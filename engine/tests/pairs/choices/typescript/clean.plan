@@ -1,0 +1,89 @@
+# A job run in one of two modes. Each choice is made once, in a place with a name: what a mode means is one table
+# (`PLANS`), how a level marks a line another (`MARKS`, read by `Report.line`); where the job comes from is the body of
+# `source`; `report` builds its Message by one constructor in either arm. The settings are the route's own value: a call
+# handed `settings.mode` or `settings.level` is handed the settings, the projection glued into the call; inside, the
+# parameter that holds the field is still the projection: its steps are handed the settings.
+
+route runs.runs.run
+step run/source
+choice run/source/?1
+step run/source/?1/load
+step run/source/?1/load/Job()
+step run/source/?1/infer
+step run/source/?1/infer/Job()
+step run/finished
+step run/finished/Runner()
+step run/finished/Runner.batch
+step run/report
+choice run/report/?1
+step run/report/?1/Report()
+step run/report/?1/Report.line
+step run/report/?1/Message()
+step run/report/?1/Message()#2
+step run/report/send
+
+line entry > run call
+line Settings·settings > run value                                 # run reads the mode and the level from it
+
+# where the job comes from
+line run/source/?1/load/Job() > Job@run/source/?1/load/Job() value
+line Job@run/source/?1/load/Job() > run/source/?1/load value
+line run/source/?1/load > Job@run/source/?1 value
+line run/source/?1/infer/Job() > Job@run/source/?1/infer/Job() value
+line Job@run/source/?1/infer/Job() > run/source/?1/infer value
+line run/source/?1/infer > Job@run/source/?1 value
+line Job@run/source/?1 > run/source value
+line run/source > Job·job@run/source value
+line Job·job@run/source > run/finished value
+line Job·job@run/source > run/report/?1/Report.line value           # its name, marked by the Report
+line Job·job@run/source > run/report/?1/Message()#2 value           # its name, unmarked
+
+# whether it finished: a Runner for the mode, and the mode's timeout
+line Settings·settings > run/finished value   # finished looks up the mode's plan itself
+line Settings·settings > run/finished/Runner() value
+# `PLANS`, the module's table of plans by mode, is one value the module holds, from beyond (#171), as the Python pair's:
+# a `Record<Mode, Plan>` holds Plans by their Mode, a key choosing the Plan a lookup gives (#167); `run`
+# (`PLANS[settings.mode]`), `finished` (`PLANS[mode].timeout`) and the Runner's initializer (`this.plan = PLANS[mode]`)
+# read it in their own code
+line Plan·PLANS > run value
+line Plan·PLANS > run/finished value
+line Plan·PLANS > run/finished/Runner() value
+home Plan·PLANS run
+line run/finished/Runner() > Runner@run/finished/Runner() value
+line Runner@run/finished/Runner() > run/finished/Runner.batch value
+line run/finished/Runner.batch > run/finished back
+line run/finished > _@run/finished value                           # the boolean, handed straight to report
+line _@run/finished > run/report value
+
+# the line that says how it went: a Report for the level marks it in one arm, and the marked string goes into the
+# Message built around it
+line Settings·settings > run/report/?1/Report() value
+# `MARKS`, the module's table of marks by level, is from beyond too: `Report.line` reads it (`MARKS[this.level]`)
+line Marks·MARKS > run/report/?1/Report.line value
+home Marks·MARKS run
+line run/report/?1/Report() > Report@run/report/?1/Report() value
+line Report@run/report/?1/Report() > run/report/?1/Report.line value
+line run/report/?1/Report.line > _@run/report/?1/Report.line value
+line _@run/report/?1/Report.line > run/report/?1/Message() value
+line run/report/?1/Message() > Message·message@run/report/?1 value
+line run/report/?1/Message()#2 > Message·message@run/report/?1 value
+line Message·message@run/report/?1 > run/report/send value
+line run/report/send > Screen own
+line run/report/send > run/report back
+line run/report > run back
+
+home Settings·settings run
+home Job@run/source/?1/load/Job() run/source/?1/load
+home Job@run/source/?1/infer/Job() run/source/?1/infer
+home Job@run/source/?1 run/source
+home Job·job@run/source run
+home Runner@run/finished/Runner() run/finished
+home _@run/finished run
+home Report@run/report/?1/Report() run/report/?1
+home _@run/report/?1/Report.line run/report/?1
+home Message·message@run/report/?1 run/report
+
+side entry left
+side Screen right
+
+# an opened step's own arrow takes what its steps make, or what its call is handed, though only a step inside takes it

@@ -1,0 +1,7 @@
+[project]
+name = "buyer"
+version = "0.1.0"
+dependencies = ["requests"]
+
+[tool.ty.environment]
+extra-paths = ["../../../../../../../engine/tests/pairs/python/typings"]

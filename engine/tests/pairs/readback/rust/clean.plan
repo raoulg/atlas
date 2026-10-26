@@ -1,0 +1,45 @@
+# A step that writes a table and reads it back only to check it: the count decides whether `keep` panics and goes no
+# further, so the table is where the route leaves its notes, in the codomain (mathematics.md, "A route's domain and
+# codomain"; rule 4 of "The closed picture is the pushforward of the fine one"). The library's operations whose result
+# the body names are steps: `let con = Connection::open(..)`, `let stored = con.query_row(..)`.
+
+route ledger.main
+step main/Ledger()
+step main/Ledger.keep
+step main/Ledger.keep/open
+step main/Ledger.keep/query_row
+
+line entry > main call
+line main/Ledger() > Ledger·ledger@main/Ledger() value
+line Ledger·ledger@main/Ledger() > main/Ledger.keep value   # the body uses the instance itself, and a step inside takes it too
+line main/Ledger.keep > Ledger·ledger@main/Ledger.keep value     # `&mut self`: keep changes the ledger
+line main/Ledger.keep/open > _·con@main/Ledger.keep/open value
+line Ledger·ledger@main/Ledger() > main/Ledger.keep/open value   # K
+line _·con@main/Ledger.keep/open > main/Ledger.keep/query_row value
+line _·con@main/Ledger.keep/open > main/Ledger.keep value   # its own execute
+line main/Ledger.keep/query_row > _·stored@main/Ledger.keep/query_row value
+line _·stored@main/Ledger.keep/query_row > main/Ledger.keep value   # the check
+line main/Ledger.keep > SQLite(notes) own
+
+home Ledger·ledger@main/Ledger() main
+home Ledger·ledger@main/Ledger.keep main
+home _·con@main/Ledger.keep/open main/Ledger.keep
+home _·stored@main/Ledger.keep/query_row main/Ledger.keep
+
+# An error is a value (#138): `?` hands on what a step fails with, converted to the function's error type, here no type
+# of the code's (`io::Error`, `rusqlite::Error`); each border it crosses uncaught hands it on. An opened step takes what
+# its steps hand on, which Atlas does not draw for an error of no type of the code's.
+line main/Ledger.keep > _@main/Ledger.keep value
+line main/Ledger.keep/open > _@main/Ledger.keep/open value
+line main/Ledger.keep/query_row > _@main/Ledger.keep/query_row value
+line _@main/Ledger.keep/open > main/Ledger.keep value
+line _@main/Ledger.keep/query_row > main/Ledger.keep value
+home _@main/Ledger.keep main
+home _@main/Ledger.keep/open main/Ledger.keep
+home _@main/Ledger.keep/query_row main/Ledger.keep
+
+side entry left
+side SQLite(notes) right
+
+# K: a value handed through a field reaches no step inside: `Connection::open(&self.path)` hands `self` (#121,
+#    decision 1, cause 3: the reader's `held_in` skips `self` even inside an argument)

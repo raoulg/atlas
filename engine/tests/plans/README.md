@@ -1,0 +1,127 @@
+# Plans: what the finest plan of a route must say
+
+The page's oracle holds the pictures of a route to one another: each is a quotient of one finest plan `F`, and
+opening a box refines it. Whether `F` says what the code does is a question of its own, and these files answer it
+for small programs (`docs/reference/mathematics.md`, "One fine plan, every picture its image"; issue #52).
+
+A `.plan` file lies beside the program it describes: `inside-a-step.plan` beside `inside-a-step/` here, and
+`clean.plan` beside `clean/` in a pair under `../pairs`. It is written from the code and the mathematics, never from
+what Atlas draws. `plans.rs` builds the plans in node with the viewer's own model (`viewer/plan.js`, through
+`../plans.mjs`). Every fact the file writes down for a route must hold, and no other. Every route of every program
+under `pairs` and `plans`, with or without a file, is also asked for its pictures: for every set of open steps, the
+oracle and the quotient must find nothing, and every closed family must open into a frame with the id of its box for
+each value it stands for, as the page draws it (the walk's rule), and every box of files folded into a directory must
+open, in one step, to the files it held or to directories below it, leaving every other file where it stood. They are asked again with the plan cut as a large
+program's is cut, at the budgets 1, 2 and 3 (`ATLAS_FINE_BUDGET`), where a step beyond the cut is the image of its body
+and each of its lines counts the fine lines its body draws there, and where each step beyond the cut, opened as the page
+opens it and planned anew, must refine the picture it was cut in; the facts are asked of the finest plan only.
+
+```bash
+cargo test -p atlas-engine --test plans -- --nocapture                              # every program
+ATLAS_PLANS=pairs/pipeline cargo test -p atlas-engine --test plans -- --nocapture   # the programs under one path
+```
+
+## The facts
+
+One fact per line; `#` starts a comment, at the start of a line or after a space.
+
+| Fact | Says |
+| --- | --- |
+| `route ID` | the facts that follow are of the route of this entry (its node's id: `clean.run`) |
+| `step PATH` | an occurrence: a call of the route, by the names on its path from the route |
+| `choice PATH` | a choice in a body, a frame of its own with its arms inside |
+| `line A > B CHANNEL` | a line of the plan, from what makes to what takes |
+| `home VALUE FRAME` | the frame a value stands in with every step open (`outside` when no frame holds it) |
+| `side PLACE SIDE` | where a place of the world stands, decided on the closed picture: `left`, `right`, `between` (also a place the code goes to without saying which way, in neither domain nor codomain), `both` |
+
+**Occurrences.** A path is the route's name and the step labels below it: `run/tidy/strip`. A constructor is `Table()`,
+a method `Class.method`, an override in a call into a family `Circle.draw` below the call. A choice is `?1`, `?2` in
+order in its body, and its arms stand below it (`pick/?1/load_csv`). A second call of one name in one body is
+`write_to#2`. Building a class runs the initializer along its order, and the step that builds it opens into that body
+(`run/Audit()/stamp`), never into the class's methods; an initializer another calls (`super(text)`) builds nothing. An
+override in a call into a family takes what the call is handed and runs on what the call runs on. In `F` every
+occurrence with calls is open. As the end of a line it is its own arrow, a point on its border that keeps what the body
+itself takes and what it gives back, at the step's moment: what the body's own code uses outside its steps
+(`print(store.path)`, `if done:`), of a value made inside or handed in, is a line to it. A value the step's call is
+handed crosses the frame to the step inside that takes it. A call into a library the program does not read is an
+occurrence where the body names what it gives (`con = duckdb.connect(path)`) or where it changes the value it runs on
+(`rows.append(row)`), labelled by the operation (`connect`, `append`); otherwise what it gives goes into the call around
+it. What a library operation touches at a place is its caller's own touch, whether or not it is a step: naming its
+result changes no line to the place (`design.md`, "An opened route is the fiber of its calls").
+
+**Values.** A value is `TYPE·NAME@MOMENT`. The type is the code's name for it (`Table`, `Circle`); a value of no type of
+the code's is `_`. The name is the one that holds it; a value no name holds has none. The moment is the occurrence that
+made it, or the choice for the value a choice hands on that two of its arms make, or that one arm makes anew of a value
+named before it (`pick/?1` in a body, `Store()/Store.get/?` for the overrides a call into a family may run, below the
+call); what one arm makes and uses itself is its maker's. A value no step makes, from beyond, has no moment. A route's
+parameters are values from its start, by their names: `Circle·c`. In the route of an exported class each public method
+is called by the entry and runs on the caller's instance, one value from beyond (`Store`); what the constructor door
+builds goes back to the caller. A door takes its parameters by their names, as a route does; two doors' parameters are
+two values (`Day·day`, `Day·day#2`). What a step reads back inside itself of what its own
+writers wrote is `PLACE in STEP` (`File(cache.json) in main/refresh`), made by the writers and taken by the reader.
+Two values the names do not tell apart are told apart by a count, `#2`. A call is handed the values the names in its
+arguments hold: `f(x.name)` is handed `x` (a projection is no occurrence; it is glued into the call). A nested call that
+is a step of its own takes its names itself, and the call around it is handed what that step gives. A projection bound to
+a name first is still the projection (`width = settings.width; f(width)` hands `settings`), and so is a parameter its call
+fills through one: inside a step, a parameter holds what its call hands it. An error is a value: its
+constructor makes it in the arm that raises it, and each border it crosses uncaught hands it on, up to the route.
+
+**Places.** A place is drawn as Atlas names it: `File(data/out.csv)`, `Screen`, `Disk(bump.path)`, `entry` (where the
+route starts).
+
+**Channels.** `value` (a value made or taken), `own` (a step's own effect at a place), `reached` (an effect through a
+step below, only where the plan is cut), `call` (the entry calls the route), `back` (a result of no type of the code's
+goes on to the step that called it, where no other step of the caller takes it: one line, labelled in the picture by
+the name that holds it, and no value `_·name` beside it).
+
+## What Atlas gets wrong today
+
+A fact Atlas gets wrong is written down as it should be and marked with the issue that tracks it:
+
+```
+known #101 line Store·store@run/Store() > run value                # a fact that does not hold
+known #134 extra line main/remove > main back                     # a fact Atlas has and should not
+known #N fault Page@Doc()/Doc() stands in                           # a fault of the pictures, matched as part of its text
+```
+
+The test reports each mark and passes. It fails once the fact holds, or the extra fact or the fault is gone, so the mark
+goes with the fix. A `known #N fault` written before any `route` holds for every route of the program.
+
+## The programs here
+
+The review of 2026-10-20 ("Atlas tegen zijn wetten", `docs/reviews/2026-10-20-laws`) gave the programs, each the
+smallest that showed one law:
+
+| Program | What it shows |
+| --- | --- |
+| `inside-a-step` | what a step makes inside and hands back stands in its frame (Z8) |
+| `readback-inside` | a read back inside a step is a value at a moment inside it; the place stays in the codomain (Z1) |
+| `own-and-reached` | a step's own effect and what it reaches are two channels to one place (Z2) |
+| `two-of-one-family` | two parameters of one family are two values (Z6) |
+| `two-of-one-type` | the route's own parameters are values from its start (Z7) |
+| `two-callers` | what a step reaches is the closure of its calls in the occurrences, not the functions (R1) |
+| `builds-a-class` | building an object runs its constructor, not its methods (R2) |
+| `builds-a-subclass` | building a subclass without an initializer of its own runs its base's, and opens into it |
+| `path-hole` | a directory no code decides is a hole in the path (R3) |
+| `path-pattern` | a pattern below a directory is one place, for the listing and for what is read of what it yields (R3) |
+| `path-listing` | a listing of all a directory holds lists the directory, each element below it; a sort key takes the paths it orders; a key no code decides is one of a table's values (#225) |
+| `check-after-fill` | a place read only to check it stays in the codomain, also where an arm filled it first (R4) |
+| `read-logged`, `with-open` | a read handed to a call, or through `with .. as`, is used: the place stands between (R4) |
+| `loop-reads-then-writes` | a read in a loop finds what a later round writes over: both (R4) |
+| `callee-reads-back` | a callee that reads back what its caller wrote changes nothing the route found (R5) |
+| `recursion-order-a`, `-b` | a recursive program draws the same whichever function is defined first (R5) |
+| `readback-one-body`, `two-steps` | a place a step writes and reads back stays in its codomain; one a later step reads is between (R4) |
+| `merged-touch-order` | two equal calls are one touch that runs on the line of each: seeded in an arm, read, written on: both (R4) |
+| `test-only` | a place the route only tests is the choice's condition, no box and no line (R4) |
+| `read-into` | a handle read into a string the step returns is used: `read_to_string(&mut s)` makes `s` from it (R4) |
+| `open-mode-unknown` | a file opened with a mode that is a value goes no way the code says: in neither (R4) |
+| `what-holds` | a place read and changed stands twice, a choice is a coproduct, a call into a family a choice (Z13) |
+| `builds-then-reads` | building a class runs its initializer at the call's place: what the caller then reads of what it wrote, it reads back (#165) |
+| `fills-by-place` | a call fills each parameter by where it writes the argument, by its name in whatever order, and a literal fills none (#157) |
+| `unbound-parameter` | a call fills each parameter by where it writes the argument, whatever its type: two projections of one value, and both parameters hold it (#157); one the plan cannot pair is a value of its body, never one from beyond the route (#159) |
+| `next-method-on-a-class` | a body run on a known class does at a place what that class runs: a `super()` call runs one method there (R5) |
+| `takes-a-title` | a parameter filled through a projection is that projection: handed a title where `take` keeps its figure, the second chart holds no figure of the first's (#172) |
+| `takes-a-bound-title` | a projection bound to a name first is still the projection: `t = self.title; other.take(t, None)` reads as `takes-a-title` (#174) |
+| `lent-after-the-put` | a part set whole to a chart is that chart: a figure lent to the chart after the put is the one the board's part draws on (#179) |
+| `drawn-after-the-put` | the same, the other way round: the figure the board makes through its part is the chart's, and the chart's own name draws on it again (#179) |
+| `folds-two-levels` | files folded into directories nested in one another that hold the same files (`data/`, `data/*/`) are one box: opening it shows the files in one step (#227) |

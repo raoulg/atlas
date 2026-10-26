@@ -1,0 +1,96 @@
+# A change to a value is a step that makes it anew: `board.mark_all()` and `board.reset()` change the board they are
+# called on, so each takes the board as it was and makes it at its own moment (`T × A → T`, mathematics.md, "Signatures
+# say the arrow"); inside `reset`, `self.cells.clear()` and `self.scores.clear()` are such steps on the board's parts.
+# `renamed` changes no input: it copies the board (`copy.copy`, a library operation whose result it names) and renames
+# the copy. `merged` is called on that copy with the board, and `Board()` in it reads the fields of both. The lists and
+# dicts are of no type of the code's: what `with_tag` gives goes into `tally`, what `tally` gives into `counted`, and
+# what `counted`, `extended` and `queued` give goes back to `main`.
+route board.core.main
+step main/Cell()
+step main/Board()
+step main/Board.mark_all
+step main/Board.mark_all/for cell in self.cells
+step main/Board.reset
+step main/renamed
+step main/Board.merged
+step main/Board.merged/Board()
+step main/with_tag
+step main/tally
+step main/counted
+step main/extended
+step main/queued
+
+line entry > main call
+line main/Cell() > Cell@main/Cell() value
+line Cell@main/Cell() > main/Board() value
+line main/Board() > Board·board@main/Board() value
+line main/Board.mark_all/for cell in self.cells > Cell·cell@main/Board.mark_all/for cell in self.cells value
+line main/Board.mark_all > Board·board@main/Board.mark_all value
+line main/Board.reset > Board·board@main/Board.reset value
+line main/renamed > Board@main/renamed value
+line Board@main/renamed > main/Board.merged/Board() value                  # self, read by Board() in merged
+line main/Board.merged/Board() > Board@main/Board.merged/Board() value
+line Board@main/Board.merged/Board() > main/Board.merged value             # merged hands back what its body made
+line main/Board.merged > Board·other@main/Board.merged value
+line Board·other@main/Board.merged > main value                            # main counts the cells of other
+line main/with_tag > _@main/with_tag value
+line _@main/with_tag > main/tally value
+line main/tally > _@main/tally value
+line _@main/tally > main/counted value
+line main/counted > main back
+line main/extended > main back
+line main/queued > main back
+
+home Cell@main/Cell() main
+home Board·board@main/Board() main
+home Board·board@main/Board.mark_all main
+home Cell·cell@main/Board.mark_all/for cell in self.cells main/Board.mark_all
+home Board·board@main/Board.reset main
+home Board@main/renamed main
+home Board@main/Board.merged/Board() main/Board.merged
+home Board·other@main/Board.merged main
+home _@main/with_tag main
+home _@main/tally main
+
+side entry left
+
+# A library operation that changes the value it runs on, or whose result the body names, is a step: on a part of
+# `self` it changes the instance the method runs on (`self.cells.clear()`), and a function that changes the list it is
+# handed (`heapq.heappush`) is one too. A list is of no type of the code's: its values are `_`
+step main/Board.reset/clear
+step main/Board.reset/clear#2
+step main/renamed/copy
+step main/extended/append
+step main/queued/list
+line Board·board@main/Board.mark_all > main/Board.reset/clear value
+line main/Board.reset/clear > Board·self@main/Board.reset/clear value
+line Board·self@main/Board.reset/clear > main/Board.reset/clear#2 value
+line main/Board.reset/clear#2 > Board·self@main/Board.reset/clear#2 value
+line Board·self@main/Board.reset/clear#2 > main/Board.reset value # the own arrow hands on what the change inside made
+line Board·board@main/Board.reset > main/renamed/copy value
+line main/renamed/copy > Board·board@main/renamed/copy value
+line Board·board@main/renamed/copy > main/renamed value
+line main/extended/append > _·xs@main/extended/append value
+line _·xs@main/extended/append > main/extended value   # the own arrow hands back what the change made
+line main/queued/list > _·jobs@main/queued/list value
+step main/queued/heappush                                   # `heapq.heappush(jobs, job)` changes the list it is handed
+line _·jobs@main/queued/list > main/queued/heappush value
+line main/queued/heappush > _·jobs@main/queued/heappush value
+line _·jobs@main/queued/heappush > main/queued value   # the own arrow hands back what the change made
+home Board·self@main/Board.reset/clear main/Board.reset
+home Board·self@main/Board.reset/clear#2 main/Board.reset
+home Board·board@main/renamed/copy main/renamed
+home _·xs@main/extended/append main/extended
+home _·jobs@main/queued/list main/queued
+home _·jobs@main/queued/heappush main/queued
+
+# `merged` is handed the board as `other`, which `Board()` in it takes
+line Board·board@main/Board.reset > main/Board.merged/Board() value
+
+# The own arrow takes a value its body only hands to a step inside it: the Cell built into `[Cell()]` for `Board()`, the
+# receiver of `merged` whose fields go into `Board(..)`
+
+# The loop over `self.cells` goes over the board the method runs on, and `cell.marked = True` is the body's own use of
+# each cell: the board reaches the loop through `self`
+line Board·board@main/Board() > main/Board.mark_all/for cell in self.cells value
+line Cell·cell@main/Board.mark_all/for cell in self.cells > main/Board.mark_all value

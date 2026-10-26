@@ -1,0 +1,56 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 920 330" role="img" aria-label="atlas check finds 16 questions; two decisions answer 4 of them, which are set aside with their reason; 12 stay open; a decision that answers nothing is asked about">
+  <g style="font-family:var(--sans);font-size:15px;fill:var(--ink-2)">
+    <text x="20" y="34">atlas check finds</text>
+    <text x="640" y="34">still asks</text>
+    <text x="640" y="214">set aside, each with its reason</text>
+  </g>
+  <g style="font-family:var(--mono);font-size:13px">
+    <!-- sixteen questions found -->
+    <g style="fill:none;stroke:var(--accent);stroke-width:2">
+      <circle cx="40" cy="70" r="13"/><circle cx="76" cy="70" r="13"/><circle cx="112" cy="70" r="13"/><circle cx="148" cy="70" r="13"/>
+      <circle cx="40" cy="106" r="13"/><circle cx="76" cy="106" r="13"/><circle cx="112" cy="106" r="13"/><circle cx="148" cy="106" r="13"/>
+      <circle cx="40" cy="142" r="13"/><circle cx="76" cy="142" r="13"/><circle cx="112" cy="142" r="13"/><circle cx="148" cy="142" r="13"/>
+      <circle cx="40" cy="178" r="13"/><circle cx="76" cy="178" r="13"/><circle cx="112" cy="178" r="13"/><circle cx="148" cy="178" r="13"/>
+    </g>
+    <g style="fill:var(--accent);font-weight:600;text-anchor:middle">
+      <text x="40" y="75">?</text><text x="76" y="75">?</text><text x="112" y="75">?</text><text x="148" y="75">?</text>
+      <text x="40" y="111">?</text><text x="76" y="111">?</text><text x="112" y="111">?</text><text x="148" y="111">?</text>
+      <text x="40" y="147">?</text><text x="76" y="147">?</text><text x="112" y="147">?</text><text x="148" y="147">?</text>
+      <text x="40" y="183">?</text><text x="76" y="183">?</text><text x="112" y="183">?</text><text x="148" y="183">?</text>
+    </g>
+    <text x="20" y="222" style="fill:var(--ink-3)">16 questions</text>
+
+    <!-- the decisions, written beside the code -->
+    <line x1="182" y1="124" x2="612" y2="124" style="stroke:var(--ink-3);stroke-width:1.5" marker-end="url(#d-head)"/>
+    <rect x="214" y="66" width="370" height="30" rx="3" style="fill:var(--bg);stroke:var(--line)"/>
+    <text x="226" y="86" style="fill:var(--ink)"># atlas: ignore[changes] <tspan style="fill:var(--ink-2)">in place, by design</tspan></text>
+    <rect x="214" y="152" width="370" height="30" rx="3" style="fill:var(--bg);stroke:var(--line)"/>
+    <text x="226" y="172" style="fill:var(--ink-3)">.atlasignore  <tspan style="fill:var(--ink)">src/legacy/**</tspan>  <tspan style="fill:var(--ink-2)"># rewrite planned</tspan></text>
+    <text x="226" y="118" style="font-family:var(--sans);font-size:13px;fill:var(--ink-3)">a decision in the code, or for a path</text>
+
+    <!-- twelve still open -->
+    <g style="fill:none;stroke:var(--accent);stroke-width:2">
+      <circle cx="660" cy="70" r="13"/><circle cx="696" cy="70" r="13"/><circle cx="732" cy="70" r="13"/><circle cx="768" cy="70" r="13"/><circle cx="804" cy="70" r="13"/><circle cx="840" cy="70" r="13"/>
+      <circle cx="660" cy="106" r="13"/><circle cx="696" cy="106" r="13"/><circle cx="732" cy="106" r="13"/><circle cx="768" cy="106" r="13"/><circle cx="804" cy="106" r="13"/><circle cx="840" cy="106" r="13"/>
+    </g>
+    <g style="fill:var(--accent);font-weight:600;text-anchor:middle">
+      <text x="660" y="75">?</text><text x="696" y="75">?</text><text x="732" y="75">?</text><text x="768" y="75">?</text><text x="804" y="75">?</text><text x="840" y="75">?</text>
+      <text x="660" y="111">?</text><text x="696" y="111">?</text><text x="732" y="111">?</text><text x="768" y="111">?</text><text x="804" y="111">?</text><text x="840" y="111">?</text>
+    </g>
+    <text x="640" y="150" style="fill:var(--ink-3)">12 questions</text>
+
+    <!-- four set aside -->
+    <g style="fill:none;stroke:var(--ink-3);stroke-width:1.5;stroke-dasharray:3 3">
+      <circle cx="660" cy="246" r="13"/><circle cx="696" cy="246" r="13"/><circle cx="732" cy="246" r="13"/><circle cx="768" cy="246" r="13"/>
+    </g>
+    <g style="fill:var(--ink-3);text-anchor:middle">
+      <text x="660" y="251">✓</text><text x="696" y="251">✓</text><text x="732" y="251">✓</text><text x="768" y="251">✓</text>
+    </g>
+    <text x="640" y="290" style="fill:var(--ink-3)">12 questions, 4 set aside</text>
+
+    <!-- a decision that answers nothing is itself asked -->
+    <rect x="214" y="250" width="370" height="30" rx="3" style="fill:var(--bg);stroke:var(--accent);stroke-dasharray:4 3"/>
+    <text x="226" y="270" style="fill:var(--ink-3)">.atlasignore  <tspan style="fill:var(--ink)">src/gone/**</tspan>  <tspan style="fill:var(--ink-2)"># removed</tspan></text>
+    <text x="226" y="306" style="font-family:var(--sans);font-size:14px;fill:var(--accent)">? It covers no finding: is the decision still needed?</text>
+  </g>
+</svg>

@@ -1,0 +1,129 @@
+name: studio
+
+# Atlas Studio for macOS and Windows, with the atlas CLI of the same commit inside: a disk image per
+# Mac (`atlas-studio-<target>.dmg`) and a setup program for Windows
+# (`atlas-studio-x86_64-pc-windows-msvc-setup.exe`, an NSIS installer that installs for the user alone,
+# without administrator rights). The version is Atlas's own, from the root Cargo.toml. Neither is
+# signed by a paid identity: the Mac app is signed ad hoc, so a disk image downloaded in a browser
+# opens through System Settings › Privacy & Security › Open Anyway; a setup program downloaded in a
+# browser meets SmartScreen's "More info › Run anyway". `install-studio.sh` and `install-studio.ps1`
+# download without the mark of the internet, so neither step is needed. `release.yml` and
+# `nightly.yml` call this workflow and publish what it makes; on a push to `next` that changes Studio
+# or this workflow, or run by hand, it only keeps them as the run's artifacts (scheduled and dispatched
+# runs take the workflow from `main`, so this push is what builds Studio on `next` before a promotion
+# carries the nightly's call to it).
+
+on:
+  push:
+    branches: [next]
+    paths: ["studio/**", ".github/workflows/studio.yml"]
+  workflow_call:
+    inputs:
+      ref:
+        description: "The commit to build"
+        type: string
+        required: true
+      channel:
+        description: "The channel the build is of: `release` or `nightly`"
+        type: string
+        default: nightly
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: "The commit or branch to build"
+        type: string
+        default: next
+
+permissions:
+  contents: read
+
+# The channel a build is of, which its atlas names (`0.68.0-nightly (sha)`) and by which Studio looks
+# for its updates: a release's, or the nightly's, which a build of `next` pushed or run by hand is too.
+# Each channel is an app of its own, so that the two install side by side: a release is Atlas Studio
+# (`io.github.raoulg.atlas-studio`), a nightly Atlas Studio Nightly, with its own identifier and so
+# its own settings and data.
+env:
+  ATLAS_CHANNEL: ${{ inputs.channel != 'release' && 'nightly' || '' }}
+  STUDIO_APP: ${{ inputs.channel != 'release' && 'Atlas Studio Nightly' || 'Atlas Studio' }}
+  STUDIO_ID: ${{ inputs.channel != 'release' && 'io.github.raoulg.atlas-studio-nightly' || 'io.github.raoulg.atlas-studio' }}
+
+jobs:
+  dmg:
+    strategy:
+      matrix:
+        target: [aarch64-apple-darwin, x86_64-apple-darwin]
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.ref || github.sha }}
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+      - name: the atlas CLI, as Studio's sidecar
+        run: |
+          cargo build --release --locked --target ${{ matrix.target }} -p atlas
+          mkdir -p studio/src-tauri/binaries
+          cp target/${{ matrix.target }}/release/atlas studio/src-tauri/binaries/atlas-${{ matrix.target }}
+      - name: the disk image
+        working-directory: studio
+        run: |
+          version=$(grep -m1 '^version' ../Cargo.toml | cut -d'"' -f2)
+          npx --yes @tauri-apps/cli@2.12.2 build --ci --target ${{ matrix.target }} --bundles dmg \
+            --config "{\"version\":\"$version\",\"productName\":\"$STUDIO_APP\",\"identifier\":\"$STUDIO_ID\"}"
+          cp src-tauri/target/${{ matrix.target }}/release/bundle/dmg/*.dmg "$GITHUB_WORKSPACE/atlas-studio-${{ matrix.target }}.dmg"
+      - name: the app in the image is signed whole and carries its atlas
+        run: |
+          mount=$(hdiutil attach -nobrowse -readonly "atlas-studio-${{ matrix.target }}.dmg" | awk -F'\t' '/\/Volumes\//{print $NF}')
+          app="$mount/$STUDIO_APP.app"
+          codesign --verify --deep --strict "$app"
+          plutil -p "$app/Contents/Info.plist" | grep CFBundleShortVersionString
+          test "$(plutil -extract CFBundleIdentifier raw "$app/Contents/Info.plist")" = "$STUDIO_ID"
+          if [ "${{ matrix.target }}" = aarch64-apple-darwin ]; then "$app/Contents/MacOS/atlas" --version; fi
+          hdiutil detach "$mount"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: atlas-studio-${{ matrix.target }}
+          path: atlas-studio-${{ matrix.target }}.dmg
+
+  setup:
+    runs-on: windows-latest
+    env:
+      TARGET: x86_64-pc-windows-msvc
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.ref || github.sha }}
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+      - name: the atlas CLI, as Studio's sidecar
+        shell: bash
+        run: |
+          cargo build --release --locked --target $TARGET -p atlas
+          mkdir -p studio/src-tauri/binaries
+          cp target/$TARGET/release/atlas.exe studio/src-tauri/binaries/atlas-$TARGET.exe
+      - name: the setup program
+        shell: bash
+        working-directory: studio
+        run: |
+          version=$(grep -m1 '^version' ../Cargo.toml | cut -d'"' -f2)
+          npx --yes @tauri-apps/cli@2.12.2 build --ci --target $TARGET --bundles nsis \
+            --config "{\"version\":\"$version\",\"productName\":\"$STUDIO_APP\",\"identifier\":\"$STUDIO_ID\"}"
+          cp src-tauri/target/$TARGET/release/bundle/nsis/*-setup.exe "$GITHUB_WORKSPACE/atlas-studio-$TARGET-setup.exe"
+      - name: the setup program installs Studio and its atlas, for the user alone
+        shell: pwsh
+        run: |
+          Start-Process -Wait -FilePath ".\atlas-studio-$env:TARGET-setup.exe" -ArgumentList '/S'
+          $dir = Join-Path $env:LOCALAPPDATA $env:STUDIO_APP
+          Get-ChildItem $dir | Select-Object Name, Length | Format-Table | Out-String | Write-Host
+          & (Join-Path $dir 'atlas.exe') --version
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+      - uses: actions/upload-artifact@v7
+        with:
+          name: atlas-studio-${{ env.TARGET }}
+          path: atlas-studio-${{ env.TARGET }}-setup.exe

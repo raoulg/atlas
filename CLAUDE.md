@@ -42,9 +42,14 @@ The rigorous half and the visual half are the same structure. Read `docs/referen
   mind, the code is what changes. If a view only works because of a special case, it is
   wrong.
 - **Atlas is its own first subject.** `atlas view .` must read as the algebra:
-  `Disk(repo) → Repo.read → Repo → Language.parse → Graph → Flow → View → File(html) → open`. When the
-  self-picture shows a box the algebra does not have, the code changes, not the
-  picture. `cargo test` pins the self-picture.
+  `Disk(repo) → Repo.read → Repo → Language.parse → Graph → (Flow, Findings) → Html → File(html) → open`:
+  the graph goes to two arrows, `flow::of` and the principles' check, and the page is drawn from the
+  pair; the view it opens in is the command line's. The picture is never bent to the line. Where they
+  differ, ask which is wrong. A box that comes from how the code happens to be written (three
+  `String`s in a tuple, an untyped value, a step that does two jobs) means the code changes. An arrow
+  the code really computes and the line does not name means the line changes: the line is derived
+  from what Atlas does, never an axiom the code is cut to. The self-picture is looked at, never
+  pinned by a test: a test that reads Atlas's own code fails when Atlas is rewritten, not when a law breaks.
 - **If the code is good, the picture is good, automatically.** Views are computed
   from types and effects, never from file layout. Hierarchies in the code
   (base classes, composition) are the zoom levels; there is no other source of
@@ -55,6 +60,15 @@ The rigorous half and the visual half are the same structure. Read `docs/referen
   benchmark: settle "Atlas or the code?" with a pair in `engine/tests/pairs`, the same program
   once as good practice writes it and once with the usual shortcut. The clean side must read as
   the algebra says, the shortcut must show as a shortcut (`engine/tests/pairs.rs`).
+- **A test holds a law, never an outcome.** Each test names the law, principle, reader fact or
+  interface contract it holds, and its subject is made for it: a small program, a pair, a graph
+  drawn by `proptest`. Where a law says two routes agree (fibers commute, quotients compose, a
+  saturated filter commutes with its quotient, a graph read back from code it was written as), the
+  test computes both and compares them; where it says they differ, a counterexample shows it.
+  A test that pins what Atlas happens to say (a finding's wording, a route's text, a count of a
+  subject's parts) or how a subject happens to be written is no law. A test that changes is read as
+  a question, never as an instruction to change the code or the test: which law moved, and is it the
+  one this change meant to move?
 - **Every change to Atlas moves the pairs.** The mockups in `engine/tests/pairs` (one program
   per language, clean and sloppy) grow with Atlas. For every change to what Atlas reads, draws or
   checks, answer three questions in them before it lands: what does this lay bare, how does the
@@ -70,6 +84,15 @@ The rigorous half and the visual half are the same structure. Read `docs/referen
 - **The mathematics has one home.** Every notion Atlas uses (a functor, a fiber, Yoneda, a
   quotient) has an entry in `docs/reference/mathematics.md`: what it is, what it is in Atlas, where
   it lives. A notion Atlas starts to use is written there first.
+- **A design question gets a derivation, not a vote.** What Atlas draws is settled in this order:
+  first the six sentences and `docs/reference/mathematics.md`, as consistently as they allow (forms
+  that are isomorphic are the same; a form is never made special when a general rule already covers
+  it); where they leave room, UI/UX and good coding practice; only what is left after both is
+  Raoul's preference. Write the derivation on the issue (label `decision`) and act on it; a
+  principle it adds goes into `mathematics.md`. The map is not the territory: how fine a picture is
+  drawn is answered by zoom and filters (quotients and fibers), never by dropping a fact from the
+  graph. What does go to Raoul is put visually: what the question means for the picture, the
+  pictures it chooses between side by side, with the derivation that narrowed it to them.
 - **Keep it simple.** The basic elements first, rigorous and consistent across all
   future codebases, before any richness. One question per feedback round.
 - **Plan in GitHub issues first**, in `raoulg/atlas`: Atlas is developed in the open. Record
@@ -79,8 +102,10 @@ The rigorous half and the visual half are the same structure. Read `docs/referen
   issue on GitHub: label it `in progress` and comment a *Coordination* note that names the active
   owner, the branch, the worktree, the base commit and the files in scope. Work in your own
   worktree and branch; never edit another agent's worktree, branch or files in scope. Claude's
-  checkout is `/Users/rgrouls/code/packages/atlas` on `atlas-obeys-its-algebra`, its subagents'
-  are `.claude/worktrees/agent-*`; Codex's are under `~/.codex/worktrees/`. Branches, versions and
+  checkout is `/Users/rgrouls/code/packages/atlas`, kept on `next`; its subagents'
+  are `.claude/worktrees/agent-*`; Codex's are under `~/.codex/worktrees/`. Since `next` is checked
+  out there, a worktree lands its branch from a detached head:
+  `git checkout --detach origin/next && git merge --no-ff <branch> && git push origin HEAD:next`. Branches, versions and
   releases follow the next section. When work lands, the issue is closed with a comment saying where:
   the commit and the version it is released as (on `next`, the nightly that has it). A commit names
   the issue it serves (`#19`).
@@ -100,19 +125,32 @@ Two long-lived branches, one release train. Everything else is a short-lived top
    (`git worktree remove <path>`, which also frees its `target`, several GB), its local branch and
    its remote branch. Check first that the worktree has no changes and that
    `git rev-list --count origin/next..HEAD` is 0. The agent that merges does this in the same turn.
-2. **Land on `next`** when `cargo fmt`, `cargo test` and `atlas check .` pass: merge the topic branch
+2. **Land on `next`** when `cargo fmt` and `cargo test` pass: merge the topic branch
    (a merge commit, no squash), push, close the issue. New work, documentation, the release
-   workflows and the tap all go to `next`, also while it is only documentation.
+   workflows and the tap all go to `next`, also while it is only documentation. The landing carries
+   the issue's note, `docs/changes/<issue>.md`, with its picture (`docs/changes/README.md`): what a
+   user sees differently, drawn with Atlas where Atlas draws it. A release report is put together
+   from these notes, never written afresh.
+   **The whole suite runs once per landing, never once per branch.** While a topic is built, its
+   owner runs only the tests of what it changes. Work done in parallel lands through one queue: each
+   topic branch is pushed, not merged, and the integrating agent merges the finished branches into
+   one branch from `origin/next`, runs `cargo fmt --check`, `cargo test` (and for a viewer change
+   `walk` and `topology`) once on the whole, and lands that. A failure there is found by testing the
+   branches in it, not by running the suite again for each. When `next` moves before the push, merge
+   it again and run again only the suites its new commits touch: documentation and CI touch none.
 3. **Promote**: when Raoul says so, `next` is merged into `main` (a merge commit), `main` is tagged
    `vX.Y.0` and pushed; the tag builds the stable release and, with the secret `TAP_TOKEN`, updates
    the tap. `main` then holds nothing `next` lacks. An agent prepares the promotion (conflicts
-   resolved, docs pictures drawn, checks green) and stops before the push.
-   The release machinery (`release.yml`, `install.sh`, `install.ps1`, the tap job, `tools/tap_formula.py`)
+   resolved, docs pictures drawn, checks green, the release's notes `docs/releases/<version>.md`
+   gathered from `docs/changes/` and made a page by `uv run tools/release_page.py`, which must name no
+   point without a picture) and stops before the push.
+   The release machinery (`release.yml`, `install.sh`, `install.ps1`, the tap job, `tools/tap_formula.py`, `tools/tap_cask.py`)
    runs only on a `v*` tag, so a change to it on `next` is not exercised until the first tag after a
    promotion, and a fault in it breaks the formula for every stable user. A promotion that carries
    such a change is reviewed by Raoul before the tag, and after the tag the agent checks that the
-   release has its five binaries, that the tap's `atlas-code` names the new version and its checksums,
-   and that `brew install raoulg/tap/atlas-code` and `install.sh` install it.
+   release has its five binaries, that the tap's `atlas-code` and `atlas-studio` name the new version and
+   their checksums, and that `brew install raoulg/tap/atlas-code`, `brew install --cask raoulg/tap/atlas-studio`
+   and `install.sh` install it.
 4. **Stable fix**: a bug in released behaviour is fixed on a branch from `main`, merged into `main`
    when Raoul says so, patch number raised, tagged `vX.Y.Z`; then `main` is merged into `next` at once.
    A fix to code that is not released yet is ordinary work on `next`.
@@ -133,7 +171,8 @@ Two long-lived branches, one release train. Everything else is a short-lived top
 ## Practical
 
 - Build and run: `cargo build`, `atlas view .` (install with `cargo install --path cli`;
-  the viewer is baked into the binary, so rebuild after editing `viewer/index.html`).
+  the viewer, `viewer/index.html` with its model `viewer/plan.js`, is baked into the binary, so rebuild
+  after editing either).
 - Version: `version` in the root `Cargo.toml`, raised as the section above says. The build adds the
   commit it is made from (`0.2.0 (b0ead14)`), and the nightly build says so too
   (`0.2.0-nightly (b0ead14)`: `ATLAS_CHANNEL=nightly` at build time).
@@ -144,14 +183,35 @@ Two long-lived branches, one release train. Everything else is a short-lived top
   function that all views use) and test that function, on small graphs, before the plan is laid out;
   keep the sweep for a gate before a promotion, and then agree on it. Show Raoul the result before
   verifying it further.
+- The laws on real programs: `engine/tests/sample.rs` asks the laws of views and of a route's pictures
+  at sites drawn from a seed, within a budget, of the programs it is pointed at (ignored by `cargo test`):
+  `ATLAS_SAMPLE_REPOS=a:b ATLAS_SAMPLE_SECONDS=120 cargo test -p atlas-engine --test sample -- --ignored --nocapture`.
+  It prints the seed and writes a report (the build, each program's revision, every site); a site that
+  breaks is asked again with the seed and `ATLAS_SAMPLE_N` it names. A short budget is ordinary
+  development; a long one, agreed on, is a gate before a promotion. `.github/workflows/laws.yml` asks it
+  every night of `next` and of public programs at fixed revisions, with a fresh seed; a red run names
+  the seed in its summary. A broken site is a question, about
+  the law, the code or the sampler, and gets an issue before anything is changed.
 - Tests: `cargo test`. The Rust workspace itself is a test subject. CI runs them on Linux, macOS
   and Windows: a test that writes files builds them as the platform lays them out (a virtual
   environment keeps its packages in `Lib\site-packages` on Windows) and compares paths as `Path`s,
   never as strings with `/`.
-- Disk: cargo names Atlas's builds by its version, so every raise leaves a full set of test
-  binaries behind (they reached 260 GB). A commit that raises the version removes them, in the
-  worktree it is made in: `lefthook.yml` runs `tools/clean-old-builds.sh` after each commit (`lefthook
-  install` once per clone; worktrees share it). Dependencies stay, so the next build stays quick.
+- The viewer's model, `viewer/plan.js` (the routes, the finest plan of a route, its quotient and the oracle), is a
+  function of the page's data that touches no document: the page inlines it, and `engine/tests/plans.rs` runs it in
+  node (node on the `PATH`; CI installs it). There every route of every program under `engine/tests/pairs` and
+  `engine/tests/plans` is held, for every set of open steps, to the oracle and to the quotient, and a `.plan` file
+  beside a program writes down the plan its code implies (`engine/tests/plans/README.md`). A plan is written from the
+  code and `docs/reference/mathematics.md`, never from what Atlas draws; a change to what the plan says lands with the
+  plans it moves, and a defect a plan shows is marked `known #N` with its issue, the mark going with the fix.
+- Builds share one compile cache: `sccache` (from the Brewfile) with `RUSTC_WRAPPER=sccache` in the
+  environment, so a new worktree does not compile the dependencies again.
+- Disk: cargo names Atlas's builds by its version and by the hash of its dependencies and toolchain,
+  so every raise, dependency update or new Rust leaves a full set of builds behind (they reached
+  260 GB). `lefthook.yml` runs `tools/clean-old-builds.sh` after each commit and merge, in the
+  worktree it is made in (`lefthook install` once per clone; worktrees share it): a commit that raises
+  the version removes Atlas's builds of the old one, and `cargo sweep` (from the Brewfile) keeps
+  `target` below 15 GB by removing the least recently used builds. Dependencies stay, so the next
+  build stays quick.
   When `df -h ~` still runs low, `cargo clean -p atlas -p atlas-engine` (and with `--release`) in
   your own worktree; never another session's target. The larger cost is the number of worktrees,
   each with its own `target` of 3 to 18 GB: remove a worktree when its branch is merged (see
@@ -169,20 +229,28 @@ Two long-lived branches, one release train. Everything else is a short-lived top
   (lefthook `pre-commit`, `tools/docs-pictures.sh`) and stages the pictures. When one draws
   otherwise, the commit stops and names it with the text that shows it: reread that text, change
   what no longer holds, and commit again.
-- The page of the interaction (`docs/interaction.html`, history, look, notes, annotations, vision, prophecy) is drawn by
-  `tools/interaction_pictures.py` from a real run of `atlas serve` and `atlas mcp`: `uv run tools/interaction_pictures.py
-  target/release/atlas`. It needs `gh` and a network (the seals ask GitHub), so no hook runs it; run it with a version
-  raise that changes what those flows draw, and reread the text beside a picture it names. `docs/img/interaction/drawn.json`
-  keeps what each picture draws.
+- The tour's history (`docs/img/interaction/history.png` and `history-dark.png`) is drawn by
+  `tools/interaction_pictures.py` from a real run of `atlas serve` on six commits of the sunspots pipeline: `uv run
+  tools/interaction_pictures.py target/release/atlas`. The pages of the tour's two sessions (pointing, designing ahead) are
+  drawn by `tools/session_pictures.py`, which plays each session again with `atlas serve` and `atlas mcp`: `uv run
+  tools/session_pictures.py target/release/atlas`; their chats are text in the page. Both draw every picture in the light
+  and the dark theme, as `docs_pictures.py` does, and the tour shows the one of its theme. No hook runs them; run them
+  with a version raise that changes what those pages draw, and reread the text beside a picture they name.
+  `docs/img/interaction/drawn.json` keeps what the history draws.
 - A viewer change is walked on the subjects before it is committed: `uv run tools/pictures.py
   walk <atlas> <repo> <dir>` opens every package, every route and every family in a route, and
   must report no view that throws, draws nothing, or opens a family into other moments.
 - A viewer change also keeps the topology of zoom: `uv run tools/pictures.py topology <atlas> <repo> <dir>` opens one
-  box at a time in each route and must report no box that takes a line away, moves a box into or out of a frame
-  that is not the one opened, or does not close to the picture it was (`docs/reference/mathematics.md`,
-  "Refinement keeps what it does not refine"), beyond the ones tracked in #39, #40, #41 and #43. Lines the open box draws
-  beyond the closed one are listed as `more` and are tracked in #38.
-- `atlas check .` must find nothing on Atlas itself (`engine/tests/principles.rs` pins it).
+  box at a time in each route and must report no box that takes a line away, draws a line the closed box did not
+  (`more`: by rule 1 a fault of the closed picture), moves a box into or out of a frame that is not the one opened, or
+  does not close to the picture it was (`docs/reference/mathematics.md`, "Refinement keeps what it does not refine").
+- `atlas check` is a signal to look critically at the code and at what the check claims, never an
+  oracle and never a target. Zero findings on Atlas is no goal: never change Atlas's code, or bend a
+  rule, to keep `atlas check .` quiet. Where a finding is wrong, repair the rule and let Atlas carry
+  what the rule then finds. `engine/tests/review.rs` keeps Atlas's findings as a reviewed list,
+  `REVIEWED`, each with why it stands; it fails when the findings change, so that each change is
+  read, not so that the list shrinks. A finding a change brings is answered there: the code changes
+  for a reason of its own, the rule is repaired, or the list says why the finding stands.
   A new principle is a rule in `engine/src/principles.rs`, a case in the fixture, a clean and a
   sloppy case in the pairs, and a section in `docs/reference/principles.md`; it checks what the graph
   holds, never a project.
@@ -220,6 +288,7 @@ Two long-lived branches, one release train. Everything else is a short-lived top
   project and re-locks `uv.lock`, and ty then reads that `.venv` as the project's environment.
   Pass the project's path as an argument instead.
 - The shell is zsh: a loop over subjects must not name its variable `path` (`while read name path`),
-  since zsh ties `path` to `$PATH` and every command in the body is then "not found". `atlas analyze`
+  since zsh ties `path` to `$PATH` and every command in the body is then "not found". `status` is
+  read-only in zsh; store a command's exit code in a task-specific variable. `atlas analyze`
   and `atlas view` write into `.atlas/` at the top of the subject's git repository unless given
   `-o`/`--out`; give the scratchpad when the subject is not ours.

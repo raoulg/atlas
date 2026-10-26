@@ -79,7 +79,14 @@ ignores, no dependency or build directory) and the files named on the command li
 → Repo** is the one place the engine touches a repository: the listing is read once, a file's
 text once, when a reader first asks, and a part of the repository is a view of the same reading.
 A package named on its own (`atlas view src/pkg`) is read as the project it is in, asked for that
-package: finding the project is part of reading, and nothing after it looks at the disk.
+package: finding the project is part of reading, and nothing after it looks at the disk. A
+worktree's `.atlas/index/` keeps each part's graph between readings, with the listed files, the
+contents the part read and its language environment as the conditions for reuse. CLI, serve and
+MCP read through the same index; `--no-cache` reads anew. A reading checks its complete input
+witness before it is published, including the repository listing and external environment.
+`atlas serve` keeps the last complete reading available while the next is drawn. Its viewer loads
+one HTML shell and receives each complete graph, flow and set of findings at `/api/snapshot`;
+the selected route, filters and opened boxes belong to the view across those readings.
 What a library's code and types are is the environment's, not the repository's: read by ty, from `node_modules`, from where Cargo keeps a crate. **Graph** is the one central type: typed nodes
 (modules, classes, functions) and typed edges, and on each function the places in the
 world its calls touch. Everything between parsing and drawing is `Graph → Graph`.
@@ -171,7 +178,10 @@ the picture; that is the zoom.
 An opened route is the fiber of its calls, not of its functions. Each call is an arrow of
 its own, in the order the body runs them: a function called twice is two arrows, and a
 method called on a value of a subclass is that subclass's (the language's own dispatch, by the
-receiver's type: ty's in Python, the declared and constructed types in Rust and TypeScript). An arrow takes what its function declares and what its call
+receiver's type: ty's in Python, the declared and constructed types in Rust and TypeScript). A
+method called through a class (`Cached.read(self)`, `Source.prototype.read.call(this)`) is that
+class's, and a `super()` call the next one after the class it is written in, along the order of
+the value's class: neither runs an override in its place. An arrow takes what its function declares and what its call
 hands it, and hands on what it gives back; each value is the one the body holds by its
 name, so `data` from one call is the `data` the next takes. A library's operation Atlas does
 not read is an arrow where the body names its result (`tests = data["x"].to_numpy()`), or
@@ -236,7 +246,11 @@ Three things make `F` honest, and each is an engine task:
    that only share a name are two. Each place keeps the
    function whose call made it whole, and a route shows it only when it reaches that
    function: `analyze` reads the folder its user names, and `changes` also reads the
-   revision it writes under `$TMPDIR`. An entry the program also calls is run by its users
+   revision it writes under `$TMPDIR`. Where the code decides a place, the place also keeps the
+   function whose own code writes what its path starts at (`Touch::fixed_by`), however many calls
+   lie between: `default_rows` for the file `read_rows(path)` reads when it hands it
+   `Path("data/rows.csv")`. A default a call leaves out is an input with a default, which decides
+   nothing. An entry the program also calls is run by its users
    as well, with what they hand it, in its own route. What an object holds is whole where
    the object was built, and a path that takes both that and what the method's own callers
    hand is whole where both are. A route that reaches none of the callers that make a call
@@ -316,8 +330,9 @@ language wraps a value in (`Result<T, E>` may fail, `Promise<T>` arrives later) 
 reference; no value for the unit type (`None`, `()`, `void`); a value of the class it runs on
 for `Self`. A constructor is a fact (`ctor`): calling it makes a value of its class. An
 initializer fills in the value a call to the class makes (Python's `__init__`, a TypeScript
-`constructor`); a function on the class that gives one constructs it too (Rust's `new`, a
-Python classmethod `-> Self`). Either way the arrow goes into `Memory(T)`. A private name
+`constructor`): the class's own, else the first along its method resolution order; a function
+on the class that gives one constructs it too (Rust's `new`, a Python classmethod `-> Self`).
+Either way the arrow goes into `Memory(T)`. A private name
 (`private`) is one only the code beside it may use: a Python name with a leading `_`, a Rust
 item without `pub`, a TypeScript member marked `private`, `protected` or `#`, or a name its
 module does not export. What a language leaves to its author is a fact on the part
@@ -328,6 +343,16 @@ world it reaches (`World`: disk, web, a database by its kind, a language model, 
 a process, the screen, a figure) and the way the data goes (`Dir`: read or write) when the
 call says. In the JSON a file's direction is part of its kind (`disk_read`, `disk_write`,
 `disk` when the call does not say), another place's stands beside it (`dir`).
+
+**Sites and what they hold** — the steps of a body, in the order they run: each `Site` is one
+call, with what it is handed (`hands`) and what it gives back (`gives`). Each of those is a
+`Held`: a value by its type and the name the code holds it by (`DataFrame · frame`), or, for a
+value no name holds (one call's result handed straight to the next), by the step that makes it.
+A route's lines between steps are drawn from these: a value one step gives and a later step is
+handed is the line between them. Where a `Touch` is a call that leaves the program for a place,
+a `Held` is a value that stays in it, passing from step to step in memory. On Atlas's own
+picture, the readers fill a `Site`'s `hands` and `gives` as they read a body, and `graph_of`
+turns them into lines.
 
 **Edges** — `contains`, `imports`, `inherits`, `calls`, `instantiates`, `takes`,
 `returns`, `has`, `mutates`, `variant`, `requests`; later `yields`, `raises`,
@@ -351,7 +376,10 @@ crate's root and of the modules it makes public with `pub mod`, as `view::hide_p
 the names a public module re-exports with `pub use`; the names exported by the module a
 `package.json` points to with `exports`, `module` or `main`). A re-exported name is followed to
 where it is defined. Each is the
-start of a route; an exported class is a route whose steps are its public methods. An entry is an
+start of a route; an exported class is a route whose steps are its public methods. A program a
+manifest declares is a command also where its package exports the function (a flat module's
+public `main`): the declaration says what the function is to its user, and the function is a door
+as well (`Node::exported`). An entry is an
 arrow whose domain is what the human hands it on the command line: a command or script carries
 its options (`Entry::options`, `--raw` named, `<name>` positional) and reads as its usage line,
 and the call that parses the command line (`Site::command_line`) is the entry's, not a step of
@@ -370,7 +398,16 @@ beside them; the graph is named after the first, each package is a part, and eve
 the project's own (its imports, its exports). A crate is read
 by Cargo's targets: one library (`src/lib.rs`) and a binary per `main` (`src/main.rs`,
 `src/bin/*.rs`), each a root of its own; a directory with its own `Cargo.toml` is another
-package. The graph holds them side by side and every node knows its part. Parts meet over HTTP: a web framework's
+package, named by its `[package] name`. A TypeScript package is named by its `package.json`'s
+`name`, which code imports it by (`@acme/client` as it is written), and by its directory only where
+that names none. The graph holds them side by side and every node knows its part. Two parts that hold a
+top-level name alike (two projects whose package is `app`, the scripts beside each) hold it under
+the directory each part lies in, `orders/app` and `billing/app`: the code does not tell them apart,
+so the picture names them by where they lie. A name one part holds keeps it, and so does the
+project at the repository's root. A Makefile is its part's, a unit beside its packages: two
+Makefiles are `orders/Makefile` and `billing/Makefile`, with a target both name (`run`) held the same
+way, and the Makefile of a directory two parts are rooted in (a `pyproject.toml` beside a
+`package.json`, each part read in its manifest's language) is one. Parts meet over HTTP: a web framework's
 routes stand at their full path (through `app.mount(prefix, sub_app)`,
 `include_router(router, prefix=…)`, `APIRouter(prefix=…)`), and a request one part makes
 whole that none of its own routes serves is a `requests` edge from the function that makes it
@@ -395,8 +432,8 @@ the joint. What crosses is data: a class one of whose operations reaches a datab
 the web, a model or a program (a sink, a repository, a client), and a library's type
 whose calls reach one (`sqlite3.Connection`), is a door to that place, and the place is
 drawn instead. A file or the screen makes no door: a value may save or show itself.
-Packages that call one another while no data joins them get a dotted line, from the
-caller: the quotient of the call graph, beside the quotient of the places. The package
+Packages whose code calls one another get a dotted line, from the caller: the quotient
+of the call graph, beside the quotient of the places, drawn whatever data also joins them. The package
 level stands whether or not entry points are found.
 
 **No declared architecture.** A repository declares nothing to Atlas: no roles, no
@@ -530,11 +567,18 @@ added (green, `+`), what B no longer has is removed (red, dashed and struck thro
 both hold is changed (amber, `~`) when its own arrows differ. The layout is the union's, so a
 switch between A, A ∪ B and B hides boxes and never moves one.
 
-A shared call occurrence has the same target, receiver, inputs and output bindings. An input
-made by another call is shared only when its producer is shared too. Anonymous output names
-belong to their reading; a shared producer aliases its outputs across the two readings, so
-each side retains its own value chain. Calls to one function with different inputs remain
-distinct occurrences without changing the function's own arrow.
+A shared call occurrence has the same target, receiver, typed inputs and output bindings, in
+call order. Which call made an input is no part of it: that is the arrow of the call that made
+it, so `raw = load(p)` becoming `raw = fetch(p)` marks that occurrence, and `smooth(raw)` after
+it stays the same. Anonymous output names belong to their reading; a shared occurrence aliases
+A's anonymous values, those it is handed and those it gives, to B's names, so each side retains
+its own value chain. A call put in before a shared one (`double(x)` becoming `double(add_one(x))`),
+or taken out, is the only occurrence marked: the shared one is handed in each reading what that
+reading hands it, and the union keeps what A hands it beside it (`Diff::hands`). A value a shared
+occurrence is handed under one name in both readings is one value, also when another call makes
+it in B (`Diff::remade`): `Frame · raw` is drawn once, with a removed line in from `load` and an
+added one from `fetch`, and is changed, since the arrows into it differ. Calls to one function
+with different inputs remain distinct occurrences without changing the function's own arrow.
 
 *Decision (PTT-509): changed is Yoneda, applied to the generators.* An object is determined up to
 isomorphism by the arrows into and out of it. A place or a type is changed when the arrows directly
@@ -543,18 +587,26 @@ changed, and keeps its name. A function is an arrow, so its identity is its own 
 takes and gives, what its own calls read and write, and for an entry its usage line. A step its body
 gains or loses is marked itself, as added or removed. Only direct arrows count (sentence 6): a
 change upstream marks the step that changed, never what runs before or after it, and a place a
-caller makes whole is the caller's arrow.
+caller makes whole is the caller's arrow. A file named by a function's own parameter (`load.path`,
+`Store.path` for what a constructor takes) waits for what the function is handed: it is named so
+whoever calls the function, and is no arrow of the function that hands the parameter on.
 
 *Renames.* A node B no longer has and a node B adds whose direct relations are isomorphic (the same
 typed arrows in and out, the node itself and what is named under it counting as the same) are one
-node, renamed: it is changed, and reads `old → new`. Only a match that is the only one either way
-counts; two that could match either way are removed and added, since Atlas never guesses.
+node, renamed: it is changed, and reads `old → new`. A function's typed arrow is among its
+relations (`list[float] → float` is no `str → str`, and a parameter more is another arrow), and a
+place named by its value (`plot.out`) is named under it. A node named under a renamed one (a method
+of a renamed class) keeps its own name, and is changed only when its own arrow is. Only a match that
+is the only one either way counts; two that could match either way are removed and added, since
+Atlas never guesses.
 
 The engine marks the nodes, the edges, the steps and touches of a node both readings hold (by
 index), and the places, by the calls that touch them. In a picture a value stands at its moments,
 so a box of a value is changed when a line drawn into or out of it is in one reading only: the page
 draws each reading by itself and marks what their union holds once. The page shows no list of
-changes; `atlas changes A..B` and the MCP tool `changes` give the agent the list. `atlas history`
+changes; `atlas changes A..B` and the MCP tool `changes` give the agent the list, read from the
+same union: each route in A and in B, the steps and places it gains and loses, those it has in both
+that the union marks changed, and apart what the union marks that no route reaches. `atlas history`
 serves the commits and these pictures on this machine.
 
 *Decision (PTT-495): a closed box is a point of a quotient.* Its own arrows are the lines that cross
@@ -613,4 +665,3 @@ than two clicks from the code.
 3. Editing: probably never. "Open in editor" as a deep link should be enough.
 4. The browser as a resting place: a click in a frontend is an arrow into an API route,
    where the request names the path it asks for.
-5. Analysis cache across runs: a `.atlas/` directory next to `.git`.

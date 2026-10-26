@@ -6,8 +6,9 @@ how updates reach you, and how your coding agent gets Atlas.
 ## Stable and nightly
 
 `main` is the stable line: only fixes, each a tagged release. `next` is where new work lands; a
-nightly build is made of it when its tests are green. The scripts take the channel from
-`ATLAS_CHANNEL`:
+nightly build is made of it when its tests are green. The nightly installs as a command of its own,
+`atlas-nightly`, beside the release's `atlas`, so the two can be installed together and the release is
+at hand when a nightly breaks. The scripts take the channel from `ATLAS_CHANNEL`:
 
 ```bash
 ATLAS_CHANNEL=nightly sh -c "$(curl -fsSL https://raw.githubusercontent.com/raoulg/atlas/next/install.sh)"
@@ -18,22 +19,70 @@ $env:ATLAS_CHANNEL = 'nightly'; irm https://raw.githubusercontent.com/raoulg/atl
 ```
 
 Homebrew has no channel variable; the nightly is a formula of its own, built from the binaries of the
-nightly release, and it replaces the stable one (both install `atlas`). On the command line, and in a
-`Brewfile`:
+nightly release. On the command line, and in a `Brewfile`:
 
 ```bash
-brew install raoulg/tap/atlas-code-nightly
+brew install raoulg/tap/atlas-code raoulg/tap/atlas-code-nightly
 brew upgrade atlas-code-nightly
 ```
 
 ```ruby
-tap "raoulg/tap"
-brew "atlas-code-nightly"                 # the nightly; `brew "atlas-code"` is the stable release
+brew "raoulg/tap/atlas-code"              # the release: `atlas`
+brew "raoulg/tap/atlas-code-nightly"      # the nightly, beside it: `atlas-nightly`
 ```
 
-`brew install --HEAD raoulg/tap/atlas-code` builds `next` from source instead (it needs Rust).
+Homebrew loads a formula from a tap it does not ship only once it is trusted; naming it in full, as
+here, trusts that formula alone. `brew install --HEAD raoulg/tap/atlas-code` builds `next` from source
+instead (it needs Rust), and installs it as `atlas`, as `cargo install` does.
 
-`atlas --version` says which one you have: `0.66.2`, or `0.67.0-nightly (b0ead14)`.
+`atlas --version` says `atlas 0.68.0`, `atlas-nightly --version` says `atlas 0.69.0-nightly (b0ead14)`.
+
+## Atlas Studio
+
+Atlas Studio is the desktop app around the same engine, with the matching `atlas` inside it: it
+needs no installed CLI. Every release and every nightly has a disk image per Mac,
+`atlas-studio-aarch64-apple-darwin.dmg` (Apple silicon) and `atlas-studio-x86_64-apple-darwin.dmg`
+(Intel), and a setup program for Windows, `atlas-studio-x86_64-pc-windows-msvc-setup.exe`. On a Mac
+Homebrew puts the app in `/Applications`:
+
+```bash
+brew install --cask raoulg/tap/atlas-studio
+```
+
+`raoulg/tap/atlas-studio-nightly` is the nightly: an app of its own, Atlas Studio Nightly, with its own
+settings and list of workspaces, so the release and the nightly install side by side and the release
+is at hand when a nightly breaks. Open a repository in one of them at a time: both would run
+`atlas serve` on what it keeps in `.atlas/`. In a `Brewfile` it is `cask "raoulg/tap/atlas-studio"`
+(or `-nightly`, or both). Studio is signed ad hoc, not with an Apple Developer ID. Homebrew
+marks what it downloads as from the internet, as a browser does, so that macOS checks the app, and
+macOS blocks its first start: open Studio once, then allow it in System Settings › Privacy & Security
+› Open Anyway. Studio installs its own updates (Atlas Studio › Check for Updates…), which open without
+asking again. Homebrew leaves an app that updates itself to do so: `brew upgrade` passes Studio by, and
+`brew upgrade --greedy` installs a new copy, which macOS asks about once more.
+
+The script puts the app in `~/Applications` instead:
+
+```bash
+sh -c "$(curl -fsSL https://raw.githubusercontent.com/raoulg/atlas/main/install-studio.sh)"
+```
+
+`ATLAS_CHANNEL=nightly` installs the nightly, as `Atlas Studio Nightly.app` beside the release, and
+`ATLAS_STUDIO_DIR` another folder. Run it again to update. The script downloads with `curl`, which leaves no mark of the internet on the app, so it opens
+as it is. A disk image downloaded in a browser does carry that mark: drag the app to Applications,
+open it once, and then allow it in System Settings › Privacy & Security › Open Anyway.
+
+On Windows the script installs Studio for you alone, without administrator rights, in
+`%LOCALAPPDATA%\Atlas Studio`, with an entry in the Start menu:
+
+```powershell
+irm https://raw.githubusercontent.com/raoulg/atlas/main/install-studio.ps1 | iex
+```
+
+`$env:ATLAS_CHANNEL = 'nightly'` installs the nightly, as Atlas Studio Nightly in
+`%LOCALAPPDATA%\Atlas Studio Nightly` beside the release; run it again to update. The setup program is
+not signed with a paid identity either. Downloaded by the script it carries no mark of the internet
+and runs as it is; downloaded in a browser, SmartScreen asks first: choose More info, then Run anyway.
+Windows › Settings › Apps removes Studio again.
 
 ## Updates
 
@@ -51,6 +100,10 @@ Your agent gets Atlas through `atlas mcp`. Register it once, for every project:
 claude mcp add --scope user atlas -- atlas mcp
 codex mcp add atlas -- "$(command -v atlas)" mcp
 ```
+
+An agent has one server called `atlas`: give it the nightly with `atlas-nightly mcp` in place of
+`atlas mcp`. Studio's Settings › Coding agents registers the CLI of its own channel, else its own
+`atlas`, so that the agent's `atlas mcp` is of the channel of the `atlas serve` it shares the page with.
 
 Claude Code's `--scope user` makes it available in every project. Codex keeps its servers in one
 configuration for all projects and starts them without your shell's `PATH`, so it is given the

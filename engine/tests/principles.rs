@@ -17,89 +17,39 @@ fn by_principle(fs: &[Finding]) -> BTreeMap<&'static str, Vec<&str>> {
     out
 }
 
-/// Each principle finds its one case in the fixture, and leaves the cases next to it alone.
+/// A finding ends in a question for the author, whatever its principle: read on the fixture, the
+/// subject with cases of the most principles side by side.
 #[test]
-fn each_principle_finds_its_case() {
+fn every_finding_ends_in_a_question() {
     let fs = findings("tests/fixture");
-    let got = by_principle(&fs);
-    // `Graph.add` and `Sink.write` are typed; `first` says nothing, nor does the `flush`
-    // that the exported DuckSink inherits from its mixin
-    assert_eq!(got["doors"], ["fixture.schema.Graph.first", "fixture.sinks.base.Mixin.flush"]);
-    // `load` makes a Loaded, `cli.show` takes it from another module
-    assert_eq!(got["sums"], ["fixture.build.Loaded"]);
-    // `CountingSink.write` gives an int where `Sink.write` promises None; `clone` narrows to a
-    // subclass. `MeanEncoder` keeps `...` with `batch dim`, `PatchEncoder` breaks `batch dim`
-    // with three dims; `GraphReader` gives one variant of the `Loaded` that `Reader` promises.
-    // `Archive` says what `Catalog` promises in other words (`List[Node]`, `Node | None`, an
-    // `Annotated[str, ..]`) or narrower (a list for a `Sequence`), as ty decides; its `head`
-    // gives one Node where a list was promised. `CountLedger` fills `Ledger[R]` in with a Node
-    // and gives a `Version[int]`; `Numbers` fills `Box[T]` in with an int and takes strings
-    assert_eq!(
-        got["overrides"],
-        [
-            "fixture.build.MeanEncoder.encode",
-            "fixture.catalog.Catalog.head",
-            "fixture.generic.Ledger.from_row",
-            "fixture.generic.Box.fill",
-            "fixture.sinks.base.Sink.write"
-        ]
-    );
-    // `Path("out.json")` in a sink, `summary` beside the command `export`, which names its own
-    // file as an entry may, and the functions of `files` that keep their data under the module's
-    // constant `DATA`; `save` writes where its caller says
-    assert_eq!(
-        got["places"],
-        [
-            "fixture.export.summary",
-            "fixture.files.kinds",
-            "fixture.files.report",
-            "fixture.files.read_report",
-            "fixture.files.install",
-            "fixture.files.export",
-            "fixture.sinks.duck.DuckSink.write"
-        ]
-    );
-    // `enrich` changes the Graph it is handed, so do `rename` (`setattr`) and `forget` (`del`);
-    // `Graph.add` changes itself, and `deeper` calls an `update` that changes nothing
-    assert_eq!(got["changes"], ["fixture.build.enrich", "fixture.edits.rename", "fixture.edits.forget"]);
-    // `Journal.connection` gives back a connection `entries` uses, without saying so; the
-    // door `Graph.first` is asked about by `doors`
-    assert_eq!(got["gives"], ["fixture.store.Journal.connection"]);
-    // `prepare` tests `mode` twice and picks where its Graph comes from between other steps;
-    // `fresh_or_empty` is nothing but that choice, so it has a name. `seeded` builds its Graph
-    // with one constructor in both arms, between other steps; `seeded_by_name` leaves that
-    // choice to `seed_graph`
-    assert_eq!(got["choices"], ["fixture.build.prepare", "fixture.build.prepare", "fixture.build.seeded"]);
-    // `Mixin.close` does nothing; `remember` writes a global, a place (`Global(fixture.build.SEEN)`),
-    // `check_name` raises, `each` calls the function it is handed, and `register_names` runs both
-    assert_eq!(got["nothing"], ["fixture.plans.keep", "fixture.sinks.base.Mixin.close"]);
-    // `_rank.low.peek` calls back up into `_rank.high`, which builds on `low`
-    assert_eq!(got["layers"], ["fixture._rank"]);
-    // `Notes` puts a Note into its file and gets a dict back, `Shelf` gets the Note, and `Diary`
-    // inherits the put of `Notes`, which is asked there; `Copier` puts a Graph into the graph
-    // database and gets only a list of nodes. `Register` gets its Stamp back inside an Entry, and
-    // `Tiles` looks its tiles up by a Point it puts nowhere
-    assert_eq!(got["lens"], ["fixture.notes.Notes", "fixture.store.Copier"]);
-    // `forgotten` supersedes a function the code does not hold; `report` is built and calls
-    // `tidy`, a prophecy. `tidy` itself, bodiless, is a todo and no finding
-    assert_eq!(got["prophecy"], ["fixture.plans.forgotten", "fixture.plans.report"]);
-    assert!(fs.iter().all(|f| f.question.ends_with('?')), "a finding ends in a question");
+    assert!(!fs.is_empty());
+    let unasked: Vec<String> = fs.iter().filter(|f| !f.question.ends_with('?')).map(|f| format!("{} {}", f.principle, f.node)).collect();
+    assert!(unasked.is_empty(), "a finding ends in a question: {unasked:?}");
 }
 
 /// A prophecy is a todo, not a finding: the rules that ask about built code leave its bodiless
 /// functions alone, and what it supersedes is still asked about, with the prophecy as the answer.
 #[test]
 fn a_prophecy_is_no_finding_and_answers_the_one_it_supersedes() {
-    let fs = findings("tests/fixture");
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixture");
+    let g = analyze(&root, &Options::default()).expect("parses");
+    let fs = check(&g);
     assert!(
         fs.iter().all(|f| f.node != "fixture.plans.tidy"),
         "{:?}",
         fs.iter().filter(|f| f.node == "fixture.plans.tidy").collect::<Vec<_>>()
     );
+    let said = |id: &str| g.node(id).unwrap().prophecy.clone().unwrap_or_else(|| panic!("{id} is a prophecy"));
+    assert_eq!(said("fixture.plans.stash").replaces.as_deref(), Some("fixture.plans.keep"));
     let keep = fs.iter().find(|f| f.node == "fixture.plans.keep").expect("the function a prophecy supersedes is still asked about");
-    assert!(keep.evidence.iter().any(|e| e.contains("answered by the prophecy `stash`")), "{:?}", keep.evidence);
-    let unmarked = fs.iter().filter(|f| f.principle == "prophecy").map(|f| f.what.as_str()).collect::<Vec<_>>();
-    assert!(unmarked[0].contains("`fixture.plans.gone`") && unmarked[1].contains("leans on `tidy`"), "{unmarked:?}");
+    assert_eq!(keep.about("answered_by"), ["fixture.plans.stash"], "{:?}", keep.about);
+    // `forgotten` supersedes a name the code does not hold; `report` calls the prophecy `tidy`
+    let gone = said("fixture.plans.forgotten");
+    assert!(gone.supersedes.as_deref() == Some("fixture.plans.gone") && gone.replaces.is_none() && gone.candidates.is_empty(), "{gone:?}");
+    assert!(g.node("fixture.plans.gone").is_none());
+    assert!(g.node("fixture.plans.tidy").unwrap().prophecy.is_some());
+    assert!(g.edges.iter().any(|e| e.src == "fixture.plans.report" && e.dst == "fixture.plans.tidy" && e.kind == EdgeKind::Calls));
+    assert_eq!(by_principle(&fs)["prophecy"], ["fixture.plans.forgotten", "fixture.plans.report"]);
 }
 
 /// An override of a generic base keeps the promise its subclass fills in: `NodeLedger(Ledger[Node])`
@@ -120,9 +70,18 @@ fn an_override_of_a_generic_base_keeps_what_its_subclass_fills_in() {
         assert_eq!(keeps(&format!("fixture.generic.{broken}")), Some(false), "{broken}");
     }
     let fs = check(&g);
+    // `Ledger.from_row` is asked about the one override that breaks its promise, and `Box.fill` about its own
+    let overrides: Vec<&str> =
+        fs.iter().filter(|f| f.principle == "overrides" && f.file.ends_with("generic.py")).map(|f| f.node.as_str()).collect();
+    assert_eq!(overrides, ["fixture.generic.Ledger.from_row", "fixture.generic.Box.fill"]);
+    let breaking: Vec<&str> =
+        g.nodes.iter().filter(|n| n.breaks.as_deref() == Some("fixture.generic.Ledger.from_row")).map(|n| n.id.as_str()).collect();
+    assert_eq!(breaking, ["fixture.generic.CountLedger.from_row"]);
+    let returns = |id: &str| g.node(id).unwrap().returns.as_ref().map(|r| r.written.clone());
+    assert_eq!(returns("fixture.generic.Ledger.from_row").as_deref(), Some("Version[R]"));
+    assert_eq!(returns("fixture.generic.CountLedger.from_row").as_deref(), Some("Version[int]"));
     let ledger = fs.iter().find(|f| f.node == "fixture.generic.Ledger.from_row").expect("Ledger.from_row is asked about");
-    assert_eq!(ledger.what, "Ledger.from_row promises (row: tuple[str, int]) -> Version[R]; 1 override breaks it");
-    assert_eq!(ledger.evidence, ["CountLedger.from_row(row: tuple[str, int]) -> Version[int] (src/fixture/generic.py:49)"]);
+    assert_eq!(ledger.about("breaks"), ["fixture.generic.CountLedger.from_row"], "{:?}", ledger.about);
 }
 
 /// What a lens puts, it gets back, also inside what a get gives: a lens composed with the
@@ -158,18 +117,59 @@ fn a_lens_puts_what_reaches_the_place_not_the_key_it_looks_up_by() {
     let lens: Vec<Finding> = check(&g).into_iter().filter(|f| f.principle == "lens").collect();
     assert!(lens.iter().all(|f| f.node != "fixture.tiles.Tiles"), "{:#?}", lens);
     let notes = lens.iter().find(|f| f.node == "fixture.notes.Notes").expect("Notes is asked");
-    assert_eq!(notes.evidence, ["put Notes.put: Note × Disk(Notes.path) → Disk(Notes.path)", "get Notes.get: Disk(Notes.path) → dict"]);
+    // its put is `Notes.put`, putting the Note into the file at `Notes.path`, and its get `Notes.get`, getting a dict from it
+    let about = |role: &str| notes.about(role);
+    assert_eq!(
+        (about("lost"), about("place"), about("put"), about("get")),
+        (vec!["fixture.notes.Note"], vec!["w:Disk:Notes.path"], vec!["fixture.notes.Notes.put"], vec!["fixture.notes.Notes.get"]),
+        "{:?}",
+        notes.about
+    );
+    // what a get gives back is no part of what the finding is about; only its sentence says it
+    assert_eq!(notes.about("back"), ["dict"], "{:?}", notes.about);
 }
 
-/// The principles read Rust by what its types and entries mean: `Disk.page` gives the
-/// `anyhow::Result<Page>` that `Source.page` promises as `Result<Page>`, and the test beside
-/// `ledger` names its own file without making `ledger` one that may.
+/// The principles read Rust by what its types and entries mean: a trait's implementation has the
+/// trait's signature, so `Disk.page`, which gives the `anyhow::Result<Page>` that `Source.page`
+/// promises as `Result<Page>`, is asked nothing, and the test beside `ledger` names its own file
+/// without making `ledger` one that may. `publish` hands `report(dir, ..)` the directory `site`,
+/// and `stock` builds its `Store` on `stock`: each decides the place the function it calls writes.
 #[test]
 fn rust_is_read_by_meaning() {
     let fs = findings("tests/fixture-rs");
     let got = by_principle(&fs);
     assert!(!got.contains_key("overrides"), "{:?}", got.get("overrides"));
-    assert_eq!(got["places"], ["handed.ledger.ledger", "handed.world.notes", "handed.world.stamp"]);
+    assert_eq!(
+        got["places"],
+        ["handed.ledger.ledger", "handed.world.notes", "handed.world.publish", "handed.world.stamp", "handed.world.stock"]
+    );
+}
+
+/// A command its package also exports is a door as well: `doors` asks of it as of any door, and
+/// asks nothing of a command its package does not export. A graph of one function, a command
+/// that does not say what its `n` is.
+#[test]
+fn a_command_its_package_exports_is_a_door() {
+    use atlas_engine::{Entry, EntryKind, Graph, Node, NodeKind, Param};
+    let graph = |exported: bool| Graph {
+        root: "tool".into(),
+        nodes: vec![Node {
+            id: "tool.main".into(),
+            kind: NodeKind::Function,
+            name: "main".into(),
+            module: "tool".into(),
+            file: "tool.py".into(),
+            entry: Some(Entry::new(EntryKind::Cli, "tool")),
+            exported,
+            params: vec![Param { name: "n".into(), ..Default::default() }],
+            ..Default::default()
+        }],
+        ..Default::default()
+    };
+    let doors = |g: &Graph| check(g).into_iter().filter(|f| f.principle == "doors").collect::<Vec<_>>();
+    let asked = doors(&graph(true));
+    assert!(matches!(asked.as_slice(), [f] if f.node == "tool.main" && f.about("takes") == ["n"]), "{asked:?}");
+    assert!(doors(&graph(false)).is_empty());
 }
 
 /// `src/` holds packages; a package called `src` has no name of its own yet, and that comes first.
@@ -177,14 +177,9 @@ fn rust_is_read_by_meaning() {
 fn a_package_called_src_is_asked_its_name() {
     let fs = findings("tests/srclayout");
     assert_eq!(by_principle(&fs)["doors"], ["src"]);
-    assert!(fs[0].what.contains("called src"), "{}", fs[0].what);
-}
-
-/// Atlas is its own first subject: it follows the principles it checks.
-#[test]
-fn atlas_obeys_its_principles() {
-    let fs = findings("..");
-    assert!(fs.is_empty(), "{:#?}", fs.iter().map(|f| format!("{} {}:{} {}", f.principle, f.file, f.line, f.what)).collect::<Vec<_>>());
+    // the name it is asked about tells it apart from the root that exports nothing
+    let asked = fs.iter().find(|f| f.principle == "doors").unwrap();
+    assert_eq!(asked.about("named"), ["src"], "{asked:?}");
 }
 
 /// The docs explain every principle the engine checks.

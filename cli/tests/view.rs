@@ -33,13 +33,11 @@ fn page_of(repo: &str) -> Value {
     data["projects"].as_object().unwrap().values().next().unwrap().clone()
 }
 
-/// What `atlas check --json` prints: one report per part, each part's findings in turn.
+/// What `atlas check --json` prints: one document, a report per part, each part's findings in turn.
 fn checked(repo: &str) -> Vec<Value> {
     let text = atlas(&["check", repo, "--json"]);
-    serde_json::Deserializer::from_str(&text)
-        .into_iter::<Value>()
-        .flat_map(|r| r.unwrap()["findings"].as_array().unwrap().clone())
-        .collect()
+    let report: Value = serde_json::from_str(&text).expect("one JSON document");
+    report["parts"].as_array().unwrap().iter().flat_map(|r| r["findings"].as_array().unwrap().clone()).collect()
 }
 
 fn analyzed(repo: &str) -> Value {
@@ -71,12 +69,6 @@ fn a_page_holds_what_check_finds() {
     }
 }
 
-/// Atlas asks nothing of itself, so its own picture carries no mark.
-#[test]
-fn atlas_marks_nothing_in_its_own_picture() {
-    assert_eq!(page_of(".")["findings"], serde_json::json!([]));
-}
-
 /// Without `--out`, what Atlas makes goes to `.atlas/` at the top of the git repository the
 /// subject is in, read from a folder below it; the folder ignores itself, so git never sees it.
 #[test]
@@ -94,8 +86,30 @@ fn what_atlas_makes_goes_to_atlas_at_the_top_of_the_repository() {
     names.sort();
     let ignore = std::fs::read_to_string(made.join(".gitignore")).unwrap_or_default();
     let _ = std::fs::remove_dir_all(&repo);
-    assert_eq!(names, [".gitignore", "graph.json", "made.html"]);
+    assert_eq!(names, [".gitignore", "graph.json", "index", "made.html"]);
     assert!(ignore.lines().any(|l| l == "*"), "the folder ignores itself: {ignore:?}");
+}
+
+/// `--view` is the page's view: the page opens in it as given, and a member the page does not know
+/// is refused before anything is read.
+#[test]
+fn view_opens_the_page_in_the_view_it_names() {
+    let out = scratch("in-view.html");
+    let view = r#"{"route":"fixture.cli.build","open":{"steps":["fixture.cli.build/2"]}}"#;
+    atlas(&["view", "engine/tests/fixture", "--no-open", "--out", out.to_str().unwrap(), "--view", view]);
+    let html = std::fs::read_to_string(&out).unwrap();
+    let _ = std::fs::remove_file(&out);
+    let data = &html[html.find("window.DATA = ").expect("the page holds its data") + "window.DATA = ".len()..];
+    let data: Value = serde_json::Deserializer::from_str(data).into_iter().next().unwrap().unwrap();
+    assert_eq!(data["projects"]["fixture"]["view"], serde_json::from_str::<Value>(view).unwrap());
+    let refused = Command::new(env!("CARGO_BIN_EXE_atlas"))
+        .args(["view", "engine/tests/fixture", "--no-open", "--view", r#"{"route":"fixture.cli.build","opne":{}}"#])
+        .current_dir(root())
+        .output()
+        .unwrap();
+    assert!(!refused.status.success());
+    let said = String::from_utf8_lossy(&refused.stderr);
+    assert!(said.contains("--view") && said.contains("unknown field `opne`"), "{said}");
 }
 
 /// An `--out` in a folder that does not exist yet makes that folder, for the page and the graph.

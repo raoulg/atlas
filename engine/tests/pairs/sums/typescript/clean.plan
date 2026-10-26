@@ -1,0 +1,70 @@
+# A knowledge base kept in a file: `voegToe` puts a Bron, `graaf` gets the Graaf of its nodes back, each node one of
+# the sum `type Node = Begrip | Bron`, made in one of two arms of a choice in `node`. The class is the library's door:
+# its route starts at each public method a caller can call, its constructor among them. The methods run on the
+# caller's instance, one value from beyond; what the constructor builds goes back to the caller.
+
+route kennis.bank.Kennisbank
+step Kennisbank()/Kennisbank()
+step Kennisbank()/Kennisbank.voegToe
+step Kennisbank()/Kennisbank.voegToe/Kennisbank.write
+step Kennisbank()/Kennisbank.graaf
+step Kennisbank()/Kennisbank.graaf/Kennisbank.node              # in the arrow function handed to `map`
+choice Kennisbank()/Kennisbank.graaf/Kennisbank.node/?1
+step Kennisbank()/Kennisbank.graaf/Kennisbank.node/?1/Bron()
+step Kennisbank()/Kennisbank.graaf/Kennisbank.node/?1/Begrip()
+step Kennisbank()/Kennisbank.graaf/Graaf()
+
+line entry > Kennisbank()/Kennisbank() call
+line entry > Kennisbank()/Kennisbank.voegToe call
+line entry > Kennisbank()/Kennisbank.graaf call
+
+# what the constructor builds goes back to the caller; the doors run on the caller's instance, one value from
+# beyond, taken where a body reads its fields or calls on it
+line Kennisbank()/Kennisbank() > Kennisbank@Kennisbank()/Kennisbank() value
+line Kennisbank > Kennisbank()/Kennisbank.voegToe/Kennisbank.write value
+line Kennisbank > Kennisbank()/Kennisbank.graaf/Kennisbank.node value
+line Kennisbank > Kennisbank()/Kennisbank.graaf/Graaf() value # `readFileSync(this.path, ..)` in what it is handed
+
+# the put: the Bron a caller hands is written into the line `write` appends to what the file held
+line Bron·bron > Kennisbank()/Kennisbank.voegToe/Kennisbank.write value                    # what it is handed: `bron.uuid`, `bron.url` glue `bron` in
+line Disk(Kennisbank.path) > Kennisbank()/Kennisbank.voegToe/Kennisbank.write own
+line Kennisbank()/Kennisbank.voegToe/Kennisbank.write > Disk(Kennisbank.path) own
+
+# the get: the lines read, each a Bron or a Begrip, a Node in the Graaf given back
+line Disk(Kennisbank.path) > Kennisbank()/Kennisbank.graaf own
+line Kennisbank()/Kennisbank.graaf/Kennisbank.node/?1/Bron() > Bron@Kennisbank()/Kennisbank.graaf/Kennisbank.node/?1 value
+line Kennisbank()/Kennisbank.graaf/Kennisbank.node/?1/Begrip() > Begrip@Kennisbank()/Kennisbank.graaf/Kennisbank.node/?1 value
+line Bron@Kennisbank()/Kennisbank.graaf/Kennisbank.node/?1 > Kennisbank()/Kennisbank.graaf/Kennisbank.node value
+line Begrip@Kennisbank()/Kennisbank.graaf/Kennisbank.node/?1 > Kennisbank()/Kennisbank.graaf/Kennisbank.node value
+line Kennisbank()/Kennisbank.graaf/Kennisbank.node > Node@Kennisbank()/Kennisbank.graaf/Kennisbank.node value
+line Node@Kennisbank()/Kennisbank.graaf/Kennisbank.node > Kennisbank()/Kennisbank.graaf/Graaf() value
+line Kennisbank()/Kennisbank.graaf/Graaf() > Graaf@Kennisbank()/Kennisbank.graaf/Graaf() value
+line Graaf@Kennisbank()/Kennisbank.graaf/Graaf() > Kennisbank()/Kennisbank.graaf value
+line Kennisbank()/Kennisbank.graaf > Graaf@Kennisbank()/Kennisbank.graaf value
+
+home Kennisbank@Kennisbank()/Kennisbank() Kennisbank()
+home Kennisbank Kennisbank()
+home Bron·bron Kennisbank()
+home Bron@Kennisbank()/Kennisbank.graaf/Kennisbank.node/?1 Kennisbank()/Kennisbank.graaf/Kennisbank.node
+home Begrip@Kennisbank()/Kennisbank.graaf/Kennisbank.node/?1 Kennisbank()/Kennisbank.graaf/Kennisbank.node
+home Node@Kennisbank()/Kennisbank.graaf/Kennisbank.node Kennisbank()/Kennisbank.graaf
+home Graaf@Kennisbank()/Kennisbank.graaf/Graaf() Kennisbank()/Kennisbank.graaf
+home Graaf@Kennisbank()/Kennisbank.graaf Kennisbank()
+
+# the line split in three parts, each held by its name: the kind decides the choice, the uuid and the text build the node
+step Kennisbank()/Kennisbank.graaf/Kennisbank.node/split
+line Kennisbank()/Kennisbank.graaf/Kennisbank.node/split > _·uuid@Kennisbank()/Kennisbank.graaf/Kennisbank.node/split value
+line Kennisbank()/Kennisbank.graaf/Kennisbank.node/split > _·soort@Kennisbank()/Kennisbank.graaf/Kennisbank.node/split value
+line Kennisbank()/Kennisbank.graaf/Kennisbank.node/split > _·tekst@Kennisbank()/Kennisbank.graaf/Kennisbank.node/split value
+line _·soort@Kennisbank()/Kennisbank.graaf/Kennisbank.node/split > Kennisbank()/Kennisbank.graaf/Kennisbank.node value
+line _·uuid@Kennisbank()/Kennisbank.graaf/Kennisbank.node/split > Kennisbank()/Kennisbank.graaf/Kennisbank.node/?1/Bron() value
+line _·tekst@Kennisbank()/Kennisbank.graaf/Kennisbank.node/split > Kennisbank()/Kennisbank.graaf/Kennisbank.node/?1/Bron() value
+line _·uuid@Kennisbank()/Kennisbank.graaf/Kennisbank.node/split > Kennisbank()/Kennisbank.graaf/Kennisbank.node/?1/Begrip() value
+line _·tekst@Kennisbank()/Kennisbank.graaf/Kennisbank.node/split > Kennisbank()/Kennisbank.graaf/Kennisbank.node/?1/Begrip() value
+home _·uuid@Kennisbank()/Kennisbank.graaf/Kennisbank.node/split Kennisbank()/Kennisbank.graaf/Kennisbank.node
+home _·soort@Kennisbank()/Kennisbank.graaf/Kennisbank.node/split Kennisbank()/Kennisbank.graaf/Kennisbank.node
+home _·tekst@Kennisbank()/Kennisbank.graaf/Kennisbank.node/split Kennisbank()/Kennisbank.graaf/Kennisbank.node
+
+side entry left
+side Disk(Kennisbank.path) both
+# the methods run on what the constructor built, not on the caller's instance

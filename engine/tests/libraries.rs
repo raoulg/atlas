@@ -141,9 +141,16 @@ fn what_lies_beyond_the_rounds_is_the_border_functions() {
     assert_eq!(wrote.artifact, "out.txt", "at the path the project hands it: {wrote:?}");
     let call = save.sites.iter().find(|s| s.to == "deepkit.store.prepare").expect("save's call into what lies beyond");
     assert_eq!(wrote.line, call.line, "drawn at the border's call that leads there");
-    let route = atlas_engine::story::route(&one, "deep.main.main", 2).unwrap();
-    assert!(route.contains("out.txt"), "the project's route reaches the place:\n{route}");
-    assert!(principles::check(&one).iter().all(|f| f.node != "deep.main.main"), "main leaves a file behind");
+    // the project's route reaches the place
+    let reached = one.reach("deep.main.main");
+    assert!(reached.contains(&save.id));
+    let in_route: Vec<(&str, &str)> =
+        save.touches_in("deep.main.main", &|f| reached.contains(f)).into_iter().map(|t| (t.kind_name(), t.artifact.as_str())).collect();
+    assert!(in_route.contains(&("disk_write", "out.txt")), "{in_route:?}");
+    // `main` hands the library its own `out.txt`: where that lives is `main`'s decision
+    let found = principles::check(&one);
+    assert!(found.iter().any(|f| f.node == "deep.main.main" && f.principle == "places"), "{found:#?}");
+    assert!(found.iter().all(|f| f.node != "deep.main.main" || f.principle == "places"), "main leaves a file behind");
     // the rounds reach the function that writes: the touch is its own
     assert!(three.node("deepkit.store.write").unwrap().touches.iter().any(|t| t.kind_name() == "disk_write"));
     assert!(

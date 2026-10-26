@@ -1,0 +1,36 @@
+# The same drawing, gathered into a list of pairs (`Vec<(String, Vec<Where>)>`), a type the code does not name. A
+# collection of pairs holds pairs, and none of what they pair (`mathematics.md`, "Containers and type parameters"): the
+# route gives back one value, the list, of no type of the code's, and no Where of its own (#177). `places` goes into the
+# pair the push is handed, and on in the list the push makes anew; the body's own code gives back that list.
+
+route drawing.drawn
+step drawn/for n in &g.nodes
+step drawn/Touch.drawn
+step drawn/Touch.drawn/Where()
+step drawn/collect                                            # `let places: Vec<Where> = ..collect()`
+step drawn/push                                               # `out.push((n.id.clone(), places))`
+
+line entry > drawn call
+line Graph·g > drawn value                                    # the route's own parameter, from its start
+line Graph·g > drawn/for n in &g.nodes value
+line drawn/for n in &g.nodes > Node·n@drawn/for n in &g.nodes value
+line Node·n@drawn/for n in &g.nodes > drawn/Touch.drawn/Where() value   # `self.op` of each touch, a part of the node
+line drawn/Touch.drawn/Where() > Where@drawn/Touch.drawn/Where() value
+line Where@drawn/Touch.drawn/Where() > drawn/Touch.drawn value
+line drawn/Touch.drawn > Where@drawn/Touch.drawn value
+line Node·n@drawn/for n in &g.nodes > drawn/collect value     # `n.touches.iter().chain(&n.instead)`
+line Where@drawn/Touch.drawn > drawn/collect value            # `map(Touch::drawn)`, glued into the collect
+line drawn/collect > Where·places@drawn/collect value
+line Node·n@drawn/for n in &g.nodes > drawn/push value        # `n.id`
+line Where·places@drawn/collect > drawn/push value            # the pair the push is handed
+line drawn/push > _·out@drawn/push value
+line _·out@drawn/push > drawn value                           # given back: the list of pairs, no Where beside it
+
+home Graph·g drawn
+home Node·n@drawn/for n in &g.nodes drawn
+home Where@drawn/Touch.drawn/Where() drawn/Touch.drawn
+home Where@drawn/Touch.drawn drawn
+home Where·places@drawn/collect drawn
+home _·out@drawn/push drawn
+
+side entry left

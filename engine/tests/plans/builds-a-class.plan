@@ -1,0 +1,15 @@
+# Building an object runs its constructor, not its methods: `Store("data/store.txt")` writes and reads nothing, and the
+# route prints the path the store holds.
+
+route storebuild.run
+step run/Store()
+
+line entry > run call
+line run/Store() > Store·store@run/Store() value
+line Store·store@run/Store() > run value   # run prints a field of the store it built
+line run > Screen own
+
+home Store·store@run/Store() run
+
+side entry left
+side Screen right

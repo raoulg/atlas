@@ -1,0 +1,26 @@
+# The clean side's calls: a caller written against a Handler hands `handle` an Event, and the override inside the
+# dispatch is handed that Event, whatever its signature says it takes (`e: Click`). That it then reads `e.x` of a value
+# that may be no Click is `check`'s to ask; the plan draws what is handed.
+
+route events.handlers.Handler
+step Handler()/Handler.handle
+step Handler()/Handler.handle/ClickHandler.handle
+step Handler()/Handler.log
+step Handler()/Handler.log/ClickHandler.log
+
+line entry > Handler()/Handler.handle call
+line entry > Handler()/Handler.log call
+line Handler > Handler()/Handler.handle/ClickHandler.handle value
+line Handler > Handler()/Handler.log/ClickHandler.log value
+line Event·e > Handler()/Handler.handle value   # handle's own body reads e.name
+line Event·e > Handler()/Handler.handle/ClickHandler.handle value
+line Click·e > Handler()/Handler.log value
+line Click·e > Handler()/Handler.log/ClickHandler.log value
+line Handler()/Handler.handle/ClickHandler.handle > Handler()/Handler.handle back
+line Handler()/Handler.log/ClickHandler.log > Handler()/Handler.log back
+
+home Handler Handler()
+home Event·e Handler()
+home Click·e Handler()
+
+side entry left

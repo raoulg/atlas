@@ -29,6 +29,38 @@ pub fn field_children<'t>(n: TsNode<'t>, field: &str) -> Vec<TsNode<'t>> {
     n.children_by_field_name(field, &mut c).collect()
 }
 
+/// The expressions of a language that hand on the value inside them: parentheses, and the
+/// language's casts, assertions and unwrappings (`(x as T)!`, `&x`, `x?`, `await x`). Atlas reads a
+/// value through them as through an identity, as it reads an `Option`, a `Result` or a promise as
+/// what it holds. Each reader names its language's.
+pub type Wrappers = &'static [&'static str];
+
+/// The value a wrapper hands on: its `value` (`&mut x`), else its first named child.
+pub fn wrapped<'t>(n: TsNode<'t>) -> Option<TsNode<'t>> {
+    n.child_by_field_name("value").or_else(|| named_children(n).into_iter().next())
+}
+
+/// The expression a value is, beneath its wrappers: `x` of `(x as T)!`.
+pub fn beneath<'t>(n: TsNode<'t>, wrappers: Wrappers) -> TsNode<'t> {
+    let mut n = n;
+    while wrappers.contains(&n.kind()) {
+        match wrapped(n) {
+            Some(x) => n = x,
+            None => break,
+        }
+    }
+    n
+}
+
+/// The outermost wrapper an expression stands in, or the expression itself: `(x as T)!` of `x`.
+pub fn outermost<'t>(n: TsNode<'t>, wrappers: Wrappers) -> TsNode<'t> {
+    let mut n = n;
+    while let Some(p) = n.parent().filter(|p| wrappers.contains(&p.kind()) && wrapped(*p).map(|x| x.id()) == Some(n.id())) {
+        n = p;
+    }
+    n
+}
+
 /// Pre-order, source order.
 /// What an expression hands a call, by the names in it: each name with the type the reader
 /// knows for it, or by its name alone where an earlier step of the body made it. A name the
@@ -41,15 +73,29 @@ pub fn held_names(
     ty: &dyn Fn(&str) -> Option<String>,
     made: &std::collections::HashSet<String>,
 ) -> Vec<crate::model::Held> {
+    held_at(e, src, skip, &|i| (text(i, src).to_string(), ty(text(i, src))), made)
+}
+
+/// What an expression hands a call, as `held_names` reads it, each name read where it stands:
+/// `holder` is handed the name's node and gives the name that holds its value there and that
+/// value's type, so that a name bound twice is typed by the binding it uses, and a name bound to
+/// another (`let record: Record = result?`) hands the value that one holds.
+pub fn held_at(
+    e: TsNode,
+    src: &[u8],
+    skip: &[&str],
+    holder: &dyn Fn(TsNode) -> (String, Option<String>),
+    made: &std::collections::HashSet<String>,
+) -> Vec<crate::model::Held> {
     let mut out: Vec<crate::model::Held> = vec![];
     for i in walk(e, &["identifier", "shorthand_property_identifier"]) {
-        let name = text(i, src);
-        if skip.contains(&name) {
+        if skip.contains(&text(i, src)) {
             continue;
         }
-        let held = match ty(name) {
-            Some(t) => crate::model::Held { ty: t, name: name.to_string(), at: i.start_byte() as u32 },
-            None if made.contains(name) => crate::model::Held { ty: String::new(), name: name.to_string(), at: i.start_byte() as u32 },
+        let (name, ty) = holder(i);
+        let held = match ty {
+            Some(t) => crate::model::Held::at(t, name, i.start_byte(), false),
+            None if made.contains(&name) => crate::model::Held::at(String::new(), name, i.start_byte(), false),
             None => continue,
         };
         if !out.contains(&held) {
@@ -119,6 +165,77 @@ pub struct ChoiceSyntax {
     pub continues: fn(TsNode) -> Option<TsNode>,
     /// What a direct child is to the choice.
     pub part: fn(TsNode, TsNode, &[u8]) -> Part,
+    /// Is this choice a guard: none of its arms runs on past its end (each ends in a `return`, a `raise`, a `continue`
+    /// or a `break`) and it has no arm for when none is chosen. What follows it in its block runs only when none is,
+    /// so it is the guard's last arm (`if not xs: return Failed(..)` then `return Fit(..)`).
+    pub guards: fn(TsNode, &[u8]) -> bool,
+}
+
+/// The arm that follows a guard in its block: the one after the guard's own arms.
+fn after_guard(g: TsNode, src: &[u8], ids: &std::collections::HashMap<usize, u32>, syn: &ChoiceSyntax) -> u32 {
+    let k = ids.get(&g.id());
+    walk_all(g)
+        .into_iter()
+        .filter(|x| ids.get(&x.id()) == k)
+        .flat_map(|x| {
+            named_children(x).into_iter().filter_map(move |c| match (syn.part)(x, c, src) {
+                Part::Arm(a) => Some(a),
+                _ => None,
+            })
+        })
+        .max()
+        .map_or(0, |a| a + 1)
+}
+
+/// The choice a statement of a block is: the statement itself, or the one choice it is made of (an
+/// expression written as a statement, `if .. { .. }` in a block).
+fn choice_of<'t>(s: TsNode<'t>, ids: &std::collections::HashMap<usize, u32>) -> Option<TsNode<'t>> {
+    if ids.contains_key(&s.id()) {
+        return Some(s);
+    }
+    let c = s.named_child(0).filter(|c| s.named_child_count() == 1 && c.start_byte() == s.start_byte())?;
+    ids.contains_key(&c.id()).then_some(c)
+}
+
+/// The statement of its block a choice stands as: itself, or the statement made of it alone.
+fn statement_of(g: TsNode) -> TsNode {
+    match g.parent() {
+        Some(p) if p.named_child_count() == 1 && p.start_byte() == g.start_byte() => p,
+        _ => g,
+    }
+}
+
+/// The guards before `n` in its block, the nearest first, each with its choice and the arm `n` is in.
+pub fn guarded_by(n: TsNode, src: &[u8], ids: &std::collections::HashMap<usize, u32>, syn: &ChoiceSyntax) -> Vec<(u32, u32)> {
+    let mut out = vec![];
+    let mut s = n.prev_named_sibling();
+    while let Some(st) = s {
+        if let Some(g) = choice_of(st, ids).filter(|g| (syn.guards)(*g, src)) {
+            out.push((ids[&g.id()], after_guard(g, src, ids, syn)));
+        }
+        s = st.prev_named_sibling();
+    }
+    out
+}
+
+/// The guards of a body, each with its choice, the arm what follows it is in, and the node that arm starts and ends at.
+pub fn guards<'t>(
+    body: TsNode<'t>,
+    src: &[u8],
+    ids: &std::collections::HashMap<usize, u32>,
+    syn: &ChoiceSyntax,
+) -> Vec<(u32, u32, TsNode<'t>, TsNode<'t>)> {
+    let mut out = vec![];
+    for g in walk_all(body).into_iter().filter(|g| ids.contains_key(&g.id()) && (syn.guards)(*g, src)) {
+        let s = statement_of(g);
+        let (Some(first), Some(last)) =
+            (s.next_named_sibling(), s.parent().and_then(|p| p.named_child(p.named_child_count().saturating_sub(1))))
+        else {
+            continue;
+        };
+        out.push((ids[&g.id()], after_guard(g, src, ids, syn), first, last));
+    }
+    out
 }
 
 /// The choices of a body, numbered in source order; a continuation shares the number of the
@@ -143,12 +260,14 @@ pub fn number_choices(body: TsNode, src: &[u8], syn: &ChoiceSyntax) -> std::coll
     ids
 }
 
-/// The arms of the choices `n` sits in, from the outermost in.
+/// The arms of the choices `n` sits in, from the outermost in: of each choice that holds it, and of each guard before it
+/// in a block that holds it.
 pub fn arms_of(n: TsNode, body: TsNode, src: &[u8], ids: &std::collections::HashMap<usize, u32>, syn: &ChoiceSyntax) -> Vec<(u32, u32)> {
     let mut out = vec![];
     let mut child = n;
     while child.id() != body.id() {
         let Some(p) = child.parent() else { break };
+        out.extend(guarded_by(child, src, ids, syn));
         if let (Some(&c), Part::Arm(a)) = (ids.get(&p.id()), (syn.part)(p, child, src)) {
             out.push((c, a));
         }
@@ -176,56 +295,177 @@ pub fn decides(n: TsNode, body: TsNode, src: &[u8], ids: &std::collections::Hash
     None
 }
 
-/// How a language writes a comparison of one value with literals: `mode == "train"`,
-/// `mode in {"a", "b"}`, a `match` or a `switch` over strings.
+/// How a language writes a comparison of one value with its cases: `mode == "train"`,
+/// `mode in {"a", "b"}`, `mode is Mode.FAST`, a `match` or a `switch` over them.
 pub struct CompareSyntax {
     /// The kinds of node that may compare.
     pub kinds: &'static [&'static str],
-    /// A test of equality or membership: its two operands.
+    /// A test of equality, identity or membership: its two operands.
     pub operands: for<'t> fn(TsNode<'t>, &[u8]) -> Option<(TsNode<'t>, TsNode<'t>)>,
-    /// The literals an operand names, when it names nothing else.
-    pub cases: fn(TsNode, &[u8]) -> Option<Vec<String>>,
+    /// The cases an operand writes: itself, or the elements of a set of them (`{"a", "b"}`).
+    pub each: for<'t> fn(TsNode<'t>) -> Vec<TsNode<'t>>,
+    /// The literal a case is: a string with nothing spliced into it.
+    pub literal: fn(TsNode, &[u8]) -> Option<String>,
+    /// Where a case is written as a member of something (`Mode.FAST`, `Mode::Fast`): the bytes of
+    /// what it is a member of.
+    pub member: fn(TsNode) -> Option<(usize, usize)>,
     /// Whether an operand is a value a body can test: a name, a member, an item.
     pub subject: fn(TsNode) -> bool,
-    /// A choice over cases (`match`, `switch`): the value as written, its literal cases, and the
-    /// node that holds the cases when the choice is numbered there rather than where it is decided.
-    pub over: for<'t> fn(TsNode<'t>, &[u8]) -> Option<(String, Vec<String>, Option<TsNode<'t>>)>,
+    /// A choice over cases (`match`, `switch`): the value as written, the nodes of its cases, and
+    /// the node that holds the cases when the choice is numbered there rather than where it is
+    /// decided.
+    pub over: for<'t> fn(TsNode<'t>, &[u8]) -> Option<(String, Vec<TsNode<'t>>, Option<TsNode<'t>>)>,
+    /// A binding that makes a name stand for a value (`m = args.mode`, `let m = &self.mode`): the
+    /// name and the value.
+    pub copies: for<'t> fn(TsNode<'t>) -> Option<(TsNode<'t>, TsNode<'t>)>,
+    /// The value an expression reads in place, with no call between: a name, or a field or an item
+    /// of one, also through a reference.
+    pub place: for<'t> fn(TsNode<'t>) -> Option<TsNode<'t>>,
+    /// What binds names in a body: the language's `UseSyntax::binds`.
+    pub binds: fn(TsNode) -> Option<(TsNode, TsNode)>,
 }
 
-/// Where a body compares one value with literals, and the choice each comparison decides.
+/// What a reader knows of a body beyond its syntax: the name the body holds the value its method
+/// runs on by, and whether the bytes of a qualifier write a type (a class, an enumeration).
+pub struct Scope<'a> {
+    pub receiver: Option<&'a str>,
+    pub is_type: &'a dyn Fn((usize, usize)) -> bool,
+}
+
+/// One case a comparison names.
+enum Case {
+    /// `"fast"`, unquoted.
+    Literal(String),
+    /// `Mode.FAST`, as written.
+    Member(String),
+}
+
+/// The case a node writes: a literal, or a member of a type.
+fn case(n: TsNode, src: &[u8], cmp: &CompareSyntax, scope: &Scope) -> Option<Case> {
+    if let Some(l) = (cmp.literal)(n, src) {
+        return Some(Case::Literal(l));
+    }
+    (cmp.member)(n).filter(|q| (scope.is_type)(*q)).map(|_| Case::Member(text(n, src).to_string()))
+}
+
+/// The literals and members an operand names, when it names nothing else.
+fn cases_of(n: TsNode, src: &[u8], cmp: &CompareSyntax, scope: &Scope) -> Option<(Vec<String>, Vec<String>)> {
+    let each = (cmp.each)(n);
+    if each.is_empty() {
+        return None;
+    }
+    let (mut literals, mut members) = (vec![], vec![]);
+    for c in each {
+        match case(c, src, cmp, scope)? {
+            Case::Literal(l) => literals.push(l),
+            Case::Member(m) => members.push(m),
+        }
+    }
+    Some((literals, members))
+}
+
+/// The name a value is written from: `args` in `args.mode`, `this` in `this.mode`.
+pub fn root_of(subject: &str) -> &str {
+    subject.split(|c: char| !(c.is_alphanumeric() || c == '_')).next().unwrap_or("")
+}
+
+/// The names a body binds once, to a value it reads in place: each stands for that value
+/// (`m = args.mode` makes `m` stand for `args.mode`). A name bound again stands for none.
+fn stand_ins(body: TsNode, src: &[u8], cmp: &CompareSyntax) -> std::collections::HashMap<String, String> {
+    let mut bound: std::collections::HashMap<&str, usize> = std::collections::HashMap::new();
+    let mut copies = std::collections::HashMap::new();
+    for n in walk_all(body) {
+        if let Some((target, _)) = (cmp.binds)(n) {
+            // the names a target binds, not those of a field it keeps the value in (`self.m = v`)
+            for i in walk(target, &["identifier"]) {
+                let (mut p, mut kept) = (i, false);
+                while p.id() != target.id() {
+                    let Some(up) = p.parent() else { break };
+                    kept = (cmp.place)(up).is_some();
+                    if kept {
+                        break;
+                    }
+                    p = up;
+                }
+                if !kept {
+                    *bound.entry(text(i, src)).or_default() += 1;
+                }
+            }
+        }
+        if let Some((name, value)) = (cmp.copies)(n).filter(|(name, _)| name.kind() == "identifier") {
+            if let Some(v) = (cmp.place)(value) {
+                copies.insert(text(name, src).to_string(), text(v, src).to_string());
+            }
+        }
+    }
+    copies.retain(|name, _| bound.get(name.as_str()) == Some(&1));
+    copies
+}
+
+/// A subject as the body was handed it: each name that stands for a value read as that value.
+fn handed(subject: &str, stand_ins: &std::collections::HashMap<String, String>) -> String {
+    let mut s = subject.to_string();
+    for _ in 0..8 {
+        let root = root_of(&s);
+        match stand_ins.get(root).filter(|v| root_of(v) != root) {
+            Some(v) => s = format!("{v}{}", &s[root.len()..]),
+            None => break,
+        }
+    }
+    s
+}
+
+/// Where a body compares one value with its cases (literals, members of a type), and the choice
+/// each comparison decides.
 pub fn compares(
     body: TsNode,
     src: &[u8],
     choices: &std::collections::HashMap<usize, u32>,
     cmp: &CompareSyntax,
     syn: &ChoiceSyntax,
+    scope: &Scope,
 ) -> Vec<crate::model::Compare> {
+    let stand_ins = stand_ins(body, src, cmp);
+    let compare = |written: &str, (cases, members): (Vec<String>, Vec<String>), line: u32, choice: Option<u32>| {
+        let subject = handed(written, &stand_ins);
+        crate::model::Compare {
+            receiver: scope.receiver.is_some_and(|r| root_of(&subject) == r),
+            written: if subject == written { String::new() } else { written.to_string() },
+            subject,
+            cases,
+            members,
+            line,
+            choice,
+        }
+    };
     let mut out = vec![];
     for n in walk(body, cmp.kinds) {
         let line = n.start_position().row as u32 + 1;
-        if let Some((subject, cases, held)) = (cmp.over)(n, src) {
-            if !cases.is_empty() {
+        if let Some((subject, nodes, held)) = (cmp.over)(n, src) {
+            let (mut cases, mut members) = (vec![], vec![]);
+            for c in nodes.into_iter().filter_map(|c| case(c, src, cmp, scope)) {
+                match c {
+                    Case::Literal(l) => cases.push(l),
+                    Case::Member(m) => members.push(m),
+                }
+            }
+            if !cases.is_empty() || !members.is_empty() {
                 let choice = match held {
                     Some(b) => choices.get(&b.id()).copied(),
                     None => decides(n, body, src, choices, syn),
                 };
-                out.push(crate::model::Compare { subject, cases, line, choice });
+                out.push(compare(&subject, (cases, members), line, choice));
             }
             continue;
         }
         let Some((l, r)) = (cmp.operands)(n, src) else { continue };
-        let (subject, cases) = match ((cmp.cases)(l, src), (cmp.cases)(r, src)) {
+        let (subject, cases) = match (cases_of(l, src, cmp, scope), cases_of(r, src, cmp, scope)) {
             (None, Some(c)) => (l, c),
             (Some(c), None) => (r, c),
             _ => continue,
         };
         if (cmp.subject)(subject) {
-            out.push(crate::model::Compare {
-                subject: text(subject, src).to_string(),
-                cases,
-                line,
-                choice: decides(n, body, src, choices, syn),
-            });
+            out.push(compare(text(subject, src), cases, line, decides(n, body, src, choices, syn)));
         }
     }
     out

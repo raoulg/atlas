@@ -1,0 +1,62 @@
+# A lens whose focus is a library's type: `put` writes a Decimal into the file and `get` gives it back inside an Entry.
+# The route of the exported struct is its public functions, each called by its caller and run on the caller's Ledger.
+# What `get` reads and parses are steps of their own, a library's operations whose results the body names; the amount
+# is of no type the code writes, so it is `_`.
+
+route books.Ledger
+step Ledger()/Ledger.new
+step Ledger()/Ledger.new/Ledger() # the struct built by its literal
+step Ledger()/Ledger.put
+step Ledger()/Ledger.get
+step Ledger()/Ledger.get/read_to_string
+step Ledger()/Ledger.get/map_err                                 # `Decimal::from_str(text.trim()).map_err(..)`, named `amount`
+step Ledger()/Ledger.get/Entry()
+
+line entry > Ledger()/Ledger.new call
+line entry > Ledger()/Ledger.put call
+line entry > Ledger()/Ledger.get call
+
+line Ledger()/Ledger.new/Ledger() > Ledger@Ledger()/Ledger.new/Ledger() value
+line Ledger@Ledger()/Ledger.new/Ledger() > Ledger()/Ledger.new value
+line Ledger()/Ledger.new > Ledger@Ledger()/Ledger.new value
+line Ledger > Ledger()/Ledger.put value # the caller's instance: every method runs on it
+line Ledger > Ledger()/Ledger.get/read_to_string value # the method hands `self.path` to it
+
+line Decimal·amount > Ledger()/Ledger.put value # put's parameter, a library's type
+line Ledger()/Ledger.put > Disk(Ledger.path) own
+
+line Disk(Ledger.path) > Ledger()/Ledger.get own
+line Ledger()/Ledger.get/read_to_string > _·text@Ledger()/Ledger.get/read_to_string value
+line _·text@Ledger()/Ledger.get/read_to_string > Ledger()/Ledger.get/map_err value   # from_str's result goes into map_err
+line Ledger()/Ledger.get/map_err > _·amount@Ledger()/Ledger.get/map_err value
+line _·amount@Ledger()/Ledger.get/map_err > Ledger()/Ledger.get/Entry() value
+line Ledger()/Ledger.get/Entry() > Entry@Ledger()/Ledger.get/Entry() value
+line Entry@Ledger()/Ledger.get/Entry() > Ledger()/Ledger.get value
+line Ledger()/Ledger.get > Entry@Ledger()/Ledger.get value
+
+home Ledger@Ledger()/Ledger.new/Ledger() Ledger()/Ledger.new
+home Ledger@Ledger()/Ledger.new Ledger()
+home Ledger Ledger()
+home Decimal·amount Ledger()
+home _·text@Ledger()/Ledger.get/read_to_string Ledger()/Ledger.get
+home _·amount@Ledger()/Ledger.get/map_err Ledger()/Ledger.get
+home Entry@Ledger()/Ledger.get/Entry() Ledger()/Ledger.get
+home Entry@Ledger()/Ledger.get Ledger()
+
+# the error `get` raises when the text is no Decimal: `io::Error::new` is no step, so it goes into map_err, whose border
+# hands it on with its result, and `?` hands it on across get's border to its caller, as it does what read_to_string
+# fails with. Both are `io::Error`, the error type of get's signature, no type of the code's (#138); an opened step takes
+# what its steps hand on, which Atlas does not draw for an error of no type of the code's
+line Ledger()/Ledger.get/read_to_string > _@Ledger()/Ledger.get/read_to_string value
+line _@Ledger()/Ledger.get/read_to_string > Ledger()/Ledger.get value
+home _@Ledger()/Ledger.get/read_to_string Ledger()/Ledger.get
+line Ledger()/Ledger.get/map_err > _@Ledger()/Ledger.get/map_err value
+line _@Ledger()/Ledger.get/map_err > Ledger()/Ledger.get value
+home _@Ledger()/Ledger.get/map_err Ledger()/Ledger.get
+line Ledger()/Ledger.get > _@Ledger()/Ledger.get value
+home _@Ledger()/Ledger.get Ledger()
+
+side entry left
+side Disk(Ledger.path) between
+
+# #125: a call whose result goes into the named call around it is a step of its own

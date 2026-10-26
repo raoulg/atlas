@@ -1,0 +1,84 @@
+# The shortcut's store: readings come back as Readings, but outages come back as the lines they are kept as, and a
+# summary is kept and given back as a line; the Outage that `saveOutage` puts no get gives back, and no Summary type
+# exists. `summary` returns the kept line when there is one (`if (kept) return kept`), else reads the day's readings and
+# writes the new line: the code after the early return is the other arm of that choice. A library's operation whose
+# result the body names (`readFileSync`, `find`, `map`) is a step; what it touches stays its caller's. Each file is
+# read, used and written by the route: it stands on both sides.
+
+route harvest.store.ReadingStore
+step ReadingStore()/ReadingStore()
+step ReadingStore()/ReadingStore.save
+step ReadingStore()/ReadingStore.history
+step ReadingStore()/ReadingStore.history/Reading()
+step ReadingStore()/ReadingStore.saveOutage
+step ReadingStore()/ReadingStore.outages
+step ReadingStore()/ReadingStore.summary
+step ReadingStore()/ReadingStore.summary/readFileSync
+step ReadingStore()/ReadingStore.summary/find
+choice ReadingStore()/ReadingStore.summary/?1   # #130: the code after `return` is the other arm
+step ReadingStore()/ReadingStore.summary/?1/ReadingStore.history   # #130: the code after `return` is the other arm
+step ReadingStore()/ReadingStore.summary/?1/ReadingStore.history/Reading()   # #130: the code after `return` is the other arm
+step ReadingStore()/ReadingStore.summary/?1/map   # #130: the code after `return` is the other arm
+
+line entry > ReadingStore()/ReadingStore() call
+line entry > ReadingStore()/ReadingStore.save call
+line entry > ReadingStore()/ReadingStore.history call
+line entry > ReadingStore()/ReadingStore.saveOutage call
+line entry > ReadingStore()/ReadingStore.outages call
+line entry > ReadingStore()/ReadingStore.summary call
+
+line ReadingStore()/ReadingStore() > ReadingStore@ReadingStore()/ReadingStore() value
+line ReadingStore > ReadingStore()/ReadingStore.save value # the caller's instance
+line Reading·reading > ReadingStore()/ReadingStore.save value
+line Disk(ReadingStore.readings) > ReadingStore()/ReadingStore.save own
+line ReadingStore()/ReadingStore.save > Disk(ReadingStore.readings) own
+line ReadingStore > ReadingStore()/ReadingStore.history value # the caller's instance
+line Disk(ReadingStore.readings) > ReadingStore()/ReadingStore.history own
+line ReadingStore()/ReadingStore.history/Reading() > Reading@ReadingStore()/ReadingStore.history/Reading() value
+line Reading@ReadingStore()/ReadingStore.history/Reading() > ReadingStore()/ReadingStore.history value
+line ReadingStore()/ReadingStore.history > Reading@ReadingStore()/ReadingStore.history value
+line ReadingStore > ReadingStore()/ReadingStore.saveOutage value # the caller's instance
+line Outage·outage > ReadingStore()/ReadingStore.saveOutage value
+line Disk(ReadingStore.outages) > ReadingStore()/ReadingStore.saveOutage own
+line ReadingStore()/ReadingStore.saveOutage > Disk(ReadingStore.outages) own
+line ReadingStore > ReadingStore()/ReadingStore.outages value # the caller's instance
+line Disk(ReadingStore.outages) > ReadingStore()/ReadingStore.outages own
+line ReadingStore > ReadingStore()/ReadingStore.summary value   # the caller's instance, for the write it makes itself
+line ReadingStore > ReadingStore()/ReadingStore.summary/readFileSync value # the caller's instance: readFileSync is handed `this.summaries`
+line Day·day > ReadingStore()/ReadingStore.summary value   # the key it looks for is made of the day
+line Day·day > ReadingStore()/ReadingStore.summary/find value   # `key`, built from `day.station` and `day.date`
+line Disk(ReadingStore.summaries) > ReadingStore()/ReadingStore.summary own
+line ReadingStore()/ReadingStore.summary > Disk(ReadingStore.summaries) own
+line ReadingStore()/ReadingStore.summary/readFileSync > _·text@ReadingStore()/ReadingStore.summary/readFileSync value
+line _·text@ReadingStore()/ReadingStore.summary/readFileSync > ReadingStore()/ReadingStore.summary/find value   # #125: its lines go into find
+line _·text@ReadingStore()/ReadingStore.summary/readFileSync > ReadingStore()/ReadingStore.summary value   # written back with the new line
+line ReadingStore()/ReadingStore.summary/find > _·kept@ReadingStore()/ReadingStore.summary/find value
+line _·kept@ReadingStore()/ReadingStore.summary/find > ReadingStore()/ReadingStore.summary value   # it decides the choice and is returned
+line ReadingStore > ReadingStore()/ReadingStore.summary/?1/ReadingStore.history value # the caller's instance (and #130)
+line Day·day > ReadingStore()/ReadingStore.summary/?1/ReadingStore.history value # #130: the code after `return` is the other arm
+line Disk(ReadingStore.readings) > ReadingStore()/ReadingStore.summary/?1/ReadingStore.history own # #130: the code after `return` is the other arm
+line ReadingStore()/ReadingStore.summary/?1/ReadingStore.history/Reading() > Reading@ReadingStore()/ReadingStore.summary/?1/ReadingStore.history/Reading() value # #130: the code after `return` is the other arm
+line Reading@ReadingStore()/ReadingStore.summary/?1/ReadingStore.history/Reading() > ReadingStore()/ReadingStore.summary/?1/ReadingStore.history value # #130: the code after `return` is the other arm
+line ReadingStore()/ReadingStore.summary/?1/ReadingStore.history > Reading@ReadingStore()/ReadingStore.summary/?1/ReadingStore.history value # #130: the code after `return` is the other arm
+line Reading@ReadingStore()/ReadingStore.summary/?1/ReadingStore.history > ReadingStore()/ReadingStore.summary/?1/map value # #130: the code after `return` is the other arm
+line Day·day > ReadingStore()/ReadingStore.summary/?1/map value # #130: the code after `return` is the other arm
+line ReadingStore()/ReadingStore.summary/?1/map > _·temperatures@ReadingStore()/ReadingStore.summary/?1/map value   # #130: the code after `return` is the other arm
+line _·temperatures@ReadingStore()/ReadingStore.summary/?1/map > ReadingStore()/ReadingStore.summary value   # `Math.min(...temperatures)`, the body's own use
+
+home ReadingStore@ReadingStore()/ReadingStore() ReadingStore()
+home ReadingStore ReadingStore()
+home Reading·reading ReadingStore()
+home Reading@ReadingStore()/ReadingStore.history/Reading() ReadingStore()/ReadingStore.history
+home Reading@ReadingStore()/ReadingStore.history ReadingStore()
+home Outage·outage ReadingStore()
+home _·text@ReadingStore()/ReadingStore.summary/readFileSync ReadingStore()/ReadingStore.summary
+home _·kept@ReadingStore()/ReadingStore.summary/find ReadingStore()/ReadingStore.summary
+home Reading@ReadingStore()/ReadingStore.summary/?1/ReadingStore.history/Reading() ReadingStore()/ReadingStore.summary/?1/ReadingStore.history
+home Reading@ReadingStore()/ReadingStore.summary/?1/ReadingStore.history ReadingStore()/ReadingStore.summary/?1   # it stands in summary's frame while summary's own arrow takes it
+home _·temperatures@ReadingStore()/ReadingStore.summary/?1/map ReadingStore()/ReadingStore.summary
+home Day·day ReadingStore()
+
+side entry left
+side Disk(ReadingStore.readings) both
+side Disk(ReadingStore.outages) both
+side Disk(ReadingStore.summaries) both

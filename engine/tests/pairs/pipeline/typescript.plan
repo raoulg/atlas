@@ -1,0 +1,189 @@
+# The TypeScript command names the records it keeps and hands them from step to step, and draws the figure as a
+# document: `trend` gives the SVG as a string, which `saveSvg` writes where the command line says. The command's own
+# code runs `main`, which parses its command line into `values`, whose fields name the places; the raw file is filled
+# only where it is missing, so it stands between the download and the reading.
+
+route sunspots.cli
+step cli.ts/main
+step cli.ts/main/parseArgs                                        # `const { values } = parseArgs(..)`, taken to the entry
+step cli.ts/main/monthsOf
+choice cli.ts/main/monthsOf/?1                                    # `if (option === undefined) return ..`: what follows is its other arm
+step cli.ts/main/monthsOf/?1/Number                                  # `const months = Number(option)`
+step cli.ts/main/Settings()                                       # `const settings: Settings = { .. }`
+choice cli.ts/main/?1
+step cli.ts/main/?1/download
+step cli.ts/main/?1/download/fetch                                # `const response = await fetch(..)`
+step cli.ts/main/load
+step cli.ts/main/load/parse
+step cli.ts/main/load/parse/parseLine                             # `.map(parseLine)` runs it on each line
+step cli.ts/main/load/parse/parseLine/map                         # `const fields = line.split(";").map(Number)`
+choice cli.ts/main/load/parse/parseLine/?1                        # `if (..) throw ..`: what follows is its other arm
+step cli.ts/main/load/parse/parseLine/?1/Month()          # `return { date, mean, std, observations }`, a Month
+step cli.ts/main/smooth
+step cli.ts/main/smooth/floor                                     # `const before = Math.floor(months / 2)`
+step cli.ts/main/smooth/average
+step cli.ts/main/trend
+step cli.ts/main/trend/at                                  # `const last = series.at(-1)`
+choice cli.ts/main/trend/?1                                       # `if (first === undefined || ..) throw ..`
+step cli.ts/main/trend/?1/range                                      # `const x = scaleUtc()..range(..)`
+step cli.ts/main/trend/?1/range#2                                    # `const y = scaleLinear()..range(..)`
+step cli.ts/main/trend/?1/line                                       # `const path = line<Smoothed>(..)`
+step cli.ts/main/trend/?1/map                                        # `const years = x.ticks(10).map(..)`
+step cli.ts/main/trend/?1/map#2                                      # `const counts = y.ticks(5).map(..)`
+step cli.ts/main/trend/?1/escape
+step cli.ts/main/saveSvg
+
+line entry > cli.ts call
+line entry > cli.ts/main/parseArgs call                           # the command line is what the parse reads
+line cli.ts/main/parseArgs > _·values@cli.ts/main/parseArgs value
+
+line _·values@cli.ts/main/parseArgs > cli.ts/main/monthsOf value         # `values.months`, checked
+line _·values@cli.ts/main/parseArgs > cli.ts/main/monthsOf/?1/Number value   # `Number(option)`: `option` holds what fills it, `{"at": 0}`
+line _·values@cli.ts/main/parseArgs > cli.ts/main/monthsOf/?1/Error() value   # the error's message names the option, `${option}`
+line Settings·DEFAULT_SETTINGS > cli.ts/main/monthsOf value   # `return DEFAULT_SETTINGS.months`: the body's own use of a module's value
+line cli.ts/main/monthsOf/?1/Number > _·months@cli.ts/main/monthsOf/?1/Number value
+line _·months@cli.ts/main/monthsOf/?1/Number > cli.ts/main/monthsOf value   # `return months`
+line cli.ts/main/monthsOf > _@cli.ts/main/monthsOf value
+line _@cli.ts/main/monthsOf > cli.ts/main/Settings() value
+line Settings·DEFAULT_SETTINGS > cli.ts/main/Settings() value            # `...DEFAULT_SETTINGS`
+line cli.ts/main/Settings() > Settings·settings@cli.ts/main/Settings() value
+
+line _·values@cli.ts/main/parseArgs > cli.ts/main/?1/download value      # `values.raw`
+line Web(www.sidc.be) > cli.ts/main/?1/download own
+line cli.ts/main/?1/download/fetch > _·response@cli.ts/main/?1/download/fetch value
+line _·response@cli.ts/main/?1/download/fetch > cli.ts/main/?1/download value   # `response.arrayBuffer()`
+line cli.ts/main/?1/download > File(data/raw/sunspots.csv) own
+# `await download(..)` is a statement: main throws away the path download gives back, so nothing goes back (#134)
+
+# `load(values.raw)`: `path` holds the values, and `readFile(path, ..)`, no step, is glued into `parse`'s call, which is
+# handed what it is handed; inside `parse`, `text` holds them, and `parseLine` is handed each line, an element of `text`
+line _·values@cli.ts/main/parseArgs > cli.ts/main/load/parse value
+line _·values@cli.ts/main/parseArgs > cli.ts/main/load/parse/parseLine/map value       # `line.split(";").map(Number)`
+line _·values@cli.ts/main/parseArgs > cli.ts/main/load/parse/parseLine/?1/Error() value   # the error's message names the line
+line File(data/raw/sunspots.csv) > cli.ts/main/load own
+line cli.ts/main/load/parse/parseLine/map > _·fields@cli.ts/main/load/parse/parseLine/map value
+line _·fields@cli.ts/main/load/parse/parseLine/map > cli.ts/main/load/parse/parseLine/?1/Month() value   # `const [year, ..] = fields`
+line cli.ts/main/load/parse/parseLine/?1/Month() > Month@cli.ts/main/load/parse/parseLine/?1/Month() value
+line Month@cli.ts/main/load/parse/parseLine/?1/Month() > cli.ts/main/load/parse/parseLine value
+line cli.ts/main/load/parse/parseLine > Month@cli.ts/main/load/parse/parseLine value
+line Month@cli.ts/main/load/parse/parseLine > cli.ts/main/load/parse value
+line cli.ts/main/load/parse > Month@cli.ts/main/load/parse value
+line Month@cli.ts/main/load/parse > cli.ts/main/load value
+line cli.ts/main/load > Month·series@cli.ts/main/load value
+
+line Month·series@cli.ts/main/load > cli.ts/main/smooth value   # `series.slice(..)`; the body uses it itself, and a step inside takes it too
+line Settings·settings@cli.ts/main/Settings() > cli.ts/main/smooth value  # `settings.months`, handed as `months`
+line Settings·settings@cli.ts/main/Settings() > cli.ts/main/smooth/floor value   # `Math.floor(months / 2)`: `months` holds what fills it, `{"at": 1}`
+line Settings·settings@cli.ts/main/Settings() > cli.ts/main/smooth/average value   # `average(series.slice(i, i + months))`
+line cli.ts/main/smooth/floor > _·before@cli.ts/main/smooth/floor value
+line _·before@cli.ts/main/smooth/floor > cli.ts/main/smooth value   # `series.slice(before, ..)`
+line Month·series@cli.ts/main/load > cli.ts/main/smooth/average value # handed series.slice(..), which is no step
+line cli.ts/main/smooth/average > cli.ts/main/smooth back # the mean goes into the Smoothed `smooth` makes; `map`, no step, takes it
+line cli.ts/main/smooth > Smoothed·smoothed@cli.ts/main/smooth value
+
+line Month·series@cli.ts/main/load > cli.ts/main/trend value   # `series[0]`, `path(series)`; the body uses it itself, and a step inside takes it too
+line Smoothed·smoothed@cli.ts/main/smooth > cli.ts/main/trend value
+line Settings·settings@cli.ts/main/Settings() > cli.ts/main/trend value   # the body uses it itself, and a step inside takes it too
+line Settings·settings@cli.ts/main/Settings() > cli.ts/main/trend/?1/escape value   # `escape(settings.title)`
+line cli.ts/main/trend/?1/escape > cli.ts/main/trend back
+line Month·series@cli.ts/main/load > cli.ts/main/trend/at value
+line cli.ts/main/trend/at > _·last@cli.ts/main/trend/at value
+line Month·series@cli.ts/main/load > cli.ts/main/trend/?1/range value      # `series[0].date`
+line _·last@cli.ts/main/trend/at > cli.ts/main/trend/?1/range value
+line Settings·settings@cli.ts/main/Settings() > cli.ts/main/trend/?1/range value   # `width`
+line cli.ts/main/trend/?1/range > _·x@cli.ts/main/trend/?1/range value
+line Month·series@cli.ts/main/load > cli.ts/main/trend/?1/range#2 value    # `series.map(..)` in its domain
+line Settings·settings@cli.ts/main/Settings() > cli.ts/main/trend/?1/range#2 value # `bottom`
+line cli.ts/main/trend/?1/range#2 > _·y@cli.ts/main/trend/?1/range#2 value
+line _·x@cli.ts/main/trend/?1/range > cli.ts/main/trend/?1/line value         # `(month) => x(month.date)`
+line _·y@cli.ts/main/trend/?1/range#2 > cli.ts/main/trend/?1/line value
+line cli.ts/main/trend/?1/line > _·path@cli.ts/main/trend/?1/line value
+line _·path@cli.ts/main/trend/?1/line > cli.ts/main/trend value   # `path(series)`, `path(smoothed)`
+line _·x@cli.ts/main/trend/?1/range > cli.ts/main/trend/?1/map value          # `x.ticks(10)`, `x(t)`
+line Settings·settings@cli.ts/main/Settings() > cli.ts/main/trend/?1/map value     # `bottom + 18`
+line cli.ts/main/trend/?1/map > _·years@cli.ts/main/trend/?1/map value
+line _·years@cli.ts/main/trend/?1/map > cli.ts/main/trend value
+line _·y@cli.ts/main/trend/?1/range#2 > cli.ts/main/trend/?1/map#2 value      # `y.ticks(5)`, `y(n)`
+line cli.ts/main/trend/?1/map#2 > _·counts@cli.ts/main/trend/?1/map#2 value
+line _·counts@cli.ts/main/trend/?1/map#2 > cli.ts/main/trend value
+line cli.ts/main/trend > _@cli.ts/main/trend value                        # the SVG document, which no name holds
+line _@cli.ts/main/trend > cli.ts/main/saveSvg value
+line _·values@cli.ts/main/parseArgs > cli.ts/main/saveSvg value          # `values.figure`
+line cli.ts/main/saveSvg > File(figures/sunspots.svg) own
+
+home _·values@cli.ts/main/parseArgs cli.ts/main
+home Settings·DEFAULT_SETTINGS cli.ts
+home _·months@cli.ts/main/monthsOf/?1/Number cli.ts/main/monthsOf   # its own arrow uses it (`return months`), at its border
+home _@cli.ts/main/monthsOf cli.ts/main
+home Settings·settings@cli.ts/main/Settings() cli.ts/main
+home _·response@cli.ts/main/?1/download/fetch cli.ts/main/?1/download
+home _·fields@cli.ts/main/load/parse/parseLine/map cli.ts/main/load/parse/parseLine
+home Month@cli.ts/main/load/parse/parseLine/?1/Month() cli.ts/main/load/parse/parseLine
+home Month@cli.ts/main/load/parse/parseLine cli.ts/main/load/parse
+home Month@cli.ts/main/load/parse cli.ts/main/load
+home Month·series@cli.ts/main/load cli.ts/main
+home _·before@cli.ts/main/smooth/floor cli.ts/main/smooth
+home Smoothed·smoothed@cli.ts/main/smooth cli.ts/main
+home _·last@cli.ts/main/trend/at cli.ts/main/trend
+home _·x@cli.ts/main/trend/?1/range cli.ts/main/trend/?1
+home _·y@cli.ts/main/trend/?1/range#2 cli.ts/main/trend/?1
+home _·path@cli.ts/main/trend/?1/line cli.ts/main/trend   # the own arrow, at trend's border, uses it
+home _·years@cli.ts/main/trend/?1/map cli.ts/main/trend
+home _·counts@cli.ts/main/trend/?1/map#2 cli.ts/main/trend
+home _@cli.ts/main/trend cli.ts/main
+
+# What each body's own code uses outside its steps (#101)
+line _·values@cli.ts/main/parseArgs > cli.ts/main value                  # `existsSync(values.raw)`, the body's own test
+line _·last@cli.ts/main/trend/at > cli.ts/main/trend value               # `last === undefined`
+line _·fields@cli.ts/main/load/parse/parseLine/map > cli.ts/main/load/parse/parseLine value   # `fields.length`, `fields.some(..)`
+
+# An error is a value (#138): `throw new Error(..)` builds one in the arm that throws it, the error an arm hands on is one
+# value at the choice's moment, and each border it crosses uncaught hands it on, up to the route. `parseLine` is handed to
+# `map`, so what it throws `parse` hands on.
+choice cli.ts/main/?1/download/?1                                        # if (!response.ok) throw ..
+step cli.ts/main/?1/download/?1/Error()
+step cli.ts/main/load/parse/parseLine/?1/Error()
+step cli.ts/main/monthsOf/?1/Error()
+step cli.ts/main/trend/?1/Error()
+line _·response@cli.ts/main/?1/download/fetch > cli.ts/main/?1/download/?1/Error() value   # `${response.status} ..`
+line cli.ts/main/?1/download/?1/Error() > Error@cli.ts/main/?1/download/?1 value
+line Error@cli.ts/main/?1/download/?1 > cli.ts/main/?1/download value
+home Error@cli.ts/main/?1/download/?1 cli.ts/main/?1/download
+line cli.ts/main/?1/download > Error@cli.ts/main/?1 value               # download is called in an arm of main's choice
+line Error@cli.ts/main/?1 > cli.ts/main value
+home Error@cli.ts/main/?1 cli.ts/main
+line cli.ts/main/load/parse/parseLine/?1/Error() > Error@cli.ts/main/load/parse/parseLine/?1 value
+line Error@cli.ts/main/load/parse/parseLine/?1 > cli.ts/main/load/parse/parseLine value
+home Error@cli.ts/main/load/parse/parseLine/?1 cli.ts/main/load/parse/parseLine
+line cli.ts/main/load/parse/parseLine > Error@cli.ts/main/load/parse/parseLine value
+line Error@cli.ts/main/load/parse/parseLine > cli.ts/main/load/parse value
+home Error@cli.ts/main/load/parse/parseLine cli.ts/main/load/parse
+line cli.ts/main/load/parse > Error@cli.ts/main/load/parse value
+line Error@cli.ts/main/load/parse > cli.ts/main/load value
+home Error@cli.ts/main/load/parse cli.ts/main/load
+line cli.ts/main/load > Error@cli.ts/main/load value
+line Error@cli.ts/main/load > cli.ts/main value
+home Error@cli.ts/main/load cli.ts/main
+line cli.ts/main/monthsOf/?1/Error() > Error@cli.ts/main/monthsOf/?1 value
+line Error@cli.ts/main/monthsOf/?1 > cli.ts/main/monthsOf value
+home Error@cli.ts/main/monthsOf/?1 cli.ts/main/monthsOf
+line cli.ts/main/monthsOf > Error@cli.ts/main/monthsOf value
+line Error@cli.ts/main/monthsOf > cli.ts/main value
+home Error@cli.ts/main/monthsOf cli.ts/main
+line cli.ts/main/trend/?1/Error() > Error@cli.ts/main/trend/?1 value
+line Error@cli.ts/main/trend/?1 > cli.ts/main/trend value
+home Error@cli.ts/main/trend/?1 cli.ts/main/trend
+line cli.ts/main/trend > Error@cli.ts/main/trend value
+line Error@cli.ts/main/trend > cli.ts/main value
+home Error@cli.ts/main/trend cli.ts/main
+line cli.ts/main > Error@cli.ts/main value
+line Error@cli.ts/main > cli.ts value                                  # `await main(..)`, the module's own code
+home Error@cli.ts/main cli.ts
+line cli.ts > Error@cli.ts value
+home Error@cli.ts cli.ts
+# the error an arm throws stands at the constructor's moment, not the choice's
+
+side entry left
+side Web(www.sidc.be) left
+side File(data/raw/sunspots.csv) between
+side File(figures/sunspots.svg) right

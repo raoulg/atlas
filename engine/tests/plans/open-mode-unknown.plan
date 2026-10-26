@@ -1,0 +1,17 @@
+# A file opened with a mode the caller hands, from the command line: the code does not say which way it goes, so the
+# file is in neither domain nor codomain (#76). The handle `open` gives is shown on the screen.
+
+route modeunknown.run
+line entry > run call
+step run/touch
+step run/touch/open                                                  # with open(PATH, mode) as f
+line run/touch/open > _·f@run/touch/open value
+line run/touch > File(data/notes.txt) own
+line run/touch > Screen own                                          # print(f)
+line _·f@run/touch/open > run/touch value                            # print(f): the body's own use
+
+home _·f@run/touch/open run/touch
+
+side entry left
+side File(data/notes.txt) between
+side Screen right

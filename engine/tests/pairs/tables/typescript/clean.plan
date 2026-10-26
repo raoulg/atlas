@@ -1,0 +1,14 @@
+# How long a run may take in its mode, looked up in one table. `plans`, a `Record<Mode, Plan>`, is one value: a map
+# holds its values by its keys, and the key chooses the Plan the lookup `plans[mode]` gives, as an index chooses an
+# element of an array; it is no value the table holds (#167). The route takes the table and the mode by their names,
+# from its start, and reads both in its own code.
+
+route tables.tables.timeout
+line entry > timeout call
+line Plan·plans > timeout value              # `plans[mode].timeout`
+line Mode·mode > timeout value               # the key the lookup is made by
+
+home Plan·plans timeout
+home Mode·mode timeout
+
+side entry left

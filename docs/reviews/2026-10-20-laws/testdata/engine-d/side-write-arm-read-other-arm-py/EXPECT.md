@@ -1,0 +1,3 @@
+Route: `eitherway.run`
+- File(data/note.txt): both — one branch uses what was there, the other leaves something there, and the two never run together, so nothing is "filled before it is read". "A read is preceded by a write only when the write happens whenever the read does, not in one branch of a choice the read is outside." The make-sure-of sentence ("writes only before it reads there, and only in an arm") does not apply: no run writes before it reads.
+Observed (0.68.0): mid (drawn as made sure of). LIKELY DEFECT: orders (flow.rs:530) and roleOf treat source order as run order; exclusive arms are not told apart from fill-then-read.

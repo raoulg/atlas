@@ -28,13 +28,15 @@ pub fn route(g: &Graph, entry: &str, depth: usize) -> Option<String> {
     s.parses = n.entry.as_ref().map_or(false, |e| matches!(e.kind, EntryKind::Cli | EntryKind::Script));
     let kind = n.entry.as_ref().map(|e| format!("{} · {}", kind_label(e.kind), usage(e))).unwrap_or_else(|| s.name(start, ""));
     let mut out = format!("{kind}\n{}{}", n.id, s.signature(n));
-    let effects = s.effects(n);
+    let path = [start.to_string()];
+    let effects = s.effects(n, Some(&path));
     if !effects.is_empty() {
         out.push_str(&format!("   ·   {effects}"));
     }
     out.push('\n');
-    let mut shown: HashMap<String, String> = HashMap::from([(start.to_string(), "the entry".to_string())]);
-    s.walk(start, "", depth.max(1), &mut shown, &mut out);
+    let mut shown: HashMap<String, String> = HashMap::from([(s.seen(start, start, &path), "the entry".to_string())]);
+    let alts = Step::of(start).runs_instead(&s.bodies);
+    s.walk(start, "", depth.max(1), &mut shown, &mut out, &path, &alts);
     Some(out)
 }
 
@@ -50,27 +52,29 @@ pub fn choices(g: &Graph, entry: &str) -> Option<String> {
     let n = s.nodes[start];
     let kind = n.entry.as_ref().map(|e| format!("{} · {}", kind_label(e.kind), usage(e))).unwrap_or_else(|| s.name(start, ""));
     let mut out = format!("{kind}\n");
-    let (mut seen, mut queue) = (HashSet::new(), std::collections::VecDeque::from([(start.to_string(), String::new())]));
+    let (mut seen, mut calls, mut queue) = (HashSet::new(), HashSet::new(), std::collections::VecDeque::from([Step::of(start)]));
     let mut found = 0;
-    while let Some((id, on)) = queue.pop_front() {
-        let k = flow::key(&id, &on);
-        let Some(b) = s.bodies.get(&k).filter(|_| seen.insert(k.clone())) else { continue };
-        let sites = s.nodes.get(id.as_str()).map(|n| n.sites.as_slice()).unwrap_or(&[]);
+    while let Some(call) = queue.pop_front() {
+        let k = flow::key(&call.to, &call.on);
+        let Some(b) = s.bodies.get(&k).filter(|_| calls.insert((k.clone(), call.named))) else { continue };
+        // a body's choices once, however many calls run it; what each call may run instead
+        let items = if seen.insert(k) { b.items.as_slice() } else { &[] };
+        let sites = s.nodes.get(call.to.as_str()).map(|n| n.sites.as_slice()).unwrap_or(&[]);
         let named = |st: &Step| {
             if s.nodes.contains_key(st.to.as_str()) {
-                s.name(&st.to, &st.on)
+                s.step_name(st)
             } else {
                 st.to.trim_start_matches("op:").to_string()
             }
         };
-        let touched = |st: &Step| s.nodes.get(st.to.as_str()).map(|n| s.effects(n)).unwrap_or_default();
-        for item in &b.items {
+        let touched = |st: &Step| s.nodes.get(st.to.as_str()).map(|n| s.effects(n, None)).unwrap_or_default();
+        for item in items {
             let steps: Vec<&Step> = match item {
                 Item::Step(st) => vec![st],
                 Item::Choice { members, when, .. } => {
                     found += 1;
                     let line = members.iter().filter_map(|m| m.step.site.and_then(|i| sites.get(i))).map(|s| s.line).min().unwrap_or(0);
-                    out.push_str(&format!("\n{} · line {line}\n", s.name(&id, &on)));
+                    out.push_str(&format!("\n{} · line {line}\n", s.step_name(&call)));
                     let mut branches: Vec<usize> = members.iter().map(|m| m.branch).collect();
                     branches.sort_unstable();
                     branches.dedup();
@@ -95,9 +99,9 @@ pub fn choices(g: &Graph, entry: &str) -> Option<String> {
                     members.iter().map(|m| &m.step).collect()
                 }
             };
-            queue.extend(steps.into_iter().filter(|st| s.nodes.contains_key(st.to.as_str())).map(|st| (st.to.clone(), st.on.clone())));
+            queue.extend(steps.into_iter().filter(|st| s.nodes.contains_key(st.to.as_str())).cloned());
         }
-        queue.extend(b.alts.iter().map(|o| (o.clone(), String::new())));
+        queue.extend(call.runs_instead(&s.bodies));
     }
     if found == 0 {
         out.push_str("\nNo choice on this route: every step runs whenever the route does.\n");
@@ -161,11 +165,15 @@ struct Story<'g> {
     nodes: HashMap<&'g str, &'g Node>,
     out: HashMap<&'g str, Vec<&'g Edge>>,
     bodies: BTreeMap<String, Body>,
+    /// The initializer building each class runs (`flow::initializers`).
+    inits: HashMap<String, String>,
     /// The route's entry, and what it can run.
     entry: String,
     reached: HashSet<String>,
     /// The route is run from the command line: its parses of the command line are the entry's.
     parses: bool,
+    /// For each function, the callers that make a path whole for a touch it reaches.
+    makers: std::cell::RefCell<HashMap<String, HashSet<String>>>,
 }
 
 impl<'g> Story<'g> {
@@ -179,9 +187,11 @@ impl<'g> Story<'g> {
             nodes: g.nodes.iter().map(|n| (n.id.as_str(), n)).collect(),
             out,
             bodies: flow::bodies(g),
+            inits: flow::initializers(g),
             entry: String::new(),
             reached: Default::default(),
             parses: false,
+            makers: Default::default(),
         }
     }
 
@@ -200,8 +210,19 @@ impl<'g> Story<'g> {
     }
 
     /// The steps of the body at `body` (a function, or a function on a class), each choice's
-    /// branches lettered, then the overrides the call may run instead.
-    fn walk(&self, body: &str, prefix: &str, depth: usize, shown: &mut HashMap<String, String>, out: &mut String) {
+    /// branches lettered, then `alts`, what the call into it may run instead. `path` is the
+    /// functions on the calls that lead into the body.
+    #[allow(clippy::too_many_arguments)]
+    fn walk(
+        &self,
+        body: &str,
+        prefix: &str,
+        depth: usize,
+        shown: &mut HashMap<String, String>,
+        out: &mut String,
+        path: &[String],
+        alts: &[Step],
+    ) {
         let Some(b) = self.bodies.get(body) else { return };
         let holder = body.split('@').next().unwrap_or(body);
         let sites = self.nodes.get(holder).map(|n| n.sites.as_slice()).unwrap_or(&[]);
@@ -221,7 +242,7 @@ impl<'g> Story<'g> {
         for item in &b.items {
             match item {
                 Item::Step(st) if !shown_step(st) => {}
-                Item::Step(st) => self.step(st, st.site.and_then(|i| sites.get(i)), &next(), "", level, depth, shown, out),
+                Item::Step(st) => self.step(st, st.site.and_then(|i| sites.get(i)), &next(), "", level, depth, shown, out, path),
                 Item::Choice { members, when, .. } => {
                     let members: Vec<_> = members.iter().filter(|m| shown_step(&m.step)).collect();
                     if members.is_empty() {
@@ -238,14 +259,14 @@ impl<'g> Story<'g> {
                             depth,
                             shown,
                             out,
+                            path,
                         );
                     }
                 }
             }
         }
-        for (i, o) in b.alts.iter().enumerate() {
-            let st = Step { to: o.clone(), on: String::new(), site: None };
-            self.step(&st, None, &format!("{prefix}{}", letter(i)), "", level, depth, shown, out);
+        for (i, o) in alts.iter().enumerate() {
+            self.step(o, None, &format!("{prefix}{}", letter(i)), "", level, depth, shown, out, path);
         }
     }
 
@@ -259,6 +280,7 @@ impl<'g> Story<'g> {
         depth: usize,
         shown: &mut HashMap<String, String>,
         out: &mut String,
+        path: &[String],
     ) {
         let indent = "  ".repeat(level);
         let Some(n) = self.nodes.get(st.to.as_str()) else {
@@ -279,33 +301,75 @@ impl<'g> Story<'g> {
             ));
             return;
         };
-        let k = flow::key(&st.to, &st.on);
-        let body = self.bodies.get(&k);
+        // building a class runs its initializer along its order and none of the class's methods, whether or not the class
+        // is a route of its own; a class built from its fields runs nothing
+        let built = n.kind == NodeKind::Class;
+        let runs = if built { self.inits.get(st.to.as_str()).map(String::as_str) } else { Some(st.to.as_str()) };
+        let runner = runs.and_then(|r| self.nodes.get(r).copied()).unwrap_or(n);
+        let k = flow::key(runs.unwrap_or(&st.to), &st.on);
+        let body = runs.and_then(|_| self.bodies.get(&k));
         let when = match when {
             "" => String::new(),
             "otherwise" => "   ·   otherwise".to_string(),
             w => format!("   ·   when {w}"),
         };
-        if let Some(at) = shown.get(&k).filter(|_| body.is_some()) {
-            out.push_str(&format!("{indent}{num}  {}  → see {at}{when}\n", self.name(&st.to, &st.on)));
+        let inner: Vec<String> = path.iter().cloned().chain([runner.id.clone()]).collect();
+        let seen = self.seen(&k, &runner.id, &inner);
+        if let Some(at) = shown.get(&seen).filter(|_| body.is_some()) {
+            out.push_str(&format!("{indent}{num}  {}  → see {at}{when}\n", self.step_name(st)));
             return;
         }
-        shown.insert(k.clone(), num.to_string());
-        let mut line = format!("{indent}{num}  {}{}", self.name(&st.to, &st.on), self.signature(n));
-        let effects = self.effects(n);
+        shown.insert(seen, num.to_string());
+        let mut line = format!("{indent}{num}  {}{}", self.step_name(st), self.signature(n));
+        let effects = self.effects(runner, Some(&inner));
         if !effects.is_empty() {
             line.push_str(&format!("   ·   {effects}"));
         }
-        let alts = body.map_or(0, |b| b.alts.len());
-        if alts > 0 {
-            line.push_str(&format!("   ·   one of {alts}"));
+        let alts = if built { &[][..] } else { st.alts(&self.bodies) };
+        if !alts.is_empty() {
+            line.push_str(&format!("   ·   one of {}", alts.len()));
         }
         line.push_str(&when);
         out.push_str(&line);
         out.push('\n');
-        if level + 1 < depth {
-            self.walk(&k, num, depth, shown, out);
+        if level + 1 < depth && body.is_some() {
+            self.walk(&k, num, depth, shown, out, &inner, &if built { vec![] } else { st.runs_instead(&self.bodies) });
         }
+    }
+
+    /// A body is shown once for each set of callers on the way to it that make a path it touches
+    /// whole: under another caller it touches other places, and is another step.
+    fn seen(&self, k: &str, id: &str, path: &[String]) -> String {
+        let mut makers = self.makers.borrow_mut();
+        let made = makers.entry(id.to_string()).or_insert_with(|| {
+            // what the function can run, as `Graph::reach` follows it, from the edges this story keeps
+            let runs = |e: &Edge| {
+                matches!(e.kind, EdgeKind::Calls | EdgeKind::Instantiates | EdgeKind::Requests)
+                    || (e.kind == EdgeKind::Contains && self.nodes.get(e.src.as_str()).map_or(false, |n| n.kind == NodeKind::Class))
+            };
+            let (mut seen, mut stack) = (HashSet::from([id]), vec![id]);
+            while let Some(at) = stack.pop() {
+                for e in self.out.get(at).into_iter().flatten().copied().filter(|e| runs(e)) {
+                    if seen.insert(e.dst.as_str()) {
+                        stack.push(e.dst.as_str());
+                    }
+                }
+            }
+            seen.iter()
+                .filter_map(|f| self.nodes.get(f))
+                .flat_map(|n| n.touches.iter().flat_map(|t| t.by.iter().flat_map(|f| f.split('&').map(str::to_string))))
+                .collect()
+        });
+        let mut on: Vec<&str> = path.iter().map(String::as_str).filter(|f| made.contains(*f)).collect();
+        on.sort_unstable();
+        on.dedup();
+        format!("{k}|{}", on.join(","))
+    }
+
+    /// A step by `name`: a method its call names (`Cached.read(self)`) by its own class, whatever
+    /// the class of the value it runs on.
+    fn step_name(&self, st: &Step) -> String {
+        self.name(&st.to, if st.named { "" } else { &st.on })
     }
 
     /// `Graph()` for a type built in place, `BasePlot` for its constructor (the signature
@@ -336,8 +400,12 @@ impl<'g> Story<'g> {
             Some(r) => r.value.clone(),
             None => String::new(),
         };
-        let changes: Vec<String> =
-            self.edges(&n.id, EdgeKind::Mutates).filter_map(|e| self.nodes.get(e.dst.as_str()).map(|t| t.name.clone())).collect();
+        let mut changes: Vec<String> = vec![];
+        for t in self.edges(&n.id, EdgeKind::Mutates).filter_map(|e| self.nodes.get(e.dst.as_str()).map(|t| t.name.clone())) {
+            if !changes.contains(&t) {
+                changes.push(t);
+            }
+        }
         let mut out = format!("({})", names.join(", "));
         if !ret.is_empty() {
             out.push_str(&format!(" → {ret}"));
@@ -348,10 +416,13 @@ impl<'g> Story<'g> {
         out
     }
 
-    /// What a step's own body does at the edges: `reads Makefile · writes *.png · prints`.
-    fn effects(&self, n: &Node) -> String {
+    /// What a step's own body does at the edges: `reads Makefile · writes *.png · prints`. A place a
+    /// caller makes whole is touched where the route reaches that caller, and under a step (`path`,
+    /// the functions on the calls that lead to it) where that caller is on the way.
+    fn effects(&self, n: &Node, path: Option<&[String]>) -> String {
         let mut groups: Vec<(String, Vec<String>)> = vec![];
-        for t in n.touches_in(&self.entry, &|f| self.reached.contains(f)) {
+        let on_way = |f: &str| path.map_or_else(|| self.reached.contains(f), |p| p.iter().any(|x| x == f));
+        for t in n.touches_in(&self.entry, &on_way) {
             let (v, what) = (t.verb(), place(t));
             match groups.iter_mut().find(|(g, _)| *g == v) {
                 Some((_, items)) => {

@@ -1,0 +1,20 @@
+# An exported class is a route whose steps are its public methods, each called by the entry. `Source.read` is a call
+# into the family of `Source`, whose members along the method resolution order are `Buffered`, `Feed` and `Tape`: it
+# runs one of the overrides that family holds, a choice between them (`Buffered` has no `read` of its own and runs the
+# base's body, the dispatch's own arrow). The Source the caller calls it on, a value from beyond, is what each override
+# runs on; the base's own body does not read it. Every `read` gives bytes, of no type of the code's: what an override
+# gives goes back to the dispatch that ran it.
+route reading.feeds.Source
+step Source()/Source.read
+step Source()/Source.read/Feed.read
+step Source()/Source.read/Tape.read
+
+line entry > Source()/Source.read call
+line Source > Source()/Source.read/Feed.read value
+line Source > Source()/Source.read/Tape.read value
+line Source()/Source.read/Feed.read > Source()/Source.read back
+line Source()/Source.read/Tape.read > Source()/Source.read back
+
+home Source Source()
+
+side entry left

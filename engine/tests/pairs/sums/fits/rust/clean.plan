@@ -1,0 +1,22 @@
+# The one copairing of the sum `Outcome`: `describe` takes it and matches it once, building a Report by one struct
+# expression in either arm; the Report either arm builds is the one it gives back, at its border.
+
+route fits.report.describe
+choice describe/?1
+step describe/?1/Report()
+step describe/?1/Report()#2
+
+line entry > describe call
+line Outcome·o > describe value                                   # the match in describe's own body opens it
+line describe/?1/Report() > Report@describe/?1 value
+line describe/?1/Report()#2 > Report@describe/?1 value
+line Outcome·o > describe/?1/Report() value                        # `score`, which the arm's pattern takes out of `o`
+line Outcome·o > describe/?1/Report()#2 value                      # `reason`, written in the format string
+line Report@describe/?1 > describe value
+line describe > Report@describe value                             # the result goes on to the caller
+
+home Outcome·o describe
+home Report@describe/?1 describe
+home Report@describe describe
+
+side entry left

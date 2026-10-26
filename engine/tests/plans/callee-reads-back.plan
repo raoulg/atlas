@@ -1,0 +1,16 @@
+# `run` writes the counter and `bump` reads that back and writes the next: what `bump` finds is what `run` left, so the
+# route changes nothing it found. The counter stands between the step that writes it and the one that reads and uses it.
+
+route bumped.run
+step run/bump
+step run/bump/int                                           # `n = int(COUNTER.read_text())`
+line entry > run call
+line run > File(data/counter.txt) own
+line File(data/counter.txt) > run/bump own
+line run/bump > File(data/counter.txt) own
+line run/bump/int > _·n@run/bump/int value
+line _·n@run/bump/int > run/bump value   # `COUNTER.write_text(str(n + 1))`
+home _·n@run/bump/int run/bump
+
+side entry left
+side File(data/counter.txt) between

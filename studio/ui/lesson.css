@@ -1,0 +1,43 @@
+.lesson-shell{position:relative;display:grid;grid-template-columns:minmax(0,1fr);height:100%;min-height:0;background:var(--s1);color:var(--s0)}
+.lesson-shell.source-open{grid-template-columns:minmax(0,1fr) minmax(320px,34%)}
+.lesson-main{min-width:0;min-height:0;display:flex;flex-direction:column}
+.lesson-toolbar{min-height:48px;display:flex;align-items:center;gap:8px;padding:7px 16px;border-bottom:1px solid var(--s4);background:var(--s6)}
+.lesson-toolbar strong{font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.lesson-toolbar .grow{flex:1}
+.lesson-toolbar button{border:1px solid var(--s18);background:var(--s3);padding:6px 10px;font-size:11px;color:var(--s2);white-space:nowrap}
+.lesson-toolbar button.active{background:var(--s24);border-color:var(--s2)}
+.lesson-document{overflow:auto;flex:1;min-height:0}
+.lesson-article{width:min(100%,1360px);margin:0 auto;padding:45px clamp(22px,4vw,58px) 90px}
+.lesson-article>:not(.lesson-view):not(figure){max-width:68ch;margin-left:auto;margin-right:auto}
+.lesson-article h1,.lesson-article h2,.lesson-article h3{font-weight:550;letter-spacing:-.03em}
+.lesson-article h1{font-size:clamp(30px,2.8vw,38px);line-height:1.13;margin-top:0;margin-bottom:26px}
+.lesson-article h2{font-size:26px;line-height:1.2;margin-top:55px;margin-bottom:17px}
+.lesson-article h3{font-size:19px;margin-top:32px;margin-bottom:12px}
+.lesson-article p,.lesson-article li{font-size:16px;line-height:1.62;color:var(--s15)}
+.lesson-article p{margin-top:0;margin-bottom:19px}
+.lesson-article li{margin-bottom:8px}
+.lesson-article ul{padding-left:26px}
+.lesson-article a{color:var(--s2);text-decoration-color:var(--s33);text-underline-offset:2px}
+.lesson-article code{font:13px ui-monospace,monospace;background:var(--s34);padding:1px 3px}
+.lesson-article pre{font:13px/1.6 ui-monospace,monospace;background:var(--s35);border:1px solid var(--s4);padding:16px;overflow:auto}
+.lesson-article pre code{background:none;padding:0}
+.lesson-article blockquote{border-left:3px solid var(--s36);margin-top:26px;margin-bottom:26px;padding:5px 19px;font-size:18px;line-height:1.5}
+.lesson-article figure{max-width:900px;margin:35px auto}
+.lesson-article figure img{max-width:100%;height:auto;border:1px solid var(--s4);background:var(--s3)}
+.lesson-view{max-width:1240px;margin:32px auto 38px;background:var(--s37);border:1px solid var(--s38)}
+.lesson-view header{min-height:45px;display:flex;align-items:center;gap:10px;padding:8px 15px;background:var(--s3);border-bottom:1px solid var(--s4)}
+.lesson-view header strong{font-size:13px;font-weight:600}
+.lesson-view header button{border:0;background:none;color:var(--s2);font-size:12px;cursor:pointer}
+.lesson-view header button:first-of-type{margin-left:auto}
+.lesson-view iframe{display:block;width:100%;height:clamp(320px,32vw,400px);border:0;background:var(--s37)}
+.lesson-view-hint{padding:8px 15px;background:var(--s39);color:var(--s40);font:11px ui-monospace,monospace}
+.lesson-message{color:var(--s41)!important;font-size:13px!important}
+.lesson-source{display:none;min-width:0;min-height:0;border-left:1px solid var(--s4);background:var(--s3);flex-direction:column}
+.lesson-shell.source-open .lesson-source{display:flex}
+.lesson-source header{min-height:48px;display:flex;align-items:center;justify-content:space-between;gap:8px;border-bottom:1px solid var(--s4);padding:0 13px;font-size:12px}
+.lesson-source header button{border:0;background:none;color:var(--s2);font-size:11px}
+.lesson-source pre,.lesson-editor{flex:1;min-height:0;margin:0;padding:19px;border:0;overflow:auto;background:var(--s3);color:var(--s42);font:12px/1.65 ui-monospace,monospace;white-space:pre;resize:none}
+.lesson-editor{width:100%;background:var(--s43)}
+.lesson-source footer{padding:9px 13px;border-top:1px solid var(--s4);color:var(--s5);font:11px ui-monospace,monospace}
+.lesson-terminal{flex:0 0 128px;min-height:0;max-height:42%;margin:0;border-top:1px solid #ddd7ce;background:#191d20;color:#dce5e8;overflow:auto;padding:13px 17px;font:12px/1.5 ui-monospace,monospace;white-space:pre-wrap}
+@media(max-width:900px){.lesson-shell.source-open{grid-template-columns:1fr}.lesson-shell.source-open .lesson-source{position:absolute;right:0;top:0;bottom:0;width:min(520px,88vw);z-index:4;box-shadow:-16px 0 35px #211e1b38}.lesson-article{padding:30px 22px 65px}.lesson-article p,.lesson-article li{font-size:15px}.lesson-view iframe{height:350px}}

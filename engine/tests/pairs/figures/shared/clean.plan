@@ -1,0 +1,68 @@
+# Two charts of a board on one figure. The board draws its left chart's line, which makes the left chart's figure, and the
+# left chart lends it to the right one by its own `lend`: `self.left.lend(self.right)` runs on the board through `left` and
+# fills `other` with the board through `right` (#172), so inside `lend`, `other.take(self.fig, self.ax)` runs on the
+# board's right part, handed its left part's `fig` and `ax`. A parameter filled through a projection is that projection
+# (#173): `take` sets the fields of the right part, which a chart keeps its figure in (`Node::holds` says the board's
+# `right` holds a Chart), to those of the left part. From then on the right part holds the left part's figure, and its
+# line draws on it: the screen shows one figure, named by the part that made it.
+
+route notebooks.overlay
+step overlay/overlay
+step overlay/overlay/Chart()
+step overlay/overlay/Chart()#2
+step overlay/overlay/Board()
+step overlay/overlay/Board.overlay
+step overlay/overlay/Board.overlay/Chart.line
+choice overlay/overlay/Board.overlay/Chart.line/?1
+step overlay/overlay/Board.overlay/Chart.line/?1/Chart.create_figure
+step overlay/overlay/Board.overlay/Chart.lend
+step overlay/overlay/Board.overlay/Chart.lend/Chart.take
+step overlay/overlay/Board.overlay/Chart.line#2
+choice overlay/overlay/Board.overlay/Chart.line#2/?1
+step overlay/overlay/Board.overlay/Chart.line#2/?1/Chart.create_figure
+
+line entry > overlay call
+line overlay/overlay/Chart() > Chart@overlay/overlay/Chart() value
+line overlay/overlay/Chart()#2 > Chart@overlay/overlay/Chart()#2 value
+line Chart@overlay/overlay/Chart() > overlay/overlay/Board() value          # `self.left = left`
+line Chart@overlay/overlay/Chart()#2 > overlay/overlay/Board() value        # `self.right = right`
+line overlay/overlay/Board() > Board·board@overlay/overlay/Board() value
+
+# the left chart's line, run on the board through `left`, makes the figure
+line Board·board@overlay/overlay/Board() > overlay/overlay/Board.overlay/Chart.line/?1/Chart.create_figure value
+line overlay/overlay/Board.overlay/Chart.line/?1/Chart.create_figure > Chart·self@overlay/overlay/Board.overlay/Chart.line/?1 value
+line overlay/overlay/Board.overlay/Chart.line/?1/Chart.create_figure > Figure 1 · Board · board.left own   # `plt.subplots()`
+line Chart·self@overlay/overlay/Board.overlay/Chart.line/?1 > overlay/overlay/Board.overlay/Chart.line value
+line overlay/overlay/Board.overlay/Chart.line > Board·self@overlay/overlay/Board.overlay/Chart.line value
+
+# the left lends it to the right: `take` runs on the board's right part, handed its left part's fields
+line Board·self@overlay/overlay/Board.overlay/Chart.line > overlay/overlay/Board.overlay/Chart.lend/Chart.take value
+line overlay/overlay/Board.overlay/Chart.lend/Chart.take > Chart·other@overlay/overlay/Board.overlay/Chart.lend/Chart.take value   # `self.fig, self.ax = fig, ax`
+line Chart·other@overlay/overlay/Board.overlay/Chart.lend/Chart.take > overlay/overlay/Board.overlay/Chart.lend value
+line overlay/overlay/Board.overlay/Chart.lend > Board·self@overlay/overlay/Board.overlay/Chart.lend value
+
+# the right chart's line draws on the figure its part now holds
+line Board·self@overlay/overlay/Board.overlay/Chart.lend > overlay/overlay/Board.overlay/Chart.line#2/?1/Chart.create_figure value
+line overlay/overlay/Board.overlay/Chart.line#2/?1/Chart.create_figure > Chart·self@overlay/overlay/Board.overlay/Chart.line#2/?1 value
+line overlay/overlay/Board.overlay/Chart.line#2/?1/Chart.create_figure > Figure 1 · Board · board.left own   # the figure the right part took
+line Chart·self@overlay/overlay/Board.overlay/Chart.line#2/?1 > overlay/overlay/Board.overlay/Chart.line#2 value
+line overlay/overlay/Board.overlay/Chart.line#2 > Board·self@overlay/overlay/Board.overlay/Chart.line#2 value
+line Board·self@overlay/overlay/Board.overlay/Chart.line#2 > overlay/overlay/Board.overlay value
+line overlay/overlay/Board.overlay > Board·board@overlay/overlay/Board.overlay value
+line Board·board@overlay/overlay/Board.overlay > overlay/overlay value     # `return board`
+line overlay/overlay > Board·board@overlay/overlay value                   # `board = overlay(..)`
+
+home Chart@overlay/overlay/Chart() overlay/overlay
+home Chart@overlay/overlay/Chart()#2 overlay/overlay
+home Board·board@overlay/overlay/Board() overlay/overlay
+home Chart·self@overlay/overlay/Board.overlay/Chart.line/?1 overlay/overlay/Board.overlay/Chart.line
+home Board·self@overlay/overlay/Board.overlay/Chart.line overlay/overlay/Board.overlay
+home Chart·other@overlay/overlay/Board.overlay/Chart.lend/Chart.take overlay/overlay/Board.overlay/Chart.lend
+home Board·self@overlay/overlay/Board.overlay/Chart.lend overlay/overlay/Board.overlay
+home Chart·self@overlay/overlay/Board.overlay/Chart.line#2/?1 overlay/overlay/Board.overlay/Chart.line#2
+home Board·self@overlay/overlay/Board.overlay/Chart.line#2 overlay/overlay/Board.overlay
+home Board·board@overlay/overlay/Board.overlay overlay/overlay
+home Board·board@overlay/overlay overlay
+
+side entry left
+side Figure 1 · Board · board.left right

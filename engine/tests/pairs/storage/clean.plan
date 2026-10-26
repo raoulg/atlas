@@ -1,0 +1,18 @@
+# The entry names every place: `run` hands `join` three paths, so the files it reads and writes are those files, each
+# a place of its own (rule 5: a place a caller makes whole is touched where that caller is on the calls that lead
+# there). `read_pair` reads both and gives a str, of no type of the code's, back to `join`, which writes it.
+
+route storage.run
+step run/join
+step run/join/read_pair
+
+line entry > run call
+line File(data/first.txt) > run/join/read_pair own
+line File(data/second.txt) > run/join/read_pair own
+line run/join/read_pair > run/join back
+line run/join > File(out/combined.txt) own
+
+side entry left
+side File(data/first.txt) left
+side File(data/second.txt) left
+side File(out/combined.txt) right

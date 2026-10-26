@@ -24,11 +24,18 @@ fn repository(test: &str) -> PathBuf {
 
 /// The server, and the address it serves at, read from what it says when it starts.
 fn serve(repo: &Path) -> (Child, String) {
+    serve_with(repo, &[])
+}
+
+/// The server, started with `more` arguments; its standard input is a pipe the test holds.
+fn serve_with(repo: &Path, more: &[&str]) -> (Child, String) {
     let cache = std::env::temp_dir().join(format!("atlas-serve-cache-{}", std::process::id()));
     let mut child = Command::new(env!("CARGO_BIN_EXE_atlas"))
         .args(["serve", "--no-open", "--port", "0"])
+        .args(more)
         .arg(repo)
         .env("XDG_CACHE_HOME", cache)
+        .stdin(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
         .expect("atlas serve starts");
@@ -66,13 +73,32 @@ fn tool(repo: &Path, name: &str, mut args: Value) -> String {
     reply["result"]["content"][0]["text"].as_str().unwrap_or_else(|| panic!("{reply}")).to_string()
 }
 
+fn complete(at: &str) -> (String, String) {
+    for _ in 0..300 {
+        let (_, body) = send(at, "GET", "/api/drawn", None, false);
+        let state: Value = serde_json::from_str(&body).unwrap();
+        if state["phase"] == "ready" {
+            let (_, page) = send(at, "GET", "/", None, false);
+            return (state["drawn"].as_str().unwrap().to_string(), page);
+        }
+        assert_ne!(state["phase"], "failed", "{state}");
+        std::thread::sleep(std::time::Duration::from_millis(100));
+    }
+    panic!("the complete page was not served");
+}
+
+fn snapshot(at: &str) -> Value {
+    serde_json::from_str(&send(at, "GET", "/api/snapshot", None, false).1).unwrap()
+}
+
 #[test]
 fn the_page_and_the_agent_share_one_view() {
     let repo = repository("shared");
     let (mut server, at) = serve(&repo);
 
-    let (status, page) = send(&at, "GET", "/", None, false);
-    assert!(status.contains("200") && page.contains("\"served\":true"), "the page knows it is served: {status}");
+    let (_, page) = complete(&at);
+    assert!(page.contains("/api/snapshot"), "the viewer requests its current reading");
+    assert_eq!(snapshot(&at)["projects"]["spots"]["served"], true);
     let (history, page) = send(&at, "GET", "/history", None, false);
     assert!(history.contains("200") && page.contains("Atlas history"), "the history beside the page: {history}");
     let mut conn = TcpStream::connect(&at).unwrap();
@@ -129,9 +155,36 @@ fn the_page_and_the_agent_share_one_view() {
 }
 
 /// What the server has drawn: the name of the drawing a page shows.
+/// Whether `child` has ended within `seconds`.
+fn ends_within(child: &mut Child, seconds: u64) -> bool {
+    let until = std::time::Instant::now() + std::time::Duration::from_secs(seconds);
+    while std::time::Instant::now() < until {
+        if child.try_wait().unwrap().is_some() {
+            return true;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(50));
+    }
+    false
+}
+
+#[test]
+fn a_server_started_by_a_program_ends_with_it() {
+    let repo = repository("tethered");
+    let (mut tethered, _) = serve_with(&repo, &["--exit-on-stdin-close"]);
+    let (mut free, _) = serve(&repo);
+    // the system closes a program's end of the pipe when the program ends, however it ends
+    drop(tethered.stdin.take());
+    drop(free.stdin.take());
+    assert!(ends_within(&mut tethered, 10), "the server ends once its standard input closes");
+    assert!(tethered.wait().unwrap().success());
+    assert!(!ends_within(&mut free, 1), "a server started without the flag serves on, as from a terminal");
+    free.kill().ok();
+}
+
 fn drawn(at: &str) -> Option<String> {
     let (_, body) = send(at, "GET", "/api/drawn", None, false);
-    serde_json::from_str::<Value>(&body).ok()?["drawn"].as_str().map(String::from)
+    let state = serde_json::from_str::<Value>(&body).ok()?;
+    (state["phase"] == "ready").then(|| state["drawn"].as_str().map(String::from)).flatten()
 }
 
 #[test]
@@ -139,9 +192,9 @@ fn the_page_follows_the_code() {
     let repo = repository("follows");
     let (mut server, at) = serve(&repo);
 
-    let (_, page) = send(&at, "GET", "/", None, false);
-    let first = drawn(&at).expect("a drawing, once the page is asked for");
-    assert!(page.contains(&format!("\"drawn\":\"{first}\"")), "the page knows which drawing it is");
+    let (first, page) = complete(&at);
+    assert!(page.contains("/api/snapshot"), "the served viewer requests complete readings");
+    assert_eq!(snapshot(&at)["projects"]["spots"]["drawn"], first);
 
     std::fs::write(
         repo.join("src/spots/__init__.py"),
@@ -154,8 +207,39 @@ fn the_page_follows_the_code() {
             drawn(&at).filter(|d| *d != first)
         })
         .expect("the server draws the changed code by itself");
-    let (_, page) = send(&at, "GET", "/", None, false);
-    assert!(page.contains(&format!("\"drawn\":\"{next}\"")) && page.contains("spots.twice"), "the page asked for next is the new drawing");
+    let updated = snapshot(&at);
+    assert_eq!(updated["projects"]["spots"]["drawn"], next);
+    assert!(updated["projects"]["spots"]["nodes"].to_string().contains("spots.twice"), "the snapshot holds the changed code");
+
+    server.kill().ok();
+    let _ = std::fs::remove_dir_all(repo.parent().unwrap());
+}
+
+/// Beside the page, the files Atlas reads, each with what the graph defines in it: the code's file
+/// holds its function, a file the graph defines nothing in is listed with none, and what git keeps
+/// or ignores is not listed.
+#[test]
+fn the_files_are_listed_with_what_the_graph_defines_in_them() {
+    let repo = repository("files");
+    std::fs::write(repo.join("README.md"), "# spots\n").unwrap();
+    std::fs::write(repo.join(".gitignore"), "out/\n").unwrap();
+    std::fs::create_dir_all(repo.join("out")).unwrap();
+    std::fs::write(repo.join("out/counts.csv"), "n\n1\n").unwrap();
+    let (mut server, at) = serve(&repo);
+
+    complete(&at);
+    let (status, body) = send(&at, "GET", "/api/files", None, false);
+    assert_eq!(status, "HTTP/1.1 200 OK");
+    let listed: Value = serde_json::from_str(&body).unwrap();
+    let files: Vec<&Value> = listed["files"].as_array().unwrap().iter().collect();
+    let file = |path: &str| files.iter().find(|f| f["path"] == path).copied();
+    let code = file("src/spots/__init__.py").expect("the code's file is listed");
+    let named: Vec<&str> = code["facts"].as_array().unwrap().iter().filter_map(|f| f["name"].as_str()).collect();
+    assert!(named.contains(&"count"), "the function is a fact of its file: {code}");
+    assert!(code["facts"].as_array().unwrap().iter().all(|f| f["entry"].is_boolean()), "each fact says whether a route starts at it");
+    assert_eq!(file("README.md").expect("a file without code is listed")["facts"], json!([]));
+    assert!(file("out/counts.csv").is_none(), "what git ignores is not listed");
+    assert!(files.iter().all(|f| !f["path"].as_str().unwrap().starts_with(".git/")), "what git keeps is not listed");
 
     server.kill().ok();
     let _ = std::fs::remove_dir_all(repo.parent().unwrap());
@@ -168,8 +252,7 @@ fn the_page_follows_the_code() {
 fn a_vision_is_drawn_beside_the_working_tree() {
     let repo = repository("vision");
     let (mut server, at) = serve(&repo);
-    let _ = send(&at, "GET", "/", None, false);
-    let first = drawn(&at).expect("a drawing, once the page is asked for");
+    let (first, _) = complete(&at);
 
     let sketch = "def count(n: int) -> int:\n    return n + 1\n\n\ndef twice(n: int) -> int:\n    return count(count(n))\n";
     let told = tool(&repo, "vision", json!({"title": "count twice", "files": {"src/spots/__init__.py": sketch}}));
@@ -183,8 +266,8 @@ fn a_vision_is_drawn_beside_the_working_tree() {
             drawn(&at).filter(|d| *d != first)
         })
         .expect("the server draws the vision by itself");
-    let (_, page) = send(&at, "GET", "/", None, false);
-    assert!(page.contains(&format!("\"drawn\":\"{next}\"")), "the page asked for next is the vision");
+    let page = snapshot(&at).to_string();
+    assert!(page.contains(&format!("\"drawn\":\"{next}\"")), "the snapshot is the vision");
     assert!(
         page.contains("\"diff\":") && page.contains("\"subject\":\"count twice\"") && page.contains("spots.twice"),
         "A and B as one picture"
@@ -197,7 +280,7 @@ fn a_vision_is_drawn_beside_the_working_tree() {
             drawn(&at).filter(|d| *d != next)
         })
         .expect("the server draws the working tree again");
-    let (_, page) = send(&at, "GET", "/", None, false);
+    let page = snapshot(&at).to_string();
     assert!(page.contains(&format!("\"drawn\":\"{alone}\"")) && !page.contains("\"diff\":"), "the working tree alone");
 
     server.kill().ok();

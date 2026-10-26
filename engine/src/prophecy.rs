@@ -4,31 +4,11 @@
 //! `@prophecy(supersedes="pkg.Old")` in Python, the attribute `#[doc = "prophecy: supersedes=pkg::Old"]`
 //! (or `#[prophecy(supersedes = "pkg::Old")]` where a macro writes it) in Rust, the JSDoc tag
 //! `/** @prophecy supersedes=pkg.Old */` in TypeScript. The readers find the marker; what it says is
-//! read here, once.
+//! read here, once, and a marker is written here in each form.
 
 use indexmap::IndexMap;
-use serde::{Deserialize, Serialize};
-use ts_rs::TS;
 
-use crate::model::{Edge, EdgeKind, Entry, EntryKind, Node, NodeKind};
-
-/// What a prophecy says of itself.
-#[derive(Serialize, Deserialize, TS, Clone, Debug, Default, PartialEq, Eq)]
-#[ts(export)]
-pub struct Prophecy {
-    /// The existing thing the prophecy replaces: it stays until the prophecy is built.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub supersedes: Option<String>,
-    /// The place is known and the shape is not.
-    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
-    pub veiled: bool,
-    /// The shape waits on an open question, as an issue (`#144`).
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub sealed: Option<String>,
-    /// The node `supersedes` names, once the graph is whole: its id.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub replaces: Option<String>,
-}
+use crate::model::{Edge, EdgeKind, Entry, EntryKind, Node, NodeKind, Prophecy};
 
 impl Prophecy {
     /// The arguments of a marker: `supersedes=pkg.Old veiled sealed="#144"`, or the same as a call
@@ -76,25 +56,73 @@ impl Prophecy {
     }
 }
 
-/// What the graph, once whole, says of its prophecies: the node each `supersedes` names (by its id,
-/// where `::` and `.` part a path alike, or by the one id that ends so), and a route for each
-/// operation of a prophecy that no other prophecy calls, so that a sketch is read as a route is.
+/// The form a language marks a prophecy in: one construct, written three ways.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Form {
+    /// Python's decorator, `@prophecy(supersedes="pkg.Old")`: a call of the project's own
+    /// `prophecy`, which Python reads by its name.
+    Decorator,
+    /// Rust's attribute, `#[doc = "prophecy: supersedes=pkg::Old"]`.
+    Attribute,
+    /// TypeScript's JSDoc tag, `/** @prophecy supersedes=pkg.Old */`.
+    JsDoc,
+}
+
+impl Form {
+    /// The line that marks the item that starts at a line, at the item's indentation. A decorator is
+    /// always a call: the project's `prophecy` takes keywords and gives the decorator, so a bare
+    /// `@prophecy` would make the item what the call gives, and ty would type it so.
+    pub fn marker(self, indent: &str, supersedes: Option<&str>) -> String {
+        let by = supersedes.map(|s| format!(" supersedes={s}")).unwrap_or_default();
+        match self {
+            Form::Decorator => format!("{indent}@prophecy({})", supersedes.map(|s| format!("supersedes=\"{s}\"")).unwrap_or_default()),
+            Form::Attribute => format!("{indent}#[doc = \"prophecy:{by}\"]"),
+            Form::JsDoc => format!("{indent}/** @prophecy{by} */"),
+        }
+    }
+
+    /// Put the marker above the item at `line` (0-based). An item that has a JSDoc right above it
+    /// takes the tag into that comment, which a second comment would hide.
+    pub fn insert(self, lines: &mut Vec<String>, line: usize, marker: String) {
+        match self {
+            Form::JsDoc if line > 0 && lines[line - 1].trim_end().ends_with("*/") => {
+                let tag = marker.trim().trim_start_matches("/**").trim_end_matches("*/").trim().to_string();
+                let indent: String = marker.chars().take_while(|c| c.is_whitespace()).collect();
+                let above = lines[line - 1].trim().to_string();
+                if above.starts_with("/**") && above.ends_with("*/") && above.len() > 5 {
+                    let said = above.trim_start_matches("/**").trim_end_matches("*/").trim().to_string();
+                    lines.splice(
+                        line - 1..line,
+                        [format!("{indent}/**"), format!("{indent} * {said}"), format!("{indent} * {tag}"), format!("{indent} */")],
+                    );
+                } else if above.starts_with("*/") || above.starts_with('*') {
+                    lines.insert(line - 1, format!("{indent} * {tag}"));
+                } else {
+                    lines.insert(line, marker);
+                }
+            }
+            _ => lines.insert(line, marker),
+        }
+    }
+}
+
+/// What the graph, once whole, says of its prophecies: the node each `supersedes` names (`named`),
+/// or the nodes when it names several, and a route for each operation of a prophecy that no other
+/// prophecy calls, so that a sketch is read as a route is.
 pub fn settle(nodes: &mut IndexMap<String, Node>, edges: &[Edge]) {
-    let ids: Vec<String> = nodes.keys().cloned().collect();
-    let replaces: Vec<(String, String)> = nodes
+    let named: Vec<(String, Vec<String>)> = nodes
         .values()
         .filter_map(|p| {
-            let name = p.prophecy.as_ref()?.supersedes.as_deref()?.replace("::", ".");
-            let tail = format!(".{name}");
-            let mut ends =
-                ids.iter().filter(|id| **id != p.id && nodes.get(*id).is_some_and(|n| n.prophecy.is_none()) && id.ends_with(&tail));
-            let found = ids.iter().find(|id| **id == name && **id != p.id).or_else(|| ends.next().filter(|_| ends.next().is_none()));
-            Some((p.id.clone(), found?.clone()))
+            let written = p.prophecy.as_ref()?.supersedes.as_deref()?;
+            Some((p.id.clone(), named(written, p, nodes)))
         })
         .collect();
-    for (id, target) in replaces {
+    for (id, mut found) in named {
         if let Some(p) = nodes.get_mut(&id).and_then(|n| n.prophecy.as_mut()) {
-            p.replaces = Some(target);
+            match found.len() {
+                1 => p.replaces = found.pop(),
+                _ => p.candidates = found,
+            }
         }
     }
     let prophetic = |nodes: &IndexMap<String, Node>, id: &str| {
@@ -115,6 +143,36 @@ pub fn settle(nodes: &mut IndexMap<String, Node>, edges: &[Edge]) {
             n.entry = Some(Entry::new(EntryKind::Prophecy, label));
         }
     }
+}
+
+/// The nodes a prophecy's `supersedes` names: the node whose id it is, else the code's nodes whose
+/// id ends so, prophecies and libraries aside. `::` and `.` part a path alike; a path written in
+/// Rust's form starts where the prophecy's module says: `crate::` at its crate (as does the crate's
+/// name, written with `_` for `-`), `self::` at the module, `super::` at the module above it.
+fn named(written: &str, p: &Node, nodes: &IndexMap<String, Node>) -> Vec<String> {
+    let mut path: Vec<&str> = written.split("::").flat_map(|s| s.split('.')).collect();
+    if written.contains("::") {
+        let mut at: Vec<&str> = p.module.split('.').collect();
+        let supers = path.iter().take_while(|s| **s == "super").count();
+        // how much of the module's path the written one starts from, and how many of its words say so
+        let from = match path[0] {
+            "crate" => Some((1, 1)),
+            head if head == at[0].replace('-', "_") => Some((1, 1)),
+            "self" => Some((at.len(), 1)),
+            "super" => Some((at.len().saturating_sub(supers).max(1), supers)),
+            _ => None,
+        };
+        if let Some((keep, said)) = from {
+            at.truncate(keep);
+            path = at.into_iter().chain(path.into_iter().skip(said)).collect();
+        }
+    }
+    let name = path.join(".");
+    if nodes.get(&name).is_some_and(|n| n.id != p.id) {
+        return vec![name];
+    }
+    let tail = format!(".{name}");
+    nodes.values().filter(|n| n.id != p.id && n.prophecy.is_none() && !n.library && n.id.ends_with(&tail)).map(|n| n.id.clone()).collect()
 }
 
 /// Split on commas and spaces that are not inside quotes.
@@ -159,7 +217,7 @@ mod tests {
 
     #[test]
     fn one_meaning_in_three_forms() {
-        let want = Prophecy { supersedes: Some("pkg.Old".into()), veiled: false, sealed: Some("#144".into()), replaces: None };
+        let want = Prophecy { supersedes: Some("pkg.Old".into()), sealed: Some("#144".into()), ..Default::default() };
         assert_eq!(Prophecy::of_decorator(r##"prophecy(supersedes="pkg.Old", sealed="#144")"##), Some(want.clone()));
         assert_eq!(Prophecy::of_decorator(r##"doc = "prophecy: supersedes=pkg.Old sealed=#144""##), Some(want.clone()));
         assert_eq!(Prophecy::of_decorator(r##"prophecy(supersedes = "pkg.Old", sealed = "#144")"##), Some(want.clone()));
@@ -171,6 +229,30 @@ mod tests {
         assert_eq!(Prophecy::of_decorator("prophecy"), Some(Prophecy::default()));
         assert_eq!(Prophecy::of_decorator("kit.prophecy(veiled=True)").map(|p| p.veiled), Some(true));
         assert_eq!(Prophecy::of_jsdoc("/** @prophecy veiled */").map(|p| p.veiled), Some(true));
+    }
+
+    #[test]
+    fn each_form_writes_what_it_reads() {
+        for form in [Form::Decorator, Form::Attribute, Form::JsDoc] {
+            let marker = form.marker("    ", Some("pkg.Old"));
+            assert!(marker.starts_with("    "), "{marker}");
+            let read = match form {
+                Form::JsDoc => Prophecy::of_jsdoc(&marker),
+                _ => Prophecy::of_decorator(marker.trim().trim_start_matches('@').trim_start_matches("#[").trim_end_matches(']')),
+            };
+            assert_eq!(read.and_then(|p| p.supersedes).as_deref(), Some("pkg.Old"), "{form:?}: {marker}");
+        }
+        assert_eq!(Form::Decorator.marker("", None), "@prophecy()");
+    }
+
+    #[test]
+    fn a_jsdoc_tag_goes_into_the_comment_above() {
+        let mut lines: Vec<String> = ["/** Where reports wait. */", "export class Vault {}"].map(String::from).to_vec();
+        Form::JsDoc.insert(&mut lines, 1, Form::JsDoc.marker("", None));
+        assert_eq!(lines, ["/**", " * Where reports wait.", " * @prophecy", " */", "export class Vault {}"]);
+        let mut lines: Vec<String> = ["# Where reports wait.", "class Vault:"].map(String::from).to_vec();
+        Form::Decorator.insert(&mut lines, 1, Form::Decorator.marker("", None));
+        assert_eq!(lines, ["# Where reports wait.", "@prophecy()", "class Vault:"]);
     }
 
     #[test]

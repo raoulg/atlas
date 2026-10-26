@@ -8,11 +8,11 @@ use std::collections::HashMap;
 use indexmap::IndexMap;
 use tree_sitter::Node as TsNode;
 
-use super::{def_node, expand, path_parts, resolve, resolve_value, Module};
+use super::module::{def_node, expand, path_parts, resolve, resolve_value, shadowed, Module};
 use crate::knowledge::{self, PathFn, PathMethod};
 use crate::model::{Node, NodeKind};
-use crate::paths::{cross, hole, lit, parent, substitute, union, Built, Seg};
-use crate::tree::{named_children, text, unquote, walk};
+use crate::paths::{bound as named_by, cross, environment_named, hole, lit, or_else, parent, substitute, union, Built, Seg};
+use crate::tree::{beneath, named_children, text, unquote, walk};
 
 const DEPTH: u32 = 12;
 
@@ -64,14 +64,14 @@ impl<'a> Eval<'a> {
         if depth > DEPTH {
             return vec![hole("…")];
         }
+        let e = beneath(e, super::module::WRAPPERS);
         let src = &at.m.src;
         let first =
             |e: TsNode<'a>| named_children(e).into_iter().next().map(|x| self.of(at, x, depth + 1)).unwrap_or_else(|| vec![hole("value")]);
         let field = |f: &str| e.child_by_field_name(f).map(|x| self.of(at, x, depth + 1)).unwrap_or_else(|| vec![hole("value")]);
         match e.kind() {
             "string_literal" | "raw_string_literal" => vec![lit(&unquote(text(e, src)))],
-            "reference_expression" => field("value"),
-            "parenthesized_expression" | "try_expression" | "await_expression" | "else_clause" => first(e),
+            "else_clause" => first(e),
             "identifier" => self.name(at, text(e, src), e.start_byte(), depth),
             "scoped_identifier" => {
                 let parts = path_parts(Some(e), src);
@@ -112,7 +112,7 @@ impl<'a> Eval<'a> {
         let src = &at.m.src;
         if let Some(scope) = at.scope {
             match bound(scope, name, pos, src) {
-                Some(Bound::Value(v)) => return self.of(at, v, depth + 1),
+                Some(Bound::Value(v)) => return named_by(name, self.of(at, v, depth + 1)),
                 Some(Bound::Field(pattern, field, value)) => {
                     return self.taken_apart(at, pattern, &field, value, depth).unwrap_or_else(|| vec![hole(name)])
                 }
@@ -122,7 +122,7 @@ impl<'a> Eval<'a> {
                 return vec![vec![Seg::Param(name.to_string())]];
             }
             if let Some(v) = const_in(scope, name, src) {
-                return self.of(at, v, depth + 1);
+                return named_by(name, self.of(at, v, depth + 1));
             }
         }
         self.constant(at.m, &[name.to_string()], depth).unwrap_or_else(|| vec![hole(name)])
@@ -143,7 +143,7 @@ impl<'a> Eval<'a> {
             [] => return None,
         };
         let v = const_in(home.tree.root_node(), name, &home.src)?;
-        Some(self.of(At { m: home, scope: None, params: &[] }, v, depth + 1))
+        Some(named_by(name, self.of(At { m: home, scope: None, params: &[] }, v, depth + 1)))
     }
 
     /// A field of the value a method runs on, as the struct literals that build that type set it
@@ -207,12 +207,9 @@ impl<'a> Eval<'a> {
         if depth > DEPTH {
             return None;
         }
+        let e = beneath(e, super::module::WRAPPERS);
         let src = &at.m.src;
         match e.kind() {
-            "reference_expression" => self.parsed(at, e.child_by_field_name("value")?, depth + 1),
-            "parenthesized_expression" | "try_expression" | "await_expression" => {
-                self.parsed(at, named_children(e).into_iter().next()?, depth + 1)
-            }
             "identifier" => {
                 let name = text(e, src);
                 let named = |p: Option<TsNode>| {
@@ -418,15 +415,15 @@ impl<'a> Eval<'a> {
                     on().into_iter().flat_map(|b| arg(0).into_iter().map(move |x| with_extension(&b, &x))).collect()
                 }
                 Some(PathMethod::Sibling) => cross(&on().iter().map(parent).collect::<Vec<_>>(), &arg(0), "/"),
-                // what an `Option` or a `Result` holds, or what it falls back to
-                None if super::OR_ELSE.contains(&method) && !method.starts_with("map") => union(on(), arg(0)),
+                // what an `Option` or a `Result` holds, or what it falls back to where it holds nothing
+                None if super::module::OR_ELSE.contains(&method) && !method.starts_with("map") => or_else(on(), arg(0)),
                 None if knowledge::hands_on(method) && !matches!(method, "map" | "and_then") => on(),
-                None => vec![hole(method)],
+                None => vec![hole("call")],
             };
         }
         let parts = expand(at.m, &path_parts(Some(f), src));
         // `Some(x)` and `Ok(x)` hold `x`
-        if matches!(parts.as_slice(), [v] if super::HOLDING.contains(&v.as_str())) {
+        if matches!(parts.as_slice(), [v] if super::module::HOLDING.contains(&v.as_str())) {
             return arg(0);
         }
         let n = parts.len();
@@ -447,15 +444,18 @@ impl<'a> Eval<'a> {
             Some(PathFn::Home) => vec![lit("~")],
             Some(PathFn::Here) => vec![lit(".")],
             Some(PathFn::Temp) => vec![lit(knowledge::TEMP_DIR)],
-            None => self
-                .given(at, &path_parts(Some(f), src), &args, depth)
-                .unwrap_or_else(|| vec![hole(parts.last().map(String::as_str).unwrap_or("call"))]),
+            Some(PathFn::Environment) => vec![environment_named(&arg(0)).unwrap_or_else(|| hole("call"))],
+            None => self.given(at, f, &args, depth).unwrap_or_else(|| vec![hole("call")]),
         }
     }
 
     /// What one of the program's functions gives back, its parameters bound to what the call
-    /// hands them.
-    fn given(&self, at: At<'a, '_>, parts: &[String], args: &[TsNode<'a>], depth: u32) -> Option<Vec<Built>> {
+    /// hands them; none where the path `f` names a local of the body.
+    fn given(&self, at: At<'a, '_>, f: TsNode<'a>, args: &[TsNode<'a>], depth: u32) -> Option<Vec<Built>> {
+        let parts = &path_parts(Some(f), &at.m.src);
+        if shadowed(at.scope, f, parts, &at.m.src) {
+            return None;
+        }
         let id = resolve_value(at.m, parts, self.modules, &self.nodes, self.crate_ids).filter(|id| !id.starts_with("ext:"))?;
         let n = self.nodes.get(&id).filter(|n| matches!(n.kind, NodeKind::Function | NodeKind::Method))?;
         let home = self.modules.get(&n.module)?;
@@ -476,12 +476,15 @@ impl<'a> Eval<'a> {
     fn macro_value(&self, at: At<'a, '_>, mac: TsNode<'a>, depth: u32) -> Vec<Built> {
         let src = &at.m.src;
         let name = mac.child_by_field_name("macro").map(|x| path_parts(Some(x), src)).and_then(|p| p.last().cloned()).unwrap_or_default();
-        let Some(tt) = named_children(mac).into_iter().find(|x| x.kind() == "token_tree") else { return vec![hole(&name)] };
+        let Some(tt) = named_children(mac).into_iter().find(|x| x.kind() == "token_tree") else { return vec![hole("call")] };
         let groups = token_groups(tt);
+        // the directory the crate's manifest is in, fixed where the program is built
+        let built_in = |var: &str| matches!(groups.first().map(Vec::as_slice), Some([x]) if unquote(text(*x, src)) == var);
         match name.as_str() {
             "format" | "format_args" => self.format(at, mac.start_byte(), &groups, depth),
             "concat" => groups.iter().fold(vec![vec![]], |acc, g| cross(&acc, &self.tokens(at, g, depth), "")),
-            _ => vec![hole(&name)],
+            m if knowledge::RUST_BUILD_DIRS.iter().any(|(mac, var)| *mac == m && built_in(var)) => vec![lit(&at.m.manifest_dir)],
+            _ => vec![hole("call")],
         }
     }
 
@@ -554,7 +557,8 @@ impl<'a> Eval<'a> {
             {
                 self.of(at, *x, depth + 1)
             }
-            _ => vec![hole(g.iter().find(|t| t.kind() == "identifier").map(|t| text(*t, src)).unwrap_or("value"))],
+            // an expression written as tokens that none of these is: no value the code names
+            _ => vec![hole("value")],
         }
     }
 }
@@ -647,7 +651,7 @@ fn bound<'a>(scope: TsNode<'a>, name: &str, pos: usize, src: &[u8]) -> Option<Bo
         let inner: Vec<TsNode> = named_children(p).into_iter().filter(|c| Some(c.id()) != ty.map(|t| t.id())).collect();
         match p.kind() {
             "tuple_struct_pattern"
-                if ty.map_or(false, |t| super::HOLDING.contains(&text(t, src))) && matches!(inner.as_slice(), [x] if named(*x)) =>
+                if ty.map_or(false, |t| super::module::HOLDING.contains(&text(t, src))) && matches!(inner.as_slice(), [x] if named(*x)) =>
             {
                 Some(Bound::Value(v))
             }
@@ -728,21 +732,11 @@ fn returns(body: TsNode) -> Vec<TsNode> {
     out
 }
 
-/// A path with another extension: `page.json` with `html` is `page.html`.
+/// A path with another extension: `page.json` with `html` is `page.html`, with an extension the
+/// code builds (`format!("{}.part", id)`) `page.{}.part`, and with none `page`.
 fn with_extension(b: &Built, ext: &Built) -> Built {
-    let [Seg::Lit(ext)] = ext.as_slice() else { return b.clone() };
-    let mut out = b.clone();
-    if let Some(s) = crate::paths::last_lit(&mut out) {
-        let name_at = s.rfind('/').map_or(0, |i| i + 1);
-        if let Some(dot) = s[name_at..].rfind('.').filter(|d| *d > 0) {
-            s.truncate(name_at + dot);
-        }
-        if !ext.is_empty() {
-            s.push('.');
-            s.push_str(ext);
-        }
-    }
-    out
+    let none = matches!(ext.as_slice(), [Seg::Lit(e)] if e.is_empty());
+    crate::paths::with_suffix(b, &if none { vec![] } else { [lit("."), ext.clone()].concat() })
 }
 
 /// One call of a function of the program, with the argument each parameter is handed.

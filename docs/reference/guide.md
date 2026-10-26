@@ -47,16 +47,25 @@ Read it from left to right:
   into what it holds (`folders: Folders`). Inside `graph_of`, `parse · one of 3` is a
   choice: the same call goes to the Python, the Rust or the TypeScript reader.
 - **A number `×n` on a line** is n lines of one channel between the same two boxes, drawn as one;
-  opening a box splits it into the lines. **`+24 types` on a pill** counts the values that only that
+  opening a box splits it into the lines. **`+25 types` on a pill** counts the values that only that
   step takes and nothing else touches; opening the pill draws them, each on the step that takes it.
 - **Click any pill** to open it into its own steps, and **show code** to see its source.
 - **A step is a call.** A function the route calls twice is two steps, and a method called
-  on a subclass's value is that subclass's (`ComparePlot.plot`). Values are drawn by the
+  on a subclass's value is that subclass's (`ComparePlot.plot`); one the call names, through a
+  class or `super()`, keeps its own class's name (`Cached.read`). Values are drawn by the
   names the code holds them by (`Graph · g`, `DataFrame · data`), and a step that changes a
   value hands it on under the same name. A library operation Atlas does not read is a step in
   italics where the code names its result (`to_numpy`), or where it changes the container it is
-  called on (`rows.append(row)` hands on `rows`). In a notebook, each call that makes
-  a figure makes its own (`Figure 3 · ResidualPlot.plot`).
+  called on (`rows.append(row)` hands on `rows`). In a notebook, a figure is drawn on
+  the screen and named by what holds it: a method that keeps its figure in the value it runs
+  on draws, with every other step on that value, on the value's one figure (`Figure 1 · Chart ·
+  chart`); any other call that makes a figure makes its own (`Figure 2 · Chart.line`). A value
+  that is set to hold what another holds (`other.fig = self.fig`) draws on the other's figure,
+  where the figure it would make is made only when the field that keeps it holds none
+  (`if self.ax is None:`); one made under a test of another field is a figure of its own. A
+  value whose class keeps two figures in fields of its own holds two, each named by the first
+  field that keeps it (`Fit · fit.res_fig`). A chart set into a board's part (`self.left = left`)
+  is that chart there: the board draws on the figure the chart holds, named where it was made.
 - **Files fold into their folders** once a picture holds more than a column's worth:
   `File(artefacts/) · 8` opens into what is in it with a click.
 - **Shift-click a package** in the overview to focus on it: the picture keeps the packages
@@ -139,7 +148,7 @@ one.
 A part opens into its packages, each as one step from what its own code reads to what it
 writes. Between packages stand the types that cross them: data one package makes and
 another takes. A sink or a repository is not drawn as a type there: it is a door to its
-database, and the database is drawn. A dotted line joins a package to one it only calls.
+database, and the database is drawn. A dotted line joins a package to one it calls.
 A package opens into its subpackages, and a module into its routes and the functions other
 packages call in it. This overview stands even when Atlas finds no entry points.
 
@@ -213,14 +222,15 @@ findings as data.
 | `prophecy` | Code that is built does not lean on code that is not. |
 
 Each principle, with its reasoning, the idioms behind it and what each language lets Atlas
-trace, is in [principles.md](principles.md). Atlas holds itself to them: `atlas check` on
-this repository finds nothing, and the tests keep it that way.
+trace, is in [principles.md](principles.md), with what each rule cannot see. A finding is a signal
+to look at the code and at what the rule claims, never a verdict and never a target: Atlas keeps
+what `atlas check` asks of itself as a reviewed list, each finding with why it stands.
 
 ## Revelation: what a design leaves to build
 
 A design can live in the tree as sketch code, marked as not built yet: a *prophecy*. Python marks
-it with a decorator, `@prophecy(supersedes="pkg.Old")` (a no-op function in the project; Atlas
-matches it by name), Rust with `#[doc = "prophecy: supersedes=pkg::Old"]`, TypeScript with a
+it with a decorator, `@prophecy(supersedes="pkg.Old")` or `@prophecy()` (a no-op function in the
+project, in a module that imports nothing of the project; Atlas matches it by name), Rust with `#[doc = "prophecy: supersedes=pkg::Old"]`, TypeScript with a
 `@prophecy supersedes=pkg.Old` tag in the JSDoc before a `declare` function, class, interface or
 type. `veiled` says the place is known and the shape is not, `sealed="#144"` that the shape waits
 on an open question.
@@ -245,7 +255,7 @@ else. The files are left for you to commit; sketch the shape next.
 
 A vision that is decided becomes a prophecy with the MCP tool `prophetize`: the vision's files are
 written into the tree, every item the vision adds marked in the language of its file (and, for
-Python, the project's `prophecy` imported, and the bodies that ty would refuse made `raise NotImplementedError`), and the vision is retracted. `supersedes` says which
+Python, the project's `prophecy` imported among the file's imports, and the bodies that ty would refuse made `raise NotImplementedError`; Atlas says so when the module that defines `prophecy` imports the file, since the import would go in a circle), and the vision is retracted. `supersedes` says which
 existing item an added one replaces. The files are left for you to commit; Atlas opens no branch.
 A vision that changes or removes what exists is refused, since writing it would replace built code
 with a sketch: the new item takes a new name and supersedes the old one.
@@ -254,7 +264,9 @@ with a sketch: the new item takes a new name and supersedes the old one.
 
 `atlas changes [<rev>]` reads the working tree against a git revision (`HEAD` by default)
 and lists what the edit did: the routes added and removed, the steps and places each route
-gains and loses, the ordered compositions that differ, and the findings it raises and resolves.
+gains and loses, those it keeps whose own arrows differ (`~`, with what they were), the ordered
+compositions that differ, what changed on no route, and the findings it raises and resolves. It
+is read from the union `atlas view --since` draws, so the list holds what the picture marks.
 Changing call order or repeating a call changes a composition even when the route reaches the
 same functions. JSON records each such function with its `before` and `after` bodies under
 `compositions_changed`; each body retains its choices and dispatch. `atlas changes A..B` compares two
@@ -270,6 +282,9 @@ since HEAD
     - step server.regels.vat
     - place asks an LLM create
 ```
+
+A function renamed with the same typed arrows is one step, changed: `~ step cli.draw: renamed from
+cli.plot · was plot(frame: Frame, out: Path) → None`.
 
 `atlas view --since <rev>` draws the revision and the working tree as one picture
 (`--until <rev>` draws two revisions): what both hold, drawn once, with what changed marked as a

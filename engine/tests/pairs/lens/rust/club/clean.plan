@@ -1,0 +1,59 @@
+# A lens on a table: `join` puts a Member into `members` and `member` gets one back from it; `latest` only gets a
+# Report, which holds a Member, from `reports`. The place is the table the statement names. The route of the exported
+# struct is its public functions, each called by its caller and run on the caller's Register; what `new` builds goes
+# back to that caller.
+
+route club.desk.Register
+step Register()/Register.new
+step Register()/Register.new/Register() # the struct built by its literal
+step Register()/Register.join
+step Register()/Register.member
+step Register()/Register.member/Member()
+step Register()/Register.latest
+step Register()/Register.latest/Member()
+step Register()/Register.latest/Report()
+
+line entry > Register()/Register.new call
+line entry > Register()/Register.join call
+line entry > Register()/Register.member call
+line entry > Register()/Register.latest call
+
+line Connection·conn > Register()/Register.new/Register() value # the literal is handed new's connection
+line Register()/Register.new/Register() > Register@Register()/Register.new/Register() value
+line Register@Register()/Register.new/Register() > Register()/Register.new value
+line Register()/Register.new > Register@Register()/Register.new value
+line Register > Register()/Register.join value # the caller's instance: every method runs on it
+line Register > Register()/Register.member value
+line Register > Register()/Register.latest value
+
+line Member·who > Register()/Register.join value
+line Register()/Register.join > SQLite(members) own
+line Register()/Register.join > _@Register()/Register.join value   # `self.conn.execute(..)?`, in its own code: a rusqlite error
+home _@Register()/Register.join Register()
+
+line SQLite(members) > Register()/Register.member own
+line Register()/Register.member/Member() > Member@Register()/Register.member/Member() value
+line Member@Register()/Register.member/Member() > Register()/Register.member value
+line Register()/Register.member > Member@Register()/Register.member value
+
+line SQLite(reports) > Register()/Register.latest own
+line Register()/Register.latest/Member() > Member@Register()/Register.latest/Member() value
+line Member@Register()/Register.latest/Member() > Register()/Register.latest/Report() value   # the author
+line Register()/Register.latest/Report() > Report@Register()/Register.latest/Report() value
+line Report@Register()/Register.latest/Report() > Register()/Register.latest value
+line Register()/Register.latest > Report@Register()/Register.latest value
+
+home Connection·conn Register()
+home Register@Register()/Register.new/Register() Register()/Register.new
+home Register@Register()/Register.new Register()
+home Register Register()
+home Member·who Register()
+home Member@Register()/Register.member/Member() Register()/Register.member
+home Member@Register()/Register.member Register()
+home Member@Register()/Register.latest/Member() Register()/Register.latest
+home Report@Register()/Register.latest/Report() Register()/Register.latest
+home Report@Register()/Register.latest Register()
+
+side entry left
+side SQLite(members) between
+side SQLite(reports) left

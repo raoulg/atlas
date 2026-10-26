@@ -76,7 +76,9 @@ pub fn prophetize(
         // an item inside an added class is marked with its class
         let top: Vec<&Node> =
             added.iter().copied().filter(|n| !n.cls.as_deref().is_some_and(|c| added.iter().any(|a| a.id == c))).collect();
-        let ext = rel.extension().and_then(|e| e.to_str()).unwrap_or("");
+        let lang = crate::language::of_file(rel);
+        // what only Python asks: a body ty accepts in a sketch, and the `prophecy` the decorator calls
+        let python = lang.as_ref().is_some_and(|l| l.name() == "python");
         let mut new_lines: Vec<String> = lines.iter().map(|l| l.to_string()).collect();
         // what is written at a line: the body of a Python sketch that ty would refuse, and the marker
         // of an item; from the bottom up, so that a line added does not move one still to come
@@ -90,7 +92,7 @@ pub fn prophetize(
                 edits.push((start as usize, 0, Edit::Marker(n)));
             }
         }
-        if ext == "py" {
+        if python {
             for n in added.iter().copied().filter(|n| matches!(n.kind, NodeKind::Function | NodeKind::Method)) {
                 let gives = n.returns.as_ref().is_some_and(|r| !r.written.is_empty() && r.written != "None");
                 if let (true, Some((_, end))) = (gives, n.span) {
@@ -110,14 +112,11 @@ pub fn prophetize(
                     let indent: String =
                         lines.get(line - 1).map(|l| l.chars().take_while(|c| c.is_whitespace()).collect()).unwrap_or_default();
                     let by = supersedes.get(&n.id).map(String::as_str);
-                    let Some(marker) = marker(ext, &indent, by) else {
-                        out.notes.push(format!(
-                            "`{}` is in a language Atlas does not mark yet: write its prophecy marker by hand",
-                            rel.display()
-                        ));
+                    let Some(form) = lang.as_ref().map(|l| l.marks()) else {
+                        out.notes.push(format!("`{}` is in no language Atlas reads: write its prophecy marker by hand", rel.display()));
                         continue;
                     };
-                    insert_marker(ext, &mut new_lines, line - 1, marker);
+                    form.insert(&mut new_lines, line - 1, form.marker(&indent, by));
                     out.marked.push(n.id.clone());
                 }
             }
@@ -126,7 +125,7 @@ pub fn prophetize(
         if text.ends_with('\n') {
             body.push('\n');
         }
-        if ext == "py" && !out.marked.is_empty() {
+        if python && !out.marked.is_empty() {
             let helper = after.iter().find_map(|g| {
                 let h = g.nodes.iter().find(|n| n.kind == NodeKind::Function && n.name == "prophecy" && !n.library)?;
                 Some((h, rel_of(g, h)))
@@ -135,7 +134,23 @@ pub fn prophetize(
                 Some((h, at)) => {
                     let imported = text.lines().any(|l| (l.starts_with("from ") || l.starts_with("import ")) && l.contains("prophecy"));
                     if !imported && !in_file(rel, &at) {
-                        body = with_import(&body, &format!("from {} import prophecy", h.module));
+                        body = with_import(&body, &h.module);
+                        if let Some(module) = top.first().map(|n| n.module.as_str()) {
+                            let helper_text = std::fs::read_to_string(repo.join(&at)).unwrap_or_default();
+                            // the package a relative import in the helper's file is taken from
+                            let package = if at.file_name().is_some_and(|f| f == "__init__.py") {
+                                h.module.as_str()
+                            } else {
+                                h.module.rsplit_once('.').map_or("", |(p, _)| p)
+                            };
+                            if imports(&helper_text, package, module) {
+                                out.notes.push(format!(
+                                    "`prophecy` is defined in `{}`, which imports `{module}`: the import of `prophecy` in `{}` goes in a circle, and the module fails to import. Keep `prophecy` in a module that imports nothing of the project",
+                                    h.module,
+                                    rel.display()
+                                ));
+                            }
+                        }
                     }
                 }
                 None => out.notes.push(
@@ -162,63 +177,81 @@ fn sketch_body(line: &str) -> Option<Vec<String>> {
     Some(vec![format!("{signature}:"), format!("{indent}    raise NotImplementedError")])
 }
 
-/// The lines that mark the item that starts at a line, at the item's indentation.
-fn marker(ext: &str, indent: &str, supersedes: Option<&str>) -> Option<String> {
-    let by = supersedes.map(|s| format!("supersedes={s}"));
-    Some(match ext {
-        "py" => format!("{indent}@prophecy{}", supersedes.map(|s| format!("(supersedes=\"{s}\")")).unwrap_or_default()),
-        "rs" => format!("{indent}#[doc = \"prophecy:{}\"]", by.map(|b| format!(" {b}")).unwrap_or_default()),
-        "ts" | "tsx" => format!("{indent}/** @prophecy{} */", by.map(|b| format!(" {b}")).unwrap_or_default()),
-        _ => return None,
-    })
-}
-
-/// Put the marker above the item at `line` (0-based). A TypeScript item that has a JSDoc right
-/// above it takes the tag into that comment, which a second comment would hide.
-fn insert_marker(ext: &str, lines: &mut Vec<String>, line: usize, marker: String) {
-    let tag = marker.trim().trim_start_matches("/**").trim_end_matches("*/").trim().to_string();
-    let indent: String = marker.chars().take_while(|c| c.is_whitespace()).collect();
-    if matches!(ext, "ts" | "tsx") && line > 0 && lines[line - 1].trim_end().ends_with("*/") {
-        let above = lines[line - 1].trim().to_string();
-        if above.starts_with("/**") && above.ends_with("*/") && above.len() > 5 {
-            let said = above.trim_start_matches("/**").trim_end_matches("*/").trim().to_string();
-            lines.splice(
-                line - 1..line,
-                [format!("{indent}/**"), format!("{indent} * {said}"), format!("{indent} * {tag}"), format!("{indent} */")],
-            );
-        } else if above.starts_with("*/") || above.starts_with('*') {
-            lines.insert(line - 1, format!("{indent} * {tag}"));
-        } else {
-            lines.insert(line, marker);
-        }
-        return;
-    }
-    lines.insert(line, marker);
-}
-
-/// A Python file with an import added before its first import, or after its docstring.
-fn with_import(text: &str, import: &str) -> String {
+/// A Python file with `from {module} import prophecy` added where isort puts it: in the block of
+/// imports from the same top-level package, before the first one whose module sorts after it; with
+/// no such block, as a block of its own after the last import; with no import, after the docstring.
+fn with_import(text: &str, module: &str) -> String {
+    let import = format!("from {module} import prophecy");
     let mut lines: Vec<&str> = text.lines().collect();
-    let first = lines.iter().position(|l| l.starts_with("import ") || l.starts_with("from "));
-    let at = first.unwrap_or_else(|| {
-        let doc = lines.first().is_some_and(|l| l.trim_start().starts_with("\"\"\""));
-        if !doc {
-            return 0;
+    let package = module.split('.').next().unwrap_or(module);
+    // each top-level import statement: its first line, its last, and the module it names
+    let mut statements: Vec<(usize, usize, &str)> = vec![];
+    let mut i = 0;
+    while i < lines.len() {
+        let l = lines[i];
+        if l.starts_with("import ") || l.starts_with("from ") {
+            let named = l.split_whitespace().nth(1).unwrap_or("");
+            let mut end = i;
+            if l.contains('(') && !l.contains(')') {
+                while end + 1 < lines.len() && !lines[end].contains(')') {
+                    end += 1;
+                }
+            }
+            statements.push((i, end, named));
+            i = end + 1;
+        } else {
+            i += 1;
         }
-        let end = lines
-            .iter()
-            .enumerate()
-            .skip(0)
-            .find(|(i, l)| (*i > 0 || l.trim().len() > 3) && l.trim_end().ends_with("\"\"\""))
-            .map_or(0, |(i, _)| i + 1);
-        end
-    });
-    lines.insert(at, import);
+    }
+    let same = |named: &str| named.split('.').next() == Some(package);
+    let block_of_its_own = !statements.is_empty() && !statements.iter().any(|(_, _, named)| same(named));
+    let at = match statements.iter().find(|(_, _, named)| same(named) && *named > module) {
+        Some((start, _, _)) => *start,
+        None => match statements.iter().rev().find(|(_, _, named)| same(named)).or(statements.last()) {
+            Some((_, end, _)) => end + 1,
+            None => {
+                let doc = lines.first().is_some_and(|l| l.trim_start().starts_with("\"\"\""));
+                if doc {
+                    lines
+                        .iter()
+                        .enumerate()
+                        .find(|(i, l)| (*i > 0 || l.trim().len() > 3) && l.trim_end().ends_with("\"\"\""))
+                        .map_or(0, |(i, _)| i + 1)
+                } else {
+                    0
+                }
+            }
+        },
+    };
+    lines.insert(at, &import);
+    if block_of_its_own {
+        lines.insert(at, "");
+    }
     let mut out = lines.join("\n");
     if text.ends_with('\n') {
         out.push('\n');
     }
     out
+}
+
+/// Whether a Python text imports module `module`: by its name, or relative to `package`, the package
+/// the text's relative imports are taken from.
+fn imports(text: &str, package: &str, module: &str) -> bool {
+    let (parent, last) = module.rsplit_once('.').unwrap_or(("", module));
+    text.lines().map(str::trim).any(|l| {
+        let named =
+            |m: &str| l == format!("import {m}") || l.starts_with(&format!("import {m} ")) || l.starts_with(&format!("from {m} import"));
+        named(module)
+            || (!parent.is_empty()
+                && l.starts_with(&format!("from {parent} import"))
+                && l.split("import").nth(1).is_some_and(|r| r.split(',').any(|n| n.trim().split_whitespace().next() == Some(last))))
+            || (parent == package
+                && (l.starts_with(&format!("from .{last} import"))
+                    || (l.starts_with("from . import")
+                        && l.split("import")
+                            .nth(1)
+                            .is_some_and(|r| r.split(',').any(|n| n.trim().split_whitespace().next() == Some(last))))))
+    })
 }
 
 /// The files with the seals of `ids` broken: `sealed=..` taken out of each prophecy's marker, in
@@ -262,4 +295,35 @@ pub fn unseal(g: &Graph, ids: &[String]) -> anyhow::Result<std::collections::BTr
             (rel, text)
         })
         .collect())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{imports, with_import};
+
+    #[test]
+    fn the_import_goes_where_isort_puts_it() {
+        let text = "\"\"\"Doc.\"\"\"\n\nfrom pathlib import Path\n\nimport pandas as pd\n\nfrom sunspots.series import load\nfrom sunspots.settings import (\n    Settings,\n)\n\nX = 1\n";
+        assert_eq!(
+            with_import(text, "sunspots"),
+            "\"\"\"Doc.\"\"\"\n\nfrom pathlib import Path\n\nimport pandas as pd\n\nfrom sunspots import prophecy\nfrom sunspots.series import load\nfrom sunspots.settings import (\n    Settings,\n)\n\nX = 1\n"
+        );
+        let after = with_import(text, "sunspots.zz");
+        assert!(after.contains("    Settings,\n)\nfrom sunspots.zz import prophecy\n"), "{after}");
+        assert_eq!(
+            with_import("from pathlib import Path\n\nX = 1\n", "pkg"),
+            "from pathlib import Path\n\nfrom pkg import prophecy\n\nX = 1\n"
+        );
+        assert_eq!(with_import("\"\"\"Doc.\"\"\"\nX = 1\n", "pkg"), "\"\"\"Doc.\"\"\"\nfrom pkg import prophecy\nX = 1\n");
+    }
+
+    #[test]
+    fn a_module_that_imports_the_marked_one_is_seen() {
+        assert!(imports("from sunspots.plot import Trend\n", "sunspots", "sunspots.plot"));
+        assert!(imports("from sunspots import plot, series\n", "sunspots", "sunspots.series"));
+        assert!(imports("from .plot import Trend\n", "sunspots", "sunspots.plot"));
+        assert!(!imports("from .plot import Trend\n", "sunspots.sub", "sunspots.plot"));
+        assert!(!imports("from typing import Callable\n", "sunspots", "sunspots.plot"));
+        assert!(!imports("from sunspots.plotting import x\n", "sunspots", "sunspots.plot"));
+    }
 }

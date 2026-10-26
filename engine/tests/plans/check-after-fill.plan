@@ -1,0 +1,20 @@
+# A cache filled where it is missing and then read only to check it is not empty: the read decides a choice and goes no
+# further, so the route does not use what is there, and the cache stays where the route leaves it.
+
+route fillcheck.run
+line entry > run call
+line run > File(cache/data.txt) own
+line File(cache/data.txt) > run own
+
+# An error is a value (#138): `raise RuntimeError(..)` builds it in the arm that raises it, the error the arm hands on is
+# one value at the choice's moment, and the route's border hands it on.
+choice run/?1                                                        # if CACHE.read_text() == ""
+step run/?1/RuntimeError()
+line run/?1/RuntimeError() > RuntimeError@run/?1 value
+line RuntimeError@run/?1 > run value
+line run > RuntimeError@run value
+home RuntimeError@run/?1 run
+home RuntimeError@run run
+
+side entry left
+side File(cache/data.txt) right

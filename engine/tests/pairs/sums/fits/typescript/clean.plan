@@ -1,0 +1,23 @@
+# The one copairing of the sum `Fit | Failed`: `describe` takes it and tests it once; each arm gives back an object
+# literal of the interface Report, which its return type names, so each arm builds a Report (`return { .. }`), and the
+# route gives the Report either arm built. The early return is the one arm, what follows it the other.
+
+route fits.report.describe
+choice describe/?1
+step describe/?1/Report()                                         # `return { line: .., points: [r.score] }`
+step describe/?1/Report()#2                            # what follows the early return is the other arm
+
+line entry > describe call
+line Fit | Failed·r > describe value # the route's parameter, by its name
+line Fit | Failed·r > describe/?1/Report() value # `r.score`
+line Fit | Failed·r > describe/?1/Report()#2 value # `r.reason`
+line describe/?1/Report() > Report@describe/?1 value # with the other arm's Report, the value either arm makes
+line describe/?1/Report()#2 > Report@describe/?1 value
+line Report@describe/?1 > describe value
+line describe > Report@describe value                             # the result goes on to the caller
+
+home Fit | Failed·r describe
+home Report@describe/?1 describe
+home Report@describe describe
+
+side entry left

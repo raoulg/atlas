@@ -1,0 +1,29 @@
+# A call on a value of a known class runs what that class runs: `feed.read()` on a `Feed(Trimmed, Logged)` runs
+# `Trimmed.read` on the feed, whose `super().read()` runs `Logged.read`, the next `read` along the feed's order, and
+# nothing else. `Logged.read` writes the log whenever it runs, so what the route then reads of the log is what its own
+# step wrote: it reads it back, and the log stands between the step that writes it and the route that reads and uses it.
+# On a value of any class a trimmed source may be, `super().read()` may run `Source.read` instead, which writes no log;
+# that is no run of this route.
+
+route feeds.run
+step run/Feed()
+step run/Feed.read                                                   # `feed.read()`, Trimmed.read on the feed
+step run/Feed.read/Logged.read                                       # `super().read()` on a feed
+step run/Feed.read/Logged.read/Source.read                           # Logged's `super().read()` on the feed
+
+line entry > run call
+line run/Feed() > Feed·feed@run/Feed() value
+line Feed·feed@run/Feed() > run/Feed.read/Logged.read/Source.read value   # the feed each `read` runs on, handed down by `super()`
+line run/Feed.read/Logged.read > File(data/log.txt) own
+line File(data/news.txt) > run/Feed.read/Logged.read/Source.read own
+line run/Feed.read/Logged.read/Source.read > run/Feed.read/Logged.read back
+line run/Feed.read/Logged.read > run/Feed.read back
+line run/Feed.read > run back                                        # `news`
+line File(data/log.txt) > run own                                    # `LOG.read_text()`, what Logged.read wrote
+line run > File(data/log.txt) own
+
+home Feed·feed@run/Feed() run
+
+side entry left
+side File(data/news.txt) left
+side File(data/log.txt) between

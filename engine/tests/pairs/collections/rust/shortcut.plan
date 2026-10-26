@@ -1,0 +1,121 @@
+# An exported class is the route of its doors: building it and each public method, each called by the entry: the
+# methods run on the caller's instance, `Store` from beyond, and what the building makes goes back to the caller. The
+# puts are the clean side's: `rows.push(Row { reading: reading.clone() })` (`clone`, which std derives, is no step)
+# makes `rows` anew, so the Reading reaches what is written at `Disk(Store.path)`. `get` reads the lines itself and
+# gives them back as they are, of no type of the code's: no Reading comes back out of the place it went into.
+
+route gathering.Store
+step Store()/Store.new
+step Store()/Store.new/Store() # C
+line entry > Store()/Store.new call
+line Store()/Store.new/Store() > Store@Store()/Store.new/Store() value
+line Store@Store()/Store.new/Store() > Store()/Store.new value
+line Store()/Store.new > Store@Store()/Store.new value
+step Store()/Store.put
+line entry > Store()/Store.put call
+step Store()/Store.put/Store.rows
+step Store()/Store.put/Store.rows/Reading()
+step Store()/Store.put/Store.rows/Row()
+line Store > Store()/Store.put/Store.rows value
+line Disk(Store.path) > Store()/Store.put/Store.rows own
+line Store()/Store.put/Store.rows/Reading() > Reading@Store()/Store.put/Store.rows/Reading() value
+line Reading@Store()/Store.put/Store.rows/Reading() > Store()/Store.put/Store.rows/Row() value
+line Store()/Store.put/Store.rows/Row() > Row@Store()/Store.put/Store.rows/Row() value
+line Row@Store()/Store.put/Store.rows/Row() > Store()/Store.put/Store.rows value  # the rows built go back
+line Store()/Store.put/Store.rows > Row·rows@Store()/Store.put/Store.rows value
+step Store()/Store.put/Row()
+step Store()/Store.put/push
+step Store()/Store.put/write_rows
+step Store()/Store.put/write_rows/collect  # `let lines = rows.iter()…collect()`
+line Reading·reading > Store()/Store.put/Row() value
+line Store()/Store.put/Row() > Row@Store()/Store.put/Row() value
+line Row·rows@Store()/Store.put/Store.rows > Store()/Store.put/push value
+line Row@Store()/Store.put/Row() > Store()/Store.put/push value
+line Store()/Store.put/push > Row·rows@Store()/Store.put/push value  # the rows made anew
+line Row·rows@Store()/Store.put/push > Store()/Store.put/write_rows/collect value
+line Store()/Store.put/write_rows/collect > _·lines@Store()/Store.put/write_rows/collect value
+line _·lines@Store()/Store.put/write_rows/collect > Store()/Store.put/write_rows value   # fs::write takes the lines joined
+line Store > Store()/Store.put/write_rows value # K: `write_rows(self.path, rows)` hands `self`
+line Store()/Store.put/write_rows > Disk(Store.path) own
+step Store()/Store.put_all
+line entry > Store()/Store.put_all call
+step Store()/Store.put_all/Store.rows
+step Store()/Store.put_all/Store.rows/Reading()
+step Store()/Store.put_all/Store.rows/Row()
+line Store > Store()/Store.put_all/Store.rows value
+line Disk(Store.path) > Store()/Store.put_all/Store.rows own
+line Store()/Store.put_all/Store.rows/Reading() > Reading@Store()/Store.put_all/Store.rows/Reading() value
+line Reading@Store()/Store.put_all/Store.rows/Reading() > Store()/Store.put_all/Store.rows/Row() value
+line Store()/Store.put_all/Store.rows/Row() > Row@Store()/Store.put_all/Store.rows/Row() value
+line Row@Store()/Store.put_all/Store.rows/Row() > Store()/Store.put_all/Store.rows value  # the rows built go back
+line Store()/Store.put_all/Store.rows > Row·rows@Store()/Store.put_all/Store.rows value
+step Store()/Store.put_all/Row()
+step Store()/Store.put_all/push
+step Store()/Store.put_all/write_rows
+step Store()/Store.put_all/write_rows/collect  # `let lines = rows.iter()…collect()`
+line Store()/Store.put_all/Row() > Row@Store()/Store.put_all/Row() value
+line Row·rows@Store()/Store.put_all/Store.rows > Store()/Store.put_all/push value
+line Row@Store()/Store.put_all/Row() > Store()/Store.put_all/push value
+line Store()/Store.put_all/push > Row·rows@Store()/Store.put_all/push value  # the rows made anew
+line Row·rows@Store()/Store.put_all/push > Store()/Store.put_all/write_rows/collect value
+line Store()/Store.put_all/write_rows/collect > _·lines@Store()/Store.put_all/write_rows/collect value
+line _·lines@Store()/Store.put_all/write_rows/collect > Store()/Store.put_all/write_rows value   # fs::write takes the lines joined
+line Store > Store()/Store.put_all/write_rows value # K: `write_rows(self.path, rows)` hands `self`
+line Store()/Store.put_all/write_rows > Disk(Store.path) own
+step Store()/Store.get
+line entry > Store()/Store.get call
+line Store > Store()/Store.get value # get reads the store's path itself
+line Disk(Store.path) > Store()/Store.get own
+line Store()/Store.get > _@Store()/Store.get value   # `Ok(fs::read_to_string(&self.path)?..)`: `?` in its own code
+home _@Store()/Store.get Store()
+
+home Store@Store()/Store.new/Store() Store()/Store.new
+home Store@Store()/Store.new Store()
+home Reading@Store()/Store.put/Store.rows/Reading() Store()/Store.put/Store.rows
+home Row@Store()/Store.put/Store.rows/Row() Store()/Store.put/Store.rows
+home Row·rows@Store()/Store.put/Store.rows Store()/Store.put
+home Row@Store()/Store.put/Row() Store()/Store.put
+home Row·rows@Store()/Store.put/push Store()/Store.put
+home _·lines@Store()/Store.put/write_rows/collect Store()/Store.put/write_rows
+home Reading@Store()/Store.put_all/Store.rows/Reading() Store()/Store.put_all/Store.rows
+home Row@Store()/Store.put_all/Store.rows/Row() Store()/Store.put_all/Store.rows
+home Row·rows@Store()/Store.put_all/Store.rows Store()/Store.put_all
+home Row@Store()/Store.put_all/Row() Store()/Store.put_all
+home Row·rows@Store()/Store.put_all/push Store()/Store.put_all
+home _·lines@Store()/Store.put_all/write_rows/collect Store()/Store.put_all/write_rows
+home Reading·reading Store()
+home Store Store()
+home Reading·readings Store()
+
+home Reading·reading@Store()/Store.put_all/for reading in readings Store()/Store.put_all
+line Reading·reading@Store()/Store.put_all/for reading in readings > Store()/Store.put_all/Row() value
+line Reading·readings > Store()/Store.put_all/for reading in readings value
+line Store()/Store.put_all/for reading in readings > Reading·reading@Store()/Store.put_all/for reading in readings value
+step Store()/Store.put_all/for reading in readings
+
+# An error is a value (#138): `?` hands on what a step fails with, converted to the function's error type, here no type
+# of the code's (`io::Error`, `rusqlite::Error`); each border it crosses uncaught hands it on. An opened step takes what
+# its steps hand on, which Atlas does not draw for an error of no type of the code's.
+line Store()/Store.put > _@Store()/Store.put value
+line Store()/Store.put/Store.rows > _@Store()/Store.put/Store.rows value
+line Store()/Store.put_all > _@Store()/Store.put_all value
+line Store()/Store.put_all/Store.rows > _@Store()/Store.put_all/Store.rows value
+line _@Store()/Store.put/Store.rows > Store()/Store.put value
+line _@Store()/Store.put_all/Store.rows > Store()/Store.put_all value
+line Store()/Store.put/write_rows > _@Store()/Store.put/write_rows value   # `write_rows(..)` last: put gives back what it gives, its error with it
+line _@Store()/Store.put/write_rows > Store()/Store.put value
+line Store()/Store.put_all/write_rows > _@Store()/Store.put_all/write_rows value
+line _@Store()/Store.put_all/write_rows > Store()/Store.put_all value
+home _@Store()/Store.put/write_rows Store()/Store.put
+home _@Store()/Store.put_all/write_rows Store()/Store.put_all
+home _@Store()/Store.put Store()
+home _@Store()/Store.put/Store.rows Store()/Store.put
+home _@Store()/Store.put_all Store()
+home _@Store()/Store.put_all/Store.rows Store()/Store.put_all
+
+side entry left
+side Disk(Store.path) both
+
+# What Atlas gets wrong here, each by the issue of its cause:
+# K: a value handed through a field reaches no step inside: `write_rows(self.path, rows)` hands `self` (#121, decision
+#    1), and the helper takes no Store

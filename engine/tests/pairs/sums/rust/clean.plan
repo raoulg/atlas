@@ -1,0 +1,121 @@
+# A knowledge base kept in a file: `voeg_toe` puts a Bron, `graaf` gets the Graaf of its nodes back, each node one of
+# the sum `enum Node { Begrip(Begrip), Bron(Bron) }`, made in one of two arms of a choice in `node`, the variant's
+# constructor injecting the struct into the sum. The struct is the library's door: its route starts at each public
+# function a caller can call. The methods run on the caller's instance, one value from beyond; what `new` builds goes
+# back to the caller.
+
+route kennis.Kennisbank
+step Kennisbank()/Kennisbank.new
+step Kennisbank()/Kennisbank.new/Kennisbank() # the struct expression `new` builds the store by
+step Kennisbank()/Kennisbank.voeg_toe
+step Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write
+step Kennisbank()/Kennisbank.graaf
+step Kennisbank()/Kennisbank.graaf/node                        # handed to `map`, run on each line
+choice Kennisbank()/Kennisbank.graaf/node/?1
+step Kennisbank()/Kennisbank.graaf/node/?1/Bron()
+step Kennisbank()/Kennisbank.graaf/node/?1/Node()              # Node::Bron
+step Kennisbank()/Kennisbank.graaf/node/?1/Begrip()
+step Kennisbank()/Kennisbank.graaf/node/?1/Node()#2            # Node::Begrip
+step Kennisbank()/Kennisbank.graaf/Graaf()
+
+line entry > Kennisbank()/Kennisbank.new call
+line entry > Kennisbank()/Kennisbank.voeg_toe call
+line entry > Kennisbank()/Kennisbank.graaf call
+
+# what the constructor builds goes back to the caller; the doors run on the caller's instance, one value from
+# beyond, taken where a body reads its fields or calls on it
+line Kennisbank()/Kennisbank.new/Kennisbank() > Kennisbank@Kennisbank()/Kennisbank.new/Kennisbank() value
+line Kennisbank@Kennisbank()/Kennisbank.new/Kennisbank() > Kennisbank()/Kennisbank.new value     # new hands back what it built
+line Kennisbank()/Kennisbank.new > Kennisbank@Kennisbank()/Kennisbank.new value
+line Kennisbank > Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write value   # its own write at self.path; read_to_string inside takes it too
+
+# the put: the Bron a caller hands is written into the line `write` appends to what the file held
+line Bron·bron > Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write/push_str value           # what it is handed: `bron.uuid`, `bron.url` glue `bron` in, held by `line`
+line Disk(Kennisbank.path) > Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write own
+line Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write > Disk(Kennisbank.path) own
+
+# the get: the lines read, each a Bron or a Begrip injected into Node, the Nodes in the Graaf given back
+line Disk(Kennisbank.path) > Kennisbank()/Kennisbank.graaf own
+line Kennisbank()/Kennisbank.graaf/node/?1/Bron() > Bron@Kennisbank()/Kennisbank.graaf/node/?1/Bron() value
+line Bron@Kennisbank()/Kennisbank.graaf/node/?1/Bron() > Kennisbank()/Kennisbank.graaf/node/?1/Node() value
+line Kennisbank()/Kennisbank.graaf/node/?1/Node() > Node@Kennisbank()/Kennisbank.graaf/node/?1 value
+line Kennisbank()/Kennisbank.graaf/node/?1/Begrip() > Begrip@Kennisbank()/Kennisbank.graaf/node/?1/Begrip() value
+line Begrip@Kennisbank()/Kennisbank.graaf/node/?1/Begrip() > Kennisbank()/Kennisbank.graaf/node/?1/Node()#2 value
+line Kennisbank()/Kennisbank.graaf/node/?1/Node()#2 > Node@Kennisbank()/Kennisbank.graaf/node/?1 value
+line Node@Kennisbank()/Kennisbank.graaf/node/?1 > Kennisbank()/Kennisbank.graaf/node value
+line Kennisbank()/Kennisbank.graaf/node > Node@Kennisbank()/Kennisbank.graaf/node value
+line Node@Kennisbank()/Kennisbank.graaf/node > Kennisbank()/Kennisbank.graaf/Graaf() value   # what `map(node)` gives, collected into its nodes
+line Kennisbank()/Kennisbank.graaf/Graaf() > Graaf@Kennisbank()/Kennisbank.graaf/Graaf() value
+line Graaf@Kennisbank()/Kennisbank.graaf/Graaf() > Kennisbank()/Kennisbank.graaf value
+line Kennisbank()/Kennisbank.graaf > Graaf@Kennisbank()/Kennisbank.graaf value
+
+home Kennisbank@Kennisbank()/Kennisbank.new/Kennisbank() Kennisbank()/Kennisbank.new
+home Kennisbank@Kennisbank()/Kennisbank.new Kennisbank()
+home Kennisbank Kennisbank()
+home Bron·bron Kennisbank()
+home Bron@Kennisbank()/Kennisbank.graaf/node/?1/Bron() Kennisbank()/Kennisbank.graaf/node/?1
+home Begrip@Kennisbank()/Kennisbank.graaf/node/?1/Begrip() Kennisbank()/Kennisbank.graaf/node/?1
+home Node@Kennisbank()/Kennisbank.graaf/node/?1 Kennisbank()/Kennisbank.graaf/node
+home Node@Kennisbank()/Kennisbank.graaf/node Kennisbank()/Kennisbank.graaf
+home Graaf@Kennisbank()/Kennisbank.graaf/Graaf() Kennisbank()/Kennisbank.graaf
+home Graaf@Kennisbank()/Kennisbank.graaf Kennisbank()
+
+# write reads the file into `text`, appends the line and a newline to it, and writes it back
+step Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write/read_to_string
+step Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write/push_str
+step Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write/push
+line Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write/read_to_string > _·text@Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write/read_to_string value
+line _·text@Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write/read_to_string > Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write/push_str value
+line Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write/push_str > _·text@Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write/push_str value
+line _·text@Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write/push_str > Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write/push value
+line Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write/push > _·text@Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write/push value
+line _·text@Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write/push > Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write value   # fs::write in write's own body writes it
+home _·text@Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write/read_to_string Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write
+home _·text@Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write/push_str Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write
+home _·text@Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write/push Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write
+
+# node splits the line, and takes its three parts by name, each a part or the empty string
+step Kennisbank()/Kennisbank.graaf/node/splitn
+step Kennisbank()/Kennisbank.graaf/node/unwrap_or
+step Kennisbank()/Kennisbank.graaf/node/unwrap_or#2
+step Kennisbank()/Kennisbank.graaf/node/unwrap_or#3
+line Kennisbank()/Kennisbank.graaf/node/splitn > _·parts@Kennisbank()/Kennisbank.graaf/node/splitn value
+line _·parts@Kennisbank()/Kennisbank.graaf/node/splitn > Kennisbank()/Kennisbank.graaf/node/unwrap_or value   # what `parts.next()` gives goes into it
+line _·parts@Kennisbank()/Kennisbank.graaf/node/splitn > Kennisbank()/Kennisbank.graaf/node/unwrap_or#2 value
+line _·parts@Kennisbank()/Kennisbank.graaf/node/splitn > Kennisbank()/Kennisbank.graaf/node/unwrap_or#3 value
+line Kennisbank()/Kennisbank.graaf/node/unwrap_or > _·uuid@Kennisbank()/Kennisbank.graaf/node/unwrap_or value
+line Kennisbank()/Kennisbank.graaf/node/unwrap_or#2 > _·soort@Kennisbank()/Kennisbank.graaf/node/unwrap_or#2 value
+line Kennisbank()/Kennisbank.graaf/node/unwrap_or#3 > _·tekst@Kennisbank()/Kennisbank.graaf/node/unwrap_or#3 value
+line _·soort@Kennisbank()/Kennisbank.graaf/node/unwrap_or#2 > Kennisbank()/Kennisbank.graaf/node value   # it decides the choice
+line _·uuid@Kennisbank()/Kennisbank.graaf/node/unwrap_or > Kennisbank()/Kennisbank.graaf/node/?1/Bron() value
+line _·tekst@Kennisbank()/Kennisbank.graaf/node/unwrap_or#3 > Kennisbank()/Kennisbank.graaf/node/?1/Bron() value
+line _·uuid@Kennisbank()/Kennisbank.graaf/node/unwrap_or > Kennisbank()/Kennisbank.graaf/node/?1/Begrip() value
+line _·tekst@Kennisbank()/Kennisbank.graaf/node/unwrap_or#3 > Kennisbank()/Kennisbank.graaf/node/?1/Begrip() value
+home _·parts@Kennisbank()/Kennisbank.graaf/node/splitn Kennisbank()/Kennisbank.graaf/node
+home _·uuid@Kennisbank()/Kennisbank.graaf/node/unwrap_or Kennisbank()/Kennisbank.graaf/node
+home _·soort@Kennisbank()/Kennisbank.graaf/node/unwrap_or#2 Kennisbank()/Kennisbank.graaf/node
+home _·tekst@Kennisbank()/Kennisbank.graaf/node/unwrap_or#3 Kennisbank()/Kennisbank.graaf/node
+
+# the io::Error, a value of no type of the code's: `read_to_string` makes it in write, and fs::write in write's own body;
+# `?` is no choice, and each border it crosses uncaught hands it on, up to the caller of the door
+line Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write/read_to_string > _@Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write/read_to_string value
+line _@Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write/read_to_string > Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write value
+line Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write > _@Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write value
+line _@Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write > Kennisbank()/Kennisbank.voeg_toe value          # `self.write(..)` last: voeg_toe gives back what it gives
+line Kennisbank()/Kennisbank.voeg_toe > _@Kennisbank()/Kennisbank.voeg_toe value
+line Kennisbank()/Kennisbank.graaf/Graaf() > _@Kennisbank()/Kennisbank.graaf/Graaf() value                        # the read glued into the step, `?`-propagated
+line _@Kennisbank()/Kennisbank.graaf/Graaf() > Kennisbank()/Kennisbank.graaf value
+line Kennisbank()/Kennisbank.graaf > _@Kennisbank()/Kennisbank.graaf value
+home _@Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write/read_to_string Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write
+home _@Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write Kennisbank()/Kennisbank.voeg_toe
+home _@Kennisbank()/Kennisbank.voeg_toe Kennisbank()
+home _@Kennisbank()/Kennisbank.graaf/Graaf() Kennisbank()/Kennisbank.graaf
+home _@Kennisbank()/Kennisbank.graaf Kennisbank()
+
+side entry left
+side Disk(Kennisbank.path) both
+
+# building the struct the route is about is read as a call of the route inside itself
+# the methods run on what the constructor built, not on the caller's instance
+line Kennisbank > Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write/read_to_string value   # `fs::read_to_string(&self.path)`
+line Kennisbank > Kennisbank()/Kennisbank.graaf/Graaf() value   # the read glued into the literal reads `self.path`

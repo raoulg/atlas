@@ -103,8 +103,8 @@ cargo install --locked --git https://github.com/raoulg/atlas atlas
 page on GitHub's runners and publishes it, to open in the browser. See
 [the picture in your README, always current](docs/reference/ci.md).
 
-Stable and nightly, which one you have, how Atlas tells you about updates, and registering it
-with your coding agent: [install](docs/reference/install.md).
+How Atlas tells you about updates, and registering it with your coding agent:
+[install](docs/reference/install.md).
 
 Alpha: what Atlas reads and draws changes from one minor version to the next. Built by Raoul Grouls
 with [Claude Code](https://claude.com/claude-code). [CC BY-NC-SA 4.0](LICENSE).

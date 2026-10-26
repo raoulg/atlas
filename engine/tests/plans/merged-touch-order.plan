@@ -1,0 +1,15 @@
+# The note is seeded in an arm, read, and then always written on. The two `write_text` calls are one touch that runs on
+# the line of each: where the arm does not run, the read finds the note as it was, and the last line writes on what it
+# found. Read, then written: both.
+
+route mergedorder.run
+line entry > run call
+step run/read_text                                                   # text = NOTE.read_text(): its result is named
+line run/read_text > _·text@run/read_text value
+home _·text@run/read_text run
+line _·text@run/read_text > run value                                # NOTE.write_text(text + "!"): the body's own write
+line File(data/note.txt) > run own
+line run > File(data/note.txt) own
+
+side entry left
+side File(data/note.txt) both

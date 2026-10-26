@@ -1,0 +1,159 @@
+# A lens on three files: `save`, `saveOutage` and `keepSummary` put a Reading, an Outage and a Summary into their
+# files, and `history`, `kept` and `keptSummary` get each back as the type it was put as, or inside a Harvest. `summary`
+# is the lens at work: the kept summary, else (`??`) one made from the day's readings and put. `keptSummary` runs
+# whenever `summary` does, and `??` chooses only whether the right side runs, as the `None` arm of Rust's `match` does;
+# `keptSummary` builds its Summary only when a line is found (`line && ..`, a choice as `||` is). The route of the
+# exported class is its constructor and its public methods, each called by its caller and run on the caller's
+# ReadingStore; what the constructor builds goes back to that caller. A library's operation whose result the body names (`find`, `map`) is a step; what it touches stays
+# its caller's. Each file is read, used and written by the route: it stands on both sides.
+
+route harvest.store.ReadingStore
+step ReadingStore()/ReadingStore()
+step ReadingStore()/ReadingStore.save
+step ReadingStore()/ReadingStore.history
+step ReadingStore()/ReadingStore.history/Reading()
+step ReadingStore()/ReadingStore.saveOutage
+step ReadingStore()/ReadingStore.kept
+step ReadingStore()/ReadingStore.kept/map
+step ReadingStore()/ReadingStore.kept/Outage()
+step ReadingStore()/ReadingStore.kept/ReadingStore.history
+step ReadingStore()/ReadingStore.kept/ReadingStore.history/Reading()
+step ReadingStore()/ReadingStore.kept/Harvest()
+step ReadingStore()/ReadingStore.summary
+step ReadingStore()/ReadingStore.summary/ReadingStore.keptSummary   # #130: `??`'s left side runs whenever summary does
+step ReadingStore()/ReadingStore.summary/ReadingStore.keptSummary/find   # #130: `??`'s left side runs whenever summary does
+choice ReadingStore()/ReadingStore.summary/ReadingStore.keptSummary/?1   # #130: `line && ..`
+step ReadingStore()/ReadingStore.summary/ReadingStore.keptSummary/?1/Summary()   # #130
+choice ReadingStore()/ReadingStore.summary/?1
+step ReadingStore()/ReadingStore.summary/?1/ReadingStore.history
+step ReadingStore()/ReadingStore.summary/?1/ReadingStore.history/Reading()
+step ReadingStore()/ReadingStore.summary/?1/daySummary
+step ReadingStore()/ReadingStore.summary/?1/daySummary/map
+step ReadingStore()/ReadingStore.summary/?1/daySummary/Summary()
+step ReadingStore()/ReadingStore.summary/?1/ReadingStore.keepSummary
+step ReadingStore()/ReadingStore.keptSummary
+step ReadingStore()/ReadingStore.keptSummary/find
+choice ReadingStore()/ReadingStore.keptSummary/?1   # #130: `line && ..`
+step ReadingStore()/ReadingStore.keptSummary/?1/Summary()   # #130
+step ReadingStore()/ReadingStore.keepSummary
+
+line entry > ReadingStore()/ReadingStore() call
+line entry > ReadingStore()/ReadingStore.save call
+line entry > ReadingStore()/ReadingStore.history call
+line entry > ReadingStore()/ReadingStore.saveOutage call
+line entry > ReadingStore()/ReadingStore.kept call
+line entry > ReadingStore()/ReadingStore.summary call
+line entry > ReadingStore()/ReadingStore.keptSummary call
+line entry > ReadingStore()/ReadingStore.keepSummary call
+
+line ReadingStore()/ReadingStore() > ReadingStore@ReadingStore()/ReadingStore() value
+line ReadingStore > ReadingStore()/ReadingStore.save value # the caller's instance
+line Reading·reading > ReadingStore()/ReadingStore.save value
+line Disk(ReadingStore.readings) > ReadingStore()/ReadingStore.save own
+line ReadingStore()/ReadingStore.save > Disk(ReadingStore.readings) own
+line ReadingStore > ReadingStore()/ReadingStore.history value # the caller's instance
+line Disk(ReadingStore.readings) > ReadingStore()/ReadingStore.history own
+line ReadingStore()/ReadingStore.history/Reading() > Reading@ReadingStore()/ReadingStore.history/Reading() value
+line Reading@ReadingStore()/ReadingStore.history/Reading() > ReadingStore()/ReadingStore.history value
+line ReadingStore()/ReadingStore.history > Reading@ReadingStore()/ReadingStore.history value
+line ReadingStore > ReadingStore()/ReadingStore.saveOutage value # the caller's instance
+line Outage·outage > ReadingStore()/ReadingStore.saveOutage value
+line Disk(ReadingStore.outages) > ReadingStore()/ReadingStore.saveOutage own
+line ReadingStore()/ReadingStore.saveOutage > Disk(ReadingStore.outages) own
+line Disk(ReadingStore.outages) > ReadingStore()/ReadingStore.kept own
+line ReadingStore()/ReadingStore.kept/Outage() > Outage@ReadingStore()/ReadingStore.kept/Outage() value
+line Outage@ReadingStore()/ReadingStore.kept/Outage() > ReadingStore()/ReadingStore.kept/map value
+line ReadingStore()/ReadingStore.kept/map > _·outages@ReadingStore()/ReadingStore.kept/map value
+line _·outages@ReadingStore()/ReadingStore.kept/map > ReadingStore()/ReadingStore.kept/Harvest() value
+line ReadingStore > ReadingStore()/ReadingStore.kept/ReadingStore.history value # the caller's instance
+line ReadingStore > ReadingStore()/ReadingStore.kept/map value # `readFileSync(this.outages, ..)` is glued into the chain `map` ends
+line Disk(ReadingStore.readings) > ReadingStore()/ReadingStore.kept/ReadingStore.history own
+line ReadingStore()/ReadingStore.kept/ReadingStore.history/Reading() > Reading@ReadingStore()/ReadingStore.kept/ReadingStore.history/Reading() value
+line Reading@ReadingStore()/ReadingStore.kept/ReadingStore.history/Reading() > ReadingStore()/ReadingStore.kept/ReadingStore.history value
+line ReadingStore()/ReadingStore.kept/ReadingStore.history > Reading@ReadingStore()/ReadingStore.kept/ReadingStore.history value
+line Reading@ReadingStore()/ReadingStore.kept/ReadingStore.history > ReadingStore()/ReadingStore.kept/Harvest() value
+line ReadingStore()/ReadingStore.kept/Harvest() > Harvest@ReadingStore()/ReadingStore.kept/Harvest() value
+line Harvest@ReadingStore()/ReadingStore.kept/Harvest() > ReadingStore()/ReadingStore.kept value
+line ReadingStore()/ReadingStore.kept > Harvest@ReadingStore()/ReadingStore.kept value
+line ReadingStore > ReadingStore()/ReadingStore.summary/ReadingStore.keptSummary/find value # `readFileSync(this.summaries, ..)` is glued into the chain `find` ends
+line Disk(ReadingStore.summaries) > ReadingStore()/ReadingStore.summary/ReadingStore.keptSummary own # #130: `??`'s left side runs whenever summary does
+line Day·day > ReadingStore()/ReadingStore.summary/ReadingStore.keptSummary/find value # #130: `??`'s left side runs whenever summary does
+line ReadingStore()/ReadingStore.summary/ReadingStore.keptSummary/find > _·line@ReadingStore()/ReadingStore.summary/ReadingStore.keptSummary/find value # #130: `??`'s left side runs whenever summary does
+line _·line@ReadingStore()/ReadingStore.summary/ReadingStore.keptSummary/find > ReadingStore()/ReadingStore.summary/ReadingStore.keptSummary value   # it decides the choice and is returned when there is none
+line Day·day > ReadingStore()/ReadingStore.summary/ReadingStore.keptSummary/?1/Summary() value # #130
+line _·line@ReadingStore()/ReadingStore.summary/ReadingStore.keptSummary/find > ReadingStore()/ReadingStore.summary/ReadingStore.keptSummary/?1/Summary() value # #130
+line ReadingStore()/ReadingStore.summary/ReadingStore.keptSummary/?1/Summary() > Summary@ReadingStore()/ReadingStore.summary/ReadingStore.keptSummary/?1/Summary() value # #130
+line Summary@ReadingStore()/ReadingStore.summary/ReadingStore.keptSummary/?1/Summary() > ReadingStore()/ReadingStore.summary/ReadingStore.keptSummary value # #130
+line ReadingStore()/ReadingStore.summary/ReadingStore.keptSummary > Summary@ReadingStore()/ReadingStore.summary/ReadingStore.keptSummary value # #130
+line Summary@ReadingStore()/ReadingStore.summary/ReadingStore.keptSummary > ReadingStore()/ReadingStore.summary value   # where the arm does not run, `??` hands on the left
+line ReadingStore > ReadingStore()/ReadingStore.summary/?1/ReadingStore.history value # the caller's instance
+line Disk(ReadingStore.readings) > ReadingStore()/ReadingStore.summary/?1/ReadingStore.history own
+line ReadingStore()/ReadingStore.summary/?1/ReadingStore.history/Reading() > Reading@ReadingStore()/ReadingStore.summary/?1/ReadingStore.history/Reading() value
+line Reading@ReadingStore()/ReadingStore.summary/?1/ReadingStore.history/Reading() > ReadingStore()/ReadingStore.summary/?1/ReadingStore.history value
+line Day·day > ReadingStore()/ReadingStore.summary/?1/ReadingStore.history value   # history is handed `day.station`
+line ReadingStore()/ReadingStore.summary/?1/ReadingStore.history > Reading@ReadingStore()/ReadingStore.summary/?1/ReadingStore.history value
+line Reading@ReadingStore()/ReadingStore.summary/?1/ReadingStore.history > ReadingStore()/ReadingStore.summary/?1/daySummary/map value   # the readings filtered go into map
+line Day·day > ReadingStore()/ReadingStore.summary/?1/daySummary/map value   # #125: filtered by `day.date` in the chain map closes
+line Day·day > ReadingStore()/ReadingStore.summary/?1/daySummary/Summary() value
+line ReadingStore()/ReadingStore.summary/?1/daySummary/map > _·temperatures@ReadingStore()/ReadingStore.summary/?1/daySummary/map value
+line _·temperatures@ReadingStore()/ReadingStore.summary/?1/daySummary/map > ReadingStore()/ReadingStore.summary/?1/daySummary/Summary() value
+line ReadingStore()/ReadingStore.summary/?1/daySummary/Summary() > Summary@ReadingStore()/ReadingStore.summary/?1/daySummary/Summary() value
+line Summary@ReadingStore()/ReadingStore.summary/?1/daySummary/Summary() > ReadingStore()/ReadingStore.summary/?1/daySummary value
+line ReadingStore()/ReadingStore.summary/?1/daySummary > Summary@ReadingStore()/ReadingStore.summary/?1/daySummary value
+line Summary@ReadingStore()/ReadingStore.summary/?1/daySummary > ReadingStore()/ReadingStore.summary/?1/ReadingStore.keepSummary value
+line ReadingStore > ReadingStore()/ReadingStore.summary/?1/ReadingStore.keepSummary value # the caller's instance
+line Disk(ReadingStore.summaries) > ReadingStore()/ReadingStore.summary/?1/ReadingStore.keepSummary own
+line ReadingStore()/ReadingStore.summary/?1/ReadingStore.keepSummary > Disk(ReadingStore.summaries) own
+line ReadingStore()/ReadingStore.summary/?1/ReadingStore.keepSummary > Summary@ReadingStore()/ReadingStore.summary/?1/ReadingStore.keepSummary value   # #130: with `??` drawn as a choice, its two sides make one Summary
+line Summary@ReadingStore()/ReadingStore.summary/?1/ReadingStore.keepSummary > ReadingStore()/ReadingStore.summary value   # with `??` drawn as a choice, its two sides make one Summary
+line ReadingStore()/ReadingStore.summary > Summary@ReadingStore()/ReadingStore.summary value
+line ReadingStore > ReadingStore()/ReadingStore.keptSummary/find value
+line Disk(ReadingStore.summaries) > ReadingStore()/ReadingStore.keptSummary own
+line Day·day#2 > ReadingStore()/ReadingStore.keptSummary/find value
+line ReadingStore()/ReadingStore.keptSummary/find > _·line@ReadingStore()/ReadingStore.keptSummary/find value
+line _·line@ReadingStore()/ReadingStore.keptSummary/find > ReadingStore()/ReadingStore.keptSummary value   # it decides the choice and is returned when there is none
+line Day·day#2 > ReadingStore()/ReadingStore.keptSummary/?1/Summary() value # #127
+line _·line@ReadingStore()/ReadingStore.keptSummary/find > ReadingStore()/ReadingStore.keptSummary/?1/Summary() value   # #130
+line ReadingStore()/ReadingStore.keptSummary/?1/Summary() > Summary@ReadingStore()/ReadingStore.keptSummary/?1/Summary() value   # #130
+line Summary@ReadingStore()/ReadingStore.keptSummary/?1/Summary() > ReadingStore()/ReadingStore.keptSummary value   # #130
+line ReadingStore()/ReadingStore.keptSummary > Summary@ReadingStore()/ReadingStore.keptSummary value
+line ReadingStore > ReadingStore()/ReadingStore.keepSummary value # the caller's instance
+line Summary·summary > ReadingStore()/ReadingStore.keepSummary value # it writes and gives back the Summary it is handed
+line Disk(ReadingStore.summaries) > ReadingStore()/ReadingStore.keepSummary own
+line ReadingStore()/ReadingStore.keepSummary > Disk(ReadingStore.summaries) own
+line ReadingStore()/ReadingStore.keepSummary > Summary@ReadingStore()/ReadingStore.keepSummary value
+
+home ReadingStore@ReadingStore()/ReadingStore() ReadingStore()
+home ReadingStore ReadingStore()
+home Reading·reading ReadingStore()
+home Reading@ReadingStore()/ReadingStore.history/Reading() ReadingStore()/ReadingStore.history
+home Reading@ReadingStore()/ReadingStore.history ReadingStore()
+home Outage·outage ReadingStore()
+home Outage@ReadingStore()/ReadingStore.kept/Outage() ReadingStore()/ReadingStore.kept
+home _·outages@ReadingStore()/ReadingStore.kept/map ReadingStore()/ReadingStore.kept
+home Reading@ReadingStore()/ReadingStore.kept/ReadingStore.history/Reading() ReadingStore()/ReadingStore.kept/ReadingStore.history
+home Reading@ReadingStore()/ReadingStore.kept/ReadingStore.history ReadingStore()/ReadingStore.kept
+home Harvest@ReadingStore()/ReadingStore.kept/Harvest() ReadingStore()/ReadingStore.kept
+home Harvest@ReadingStore()/ReadingStore.kept ReadingStore()
+home _·line@ReadingStore()/ReadingStore.summary/ReadingStore.keptSummary/find ReadingStore()/ReadingStore.summary/ReadingStore.keptSummary
+home Summary@ReadingStore()/ReadingStore.summary/ReadingStore.keptSummary/?1/Summary() ReadingStore()/ReadingStore.summary/ReadingStore.keptSummary
+home Summary@ReadingStore()/ReadingStore.summary/ReadingStore.keptSummary ReadingStore()/ReadingStore.summary
+home Reading@ReadingStore()/ReadingStore.summary/?1/ReadingStore.history/Reading() ReadingStore()/ReadingStore.summary/?1/ReadingStore.history
+home Reading@ReadingStore()/ReadingStore.summary/?1/ReadingStore.history ReadingStore()/ReadingStore.summary/?1
+home _·temperatures@ReadingStore()/ReadingStore.summary/?1/daySummary/map ReadingStore()/ReadingStore.summary/?1/daySummary
+home Summary@ReadingStore()/ReadingStore.summary/?1/daySummary/Summary() ReadingStore()/ReadingStore.summary/?1/daySummary
+home Summary@ReadingStore()/ReadingStore.summary/?1/daySummary ReadingStore()/ReadingStore.summary/?1
+home Summary@ReadingStore()/ReadingStore.summary/?1/ReadingStore.keepSummary ReadingStore()/ReadingStore.summary
+home Summary@ReadingStore()/ReadingStore.summary ReadingStore()
+home Day·day ReadingStore()
+home _·line@ReadingStore()/ReadingStore.keptSummary/find ReadingStore()/ReadingStore.keptSummary
+home Summary@ReadingStore()/ReadingStore.keptSummary/?1/Summary() ReadingStore()/ReadingStore.keptSummary
+home Summary@ReadingStore()/ReadingStore.keptSummary ReadingStore()
+home Day·day#2 ReadingStore()
+home Summary@ReadingStore()/ReadingStore.keepSummary ReadingStore()
+home Summary·summary ReadingStore()
+
+side entry left
+side Disk(ReadingStore.readings) both
+side Disk(ReadingStore.outages) both
+side Disk(ReadingStore.summaries) both

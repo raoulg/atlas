@@ -1,0 +1,11 @@
+# A pattern below a directory is the fiber of the directory over the pattern: the listing and the reads of what it
+# yields are one place, the term `assets/regelingen/*/IO-*`.
+
+route globbed.run
+line entry > run call
+line File(assets/regelingen/*/IO-*) > run own        # ASSETS.glob(..) lists it, m.read_text() reads what it yields
+line run > Screen own
+
+side entry left
+side File(assets/regelingen/*/IO-*) left
+side Screen right

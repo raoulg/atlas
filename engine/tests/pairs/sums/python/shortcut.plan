@@ -1,0 +1,46 @@
+# The knowledge base with the shortcut: `graaf` gives the lines back as rows, dicts of no type of the code's, so the
+# Bron put by `voeg_toe` never comes back as a Node: no value of the code's leaves the get.
+
+route kennis.bank.Kennisbank
+step Kennisbank()/Kennisbank()
+step Kennisbank()/Kennisbank.voeg_toe
+step Kennisbank()/Kennisbank.voeg_toe/Kennisbank._write
+step Kennisbank()/Kennisbank.graaf
+step Kennisbank()/Kennisbank.graaf/Kennisbank._row
+
+line entry > Kennisbank()/Kennisbank() call
+line entry > Kennisbank()/Kennisbank.voeg_toe call
+line entry > Kennisbank()/Kennisbank.graaf call
+
+# what the constructor builds goes back to the caller; the doors run on the caller's instance, one value from
+# beyond, taken where a body reads its fields or calls on it
+line Kennisbank()/Kennisbank() > Kennisbank@Kennisbank()/Kennisbank() value
+line Kennisbank > Kennisbank()/Kennisbank.voeg_toe/Kennisbank._write value
+line Kennisbank > Kennisbank()/Kennisbank.graaf value   # graaf reads self.path itself, and hands self to _node
+line Kennisbank > Kennisbank()/Kennisbank.graaf/Kennisbank._row value
+
+line Bron·bron > Kennisbank()/Kennisbank.voeg_toe/Kennisbank._write value                    # what it is handed: `bron.uuid`, `bron.url` glue `bron` in
+line Disk(Kennisbank.path) > Kennisbank()/Kennisbank.voeg_toe/Kennisbank._write own
+line Kennisbank()/Kennisbank.voeg_toe/Kennisbank._write > Disk(Kennisbank.path) own
+
+line Disk(Kennisbank.path) > Kennisbank()/Kennisbank.graaf own
+line Kennisbank()/Kennisbank.graaf/Kennisbank._row > Kennisbank()/Kennisbank.graaf back   # each row, a dict, goes back to graaf
+
+home Kennisbank@Kennisbank()/Kennisbank() Kennisbank()
+home Kennisbank Kennisbank()
+home Bron·bron Kennisbank()
+
+# the line split in three parts, each held by its name, which `_row` puts into a row
+step Kennisbank()/Kennisbank.graaf/Kennisbank._row/split
+line Kennisbank()/Kennisbank.graaf/Kennisbank._row/split > _·uuid@Kennisbank()/Kennisbank.graaf/Kennisbank._row/split value
+line Kennisbank()/Kennisbank.graaf/Kennisbank._row/split > _·soort@Kennisbank()/Kennisbank.graaf/Kennisbank._row/split value
+line Kennisbank()/Kennisbank.graaf/Kennisbank._row/split > _·tekst@Kennisbank()/Kennisbank.graaf/Kennisbank._row/split value
+line _·uuid@Kennisbank()/Kennisbank.graaf/Kennisbank._row/split > Kennisbank()/Kennisbank.graaf/Kennisbank._row value   # the row literal `_row` gives back
+line _·soort@Kennisbank()/Kennisbank.graaf/Kennisbank._row/split > Kennisbank()/Kennisbank.graaf/Kennisbank._row value
+line _·tekst@Kennisbank()/Kennisbank.graaf/Kennisbank._row/split > Kennisbank()/Kennisbank.graaf/Kennisbank._row value
+home _·uuid@Kennisbank()/Kennisbank.graaf/Kennisbank._row/split Kennisbank()/Kennisbank.graaf/Kennisbank._row
+home _·soort@Kennisbank()/Kennisbank.graaf/Kennisbank._row/split Kennisbank()/Kennisbank.graaf/Kennisbank._row
+home _·tekst@Kennisbank()/Kennisbank.graaf/Kennisbank._row/split Kennisbank()/Kennisbank.graaf/Kennisbank._row
+
+side entry left
+side Disk(Kennisbank.path) both

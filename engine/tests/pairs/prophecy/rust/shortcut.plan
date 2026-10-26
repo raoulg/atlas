@@ -1,0 +1,14 @@
+# Built code leans on the sketch: `run` makes the prophetized `Store` and writes the report to it, and both are
+# `todo!()`, so the built route has no effect.
+
+route archive.run
+step run/Store.new
+step run/Store.write
+
+line entry > run call
+line run/Store.new > Store@run/Store.new value
+line Store@run/Store.new > run/Store.write value
+
+home Store@run/Store.new run
+
+side entry left

@@ -21,12 +21,13 @@ use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
 
-use ruff_db::diagnostic::{Diagnostic, Severity};
+use ruff_db::diagnostic::{Diagnostic, Severity, UnifiedFile};
 use ruff_db::files::{system_path_to_file, File, FilePath, FileRange, FileRootKind, Files};
 use ruff_db::parsed::parsed_module;
 use ruff_db::system::{OsSystem, System, SystemPath, SystemPathBuf};
 use ruff_db::vendored::VendoredFileSystem;
 use ruff_db::Db as SourceDb;
+use ruff_python_ast::token::TokenKind;
 use ruff_python_ast::visitor::{self, Visitor};
 use ruff_python_ast::{self as ast, AnyNodeRef, PythonVersion};
 use ruff_text_size::{Ranged, TextRange};
@@ -116,8 +117,28 @@ pub struct Value {
 
 /// The classes a type is, as written: through the containers that hold values (`tuple`,
 /// `list`, `dict`, a union) to each value's own class, but not into a class's own parameters
-/// (`ndarray[tuple[int], dtype[float64]]` is an `ndarray`).
+/// (`ndarray[tuple[int], dtype[float64]]` is an `ndarray`), nor into a pair a collection holds,
+/// which is of a type the code does not name (`list[tuple[date, float]]` holds no `date`), nor into
+/// a map's keys (`dict[Mode, Plan]` holds Plans by their Mode).
 pub fn outer_classes(label: &str) -> Vec<String> {
+    classes_within(label, false)
+}
+
+/// What follows the first parameter of a generic's parameters: `Plan` of `Mode, Plan`.
+fn past_first(params: &str) -> &str {
+    let mut depth = 0;
+    for (i, c) in params.char_indices() {
+        match c {
+            '[' => depth += 1,
+            ']' => depth -= 1,
+            ',' if depth == 0 => return &params[i + 1..],
+            _ => {}
+        }
+    }
+    ""
+}
+
+fn classes_within(label: &str, in_collection: bool) -> Vec<String> {
     // split at depth 0 on `,` and `|`
     fn parts(s: &str) -> Vec<&str> {
         let (mut out, mut depth, mut start) = (vec![], 0, 0);
@@ -141,11 +162,16 @@ pub fn outer_classes(label: &str) -> Vec<String> {
             Some(i) if p.ends_with(']') => (&p[..i], Some(&p[i + 1..p.len() - 1])),
             _ => (p, None),
         };
+        let pair = crate::knowledge::PYTHON_TUPLES.contains(&head) && inner.is_some_and(|i| !i.trim_end().ends_with("..."));
         match inner {
-            Some(inner) if crate::knowledge::PYTHON_HOLDERS.contains(&head) || crate::knowledge::PYTHON_ALTERNATIVES.contains(&head) => {
-                out.extend(outer_classes(inner))
+            Some(_) if pair && in_collection => {}
+            Some(inner) if crate::knowledge::PYTHON_ALTERNATIVES.contains(&head) => out.extend(classes_within(inner, in_collection)),
+            Some(inner) if crate::knowledge::PYTHON_HOLDERS.contains(&head) => {
+                // a map holds its values by its keys, its first parameter: a key is no value it holds
+                let inner = if crate::knowledge::PYTHON_MAPS.contains(&head) { past_first(inner) } else { inner };
+                out.extend(classes_within(inner, crate::knowledge::python_collection(head) || (in_collection && !pair)))
             }
-            _ if !head.is_empty() => out.push(head.to_string()),
+            _ if !head.is_empty() && head != "..." => out.push(head.to_string()),
             _ => {}
         }
     }
@@ -160,6 +186,7 @@ pub struct Facts {
     defs: HashMap<(usize, usize), Target>,
     signatures: HashMap<(usize, usize), Vec<Param>>,
     keeps: HashMap<usize, bool>,
+    breaks: HashMap<usize, Target>,
 }
 
 impl Facts {
@@ -184,10 +211,16 @@ impl Facts {
     }
 
     /// For the method whose name is written at `at`, when it overrides one of a class of the
-    /// project's own: whether it keeps the promise of the method it overrides, as ty's check of an
+    /// project's own: whether it keeps the promise of each method it overrides, as ty's check of an
     /// override decides it.
     pub fn keeps(&self, at: usize) -> Option<bool> {
         self.keeps.get(&at).copied()
+    }
+
+    /// For the method whose name is written at `at`, when it does not keep its promise: the method
+    /// whose promise ty finds it breaks, where a file Atlas reads defines it.
+    pub fn breaks(&self, at: usize) -> Option<&Target> {
+        self.breaks.get(&at)
     }
 }
 
@@ -427,13 +460,19 @@ impl Ty {
                 classes.extend(self.classes(&path, &name));
             }
         }
-        let mut broken: HashMap<String, Vec<TextRange>> = HashMap::new();
-        for (file, at) in overrides(&classes, &names) {
-            let path = classes.iter().find(|c| c.file == file).map(|c| &c.path);
-            let ranges = broken.entry(file.clone()).or_insert_with(|| path.map_or_else(Vec::new, |p| self.broken(p)));
-            let keeps = !ranges.iter().any(|r| r.start().to_usize() <= at && at < r.end().to_usize());
-            if let Some(f) = out.files.get_mut(&file) {
-                f.keeps.insert(at, keeps);
+        let mut broken: HashMap<String, Vec<Broken>> = HashMap::new();
+        for o in overrides(&classes, &names) {
+            let path = classes.iter().find(|c| c.file == o.file).map(|c| &c.path);
+            let found = broken.entry(o.file.clone()).or_insert_with(|| path.map_or_else(Vec::new, |p| self.broken(p)));
+            let within = |r: &TextRange, at: usize| r.start().to_usize() <= at && at < r.end().to_usize();
+            let here = found.iter().find(|b| within(&b.signature, o.at));
+            // the method ty names as the one whose promise it breaks: the base whose signature it marks
+            let base = here.and_then(|b| o.bases.iter().find(|(key, at, _)| b.bases.iter().any(|(k, r)| k == key && within(r, *at))));
+            if let Some(f) = out.files.get_mut(&o.file) {
+                f.keeps.insert(o.at, here.is_none());
+                if let Some((_, at, file)) = base {
+                    f.breaks.insert(o.at, Target::Here { file: file.clone(), at: *at });
+                }
             }
         }
         out.libs = here.libs.into_inner().into_iter().map(|(path, module)| (module, path)).collect();
@@ -507,12 +546,62 @@ impl Ty {
         found.out
     }
 
-    /// Where ty's check of the file at `path` finds a method that does not keep the promise of
-    /// the one it overrides: the range of each such method's signature.
-    fn broken(&self, path: &SystemPathBuf) -> Vec<TextRange> {
-        let Ok(file) = system_path_to_file(&self.db, path) else { return vec![] };
-        self.db.check_file(file).iter().filter(|d| d.id().is_lint_named(OVERRIDES)).filter_map(|d| d.range()).collect()
+    /// Where ty's check of the file at `path` finds a method that does not keep the promise of one
+    /// it overrides. A `# type: ignore[...]` on the first or last line of its signature is the code
+    /// saying it knows, whatever its codes, as the bare `# type: ignore` is: ty itself honours only
+    /// the bare form and codes of its own (`ty:`).
+    fn broken(&self, path: &SystemPathBuf) -> Vec<Broken> {
+        let db = &self.db;
+        let Ok(file) = system_path_to_file(db, path) else { return vec![] };
+        let found: Vec<Diagnostic> = db.check_file(file).into_iter().filter(|d| d.id().is_lint_named(OVERRIDES)).collect();
+        if found.is_empty() {
+            return vec![];
+        }
+        let text = ruff_db::source::source_text(db, file);
+        let parsed = parsed_module(db, db.program_file(file).python_file(db)).load(db);
+        let ignores: Vec<usize> = parsed
+            .tokens()
+            .iter()
+            .filter(|t| t.kind() == TokenKind::Comment && ignores_with_codes(&text[t.range()]))
+            .map(|t| t.start().to_usize())
+            .collect();
+        let line = |at: usize| {
+            let start = text[..at].rfind('\n').map_or(0, |i| i + 1);
+            (start, text[at..].find('\n').map_or(text.len(), |i| at + i))
+        };
+        let ignored = |r: TextRange| {
+            [r.start().to_usize(), r.end().to_usize()].into_iter().map(line).any(|(a, b)| ignores.iter().any(|c| a <= *c && *c <= b))
+        };
+        found
+            .iter()
+            .filter_map(|d| {
+                let signature = d.range().filter(|r| !ignored(*r))?;
+                let bases = d
+                    .secondary_annotations()
+                    .filter_map(|a| {
+                        let UnifiedFile::Ty(f) = a.get_span().file() else { return None };
+                        Some((key(f.path(db).as_system_path()?.as_std_path()), a.get_span().range()?))
+                    })
+                    .collect();
+                Some(Broken { signature, bases })
+            })
+            .collect()
     }
+}
+
+/// A method ty finds breaking the promise of one it overrides: its signature, and the signatures
+/// ty marks beside it, each by the key of its file; the method whose promise it breaks is among them.
+struct Broken {
+    signature: TextRange,
+    bases: Vec<(String, TextRange)>,
+}
+
+/// Whether a comment holds a `type: ignore` with codes (`# type: ignore[override]`), alone or after
+/// another comment on its line (`# noqa # type: ignore[override]`).
+fn ignores_with_codes(comment: &str) -> bool {
+    comment.split('#').any(|c| {
+        c.trim().strip_prefix("type:").and_then(|c| c.trim_start().strip_prefix("ignore")).is_some_and(|c| c.trim_start().starts_with('['))
+    })
 }
 
 /// The files of a list ty reads, by their paths on disk, with the names Atlas knows them by.
@@ -527,8 +616,9 @@ fn keyed(list: &[(String, PathBuf)]) -> HashMap<String, String> {
     asked(list).into_iter().map(|(p, name)| (key(p.as_std_path()), name)).collect()
 }
 
-/// The check of ty's that Atlas asks for: whether a method keeps the promise of the one it
-/// overrides. It reads the whole promise, what the method takes and what it gives, and reads a
+/// The check of ty's that Atlas asks for: whether a method keeps the promise of each one it
+/// overrides, along its class's method resolution order, and if not, the first whose promise it
+/// breaks. It reads the whole promise, what the method takes and what it gives, and reads a
 /// generic base as the subclass sees it: in `class Boekwinkel(Winkel[Boek])`, a `-> Versie[R]`
 /// of `Winkel[R]` promises `Versie[Boek]`.
 const OVERRIDES: &str = "invalid-method-override";
@@ -553,10 +643,17 @@ struct Class {
     methods: Vec<(String, usize)>,
 }
 
-/// Each method that overrides one of a class read with it: its file, and where its name is
-/// written. The overridden method is one of a base that defines it, breadth first through the
-/// bases as written, as the graph finds it.
-fn overrides(classes: &[Class], here: &HashMap<String, String>) -> Vec<(String, usize)> {
+/// A method that overrides one of a class read with it: its file, where its name is written, and
+/// each method of its class's ancestors it overrides, by the key of its file, where its name is
+/// written and the name Atlas knows the file by. ty holds it to every one of them.
+struct Override {
+    file: String,
+    at: usize,
+    bases: Vec<(String, usize, String)>,
+}
+
+/// Each method that overrides one of a class read with it.
+fn overrides(classes: &[Class], here: &HashMap<String, String>) -> Vec<Override> {
     let by_place: HashMap<(&str, usize), &Class> = classes.iter().map(|c| ((c.key.as_str(), c.at), c)).collect();
     // the bases a class is read with: those defined in a file Atlas reads
     let bases = |c: &Class| -> Vec<(String, usize)> {
@@ -567,16 +664,19 @@ fn overrides(classes: &[Class], here: &HashMap<String, String>) -> Vec<(String, 
         for (name, at) in &c.methods {
             let mut seen = HashSet::new();
             let mut queue: VecDeque<(String, usize)> = bases(c).into();
+            let mut overridden = vec![];
             while let Some(b) = queue.pop_front() {
                 let Some(base) = by_place.get(&(b.0.as_str(), b.1)).copied() else { continue };
                 if !seen.insert(b) {
                     continue;
                 }
-                if base.methods.iter().any(|(n, _)| n == name) {
-                    out.push((c.file.clone(), *at));
-                    break;
+                for (_, m) in base.methods.iter().filter(|(n, _)| n == name) {
+                    overridden.push((base.key.clone(), *m, base.file.clone()));
                 }
                 queue.extend(bases(base));
+            }
+            if !overridden.is_empty() {
+                out.push(Override { file: c.file.clone(), at: *at, bases: overridden });
             }
         }
     }
@@ -1396,7 +1496,26 @@ mod tests {
     fn a_type_is_the_classes_of_the_values_it_holds() {
         assert_eq!(outer_classes("ndarray[tuple[int], dtype[float64]]"), ["ndarray"]);
         assert_eq!(outer_classes("tuple[Figure, Axes]"), ["Figure", "Axes"]);
+        assert_eq!(outer_classes("list[tuple[Station, float]]"), Vec::<String>::new());
+        assert_eq!(outer_classes("tuple[Station, Store] | None"), ["Station", "Store", "None"]);
+        assert_eq!(outer_classes("list[tuple[Station, ...]]"), ["Station"]);
         assert_eq!(outer_classes("list[Node] | None"), ["Node", "None"]);
-        assert_eq!(outer_classes("dict[str, Series[Any]]"), ["str", "Series"]);
+        assert_eq!(outer_classes("dict[str, Series[Any]]"), ["Series"]);
+        assert_eq!(outer_classes("dict[Mode, Plan]"), ["Plan"]);
+        assert_eq!(outer_classes("dict[tuple[Mode, Level], list[Plan]] | None"), ["Plan", "None"]);
+        assert_eq!(outer_classes("Counter[Mode]"), Vec::<String>::new());
+    }
+
+    /// A `type: ignore` with codes says the code knows, whatever the codes and wherever it stands
+    /// among the comments of its line; the bare form and ty's own codes are ty's to read.
+    #[test]
+    fn a_type_ignore_with_codes_is_read_whatever_its_codes() {
+        use super::ignores_with_codes;
+        assert!(ignores_with_codes("# type: ignore[override]"));
+        assert!(ignores_with_codes("#type:ignore[misc, override]"));
+        assert!(ignores_with_codes("# noqa: E501 # type: ignore[override]  # reason"));
+        assert!(!ignores_with_codes("# type: ignore"));
+        assert!(!ignores_with_codes("# ty: ignore[invalid-method-override]"));
+        assert!(!ignores_with_codes("# a type: ignore[override] in prose"));
     }
 }

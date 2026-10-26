@@ -1,0 +1,52 @@
+# A function whose value is used says what it gives back (principle `gives`): `get_store() -> ReadingStore` says
+# what it gives, so the store's `history` is a step of the route, and the route reads the `readings` table through it.
+
+route harvest.api.readings
+step readings/get_store
+step readings/get_store/ReadingStore()
+step readings/ReadingStore.history
+step readings/ReadingStore.history/ReadingStore.connect
+step readings/ReadingStore.history/ReadingStore.connect/connect          # con = sqlite3.connect(self.path)
+step readings/ReadingStore.history/fetchall                   # rows = con.execute(..).fetchall()
+step readings/ReadingStore.history/Unit()
+step readings/ReadingStore.history/Reading()
+
+line entry > readings call
+line readings/get_store/ReadingStore() > ReadingStore@readings/get_store/ReadingStore() value
+line ReadingStore@readings/get_store/ReadingStore() > readings/get_store value         # get_store hands back what it built
+line readings/get_store > ReadingStore@readings/get_store value
+# history is called on the store and hands it to connect, whose body hands its path to sqlite3.connect
+line ReadingStore@readings/get_store > readings/ReadingStore.history/ReadingStore.connect/connect value
+line readings/ReadingStore.history/ReadingStore.connect/connect > Connection·con@readings/ReadingStore.history/ReadingStore.connect/connect value
+line Connection·con@readings/ReadingStore.history/ReadingStore.connect/connect > readings/ReadingStore.history/ReadingStore.connect value
+# `with self.connect() as con`: the name holds the connection connect gives
+line readings/ReadingStore.history/ReadingStore.connect > Connection·con@readings/ReadingStore.history/ReadingStore.connect value
+line Connection·con@readings/ReadingStore.history/ReadingStore.connect > readings/ReadingStore.history value   # the `with` enters and closes it
+line Connection·con@readings/ReadingStore.history/ReadingStore.connect > readings/ReadingStore.history/fetchall value   # con.execute(..) is glued into fetchall()
+line SQLite(readings) > readings/ReadingStore.history own                              # the SELECT, its touch history's own
+line readings/ReadingStore.history/fetchall > _·rows@readings/ReadingStore.history/fetchall value
+line _·rows@readings/ReadingStore.history/fetchall > readings/ReadingStore.history/Unit() value
+line _·rows@readings/ReadingStore.history/fetchall > readings/ReadingStore.history/Reading() value
+line readings/ReadingStore.history/Unit() > Unit@readings/ReadingStore.history/Unit() value
+line Unit@readings/ReadingStore.history/Unit() > readings/ReadingStore.history/Reading() value
+line readings/ReadingStore.history/Reading() > Reading@readings/ReadingStore.history/Reading() value
+line Reading@readings/ReadingStore.history/Reading() > readings/ReadingStore.history value
+line readings/ReadingStore.history > Reading@readings/ReadingStore.history value
+line Reading@readings/ReadingStore.history > readings value                            # the route hands back the readings
+line readings > Reading@readings value                                                  # and gives them, at its moment
+
+home ReadingStore@readings/get_store/ReadingStore() readings/get_store
+home ReadingStore@readings/get_store readings
+home Connection·con@readings/ReadingStore.history/ReadingStore.connect/connect readings/ReadingStore.history/ReadingStore.connect
+home Connection·con@readings/ReadingStore.history/ReadingStore.connect readings/ReadingStore.history
+home _·rows@readings/ReadingStore.history/fetchall readings/ReadingStore.history
+home Unit@readings/ReadingStore.history/Unit() readings/ReadingStore.history
+home Reading@readings/ReadingStore.history/Reading() readings/ReadingStore.history
+home Reading@readings/ReadingStore.history readings
+home Reading@readings readings
+
+side entry left
+side SQLite(readings) left # read and handed back; making its shape on connecting puts nothing
+
+# an own arrow takes what only a step inside it takes: the store (to connect), the Unit (to Reading())
+# building the store runs its public methods, which touch its tables

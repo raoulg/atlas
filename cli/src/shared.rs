@@ -21,6 +21,7 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
+use atlas_engine::sight::Sight;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -64,8 +65,47 @@ pub struct Note {
 }
 
 /// A file of `.atlas/` at the top of the repository `repo` is in.
+/// How long each phase of drawing the page took the last few times `atlas serve` started, in
+/// seconds, the latest last: what the progress bars expect of the next start. A start that finds the
+/// index of its build of Atlas reads little (`warm`), one that does not reads all (`cold`), so the two
+/// kinds are kept apart.
+#[derive(Serialize, Deserialize, Default, Clone, Debug, PartialEq)]
+pub struct Timings {
+    #[serde(default)]
+    pub cold: BTreeMap<String, Vec<f64>>,
+    #[serde(default)]
+    pub warm: BTreeMap<String, Vec<f64>>,
+}
+
+impl Timings {
+    /// The times of starts of one kind, by phase.
+    pub fn of(&self, warm: bool) -> &BTreeMap<String, Vec<f64>> {
+        if warm {
+            &self.warm
+        } else {
+            &self.cold
+        }
+    }
+
+    pub fn of_mut(&mut self, warm: bool) -> &mut BTreeMap<String, Vec<f64>> {
+        if warm {
+            &mut self.warm
+        } else {
+            &mut self.cold
+        }
+    }
+}
+
+pub fn timings(repo: &Path) -> Timings {
+    read(&file(repo, "timings.json")).and_then(|v| serde_json::from_value(v).ok()).unwrap_or_default()
+}
+
+pub fn set_timings(repo: &Path, timings: &Timings) -> Result<()> {
+    write(&file(repo, "timings.json"), timings)
+}
+
 fn file(repo: &Path, name: &str) -> PathBuf {
-    crate::made(Some(repo), name)
+    crate::home::made(Some(repo), name)
 }
 
 fn read(path: &Path) -> Option<Value> {
@@ -88,17 +128,25 @@ pub fn set_shown(repo: &Path, shown: &Value) -> Result<()> {
     write(&file(repo, "shown.json"), shown)
 }
 
-/// Ask the page to go to `view`.
-pub fn look(repo: &Path, view: &Value) -> Result<()> {
-    write(&file(repo, "look.json"), view)
+/// Where an agent asks the page to look: a sight to go to, a box or a line to point at there (by its
+/// id, a line as `from>to`), or both.
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+pub struct Look {
+    pub view: Option<Sight>,
+    pub at: Option<String>,
 }
 
-/// The view an agent asked for, taken once.
-pub fn take_look(repo: &Path) -> Option<Value> {
+/// Ask the page to look where `look` says.
+pub fn look(repo: &Path, look: &Look) -> Result<()> {
+    write(&file(repo, "look.json"), look)
+}
+
+/// Where an agent asked the page to look, taken once.
+pub fn take_look(repo: &Path) -> Option<Look> {
     let path = file(repo, "look.json");
-    let view = read(&path)?;
+    let look = read(&path).and_then(|v| serde_json::from_value(v).ok());
     std::fs::remove_file(&path).ok()?;
-    Some(view)
+    look
 }
 
 pub fn notes(repo: &Path) -> Vec<Note> {

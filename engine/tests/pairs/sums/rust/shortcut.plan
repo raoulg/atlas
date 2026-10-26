@@ -1,0 +1,65 @@
+# The knowledge base with the shortcut: `graaf` gives the lines back as Strings, of no type of the code's, so the Bron
+# put by `voeg_toe` never comes back as a Node: no value of the code's leaves the get.
+
+route kennis.Kennisbank
+step Kennisbank()/Kennisbank.new
+step Kennisbank()/Kennisbank.new/Kennisbank() # the struct expression `new` builds the store by
+step Kennisbank()/Kennisbank.voeg_toe
+step Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write
+step Kennisbank()/Kennisbank.graaf
+
+line entry > Kennisbank()/Kennisbank.new call
+line entry > Kennisbank()/Kennisbank.voeg_toe call
+line entry > Kennisbank()/Kennisbank.graaf call
+
+# what the constructor builds goes back to the caller; the doors run on the caller's instance, one value from
+# beyond, taken where a body reads its fields or calls on it
+line Kennisbank()/Kennisbank.new/Kennisbank() > Kennisbank@Kennisbank()/Kennisbank.new/Kennisbank() value
+line Kennisbank@Kennisbank()/Kennisbank.new/Kennisbank() > Kennisbank()/Kennisbank.new value     # new hands back what it built
+line Kennisbank()/Kennisbank.new > Kennisbank@Kennisbank()/Kennisbank.new value
+line Kennisbank > Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write value   # its own write at self.path; read_to_string inside takes it too
+line Kennisbank > Kennisbank()/Kennisbank.graaf value
+
+line Bron·bron > Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write/push_str value           # what it is handed: `bron.uuid`, `bron.url` glue `bron` in, held by `line`
+line Disk(Kennisbank.path) > Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write own
+line Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write > Disk(Kennisbank.path) own
+
+line Disk(Kennisbank.path) > Kennisbank()/Kennisbank.graaf own
+
+home Kennisbank@Kennisbank()/Kennisbank.new/Kennisbank() Kennisbank()/Kennisbank.new
+home Kennisbank@Kennisbank()/Kennisbank.new Kennisbank()
+home Kennisbank Kennisbank()
+home Bron·bron Kennisbank()
+
+# write reads the file into `text`, appends the line and a newline to it, and writes it back
+step Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write/read_to_string
+step Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write/push_str
+step Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write/push
+line Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write/read_to_string > _·text@Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write/read_to_string value
+line _·text@Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write/read_to_string > Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write/push_str value
+line Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write/push_str > _·text@Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write/push_str value
+line _·text@Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write/push_str > Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write/push value
+line Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write/push > _·text@Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write/push value
+line _·text@Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write/push > Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write value   # fs::write in write's own body writes it
+home _·text@Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write/read_to_string Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write
+home _·text@Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write/push_str Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write
+home _·text@Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write/push Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write
+
+# the io::Error, a value of no type of the code's: `read_to_string` makes it in write, and fs::write in write's own body;
+# `?` is no choice, and each border it crosses uncaught hands it on, up to the caller of the door
+line Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write/read_to_string > _@Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write/read_to_string value
+line _@Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write/read_to_string > Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write value
+line Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write > _@Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write value
+line _@Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write > Kennisbank()/Kennisbank.voeg_toe value          # `self.write(..)` last: voeg_toe gives back what it gives
+line Kennisbank()/Kennisbank.voeg_toe > _@Kennisbank()/Kennisbank.voeg_toe value
+line Kennisbank()/Kennisbank.graaf > _@Kennisbank()/Kennisbank.graaf value                                  # its read, `?`-propagated in its own code, no step
+home _@Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write/read_to_string Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write
+home _@Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write Kennisbank()/Kennisbank.voeg_toe
+home _@Kennisbank()/Kennisbank.voeg_toe Kennisbank()
+home _@Kennisbank()/Kennisbank.graaf Kennisbank()
+
+side entry left
+side Disk(Kennisbank.path) both
+# building the struct the route is about is read as a call of the route inside itself
+# the methods run on what the constructor built, not on the caller's instance
+line Kennisbank > Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write/read_to_string value   # `fs::read_to_string(&self.path)`

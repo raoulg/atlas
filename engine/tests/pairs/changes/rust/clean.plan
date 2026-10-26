@@ -1,0 +1,42 @@
+# The signature says the log changes, as `&mut Log` or as `&RefCell<Log>`: each `note` takes the log as it was and
+# makes it at its own moment, and inside it `push` makes the log's lines anew. A struct expression builds its struct,
+# as a constructor does; `RefCell::new` moves that Log into a cell, which is read as what it holds.
+# `run` counts the lines of both logs itself.
+route journal.run
+step run/Log()
+step run/note
+step run/note/push
+step run/Log()#2
+step run/note_shared
+
+line entry > run call
+line run/Log() > Log·log@run/Log() value
+line Log·log@run/Log() > run/note/push value
+line run/note/push > Log·log@run/note/push value
+line Log·log@run/note/push > run/note value
+line run/note > Log·log@run/note value
+line run/note_shared > Log·shared@run/note_shared value
+line Log·shared@run/note_shared > run value   # `shared.borrow().lines.len()`: the body uses it itself
+
+home Log·log@run/Log() run
+home Log·log@run/note/push run/note
+home Log·log@run/note run
+home Log·shared@run/note_shared run
+
+side entry left
+
+# `RefCell::new(Log { .. })` is no step: a cell is read as what it holds, as `Option` and `Box` are ("Wrappers are
+# identities"), and moving a value into it makes no new one, as a copy would (`copy.copy`, #125). `let mut log = Log
+# { .. }` and `let shared = RefCell::new(Log { .. })` say one thing: the Log the struct expression builds, named.
+line run/Log()#2 > Log·shared@run/Log()#2 value
+home Log·shared@run/Log()#2 run
+
+# A library operation that changes what a call gives (`log.borrow_mut().lines.push(..)`) is a step
+step run/note_shared/push
+line Log·shared@run/Log()#2 > run/note_shared/push value
+line run/note_shared/push > Log·log@run/note_shared/push value
+line Log·log@run/note_shared/push > run/note_shared value
+home Log·log@run/note_shared/push run/note_shared
+
+# `run` reads the lines of the log `note` changed
+line Log·log@run/note > run value

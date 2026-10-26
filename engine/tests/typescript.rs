@@ -132,7 +132,12 @@ fn a_server_registers_its_routes() {
     );
     assert_eq!(entry("server.regels.regels.POST /"), Some((EntryKind::Route, "POST /api/regels".into())));
     assert!(g.node("fixture-ts.server.regels.regels").is_none(), "a router is no function");
-    assert_eq!(entry("server"), Some((EntryKind::Cli, "dev · serve".into())), "the scripts that run server/index.ts");
+    let (kind, scripts) = entry("server").expect("the scripts that run server/index.ts make it a command");
+    assert_eq!(kind, EntryKind::Cli);
+    assert!(
+        scripts.contains("dev") && scripts.contains("serve") && !scripts.contains("build"),
+        "the scripts that run server/index.ts, and not `build`: {scripts}"
+    );
     assert_eq!(entry("lib.api.laad"), Some((EntryKind::Export, "laad".into())), "`exports` → lib/index.ts → `export *`");
     assert_eq!(entry("lib.model.Laag"), Some((EntryKind::Export, "Kaartlaag".into())), "`export {{ Laag as Kaartlaag }}`");
     assert_eq!(entry("lib.thema.thema"), None, "not exported by the entry");
@@ -191,12 +196,12 @@ fn paths_and_requests_are_evaluated() {
             .map(|t| (t.kind_name().to_string(), t.artifact.clone()))
             .collect::<Vec<_>>()
     };
-    // the file `klanten` hands `lees`, in the routes that reach `klanten`: under `DATA`'s default,
-    // or wherever `DATA_DIR` says, a place the code does not name
+    // the file `klanten` hands `lees`, in the routes that reach `klanten`: under `DATA`, what
+    // `DATA_DIR` says or its default, one input drawn as its default
     let lees: Vec<(&str, &[String])> =
         g.node("fixture-ts.server.opslag.lees").unwrap().touches.iter().map(|t| (t.artifact.as_str(), t.by.as_slice())).collect();
     let klanten = &["fixture-ts.server.opslag.klanten".to_string()][..];
-    assert_eq!(lees, [("data/klanten.csv", klanten), ("", klanten)], "`lees(\"klanten.csv\")` under `DATA`");
+    assert_eq!(lees, [("data/klanten.csv", klanten)], "`lees(\"klanten.csv\")` under `DATA`");
     // an object holds what its constructor was handed: a parameter property, and `this.map = map`;
     // `new Archief("archief").bewaar("a.txt", ..)` hands the method the rest of the path
     assert_eq!(t("server.opslag.Archief.bewaar"), [("disk_write".into(), "archief/a.txt".into())], "`constructor(private map: string)`");
@@ -222,9 +227,14 @@ fn a_change_to_an_input_is_a_change() {
     assert!(has(&m, "lib.telling.verzamel", "lib.model.Regel"), "`uit.push(r)`: {m:?}");
     assert!(has(&m, "lib.telling.hernoem", "lib.model.Regel"), "`regel.id = id`");
     assert!(has(&m, "lib.telling.Teller.tel", "lib.telling.Teller"), "`this.aantal++`");
-    assert!(!m.iter().any(|(s, _)| s == "lib.telling.telAlles" || s == "lib.telling.Teller.__init__"), "{m:?}");
-    let asked: Vec<String> = check(&g).into_iter().filter(|f| f.principle == "changes").map(|f| f.what).collect();
-    assert!(asked.iter().any(|w| w.contains("verzamel")) && !asked.iter().any(|w| w.contains("Teller.tel")), "{asked:?}");
+    for builds in ["lib.telling.telAlles", "lib.telling.Teller.constructor"] {
+        assert!(g.node(&format!("fixture-ts.{builds}")).is_some(), "{builds} is in the graph");
+        assert!(!m.iter().any(|(s, _)| s == builds), "{builds}: {m:?}");
+    }
+    let asked: Vec<_> = check(&g).into_iter().filter(|f| f.principle == "changes").collect();
+    let verzamel = asked.iter().find(|f| f.node == "fixture-ts.lib.telling.verzamel").unwrap_or_else(|| panic!("{asked:#?}"));
+    assert_eq!((verzamel.about("changes"), verzamel.about("type")), (vec!["uit"], vec!["fixture-ts.lib.model.Regel"]));
+    assert!(asked.iter().all(|f| f.node != "fixture-ts.lib.telling.Teller.tel"), "{asked:#?}");
 }
 
 /// A TypeScript body lists its calls, each with what it is handed and the name it is kept by:
@@ -660,4 +670,198 @@ extra();
         (extra.command_line.unwrap(), names(&extra.gives)),
         (vec!["--dry-run".to_string(), "--level".to_string()], vec!["parsed".to_string()])
     );
+}
+
+/// Isomorphic is the same: a value read through a wrapper (parentheses, `!`, `as`, `satisfies`,
+/// `await`) is the value inside it. Each of `Store`'s methods changes the rows it holds, however the
+/// field is written, and a cast names the class a method runs on.
+#[test]
+fn a_value_through_its_wrappers_is_the_value_inside() {
+    let g = written(
+        "wrappers",
+        &[
+            ("package.json", "{\"name\": \"wrappers\", \"version\": \"0.0.0\", \"type\": \"module\"}\n"),
+            (
+                "src/store.ts",
+                "export class Store {\n  rows: string[] = [];\n  plain(r: string): void {\n    this.rows.push(r);\n  }\n  bang(r: string): void {\n    (this.rows!).push(r);\n  }\n  cast(r: string): void {\n    (this.rows as string[]).push(r);\n  }\n  meets(r: string): void {\n    (this.rows satisfies string[]).push(r);\n  }\n}\n\nexport function fill(x: unknown): void {\n  (x as Store).plain(\"a\");\n}\n",
+            ),
+        ],
+    );
+    let r = &g.root;
+    let mutates = edges(&g, EdgeKind::Mutates);
+    for m in ["plain", "bang", "cast", "meets"] {
+        assert!(has(&mutates, &format!("{r}.store.Store.{m}"), &format!("{r}.store.Store")), "{m} changes the Store: {mutates:?}");
+    }
+    assert!(has(&edges(&g, EdgeKind::Calls), &format!("{r}.store.fill"), &format!("{r}.store.Store.plain")), "a cast names the class");
+}
+
+/// An object literal the compiler checks against a type of the program's builds a value of it, as
+/// `new` does, a struct expression in Rust and a call of the class in Python (#154): handed to a
+/// parameter its function writes with the type, also of a method or a constructor and of a function
+/// another module declares, written `satisfies` or `as` the type. The call it is handed to is handed
+/// what it builds. A literal written for a type that is no plain name of the program's
+/// (`Partial<Box>`) builds nothing, and neither does one handed to a rest parameter.
+#[test]
+fn an_object_literal_of_a_type_of_the_programs_builds_it() {
+    let g = written(
+        "literals",
+        &[
+            ("package.json", r#"{ "name": "literals" }"#),
+            ("tsconfig.json", "{}"),
+            (
+                "src/model.ts",
+                r#"export interface Box {
+  size: number;
+}
+
+export function weigh(b: Box, scale: number): number {
+  return b.size * scale;
+}
+"#,
+            ),
+            (
+                "src/main.ts",
+                r#"import { weigh } from "./model.js";
+import type { Box } from "./model.js";
+
+class Shelf {
+  constructor(readonly first: Box) {}
+
+  put(b: Box): number {
+    return b.size;
+  }
+}
+
+function part(b: Partial<Box>): number {
+  return b.size ?? 0;
+}
+
+function all(...bs: Box[]): number {
+  return bs.length;
+}
+
+export function main(n: number): number {
+  const shelf = new Shelf({ size: n });
+  const kept = { size: 2 } satisfies Box;
+  const cast = { size: 3 } as Box;
+  return weigh({ size: 1 }, 2) + shelf.put({ size: n }) + part({ size: 4 }) + all({ size: 5 }) + kept.size + cast.size;
+}
+"#,
+            ),
+        ],
+    );
+    let main = g.node(&format!("{}.main.main", g.root)).expect("main");
+    let bx = format!("{}.model.Box", g.root);
+    // Each literal that builds a Box, by where its value goes: the name that keeps it, or the call
+    // that is handed it.
+    let last = |id: &str| id.rsplit('.').next().unwrap_or(id).to_string();
+    let built: Vec<String> = main
+        .sites
+        .iter()
+        .filter(|s| s.to == bx)
+        .flat_map(|s| s.gives.iter())
+        .map(|h| match main.sites.iter().find(|c| h.name.starts_with('#') && c.hands.iter().any(|x| x.name == h.name)) {
+            Some(c) => last(&c.to),
+            None => h.name.clone(),
+        })
+        .collect();
+    assert_eq!(
+        built,
+        ["Shelf", "kept", "cast", "weigh", "put"],
+        "`new Shelf({{..}})`, `satisfies`, `as`, `weigh({{..}})`, `shelf.put({{..}})`: {:#?}",
+        main.sites
+    );
+    let kept: Vec<&str> = main
+        .sites
+        .iter()
+        .filter(|s| s.to == bx)
+        .flat_map(|s| s.gives.iter().map(|h| h.name.as_str()))
+        .filter(|n| !n.starts_with('#'))
+        .collect();
+    assert_eq!(kept, ["kept", "cast"], "a literal kept by a name gives it");
+    let weigh = main.sites.iter().find(|s| s.to.ends_with(".weigh")).expect("weigh");
+    assert!(weigh.hands.iter().any(|h| h.ty == bx && h.name.starts_with('#')), "weigh is handed the Box the literal builds: {weigh:#?}");
+    let part = main.sites.iter().find(|s| s.to.ends_with(".part")).expect("part");
+    assert!(part.hands.is_empty(), "`Partial<Box>` is no Box: {part:#?}");
+}
+
+/// A call gives anew each value it changes among what it is handed, under the name it was handed
+/// (#129): the value it is called on where the method changes `this`, and each argument whose
+/// parameter the function changes, also through a call of another that changes it (`refill` hands
+/// its `xs` to `addAll`). A change through a projection changes its owner (`fill(box.items)` gives
+/// `box`), a name of no type of the program's is of the type the change is drawn as (an Array), and
+/// what the call makes anew (a spread) changes nothing of the body's. `this.items.push(..)` is the
+/// language's `push` on a part of the value the method runs on: it is handed `this` and gives it
+/// anew.
+#[test]
+fn a_call_gives_anew_what_it_changes_of_what_it_is_handed() {
+    let g = written(
+        "changed",
+        &[
+            ("package.json", r#"{ "name": "changed" }"#),
+            ("tsconfig.json", "{}"),
+            (
+                "src/main.ts",
+                r#"export class Box {
+  items: string[] = [];
+
+  add(x: string): void {
+    this.items.push(x);
+  }
+}
+
+function addAll(xs: string[], more: string[]): void {
+  xs.push(...more);
+}
+
+function refill(xs: string[]): void {
+  addAll(xs, ["a"]);
+}
+
+function fill(items: string[]): void {
+  items.push("b");
+}
+
+export function main(): number {
+  const box = new Box();
+  const other = new Box();
+  box.add("a");
+  const lines: string[] = [];
+  refill(lines);
+  fill(box.items);
+  fill([...other.items]);
+  return lines.length + box.items.length;
+}
+"#,
+            ),
+        ],
+    );
+    let r = &g.root;
+    let mut via: Vec<(String, String)> = g
+        .edges
+        .iter()
+        .filter(|e| e.kind == EdgeKind::Mutates && e.src == format!("{r}.main.refill"))
+        .map(|e| (e.dst.clone(), e.via.clone().unwrap_or_default()))
+        .collect();
+    via.sort();
+    assert_eq!(via, [("ext:javascript.Array".to_string(), "xs".to_string())], "refill changes what it hands addAll");
+    let main = g.node(&format!("{r}.main.main")).expect("main");
+    let gives = |to: &str| -> Vec<Vec<(String, String)>> {
+        main.sites
+            .iter()
+            .filter(|s| s.to.ends_with(to))
+            .map(|s| s.gives.iter().map(|h| (h.ty.rsplit('.').next().unwrap_or("").to_string(), h.name.clone())).collect())
+            .collect()
+    };
+    let bx = ("Box".to_string(), "box".to_string());
+    assert_eq!(gives(".Box.add"), [vec![bx.clone()]], "`box.add(..)` changes the box");
+    assert_eq!(gives(".refill"), [vec![("Array".to_string(), "lines".to_string())]], "through `addAll`");
+    assert_eq!(gives(".fill"), [vec![bx], vec![]], "`fill(box.items)` changes the box; a spread is a new array");
+    let add = g.node(&format!("{r}.main.Box.add")).expect("add");
+    let push = add.sites.iter().find(|s| s.op == "push").unwrap_or_else(|| panic!("{:#?}", add.sites));
+    let held = |hs: &[atlas_engine::Held]| -> Vec<(String, String)> { hs.iter().map(|h| (h.ty.clone(), h.name.clone())).collect() };
+    let this = format!("{r}.main.Box");
+    assert!(push.changes && !push.not_followed, "{push:#?}");
+    assert!(held(&push.hands).contains(&(this.clone(), String::new())), "handed the box it runs on: {push:#?}");
+    assert_eq!(held(&push.gives), [(this, "this".to_string())], "and gives it anew");
 }

@@ -1,0 +1,32 @@
+# The same fit, which keeps both figures itself. `create_figures` makes two in one body, each kept in fields of the value
+# it runs on (`self.fig, self.ax = plt.subplots()`, `self.res_fig, self.res_ax = plt.subplots()`): each binding is a slot
+# of the class, so a fit holds two figures (#178), as two calls make two (#175). A class that keeps more than one figure
+# names each by the first field its binding sets: `fit.fig` and `fit.res_fig`. Two figures, as on the clean side; what
+# differs is what holds them, one value in two slots against two charts in two parts.
+
+route notebooks.residuals
+step residuals/draw_fit
+step residuals/draw_fit/Fit()
+step residuals/draw_fit/Fit.draw
+choice residuals/draw_fit/Fit.draw/?1
+step residuals/draw_fit/Fit.draw/?1/Fit.create_figures
+
+line entry > residuals call
+line residuals/draw_fit/Fit() > Fit·fit@residuals/draw_fit/Fit() value
+line Fit·fit@residuals/draw_fit/Fit() > residuals/draw_fit/Fit.draw/?1/Fit.create_figures value
+line residuals/draw_fit/Fit.draw/?1/Fit.create_figures > Fit·self@residuals/draw_fit/Fit.draw/?1 value
+line residuals/draw_fit/Fit.draw/?1/Fit.create_figures > Figure 1 · Fit · fit.fig own        # `self.fig, self.ax = plt.subplots()`
+line residuals/draw_fit/Fit.draw/?1/Fit.create_figures > Figure 2 · Fit · fit.res_fig own    # `self.res_fig, self.res_ax = plt.subplots()`
+line Fit·self@residuals/draw_fit/Fit.draw/?1 > residuals/draw_fit/Fit.draw value   # `self.ax.plot(..)`, `self.res_ax.plot(..)`
+line residuals/draw_fit/Fit.draw > Fit·fit@residuals/draw_fit/Fit.draw value
+line Fit·fit@residuals/draw_fit/Fit.draw > residuals/draw_fit value           # `return fit`
+line residuals/draw_fit > Fit·fit@residuals/draw_fit value                     # `fit = draw_fit(..)`
+
+home Fit·fit@residuals/draw_fit/Fit() residuals/draw_fit
+home Fit·self@residuals/draw_fit/Fit.draw/?1 residuals/draw_fit/Fit.draw
+home Fit·fit@residuals/draw_fit/Fit.draw residuals/draw_fit
+home Fit·fit@residuals/draw_fit residuals
+
+side entry left
+side Figure 1 · Fit · fit.fig right
+side Figure 2 · Fit · fit.res_fig right

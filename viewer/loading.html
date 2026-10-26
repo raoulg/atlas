@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Atlas · reading code</title>
+<style>
+  :root{--bg:#f4f1ec;--panel:#fff;--ink:#111;--ink-2:#5a544d;--ink-3:#857d73;--line:#e2dcd3;--accent:#c43a14;
+    font-family:system-ui,-apple-system,sans-serif;color:var(--ink);background:var(--bg)}
+  @media(prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#141210;--panel:#1b1815;--ink:#f4f1ec;--ink-2:#b8b0a5;--line:#2b2621;--accent:#f2643c}}
+  :root[data-theme="dark"]{--bg:#141210;--panel:#1b1815;--ink:#f4f1ec;--ink-2:#b8b0a5;--line:#2b2621;--accent:#f2643c}
+  body{margin:0;min-height:100vh;display:grid;grid-template-rows:46px 1fr}
+  header{display:flex;align-items:center;padding:0 16px;background:var(--panel);border-bottom:1px solid var(--line);font-weight:600}
+  main{display:grid;place-content:center;padding:24px}
+  .card{width:min(540px,calc(100vw - 48px))}
+  .eyebrow{font:11px ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-3)}
+  h1{font-size:24px;font-weight:550;line-height:1.2;margin:14px 0 10px}
+  p{line-height:1.55;color:var(--ink-2);max-width:48ch}
+  .track{height:3px;background:var(--line);overflow:hidden;margin:26px 0 8px}
+  .track::before{content:"";display:block;width:var(--done,0%);height:100%;background:var(--accent);transition:width .1s linear}
+  .step{font:11px ui-monospace,SFMono-Regular,Menlo,monospace;color:var(--ink-3);text-align:right;margin:0 0 22px}
+  #error{white-space:pre-wrap;color:var(--accent)}
+  .hosted body{grid-template-rows:1fr}.hosted header{display:none}
+</style>
+<script>/*__PALETTE__*/</script>
+<header>atlas</header>
+<main><div class="card">
+  <div class="eyebrow">Your repository</div>
+  <h1>The first picture is taking shape</h1>
+  <p id="status" role="status">Reading the repository's own code. The page opens as soon as that picture is ready.</p>
+  <div class="track" aria-hidden="true"></div><div class="step" id="step" role="progressbar" aria-valuemin="0" aria-valuemax="100">0%</div>
+  <p id="error" role="alert" hidden></p>
+</div></main>
+<script>
+/*__PROGRESS__*/
+  // in Atlas Studio the bar above is Studio's own
+  if (new URLSearchParams(location.search).has("host") && window.parent !== window) document.documentElement.classList.add("hosted");
+  const status = document.getElementById("status"), error = document.getElementById("error"), track = document.querySelector(".track"), step = document.getElementById("step");
+  // the first phase, reading the project's own code: the picture opens when it is full; what follows
+  // has a bar of its own in the picture
+  const bar = progressBar("code", done => {
+    const percent = Math.floor(done * 100);
+    track.style.setProperty("--done", `${done * 100}%`);
+    step.textContent = `${percent}%`;
+    step.setAttribute("aria-valuenow", percent);
+  });
+  async function check() {
+    try {
+      const response = await fetch("/api/drawn", {cache: "no-store"});
+      if (!response.ok) throw new Error("The server did not answer.");
+      const state = await response.json();
+      if (state.drawn) { location.reload(); return; }
+      if (state.error) {
+        bar.stop();
+        status.textContent = "Atlas could not draw this repository.";
+        error.textContent = state.error; error.hidden = false;
+      } else {
+        bar.seen(state);
+        status.textContent = state.phase === "libraries" ? "Following library calls for the complete picture." : "Reading the repository's own code. The page opens as soon as that picture is ready.";
+        error.hidden = true;
+      }
+    } catch { status.textContent = "Waiting for the Atlas server…"; }
+    setTimeout(check, 500);
+  }
+  check();
+</script>
+</html>

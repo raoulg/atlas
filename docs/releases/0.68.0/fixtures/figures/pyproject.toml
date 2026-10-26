@@ -1,0 +1,11 @@
+[project]
+name = "example"
+version = "0.1.0"
+requires-python = ">=3.12"
+
+[project.scripts]
+plots = "plots:main"
+
+# the libraries it imports, as their stubs: in place of an installed environment
+[tool.ty.environment]
+extra-paths = ["../../../../../engine/tests/fixture/typings", "../../../../../engine/tests/pairs/pipeline/typings"]

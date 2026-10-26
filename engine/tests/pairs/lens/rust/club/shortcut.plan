@@ -1,0 +1,77 @@
+# The shortcut's register: `join` puts a Member into `members`, and `names` reads back only their names, strings of no
+# type of the code's; a Member comes back only inside a Report, from `reports`. `names` returns what it read, so the
+# table stands between the put and the read.
+
+route club.desk.Register
+step Register()/Register.new
+step Register()/Register.new/Register()
+step Register()/Register.join
+step Register()/Register.names
+step Register()/Register.latest
+step Register()/Register.latest/Member()
+step Register()/Register.latest/Report()
+
+line entry > Register()/Register.new call
+line entry > Register()/Register.join call
+line entry > Register()/Register.names call
+line entry > Register()/Register.latest call
+
+line Connection·conn > Register()/Register.new/Register() value # the literal is handed new's connection
+line Register()/Register.new/Register() > Register@Register()/Register.new/Register() value
+line Register@Register()/Register.new/Register() > Register()/Register.new value
+line Register()/Register.new > Register@Register()/Register.new value
+line Register > Register()/Register.join value # the caller's instance: every method runs on it
+line Register > Register()/Register.names/prepare value # the method hands `self.conn` to it
+line Register > Register()/Register.latest value
+
+line Member·who > Register()/Register.join value
+line Register()/Register.join > SQLite(members) own
+line Register()/Register.join > _@Register()/Register.join value   # `self.conn.execute(..)?`, in its own code: a rusqlite error
+home _@Register()/Register.join Register()
+
+line SQLite(members) > Register()/Register.names own
+
+line SQLite(reports) > Register()/Register.latest own
+line Register()/Register.latest/Member() > Member@Register()/Register.latest/Member() value
+line Member@Register()/Register.latest/Member() > Register()/Register.latest/Report() value   # the author
+line Register()/Register.latest/Report() > Report@Register()/Register.latest/Report() value
+line Report@Register()/Register.latest/Report() > Register()/Register.latest value
+line Register()/Register.latest > Report@Register()/Register.latest value
+
+home Connection·conn Register()
+home Register@Register()/Register.new/Register() Register()/Register.new
+home Register@Register()/Register.new Register()
+home Register Register()
+home Member·who Register()
+home Member@Register()/Register.latest/Member() Register()/Register.latest
+home Report@Register()/Register.latest/Report() Register()/Register.latest
+home Report@Register()/Register.latest Register()
+
+# An error is a value (#138): `?` hands on what a step fails with, converted to the function's error type, here no type
+# of the code's (`io::Error`, `rusqlite::Error`); each border it crosses uncaught hands it on. An opened step takes what
+# its steps hand on, which Atlas does not draw for an error of no type of the code's.
+line Register()/Register.names > _@Register()/Register.names value
+line Register()/Register.names/prepare > _@Register()/Register.names/prepare value
+line Register()/Register.names/query_map > _@Register()/Register.names/query_map value
+line _@Register()/Register.names/prepare > Register()/Register.names value
+line _@Register()/Register.names/query_map > Register()/Register.names value
+home _@Register()/Register.names Register()
+home _@Register()/Register.names/prepare Register()/Register.names
+home _@Register()/Register.names/query_map Register()/Register.names
+
+side entry left
+side SQLite(members) between
+side SQLite(reports) left
+
+# an opened step's own arrow gives back what its steps make of the type it gives: latest gives back the Report, not its
+# author
+# what names the statement and the rows it gives back are steps of their own (a library's operation whose result the
+# body names); `rows` goes on to `collect`, an unnamed call, and back to the caller
+step Register()/Register.names/prepare
+step Register()/Register.names/query_map
+line Register()/Register.names/prepare > _·select@Register()/Register.names/prepare value
+line _·select@Register()/Register.names/prepare > Register()/Register.names/query_map value
+line Register()/Register.names/query_map > _·rows@Register()/Register.names/query_map value
+line _·rows@Register()/Register.names/query_map > Register()/Register.names value   # names returns what `collect` makes of them
+home _·select@Register()/Register.names/prepare Register()/Register.names
+home _·rows@Register()/Register.names/query_map Register()/Register.names

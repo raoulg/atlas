@@ -135,22 +135,102 @@ fn a_cache_filled_on_first_use_is_made_sure_of() {
             "_cache: dict[str, int] = {}\n\n\ndef build(key: str) -> int:\n    return len(key)\n\n\ndef cached(key: str) -> int:\n    if key not in _cache:\n        value = build(key)\n        _cache[key] = value\n    return _cache[key]\n\n\ndef bump(key: str) -> None:\n    _cache[key] = _cache.get(key, 0) + 1\n",
         )],
     );
-    let globals = |id: &str| {
-        g.node(id)
-            .unwrap()
-            .touches
-            .iter()
-            .filter(|t| t.kind_name() == "global")
-            .map(|t| (t.op.clone(), t.dir_name(), t.line))
-            .collect::<Vec<_>>()
-    };
-    assert_eq!(
-        globals("memo.cached"),
-        [("_cache".to_string(), "write", 11), ("_cache".to_string(), "read", 12)],
-        "the test of a key goes with the reading"
-    );
+    let globals: Vec<_> = g.node("memo.cached").unwrap().touches.iter().filter(|t| t.kind_name() == "global").collect();
+    let kept: Vec<(&str, &str)> = globals.iter().map(|t| (t.op.as_str(), t.dir_name())).collect();
+    assert_eq!(kept, [("_cache", "write"), ("_cache", "read")], "the test of a key goes with the reading");
+    assert!(globals[0].line < globals[1].line, "the write stands before the read: {globals:#?}");
     let arrows = atlas_engine::flow::arrows(&g);
     let cache = "w:Global:memo._cache";
     assert!(arrows.get("memo.cached").map_or(true, |a| !a.updates.iter().any(|p| p == cache) && !a.reads_back.iter().any(|p| p == cache)));
     assert!(arrows["memo.bump"].updates.iter().any(|p| p == cache), "{:?}", arrows.get("memo.bump"));
+}
+
+/// Reach is kept per step, not per function: a helper that writes the path its caller hands writes,
+/// under each caller, that caller's file, and the route says so at each step.
+#[test]
+fn a_helper_writes_under_each_caller_that_callers_file() {
+    let g = written(
+        "twocallers",
+        &[(
+            "twocallers.py",
+            r#"from pathlib import Path
+
+
+def write_to(name: str) -> None:
+    Path(name).write_text("x")
+
+
+def alpha() -> None:
+    write_to("data/alpha.txt")
+
+
+def beta() -> None:
+    write_to("data/beta.txt")
+
+
+def run() -> None:
+    alpha()
+    beta()
+"#,
+        )],
+    );
+    let bodies = atlas_engine::flow::bodies(&g);
+    let steps = |id: &str| bodies[id].steps().iter().map(|s| s.to.clone()).collect::<Vec<_>>();
+    assert_eq!(steps("twocallers.run"), ["twocallers.alpha", "twocallers.beta"]);
+    let helper = g.node("twocallers.write_to").unwrap();
+    for (caller, file) in [("twocallers.alpha", "data/alpha.txt"), ("twocallers.beta", "data/beta.txt")] {
+        assert_eq!(steps(caller), ["twocallers.write_to"], "{caller}");
+        // the step `run → caller → write_to`, as the route walks it
+        let path = ["twocallers.run", caller, "twocallers.write_to"];
+        let written: Vec<&str> = helper
+            .touches_in("twocallers.run", &|f| path.contains(&f))
+            .iter()
+            .filter(|t| t.kind_name() == "disk_write")
+            .map(|t| t.artifact.as_str())
+            .collect();
+        assert_eq!(written, [file], "under {caller}: {:#?}", helper.touches);
+    }
+}
+
+/// What hands on the value inside it, parentheses and `await`, is read as that value, wherever a
+/// value is read: the file `open` is handed is named by the call that gives it, whether the call
+/// is written plainly, in parentheses or awaited.
+#[test]
+fn a_value_through_its_wrappers_is_the_value_inside() {
+    let g = written(
+        "wrappers",
+        &[(
+            "wrappers.py",
+            r#"def where() -> str:
+    return "data/notes.txt"
+
+
+async def place() -> str:
+    return "data/notes.txt"
+
+
+def plain() -> str:
+    with open(where()) as f:
+        return f.read()
+
+
+def parenthesized() -> str:
+    with open((where())) as f:
+        return f.read()
+
+
+async def awaited() -> str:
+    with open(await place()) as f:
+        return f.read()
+"#,
+        )],
+    );
+    let read = |f: &str| -> Vec<String> {
+        g.node(&format!("wrappers.{f}")).unwrap().touches.iter().filter(|t| t.kind_name() == "disk_read").map(|t| t.what.clone()).collect()
+    };
+    let plain = read("plain");
+    assert!(plain.len() == 1 && plain[0].contains("where"), "the file is named by the call `where`: {plain:?}");
+    assert_eq!(read("parenthesized"), plain, "parentheses are the value inside");
+    let awaited: Vec<String> = read("awaited").iter().map(|w| w.replace("place", "where")).collect();
+    assert_eq!(awaited, plain, "`await place()` is named as `place()` is");
 }

@@ -43,7 +43,7 @@ fn a_client_initializes_lists_and_calls() {
         json!({ "jsonrpc": "2.0", "id": 2, "method": "tools/list" }),
         call(3, "check", json!({ "path": "engine/tests/fixture", "principle": "choices" })),
         call(4, "explain", json!({ "principle": "sums" })),
-        call(5, "route", json!({ "entry": "analyze" })),
+        call(5, "route", json!({ "path": "engine/tests/fixture", "entry": "build" })),
         call(6, "explain", json!({ "principle": "kiss" })),
         call(7, "nothing", json!({})),
     ]);
@@ -77,25 +77,37 @@ fn a_client_initializes_lists_and_calls() {
     assert!(text(&replies[2]).contains("prepare tests `mode`"), "{}", text(&replies[2]));
     assert!(!text(&replies[2]).contains("\ndoors ·"), "only the principle asked for");
     assert!(text(&replies[3]).starts_with("A sum type is unwrapped where it arises."));
-    // analyze is its algebra: Disk(repo) -> read -> Repo -> parse -> Graph
-    assert!(
-        text(&replies[4]).contains("\n1  read(dir, opts) → Repo\n  1.1  Repo.read(dir, named) → Repo   ·   reads analyze.dir"),
-        "{}",
-        text(&replies[4])
-    );
-    // a package named on its own is read as the project it is in, asked for that package:
-    // `Repo::read(&root, ..)?.asked_for(package)`, a method on what the call before it gives, run
-    // only when a package is named
-    assert!(
-        text(&replies[4]).contains("\n  1.3a  Repo.asked_for(asked) → Repo   ·   when Some((root, package))\n"),
-        "{}",
-        text(&replies[4])
-    );
-    // the places other routes hand `analyze` (a revision `changes` reads into a temporary folder) are theirs
-    assert!(!text(&replies[4]).contains("$TMPDIR"), "{}", text(&replies[4]));
-    assert!(text(&replies[4]).contains("2.2  Language.parse(repo, opts) → Graph   ·   one of 3"), "{}", text(&replies[4]));
+    assert_ne!(replies[4]["result"]["isError"], true, "{}", text(&replies[4]));
+    assert!(text(&replies[4]).contains("fixture.cli.build"), "the route tool returns the requested entry: {}", text(&replies[4]));
     assert_eq!(replies[5]["result"]["isError"], true, "an unknown principle is the tool's error, said in words");
     assert_eq!(replies[6]["error"]["code"], -32602, "an unknown tool is a protocol error");
+}
+
+/// `check` with `json: true` gives the findings as data, the document `atlas check --json` prints: per
+/// part its findings, each with what it is about, by role and id.
+#[test]
+fn check_gives_the_findings_as_data() {
+    let replies = session(&[call(1, "check", json!({ "path": "engine/tests/fixture", "json": true }))]);
+    assert_ne!(replies[0]["result"]["isError"], true, "{}", text(&replies[0]));
+    let doc: Value = serde_json::from_str(text(&replies[0])).unwrap_or_else(|e| panic!("{e}: {}", text(&replies[0])));
+    let findings: Vec<&Value> =
+        doc["parts"].as_array().expect("parts").iter().flat_map(|p| p["findings"].as_array().expect("findings")).collect();
+    let about: Vec<&Value> = findings.iter().filter_map(|f| f["about"].as_array()).flatten().collect();
+    assert!(!about.is_empty(), "some finding says what it is about: {doc:#}");
+    assert!(about.iter().all(|a| a["role"].is_string() && a["id"].is_string()), "{about:?}");
+}
+
+/// An agent can request a route by its entry's id, and a route that is not there is the tool's
+/// error, said in words.
+#[test]
+fn an_agent_can_read_a_route_by_its_entry() {
+    let replies = session(&[
+        call(1, "route", json!({ "path": "engine/tests/fixture", "entry": "fixture.cli.build" })),
+        call(2, "route", json!({ "path": "engine/tests/fixture", "entry": "fixture.cli.nowhere" })),
+    ]);
+    assert_ne!(replies[0]["result"]["isError"], true, "{}", text(&replies[0]));
+    assert!(text(&replies[0]).contains("fixture.cli.build"), "{}", text(&replies[0]));
+    assert_eq!(replies[1]["result"]["isError"], true, "{}", text(&replies[1]));
 }
 
 /// `changes` over MCP: an agent sees what its edit did to the routes.
@@ -147,9 +159,12 @@ fn view_writes_the_page_in_a_view() {
     let replies = session(&[call(1, "view", json!({ "path": "engine/tests/fixture", "view": shown, "out": out.to_string_lossy() }))]);
     assert!(text(&replies[0]).starts_with("Wrote "), "{}", text(&replies[0]));
     let page = std::fs::read_to_string(&out).unwrap();
-    assert!(
-        page.contains(r#""view":{"open":{"functions":["fixture.build.Pipeline.run"]},"route":"fixture.cli.build"}"#),
-        "the page opens in the view"
-    );
     let _ = std::fs::remove_file(&out);
+    let data = &page[page.find("window.DATA = ").expect("the page holds its data") + "window.DATA = ".len()..];
+    let data: Value = serde_json::Deserializer::from_str(data).into_iter().next().unwrap().unwrap();
+    assert_eq!(data["projects"]["fixture"]["view"], shown, "the page opens in the view");
+    // a view the page does not know is said, not drawn as no view at all
+    let replies = session(&[call(1, "view", json!({ "path": "engine/tests/fixture", "view": { "rout": "fixture.cli.build" } }))]);
+    assert_eq!(replies[0]["result"]["isError"], true);
+    assert!(text(&replies[0]).contains("unknown field `rout`"), "{}", text(&replies[0]));
 }

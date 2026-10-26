@@ -10,6 +10,7 @@
 //! statement whose verb and tables are written out is whole where it is built; the values it is
 //! built from name no place.
 
+use std::collections::HashSet;
 use std::sync::OnceLock;
 
 use regex::Regex;
@@ -123,38 +124,83 @@ pub enum Seg {
     /// A parameter of another function, through the object it set up: `self.cache_dir`, set in
     /// `__init__` from its `cache_dir`, by the function's id and the parameter's name.
     Held(String, String),
-    /// What cannot be known, by the name the code gives it.
+    /// What cannot be known, by the name the code gives it; what the environment holds for a
+    /// variable is named by `$` and the variable (`environment`).
     Hole(String),
-    /// An option of the command line, by its name, holding its default: what the entry runs with
-    /// where the command line leaves it out, and which the command line may override. It is an
-    /// input of the entry, as a parameter of a command is (typer's `raw: Path = RAW`), whatever
-    /// parser reads it (clap's `default_value`, parseArgs' `default`, argparse's `default=`):
-    /// whole where the command line is read, and never decided by the code alone.
+    /// An input with a default, by its name: what the code takes where nobody says otherwise, and
+    /// which whoever hands the input may override. An option of the command line, whatever parser
+    /// reads it (clap's `default_value`, parseArgs' `default`, argparse's `default=`), a
+    /// parameter's default (`path: Path = Path("out.csv")`, typer's `raw: Path = RAW`), and what
+    /// the code falls back to where a caller or the environment says nothing
+    /// (`os.environ.get("STORE", "out.csv")`, `process.env.STORE ?? "out.csv"`) are each one:
+    /// never decided by the code alone.
     Option(String, Built),
+    /// Where the package's own code lies, by its path in the repository: the file of the module an
+    /// expression is written in (`__file__`, `import.meta.url`), or the directory a package ships
+    /// its files in (`importlib.resources.files(..)`). A file read from there is part of the
+    /// package, wherever it is installed.
+    Package(String),
 }
 
 pub type Built = Vec<Seg>;
 
-/// The values an option of the command line holds: its default, each as reached through the
-/// option; no value where it declares none.
+/// The values an input with a default holds: its default, each as reached through the input; no
+/// value where it declares none.
 pub fn option(name: &str, default: Vec<Built>) -> Vec<Built> {
     default.into_iter().map(|d| vec![Seg::Option(name.to_string(), d)]).collect()
 }
 
-/// Whether a value is known as text throughout: literal, or an option's default that is.
+/// What the environment holds for the variable `name`: set where the program runs, and not known
+/// to the code.
+pub fn environment(name: &str) -> Built {
+    hole(&format!("${name}"))
+}
+
+/// What the environment holds for the variable a call names, where the code names it as text.
+pub fn environment_named(names: &[Built]) -> Option<Built> {
+    match names {
+        [b] if known(b) => Some(environment(&render(b))),
+        _ => None,
+    }
+}
+
+/// A value, or what the code takes where the value says nothing: `os.environ.get("X") or "d"`,
+/// `x ?? "d"`, `env::var("X").unwrap_or(..)`, `opts.config ?? "d"`. Where every value is one the
+/// code does not decide (what a caller hands, an input with a default, what the environment says,
+/// a value the code does not know), it is an input, and what the code takes is its default, which
+/// whoever says the value may override; else the two are alternatives. An input nothing in the
+/// program hands (what the environment says, a value the code does not know) is that input with
+/// its default and nothing beside it, as an option of the command line is: one place, drawn as
+/// its default, which a run reads or writes whatever the input says. What a caller hands is
+/// followed to the caller, so it stays beside the default.
+pub fn or_else(value: Vec<Built>, fallback: Vec<Built>) -> Vec<Built> {
+    let input = |b: &Built| match b.as_slice() {
+        [Seg::Param(x) | Seg::Held(_, x) | Seg::Option(x, _) | Seg::Hole(x)] => Some(x.clone()),
+        _ => None,
+    };
+    let named: Option<Vec<String>> = value.iter().map(input).collect();
+    let untraced = value.iter().all(|b| matches!(b.as_slice(), [Seg::Hole(_)]));
+    match named.and_then(|n| n.into_iter().next()) {
+        Some(name) if untraced && !fallback.is_empty() => option(&name, fallback),
+        Some(name) => union(value, option(&name, fallback)),
+        None => union(value, fallback),
+    }
+}
+
+/// Whether a value is known as text throughout: literal, or an input's default that is.
 pub fn known(b: &Built) -> bool {
     b.iter().all(|s| match s {
-        Seg::Lit(_) => true,
+        Seg::Lit(_) | Seg::Package(_) => true,
         Seg::Option(_, d) => known(d),
         _ => false,
     })
 }
 
-/// The literal text a value ends in, inside the option it ends in, if any: where a file's name
+/// The literal text a value ends in, inside the input it ends in, if any: where a file's name
 /// and its extension are written.
 pub fn last_lit(b: &mut Built) -> Option<&mut String> {
     match b.last_mut()? {
-        Seg::Lit(s) => Some(s),
+        Seg::Lit(s) | Seg::Package(s) => Some(s),
         Seg::Option(_, d) => last_lit(d),
         _ => None,
     }
@@ -199,10 +245,14 @@ pub fn hole(s: &str) -> Built {
     vec![Seg::Hole(s.to_string())]
 }
 
-/// `a` then `b`, with `sep` between them; adjacent literal text merges.
+/// `a` then `b`, with `sep` between them; adjacent literal text merges. The empty path is the unit
+/// of a path's join, in every language (`Path("") / "x"`, `join("", "x")`, `PathBuf::from("").join("x")`
+/// are `x`), so nothing stands between it and what is joined to it.
 pub fn join(a: &Built, b: &Built, sep: &str) -> Built {
     let mut out = a.clone();
-    let rest: Vec<Seg> = if sep.is_empty() { b.clone() } else { std::iter::once(Seg::Lit(sep.into())).chain(b.iter().cloned()).collect() };
+    let empty = sep == "/" && known(a) && render(a).is_empty();
+    let rest: Vec<Seg> =
+        if sep.is_empty() || empty { b.clone() } else { std::iter::once(Seg::Lit(sep.into())).chain(b.iter().cloned()).collect() };
     for s in rest {
         match (out.last_mut(), &s) {
             (Some(Seg::Lit(x)), Seg::Lit(y)) => x.push_str(y),
@@ -239,36 +289,89 @@ pub fn union(mut xs: Vec<Built>, ys: Vec<Built>) -> Vec<Built> {
 /// The directory a path is in: up to its last `/`.
 pub fn parent(b: &Built) -> Built {
     for i in (0..b.len()).rev() {
-        if let Seg::Lit(s) = &b[i] {
-            let t = s.trim_end_matches('/');
-            if let Some(k) = t.rfind('/') {
-                let mut out = b[..i].to_vec();
-                out.push(Seg::Lit(t[..k.max(1)].to_string()));
-                return out;
-            }
+        let (Seg::Lit(s) | Seg::Package(s)) = &b[i] else { continue };
+        let t = s.trim_end_matches('/');
+        // the directory above `{p}/..` is one more step up, once the path is said
+        if t == ".." || t.ends_with("/..") {
+            return [b.clone(), lit("/..")].concat();
+        }
+        if let Some(k) = t.rfind('/') {
+            let mut out = b[..i].to_vec();
+            let up = t[..k.max(1)].to_string();
+            out.push(if matches!(b[i], Seg::Package(_)) { Seg::Package(up) } else { Seg::Lit(up) });
+            return out;
         }
     }
-    match b.as_slice() {
-        [Seg::Lit(_)] => lit("."),
+    // text after the last part that is no literal is more of that part's name (`{to}.json`)
+    let name = b.iter().rposition(|s| !matches!(s, Seg::Lit(_))).map_or(b.len(), |k| k + 1);
+    match (b.as_slice(), &b[..name]) {
+        ([Seg::Lit(_)], _) => lit("."),
+        // a module at the top of the repository is in its root
+        ([Seg::Package(_)], _) => vec![Seg::Package(".".into())],
         // a path a caller hands or an option names: its directory, once the path is said (`{to}/..`)
-        [.., Seg::Param(_) | Seg::Held(..) | Seg::Option(..)] => [b.clone(), lit("/..")].concat(),
+        (_, [.., Seg::Param(_) | Seg::Held(..) | Seg::Option(..)]) => [b[..name].to_vec(), lit("/..")].concat(),
         _ => hole("parent"),
     }
 }
 
+/// Marks, in a path's text, that the suffix of the name before it is taken away: what
+/// `with_suffix` does to a name not said where it is written (a path a caller hands), done once
+/// the name is said, as `/..` is for `parent`.
+const UNSUFFIXED: char = '\u{1}';
+
+/// A path with another suffix, written with its dot (`.html`, `.{}.part`), or with none (the
+/// empty suffix takes it away): `page.json` is `page.html`. A name the path does not say yet (a
+/// path a caller hands) gets its suffix once the caller says it: `{path}` with `.part`, handed
+/// `look.json`, is `look.part`.
+pub fn with_suffix(b: &Built, suffix: &Built) -> Built {
+    let mut out = b.clone();
+    let whole = b.len() == 1;
+    match last_lit(&mut out) {
+        Some(s) if !s.ends_with('/') && s.contains('/') || (whole && !s.is_empty()) => {
+            let name_at = s.rfind('/').map_or(0, |i| i + 1);
+            if let Some(dot) = s[name_at..].rfind('.').filter(|d| *d > 0) {
+                s.truncate(name_at + dot);
+            }
+        }
+        _ => out = join(&out, &lit(&UNSUFFIXED.to_string()), ""),
+    }
+    join(&out, suffix, "")
+}
+
+/// A path's text with each suffix `with_suffix` takes away from a name said later taken away.
+fn unsuffixed(p: String) -> String {
+    if !p.contains(UNSUFFIXED) {
+        return p;
+    }
+    let mut out = String::new();
+    for c in p.chars() {
+        if c != UNSUFFIXED {
+            out.push(c);
+            continue;
+        }
+        let name_at = out.rfind('/').map_or(0, |i| i + 1);
+        if let Some(dot) = out[name_at..].rfind('.').filter(|d| *d > 0) {
+            out.truncate(name_at + dot);
+        }
+    }
+    out
+}
+
 /// A path with its unknown parts written as `{name}`, and an option as its default.
 pub fn render(b: &Built) -> String {
-    b.iter()
-        .map(|s| match s {
-            Seg::Lit(x) => x.clone(),
-            Seg::Param(x) | Seg::Held(_, x) | Seg::Hole(x) => format!("{{{x}}}"),
-            Seg::Option(_, d) => render(d),
-        })
-        .collect()
+    unsuffixed(
+        b.iter()
+            .map(|s| match s {
+                Seg::Lit(x) | Seg::Package(x) => x.clone(),
+                Seg::Param(x) | Seg::Held(_, x) | Seg::Hole(x) => format!("{{{x}}}"),
+                Seg::Option(_, d) => render(d),
+            })
+            .collect(),
+    )
 }
 
 /// A path with what is given to the function written as `{name}`: what a caller hands, what the
-/// environment says, and an option of the command line.
+/// environment says, and an input with a default.
 fn inputs(b: &Built) -> String {
     b.iter()
         .map(|s| match s {
@@ -293,12 +396,54 @@ pub fn is_statement(db: crate::model::Db, built: &[Built]) -> bool {
     crate::effects::reads_statements(db) && built.iter().any(starts)
 }
 
+/// The names Atlas gives a hole where the code gives it none: an expression it does not follow
+/// (`value`, `call`, `format`, `method`, `parent`) or one beyond its depth (`…`). A call Atlas
+/// does not follow is `call` in every language, never the name of what it calls: the callee names
+/// an operation, not the value it gives back.
+const ANONYMOUS: &[&str] = &["value", "call", "format", "method", "parent", "…"];
+
+/// Whether a hole, by its name or as a place writes it (`call`, `{call}`), is one the code gives
+/// no name.
+fn anonymous(hole: &str) -> bool {
+    let name = hole.trim_start_matches('$').trim_start_matches('{').trim_end_matches('}');
+    ANONYMOUS.contains(&name.trim_start_matches('$'))
+}
+
+/// A hole as a place writes it: `{name}` where the code names it, `{}` where it does not.
+fn named_hole(hole: &str) -> String {
+    if anonymous(hole) {
+        "{}".into()
+    } else {
+        hole.trim_start_matches('$').to_string()
+    }
+}
+
+/// What a name the code binds holds, as the code names it. A value that no code Atlas follows
+/// decides and that the code gives no name (what a library call gives back:
+/// `let home = dirs::home_dir()`) is named by the binding, the first name the code gives it,
+/// which every later name of it hands on; so one value is one hole however many names it passes
+/// through. A path built around such a value keeps its hole unnamed: the binding names the
+/// whole, not the part.
+pub fn bound(name: &str, values: Vec<Built>) -> Vec<Built> {
+    values
+        .into_iter()
+        .map(|b| match b.as_slice() {
+            [Seg::Hole(h)] if anonymous(h) => hole(name),
+            _ => b,
+        })
+        .collect()
+}
+
 /// The place a path names: the file, or for an operation on a directory that directory. A file
-/// whose name is known under a directory that is not (`artefacts/{variant}/report.json`) is
-/// that name under any such directory (`artefacts/*/report.json`); a path whose last part is
-/// not known rests in the directory before its first unknown part, so what is unpacked into
-/// `D/{kind}/{id}` and what lists `D` meet at `D/`. A path that names nothing in the repository
-/// (only `.`, or nothing before an unknown) is no place.
+/// whose name is known under a directory that is not (`artefacts/{variant}/report.json`,
+/// `{$DATA_DIR}/report.txt`) is that name under that directory, the hole kept in the term by the
+/// name the code gives it; a hole the code gives no name (`{value}`) is `{}`, so it is never taken
+/// for a wildcard the code writes, nor two named holes for one directory; a path whose last part is not known rests in
+/// the directory before its first unknown part, so what is unpacked into `D/{kind}/{id}` and what
+/// lists `D` meet at `D/`. A pattern the code writes (`D.glob("*/IO-*")`) is the fiber below its
+/// directory, whatever operation it is handed to: the listing and the reads of what it yields are
+/// one place. A path that names nothing (only `.`, only wildcards, or nothing before an unknown
+/// last part) is no place.
 pub fn place(b: &Built, op: &str) -> Option<String> {
     let mut p = render(b).replace('\\', "/");
     while p.contains("//") {
@@ -320,25 +465,51 @@ pub fn place(b: &Built, op: &str) -> Option<String> {
     }
     let p = if kept.is_empty() { ".".to_string() } else { kept.join("/") };
     let dir = DIR_OPS.contains(&op);
-    let unknown = |s: &str| s.contains(['{', '*', '?', '[']);
+    // a part the code leaves unknown; a wildcard the code writes is part of the term a file
+    // operation names, and an operation on a directory rests above it
+    let wild = |s: &str| s.contains(['*', '?', '[']);
+    let unknown = |s: &str| s.contains('{') || (dir && wild(s));
     let p = p.trim_end_matches('/').to_string();
-    let parts: Vec<&str> = p.split('/').collect();
-    // a pattern below a directory is the part of the directory it holds: the place keeps it
-    let pattern = crate::knowledge::PATH_PATTERNS.iter().any(|(name, _)| *name == op);
+    let mut parts: Vec<&str> = p.split('/').collect();
+    // a pattern below a directory is the part of the directory it holds: the place keeps it; one that
+    // holds everything below it (`iterdir()`, `glob("*")`, `rglob("*")`) is the fiber over a
+    // predicate that always holds, the whole directory, which is what is listed
+    let mut pattern = crate::knowledge::PATH_PATTERNS.iter().any(|(name, _, _)| *name == op);
+    if pattern && parts.len() > 1 && parts.last() == Some(&"*") {
+        parts.pop();
+        if parts.len() > 1 && parts.last() == Some(&"**") {
+            parts.pop();
+        }
+        pattern = false;
+    }
+    let p = parts.join("/");
+    let any = || {
+        parts
+            .iter()
+            .map(|x| placeholder_re().replace_all(x, |c: &regex::Captures| named_hole(&c[0])).into_owned())
+            .collect::<Vec<_>>()
+            .join("/")
+    };
     let p = match parts.iter().position(|x| unknown(x)) {
+        // the pattern's own wildcards stay; a part the code leaves unknown is one more
+        _ if pattern && parts.iter().any(|x| unknown(x) || wild(x)) => any(),
         None if dir => format!("{p}/"),
-        Some(i) if pattern && i > 0 => {
-            // the pattern's own wildcards stay; a part the code leaves unknown is one more
-            parts.iter().map(|x| placeholder_re().replace_all(x, "*").into_owned()).collect::<Vec<_>>().join("/")
-        }
         None => p.clone(),
-        Some(i) if !dir && i + 1 < parts.len() && !unknown(parts[parts.len() - 1]) && i > 0 => {
-            parts.iter().map(|x| if unknown(x) { "*" } else { x }).collect::<Vec<_>>().join("/")
-        }
+        // a file whose name is known is that name under any directory the code leaves unknown
+        Some(i) if !dir && i + 1 < parts.len() && !unknown(parts[parts.len() - 1]) => any(),
         Some(0) => return None,
         Some(i) => format!("{}/", parts[..i].join("/")),
     };
-    (!matches!(p.as_str(), "" | "." | "./" | "/" | "*")).then_some(p)
+    let names = p.split('/').any(|x| !matches!(x, "" | "." | "*" | "**" | "{}"));
+    names.then_some(p)
+}
+
+/// The places the program names a place below, which are therefore directories: what
+/// `D.glob("*/IO-*")` lists and `io_dir / "Metadata.xml"` reads in is the directory `D/*/IO-*/`,
+/// so the listing and the files in it are one folder, whatever the operation that names it.
+pub fn folders<'a>(places: impl Iterator<Item = &'a str> + Clone) -> HashSet<String> {
+    let below: HashSet<&str> = places.clone().flat_map(|a| a.trim_end_matches('/').match_indices('/').map(move |(i, _)| &a[..i])).collect();
+    places.filter(|a| !a.ends_with('/') && below.contains(a)).map(str::to_string).collect()
 }
 
 /// The name of the one value `built` holds, where it is whole in `holder`, when it is one of
@@ -409,119 +580,131 @@ pub enum Whole {
     Users(String),
 }
 
-/// What a value built from the parameters of `f` is at each call that hands them, followed out
-/// through the callers' parameters in turn, with where it is whole: the URL
-/// `request(method, path)` fetches is `/api/customers` where `api.get("/customers")` is called.
-/// A parameter a call leaves out holds its `default`; so does one of a function nobody in the
-/// program calls (an entry's declared defaults), which otherwise holds what its users hand it,
-/// unknown. An entry the program also calls is run by its users as well.
-pub fn at_callers<H: Handing>(
-    calls: &[H],
-    family: &crate::builder::Family,
-    default: &dyn Fn(&str, &str) -> Vec<Built>,
-    entry: &dyn Fn(&str) -> bool,
-    f: &str,
-    b: &Built,
-    depth: u32,
-) -> Vec<(Whole, Built)> {
-    callers_of(calls, family, default, entry, f, b, None, depth)
+/// What completes a value through the callers of the function it is built in: the program's
+/// calls, its families, the defaults its parameters declare, which functions are entries, and
+/// whether a value, as far as it is whole, decides where its call goes.
+pub struct Callers<'c, H> {
+    pub calls: &'c [H],
+    pub family: &'c crate::builder::Family,
+    pub default: &'c dyn Fn(&str, &str) -> Vec<Built>,
+    pub entry: &'c dyn Fn(&str) -> bool,
+    pub decides: &'c dyn Fn(&Built) -> bool,
 }
 
-/// `at_callers`, keeping to the calls of `f` that hand its parameter `only.0` a value that is an
-/// `only.1`, or one the code does not say: the member of a family a call on that parameter runs.
-#[allow(clippy::too_many_arguments)]
-fn callers_of<H: Handing>(
-    calls: &[H],
-    family: &crate::builder::Family,
-    default: &dyn Fn(&str, &str) -> Vec<Built>,
-    entry: &dyn Fn(&str) -> bool,
-    f: &str,
-    b: &Built,
-    only: Option<(&str, &str)>,
-    depth: u32,
-) -> Vec<(Whole, Built)> {
-    // what an object holds is what the callers of the function that set it up hand that function:
-    // whole where that is, unless `f`'s own callers still have to hand the rest
-    if let Some((g, p)) = b.iter().find_map(|s| match s {
-        Seg::Held(g, p) => Some((g.clone(), p.clone())),
-        _ => None,
-    }) {
-        let held = if depth > DEPTH {
-            vec![(Whole::In(f.to_string()), hole(&p))]
-        } else {
-            at_callers(calls, family, default, entry, &g, &vec![Seg::Param(p.clone())], depth + 1)
-        };
-        let mut out = vec![];
-        for (w, v) in held {
-            for x in fill(b, &g, &p, &v) {
-                for (w2, y) in at_callers(calls, family, default, entry, f, &x, depth + 1) {
-                    // whole where both are: a route reaches the one that built the object and the
-                    // one that handed `f` the rest
-                    let both = match (&w, w2) {
-                        (_, Whole::In(x)) if x == f => w.clone(),
-                        (Whole::In(a), Whole::In(x)) if a != f && *a != x => Whole::In(format!("{x}&{a}")),
-                        (_, w2) => w2,
-                    };
-                    out.push((both, y));
-                    if out.len() >= COMPLETIONS {
-                        return out;
+/// A completion: where the value is whole, what it is there, and the function whose own code
+/// decides it, if one does.
+type Completion = (Whole, Built, Option<String>);
+
+impl<H: Handing> Callers<'_, H> {
+    /// What a value built from the parameters of `f` is at each call that hands them, followed out
+    /// through the callers' parameters in turn, with where it is whole: the URL
+    /// `request(method, path)` fetches is `/api/customers` where `api.get("/customers")` is
+    /// called. A parameter a call leaves out holds its `default`, an input whoever calls `f` may
+    /// override; so does one of a function nobody in the program calls (an entry's declared
+    /// defaults), which otherwise holds what its users hand it, unknown. An entry the program also
+    /// calls is run by its users as well. The function that decides the value is the first, out
+    /// through the callers, in whose own code it decides: `default_rows` for `read_rows(path)`
+    /// called as `read_rows(Path("data/rows.csv"))`.
+    pub fn at(&self, f: &str, b: &Built, depth: u32) -> Vec<Completion> {
+        self.of(f, b, None, None, depth)
+    }
+
+    /// `at`, keeping to the calls of `f` that hand its parameter `only.0` a value that is an
+    /// `only.1`, or one the code does not say: the member of a family a call on that parameter
+    /// runs. `decided` is the function that decides the value, where a callee's code already did.
+    fn of(&self, f: &str, b: &Built, only: Option<(&str, &str)>, decided: Option<&str>, depth: u32) -> Vec<Completion> {
+        // decided by a callee, else here where the value as `f` builds it decides
+        let here = decided.map(str::to_string).or_else(|| (self.decides)(b).then(|| f.to_string()));
+        // what an object holds is what the callers of the function that set it up hand that
+        // function: whole where that is, unless `f`'s own callers still have to hand the rest
+        if let Some((g, p)) = b.iter().find_map(|s| match s {
+            Seg::Held(g, p) => Some((g.clone(), p.clone())),
+            _ => None,
+        }) {
+            let held = if depth > DEPTH {
+                vec![(Whole::In(f.to_string()), hole(&p), None)]
+            } else {
+                self.at(&g, &vec![Seg::Param(p.clone())], depth + 1)
+            };
+            let mut out = vec![];
+            for (w, v, built) in held {
+                for x in fill(b, &g, &p, &v) {
+                    // a value that what the object holds decides is decided where the object was built
+                    let by = here.clone().or_else(|| (self.decides)(&x).then_some(built.clone()).flatten());
+                    for (w2, y, decider) in self.of(f, &x, None, by.as_deref(), depth + 1) {
+                        // whole where both are: a route reaches the one that built the object and
+                        // the one that handed `f` the rest
+                        let both = match (&w, w2) {
+                            (_, Whole::In(x)) if x == f => w.clone(),
+                            (Whole::In(a), Whole::In(x)) if a != f && *a != x => Whole::In(format!("{x}&{a}")),
+                            (_, w2) => w2,
+                        };
+                        out.push((both, y, decider));
+                        if out.len() >= COMPLETIONS {
+                            return out;
+                        }
                     }
                 }
             }
+            return out;
         }
-        return out;
-    }
-    if !b.iter().any(|s| matches!(s, Seg::Param(_))) {
-        return vec![(Whole::In(f.to_string()), b.clone())];
-    }
-    let unknown = |p: &str| match default(f, p) {
-        d if d.is_empty() => vec![hole(p)],
-        d => d,
-    };
-    // a call of a method `f` overrides is a call of `f`, handing its parameters by place
-    let none = vec![];
-    let theirs = |named: Option<&Vec<(String, String)>>, p: &str| -> Option<String> {
-        match named {
-            None => Some(p.to_string()),
-            Some(named) => named.iter().find(|(own, _)| own == p).map(|(_, theirs)| theirs.clone()),
+        if !b.iter().any(|s| matches!(s, Seg::Param(_))) {
+            return vec![(Whole::In(f.to_string()), b.clone(), here)];
         }
-    };
-    let sites: Vec<(&H, Option<&Vec<(String, String)>>)> = calls
-        .iter()
-        .filter(|a| a.callee() == f)
-        .map(|a| (a, None))
-        .chain(
-            family
-                .overrides
-                .get(f)
-                .unwrap_or(&none)
-                .iter()
-                .flat_map(|(base, named)| calls.iter().filter(move |a| a.callee() == base).map(move |a| (a, Some(named)))),
-        )
-        .filter(|(a, named)| match only {
-            Some((p, class)) => theirs(*named, p).and_then(|q| a.class_handed(&q)).map_or(true, |k| family.is_a(&k, class)),
-            None => true,
-        })
-        .collect();
-    if sites.is_empty() || depth > DEPTH {
-        return substitute(b, unknown).into_iter().map(|x| (Whole::In(f.to_string()), x)).collect();
-    }
-    let mut out: Vec<(Whole, Built)> =
-        if entry(f) { substitute(b, unknown).into_iter().map(|x| (Whole::Users(f.to_string()), x)).collect() } else { vec![] };
-    for (a, named) in sites {
-        let hands = |p: &str| theirs(named, p).and_then(|q| a.hands(&q));
-        // through a base's method called on a parameter, the callers that hand that parameter
-        // decide which member runs: the one `f` is a method of
-        let class = f.rsplit_once('.').map_or("", |(c, _)| c);
-        let next = named.and(a.on()).map(|q| (q, class));
-        for x in substitute(b, |p| hands(p).filter(|v| !v.is_empty()).unwrap_or_else(|| unknown(p))) {
-            out.extend(callers_of(calls, family, default, entry, a.caller(), &x, next, depth + 1));
-            if out.len() >= COMPLETIONS {
-                return out;
+        let (calls, family) = (self.calls, self.family);
+        // a parameter a call leaves out holds its default, an input its callers may override
+        let unknown = |p: &str| match (self.default)(f, p) {
+            d if d.is_empty() => vec![hole(p)],
+            d => option(p, d),
+        };
+        // a call of a method `f` overrides is a call of `f`, handing its parameters by place
+        let none = vec![];
+        let theirs = |named: Option<&Vec<(String, String)>>, p: &str| -> Option<String> {
+            match named {
+                None => Some(p.to_string()),
+                Some(named) => named.iter().find(|(own, _)| own == p).map(|(_, theirs)| theirs.clone()),
+            }
+        };
+        let sites: Vec<(&H, Option<&Vec<(String, String)>>)> = calls
+            .iter()
+            .filter(|a| a.callee() == f)
+            .map(|a| (a, None))
+            .chain(
+                family
+                    .overrides
+                    .get(f)
+                    .unwrap_or(&none)
+                    .iter()
+                    .flat_map(|(base, named)| calls.iter().filter(move |a| a.callee() == base).map(move |a| (a, Some(named)))),
+            )
+            .filter(|(a, named)| match only {
+                Some((p, class)) => theirs(*named, p).and_then(|q| a.class_handed(&q)).map_or(true, |k| family.is_a(&k, class)),
+                None => true,
+            })
+            .collect();
+        if sites.is_empty() || depth > DEPTH {
+            return substitute(b, unknown).into_iter().map(|x| (Whole::In(f.to_string()), x, here.clone())).collect();
+        }
+        let mut out: Vec<Completion> = if (self.entry)(f) {
+            substitute(b, unknown).into_iter().map(|x| (Whole::Users(f.to_string()), x, here.clone())).collect()
+        } else {
+            vec![]
+        };
+        for (a, named) in sites {
+            let hands = |p: &str| theirs(named, p).and_then(|q| a.hands(&q));
+            // through a base's method called on a parameter, the callers that hand that parameter
+            // decide which member runs: the one `f` is a method of
+            let class = f.rsplit_once('.').map_or("", |(c, _)| c);
+            let next = named.and(a.on()).map(|q| (q, class));
+            for x in substitute(b, |p| hands(p).filter(|v| !v.is_empty()).unwrap_or_else(|| unknown(p))) {
+                out.extend(self.of(a.caller(), &x, next, here.as_deref(), depth + 1));
+                if out.len() >= COMPLETIONS {
+                    return out;
+                }
             }
         }
+        out
     }
-    out
 }
 
 /// `b` with what the object holds for parameter `p` of `g` written in.
@@ -541,25 +724,34 @@ fn fill(b: &Built, g: &str, p: &str, v: &Built) -> Vec<Built> {
 /// hand: the function that makes it, its touch, and the path, URL or statement as built.
 pub type Waiting = (String, crate::model::Touch, Vec<Built>);
 
-/// A waiting call with its path, URL or statement at each call that completes it, with where it
-/// is whole.
-/// Each completion says whether the code decided it: the value starts at something the function
-/// itself holds (a literal, a constant), not at what a caller or the environment hands it.
-pub type Completed = (String, crate::model::Touch, Vec<(Whole, Built, bool)>);
+/// A waiting call with its path, URL or statement as built, and at each call that completes it,
+/// with where it is whole and the function whose own code decides it, if one does.
+pub type Completed = (String, crate::model::Touch, Vec<Built>, Vec<(Whole, Built, Option<String>)>);
 
-/// Whether the function a path or URL is built in decides it: it starts at something the code
-/// holds, a literal or a constant, not at what a caller hands, the command line or the
-/// environment says (a value, an option, the user's home `~`, the system's `$TMPDIR`). A
-/// request's URL is decided only with its host.
-fn decided(b: &Built, kind: crate::model::World) -> bool {
+/// The way a request goes by the method it is built with (`knowledge::REQUEST_WAYS`), where every
+/// alternative says the same; none where one does not say its method.
+fn way_of_request<'b>(mut built: impl Iterator<Item = &'b Built>) -> Option<crate::model::Dir> {
+    let way = |b: &Built| crate::knowledge::request_way(method_and_path(&render(b)).0);
+    let first = way(built.next()?)?;
+    built.all(|b| way(b) == Some(first)).then_some(first)
+}
+
+/// Whether the code decides where a call goes, once its path or URL is whole: it starts at
+/// something the code holds, a literal or a constant, not at what a caller hands, an input with a
+/// default, or what the environment says (a value, the user's home `~`, the system's `$TMPDIR`).
+/// A request's URL is decided only with its host. A file read from where the package's code lies
+/// is part of the package; one written there is a place the code decides.
+fn decided(b: &Built, t: &crate::model::Touch) -> bool {
+    use crate::model::{Dir, World};
     let rendered = inputs(b);
     let given = |s: &str| s.is_empty() || s.starts_with(['{', '$', '~']);
-    match kind {
-        crate::model::World::Net => {
+    match t.kind {
+        World::Net => {
             let url = rendered.split_once(' ').map_or(rendered.as_str(), |(_, u)| u);
             url.contains("://") && !given(url)
         }
-        crate::model::World::Disk => !given(&rendered),
+        World::Disk if matches!(b.first(), Some(Seg::Package(_))) => t.dir == Some(Dir::Write),
+        World::Disk => !given(&rendered),
         _ => false,
     }
 }
@@ -574,7 +766,9 @@ fn names_its_places(b: &Built, kind: crate::model::World) -> bool {
 }
 
 /// Complete the waiting calls through their callers; `entry` says which functions are entries.
-/// A statement that names its places is whole where it is built.
+/// A statement that names its places is whole where it is built. Where the code decides a path
+/// or URL, the function that decides it is the one whose own code the value starts in, wherever
+/// the call that touches the place is.
 pub fn complete<H: Handing>(
     calls: Vec<Waiting>,
     handing: &[H],
@@ -585,18 +779,16 @@ pub fn complete<H: Handing>(
     calls
         .into_iter()
         .map(|(f, t, built)| {
+            let decides = |b: &Built| decided(b, &t);
+            let callers = Callers { calls: handing, family, default, entry, decides: &decides };
             let found = built
                 .iter()
-                .flat_map(|b| {
-                    let wholes = if names_its_places(b, t.kind) {
-                        vec![(Whole::In(f.clone()), b.clone())]
-                    } else {
-                        at_callers(handing, family, default, entry, &f, b, 0)
-                    };
-                    wholes.into_iter().map(|(w, x)| (w, x, decided(b, t.kind)))
+                .flat_map(|b| match names_its_places(b, t.kind) {
+                    true => vec![(Whole::In(f.clone()), b.clone(), decides(b).then(|| f.clone()))],
+                    false => callers.at(&f, b, 0),
                 })
                 .collect();
-            (f, t, found)
+            (f, t, built, found)
         })
         .collect()
 }
@@ -620,7 +812,7 @@ pub fn place_calls(store: &mut crate::builder::GraphBuilder, completed: Vec<Comp
             Some((n.id.clone(), method.to_string(), path.to_string()))
         })
         .collect();
-    for (f, t, found) in completed {
+    for (f, t, built, found) in completed {
         // what each place of completion makes of it: the alternatives one caller hands are one
         let mut wholes: Vec<&Whole> = vec![];
         for (w, _, _) in &found {
@@ -628,9 +820,12 @@ pub fn place_calls(store: &mut crate::builder::GraphBuilder, completed: Vec<Comp
                 wholes.push(w);
             }
         }
-        // a route that reaches none of the callers that make it whole sees the call as it was read
+        // a route that reaches none of the callers that make it whole sees the call as it was read,
+        // a file named by the value its function holds as it is where nothing calls the function
         if wholes.iter().any(|w| **w != Whole::In(f.clone())) {
-            store.instead(&f, t.clone());
+            let what = if t.kind == World::Disk { by_value(store, &f, built.iter()) } else { None };
+            let dir = if t.kind == World::Net { way_of_request(built.iter()).or(t.dir) } else { t.dir };
+            store.instead(&f, Touch { what: what.unwrap_or_else(|| t.what.clone()), dir, ..t.clone() });
         }
         for whole in wholes {
             let (by, users_of) = match whole {
@@ -641,14 +836,23 @@ pub fn place_calls(store: &mut crate::builder::GraphBuilder, completed: Vec<Comp
             let holder = match whole {
                 Whole::In(h) | Whole::Users(h) => h,
             };
-            let mut placed: Vec<(String, Option<crate::model::Dir>, bool)> = vec![];
-            let (mut requested, mut unnamed, mut decides) = (false, false, false);
+            // the way a request goes, where the method its alternatives say gives one
+            let alternatives = found.iter().filter(|(w, _, _)| w == whole).map(|(_, b, _)| b);
+            let way = if t.kind == World::Net { way_of_request(alternatives).or(t.dir) } else { t.dir };
+            // each place with the functions whose own code decides it
+            let mut placed: Vec<(String, Option<crate::model::Dir>, Vec<String>)> = vec![];
+            let (mut requested, mut decides) = (false, vec![]);
+            // the alternatives that name no place: what a caller or the environment says
+            let mut unnamed: Vec<&Built> = vec![];
             // the file a connection opens
             let mut opened = String::new();
-            for (b, fixed) in found.iter().filter(|(w, _, _)| w == whole).map(|(_, b, fixed)| (b, *fixed)) {
+            // a file the term names with a part no code decides, by the term the code writes
+            let mut terms: Vec<(String, String)> = vec![];
+            for (b, decider) in found.iter().filter(|(w, _, _)| w == whole).map(|(_, b, d)| (b, d)) {
                 let rendered = render(b);
                 let before = placed.len();
-                decides |= fixed;
+                let fixed: Vec<String> = decider.iter().cloned().collect();
+                decides.extend(fixed.iter().cloned());
                 // a request's method, when the code says it, and its URL
                 let (method, url) = match rendered.split_once(' ') {
                     Some((m, u)) if t.kind == World::Net => (m.to_ascii_uppercase(), u.to_string()),
@@ -669,10 +873,12 @@ pub fn place_calls(store: &mut crate::builder::GraphBuilder, completed: Vec<Comp
                         .map(|(a, _)| a)
                         .filter(|a| !a.is_empty())
                     {
-                        placed.push((host, t.dir, fixed));
+                        placed.push((host, way, fixed));
                     }
                     requested |= served;
-                    unnamed |= !served && placed.len() == before;
+                    if !served && placed.len() == before {
+                        unnamed.push(b);
+                    }
                     // a request no route of the part serves may be another part's
                     if let Some(path) = asked_path(&url).filter(|_| !served) {
                         store.ask(asker, request(&method, &path));
@@ -686,12 +892,15 @@ pub fn place_calls(store: &mut crate::builder::GraphBuilder, completed: Vec<Comp
                         crate::effects::sql(db, std::slice::from_ref(&rendered))
                             .unwrap_or_default()
                             .into_iter()
-                            .map(|(table, dir)| (table, dir.or(t.dir), false)),
+                            .map(|(table, dir)| (table, dir.or(t.dir), vec![])),
                     );
                 } else if let Some(p) = place(b, &t.op) {
+                    if !known(b) && !terms.iter().any(|(q, _)| *q == p) {
+                        terms.push((p.clone(), render(b).replace('\\', "/")));
+                    }
                     placed.push((p, t.dir, fixed));
                 } else {
-                    unnamed = true;
+                    unnamed.push(b);
                 }
             }
             // a place two alternatives name is decided where either decides it
@@ -699,49 +908,72 @@ pub fn place_calls(store: &mut crate::builder::GraphBuilder, completed: Vec<Comp
             placed.dedup_by(|b, a| {
                 let same = a.0 == b.0 && a.1 == b.1;
                 if same {
-                    a.2 |= b.2;
+                    a.2.append(&mut b.2);
                 }
                 same
             });
-            let at = |artifact: String, dir, fixed| Touch { artifact, dir, fixed, by: by.clone(), users_of: users_of.clone(), ..t.clone() };
+            // the touch is the function's own decision where its own code decides it, and its
+            // callers' where theirs does
+            let at = |artifact: String, dir, mut deciders: Vec<String>| {
+                deciders.sort();
+                deciders.dedup();
+                let fixed = deciders.contains(&f);
+                deciders.retain(|d| *d != f);
+                Touch { artifact, dir, fixed, fixed_by: deciders, by: by.clone(), users_of: users_of.clone(), ..t.clone() }
+            };
             // a file whose path is one value no literal makes is named by that value where it is
             // whole, so every call handed it touches the same place: `path` in a helper and
-            // `self.path` in a method are both `Store.path` when the constructor takes it
-            let value = if t.kind == World::Disk {
-                by_value(store, holder, found.iter().filter(|(w, _, _)| w == whole).map(|(_, b, _)| b))
-            } else {
-                None
-            };
-            // a path no place is named by is the term it evaluates to, its unknown parts left as
-            // the names the code gives them
-            let value = value.or_else(|| {
-                let mut terms: Vec<String> = vec![];
-                for (_, b, _) in found.iter().filter(|(w, _, _)| w == whole) {
-                    let term = render(b).replace('\\', "/");
-                    if t.kind == World::Disk && b.iter().any(|s| !matches!(s, Seg::Hole(_))) && !terms.contains(&term) {
-                        terms.push(term);
+            // `self.path` in a method are both `Store.path` when the constructor takes it; a path
+            // no place is named by is the term it evaluates to, its unknown parts left as the names
+            // the code gives them, and what the environment says as its variable
+            let named = |built: &[&Built]| {
+                let value = if t.kind == World::Disk { by_value(store, holder, built.iter().copied()) } else { None };
+                value.or_else(|| {
+                    let mut terms: Vec<String> = vec![];
+                    for b in built {
+                        let term = render(b).replace('\\', "/");
+                        let said = b.iter().any(|s| !matches!(s, Seg::Hole(h) if !h.starts_with('$')));
+                        if t.kind == World::Disk && said && !terms.contains(&term) {
+                            terms.push(term);
+                        }
                     }
-                }
-                (!terms.is_empty()).then(|| terms.join("|"))
-            });
+                    (!terms.is_empty()).then(|| terms.join("|"))
+                })
+            };
+            let all: Vec<&Built> = found.iter().filter(|(w, _, _)| w == whole).map(|(_, b, _)| b).collect();
+            let (value, unnamed_value) = (named(&all), named(&unnamed));
             if placed.is_empty() {
                 if !requested {
                     // a URL without a host is the page's own origin, decided by whoever serves it
-                    let fixed = decides && (t.kind != World::Net || !t.artifact.is_empty());
-                    let touch = at(t.artifact.clone(), t.dir, fixed);
+                    let fixed = if t.kind != World::Net || !t.artifact.is_empty() { decides } else { vec![] };
+                    let touch = at(t.artifact.clone(), way, fixed);
                     store.touch(&f, Touch { what: value.unwrap_or_else(|| touch.what.clone()), file: opened, ..touch });
                 }
                 continue;
             }
             for (artifact, dir, fixed) in placed {
-                store.touch(&f, at(artifact, dir, fixed));
+                let what = terms.iter().find(|(p, _)| *p == artifact).map_or_else(|| t.what.clone(), |(_, term)| term.clone());
+                store.touch(&f, Touch { what, ..at(artifact, dir, fixed) });
             }
-            // an alternative that names no place stays one the code does not name: what the
-            // environment says beside the default the code holds
-            if unnamed {
-                let touch = at(String::new(), t.dir, false);
-                store.touch(&f, Touch { what: value.unwrap_or_else(|| touch.what.clone()), ..touch });
+            // an alternative that names no place stays one the code does not name, by what names
+            // it: what a caller hands that no code says
+            if !unnamed.is_empty() {
+                let touch = at(String::new(), way, vec![]);
+                store.touch(&f, Touch { what: unnamed_value.unwrap_or_else(|| touch.what.clone()), ..touch });
             }
+        }
+    }
+    let disk: Vec<&str> = store
+        .nodes
+        .values()
+        .flat_map(|n| n.touches.iter().chain(&n.instead))
+        .filter(|t| t.kind == World::Disk)
+        .map(|t| t.artifact.as_str())
+        .collect();
+    let dirs = folders(disk.into_iter());
+    for t in store.nodes.values_mut().flat_map(|n| n.touches.iter_mut().chain(n.instead.iter_mut())) {
+        if t.kind == World::Disk && dirs.contains(&t.artifact) {
+            t.artifact.push('/');
         }
     }
 }
@@ -765,5 +997,181 @@ mod tests {
         assert_eq!(asked_path("data/raw.csv"), None, "a relative path is a file");
         assert_eq!(method_and_path("POST /v1/orders"), ("POST", "/v1/orders"));
         assert_eq!(method_and_path("/v1/orders"), ("", "/v1/orders"));
+    }
+
+    /// A call as a test writes it: its caller, its callee, and what it hands each parameter.
+    struct Call(&'static str, &'static str, Vec<(&'static str, Built)>);
+
+    impl Handing for Call {
+        fn caller(&self) -> &str {
+            self.0
+        }
+        fn callee(&self) -> &str {
+            self.1
+        }
+        fn hands(&self, p: &str) -> Option<Vec<Built>> {
+            self.2.iter().find(|(q, _)| *q == p).map(|(_, b)| vec![b.clone()])
+        }
+    }
+
+    /// The completions of `read(path)`'s path through `calls`, with `default` for what a call
+    /// leaves out.
+    fn completed(
+        calls: &[Call],
+        default: &dyn Fn(&str, &str) -> Vec<Built>,
+        dir: crate::model::Dir,
+    ) -> Vec<(Whole, Built, Option<String>)> {
+        let t = crate::model::Touch::new(crate::model::World::Disk, Some(dir));
+        let decides = |b: &Built| decided(b, &t);
+        let family = crate::builder::Family::default();
+        let callers = Callers { calls, family: &family, default, entry: &|_| false, decides: &decides };
+        callers.at("read", &vec![Seg::Param("path".into())], 0)
+    }
+
+    /// The function that decides a path is the one whose own code writes what the path starts at,
+    /// however many calls lie between it and the call that opens the file; a default a call
+    /// leaves out decides nothing.
+    #[test]
+    fn the_function_that_writes_the_path_decides_it() {
+        use crate::model::Dir;
+        let none = |_: &str, _: &str| vec![];
+        let handed = [Call("rows", "read", vec![("path", lit("data/rows.csv"))]), Call("main", "rows", vec![])];
+        assert_eq!(completed(&handed, &none, Dir::Read), [(Whole::In("rows".into()), lit("data/rows.csv"), Some("rows".into()))]);
+        let through = [
+            Call("rows", "read", vec![("path", vec![Seg::Param("dir".into()), Seg::Lit("/rows.csv".into())])]),
+            Call("main", "rows", vec![("dir", lit("data"))]),
+        ];
+        assert_eq!(completed(&through, &none, Dir::Read), [(Whole::In("main".into()), lit("data/rows.csv"), Some("main".into()))]);
+        let left_out = [Call("main", "read", vec![])];
+        let default = |_: &str, p: &str| if p == "path" { vec![lit("out.csv")] } else { vec![] };
+        assert_eq!(
+            completed(&left_out, &default, Dir::Read),
+            [(Whole::In("main".into()), vec![Seg::Option("path".into(), lit("out.csv"))], None)],
+            "the parameter's default is an option of whoever calls it"
+        );
+    }
+
+    /// What the code falls back to where an input says nothing is that input's default: an
+    /// option, never decided by the code alone. A file found from where the package's code lies
+    /// is the package's when it is read, and a place the code decides when it is written.
+    #[test]
+    fn a_fallback_of_an_input_is_its_default() {
+        use crate::model::{Dir, Touch, World};
+        let fallback = or_else(vec![environment("STORE")], vec![lit("out.csv")]);
+        assert_eq!(fallback, [vec![Seg::Option("$STORE".into(), lit("out.csv"))]], "what the environment says with a default is one input");
+        let handed = or_else(vec![vec![Seg::Param("path".into())]], vec![lit("out.csv")]);
+        assert_eq!(
+            handed,
+            [vec![Seg::Param("path".into())], vec![Seg::Option("path".into(), lit("out.csv"))]],
+            "what a caller hands is followed"
+        );
+        assert_eq!(or_else(vec![lit("a.csv")], vec![lit("b.csv")]), [lit("a.csv"), lit("b.csv")], "two literals are alternatives");
+        let (read, write) = (Touch::new(World::Disk, Some(Dir::Read)), Touch::new(World::Disk, Some(Dir::Write)));
+        assert!(fallback.iter().all(|b| !decided(b, &write)), "{fallback:?}");
+        let shipped = vec![Seg::Package("src/pages".into()), Seg::Lit("/template.html".into())];
+        assert!(!decided(&shipped, &read) && decided(&shipped, &write));
+        assert_eq!(place(&shipped, "read_text").as_deref(), Some("src/pages/template.html"));
+    }
+
+    /// A part no code decides stays a hole in the term, by the name the code gives it: a file whose
+    /// name is known is that name under that directory, wherever the unknown part stands; a hole the
+    /// code gives no name is `{}`, never a wildcard; a pattern is one place, the fiber below its
+    /// directory, for the listing and for what is read of what it yields.
+    #[test]
+    fn a_hole_stays_in_the_term() {
+        let env = |rest: &str| [environment("DATA_DIR"), lit(rest)].concat();
+        assert_eq!(place(&env("/report.txt"), "read_text").as_deref(), Some("{$DATA_DIR}/report.txt"));
+        assert_eq!(place(&env("/sub/report.txt"), "open").as_deref(), Some("{$DATA_DIR}/sub/report.txt"));
+        assert_eq!(
+            place(&[lit("artefacts/"), hole("variant"), lit("/report.json")].concat(), "open").as_deref(),
+            Some("artefacts/{variant}/report.json")
+        );
+        assert_ne!(
+            place(&[hole("base"), lit("/report.txt")].concat(), "read"),
+            place(&[hole("top"), lit("/report.txt")].concat(), "read"),
+            "two holes the code names are two directories"
+        );
+        assert_eq!(place(&[hole("value"), lit("/report.txt")].concat(), "read").as_deref(), Some("{}/report.txt"));
+        assert_ne!(place(&[hole("value"), lit("/x/*.xml")].concat(), "glob"), place(&lit("*/x/*.xml"), "glob"), "a hole is no wildcard");
+        assert_eq!(place(&environment("DATA_DIR"), "read_text"), None, "nothing known is no place");
+        assert_eq!(place(&[environment("DATA_DIR"), lit("/"), hole("name")].concat(), "read_text"), None);
+        assert_eq!(place(&[lit("data/"), hole("name")].concat(), "read_text").as_deref(), Some("data/"));
+        let pattern = lit("assets/regelingen/*/IO-*");
+        assert_eq!(place(&pattern, "glob").as_deref(), Some("assets/regelingen/*/IO-*"));
+        assert_eq!(place(&pattern, "read_text").as_deref(), Some("assets/regelingen/*/IO-*"), "what the glob yields");
+        assert_eq!(place(&lit("build/*"), "rmtree").as_deref(), Some("build/"));
+        assert_eq!(place(&lit("*"), "read_text"), None);
+        let unset = or_else(vec![environment("DATA_DIR")], vec![lit("")]);
+        let joined: Vec<Option<String>> = cross(&unset, &[lit("sub/report.txt")], "/").iter().map(|b| place(b, "read")).collect();
+        assert_eq!(joined, [Some("sub/report.txt".into())], "the empty path joins as nothing, and the variable is its input");
+    }
+
+    /// A place the program names a place below is a directory, whatever operation names it: the
+    /// listing of `D/*/IO-*` and the files read in what it yields are one folder.
+    #[test]
+    fn a_place_with_places_below_is_a_folder() {
+        let places = ["D/*/IO-*", "D/*/IO-*/Metadata.xml", "D/x.csv", "D/*/IO-*/"];
+        assert_eq!(folders(places.into_iter()), HashSet::from(["D/*/IO-*".to_string()]));
+    }
+
+    /// A hole keeps the name the code gives the value: a value the code binds and no code Atlas
+    /// follows decides is named by the binding, and a later name of it hands that name on, so one
+    /// value is one hole; a path built around such a value is no name of it, and a hole the code
+    /// names keeps its name.
+    #[test]
+    fn a_binding_names_the_value_it_holds() {
+        let given = vec![hole("call")];
+        assert_eq!(bound("folder", given.clone()), [hole("folder")]);
+        assert_eq!(bound("path", bound("folder", given.clone())), bound("folder", given), "a later name hands the first on");
+        let built = vec![[hole("call"), lit("/note.json")].concat()];
+        assert_eq!(bound("path", built.clone()), built, "the binding names the whole, not the part");
+        assert_eq!(bound("x", vec![environment("HOME")]), [environment("HOME")]);
+        assert_eq!(bound("x", vec![lit("data")]), [lit("data")]);
+    }
+
+    /// A suffix given to a path a caller hands is the suffix given to what the caller hands:
+    /// `path.with_extension("part")` with `path = a/look.json` is `a/look.part`, the same as written
+    /// out, and so with a suffix the code builds (`format!("{}.part", id)`). A name the path says
+    /// gets its suffix where it is written.
+    #[test]
+    fn a_suffix_of_a_handed_path_is_the_suffix_of_what_is_handed() {
+        let path = vec![Seg::Param("path".into())];
+        for suffix in [lit(".part"), [lit("."), hole("value"), lit(".part")].concat(), lit("")] {
+            let handed = substitute(&with_suffix(&path, &suffix), |_| vec![lit("a/look.json")]);
+            let written = with_suffix(&lit("a/look.json"), &suffix);
+            assert_eq!(handed.iter().map(render).collect::<Vec<_>>(), [render(&written)], "{suffix:?}");
+        }
+        assert_eq!(render(&with_suffix(&lit("a/look.json"), &lit(".part"))), "a/look.part");
+        assert_eq!(render(&with_suffix(&lit("a/.env"), &lit(".bak"))), "a/.env.bak", "a dot file has no suffix");
+        let up = parent(&with_suffix(&path, &lit(".part")));
+        assert_eq!(place(&substitute(&up, |_| vec![lit("a/look.json")])[0], "read").as_deref(), Some("a"));
+    }
+
+    /// Going up twice from a path a caller hands is going up twice from what the caller hands:
+    /// `x.parent.parent / "m.json"` with `x = a/b/c.xml` is `a/m.json`, the same as written out.
+    #[test]
+    fn a_parent_of_a_parent_is_two_steps_up() {
+        let x = vec![Seg::Param("x".into())];
+        let up = join(&parent(&parent(&x)), &lit("m.json"), "/");
+        let handed = substitute(&up, |_| vec![lit("a/b/c.xml")]);
+        let written = join(&parent(&parent(&lit("a/b/c.xml"))), &lit("m.json"), "/");
+        assert_eq!(handed.iter().map(|b| place(b, "read")).collect::<Vec<_>>(), [place(&written, "read")]);
+        assert_eq!(place(&written, "read").as_deref(), Some("a/m.json"));
+    }
+
+    /// A pattern that holds everything below a directory is the fiber over a predicate that always
+    /// holds: the directory itself. `D.iterdir()`, `D.glob("*")` and `D.rglob("*")` list the place a
+    /// listing handed `D` lists, also below a part the code leaves unknown; a pattern that holds a
+    /// part of it stays that part.
+    #[test]
+    fn a_pattern_that_holds_everything_is_the_directory() {
+        for d in [lit("data/raw"), join(&lit("data"), &hole("kind"), "/")] {
+            let listed = place(&d, "listdir");
+            assert!(listed.is_some());
+            for (op, pattern) in [("iterdir", "*"), ("glob", "*"), ("rglob", "**/*")] {
+                assert_eq!(place(&join(&d, &lit(pattern), "/"), op), listed, "{op}({pattern}) of {d:?}");
+            }
+        }
+        assert_eq!(place(&lit("data/raw/*.csv"), "glob").as_deref(), Some("data/raw/*.csv"));
     }
 }

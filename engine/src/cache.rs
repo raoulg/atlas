@@ -1,13 +1,13 @@
-//! What does not change, kept on disk between readings, so that reading is fast without reading
-//! less: the parts of a revision, by its commit, and what ty says of a library's file, by the file
-//! and the environment it is read in. A kept answer is the answer a reading gives anew: its key
-//! holds everything that answer depends on, and an entry holds its key whole, so a key that only
-//! shares a hash with another finds nothing.
+//! Complete answers kept on disk between readings: the current graph of a working-tree part,
+//! the parts of a revision by commit, and what ty says of a library's file. A working-tree entry
+//! carries a witness of its source and environment inputs; an answer is reused only while those
+//! inputs stand as they did. Each entry holds its key whole, so a key that only shares a hash with
+//! another finds nothing.
 //!
-//! The cache is `$XDG_CACHE_HOME/atlas`, else the platform's cache directory (`~/Library/Caches`,
-//! `%LOCALAPPDATA%`, `~/.cache`), with a directory per build of Atlas. An entry is written to a file
-//! of its own and renamed into place, so two processes that keep one entry at once leave one whole
-//! entry.
+//! Revision and library entries are in `$XDG_CACHE_HOME/atlas`, else the platform's cache directory
+//! (`~/Library/Caches`, `%LOCALAPPDATA%`, `~/.cache`). Working-tree entries are in the worktree's
+//! `.atlas/index/`. Each has a directory per build of Atlas. An entry is written to a file of its
+//! own and renamed into place, so two processes that keep one entry at once leave one whole entry.
 
 use std::collections::hash_map::DefaultHasher;
 use std::hash::Hasher;
@@ -17,12 +17,16 @@ use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
 
+use crate::model::Graph;
+
 /// Where one build of Atlas keeps what does not change.
 #[derive(Clone, Debug)]
 pub struct Cache {
     dir: PathBuf,
     /// How many answers it gave, shared by its clones.
     hits: Arc<AtomicUsize>,
+    /// How many complete entries it wrote, shared by its clones.
+    writes: Arc<AtomicUsize>,
 }
 
 impl Cache {
@@ -42,7 +46,18 @@ impl Cache {
             let stamp = std::env::current_exe().and_then(std::fs::metadata).map(|m| format!("{} {}", m.len(), modified(&m)));
             name.push_str(&format!("{EDITED}{}", &digest(stamp.unwrap_or_default().as_bytes())[..16]));
         }
-        Cache { dir: root.join(name), hits: Arc::default() }
+        Cache { dir: root.join(name), hits: Arc::default(), writes: Arc::default() }
+    }
+
+    /// The same build's index for the working tree containing `dir`.
+    pub fn workspace(&self, dir: &Path) -> Option<Cache> {
+        let build = self.dir.file_name()?;
+        Some(Cache { dir: home(dir).join("index").join(build), hits: self.hits.clone(), writes: self.writes.clone() })
+    }
+
+    /// Whether it keeps anything yet: a reading with a cache that keeps nothing reads everything.
+    pub fn holds_any(&self) -> bool {
+        std::fs::read_dir(&self.dir).is_ok_and(|mut entries| entries.next().is_some())
     }
 
     /// The value kept of `kind` under `key`.
@@ -57,6 +72,11 @@ impl Cache {
     /// How many values it has given.
     pub fn hits(&self) -> usize {
         self.hits.load(Ordering::Relaxed)
+    }
+
+    /// How many complete values it has kept.
+    pub fn writes(&self) -> usize {
+        self.writes.load(Ordering::Relaxed)
     }
 
     /// Keep `value` of `kind` under `key`: written beside its place and renamed into it.
@@ -78,8 +98,13 @@ impl Cache {
         let mut bytes = head(key).into_bytes();
         bytes.push(b'\n');
         bytes.extend_from_slice(value);
-        if std::fs::write(&partial, bytes).and_then(|_| std::fs::rename(&partial, &file)).is_err() {
-            let _ = std::fs::remove_file(&partial);
+        match std::fs::write(&partial, bytes).and_then(|_| std::fs::rename(&partial, &file)) {
+            Ok(()) => {
+                self.writes.fetch_add(1, Ordering::Relaxed);
+            }
+            Err(_) => {
+                let _ = std::fs::remove_file(&partial);
+            }
         }
     }
 
@@ -99,6 +124,17 @@ impl Cache {
             }
         }
     }
+}
+
+/// Where Atlas keeps generated files for `dir`, at its Git worktree root when one exists.
+pub fn home(dir: &Path) -> PathBuf {
+    let dir = crate::repo::normal(&std::path::absolute(dir).unwrap_or_else(|_| dir.to_path_buf()));
+    let top = dir.ancestors().find(|a| a.join(".git").exists()).unwrap_or(&dir);
+    let home = top.join(".atlas");
+    if std::fs::create_dir_all(&home).is_ok() && !home.join(".gitignore").exists() {
+        let _ = std::fs::write(home.join(".gitignore"), "# Generated Atlas files.\n*\n");
+    }
+    home
 }
 
 /// What the directory of a build with edits has in its name.
@@ -129,6 +165,39 @@ pub fn digest(bytes: &[u8]) -> String {
         h.finish()
     };
     format!("{:016x}{:016x}", half(1), half(2))
+}
+
+/// Where each step and each value a step hands or gives is written in its file: what a reading
+/// knows and the graph's JSON leaves out, kept beside it.
+#[derive(Default, Serialize, Deserialize)]
+pub(crate) struct Written {
+    steps: Vec<(u32, u32)>,
+    values: Vec<u32>,
+}
+
+impl Written {
+    pub(crate) fn of(parts: &[Graph]) -> Written {
+        let mut w = Written::default();
+        for s in parts.iter().flat_map(|g| &g.nodes).flat_map(|n| &n.sites) {
+            w.steps.push(s.span);
+            w.values.extend(s.hands.iter().chain(&s.gives).map(|h| h.at));
+        }
+        w
+    }
+
+    /// Write it back into the parts, in the same order; whether it fits them.
+    pub(crate) fn apply(&self, parts: &mut [Graph]) -> bool {
+        let (mut steps, mut values) = (self.steps.iter(), self.values.iter());
+        for s in parts.iter_mut().flat_map(|g| g.nodes.iter_mut()).flat_map(|n| n.sites.iter_mut()) {
+            let Some(span) = steps.next() else { return false };
+            s.span = *span;
+            for h in s.hands.iter_mut().chain(s.gives.iter_mut()) {
+                let Some(at) = values.next() else { return false };
+                h.at = *at;
+            }
+        }
+        steps.next().is_none() && values.next().is_none()
+    }
 }
 
 /// When a file was last written, in nanoseconds.

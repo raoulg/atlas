@@ -3,7 +3,8 @@
 nightly build. The nightly workflow runs it after it publishes the immutable pre-release
 `nightly-<yyyymmddHHMM>` and pushes the result to the tap; the formula names that pre-release, so
 its checksums hold for as long as it is kept. Its version is the base version and the minute of
-the build, so that every nightly is newer than the one before it.
+the build, so that every nightly is newer than the one before it. It installs the command as
+`atlas-nightly`, beside the release's `atlas` (`atlas-code`).
 
     tap_formula.py <dist-dir> <base-version> <yyyymmddHHMM> > Formula/atlas-code-nightly.rb
 
@@ -23,24 +24,22 @@ TARGETS = {
 }
 
 HEAD = '''class AtlasCodeNightly < Formula
-  desc "Draws what a program is, beneath the language it is written in: the nightly build"
+  desc "Draws what a program is, beneath its language: the nightly build"
   homepage "https://raoulg.github.io/atlas/"
   version "{version}"
   license "CC-BY-NC-SA-4.0"
 
   # A nightly of `next`, built when `next` has moved and its tests are green: one pre-release per build.
-  # Ariga's Atlas, a database schema tool in homebrew-core, installs an executable of the same name.
-  conflicts_with "atlas", because: "both install an `atlas` executable"
-  conflicts_with "atlas-code", because: "both install an `atlas` executable"
+  # It installs `atlas-nightly`, beside the release's `atlas`.
 '''
 
 TAIL = '''
   def install
-    bin.install "atlas"
+    bin.install "atlas" => "atlas-nightly"
   end
 
   test do
-    assert_match version.to_s.split("-").first, shell_output("#{bin}/atlas --version")
+    assert_match version.to_s.split("-").first, shell_output("#{bin}/atlas-nightly --version")
   end
 end
 '''

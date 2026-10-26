@@ -1,0 +1,27 @@
+# The same two figures, both made in the body of `compare`: two `plt.subplots()` calls, each a figure of its own (#175).
+# No value beyond a call holds what it makes (`fig` and `other` are dropped, `ax` and `bx` drawn on by the body itself), so
+# each figure is its call's: one step that makes two, each named by that step.
+
+route notebooks.compare
+step compare/compare
+step compare/compare/subplots                                       # `fig, ax = plt.subplots()`
+step compare/compare/subplots#2                                     # `other, bx = plt.subplots()`
+
+line entry > compare call
+line compare/compare/subplots > _·fig@compare/compare/subplots value
+line compare/compare/subplots > _·ax@compare/compare/subplots value
+line compare/compare/subplots#2 > _·other@compare/compare/subplots#2 value
+line compare/compare/subplots#2 > _·bx@compare/compare/subplots#2 value
+line _·ax@compare/compare/subplots > compare/compare value                             # `ax.set_title(..)`, `ax.plot(..)`
+line _·bx@compare/compare/subplots#2 > compare/compare value
+line compare/compare > Figure 1 · compare own
+line compare/compare > Figure 2 · compare own                       # a second figure, by a second call
+
+home _·fig@compare/compare/subplots compare/compare
+home _·ax@compare/compare/subplots compare/compare
+home _·other@compare/compare/subplots#2 compare/compare
+home _·bx@compare/compare/subplots#2 compare/compare
+
+side entry left
+side Figure 1 · compare right
+side Figure 2 · compare right

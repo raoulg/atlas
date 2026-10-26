@@ -1,0 +1,22 @@
+# The log is borrowed to read: `note` clones its lines (a library operation whose result it names) and pushes the line
+# onto the copy, which it drops. It gives nothing back and changes nothing, the arrow into the terminal object. `run`
+# counts the lines of the log as it built it.
+route journal.run
+step run/Log()
+step run/note
+step run/note/clone
+step run/note/push
+
+line entry > run call
+line run/Log() > Log·log@run/Log() value
+line Log·log@run/Log() > run/note/clone value
+line run/note/clone > _·lines@run/note/clone value
+line _·lines@run/note/clone > run/note/push value
+line run/note/push > _·lines@run/note/push value
+line Log·log@run/Log() > run value   # `log.lines.len()`: the body uses it itself
+
+home Log·log@run/Log() run
+home _·lines@run/note/clone run/note
+home _·lines@run/note/push run/note
+
+side entry left

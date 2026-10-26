@@ -1,0 +1,27 @@
+# A call into a family runs one of its overrides: `Handler.handle` and `Handler.log` each run their own body or
+# `ClickHandler`'s, on the Handler the caller calls them on. What the caller hands the base's method is what the override
+# is handed: `handle` an Event, `log` a Click, each a value from beyond. The base's own body (the dispatch's own arrow)
+# reads the value it is handed, not the Handler. Each result, a string, goes back to the dispatch that ran it.
+
+route events.handlers.Handler
+step Handler()/Handler.handle
+step Handler()/Handler.handle/ClickHandler.handle
+step Handler()/Handler.log
+step Handler()/Handler.log/ClickHandler.log
+
+line entry > Handler()/Handler.handle call
+line entry > Handler()/Handler.log call
+line Handler > Handler()/Handler.handle/ClickHandler.handle value
+line Handler > Handler()/Handler.log/ClickHandler.log value
+line Event·e > Handler()/Handler.handle value   # handle's own body reads e.name
+line Event·e > Handler()/Handler.handle/ClickHandler.handle value
+line Click·e > Handler()/Handler.log value
+line Click·e > Handler()/Handler.log/ClickHandler.log value
+line Handler()/Handler.handle/ClickHandler.handle > Handler()/Handler.handle back
+line Handler()/Handler.log/ClickHandler.log > Handler()/Handler.log back
+
+home Handler Handler()
+home Event·e Handler()
+home Click·e Handler()
+
+side entry left

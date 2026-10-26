@@ -4,8 +4,38 @@
 
 // ---------- the web ----------
 
-/// The methods a request goes by.
-pub const HTTP_METHODS: &[&str] = &["get", "post", "put", "patch", "delete", "head", "options"];
+/// The way a request goes by its method, as a statement goes by its verb (`effects::sql`): a
+/// `GET` takes what the place holds, and `HEAD` and `OPTIONS` what it says of it; a `POST`, `PUT`,
+/// `PATCH` or `DELETE` leaves something there. What a request that leaves something answers is
+/// what the place gives back of what it left, read back, no use of what was there. One table for
+/// every language: each reader writes the method into the request it builds (`paths::request_of`,
+/// `fetch`'s `init.method`), whatever library sends it.
+pub const REQUEST_WAYS: &[(&str, Dir)] = &[
+    ("get", Dir::Read),
+    ("head", Dir::Read),
+    ("options", Dir::Read),
+    ("post", Dir::Write),
+    ("put", Dir::Write),
+    ("patch", Dir::Write),
+    ("delete", Dir::Write),
+];
+
+/// The methods a request goes by: those of `REQUEST_WAYS`.
+pub const HTTP_METHODS: &[&str] = &{
+    let mut out = [""; REQUEST_WAYS.len()];
+    let mut i = 0;
+    while i < out.len() {
+        out[i] = REQUEST_WAYS[i].0;
+        i += 1;
+    }
+    out
+};
+
+/// The way a request goes by its method, in any case (`delete`, `DELETE`); none where the code
+/// does not say the method.
+pub fn request_way(method: &str) -> Option<Dir> {
+    REQUEST_WAYS.iter().find(|(m, _)| m.eq_ignore_ascii_case(method)).map(|(_, d)| *d)
+}
 
 /// The hosts that are the machine a program runs on, where the other parts of a repository may
 /// serve their routes.
@@ -182,6 +212,12 @@ impl CliFramework {
 
 // ---------- a Python project's manifest ----------
 
+/// The files the Python tools read from a project's root to install or build it, each of which says
+/// that the directory holds a Python project: the standard's `pyproject.toml`, setuptools'
+/// `setup.py` and `setup.cfg`, pip's `requirements.txt` and pipenv's `Pipfile`. A lock is made from
+/// one of them, and conda's `environment.yml` holds any language's packages.
+pub const PYTHON_PROJECT_FILES: &[&str] = &["pyproject.toml", "setup.py", "setup.cfg", "requirements.txt", "Pipfile"];
+
 /// What a table of entry points declares: programs, run by their names, or plugins, each loaded
 /// by the host that names its group.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -268,6 +304,12 @@ pub fn made_dir(name: &str) -> bool {
 
 /// Directories that hold tests and the data they read.
 pub const TEST_DIRS: &[&str] = &["tests", "test", "__tests__", "fixtures", "testdata"];
+
+/// A Python test file by pytest's convention, wherever it stands: `test_*.py`, `*_test.py`, and
+/// `conftest.py`, which holds what its tests share.
+pub fn python_test_file(name: &str) -> bool {
+    name.starts_with("test_") || name.ends_with("_test.py") || name == "conftest.py"
+}
 
 // ---------- a library's code ----------
 
@@ -412,6 +454,34 @@ pub const PYTHON_HOLDERS: &[&str] = &[
     "Reversible",
 ];
 
+/// The tuples among `PYTHON_HOLDERS`: a tuple of fixed length stands for one value, the values it
+/// pairs; one of any length (`tuple[Station, ...]`) holds many.
+pub const PYTHON_TUPLES: &[&str] = &["tuple", "Tuple"];
+
+/// The maps among `PYTHON_HOLDERS`: a map holds its values by its keys, its first parameter (`dict[Mode, Plan]` holds
+/// Plans by their Mode, a `Counter[str]` counts by strings). A key chooses the value a lookup gives, as an index chooses
+/// an element of a list, and is no value the map holds; iterating it is a step whose element is its own value.
+pub const PYTHON_MAPS: &[&str] =
+    &["dict", "Dict", "Mapping", "MutableMapping", "defaultdict", "DefaultDict", "OrderedDict", "Counter", "ChainMap"];
+
+/// Whether a Python generic type holds many values: a holder that is no tuple. A pair one holds is
+/// an element of a type the code does not name (`list[tuple[date, float]]`), as Rust's
+/// `RUST_COLLECTIONS` read it.
+pub fn python_collection(name: &str) -> bool {
+    PYTHON_HOLDERS.contains(&name) && !PYTHON_TUPLES.contains(&name)
+}
+
+/// The keywords a Python call is handed a function by whose value the call uses: the key it
+/// orders, picks or groups by (`sorted(xs, key=score)`, `max(xs, key=..)`, `list.sort(key=..)`,
+/// `itertools.groupby(xs, key=..)`).
+pub const PYTHON_USES_HANDED: &[&str] = &["key"];
+
+/// What makes a Python method a declaration that what implements it fills in: a decorator
+/// (`@abstractmethod`), or a base, by package and name, that makes its class a protocol, which any
+/// class with its methods implements without naming it (`typing.Protocol`).
+pub const PYTHON_ABSTRACT: &[&str] = &["abstractmethod"];
+pub const PYTHON_PROTOCOLS: &[(&str, &str)] = &[("typing", "Protocol"), ("typing_extensions", "Protocol")];
+
 /// Python's generic types whose value is one of their parameters: `Optional[Node]` is a Node or
 /// nothing.
 pub const PYTHON_ALTERNATIVES: &[&str] = &["Optional", "Union"];
@@ -464,6 +534,27 @@ pub const TYPESCRIPT_CONTAINERS: &[&str] = &[
     "Generator",
     "AsyncGenerator",
 ];
+
+/// The TypeScript containers among `TYPESCRIPT_CONTAINERS` that hold many values, not one: the
+/// collections, and what an iterator gives. A pair one holds is an element of a type the code does
+/// not name (`Array<[Date, number]>`), as Rust's `RUST_COLLECTIONS` read it.
+pub const TYPESCRIPT_COLLECTIONS: &[&str] = &[
+    "Array",
+    "ReadonlyArray",
+    "Set",
+    "ReadonlySet",
+    "Map",
+    "ReadonlyMap",
+    "Record",
+    "Iterable",
+    "AsyncIterable",
+    "Generator",
+    "AsyncGenerator",
+];
+
+/// The maps among `TYPESCRIPT_CONTAINERS`: each holds its values by its keys, its first argument (`Record<Mode, Plan>`
+/// holds Plans by their Mode), as Python's `PYTHON_MAPS` do.
+pub const TYPESCRIPT_MAPS: &[&str] = &["Map", "ReadonlyMap", "Record"];
 
 /// Rust's generic types whose arguments are the values they hold or stand for, by the name Rust
 /// code writes them with: std's collections, pointers, cells and locks with their guards, an
@@ -522,6 +613,35 @@ pub const RUST_CONTAINERS: &[&str] = &[
     "Lazy",
 ];
 
+/// The Rust containers among `RUST_CONTAINERS` that hold many values, not one: std's
+/// collections, what an iterator or a stream gives, and the collections of common crates. A pair
+/// one holds is an element of a type the code does not name (`Vec<(NaiveDate, f64)>`).
+pub const RUST_COLLECTIONS: &[&str] = &[
+    "Vec",
+    "VecDeque",
+    "HashMap",
+    "HashSet",
+    "BTreeMap",
+    "BTreeSet",
+    "BinaryHeap",
+    "LinkedList",
+    "Iterator",
+    "IntoIterator",
+    "DoubleEndedIterator",
+    "ExactSizeIterator",
+    "Stream",
+    "IndexMap",
+    "IndexSet",
+    "SmallVec",
+    "ArrayVec",
+    "DashMap",
+    "DashSet",
+];
+
+/// The maps among `RUST_CONTAINERS`: each holds its values by its keys, its first argument (`HashMap<Mode, Plan>` holds
+/// Plans by their Mode), as Python's `PYTHON_MAPS` do.
+pub const RUST_MAPS: &[&str] = &["HashMap", "BTreeMap", "IndexMap", "DashMap"];
+
 /// Whether a Rust generic type's arguments are the values it holds or stands for.
 pub fn rust_container(name: &str) -> bool {
     RUST_CONTAINERS.contains(&name) || RUST_SUMS.contains(&name)
@@ -529,16 +649,63 @@ pub fn rust_container(name: &str) -> bool {
 
 /// Methods that change the value they are called on: a language's own containers', and a
 /// library's (networkx's graphs). By registry and source.
-/// The builtins' row is the methods of Python's `MutableSequence`, `MutableMapping` and
-/// `MutableSet`, with `list.sort`; a call changes its receiver when ty says it goes to the
-/// package of its row. The `std` row is the methods of Rust's collections (`Vec`, `String`,
-/// `VecDeque`, the maps and sets) that take `&mut self` and change what they hold.
+/// A Python call changes its receiver when ty says it goes to the package of a row that has the
+/// method, and ty says where the method is defined: `list.append` in `builtins`, the methods
+/// `list`, `dict` and `set` inherit (`clear`, `update`, `setdefault`, `reverse`, `popitem`) on
+/// `typing`'s `MutableSequence`, `MutableMapping` and `MutableSet`, `deque`'s, `Counter`'s and
+/// `OrderedDict`'s in `collections`, and `os.environ`'s own `setdefault` and `pop` in `os`. The
+/// `std` row is the methods of Rust's collections (`Vec`, `String`, `VecDeque`, the maps and sets)
+/// that take `&mut self` and change what they hold.
 pub const MUTATORS: &[(Registry, &str, &[&str])] = &[
     (
         Registry::PyPi,
         "builtins",
-        &["append", "extend", "insert", "remove", "pop", "clear", "update", "add", "discard", "setdefault", "sort", "reverse", "popitem"],
+        &[
+            "append",
+            "extend",
+            "insert",
+            "remove",
+            "pop",
+            "clear",
+            "update",
+            "add",
+            "discard",
+            "setdefault",
+            "sort",
+            "reverse",
+            "popitem",
+            "difference_update",
+            "intersection_update",
+            "symmetric_difference_update",
+        ],
     ),
+    (
+        Registry::PyPi,
+        "typing",
+        &["append", "extend", "insert", "remove", "pop", "clear", "reverse", "add", "discard", "update", "setdefault", "popitem"],
+    ),
+    (
+        Registry::PyPi,
+        "collections",
+        &[
+            "append",
+            "appendleft",
+            "extend",
+            "extendleft",
+            "insert",
+            "remove",
+            "pop",
+            "popleft",
+            "rotate",
+            "sort",
+            "update",
+            "subtract",
+            "setdefault",
+            "popitem",
+            "move_to_end",
+        ],
+    ),
+    (Registry::PyPi, "os", &["setdefault", "pop"]),
     (Registry::PyPi, "networkx", &["add_node", "add_edge", "add_nodes_from", "add_edges_from", "remove_node", "remove_edge"]),
     (
         Registry::Npm,
@@ -582,6 +749,10 @@ pub const MUTATORS: &[(Registry, &str, &[&str])] = &[
 /// `javascript` row of `MUTATORS`.
 pub const TYPESCRIPT_CHANGEABLE: &[&str] = &["Array", "Map", "Set", "WeakMap", "WeakSet"];
 
+/// The language's own type guards that narrow the value they are handed to one of its containers,
+/// where they hold: `Array.isArray(x)` says `x` is an `Array`. By the global and the guard's name.
+pub const TYPESCRIPT_GUARDS: &[(&str, &str)] = &[("Array", "isArray")];
+
 /// A package whose methods change the value they are called on when handed this keyword as
 /// `True`: pandas' `inplace=True`.
 pub const IN_PLACE: &[(&str, &str)] = &[("pandas", "inplace")];
@@ -597,8 +768,44 @@ pub fn mutates(from: Registry, package: &str, method: &str) -> bool {
 }
 
 /// Functions that change an argument they are handed, by package, name and the argument's
-/// position: `setattr(obj, ..)`, `random.shuffle(xs)`.
-pub const CHANGES_ARGUMENT: &[(&str, &str, usize)] = &[("builtins", "setattr", 0), ("builtins", "delattr", 0), ("random", "shuffle", 0)];
+/// position: `setattr(obj, ..)`, `random.shuffle(xs)`, the heap and the sorted list that `heapq`
+/// and `bisect` keep in a list they are handed.
+pub const CHANGES_ARGUMENT: &[(&str, &str, usize)] = &[
+    ("builtins", "setattr", 0),
+    ("builtins", "delattr", 0),
+    ("random", "shuffle", 0),
+    ("heapq", "heappush", 0),
+    ("heapq", "heappop", 0),
+    ("heapq", "heapify", 0),
+    ("heapq", "heapreplace", 0),
+    ("heapq", "heappushpop", 0),
+    ("bisect", "insort", 0),
+    ("bisect", "insort_left", 0),
+    ("bisect", "insort_right", 0),
+];
+
+/// Python's own containers that change in place, by module and class as ty finds them: an
+/// augmented assignment (`xs += ys`) changes one, where it makes any other value anew.
+pub const PYTHON_CHANGEABLE: &[(&str, &str)] = &[
+    ("builtins", "list"),
+    ("builtins", "dict"),
+    ("builtins", "set"),
+    ("builtins", "bytearray"),
+    ("collections", "deque"),
+    ("collections", "Counter"),
+    ("collections", "OrderedDict"),
+    ("collections", "defaultdict"),
+    ("typing", "MutableSequence"),
+    ("typing", "MutableMapping"),
+    ("typing", "MutableSet"),
+    ("typing", "List"),
+    ("typing", "Dict"),
+    ("typing", "Set"),
+    ("typing", "Deque"),
+    ("typing", "DefaultDict"),
+    ("typing", "OrderedDict"),
+    ("typing", "Counter"),
+];
 
 /// Libraries whose array types carry their shape in the annotation (`Float[Tensor, "batch dim"]`):
 /// such a type keeps its shape in its name.
@@ -736,6 +943,32 @@ pub fn reaches(pkg: &str, from: Option<Registry>) -> Option<World> {
 
 /// What a request does that moves data, beside its HTTP method: send one, stream one, open a URL.
 pub const REQUESTS: &[&str] = &["request", "send", "stream", "urlopen", "urlretrieve"];
+
+/// A request whose method is what the call is handed, as its library says, not its name: urllib's
+/// `urlopen(url, data=None)` and `urlretrieve(url, filename, reporthook, data)` send a `GET`, and a
+/// `POST` where they are handed data to send; a `Request(url, data, .., method=None)` opened by
+/// `urlopen` goes as its own `method` says, else by its data alike. The operation, the place and
+/// keyword of its data, and the keyword of its method where it has one.
+pub struct RequestByData {
+    pub op: &'static str,
+    pub data: (usize, &'static str),
+    pub method: Option<&'static str>,
+}
+
+pub const REQUESTS_BY_DATA: &[RequestByData] = &[
+    RequestByData { op: "urlopen", data: (1, "data"), method: None },
+    RequestByData { op: "urlretrieve", data: (3, "data"), method: None },
+    RequestByData { op: "Request", data: (1, "data"), method: Some("method") },
+];
+
+/// The method a request goes by that sends no data, and the one that sends it (`REQUESTS_BY_DATA`).
+pub const REQUEST_WITHOUT_DATA: &str = "get";
+pub const REQUEST_WITH_DATA: &str = "post";
+
+/// The request an operation of `REQUESTS_BY_DATA` sends, by its name as the code writes it.
+pub fn request_by_data(op: &str) -> Option<&'static RequestByData> {
+    REQUESTS_BY_DATA.iter().find(|r| r.op == op)
+}
 
 /// A socket's connecting, sending and receiving: the network calls that are handed no URL.
 pub const SOCKET_OPS: &[&str] = &["connect", "send", "sendall", "sendto", "recv", "recvfrom", "recv_into"];
@@ -923,6 +1156,16 @@ pub fn operation(pkg: &str, op: &str) -> Option<Crossing> {
     OPERATIONS.iter().find(|(p, o, _)| *p == pkg && *o == op).map(|(_, _, c)| *c)
 }
 
+/// The functions that end the program where they are called, as an error no one catches does:
+/// by the module that holds them and their name, Python's `sys.exit` and `os._exit`, Node's
+/// `process.exit`, Rust's `std::process::exit`.
+pub const ENDS_THE_RUN: &[(&str, &str)] = &[("sys", "exit"), ("os", "_exit"), ("os", "abort"), ("process", "exit"), ("process", "abort")];
+
+/// Whether the function `name` of the module `module` ends the program.
+pub fn ends_the_run(module: &str, name: &str) -> bool {
+    ENDS_THE_RUN.contains(&(module, name))
+}
+
 /// A program's streams that a write to shows the human: `sys.stdout`, `process.stderr`, Rust's
 /// `io::stderr()`.
 pub const STREAMS: &[(&str, &str)] =
@@ -955,6 +1198,7 @@ pub const FILE_PACKAGES: &[&str] = &[
     "shutil",
     "os",
     "pathlib",
+    "importlib",
     "pandas",
     "geopandas",
     "numpy",
@@ -992,6 +1236,7 @@ pub const FILE_READS: &[&str] = &[
     "readlines",
     "safe_load",
     "listdir",
+    "scandir",
     "walk",
     "open",
 ];
@@ -1340,19 +1585,48 @@ pub const PATH_MAKERS: &[&str] =
     &["Path", "PurePath", "PosixPath", "WindowsPath", "PurePosixPath", "PureWindowsPath", "Path::new", "PathBuf::from", "URL", "new URL"];
 
 /// Libraries whose values are paths: a method of one names its file by the path it is called on.
-pub const PATH_LIBRARIES: &[&str] = &["pathlib"];
+/// importlib's are what a package ships (`files("pages").joinpath("template.html").read_text()`).
+pub const PATH_LIBRARIES: &[&str] = &["pathlib", "importlib"];
+
+/// The functions that give the directory a package ships its files in, handed the package by its
+/// name, by the library's module and the function's name: `importlib.resources.files("pages")`.
+/// What is read from there is part of the package.
+pub const PACKAGE_FILES: &[(&str, &str)] = &[("importlib.resources", "files"), ("importlib_resources", "files")];
 
 /// A path's methods that give back the path they are called on, written another way.
 pub const SAME_PATH: &[&str] = &["resolve", "absolute", "expanduser", "as_posix", "__fspath__"];
 
 /// A path's methods that give the paths below the one they are called on that match a pattern,
-/// with what the pattern starts with: `glob("*/IO-*")` is `*/IO-*` below it, `rglob("*.gml")` is
-/// `**/*.gml`.
-pub const PATH_PATTERNS: &[(&str, &str)] = &[("glob", ""), ("rglob", "**/")];
+/// with what the pattern starts with and how many arguments write the rest of it:
+/// `glob("*/IO-*")` is `*/IO-*` below it, `rglob("*.gml")` is `**/*.gml`, and `iterdir()`, handed
+/// nothing, is `*`, as `glob("*")` is.
+pub const PATH_PATTERNS: &[(&str, &str, usize)] = &[("glob", "", 1), ("rglob", "**/", 1), ("iterdir", "*", 0)];
+
+/// A library's function that lists the directory it is handed, as a path's `iterdir()` does: each
+/// element is below the directory, `*`. Where `names` holds, an element is the name alone, which
+/// the code puts back below the directory itself (`os.path.join(d, name)`); else it is the path
+/// (`os.scandir(d)`, whose entries are paths).
+pub struct Listing {
+    pub library: &'static str,
+    pub function: &'static str,
+    pub names: bool,
+}
+
+pub const LISTINGS_BELOW: &[Listing] =
+    &[Listing { library: "os", function: "listdir", names: true }, Listing { library: "os", function: "scandir", names: false }];
+
+/// The attributes of a listing's element that are the path the element is at, by the library and
+/// the element's class: `entry.path` of an `os.DirEntry`.
+pub const ELEMENT_PATHS: &[(&str, &str, &str)] = &[("os", "DirEntry", "path")];
 
 /// Functions that give back the elements of the collection they are handed, in another order or
 /// kind: `sorted(paths)` holds the paths `paths` holds.
 pub const SAME_ELEMENTS: &[&str] = &["sorted", "list", "set", "tuple", "frozenset", "reversed", "iter", "fromkeys"];
+
+/// Functions that give back one of the values they are handed: one element of the collection
+/// (`max(paths, key=..)`, `next(paths)`), or one of the values themselves (`min(a, b)`), or the
+/// default `next` is handed.
+pub const ONE_OF_ELEMENTS: &[&str] = &["max", "min", "next"];
 
 /// What a path library's function makes of what it is handed.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -1369,6 +1643,8 @@ pub enum PathFn {
     Here,
     /// The system's directory for temporary files.
     Temp,
+    /// What the environment holds for the variable its first argument names.
+    Environment,
 }
 
 /// A command-line parser whose parsed values are attributes of one object (`args.out`): its
@@ -1426,6 +1702,19 @@ pub struct DerivedParser {
     pub flatten: &'static str,
 }
 
+/// The functions that give the command line the program is run with, word by word, unparsed: what
+/// they give is the entry's, whatever the program makes of it.
+pub const RUST_COMMAND_LINE: &[&[&str]] = &[&["std", "env", "args"], &["std", "env", "args_os"]];
+
+/// The values of a JavaScript runtime that hold the command line the program is run with, word by
+/// word, unparsed, as `RUST_COMMAND_LINE` gives it: Node's (and Bun's) `process.argv`, Deno's
+/// `Deno.args`.
+pub const TYPESCRIPT_COMMAND_LINE: &[&[&str]] = &[&["process", "argv"], &["Deno", "args"]];
+
+/// The value of Python's standard library that holds the command line the program is run with,
+/// word by word, unparsed, as `RUST_COMMAND_LINE` gives it: `sys.argv`.
+pub const PYTHON_COMMAND_LINE: &[&[&str]] = &[&["sys", "argv"]];
+
 /// clap's derive: `#[derive(Parser)] struct Cli { #[arg(long, default_value = RAW)] raw: PathBuf }`,
 /// with the options a struct of `Args` or a variant of `Subcommand` adds to it.
 pub const DERIVED_PARSERS: &[DerivedParser] = &[DerivedParser {
@@ -1466,7 +1755,14 @@ pub const RUST_PATH_FUNCTIONS: &[(&str, &str, PathFn)] = &[
     ("env", "home_dir", PathFn::Home),
     ("dirs", "home_dir", PathFn::Home),
     ("env", "temp_dir", PathFn::Temp),
+    ("env", "var", PathFn::Environment),
+    ("env", "var_os", PathFn::Environment),
 ];
+
+/// The macros that give, where the program is built, the directory its crate's manifest is in,
+/// by the macro and the variable Cargo sets: `env!("CARGO_MANIFEST_DIR")`. Read at run time, it
+/// names the source directory of the machine the program was built on.
+pub const RUST_BUILD_DIRS: &[(&str, &str)] = &[("env", "CARGO_MANIFEST_DIR")];
 
 /// What a method of a path makes of the path it is called on.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -1560,6 +1856,160 @@ pub const RUST_SEQUENCES: &[&str] = &["Vec", "VecDeque", "HashSet", "BTreeSet", 
 
 /// The methods that go over a sequence's elements, by reference or by value.
 pub const RUST_ELEMENTS: &[&str] = &["iter", "iter_mut", "into_iter", "drain"];
+
+/// The adaptors of an iterator that keep its elements as they are, fewer or in another order.
+pub const RUST_KEEPS_ELEMENTS: &[&str] =
+    &["filter", "skip", "take", "rev", "skip_while", "take_while", "peekable", "inspect", "step_by", "by_ref"];
+
+/// The adaptors of an iterator that go on with the elements of what they are handed after their own:
+/// each element of `a.iter().chain(&b)` is one of `a` or one of `b`.
+pub const RUST_JOINS_ELEMENTS: &[&str] = &["chain"];
+
+/// The methods that go over the parts of a value one by one: a string's lines, words and characters,
+/// a slice's windows and chunks, a map's keys and values.
+pub const RUST_PARTS: &[&str] = &[
+    "lines",
+    "split",
+    "splitn",
+    "rsplit",
+    "split_whitespace",
+    "split_terminator",
+    "chars",
+    "bytes",
+    "char_indices",
+    "windows",
+    "chunks",
+    "chunks_exact",
+    "keys",
+    "values",
+    "values_mut",
+    "enumerate",
+    "zip",
+];
+
+/// A call of the language's own that runs a function it is handed on each element of what it goes
+/// over: its name, where it is handed the function (by place or by keyword), where what it goes over
+/// is (by place; none for the value a method is called on), and the parameter of the function the
+/// element fills. Python's `map(f, xs)`, `sorted(xs, key=f)`, `xs.sort(key=f)`, `reduce(f, xs)`.
+pub struct EachCall {
+    pub name: &'static str,
+    pub function: Handed,
+    pub over: Option<usize>,
+    pub element: u32,
+}
+
+/// Where a call is handed a value: at a place among its arguments, or by a keyword.
+#[derive(Clone, Copy)]
+pub enum Handed {
+    At(usize),
+    Key(&'static str),
+}
+
+pub const PYTHON_EACH: &[EachCall] = &[
+    EachCall { name: "map", function: Handed::At(0), over: Some(1), element: 0 },
+    EachCall { name: "filter", function: Handed::At(0), over: Some(1), element: 0 },
+    EachCall { name: "sorted", function: Handed::Key("key"), over: Some(0), element: 0 },
+    EachCall { name: "min", function: Handed::Key("key"), over: Some(0), element: 0 },
+    EachCall { name: "max", function: Handed::Key("key"), over: Some(0), element: 0 },
+    EachCall { name: "sort", function: Handed::Key("key"), over: None, element: 0 },
+    EachCall { name: "reduce", function: Handed::At(0), over: Some(1), element: 1 },
+];
+
+/// The methods of an array that run the function they are handed first on each element of the array,
+/// with the parameter the element fills: the first, the second of a `reduce`, whose first is what it
+/// gathers.
+pub const TYPESCRIPT_EACH: &[(&str, u32)] = &[
+    ("map", 0),
+    ("flatMap", 0),
+    ("filter", 0),
+    ("forEach", 0),
+    ("find", 0),
+    ("findIndex", 0),
+    ("findLast", 0),
+    ("findLastIndex", 0),
+    ("some", 0),
+    ("every", 0),
+    ("reduce", 1),
+    ("reduceRight", 1),
+];
+
+/// The classes of error a Python handler that names one catches whatever is raised by: every error is
+/// of them (`except Exception:`).
+pub const PYTHON_CATCH_ALL: &[&str] = &["Exception", "BaseException"];
+
+/// The methods that hand the closure they are given each element of what they run on, or what an
+/// `Option` or a `Result` holds, with the place of the closure's parameter the element fills first:
+/// `xs.iter().map(|x| ..)` hands it each `x`, `xs.iter().fold(0, |n, x| ..)` its second, after what it
+/// gathers. Each parameter from that place on is an element (`xs.sort_by(|a, b| ..)`).
+pub const RUST_EACH: &[(&str, u32)] = &[
+    ("map", 0),
+    ("filter", 0),
+    ("filter_map", 0),
+    ("flat_map", 0),
+    ("for_each", 0),
+    ("find", 0),
+    ("find_map", 0),
+    ("any", 0),
+    ("all", 0),
+    ("position", 0),
+    ("fold", 1),
+    ("try_fold", 1),
+    ("take_while", 0),
+    ("skip_while", 0),
+    ("map_while", 0),
+    ("inspect", 0),
+    ("partition", 0),
+    ("max_by_key", 0),
+    ("min_by_key", 0),
+    ("max_by", 0),
+    ("min_by", 0),
+    ("sort_by_key", 0),
+    ("sort_by", 0),
+    ("retain", 0),
+    ("and_then", 0),
+    ("is_some_and", 0),
+    ("map_or", 0),
+    ("map_or_else", 0),
+];
+
+/// The place of the parameter a method of `RUST_EACH` hands its closure each element in first.
+pub fn rust_element(method: &str) -> Option<u32> {
+    RUST_EACH.iter().find(|(m, _)| *m == method).map(|(_, at)| *at)
+}
+
+/// The macros that format their arguments into a string, where a name written in the string
+/// (`format!("{key} {low}")`) is an argument as one written after it is: std's, anyhow's errors,
+/// and the log crate's.
+pub const RUST_FORMAT_MACROS: &[&str] = &[
+    "format",
+    "format_args",
+    "print",
+    "println",
+    "eprint",
+    "eprintln",
+    "write",
+    "writeln",
+    "panic",
+    "assert",
+    "assert_eq",
+    "assert_ne",
+    "unreachable",
+    "todo",
+    "unimplemented",
+    "anyhow",
+    "bail",
+    "ensure",
+    "error",
+    "warn",
+    "info",
+    "debug",
+    "trace",
+];
+
+/// The methods of a sequence or an iterator that give one of its elements, as it is held (in an
+/// `Option`, which is read as what it holds): `series.first()`.
+pub const RUST_ONE_ELEMENT: &[&str] =
+    &["first", "last", "get", "get_mut", "first_mut", "last_mut", "pop", "next", "next_back", "nth", "find"];
 
 /// The crate the prelude's types are of: `Vec` and `String` are `std`'s.
 pub const RUST_PRELUDE_CRATE: &str = "std";

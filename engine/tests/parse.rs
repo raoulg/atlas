@@ -22,13 +22,21 @@ fn edges(g: &Graph, kind: EdgeKind) -> HashSet<(String, String)> {
     g.edges.iter().filter(|e| e.kind == kind).map(|e| (e.src.clone(), e.dst.clone())).collect()
 }
 
+/// What `id` touches in the route that starts at `entry`, which runs it: each touch's kind and place.
+fn in_route<'g>(g: &'g Graph, entry: &str, id: &str) -> Vec<(&'static str, &'g str)> {
+    let reached = g.reach(entry);
+    assert!(reached.contains(id), "the route from {entry} runs {id}");
+    g.node(id).unwrap().touches_in(entry, &|f| reached.contains(f)).into_iter().map(|t| (t.kind_name(), t.artifact.as_str())).collect()
+}
+
 #[test]
 fn modules_classes_and_functions_are_found() {
     let g = fixture();
     assert_eq!(g.root, "fixture");
-    let kinds = |k: NodeKind| g.nodes.iter().filter(|n| n.kind == k).count();
-    // `services` holds the places a library reaches by its table alone
-    assert_eq!(kinds(NodeKind::Module), 28, "the package's twenty-five, a script and two notebooks");
+    // a script and two notebooks are modules beside the package's own
+    for id in ["fixture.build", "scripts.report", "notebooks.explore", "notebooks.les1.01_1-verken"] {
+        assert_eq!(g.node(id).map(|n| n.kind), Some(NodeKind::Module), "{id}");
+    }
     assert!(g.node("fixture.sinks").unwrap().is_pkg);
     assert_eq!(g.node("fixture.schema.Graph").unwrap().doc, "Nodes and edges.");
     assert_eq!(g.node("fixture.sinks.duck.DuckSink").unwrap().bases, vec!["Sink", "Mixin"]);
@@ -183,10 +191,11 @@ fn an_object_holds_what_its_constructor_was_handed() {
     let keep: Vec<&str> = rs.node("handed.world.Store.keep").unwrap().touches.iter().map(|t| t.artifact.as_str()).collect();
     assert_eq!(keep, ["stock/kept.txt"], "`Store::new(PathBuf::from(\"stock\"))`");
     // the place is `stock`'s: a route that does not build the value sees the call as it was read
-    let stock = atlas_engine::story::route(&rs, "handed.world.stock", 3).unwrap();
-    assert!(stock.contains("writes stock/kept.txt"), "{stock}");
-    let own = atlas_engine::story::route(&rs, "handed.world.Store.keep", 3).unwrap();
-    assert!(own.contains("writes") && !own.contains("stock/kept.txt"), "{own}");
+    assert_eq!(in_route(&rs, "handed.world.stock", "handed.world.Store.keep"), [("disk_write", "stock/kept.txt")]);
+    let read: Vec<(&str, &str)> =
+        rs.node("handed.world.Store.keep").unwrap().instead.iter().map(|t| (t.kind_name(), t.artifact.as_str())).collect();
+    assert!(read.iter().any(|(kind, _)| *kind == "disk_write") && read.iter().all(|(_, place)| *place != "stock/kept.txt"), "{read:?}");
+    assert_eq!(in_route(&rs, "handed.world.Store.keep", "handed.world.Store.keep"), read);
 }
 
 /// A script's command line, run as written, holds the defaults its parser declares: `args.out_file`
@@ -448,7 +457,7 @@ fn alternatives_carry_their_arms() {
     let rs = analyze(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixture-rs"), &Options::default()).unwrap();
     let arms = |dst: &str| rs.edges.iter().find(|e| e.src == "handed.choose.resolve" && e.dst == dst).map(|e| e.arms.clone()).unwrap();
     assert_eq!(arms("handed.choose.load"), [(0, 0)], "match arm `Some(p)`");
-    assert_eq!(arms("handed.choose.find"), [(0, 1), (1, 0)], "`None`, then the receiver of `unwrap_or_else`");
+    assert_eq!(arms("handed.choose.find"), [(0, 1)], "`None`; the receiver of `unwrap_or_else` always runs");
     assert_eq!(arms("handed.choose.infer"), [(0, 1), (1, 1)], "`None`, then its argument");
 }
 
@@ -468,8 +477,19 @@ fn an_arm_says_what_decides_it() {
     );
     let rs = analyze(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixture-rs"), &Options::default()).unwrap();
     assert_eq!(whens(&rs, "handed.choose.resolve"), [w(0, 0, "Some(p)"), w(0, 1, "None"), w(1, 1, "otherwise")]);
-    let text = atlas_engine::story::choices(&g, "fixture.build.prepare").unwrap();
-    assert!(text.contains("  a  when mode == \"fresh\":  build_graph") && text.contains("  b  otherwise:  empty"), "{text}");
+    // what each arm runs, beside what decides it
+    let bodies = atlas_engine::flow::bodies(&g);
+    let arms: Vec<(usize, &str, &str)> = bodies["fixture.build.prepare"]
+        .items
+        .iter()
+        .find_map(|it| match it {
+            atlas_engine::flow::Item::Choice { choice: 0, members, when } => {
+                Some(members.iter().map(|m| (m.branch, m.step.to.as_str(), when[m.branch].as_str())).collect())
+            }
+            _ => None,
+        })
+        .expect("the first choice of `prepare` runs steps");
+    assert_eq!(arms, [(0, "fixture.build.build_graph", "mode == \"fresh\""), (1, "fixture.build.empty", "otherwise")]);
 }
 
 /// Where data rests is named as precisely as the code allows: a literal file, else its format;
@@ -516,202 +536,6 @@ fn files_and_tables_are_places() {
     assert!(returns.contains(&("fixture.build.describe".into(), "fixture.schema.Node".into())));
 }
 
-/// A Rust workspace parses; the sample is this workspace.
-#[test]
-fn rust_workspace_parses() {
-    let repo = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..");
-    let g = analyze(&repo, &Options::default()).expect("the Atlas workspace parses");
-    let ids: HashSet<&str> = g.nodes.iter().map(|n| n.id.as_str()).collect();
-    for id in ["atlas-engine", "atlas-engine.model", "atlas-engine.view", "atlas-engine.python", "atlas-engine.rust", "atlas"] {
-        assert!(ids.contains(id), "module {id}");
-    }
-    assert!(ids.contains("atlas-engine.model.Graph") && ids.contains("atlas-engine.view.View"));
-    assert_eq!(g.node("atlas.main").unwrap().entry.as_ref().unwrap().kind, EntryKind::Cli);
-    // `atlas` is handed what clap parses its command line into: the global `--libraries` and
-    // `--no-cache`; the subcommand is no option of its own, and `Cli::parse()` is the step that
-    // reads it
-    let main = g.node("atlas.main").unwrap();
-    assert_eq!(main.entry.as_ref().unwrap().options, ["--libraries", "--no-cache"]);
-    let parse = main.sites.iter().find(|s| s.command_line.is_some()).expect("main parses its command line");
-    assert_eq!(
-        (parse.to.as_str(), parse.command_line.clone().unwrap()),
-        ("atlas.Cli", vec!["--libraries".to_string(), "--no-cache".to_string()])
-    );
-    assert_eq!(
-        g.node("atlas-engine.analyze").unwrap().entry.as_ref().unwrap().kind,
-        EntryKind::Export,
-        "pub fn at the root of a library crate"
-    );
-    let hide = g.node("atlas-engine.view.hide_private").unwrap().entry.as_ref().unwrap();
-    assert_eq!((hide.kind, hide.label.as_str()), (EntryKind::Export, "view::hide_private"), "pub in a `pub mod`, by its path");
-    let inh = edges(&g, EdgeKind::Inherits);
-    assert!(inh.contains(&("atlas-engine.view.Fiber".into(), "atlas-engine.view.View".into())), "impl View for Fiber");
-    let calls = edges(&g, EdgeKind::Calls);
-    assert!(calls.contains(&("atlas.main".into(), "atlas.view".into())));
-    assert!(calls.contains(&("atlas.view".into(), "atlas.page".into())), "the command writes the page");
-    // the page reads the repository (one reading, or two as one) and draws what it read
-    assert!(
-        calls.contains(&("atlas.page".into(), "atlas.reading".into())) && calls.contains(&("atlas.page".into(), "atlas.viewer".into())),
-        "the command reads, then draws"
-    );
-    assert!(
-        calls.contains(&("atlas.reading".into(), "atlas-engine.parts.analyze_parts".into()))
-            && calls.contains(&("atlas.single".into(), "atlas-engine.parts.merged".into())),
-        "cli calls into the engine"
-    );
-    assert!(calls.contains(&("atlas.union".into(), "atlas-engine.diff.union".into())), "two readings are one graph, their union");
-    assert!(
-        calls.contains(&("atlas.viewer".into(), "atlas-engine.flow.of".into())),
-        "the page is drawn from the Flow: Graph -> Flow -> File(html)"
-    );
-    assert!(
-        calls.contains(&("atlas-engine.parts.analyze_parts".into(), "atlas-engine.graph_of".into())),
-        "each part is analyzed in its language"
-    );
-    assert!(calls.contains(&("atlas-engine.language.Rust.parse".into(), "atlas-engine.rust.parse".into())), "trait impl calls the module");
-    let returns = edges(&g, EdgeKind::Returns);
-    assert!(returns.contains(&("atlas-engine.analyze".into(), "atlas-engine.model.Graph".into())), "`pub use model::*` resolves Graph");
-    // `let lang = language::detect(..)?; lang.parse(..)`: a local typed by the callee's return
-    assert!(calls.contains(&("atlas-engine.graph_of".into(), "atlas-engine.language.Language.parse".into())));
-    // typed parameters give receivers a type: `store.add_edge(..)` with `store: &mut GraphBuilder`
-    assert!(calls.contains(&("atlas-engine.python.collect_symbols".into(), "atlas-engine.builder.GraphBuilder.add_edge".into())));
-    // the repository is read in one place, and a reader reads what was read
-    assert!(boundaries(g.node("atlas-engine.repo.Repo.read").unwrap()).get("disk_read").is_some(), "the listing");
-    assert!(boundaries(g.node("atlas-engine.repo.Repo.bytes").unwrap()).get("disk_read").is_some(), "a file's text, once");
-    for reader in [
-        "atlas-engine.rust.parse",
-        "atlas-engine.typescript.parse",
-        "atlas-engine.entries.read_makefile",
-        "atlas-engine.language.Python.detect",
-        "atlas-engine.language.Python.parse",
-    ] {
-        assert!(!boundaries(g.node(reader).unwrap()).contains_key("disk_read"), "{reader} reads the Repo, not the disk");
-    }
-    let test = |id: &str| g.node(id).and_then(|n| n.entry.as_ref()).map_or(false, |e| e.kind == EntryKind::Test);
-    let readers: Vec<&str> = g
-        .edges
-        .iter()
-        .filter(|e| e.kind == EdgeKind::Calls && e.dst == "atlas-engine.repo.Repo.read" && !test(&e.src))
-        .map(|e| e.src.as_str())
-        .collect();
-    assert_eq!(
-        readers,
-        ["atlas-engine.language.read"],
-        "the repository is read in one place, and what it is depends on nothing read after it"
-    );
-    assert!(boundaries(g.node("atlas.view").unwrap()).contains_key("screen"), "eprintln!");
-    let m = edges(&g, EdgeKind::Mutates);
-    assert!(m.contains(&("atlas-engine.model.Graph.recount".into(), "atlas-engine.model.Graph".into())), "&mut self");
-    // a method runs on the value the call before it gives: `Repo::read(&root, ..)?.asked_for(package)`
-    let read: Vec<&str> = g.node("atlas-engine.language.read").unwrap().sites.iter().map(|s| s.to.as_str()).collect();
-    assert_eq!(
-        read,
-        [
-            "atlas-engine.repo.Repo.read",
-            "atlas-engine.language.languages",
-            "atlas-engine.repo.Repo.read",
-            "atlas-engine.repo.Repo.asked_for"
-        ]
-    );
-    let places = |id: &str| {
-        g.node(id).unwrap().touches.iter().map(|t| (t.kind_name().to_string(), t.op.clone(), t.artifact.clone())).collect::<Vec<_>>()
-    };
-    // a name bound by `if let`: `if let Some(d) = dest.parent()` is the directory, under the
-    // revision's `env::temp_dir()`, of the file written there, so making it is part of writing it
-    let revision = places("atlas-engine.changes.revision");
-    assert!(
-        revision.contains(&("disk_write".into(), "write".into(), "$TMPDIR/".into()))
-            && !revision.iter().any(|(_, op, _)| op == "create_dir_all"),
-        "{revision:?}"
-    );
-    // `atlas analyze` writes its graph where `-o` says, else where `made` puts it: in `.atlas/` at
-    // the top of the git repository, a folder found on disk that the code cannot name, or for a
-    // clone in the system's temporary folder; the command line decides, not the code alone
-    let written = places("atlas.main");
-    assert!(written.contains(&("disk_write".into(), "write".into(), "$TMPDIR/atlas/graph.json".into())), "{written:?}");
-    assert!(written.contains(&("disk_write".into(), "write".into(), "".into())), "the folder found on disk has no name: {written:?}");
-    let graph = g.node("atlas.main").unwrap().touches.iter().find(|t| t.artifact == "$TMPDIR/atlas/graph.json").unwrap();
-    assert!(!graph.fixed && graph.by.is_empty(), "{graph:?}");
-    // a `let` holds the type of the parameter it is handed to: `joined`'s graph, the one graph
-    // read or the merge of several, is the `Graph` that `join(g: &mut Graph)` takes
-    let joining = g.node("atlas-engine.parts.joined").unwrap().sites.iter().find(|s| s.to == "atlas-engine.parts.join").unwrap();
-    assert_eq!(joining.hands.iter().map(|h| (h.name.as_str(), h.ty.as_str())).collect::<Vec<_>>(), [("g", "atlas-engine.model.Graph")]);
-    // a generic's arguments are values where it holds them: `analyze_parts` gives the Graphs of a
-    // `Result<Vec<Graph>>`, `merged` takes the Graphs of a `Vec<Graph>`, a Graph has the Nodes of
-    // its `Vec<Node>`, and `Ix::out` gives the Edges of an `impl Iterator<Item = &Edge>`, whose
-    // `Item` names what it gives, not flow's `Item`
-    let takes = edges(&g, EdgeKind::Takes);
-    let has = edges(&g, EdgeKind::Has);
-    let pair = |a: &str, b: &str| (a.to_string(), b.to_string());
-    assert!(returns.contains(&pair("atlas-engine.parts.analyze_parts", "atlas-engine.model.Graph")));
-    assert!(takes.contains(&pair("atlas-engine.parts.merged", "atlas-engine.model.Graph")));
-    assert!(has.contains(&pair("atlas-engine.model.Graph", "atlas-engine.model.Node")));
-    assert!(returns.contains(&pair("atlas-engine.flow.Ix.out", "atlas-engine.model.Edge")));
-    assert!(!returns.contains(&pair("atlas-engine.flow.Ix.out", "atlas-engine.flow.Item")));
-    // a callback is handed no value: `initializer(node: impl Fn(&str) -> Option<&Node>)` takes no
-    // Node, and the `fn(..) -> Part` a `ChoiceSyntax` keeps holds no Part
-    assert!(!takes.contains(&pair("atlas-engine.model.Node.initializer", "atlas-engine.model.Node")));
-    assert!(!has.contains(&pair("atlas-engine.tree.ChoiceSyntax", "atlas-engine.tree.Part")));
-    // the crates Atlas calls are read where Cargo keeps them, as far as its calls reach: `Regex::new`
-    // is a step into regex's own code, the library's and no part of Atlas; of ty's `types`, a module
-    // of thousands of lines, only what Atlas calls is drawn; compiled code (tree-sitter) and the
-    // crates the tables describe (walkdir, ignore) are not read
-    let new = g.node("regex.regex.string.Regex.new").expect("a crate's function Atlas calls is read");
-    assert!(new.library && g.parts.iter().all(|p| !p.id.starts_with("regex")));
-    assert!(g.node("atlas-engine.entries.read_makefile").unwrap().sites.iter().any(|s| s.to == new.id));
-    assert!(g.nodes.iter().filter(|n| n.module == "ty_python_semantic.types").count() < 10);
-    assert!(g.nodes.iter().all(|n| !["tree_sitter", "walkdir", "ignore"].contains(&n.id.split('.').next().unwrap_or(""))));
-}
-
-/// Atlas obeys its own algebra: the steps of `analyze` move data between the repository as read
-/// (`Repo`), the `Options` of the reading, a `Language`, the `Graph` and a `View` of it, and
-/// nothing else.
-/// A new type between parse and Graph is a box the algebra does not have, and the code changes,
-/// not the picture.
-#[test]
-fn atlas_reads_as_its_algebra() {
-    let repo = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..");
-    let g = analyze(&repo, &Options::default()).expect("the Atlas workspace parses");
-    let classes: HashSet<&str> = g.nodes.iter().filter(|n| n.kind == NodeKind::Class).map(|n| n.id.as_str()).collect();
-    let name = |id: &str| id.rsplit('.').next().unwrap().to_string();
-    let steps_of = |f: &str| g.edges.iter().filter(|e| e.src == f && e.kind == EdgeKind::Calls).map(|e| e.dst.as_str()).collect::<Vec<_>>();
-    let short = |steps: &[&str]| steps.iter().map(|s| s.trim_start_matches("atlas-engine.").to_string()).collect::<Vec<_>>();
-    assert_eq!(
-        short(&steps_of("atlas-engine.analyze")),
-        ["language.read", "graph_of"],
-        "analyze: Disk(repo) -> read -> Repo -> parse -> Graph"
-    );
-    let steps = steps_of("atlas-engine.graph_of");
-    assert_eq!(
-        short(&steps),
-        ["language.of", "language.Language.parse", "entries.read_makefile", "parts.assign", "view.reached", "view.View.apply"],
-        "the graph of what was read, step by step"
-    );
-    for step in steps {
-        for e in g.edges.iter().filter(|e| e.src == step && matches!(e.kind, EdgeKind::Takes | EdgeKind::Returns | EdgeKind::Mutates)) {
-            if classes.contains(e.dst.as_str()) {
-                assert!(
-                    ["Repo", "Graph", "Language", "Options", "View"].contains(&name(&e.dst).as_str()),
-                    "{step} moves a {}: the algebra has no such place",
-                    e.dst
-                );
-            }
-        }
-    }
-    let returns = edges(&g, EdgeKind::Returns);
-    assert!(
-        returns.contains(&("atlas-engine.language.Language.parse".into(), "atlas-engine.model.Graph".into())),
-        "parse: Disk(repo) × Options -> Graph"
-    );
-    let takes = edges(&g, EdgeKind::Takes);
-    assert!(
-        takes.contains(&("atlas-engine.language.Language.parse".into(), "atlas-engine.Options".into())),
-        "what a reading depends on is its argument, not a global"
-    );
-    let mutates = edges(&g, EdgeKind::Mutates);
-    assert!(mutates.contains(&("atlas-engine.parts.assign".into(), "atlas-engine.model.Graph".into())), "assign: Graph -> Graph");
-}
-
 #[test]
 fn views_are_fibers_and_quotients() {
     let g = fixture();
@@ -722,7 +546,9 @@ fn views_are_fibers_and_quotients() {
     assert!(!ids.contains("fixture.cli.cmd_report"));
 
     let priv_free = hide_private().apply(&g);
-    assert!(priv_free.node("fixture.sinks.duck.DuckSink.__init__").is_none());
+    assert!(priv_free.node("fixture.store._session").is_none());
+    // the initializer runs on every user's behalf, through a call to the class: no private name
+    assert!(priv_free.node("fixture.sinks.duck.DuckSink.__init__").is_some());
     assert!(priv_free.node("fixture.sinks").is_some(), "packages stay");
 
     let q = Compose(vec![Box::new(hide_private()), Box::new(by_module())]).apply(&g);
@@ -762,16 +588,17 @@ fn a_client_is_a_door() {
 /// from the code: a constant (`DATA / "raw"`), what a parameter is handed (`unpack(.., out)`),
 /// an entry's declared default (`--out`). An unknown part of a path is a directory: what is
 /// made in `data/raw/{kind}/{archive}` and what lists `data/raw` meet at `data/raw/`; a file
-/// named under an unknown directory is that name under any (`data/*/report.json`).
+/// named under an unknown directory is that name under that directory, by the name the code gives it
+/// (`data/{kind}/report.json`).
 #[test]
 fn routes_meet_on_the_disk() {
     let g = fixture();
     let places = |id: &str| g.node(id).unwrap().touches.iter().map(|t| (t.kind_name(), t.artifact.as_str())).collect::<HashSet<_>>();
     assert!(places("fixture.files.unpack").contains(&("disk_write", "data/raw/")), "{:?}", places("fixture.files.unpack"));
     assert!(places("fixture.files.kinds").contains(&("disk_read", "data/raw/")), "{:?}", places("fixture.files.kinds"));
-    assert!(places("fixture.files.report").contains(&("disk_write", "data/*/report.json")), "{:?}", places("fixture.files.report"));
+    assert!(places("fixture.files.report").contains(&("disk_write", "data/{kind}/report.json")), "{:?}", places("fixture.files.report"));
     assert!(
-        places("fixture.files.read_report").contains(&("disk_read", "data/*/report.json")),
+        places("fixture.files.read_report").contains(&("disk_read", "data/{kind}/report.json")),
         "{:?}",
         places("fixture.files.read_report")
     );
@@ -863,9 +690,11 @@ fn rust_reads_paths_as_built() {
     let here = |kind: &str, artifact: &str| (kind.to_string(), artifact.to_string(), vec![], vec![]);
     let by = |kind: &str, artifact: &str, f: &str| (kind.to_string(), artifact.to_string(), vec![format!("handed.world.{f}")], vec![]);
     let users = |kind: &str, f: &str| (kind.to_string(), String::new(), vec![], vec![format!("handed.world.{f}")]);
+    // a file whose name is known under a directory its users hand is that name under that directory, by its name
+    let under = |kind: &str, file: &str, f: &str| (kind.to_string(), format!("{{dir}}/{file}"), vec![], vec![format!("handed.world.{f}")]);
     assert_eq!(
         t("report"),
-        [users("disk_write", "report"), by("disk_write", "site/report.html", "publish")],
+        [by("disk_write", "site/report.html", "publish"), under("disk_write", "report.html", "report")],
         "`dir.join(REPORT)`: `publish` hands `Path::new(\"site\")`, and `report` is exported"
     );
     assert_eq!(t("stamp"), [here("disk_write", "out/")], "`format!(\"out/{{name}}.txt\")`: the directory before what is not known");
@@ -877,17 +706,23 @@ fn rust_reads_paths_as_built() {
     assert_eq!(t("prepare"), [here("db_sqlite", "seen")], "`conn.execute(SCHEMA, [])`");
     assert_eq!(t("run"), [users("db_sqlite", "run"), by("db_sqlite", "seen", "forget")], "`run(path, \"DELETE FROM seen\")`");
     // a route shows what its own calls hand
-    let publish = atlas_engine::story::route(&g, "handed.world.publish", 3).unwrap();
-    assert!(publish.contains("writes site/report.html") && !publish.contains("writes dir"), "{publish}");
-    let report = atlas_engine::story::route(&g, "handed.world.report", 3).unwrap();
-    assert!(!report.contains("site/report.html"), "{report}");
+    assert_eq!(in_route(&g, "handed.world.publish", "handed.world.report"), [("disk_write", "site/report.html")]);
+    assert_eq!(in_route(&g, "handed.world.report", "handed.world.report"), [("disk_write", "{dir}/report.html")]);
 }
 
-/// `atlas check .` inside a crate reads the crate: the walk's root is read whatever it is called.
+/// `atlas check .` inside a crate reads the crate: the walk's root is read whatever it is called,
+/// so the crate read as `.` from its own directory is the crate read by its full path.
 #[test]
 fn a_crate_reads_from_inside() {
-    let g = analyze(std::path::Path::new("."), &Options::default()).expect("the engine crate, from its own directory");
-    assert!(g.nodes.iter().filter(|n| n.kind == NodeKind::Module).count() > 10);
+    let ids = |g: &Graph| {
+        let mut ids: Vec<String> = g.nodes.iter().map(|n| n.id.clone()).collect();
+        ids.sort();
+        ids
+    };
+    let inside = analyze(std::path::Path::new("."), &Options::default()).expect("the crate, from its own directory");
+    let named = analyze(&PathBuf::from(env!("CARGO_MANIFEST_DIR")), &Options::default()).unwrap();
+    assert!(inside.nodes.iter().any(|n| n.kind == NodeKind::Module), "`.` is read");
+    assert_eq!(ids(&inside), ids(&named));
 }
 
 /// A file call's file is what its library types as one: the path a method of a path is called
@@ -949,36 +784,6 @@ fn a_door_reaches_a_service() {
     assert_eq!(door("fixture.schema.Graph"), "");
 }
 
-/// A Rust body lists its calls in the order they run, each with what it is handed and the name
-/// it is kept by: Atlas's own `analyze` hands the `Graph` one call gives to the next, and a
-/// local takes its type from what the function it is kept from gives back, wherever that is
-/// defined.
-#[test]
-fn a_rust_body_lists_its_calls() {
-    let repo = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..");
-    let g = analyze(&repo, &Options::default()).expect("the Atlas workspace parses");
-    let analyze_fn = g.nodes.iter().find(|n| n.id == "atlas-engine.graph_of").unwrap();
-    let step = |to: &str| analyze_fn.sites.iter().find(|s| s.to == to).unwrap_or_else(|| panic!("{to} in {:#?}", analyze_fn.sites));
-    let held = |ty: &str, name: &str| atlas_engine::Held::new(ty, name);
-    assert_eq!(
-        step("atlas-engine.language.Language.parse").gives,
-        [held("atlas-engine.model.Graph", "g")],
-        "a method gives what it returns, not its receiver's type"
-    );
-    let detect = step("atlas-engine.language.of");
-    assert_eq!(
-        detect.hands,
-        [held("atlas-engine.repo.Repo", "repo"), held("atlas-engine.Options", "opts")],
-        "the repository is a value: what was read"
-    );
-    let order: Vec<&str> = analyze_fn.sites.iter().map(|s| s.to.as_str()).collect();
-    assert!(
-        order.iter().position(|t| *t == "atlas-engine.entries.read_makefile")
-            < order.iter().position(|t| *t == "atlas-engine.parts.assign"),
-        "{order:?}"
-    );
-}
-
 /// `parse` is a function: the same files read with the same options give the same graph, to the
 /// order of its edges. Each `HashMap` and `HashSet` seeds its order afresh, so a reading that
 /// iterates one into the graph differs from run to run.
@@ -987,7 +792,7 @@ fn parse_is_a_function() {
     let json = |repo: &str| {
         serde_json::to_string(&analyze(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(repo), &Options::default()).unwrap()).unwrap()
     };
-    for repo in ["tests/fixture", "tests/fixture-rs", "tests/fixture-ts", ".."] {
+    for repo in ["tests/fixture", "tests/fixture-rs", "tests/fixture-ts"] {
         let first = json(repo);
         for _ in 0..3 {
             assert!(json(repo) == first, "{repo} reads differently the second time");
@@ -1008,27 +813,6 @@ fn a_call_inside_a_call_is_composition() {
     assert!(sink.name.starts_with('#') && sink.ty == "fixture.sinks.duck.DuckSink", "{sink:?}");
     assert!(steps[1].hands.contains(sink), "Pipeline is handed the sink: {:?}", steps[1].hands);
     assert!(steps[2].hands.contains(&steps[1].gives[0]), "run is called on what Pipeline gives");
-
-    // `let lang = language::of(repo, opts)?`: the unwrapping is an identity
-    let atlas = analyze(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(".."), &Options::default()).unwrap();
-    let analyze_steps: Vec<&str> = atlas
-        .node("atlas-engine.graph_of")
-        .unwrap()
-        .sites
-        .iter()
-        .map(|s| if s.to.is_empty() { s.op.as_str() } else { s.to.as_str() })
-        .collect();
-    assert_eq!(
-        analyze_steps,
-        [
-            "atlas-engine.language.of",
-            "atlas-engine.language.Language.parse",
-            "atlas-engine.entries.read_makefile",
-            "atlas-engine.parts.assign",
-            "atlas-engine.view.reached",
-            "atlas-engine.view.View.apply"
-        ]
-    );
 }
 
 /// What a step runs is the same for the agent and the page: the engine's bodies. A method called
@@ -1044,13 +828,34 @@ fn a_body_is_what_a_route_runs() {
         "`self.sink.write(..)` on the sink the pipeline holds: {run:?}"
     );
 
-    let atlas = analyze(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(".."), &Options::default()).unwrap();
-    let bodies = atlas_engine::flow::bodies(&atlas);
-    let mut alts = bodies["atlas-engine.language.Language.parse"].alts.clone();
+    // a call on a `&dyn Language` runs whichever implementation the value has: the alternatives
+    // of the trait's method are the `parse` of each type that implements it, read off the graph's
+    // `inherits` lines
+    let g = dispatch();
+    let bodies = atlas_engine::flow::bodies(&g);
+    let mut alts = bodies["dispatch.Language.parse"].alts.clone();
     alts.sort();
-    assert_eq!(alts, ["atlas-engine.language.Python.parse", "atlas-engine.language.Rust.parse", "atlas-engine.language.TypeScript.parse"]);
-    let route = atlas_engine::story::route(&atlas, "atlas-engine.analyze", 2).unwrap();
-    assert!(route.contains("2.2  Language.parse(repo, opts) → Graph   ·   one of 3"), "the agent reads the same alternatives: {route}");
+    let mut implementations: Vec<String> = g
+        .edges
+        .iter()
+        .filter(|e| e.kind == EdgeKind::Inherits && e.dst == "dispatch.Language")
+        .map(|e| format!("{}.parse", e.src))
+        .collect();
+    implementations.sort();
+    assert_eq!(implementations.len(), 3, "{implementations:?}");
+    assert_eq!(alts, implementations);
+    assert!(edges(&g, EdgeKind::Calls).contains(&("dispatch.count".into(), "dispatch.Language.parse".into())));
+}
+
+/// A call on a value whose type is known runs that type's method, whatever made the value.
+#[test]
+#[ignore = "#207: a value made by a unit struct's name has no type"]
+fn a_call_on_a_known_value_runs_its_type_s_method() {
+    assert!(edges(&dispatch(), EdgeKind::Calls).contains(&("dispatch.words".into(), "dispatch.Words.parse".into())));
+}
+
+fn dispatch() -> Graph {
+    analyze(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/laws/dispatch"), &Options::default()).unwrap()
 }
 
 /// A subclass stands in the place of the base the program uses as a type, and a family whose

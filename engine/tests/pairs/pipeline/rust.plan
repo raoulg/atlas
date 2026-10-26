@@ -1,0 +1,102 @@
+# The quick Rust hands its values on as arguments, as the compiler asks, but they are pairs of no type of the
+# program's (`Vec<(NaiveDate, f64)>`), and each step names its own place: the route reaches the same places as the
+# clean one, and the raw file is downloaded on every run and read by the next step, so it stands between them.
+
+route sunspots.main
+step main/download
+step main/download/text                                           # `let body = reqwest::blocking::get(..)?.text()?`
+step main/load
+step main/load/from_path                                          # `let mut reader = ..from_path(..)?`
+step main/load/new                                                # `let mut rows = Vec::new()`
+step main/load/for result in reader.deserialize()                             # `for result in reader.deserialize()`
+choice main/load/?1                                               # `if record.mean == -1.0 { continue; }`: the rest of the loop runs otherwise
+step main/load/?1/ok_or                                           # `let date = NaiveDate::from_ymd_opt(..).ok_or(..)?`
+step main/load/?1/push                                            # `rows.push(..)` changes `rows`
+step main/smooth
+step main/plot
+step main/plot/into_drawing_area                                  # `let root = BitMapBackend::new(..).into_drawing_area()`
+step main/plot/fold                                               # `let top = rows.iter()..fold(..)`
+step main/plot/build_cartesian_2d                                 # `let mut chart = ChartBuilder::on(&root)..`
+
+line entry > main call
+line Web(www.sidc.be) > main/download own
+line main/download/text > _·body@main/download/text value
+line _·body@main/download/text > main/download value   # `fs::write(.., body)`
+line main/download > File(data/raw/sunspots.csv) own
+line File(data/raw/sunspots.csv) > main/load own
+line main/load/from_path > _·reader@main/load/from_path value
+line main/load/new > _·rows@main/load/new value
+line _·reader@main/load/from_path > main/load/for result in reader.deserialize() value
+line main/load/for result in reader.deserialize() > Record·result@main/load/for result in reader.deserialize() value
+line Record·result@main/load/for result in reader.deserialize() > main/load/?1/ok_or value   # `record.year`, `record.month`: `record` holds what `result` holds
+line Record·result@main/load/for result in reader.deserialize() > main/load/?1/push value    # `record.mean`
+line main/load/?1/ok_or > _·date@main/load/?1/ok_or value
+line _·date@main/load/?1/ok_or > main/load/?1/push value
+line _·rows@main/load/new > main/load/?1/push value
+line main/load/?1/push > _·rows@main/load/?1 value                  # one arm makes anew what was named before the choice
+line _·rows@main/load/?1 > main/load value   # `Ok(rows)`
+line main/load > _·rows@main/load value                           # a named value of no type of the program's
+line _·rows@main/load > main/smooth value
+line _·rows@main/load > main/plot value   # `draw_series(LineSeries::new(rows..))`, the body's own call
+line _·rows@main/load > main/plot/fold value
+line _·rows@main/load > main/plot/build_cartesian_2d value                # `rows[0].0..rows[rows.len() - 1].0`
+line main/smooth > _·smoothed@main/smooth value
+line _·smoothed@main/smooth > main/plot value
+line main/plot/into_drawing_area > _·root@main/plot/into_drawing_area value
+line _·root@main/plot/into_drawing_area > main/plot value   # `root.fill(..)`, `root.present()`
+line main/plot/fold > _·top@main/plot/fold value
+line _·root@main/plot/into_drawing_area > main/plot/build_cartesian_2d value
+line _·top@main/plot/fold > main/plot/build_cartesian_2d value
+line main/plot/build_cartesian_2d > _·chart@main/plot/build_cartesian_2d value
+line _·chart@main/plot/build_cartesian_2d > main/plot value   # `chart.draw_series(..)`
+line main/plot > File(figures/sunspots.png) own
+
+home _·body@main/download/text main/download
+home _·reader@main/load/from_path main/load
+home _·rows@main/load/new main/load
+home Record·result@main/load/for result in reader.deserialize() main/load
+home _·date@main/load/?1/ok_or main/load/?1
+home _·rows@main/load/?1 main/load   # load's own arrow uses it (`Ok(rows)`), at its border
+home _·rows@main/load main
+home _·smoothed@main/smooth main
+home _·root@main/plot/into_drawing_area main/plot
+home _·top@main/plot/fold main/plot
+home _·chart@main/plot/build_cartesian_2d main/plot
+
+# what a body's own code uses outside its steps (#101)
+line Record·result@main/load/for result in reader.deserialize() > main/load value   # `record.mean == -1.0`, through `let record: Record = result?`
+
+# An error is a value (#138): `?` hands on what a step fails with, converted to the function's error type, here a
+# `Box<dyn Error>`, no type of the code's; each border it crosses uncaught hands it on, up to the route. An opened step
+# takes what its steps hand on, which Atlas does not draw for an error of no type of the code's.
+line main/download/text > _@main/download/text value
+line _@main/download/text > main/download value
+home _@main/download/text main/download
+line main/download > _@main/download value
+line _@main/download > main value
+home _@main/download main
+line main/load/from_path > _@main/load/from_path value
+line _@main/load/from_path > main/load value
+home _@main/load/from_path main/load
+line main/load/?1/ok_or > _@main/load/?1 value                         # ok_or("bad date")?, in the arm after the guard
+line _@main/load/?1 > main/load value
+home _@main/load/?1 main/load
+line main/load > _@main/load value
+line _@main/load > main value
+home _@main/load main
+line main/plot/build_cartesian_2d > _@main/plot/build_cartesian_2d value
+line _@main/plot/build_cartesian_2d > main/plot value
+home _@main/plot/build_cartesian_2d main/plot
+line main/plot > _@main/plot value
+line _@main/plot > main value
+home _@main/plot main
+line main > _@main value
+home _@main main
+
+side entry left
+side Web(www.sidc.be) left
+side File(data/raw/sunspots.csv) between
+side File(figures/sunspots.png) right
+
+
+# a library call whose result no name holds is drawn as a step, its result named by the call around it

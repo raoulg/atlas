@@ -1,0 +1,23 @@
+# A node's places, each touch drawn by a function written in place that `map` hands each element of `touches`. The
+# function's `t` is that element, a part of the array the route is handed, glued into the step as a projection is (#180),
+# as `.map(|t| t.drawn())` reads in Rust (#170): `t.drawn()` is `Touch.drawn` on the route's `touches`, and no Touch comes
+# from beyond beside it. The route gives back a list of pairs, a type the code does not name, and no Where of its own
+# (#177): the Where `Touch.drawn` makes goes on, through `map`, into the pairs the body's own code returns.
+
+route drawing.drawn
+step drawn/Touch.drawn
+step drawn/Touch.drawn/Where()
+
+line entry > drawn call
+line Touch·touches > drawn value                              # `touches.map(..)`: no step
+line Touch·touches > drawn/Touch.drawn/Where() value         # `this.op` of each touch, an element of `touches`
+line drawn/Touch.drawn/Where() > Where@drawn/Touch.drawn/Where() value
+line Where@drawn/Touch.drawn/Where() > drawn/Touch.drawn value
+line drawn/Touch.drawn > Where@drawn/Touch.drawn value
+line Where@drawn/Touch.drawn > drawn value                    # put into the pairs the body gives back, by its own code
+
+home Touch·touches drawn
+home Where@drawn/Touch.drawn/Where() drawn/Touch.drawn
+home Where@drawn/Touch.drawn drawn
+
+side entry left

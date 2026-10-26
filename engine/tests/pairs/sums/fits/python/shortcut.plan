@@ -1,0 +1,35 @@
+# The command line with the shortcut: the sum `fit` makes is handed on unopened to `line` and to `points`, two takers
+# of one value, each of which chooses again which variant it holds.
+
+route fits.cli.main
+step main/for x in sys.argv[1:]                                    # each word the human typed, kept as `x`
+step main/fit
+choice main/fit/?1
+step main/fit/?1/Failed()
+step main/fit/?1/Fit()                                  # what follows the early return is the other arm
+step main/line
+step main/points
+
+line entry > main call
+line entry > main/for x in sys.argv[1:] call                       # the command line is the entry's
+line main/for x in sys.argv[1:] > _·x@main/for x in sys.argv[1:] value
+line _·x@main/for x in sys.argv[1:] > main/fit value               # `fit([float(x) for x in ..])`
+line main/fit/?1/Failed() > Failed@main/fit/?1 value   # with Fit() in the other arm, the sum either arm makes
+line main/fit/?1/Fit() > Fit@main/fit/?1 value
+line _·x@main/for x in sys.argv[1:] > main/fit/?1/Fit() value     # `Fit(sum(xs) / len(xs))`: `xs` holds the words
+line Failed@main/fit/?1 > main/fit value
+line Fit@main/fit/?1 > main/fit value
+line main/fit > Fit | Failed·result@main/fit value        # fit gives one value, the sum, held by `result`
+line Fit | Failed·result@main/fit > main/line value       # the same sum, however `points` spells it
+line Fit | Failed·result@main/fit > main/points value
+line main/line > main back                                        # the line, a str, printed by main
+line main/points > main back                                      # the points, a list of floats, printed by main
+line main > Screen own
+
+home Failed@main/fit/?1 main/fit
+home Fit@main/fit/?1 main/fit
+home _·x@main/for x in sys.argv[1:] main
+home Fit | Failed·result@main/fit main
+
+side entry left
+side Screen right

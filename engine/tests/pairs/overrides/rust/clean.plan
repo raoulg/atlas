@@ -1,0 +1,24 @@
+# A trait's implementation is an override of the trait's method: `Store.get` runs the `get` of a type that implements
+# `Store`, a choice between them, here `Shelf.get` alone, on the Store the caller calls it on (a value from beyond; the
+# trait's declaration has no body to read it). `Shelf.get` builds a `Book` (a unit struct named as a value is a value of
+# it) and hands it back at its own moment; the dispatch hands on what its override gave, at its own (law 4, Moment).
+
+route books.Store
+step Store()/Store.get
+step Store()/Store.get/Shelf.get
+step Store()/Store.get/Shelf.get/Book()
+
+line entry > Store()/Store.get call
+line Store > Store()/Store.get/Shelf.get value
+line Store()/Store.get/Shelf.get/Book() > Book@Store()/Store.get/Shelf.get/Book() value
+line Book@Store()/Store.get/Shelf.get/Book() > Store()/Store.get/Shelf.get value
+line Store()/Store.get/Shelf.get > Book@Store()/Store.get/? value              # the override makes it at the dispatch's choice
+line Book@Store()/Store.get/? > Store()/Store.get value
+line Store()/Store.get > Book@Store()/Store.get value
+
+home Store Store()
+home Book@Store()/Store.get/Shelf.get/Book() Store()/Store.get/Shelf.get
+home Book@Store()/Store.get/? Store()/Store.get
+home Book@Store()/Store.get Store()
+
+side entry left

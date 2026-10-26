@@ -10,13 +10,21 @@ use anyhow::Result;
 
 use crate::cache::Check;
 use crate::model::{Graph, Leaves};
+use crate::options::Options;
+use crate::prophecy::Form;
 use crate::repo::Repo;
-use crate::{entries, python, pytypes, rust, typescript, Options};
+use crate::{entries, knowledge, python, pytypes, rust, typescript};
 
 pub trait Language {
     fn name(&self) -> &'static str;
-    /// The file that roots a part in the language.
-    fn manifest(&self) -> &'static str;
+    /// The files that root a part in the language: each says that its directory holds a project.
+    fn manifests(&self) -> &'static [&'static str];
+    /// The extensions of the files that hold its code as text.
+    fn sources(&self) -> &'static [&'static str];
+    /// The form it marks a prophecy in.
+    fn marks(&self) -> Form;
+    /// What opens a comment that runs to the end of its line.
+    fn comment(&self) -> &'static str;
     /// Does this repo look like one of mine?
     fn detect(&self, repo: &Repo, opts: &Options) -> bool;
     /// `Disk(repo) -> Graph`: every file, its symbols, the calls and types between them, the
@@ -24,6 +32,11 @@ pub trait Language {
     fn parse(&self, repo: &Repo, opts: &Options) -> Result<Graph>;
     /// What the language leaves its author to write.
     fn leaves(&self) -> Leaves;
+    /// Whether the language compares types by their members rather than by what they are declared
+    /// as.
+    fn structural(&self) -> bool {
+        false
+    }
     /// Whether the part read at `part` reads the directory `dir` below it, which holds a manifest
     /// of the language, as its own; a manifest no part around it reads roots a part.
     fn reads(&self, part: &Repo, dir: &Path) -> bool;
@@ -56,20 +69,31 @@ impl Language for Python {
     fn name(&self) -> &'static str {
         "python"
     }
-    fn manifest(&self) -> &'static str {
-        "pyproject.toml"
+    fn manifests(&self) -> &'static [&'static str] {
+        knowledge::PYTHON_PROJECT_FILES
+    }
+    /// A notebook holds its code in the cells of a JSON document.
+    fn sources(&self) -> &'static [&'static str] {
+        &["py"]
+    }
+    fn marks(&self) -> Form {
+        Form::Decorator
+    }
+    fn comment(&self) -> &'static str {
+        "#"
     }
     fn detect(&self, repo: &Repo, _opts: &Options) -> bool {
-        repo.is_file("pyproject.toml") || !python::packages(repo).is_empty() || !repo.named().is_empty()
+        python::is_project(repo, repo.root()) || !python::packages(repo).is_empty() || !repo.named().is_empty()
     }
     fn parse(&self, repo: &Repo, opts: &Options) -> Result<Graph> {
         let (packages, project_root) = Python::reading(repo, opts);
         // a project of scripts and notebooks has no package: a file named on the command line
         // in a folder without one, or a project file with none beside it
-        if packages.is_empty() && !repo.is_file("pyproject.toml") && repo.named().is_empty() {
+        if packages.is_empty() && !python::is_project(repo, repo.root()) && repo.named().is_empty() {
             anyhow::bail!(
-                "no Python package found under {} (looked for a pyproject.toml, src/<pkg>/__init__.py and <pkg>/__init__.py)",
-                repo.root().display()
+                "no Python package found under {} (looked for {}, src/<pkg>/__init__.py and <pkg>/__init__.py)",
+                repo.root().display(),
+                knowledge::PYTHON_PROJECT_FILES.join(", ")
             );
         }
         let (mut b, root) = python::parse(repo, &packages, project_root.as_deref(), opts)?;
@@ -81,21 +105,21 @@ impl Language for Python {
     fn reads(&self, part: &Repo, dir: &Path) -> bool {
         python::packages(part).iter().any(|p| dir.starts_with(p))
     }
-    /// A signature may say nothing, and a package offers whatever its root binds unless
-    /// `__all__` names it.
+    /// A signature may say nothing, a package offers whatever its root binds unless `__all__` names
+    /// it, and nothing holds an override to its base.
     fn leaves(&self) -> Leaves {
-        Leaves { exports: true, types: true, returns: true }
+        Leaves { exports: true, types: true, returns: true, overrides: true }
     }
-    /// A package without a `pyproject.toml` of its own is in the nearest of the three directories
-    /// above it that has one.
+    /// A package that holds no project of its own (`python::is_project`) is in the nearest of the
+    /// three directories above it that holds one.
     fn project_above(&self, repo: &Repo, opts: &Options) -> Option<(PathBuf, PathBuf)> {
-        if repo.is_file("pyproject.toml") {
+        if python::is_project(repo, repo.root()) {
             return None;
         }
         let package = opts.package.clone().or_else(|| python::packages(repo).into_iter().next())?;
         let root = package.ancestors().take(python::PROJECT_ABOVE).find(|p| match p.starts_with(repo.root()) {
-            true => repo.is_file(p.join("pyproject.toml")),
-            false => p.join("pyproject.toml").is_file(),
+            true => python::is_project(repo, p),
+            false => python::project_files(p).any(|f| f.is_file()),
         })?;
         (!root.starts_with(repo.root())).then(|| (root.to_path_buf(), package.clone()))
     }
@@ -116,7 +140,7 @@ impl Python {
         let first = packages.first().map(PathBuf::as_path);
         let project_root = first
             .and_then(|p| python::project_root(repo, p))
-            .or_else(|| (repo.is_file("pyproject.toml") || first.is_none()).then(|| repo.root().to_path_buf()));
+            .or_else(|| (python::is_project(repo, repo.root()) || first.is_none()).then(|| repo.root().to_path_buf()));
         (packages, project_root)
     }
 }
@@ -127,8 +151,17 @@ impl Language for Rust {
     fn name(&self) -> &'static str {
         "rust"
     }
-    fn manifest(&self) -> &'static str {
-        "Cargo.toml"
+    fn manifests(&self) -> &'static [&'static str] {
+        &["Cargo.toml"]
+    }
+    fn sources(&self) -> &'static [&'static str] {
+        &["rs"]
+    }
+    fn marks(&self) -> Form {
+        Form::Attribute
+    }
+    fn comment(&self) -> &'static str {
+        "//"
     }
     fn detect(&self, repo: &Repo, _opts: &Options) -> bool {
         repo.is_file("Cargo.toml")
@@ -137,7 +170,8 @@ impl Language for Rust {
         let (b, root) = rust::parse(repo, opts)?;
         Ok(b.finish(root, Some(repo.root()), self.name()))
     }
-    /// The compiler asks for every type, and `pub` is the export.
+    /// The compiler asks for every type, `pub` is the export, and a trait's implementation has the
+    /// trait's signature.
     fn leaves(&self) -> Leaves {
         Leaves::default()
     }
@@ -160,8 +194,17 @@ impl Language for TypeScript {
     fn name(&self) -> &'static str {
         "typescript"
     }
-    fn manifest(&self) -> &'static str {
-        "package.json"
+    fn manifests(&self) -> &'static [&'static str] {
+        &["package.json"]
+    }
+    fn sources(&self) -> &'static [&'static str] {
+        typescript::EXTENSIONS
+    }
+    fn marks(&self) -> Form {
+        Form::JsDoc
+    }
+    fn comment(&self) -> &'static str {
+        "//"
     }
     fn detect(&self, repo: &Repo, _opts: &Options) -> bool {
         typescript::detect(repo)
@@ -171,9 +214,14 @@ impl Language for TypeScript {
         Ok(b.finish(root, Some(repo.root()), self.name()))
     }
     /// The compiler works out what a function gives, which a reader of its declaration does not
-    /// see (`isolatedDeclarations` asks for it).
+    /// see (`isolatedDeclarations` asks for it), and holds an override to what its base gives but
+    /// not to what it takes: it checks a method's parameters both ways.
     fn leaves(&self) -> Leaves {
-        Leaves { returns: true, ..Default::default() }
+        Leaves { returns: true, overrides: true, ..Default::default() }
+    }
+    /// A value stands where a type is asked for when it has the type's members.
+    fn structural(&self) -> bool {
+        true
     }
     /// A package reads every file under its code, the packages there with it.
     fn reads(&self, part: &Repo, dir: &Path) -> bool {
@@ -188,10 +236,20 @@ impl Language for TypeScript {
     }
 }
 
+/// The manifests that root a part, in every language.
+pub fn manifests() -> Vec<&'static str> {
+    languages().iter().flat_map(|l| l.manifests().iter().copied()).collect()
+}
+
 /// What the languages look for: the manifests that root a part, and a package directory.
 pub fn looked_for() -> String {
-    let manifests: Vec<&str> = languages().iter().map(|l| l.manifest()).collect();
-    format!("looked for {}, or a package directory", manifests.join(", "))
+    format!("looked for {}, or a package directory", manifests().join(", "))
+}
+
+/// What opens a line's comment in the language of the file at `path`, by its extension.
+pub fn comment_of(path: &str) -> Option<&'static str> {
+    let ext = Path::new(path).extension()?.to_str()?;
+    languages().into_iter().find(|l| l.sources().contains(&ext)).map(|l| l.comment())
 }
 
 /// What the language of that name leaves its author to write.
@@ -199,13 +257,28 @@ pub fn leaves(name: &str) -> Leaves {
     languages().into_iter().find(|l| l.name() == name).map_or_else(Leaves::default, |l| l.leaves())
 }
 
+/// Whether the language of that name compares types by their members.
+pub fn structural(name: &str) -> bool {
+    languages().into_iter().find(|l| l.name() == name).is_some_and(|l| l.structural())
+}
+
+/// The language whose code a file holds, by its extension.
+pub fn of_file(path: &Path) -> Option<Box<dyn Language>> {
+    let ext = path.extension().and_then(|e| e.to_str())?;
+    languages().into_iter().find(|l| l.sources().contains(&ext))
+}
+
 /// All known languages, in detection order.
 pub fn languages() -> Vec<Box<dyn Language>> {
     vec![Box::new(Rust), Box::new(Python), Box::new(TypeScript)]
 }
 
-/// The language a repo is written in; a package directory, given or asked for, means Python.
+/// The language a repo is written in: a part's, the language of its manifest; a package directory,
+/// given or asked for, means Python.
 pub fn detect(repo: &Repo, opts: &Options) -> Option<Box<dyn Language>> {
+    if let Some(name) = repo.language() {
+        return languages().into_iter().find(|l| l.name() == name);
+    }
     if opts.package.is_some() || repo.asked().is_some() {
         return Some(Box::new(Python));
     }

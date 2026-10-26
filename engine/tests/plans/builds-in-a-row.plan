@@ -1,0 +1,30 @@
+# Building runs the initializer, and an initializer another one calls (`super().__init__()`) builds nothing: it fills in
+# the value its caller builds. So each build is the value it makes and nothing else: `Expert(2)` takes no Expert, though
+# one was built just before it, and the mixture takes the two experts it is handed. Each base initializer prints.
+
+route experts.run
+step run/Expert()
+step run/Expert()/Component()
+step run/Expert()#2
+step run/Expert()#2/Component()
+step run/Mixture()
+step run/Mixture()/Component()
+
+line entry > run call
+line run/Expert()/Component() > Screen own
+line run/Expert()#2/Component() > Screen own
+line run/Mixture()/Component() > Screen own
+line run/Expert() > Expert·small@run/Expert() value
+line run/Expert()#2 > Expert·large@run/Expert()#2 value
+line Expert·small@run/Expert() > run/Mixture() value          # the mixture reads the size of each expert it is handed
+line Expert·large@run/Expert()#2 > run/Mixture() value
+line run/Mixture() > Mixture·mixture@run/Mixture() value
+line Mixture·mixture@run/Mixture() > run value                # run prints a field of the mixture it built
+line run > Screen own
+
+home Expert·small@run/Expert() run
+home Expert·large@run/Expert()#2 run
+home Mixture·mixture@run/Mixture() run
+
+side entry left
+side Screen right

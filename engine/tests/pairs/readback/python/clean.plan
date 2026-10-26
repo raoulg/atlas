@@ -1,0 +1,41 @@
+# A step that writes a table and reads it back only to check it: the count decides whether `keep` fails and goes no
+# further, so the table is where the route leaves its notes, in the codomain (mathematics.md, "A route's domain and
+# codomain"; rule 4 of "The closed picture is the pushforward of the fine one").
+
+route ledger.run
+step run/Ledger()
+step run/Ledger.keep
+step run/Ledger.keep/connect                                # `con = duckdb.connect(..)` names what it gives
+
+line entry > run call
+line run/Ledger() > Ledger@run/Ledger() value
+line Ledger@run/Ledger() > run/Ledger.keep value   # its own body changes it (`self.kept +=`) besides handing it to connect
+line run/Ledger.keep > Ledger@run/Ledger.keep value         # keep changes the ledger it runs on (`self.kept +=`)
+line run/Ledger.keep/connect > DuckDBPyConnection·con@run/Ledger.keep/connect value
+line Ledger@run/Ledger() > run/Ledger.keep/connect value   # `duckdb.connect(self.path)` hands the ledger
+line DuckDBPyConnection·con@run/Ledger.keep/connect > run/Ledger.keep value   # keep's own calls use con
+line run/Ledger.keep > DuckDB(notes) own                    # it inserts the notes; reading them back is no read
+
+home Ledger@run/Ledger() run
+home Ledger@run/Ledger.keep run
+home DuckDBPyConnection·con@run/Ledger.keep/connect run/Ledger.keep
+
+# An error is a value (#121, decision 4): `RuntimeError(..)` makes it in the arm that raises it, and each border it crosses
+# uncaught hands it on, up to the route.
+choice run/Ledger.keep/?1
+step run/Ledger.keep/?1/RuntimeError()
+line run/Ledger.keep/?1/RuntimeError() > RuntimeError@run/Ledger.keep/?1 value
+line RuntimeError@run/Ledger.keep/?1 > run/Ledger.keep value
+line run/Ledger.keep > RuntimeError@run/Ledger.keep value
+line RuntimeError@run/Ledger.keep > run value
+home RuntimeError@run/Ledger.keep/?1 run/Ledger.keep
+home RuntimeError@run/Ledger.keep run
+line run > RuntimeError@run value                           # and the route's border hands it on, as `main`'s does in Rust
+home RuntimeError@run run
+
+side entry left
+side DuckDB(notes) right
+
+# K: a value handed through a field reaches no step inside: `duckdb.connect(self.path)` hands `self` (#121, decision 1,
+#    cause 3: the reader's `held_in` skips `self` even inside an argument)
+# building the ledger runs its public methods, which touch the table

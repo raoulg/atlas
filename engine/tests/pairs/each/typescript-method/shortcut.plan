@@ -1,0 +1,38 @@
+# The same drawing, where each place is pushed onto a list the body changes. A loop is a step: it takes what it goes
+# over and gives each element under the name it binds, so the node and the touch are values the body makes, `Node·n`
+# from the graph and `Touch·t` from the node, and `t.drawn()` on the loop's `t` is `Touch.drawn`, as on the clean side's
+# element. `out.push(..)` makes the list anew from the Where it is handed; `out: Where[]` holds Wheres, as `vec![]`
+# gathering them does in Rust, and starts as `[]`, which no step makes, so the push takes no list, and the body gives back
+# what the push made. The plan is the Rust method pair's (`../rust-method/shortcut.plan`).
+
+route drawing.drawn
+step drawn/for n of g.nodes
+step drawn/for t of n.touches
+step drawn/Touch.drawn
+step drawn/Touch.drawn/Where()
+step drawn/push                                                # `out.push(t.drawn())`
+
+line entry > drawn call
+line Graph·g > drawn value                                    # the route's own parameter, from its start
+line Graph·g > drawn/for n of g.nodes value
+line drawn/for n of g.nodes > Node·n@drawn/for n of g.nodes value
+line Node·n@drawn/for n of g.nodes > drawn/for t of n.touches value
+line drawn/for t of n.touches > Touch·t@drawn/for t of n.touches value
+line Touch·t@drawn/for t of n.touches > drawn/Touch.drawn/Where() value   # `this.op`
+line drawn/Touch.drawn/Where() > Where@drawn/Touch.drawn/Where() value
+line Where@drawn/Touch.drawn/Where() > drawn/Touch.drawn value
+line drawn/Touch.drawn > Where@drawn/Touch.drawn value
+line Where@drawn/Touch.drawn > drawn/push value
+line drawn/push > Where·out@drawn/push value
+line Where·out@drawn/push > drawn value                       # given back
+line drawn > Where@drawn value                                # and given, at the route's moment
+
+home Graph·g drawn
+home Where@drawn drawn
+home Node·n@drawn/for n of g.nodes drawn
+home Touch·t@drawn/for t of n.touches drawn
+home Where@drawn/Touch.drawn/Where() drawn/Touch.drawn
+home Where@drawn/Touch.drawn drawn
+home Where·out@drawn/push drawn
+
+side entry left

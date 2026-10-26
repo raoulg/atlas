@@ -1,0 +1,14 @@
+# Built code leans on the sketch: `run` builds the declared, prophetized `Store` and writes the report to it; neither
+# has a body, so the built route has no effect.
+
+route archive.run
+step run/Store()
+step run/Store.write
+
+line entry > run call
+line run/Store() > Store@run/Store() value
+line Store@run/Store() > run/Store.write value
+
+home Store@run/Store() run
+
+side entry left

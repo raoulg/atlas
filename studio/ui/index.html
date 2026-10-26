@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Atlas Studio</title>
+  <link rel="stylesheet" href="theme.css">
+  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="lesson.css">
+  <link rel="stylesheet" href="workbench.css">
+  <link rel="stylesheet" href="vendor/xterm.css">
+  <script src="themes.js"></script>
+  <script defer src="vendor/xterm.js"></script>
+  <script defer src="vendor/addon-fit.js"></script>
+  <script defer src="vendor/marked.umd.js"></script>
+  <script defer src="vendor/highlight.min.js"></script>
+  <script defer src="lesson.js"></script>
+  <script defer src="lesson.html.js"></script>
+  <script defer src="lesson.mount.js"></script>
+  <script defer src="files.js"></script>
+  <script defer src="terminal.js"></script>
+  <script defer src="workspaces.js"></script>
+  <script defer src="bar.js"></script>
+  <script defer src="updates.js"></script>
+  <script defer src="settings.js"></script>
+  <script defer src="studio.js"></script>
+</head>
+<body>
+  <div class="app">
+    <header class="topbar">
+      <div class="brand"><span class="mark">A</span> Atlas <span class="brand-light">/ studio</span></div>
+      <button id="workspace-button" class="workspace-button" type="button" title="Workspaces (⌘O)"><span id="project-name">No workspace</span><span class="chevron">▾</span></button>
+      <div id="atlas-bar" class="atlas-bar" aria-label="Atlas view" hidden></div>
+      <button id="insert-atlas-view" class="open-button" type="button" hidden>Insert view in lesson</button>
+      <button id="open-workspace" class="open-button" type="button" title="Workspaces (⌘O) · a new window (⌘N)">Open workspace</button>
+    </header>
+    <div class="workbench">
+      <nav class="sidebar" aria-label="Workspace sections">
+        <div class="side-label">WORKSPACE</div>
+        <button class="side-tab active" type="button" data-view="atlas" aria-current="page"><span>◇</span> Atlas view</button>
+        <button class="side-tab" type="button" data-view="history"><span>◷</span> History</button>
+        <div class="side-label files-label"><span>FILES</span><span class="files-legend" title="A filled dot: the graph defines something in the file. An open dot: a physical file only."><span class="traced">●</span> traced <span>○</span> file</span></div>
+        <div id="file-tree" class="file-tree-host"></div>
+        <div class="side-label lessons-label">LESSONS</div>
+        <div id="lesson-list" class="lesson-list"></div>
+        <div class="side-path" id="side-path">Open a repository to begin.</div>
+      </nav>
+      <main class="content">
+        <div class="stage">
+          <div class="center">
+            <section id="workspaces" class="workspaces" aria-label="Workspaces" hidden></section>
+            <section id="updates" class="updates" aria-label="Update" hidden></section>
+            <section id="settings" class="workspaces settings" aria-label="Settings" hidden></section>
+            <div id="loading" class="message" hidden>Opening workspace…</div>
+            <div id="error" class="message error" role="alert" hidden></div>
+            <section id="views" class="views" aria-label="Atlas workspace" hidden>
+              <iframe id="atlas-frame" title="Atlas view" referrerpolicy="no-referrer"></iframe>
+              <iframe id="history-frame" title="Atlas history" referrerpolicy="no-referrer" hidden></iframe>
+              <section id="lesson-panel" aria-label="Lesson" hidden></section>
+            </section>
+          </div>
+          <aside id="preview" class="preview" aria-label="Preview" hidden></aside>
+        </div>
+        <section id="terminal-panel" class="terminal-panel" aria-label="Terminal" hidden>
+          <div id="terminal-grip" class="terminal-grip" title="Drag to resize"></div>
+        </section>
+      </main>
+    </div>
+    <footer class="statusbar"><span class="status-dot"></span><span id="status-text">Ready</span><button id="update-button" class="status-button update" type="button" hidden></button><button id="terminal-toggle" class="status-button" type="button" title="Show or hide the terminal (Ctrl+`)" disabled>▸_ Terminal</button><button id="scheme-toggle" class="status-button scheme" type="button">◐</button><span id="studio-version" class="status-right">Atlas Studio</span></footer>
+  </div>
+</body>
+</html>

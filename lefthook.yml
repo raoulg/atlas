@@ -7,6 +7,12 @@ pre-commit:
       run: sh tools/docs-pictures.sh
 post-commit:
   commands:
-    # a raised version leaves the builds of the old one behind (tools/clean-old-builds.sh)
+    # a raised version, an updated dependency or a new toolchain leave old builds behind
+    # (tools/clean-old-builds.sh)
     clean-old-builds:
-      run: sh tools/clean-old-builds.sh
+      run: sh tools/clean-old-builds.sh commit
+post-merge:
+  commands:
+    # a merge or pull can bring an updated dependency or toolchain (tools/clean-old-builds.sh)
+    clean-old-builds:
+      run: sh tools/clean-old-builds.sh merge

@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "main",
+  "description": "The local Atlas Studio shell",
+  "windows": ["main", "workspace-*"],
+  "permissions": ["core:default", "opener:default"]
+}

@@ -8,7 +8,9 @@ use std::io::{BufRead, Write};
 use std::path::PathBuf;
 
 use anyhow::Result;
+use atlas_engine::sight::Sight;
 use atlas_engine::{principles, remote, story, Graph, Options};
+use serde::Deserialize;
 use serde_json::{json, Value};
 
 /// Protocol versions this server speaks; a client asking for one gets it, else the newest.
@@ -91,7 +93,7 @@ fn initialize(params: &Value) -> Value {
     json!({
         "protocolVersion": version,
         "capabilities": { "tools": {} },
-        "serverInfo": { "name": "atlas", "version": crate::VERSION.as_str() },
+        "serverInfo": { "name": "atlas", "version": crate::version::VERSION.as_str() },
         "instructions": INSTRUCTIONS,
     })
 }
@@ -109,10 +111,12 @@ fn tools() -> Value {
         },
         {
             "name": "check",
-            "description": "Check a repository against Atlas's principles. Each finding gives the file and line, what the graph shows, the evidence, and a question for the author.",
+            "description": "Check a repository against Atlas's principles. Each finding gives the file and line, what the graph shows, the evidence, and a question for the author. A finding the author has answered with a decision (`# atlas: ignore[changes] reason` in the code, or an entry of `.atlasignore`) is set aside and counted; a decision that sets nothing aside is listed as a question of its own.",
             "inputSchema": { "type": "object", "properties": {
                 "path": path,
                 "principle": { "type": "string", "description": "Only this principle's findings: an id from `principles`." },
+                "json": { "type": "boolean", "description": "The findings as data, as `atlas check --json` prints them: each with `about`, the ids it is about by the part each plays (`breaks`, `variant`, `put`, `lost`), to read without the sentences, and one set aside with its `aside`, the decision that answers it." },
+                "all": { "type": "boolean", "description": "List the findings set aside too, each with the decision that answers it." },
             } },
             "annotations": read_only,
         },
@@ -276,14 +280,25 @@ fn call(name: &str, args: &Value, opts: &Options) -> Option<Result<String, Strin
             }
             let asked: Vec<&principles::Principle> =
                 principles::PRINCIPLES.iter().filter(|p| text("principle").map_or(true, |id| p.id == id)).collect();
+            let found: Vec<Vec<principles::Finding>> = gs.iter().map(atlas_engine::aside::check).collect();
+            // whether a decision sets anything aside is asked of every finding, whichever are shown
+            let stale = atlas_engine::aside::stale(&gs.iter().zip(&found).map(|(g, f)| (g, f.as_slice())).collect::<Vec<_>>());
             let parts: Vec<(String, Vec<principles::Finding>)> = gs
                 .iter()
-                .map(|g| (g.root.clone(), principles::check(g).into_iter().filter(|f| asked.iter().any(|p| p.id == f.principle)).collect()))
+                .zip(found)
+                .map(|(g, f)| (g.root.clone(), f.into_iter().filter(|f| asked.iter().any(|p| p.id == f.principle)).collect()))
                 .collect();
+            if args.get("json").and_then(Value::as_bool) == Some(true) {
+                let reports: Vec<Value> = parts.iter().map(|(root, findings)| json!({ "root": root, "findings": findings })).collect();
+                return Ok(serde_json::to_string_pretty(&json!({ "parts": reports, "stale": stale })).unwrap_or_default());
+            }
             let look = principles::Look::plain();
-            let reports: Vec<String> = parts.iter().map(|(root, findings)| principles::report(root, findings, &look)).collect();
+            let mut reports: Vec<String> = parts.iter().map(|(root, findings)| principles::report(root, findings, &look)).collect();
+            if args.get("all").and_then(Value::as_bool) == Some(true) {
+                reports.extend(parts.iter().map(|(root, findings)| principles::set_aside(root, findings, &look)).filter(|r| !r.is_empty()));
+            }
             let counted: Vec<(&str, &[principles::Finding])> = parts.iter().map(|(r, f)| (r.as_str(), f.as_slice())).collect();
-            Ok(reports.join("\n") + &principles::summary(&counted, &asked, &look))
+            Ok(reports.join("\n") + &principles::summary(&counted, &asked, &look) + &atlas_engine::aside::report(&stale, &look))
         }),
         "revelation" => parts_of(text("path"), opts).map(|gs| {
             let repo = here(text("path"));
@@ -368,37 +383,17 @@ fn call(name: &str, args: &Value, opts: &Options) -> Option<Result<String, Strin
                 .map(|c| atlas_engine::changes::report(&c))
                 .map_err(|e| format!("Could not compare {} with {rev}: {e}", repo.display()))
         }
-        "view" => {
-            let (repo, clone) = match located(text("path")) {
-                Ok(r) => r,
-                Err(e) => return Some(Err(e)),
-            };
-            let shown = args.get("view").cloned().filter(Value::is_object);
-            crate::page(&[repo.clone()], opts, None, None, shown).map_err(|e| format!("Could not read {}: {e}", repo.display())).and_then(
-                |(name, html, _)| {
-                    let home = clone.is_none().then_some(repo.as_path());
-                    let out = text("out").map(PathBuf::from).unwrap_or_else(|| crate::made(home, &format!("{name}.view.html")));
-                    if let Some(dir) = out.parent() {
-                        std::fs::create_dir_all(dir).map_err(|e| format!("Could not make {}: {e}", dir.display()))?;
-                    }
-                    std::fs::write(&out, html).map_err(|e| format!("Could not write {}: {e}", out.display()))?;
-                    Ok(format!(
-                        "Wrote {}. Open it in a browser, or hand the file to the person you work with; once open, its address holds the view, to share as a link.",
-                        out.display()
-                    ))
-                },
-            )
-        }
+        "view" => sight(args).and_then(|sight| view(text("path"), sight, text("out"), opts)),
         "shown" => Ok(shown(&here(text("path")))),
-        "look" => {
-            let (view, at) = (args.get("view").filter(|v| v.is_object()), text("at").filter(|a| !a.is_empty()));
+        "look" => sight(args).and_then(|view| {
+            let at = text("at").filter(|a| !a.is_empty()).map(str::to_string);
             if view.is_none() && at.is_none() {
-                return Some(Err("`look` takes a `view` (`{\"route\": …, \"open\": {…}}`), a box or line to point `at`, or both.".into()));
+                return Err("`look` takes a `view` (`{\"route\": …, \"open\": {…}}`), a box or line to point `at`, or both.".into());
             }
-            crate::shared::look(&here(text("path")), &json!({ "view": view, "at": at }))
+            crate::shared::look(&here(text("path")), &crate::shared::Look { view, at })
                 .map(|_| "The page of `atlas serve` goes there when it next asks, within a second while it is open.".to_string())
                 .map_err(|e| format!("Could not keep where to look: {e}"))
-        }
+        }),
         "vision" => {
             let repo = here(text("path"));
             if args.get("retract").and_then(Value::as_bool) == Some(true) {
@@ -501,6 +496,35 @@ fn call(name: &str, args: &Value, opts: &Options) -> Option<Result<String, Strin
         }),
         _ => return None,
     })
+}
+
+/// The sight a tool is handed as its `view`, if any.
+fn sight(args: &Value) -> Result<Option<Sight>, String> {
+    args.get("view")
+        .filter(|v| !v.is_null())
+        .map(Sight::deserialize)
+        .transpose()
+        .map_err(|e| format!("`view` is not a view the page knows ({e}): it holds `route`, `kind`, `part`, `focus` and `open`."))
+}
+
+/// The page of the repository at `path` in `sight`, written to `out`, else to `.atlas/<project>.view.html`
+/// at the top of the git repository it is in.
+fn view(path: Option<&str>, sight: Option<Sight>, out: Option<&str>, opts: &Options) -> Result<String, String> {
+    let (repo, clone) = located(path)?;
+    let read = crate::page::reading(&[repo.clone()], opts, None, None).map_err(|e| format!("Could not read {}: {e}", repo.display()))?;
+    let findings = read.findings();
+    let (graph, compared) = read.drawn();
+    let flow = atlas_engine::flow::of(&graph);
+    let opens = crate::page::Opens { route: None, sight, served: None, preliminary: false };
+    let html =
+        crate::page::Html::of(&graph, &flow, &findings, compared.as_ref(), &opens).map_err(|e| format!("Could not draw the page: {e}"))?;
+    let home = clone.is_none().then_some(repo.as_path());
+    let out = out.map(PathBuf::from).unwrap_or_else(|| crate::home::made(home, &format!("{}.view.html", graph.root)));
+    html.write(&out).map_err(|e| format!("Could not write the page: {e:#}"))?;
+    Ok(format!(
+        "Wrote {}. Open it in a browser, or hand the file to the person you work with; once open, its address holds the view, to share as a link.",
+        out.display()
+    ))
 }
 
 /// The repository `atlas serve` serves, as a tool names it: a directory, else where the server runs.

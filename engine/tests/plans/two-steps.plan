@@ -1,0 +1,15 @@
+# One step leaves a file for the next, which reads it and uses what it read: the place is the object between them.
+
+route stages.run
+step run/fetch
+step run/process
+
+line entry > run call
+line run/fetch > File(data/stage.txt) own
+line File(data/stage.txt) > run/process own
+line run/process > run back
+line run > Screen own
+
+side entry left
+side File(data/stage.txt) between
+side Screen right

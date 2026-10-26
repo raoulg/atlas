@@ -3,7 +3,7 @@
 //! Everything between `parse` and `layout` is `Graph -> Graph`. The JSON shape is the
 //! contract with the frontend; `ts-rs` generates the TypeScript side from these types.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap, VecDeque};
 
 use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
@@ -99,23 +99,45 @@ pub struct Node {
     pub bases: Vec<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub methods: Vec<String>,
+    /// For a class: the fields it declares, by name, beside its methods.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub fields: Vec<String>,
+    /// For a class: the class of the program each of its fields holds, by the field's name, as its declarations and its
+    /// methods' assignments say (`self.left = left` with `left: Chart`): what a value of it is reached through, field by
+    /// field (`board.left` is a `Chart`). The `has` edges say which classes it holds; this says through which field.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    #[ts(type = "Record<string, string>")]
+    pub holds: BTreeMap<String, String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub decorators: Vec<String>,
     /// Sketch code kept in the tree, not built yet: what its marker says. Read by the language's reader.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub prophecy: Option<crate::prophecy::Prophecy>,
+    pub prophecy: Option<Prophecy>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub params: Vec<Param>,
     /// What the signature says it gives back; none when it does not say.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub returns: Option<Returns>,
-    /// For a method that overrides another: whether what it gives back can stand where the
-    /// overridden method's promise stood, as the language's type checker decides; none where no
+    /// The signatures its callers are checked against, where the code declares them apart from
+    /// the body that runs: its overloads, in the order they are written. `params` and `returns`
+    /// are then the implementation's, which no caller is checked against.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub overloads: Vec<Signature>,
+    /// For a method that overrides another: whether it can stand where each method it overrides
+    /// stood, what it takes and what it gives, as the language's type checker decides; none where no
     /// checker decided.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub keeps: Option<bool>,
+    /// For an override that does not keep its promise: the method whose promise it breaks, as the
+    /// type checker names it, where the graph holds that method.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub breaks: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub entry: Option<Entry>,
+    /// Its package exports it, where its entry is a route of another kind: a program a manifest
+    /// declares, whose function the package also exports, is a command and a door.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub exported: bool,
     /// The calls that leave the package, with what they touch: a path literal, a table, a
     /// command, or the argument's name when nothing better is known.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -143,12 +165,30 @@ pub struct Node {
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub private: bool,
     /// Its body may end it without giving back: it raises, throws or panics, outside the
-    /// functions it defines.
+    /// functions it defines, or it calls what ends the program (`sys.exit`, `process.exit`).
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub raises: bool,
+    /// The error its body's own code hands on outside its steps, as its signature converts it, `""`
+    /// for one of no type of the code's: a `?` written in no step (`Ok(fs::read_to_string(p)?.lines()..)`).
+    /// What a step hands on, the step's site says (`Site::fails`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fails: Option<String>,
     /// It calls a function it is handed: what that function does is its caller's to say.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub calls_handed: bool,
+    /// For a method: it has no body of its own. An interface, a protocol, a trait or an abstract
+    /// class declares it, and a call to it runs what implements it.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub declared: bool,
+    /// What its body does that the graph holds nothing else of, by line and as the code writes it:
+    /// a call whose value goes nowhere, made for an effect Atlas does not know, a library's of
+    /// which no table says it crosses into the world, changes a value or ends the program
+    /// (`logger.info(..)`, `tensor.mul_(..)`), or one Atlas cannot follow (`self.on_done(..)`);
+    /// and a value a class keeps, which the body changes (`Counter.total += 1`). What these leave
+    /// behind, Atlas does not see.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[ts(type = "Array<[number, string]>")]
+    pub unseen: Vec<(u32, String)>,
     /// For a function handed to a call where it is declared (`memo((props) => ..)`,
     /// `createServerFn(..).handler(..)`): the call, which gives its parameters their types.
     #[serde(default, skip_serializing_if = "String::is_empty")]
@@ -169,19 +209,72 @@ pub struct Node {
     /// Code of a library the project uses, read as far as the project's calls reach into it.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub library: bool,
+    /// Test code, by where it stands: a module the language keeps for tests (a test file, a Rust
+    /// `#[cfg(test)]` module, a crate's `tests/`), or an item of one that the graph keeps in the
+    /// module around it (a Rust `mod tests { .. }`).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub test: bool,
     /// The calls of its body, in the order they run: the steps of a route through it.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub sites: Vec<Site>,
+    /// What the body's own code uses outside the calls that are its steps: each name it reads in a
+    /// condition, an operator, a format, a return or an argument of a call that is no step
+    /// (`print(store.path)`, `if done:`, `Ok(path)`), once in each arm it is read in. A projection of a
+    /// name uses that name; a name bound to a part of another (`width = settings.width`) uses it where
+    /// the body reads that name. The instance a method runs on is used by no name, as a call is handed
+    /// it.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub uses: Vec<Use>,
+    /// The names the arms of its body's choices bind by the body's own code, no step of it: what an
+    /// arm sets a name to (`let unit; if .. { unit = KELVIN }`), and what an arm of a choice a name is
+    /// bound to gives where no step makes it (`let out = match f { "csv" => String::from(..), _ =>
+    /// format!(..) }`, `x = a if c else b`). Each name once in each arm, with its type when known and
+    /// the arms the value is made in. Such an arm makes the name's value as an arm whose step gives it
+    /// does. Outside the choices, the names it binds by a literal, a value made by no step that reads
+    /// no value (`let mut held = vec![]`, `items = []`), with no arms: the body makes that value
+    /// itself, as a call handed nothing makes it (`Vec::new()`, `list()`).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub binds: Vec<Use>,
+    /// What its body's own code sets a part of a value to, by assignment through the name that holds
+    /// the value (`other.fig = self.fig`, `rows[i] = row`): the value changed and what the assigned
+    /// expression reads, a lens's put made in place.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub sets: Vec<Set>,
     /// The lines each arm of its body's choices spans, first and last: what is written there runs
     /// only in that arm.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     #[ts(type = "Array<[number, number]>")]
     pub arm_lines: Vec<(u32, u32)>,
+    /// The choice each of `arm_lines` is an arm of, numbered as `Site::arms` numbers them: two arms
+    /// of one choice never run in one run of the body.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub arm_choices: Vec<u32>,
+    /// The lines each loop of its body spans, first and last: what runs there may run again after
+    /// what follows it in the loop.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[ts(type = "Array<[number, number]>")]
+    pub loop_lines: Vec<(u32, u32)>,
     /// What decides each arm of its body's choices, as the code writes it: `(choice, arm, when)`,
     /// with the choices and arms numbered as `Site::arms` numbers them.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     #[ts(type = "Array<[number, number, string]>")]
     pub whens: Vec<(u32, u32, String)>,
+    /// The fields the conditions that decide its body's choices read of the values they read, as the code
+    /// names them: `ax` of the instance for `if self.ax is None:` (#184).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub tests: Vec<Test>,
+}
+
+/// A field a condition reads (`Node::tests`): the choice it decides, numbered as `Site::arms` numbers them,
+/// the value it reads the field of, as a call is handed it (the instance a method runs on by no name), and the
+/// field, through the fields it is reached by (`left.ax` of `self.left.ax is None`), an element left out. A
+/// condition that reads a value whole, or calls a method on it, reads no field of it.
+#[derive(Serialize, Deserialize, TS, Clone, Debug, Default, PartialEq)]
+#[ts(export)]
+pub struct Test {
+    pub choice: u32,
+    pub on: Held,
+    pub field: String,
 }
 
 impl Node {
@@ -189,6 +282,28 @@ impl Node {
     pub fn initializer<'a>(&self, node: impl Fn(&str) -> Option<&'a Node>) -> Option<String> {
         self.methods.iter().map(|m| format!("{}.{m}", self.id)).find(|id| node(id).map_or(false, |m| m.ctor && !m.on_class))
     }
+}
+
+/// What a prophecy says of itself: sketch code kept in the tree, marked as not built yet. `prophecy.rs`
+/// reads it from the marker and settles it in the whole graph.
+#[derive(Serialize, Deserialize, TS, Clone, Debug, Default, PartialEq, Eq)]
+#[ts(export)]
+pub struct Prophecy {
+    /// The existing thing the prophecy replaces: it stays until the prophecy is built.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub supersedes: Option<String>,
+    /// The place is known and the shape is not.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub veiled: bool,
+    /// The shape waits on an open question, as an issue (`#144`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sealed: Option<String>,
+    /// The node `supersedes` names, once the graph is whole: its id.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub replaces: Option<String>,
+    /// The nodes `supersedes` names when it names more than one: which it replaces, it does not say.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub candidates: Vec<String>,
 }
 
 /// A parameter, as the signature declares it.
@@ -210,6 +325,68 @@ pub struct Param {
     /// The signature says the body may change it in place.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub changes: bool,
+    /// Its type is the unchecked one, which every value passes as and which passes as every type:
+    /// written out, it says no more than a parameter without a type.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub unchecked: bool,
+    /// The types its type holds as values, as its language reads the type, each by the last part of
+    /// its name: `dict[Mode, Plan]` holds a `Plan` by its `Mode`, `Option<Vec<Node>>` a `Node`,
+    /// `VectorCache[TVectorizer]` a `VectorCache`. A name written through an alias is held by the name
+    /// of the type it stands for (`Order as Parcel` holds an `Order`), once the reader resolves it.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub holds: Vec<String>,
+}
+
+impl Param {
+    /// Whether the signature says what it is: a type is written, and it is not the unchecked one.
+    pub fn says(&self) -> bool {
+        !self.ty.is_empty() && !self.unchecked
+    }
+
+    /// Whether its type holds a value of the type named `name` (the last part of its name).
+    pub fn holds_type(&self, name: &str) -> bool {
+        self.holds.iter().any(|h| h == name)
+    }
+
+    /// What a type holds as values, as `type_names` reads it, by the last part of each name.
+    pub fn held(names: Vec<Vec<String>>) -> Vec<String> {
+        let mut out: Vec<String> = vec![];
+        for n in names.into_iter().filter_map(|n| n.last().cloned()) {
+            if !out.contains(&n) {
+                out.push(n);
+            }
+        }
+        out
+    }
+}
+
+/// The names of `held`, each as the last part of the type it resolves to: a type written through an
+/// alias (`Order as Parcel`, `use tree_sitter::Node as TsNode`) is the type it stands for, held by that
+/// type's name, as the `takes` it resolves to names it. A name that resolves to nothing stays as written.
+pub fn resolve_held(held: &[String], resolve: &impl Fn(&str) -> Option<String>) -> Vec<String> {
+    let mut out: Vec<String> = vec![];
+    for h in held {
+        let name = resolve(h).map_or(h.clone(), |id| id.strip_prefix("ext:").unwrap_or(&id).rsplit('.').next().unwrap_or(&id).to_string());
+        if !out.contains(&name) {
+            out.push(name);
+        }
+    }
+    out
+}
+
+/// What the parameters and the result of `n` hold, each name resolved by `resolve` (`resolve_held`);
+/// `set_holds` puts them back once the reader no longer borrows the graph to resolve them.
+pub fn holds_resolved(n: &Node, resolve: impl Fn(&str) -> Option<String>) -> (Vec<Vec<String>>, Option<Vec<String>>) {
+    (n.params.iter().map(|p| resolve_held(&p.holds, &resolve)).collect(), n.returns.as_ref().map(|r| resolve_held(&r.holds, &resolve)))
+}
+
+pub fn set_holds(n: &mut Node, (params, returns): (Vec<Vec<String>>, Option<Vec<String>>)) {
+    for (p, h) in n.params.iter_mut().zip(params) {
+        p.holds = h;
+    }
+    if let (Some(r), Some(h)) = (n.returns.as_mut(), returns) {
+        r.holds = h;
+    }
 }
 
 /// `name: type`, and `…name` for one that takes whatever arguments are left.
@@ -237,10 +414,38 @@ pub struct Returns {
     /// It gives a value of the class it runs on, whichever subclass that is.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub own: bool,
-    /// The effect it is wrapped in says it may end without its value: a `Result` that fails, a
-    /// `Promise` that rejects.
+    /// The effect it is wrapped in says it may end without its value: a `Result` that fails. A
+    /// `Promise` says the value arrives later; it rejects where its body throws, as any call may.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub fails: bool,
+    /// The type of the value it gives is the unchecked one (`Param::unchecked`): it says no more
+    /// than leaving the type out.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub unchecked: bool,
+    /// The types the written type holds as values, as its language reads the type (`Param::holds`), each by the last part
+    /// of its name: `Result<Vec<Node>, Error>` holds a `Node` and an `Error`; `Vec<(String, Vec<Where>)>` holds pairs, of
+    /// a type the code does not name, and no `Where`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub holds: Vec<String>,
+}
+
+impl Returns {
+    /// Whether it says what the function gives: its type is not the unchecked one.
+    pub fn says(&self) -> bool {
+        !self.unchecked
+    }
+}
+
+/// A signature declared apart from the body that runs: an overload.
+#[derive(Serialize, Deserialize, TS, Clone, Debug, Default, PartialEq, Eq)]
+#[ts(export)]
+pub struct Signature {
+    /// The line it is written on.
+    pub line: u32,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub params: Vec<Param>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub returns: Option<Returns>,
 }
 
 /// A call in a body, as a step of the route through it: what it reaches, what it is handed and
@@ -265,6 +470,30 @@ pub struct Site {
     /// `T × A → T`, never an identity, however much of `A` the graph follows.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub changes: bool,
+    /// The body throws away what the call gives back: the call is the whole of a statement
+    /// (`other.take_from(board)`, `void remove(..)`, `store.add(x);`).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub dropped: bool,
+    /// What the call gives leaves the body as an error: it builds the error a `raise`, a `throw`
+    /// or a `return Err(..)` ends the body with.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub raises: bool,
+    /// The errors the call hands on, outside a handler that catches them: each error what it runs
+    /// can end with, by its type, `""` where it is no type of the code's. A call into a family hands
+    /// on what any of the overrides it may run can end with; a Rust `?` the one error its signature
+    /// converts to. Sorted, so that a reading is a function of the code.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub fails: Vec<String>,
+    /// The call hands on what its callee's body raises, as a `raise` propagates in its language: read
+    /// where the call stands, and `fails` is settled from what the callee's body ends with once the
+    /// graph is whole. A call `?` hands on fails as the reader reads it.
+    #[serde(skip)]
+    pub handed_on: bool,
+    /// The handlers that watch the call (the body of a `try` it stands in), innermost first, each by
+    /// the classes it catches as the code names them, none for one that catches whatever is raised.
+    /// `fails` is settled from them once the graph is whole.
+    #[serde(skip)]
+    pub caught: Vec<Vec<String>>,
     /// The class of the value a method is called on, when that is a subclass of the method's own
     /// class (`ComparePlot(..).plot()` reaches `BasePlot.plot` on a `ComparePlot`).
     #[serde(default, skip_serializing_if = "String::is_empty")]
@@ -273,9 +502,27 @@ pub struct Site {
     /// subclass, it reaches that subclass's method.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub on_receiver: bool,
-    /// The values the call is handed: its arguments and the value it is called on.
+    /// The call is made through a class (`Cached.read(self)`): it runs the method that class's
+    /// order finds, and no override of it, whatever the class of the value it runs on.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub named: bool,
+    /// The class a `super()` call is written in (`super().read()` in `Buffered`): the call runs
+    /// the next method after it along the order of the value's class.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub after: String,
+    /// The values the call is handed: its arguments and the value it is called on, each with the
+    /// parameters it fills (`Held::fills`).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub hands: Vec<Held>,
+    /// The parameters the call writes an argument for, as the call writes them, in the order written:
+    /// the value it runs on, each argument by its place and by its name. A parameter none of them
+    /// fills holds its default; one an argument fills that hands no value holds what no step makes
+    /// (a literal, a constant).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub args: Vec<Slot>,
+    /// Where each of `args` is written, as a byte range of its file.
+    #[serde(skip)]
+    pub written: Vec<(u32, u32)>,
     /// What it gives back.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub gives: Vec<Held>,
@@ -293,6 +540,10 @@ pub struct Site {
     /// of the body is (a function handed on, called by whoever receives it).
     #[serde(skip)]
     pub span: (u32, u32),
+    /// The call stands in a function written in place in the body (`|row| ..`, `lambda r: ..`,
+    /// `(r) => ..`): what it gives under a name that function binds is the function's own.
+    #[serde(skip)]
+    pub in_function: bool,
 }
 
 /// A value by its type, and the name the code holds it by when it has one. A value no name holds
@@ -307,12 +558,121 @@ pub struct Held {
     /// Where the code writes it, as a byte offset of its file: where it comes from, not what it is.
     #[serde(skip)]
     pub at: u32,
+    /// Where the value comes from when the name written at `at` holds it through a binding of a projection of it that the
+    /// reader follows (`let t = &self.title`): the byte offset of the name that projection starts from (`self`), so that the
+    /// fields the name is bound to can be read where it is used (`Steps::fills`, `Set::of`). None (0) where `at` says it.
+    #[serde(skip)]
+    pub bound: u32,
+    /// For a value a call is handed: the parameters it fills, each argument of the call it is written
+    /// in (`Site::args`). `f(x.title, x.lines)` hands `x` for the first two; `f(g(y))` hands what the
+    /// step `g` gives for the first, and `y` to `g`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub fills: Vec<Slot>,
+    /// Of the parameters it fills, those it fills through a field of it, each with that field as the code names it,
+    /// through the fields it is reached by, as `Set::of` names one: `title` for the first parameter of
+    /// `other.take(self.title, self.ax)` and `ax` for the second, `left` for the value `self.left.line(..)` runs on. The
+    /// call is handed the value, the projection glued into it (`take ∘ π_title`, whose domain is the value's type); the
+    /// field says which part of it fills the parameter. A parameter it fills whole, or through what the call computes of
+    /// it (`f(x.n + 1)`), is none of them.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[ts(type = "Array<[Slot, string]>")]
+    pub through: Vec<(Slot, String)>,
+    /// The value is one of the body's own parameters of no type of the code's, handed or read by its name, or what a step
+    /// gives of such parameters alone (a loop's element): it holds a value only where the function's calls fill them with
+    /// one, settled once every body is read (`builder::settle_parameters`).
+    #[serde(skip)]
+    pub param: bool,
 }
 
 impl Held {
     pub fn new(ty: impl Into<String>, name: impl Into<String>) -> Held {
-        Held { ty: ty.into(), name: name.into(), at: 0 }
+        Held { ty: ty.into(), name: name.into(), ..Held::default() }
     }
+
+    /// The value as one of the body's code holds it, written at byte `at`: no parameter of a call filled yet.
+    pub fn at(ty: impl Into<String>, name: impl Into<String>, at: usize, param: bool) -> Held {
+        Held { at: at as u32, param, ..Held::new(ty, name) }
+    }
+}
+
+/// Which parameter of the function a call reaches an argument fills, as the call writes it. Inside the
+/// callee the parameter holds what the argument hands (`mathematics.md`, "One fine plan"): a call
+/// pairs its values with the parameters by where it writes them, not by their types.
+#[derive(Serialize, Deserialize, TS, Clone, Debug, PartialEq, Eq, Hash)]
+#[serde(rename_all = "snake_case")]
+#[ts(export)]
+pub enum Slot {
+    /// The value the call runs on: `x` of `x.f(..)`, `Trend::new(..)` of `Trend::new(..).save(..)`, and
+    /// the first argument of a method called through its class or path (`Cached.read(self)`,
+    /// `Trend::save(&t, ..)`, `Source.prototype.read.call(v)`).
+    Receiver,
+    /// The parameter after the receiver at this place, the first being 0: the argument written there
+    /// by place.
+    At(u32),
+    /// The parameter of this name: a keyword argument (`f(title=t)`), a field a literal of a struct or
+    /// an element writes (`Trend { settings }`, `<Chart rows={rows} />`).
+    Name(String),
+    /// What a spread hands (`f(*xs)`, `f(...xs)`) and what any argument by place after it hands: the
+    /// parameters from this place on, of which the call does not say which.
+    Spread(u32),
+    /// What a spread of names hands (`f(**options)`, `Settings { ..base }`): the parameters the call
+    /// writes no argument for by name.
+    Keywords,
+}
+
+/// A value a body's own code reads (`Node::uses`) or an arm binds (`Node::binds`), by the name that
+/// holds it (none for the instance a method runs on), with its type when known and the arms of the
+/// choices the use or the binding sits in, numbered as `Site::arms` numbers them.
+#[derive(Serialize, Deserialize, TS, Clone, Debug, Default, PartialEq, Eq)]
+#[ts(export)]
+pub struct Use {
+    pub name: String,
+    #[serde(rename = "type", default, skip_serializing_if = "String::is_empty")]
+    pub ty: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[ts(type = "Array<[number, number]>")]
+    pub arms: Vec<(u32, u32)>,
+    /// The name is one of the body's own parameters of no type of the code's (`Held::param`).
+    #[serde(skip)]
+    pub param: bool,
+}
+
+/// A part of a value the body's own code sets (`Node::sets`), one for each part a binding sets: the value,
+/// as a call is handed it (`other` of `other.fig = self.fig`, the instance a method runs on by no name for
+/// `self.n = ..`), the field of it that is set, what the assigned expression reads (the instance of
+/// `self.fig`) and the field of it that the expression is, the lines the binding spans, and the arms of
+/// the choices the setting sits in, numbered as `Site::arms` numbers them. A binding that sets two parts
+/// at once sets each to the part of the value at its place where the value is written as as many parts
+/// (`other.fig, other.ax = self.fig, self.ax`), else each to the whole value (`self.fig, self.ax =
+/// plt.subplots()`).
+#[derive(Serialize, Deserialize, TS, Clone, Debug, Default, PartialEq)]
+#[ts(export)]
+pub struct Set {
+    pub on: Held,
+    /// The field of the value that is set, as the code names it, through the fields it is reached by:
+    /// `fig` of `other.fig = ..`, `fig.title` of `self.fig.title = ..`; none for an element of the
+    /// value itself (`rows[i] = row`).
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub field: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub from: Vec<Held>,
+    /// Where the assigned expression is a field of a value, as the code names it (`fig` of `other.fig =
+    /// self.fig`): that field of the one value of `from`. None where it is a whole value (`self.fig =
+    /// fig`) or what the body computes (`self.title = title + "!"`).
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub of: String,
+    /// The lines the binding spans, first and last; none for one the signature writes
+    /// (`constructor(readonly until: string)`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(type = "[number, number] | null")]
+    pub lines: Option<(u32, u32)>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[ts(type = "Array<[number, number]>")]
+    pub arms: Vec<(u32, u32)>,
+    /// Where the assigned expression is written, as a byte range of its file: a step written there that the
+    /// set keeps (`self.left = Chart("left")`) is among what it reads once its result is named.
+    #[serde(skip)]
+    pub value: (u32, u32),
 }
 
 /// A value is its type and its name; where it is written does not make it another.
@@ -541,16 +901,25 @@ pub struct Touch {
     /// The file a database connection opens, where the code says so: `duckdb.connect(path)`. A
     /// database that is no file (in memory, at an address) names none.
     pub file: String,
-    /// The code alone decides where: the path or URL starts at a literal (`"out.csv"`,
-    /// `Path("data") / name`), not at a value a caller hands in (`root / "out.csv"`).
+    /// The code alone decides where, in its own function: the path or URL starts at a literal
+    /// (`"out.csv"`, `Path("data") / name`), not at a value a caller hands in (`root / "out.csv"`).
     pub fixed: bool,
+    /// The functions whose own code decides where, where that is not its own function: each hands
+    /// it a path or URL that starts at a literal (`read_rows(Path("data/rows.csv"))`).
+    pub fixed_by: Vec<String>,
     /// The line of the first such call, 1-based.
     pub line: u32,
+    /// The lines of the other calls it stands for, each once: two `write_text` calls of one file,
+    /// one in an arm and one after a read, are one touch that runs on both lines.
+    pub also_at: Vec<u32>,
     /// The functions whose calls hand what makes its path or statement whole, where that is not
     /// its own function: a route shows it when it reaches one of them (`a&b`: both).
     pub by: Vec<String>,
     /// The entries whose users hand what makes it whole: their own routes show it.
     pub users_of: Vec<String>,
+    /// What the call gives goes to nothing its function hands on: it only decides a choice, goes
+    /// to an error, or is dropped. A read that checks what is there, not one that uses it.
+    pub checks: bool,
 }
 
 impl Touch {
@@ -566,9 +935,12 @@ impl Touch {
             artifact: String::new(),
             file: String::new(),
             fixed: false,
+            fixed_by: vec![],
             line: 0,
+            also_at: vec![],
             by: vec![],
             users_of: vec![],
+            checks: false,
         }
     }
 
@@ -614,12 +986,18 @@ pub struct TouchJson {
     pub dir: String,
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub fixed: bool,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub fixed_by: Vec<String>,
     #[serde(default, skip_serializing_if = "is_zero")]
     pub line: u32,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub also_at: Vec<u32>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub by: Vec<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub users_of: Vec<String>,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub checks: bool,
 }
 
 impl From<Touch> for TouchJson {
@@ -635,9 +1013,12 @@ impl From<Touch> for TouchJson {
             file: t.file,
             dir,
             fixed: t.fixed,
+            fixed_by: t.fixed_by,
             line: t.line,
+            also_at: t.also_at,
             by: t.by,
             users_of: t.users_of,
+            checks: t.checks,
         }
     }
 }
@@ -656,9 +1037,12 @@ impl TryFrom<TouchJson> for Touch {
             artifact: j.artifact,
             file: j.file,
             fixed: j.fixed,
+            fixed_by: j.fixed_by,
             line: j.line,
+            also_at: j.also_at,
             by: j.by,
             users_of: j.users_of,
+            checks: j.checks,
         })
     }
 }
@@ -692,20 +1076,39 @@ pub struct Edge {
     pub uses: bool,
 }
 
-/// Where a body compares one value with literals: `args.mode == "train"`,
-/// `mode in {"a", "b"}`, `case "a":`, `"a" =>`.
+/// Where a body compares one value with its cases: `args.mode == "train"`,
+/// `mode in {"a", "b"}`, `mode is Mode.FAST`, `case "a":`, `"a" =>`.
 #[derive(Serialize, Deserialize, TS, Clone, Debug, Default, PartialEq, Eq)]
 #[ts(export)]
 pub struct Compare {
-    /// The value as written: `args.experiment`.
+    /// The value tested, as the body was handed it: `args.experiment`. A name the body binds once
+    /// to a value it reads in place is that value: after `m = args.mode`, `m` is `args.mode`.
     pub subject: String,
+    /// The subject as the comparison writes it, where a name stands for it: `m`.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub written: String,
     /// The literals it is compared with.
     pub cases: Vec<String>,
+    /// The members of a type it is compared with, as written: `Mode.FAST`, `Mode::Fast`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub members: Vec<String>,
     pub line: u32,
     /// The choice it decides, numbered like `Edge::arms`; a comparison that only computes a
     /// value (`weighted = mode in {..}`) decides none.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub choice: Option<u32>,
+    /// The subject is the value the method runs on, or is read through it: `self.mode`,
+    /// `this.mode`.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub receiver: bool,
+}
+
+impl Compare {
+    /// Each case as the code writes it: a literal quoted (`"fast"`), a member as it stands
+    /// (`Mode.FAST`).
+    pub fn named(&self) -> Vec<String> {
+        self.cases.iter().map(|c| format!("\"{c}\"")).chain(self.members.iter().cloned()).collect()
+    }
 }
 
 #[derive(Serialize, Deserialize, TS, Clone, Debug, Default)]
@@ -722,6 +1125,12 @@ pub struct MakeTarget {
     /// Entry ids this target runs, in recipe order.
     #[serde(default)]
     pub calls: Vec<String>,
+    /// The unit it stands in: its Makefile.
+    #[serde(default)]
+    pub module: String,
+    /// The part of the repository its Makefile belongs to.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub part: String,
 }
 
 #[derive(Serialize, Deserialize, TS, Clone, Debug, Default)]
@@ -807,6 +1216,10 @@ pub struct Part {
     /// What its language leaves to the author.
     #[serde(default)]
     pub leaves: Leaves,
+    /// Its language compares types by their members: a value stands where a type is asked for when
+    /// it has every member that type declares, whatever it is declared as (TypeScript).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub structural: bool,
 }
 
 /// What a language leaves its author to write: what its compiler neither asks for nor works out,
@@ -821,6 +1234,10 @@ pub struct Leaves {
     /// What a function gives back, as its declaration reads: left out, or worked out where a
     /// reader of the declaration does not see it.
     pub returns: bool,
+    /// That an override keeps the promise of the method it overrides: no compiler holds it to it,
+    /// or one holds it only to part of it.
+    #[serde(default)]
+    pub overrides: bool,
 }
 
 #[derive(Serialize, Deserialize, TS, Clone, Debug, Default)]
@@ -894,6 +1311,76 @@ impl Graph {
         self.nodes.iter().map(|n| (n.id.as_str(), n)).collect()
     }
 
+    /// Every id the graph holds, mapped by `to`: each node's own, and each that names a node (its
+    /// module, class and part, the method whose promise it breaks, what its prophecy replaces or may
+    /// replace, what its calls reach and the types they hand and give, the values its own code uses,
+    /// binds and sets and the error it hands on, a value named by its step, whose calls make its touches
+    /// whole and whose code decides where they go), an edge's ends, a make target's own with its
+    /// Makefile, its part and what it runs, the parts and the root.
+    pub fn rename(&mut self, to: &dyn Fn(&str) -> String) {
+        let m = |s: &mut String| {
+            if !s.is_empty() {
+                *s = to(s)
+            }
+        };
+        // a value no name holds is named by the step that makes it, in the function it is made in: `#<function>@<where>`
+        let named = |s: &mut String| {
+            if let Some((f, at)) = s.strip_prefix('#').and_then(|r| r.rsplit_once('@')) {
+                *s = format!("#{}@{at}", to(f));
+            }
+        };
+        let held = |h: &mut Held| {
+            m(&mut h.ty);
+            named(&mut h.name);
+        };
+        m(&mut self.root);
+        self.parts.iter_mut().for_each(|p| m(&mut p.id));
+        for n in &mut self.nodes {
+            m(&mut n.id);
+            m(&mut n.module);
+            m(&mut n.part);
+            n.cls.iter_mut().chain(n.breaks.iter_mut()).chain(n.holds.values_mut()).for_each(&m);
+            if let Some(p) = n.prophecy.as_mut() {
+                p.supersedes.iter_mut().chain(p.replaces.iter_mut()).chain(p.candidates.iter_mut()).for_each(&m);
+            }
+            for s in &mut n.sites {
+                m(&mut s.to);
+                m(&mut s.on);
+                m(&mut s.after);
+                s.fails.iter_mut().for_each(&m);
+                s.hands.iter_mut().chain(s.gives.iter_mut()).for_each(held);
+            }
+            for u in n.uses.iter_mut().chain(n.binds.iter_mut()) {
+                m(&mut u.ty);
+                named(&mut u.name);
+            }
+            n.fails.iter_mut().for_each(&m);
+            for s in &mut n.sets {
+                held(&mut s.on);
+                s.from.iter_mut().for_each(held);
+            }
+            for t in &mut n.tests {
+                held(&mut t.on);
+            }
+            for t in n.touches.iter_mut().chain(n.instead.iter_mut()) {
+                for f in &mut t.by {
+                    *f = f.split('&').map(to).collect::<Vec<_>>().join("&");
+                }
+                t.users_of.iter_mut().chain(t.fixed_by.iter_mut()).for_each(&m);
+            }
+        }
+        for e in &mut self.edges {
+            m(&mut e.src);
+            m(&mut e.dst);
+        }
+        for t in &mut self.make {
+            m(&mut t.id);
+            m(&mut t.module);
+            m(&mut t.part);
+            t.calls.iter_mut().for_each(&m);
+        }
+    }
+
     pub fn recount(&mut self) {
         let mut nodes = BTreeMap::new();
         for n in &self.nodes {
@@ -909,10 +1396,116 @@ impl Graph {
     }
 }
 
+/// The method resolution order of `class`: the class, then its ancestors nearest first, linearized
+/// by C3 from the bases each class declares, in the order it declares them (Python's order). A class
+/// comes before its bases, and its bases keep the order they are declared in. Where declared orders
+/// contradict one another, as TypeScript's `implements A, B` with `B extends A` may, a class still
+/// comes before its ancestors, and failing that the base declared first comes first. A class
+/// reached again through a cycle of bases adds nothing. `known` keeps the order of every class
+/// worked out on the way.
+pub fn linearization<'a>(
+    class: &'a str,
+    bases: &dyn Fn(&'a str) -> Vec<&'a str>,
+    known: &mut HashMap<&'a str, Vec<&'a str>>,
+) -> Vec<&'a str> {
+    fn order<'a>(
+        class: &'a str,
+        bases: &dyn Fn(&'a str) -> Vec<&'a str>,
+        known: &mut HashMap<&'a str, Vec<&'a str>>,
+        open: &mut Vec<&'a str>,
+    ) -> Vec<&'a str> {
+        if let Some(l) = known.get(class) {
+            return l.clone();
+        }
+        if open.contains(&class) {
+            return vec![];
+        }
+        open.push(class);
+        let mut declared: Vec<&'a str> = vec![];
+        for b in bases(class) {
+            if b != class && !declared.contains(&b) {
+                declared.push(b);
+            }
+        }
+        // each base's own order, and the declared order last
+        let mut seqs: Vec<(bool, VecDeque<&'a str>)> = declared.iter().map(|b| (false, order(b, bases, known, open).into())).collect();
+        seqs.push((true, declared.into()));
+        let mut out = vec![class];
+        loop {
+            seqs.retain(|(_, s)| !s.is_empty());
+            let Some(first) = seqs.first().map(|(_, s)| s[0]) else { break };
+            let later = |h: &str, all: bool| seqs.iter().filter(|(d, _)| all || !d).any(|(_, s)| s.iter().skip(1).any(|x| *x == h));
+            let heads = || seqs.iter().map(|(_, s)| s[0]);
+            let next = heads().find(|h| !later(h, true)).or_else(|| heads().find(|h| !later(h, false))).unwrap_or(first);
+            for (_, s) in &mut seqs {
+                s.retain(|x| *x != next);
+            }
+            if !out.contains(&next) {
+                out.push(next);
+            }
+        }
+        open.pop();
+        known.insert(class, out.clone());
+        out
+    }
+    order(class, bases, known, &mut vec![])
+}
+
+/// What building a value of a class runs: the initializer of the first class along its method
+/// resolution order (`order`, as `linearization` gives it) that defines one, its own before a
+/// base's. A call of the class hands it its arguments, and `super(..)` in a constructor hands its
+/// own to the one the base runs.
+pub fn initializer_along<'a>(order: &[&str], node: impl Fn(&str) -> Option<&'a Node> + Copy) -> Option<String> {
+    order.iter().filter_map(|c| node(c)).filter(|n| n.kind == NodeKind::Class).find_map(|n| n.initializer(node))
+}
+
 pub fn kind_name(k: &NodeKind) -> String {
     serde_json::to_value(k).unwrap().as_str().unwrap().to_string()
 }
 
 pub fn edge_name(k: &EdgeKind) -> String {
     serde_json::to_value(k).unwrap().as_str().unwrap().to_string()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The method resolution order of `class` in a hierarchy written as `(class, [bases])`.
+    fn mro<'a>(class: &'a str, hierarchy: &'a [(&'a str, &'a [&'a str])]) -> Vec<&'a str> {
+        let bases = |c: &'a str| hierarchy.iter().find(|(k, _)| *k == c).map_or(vec![], |(_, bs)| bs.to_vec());
+        linearization(class, &bases, &mut HashMap::new())
+    }
+
+    /// Single inheritance is the chain of bases.
+    #[test]
+    fn a_chain_is_its_own_order() {
+        assert_eq!(mro("C", &[("C", &["B"]), ("B", &["A"])]), ["C", "B", "A"]);
+    }
+
+    /// A class's bases keep the order it declares them in, each followed by its own bases unless a
+    /// later base shares them: `D(B, C)` with `B(A)` and `C(X)` runs `B`'s `A` before `C`, and in a
+    /// diamond `D(B, C)` over `A`, `A` comes last.
+    #[test]
+    fn bases_keep_their_declared_order_and_a_shared_base_comes_last() {
+        assert_eq!(mro("D", &[("D", &["B", "C"]), ("B", &["A"]), ("C", &["X"])]), ["D", "B", "A", "C", "X"]);
+        assert_eq!(mro("D", &[("D", &["B", "C"]), ("B", &["A"]), ("C", &["A"])]), ["D", "B", "C", "A"]);
+    }
+
+    /// The order of the example Python's description of its MRO gives: `A(B, C)`, `B(D, E)`,
+    /// `C(D, F)`, and each of `D`, `E`, `F` over `O`.
+    #[test]
+    fn the_order_is_pythons() {
+        let h: &[(&str, &[&str])] =
+            &[("A", &["B", "C"]), ("B", &["D", "E"]), ("C", &["D", "F"]), ("D", &["O"]), ("E", &["O"]), ("F", &["O"])];
+        assert_eq!(mro("A", h), ["A", "B", "C", "D", "E", "F", "O"]);
+    }
+
+    /// Declared orders that contradict one another still put each class before its ancestors:
+    /// `implements A, B` where `B extends A`. A cycle of bases ends.
+    #[test]
+    fn a_contradiction_keeps_a_class_before_its_ancestors_and_a_cycle_ends() {
+        assert_eq!(mro("K", &[("K", &["A", "B"]), ("B", &["A"])]), ["K", "B", "A"]);
+        assert_eq!(mro("A", &[("A", &["B"]), ("B", &["A"])]), ["A", "B"]);
+    }
 }

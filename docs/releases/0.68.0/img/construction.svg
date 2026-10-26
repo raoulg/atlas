@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 920 360" role="img" aria-label="Two ways a law holds. By construction: a circle drawn with a compass is round everywhere, since the tool cannot draw it otherwise. By sampling: darts thrown at the circle at random places, within a budget, each checked; a miss comes back with its seed.">
+  <g style="font-family:var(--sans)">
+    <!-- by construction: a compass draws the circle -->
+    <circle cx="230" cy="175" r="92" style="fill:none;stroke:var(--key);stroke-width:2.4"/>
+    <polygon points="274,45 282,47 232,171 228,169" style="fill:var(--ink-2)"/>
+    <polygon points="274,47 282,45 318,157 310,161" style="fill:var(--ink-2)"/>
+    <line x1="231" y1="169" x2="230" y2="175" style="stroke:var(--ink);stroke-width:1.6;stroke-linecap:round"/>
+    <polygon points="309,160 319,156 322,175" style="fill:var(--key)"/>
+    <rect x="274" y="15" width="10" height="26" rx="3" style="fill:var(--ink)"/>
+    <circle cx="278" cy="45" r="7" style="fill:var(--panel);stroke:var(--ink);stroke-width:2"/>
+    <text x="230" y="303" style="fill:var(--key);font-size:16px;font-weight:600;text-anchor:middle">By construction</text>
+    <text x="230" y="325" style="fill:var(--ink-2);font-size:14px;text-anchor:middle">round everywhere: the tool</text>
+    <text x="230" y="343" style="fill:var(--ink-2);font-size:14px;text-anchor:middle">cannot draw it otherwise</text>
+
+    <!-- by sampling: darts at the same circle -->
+    <circle cx="690" cy="175" r="92" style="fill:none;stroke:var(--ink-3);stroke-width:1.4;stroke-dasharray:5 5"/>
+    <circle cx="782.0" cy="175.0" r="5" style="fill:var(--edit)"/><circle cx="762.5" cy="118.4" r="5" style="fill:var(--edit)"/><circle cx="686.8" cy="83.1" r="5" style="fill:var(--edit)"/><circle cx="618.5" cy="117.1" r="5" style="fill:var(--edit)"/><circle cx="602.0" cy="201.9" r="5" style="fill:var(--edit)"/><circle cx="638.6" cy="251.3" r="5" style="fill:var(--edit)"/><circle cx="762.5" cy="231.6" r="5" style="fill:var(--edit)"/>
+    <g style="stroke:var(--del);stroke-width:2.4;stroke-linecap:round">
+      <line x1="779.3" y1="224.0" x2="791.3" y2="236.0"/><line x1="791.3" y1="224.0" x2="779.3" y2="236.0"/>
+    </g>
+    <text x="799.3" y="235.0" style="fill:var(--del);font-family:var(--mono);font-size:12px">seed 4127</text>
+    <text x="690" y="303" style="fill:var(--edit);font-size:16px;font-weight:600;text-anchor:middle">By sampling</text>
+    <text x="690" y="325" style="fill:var(--ink-2);font-size:14px;text-anchor:middle">darts at random, within a budget;</text>
+    <text x="690" y="343" style="fill:var(--ink-2);font-size:14px;text-anchor:middle">a miss comes back with its seed</text>
+  </g>
+</svg>

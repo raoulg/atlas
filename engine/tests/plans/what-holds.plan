@@ -1,0 +1,73 @@
+# What holds: a place read and changed stands twice, a choice is a coproduct of its arms, a call into a family is a
+# choice between its members.
+
+# `bump` reads the count at the path it is handed and writes the next one there: one place, read and changed, so it
+# stands on both sides. The path is a parameter of the route, which no code decides.
+route counter.bump
+step bump/read_count
+step bump/write_count
+
+line entry > bump call
+line Disk(bump.path) > bump/read_count own
+line bump/read_count > _·n@bump/read_count value          # the count, of no type of the code's, under its name
+line _·n@bump/read_count > bump/write_count value         # `write_count(path, n + 1)`
+line bump/write_count > Disk(bump.path) own
+
+side entry left
+home _·n@bump/read_count bump
+
+side Disk(bump.path) both
+
+# `pick` makes its Table in one of two arms: the value is made by the choice, and `show` takes it after.
+route counter.pick
+choice pick/?1
+step pick/?1/load_csv
+step pick/?1/load_csv/Table()
+step pick/?1/load_json
+step pick/?1/load_json/Table()
+step pick/show
+
+line entry > pick call
+line Disk(pick.path) > pick/?1/load_csv own
+line Disk(pick.path) > pick/?1/load_json own
+line pick/?1/load_csv/Table() > Table@pick/?1/load_csv/Table() value
+line Table@pick/?1/load_csv/Table() > pick/?1/load_csv value
+line pick/?1/load_csv > Table·t@pick/?1 value
+line pick/?1/load_json/Table() > Table@pick/?1/load_json/Table() value
+line Table@pick/?1/load_json/Table() > pick/?1/load_json value
+line pick/?1/load_json > Table·t@pick/?1 value
+line Table·t@pick/?1 > pick/show value
+line pick/show > Screen own
+
+home Table@pick/?1/load_csv/Table() pick/?1/load_csv
+home Table@pick/?1/load_json/Table() pick/?1/load_json
+home Table·t@pick/?1 pick
+
+side entry left
+side Disk(pick.path) left
+side Screen right
+
+# `draw_all` calls `draw` on each Shape it is handed: the loop is a step of its own, which takes the shapes and gives
+# each `s` (#103), and the call runs one of the overrides on it, a choice between them.
+route counter.draw_all
+step draw_all/for s in shapes
+step draw_all/Shape.draw
+step draw_all/Shape.draw/Circle.draw
+step draw_all/Shape.draw/Square.draw
+
+line entry > draw_all call
+line Shape·shapes > draw_all value
+line Shape·shapes > draw_all/for s in shapes value
+line draw_all/for s in shapes > Shape·s@draw_all/for s in shapes value
+line Shape·s@draw_all/for s in shapes > draw_all/Shape.draw/Circle.draw value
+line Shape·s@draw_all/for s in shapes > draw_all/Shape.draw/Square.draw value
+line draw_all/Shape.draw/Circle.draw > draw_all/Shape.draw back
+line draw_all/Shape.draw/Square.draw > draw_all/Shape.draw back
+line draw_all/Shape.draw > draw_all back
+line draw_all > Screen own
+
+home Shape·shapes draw_all
+home Shape·s@draw_all/for s in shapes draw_all
+
+side entry left
+side Screen right
