@@ -18,6 +18,8 @@ use serde::Serialize;
 /// The viewer, baked into the binary, with its model and its fonts: the layout of the graph it is handed.
 const VIEWER: &str = include_str!("../../viewer/index.html");
 const PLAN: &str = include_str!("../../viewer/plan.js");
+/// How far a drawing of `atlas serve` is: the viewer and the loading page measure it alike.
+pub(crate) const PROGRESS: &str = include_str!("../../viewer/progress.js");
 const D3: &str = include_str!("../../viewer/vendor/d3.min.js");
 const HIGHLIGHT: &str = include_str!("../../viewer/vendor/highlight.min.js");
 const ELK: &str = include_str!("../../viewer/vendor/elk.bundled.js");
@@ -190,6 +192,7 @@ impl Html {
         let worker = serde_json::to_string(ELK_WORKER).expect("worker source is serializable").replace("</", "<\\/");
         VIEWER
             .replacen("/*__PLAN__*/", PLAN, 1)
+            .replacen("/*__PROGRESS__*/", PROGRESS, 1)
             .replacen("/*__FONTS__*/", FONTS, 1)
             .replacen("/*__D3__*/", D3, 1)
             .replacen("/*__HIGHLIGHT__*/", HIGHLIGHT, 1)
@@ -260,7 +263,7 @@ mod tests {
     #[test]
     fn viewer_carries_its_scripts_for_offline_opening() {
         let page: String = Html::shell().into();
-        for marker in ["/*__D3__*/", "/*__HIGHLIGHT__*/", "/*__ELK__*/", "/*__ELK_WORKER__*/null"] {
+        for marker in ["/*__D3__*/", "/*__HIGHLIGHT__*/", "/*__ELK__*/", "/*__ELK_WORKER__*/null", "/*__PROGRESS__*/"] {
             assert!(!page.contains(marker), "missing embedded asset: {marker}");
         }
         assert!(page.contains("https://d3js.org v7.9.0"));
@@ -268,5 +271,31 @@ mod tests {
         assert!(page.contains("ELK_WORKER = \""));
         assert!(!page.contains("<script src=\"https://"));
         assert!(!page.contains("importScripts(\"https://"));
+    }
+
+    /// Each phase of a drawing has its own measure: it only rises, keeps even with the time while the
+    /// phase takes what it took the last time, never fills before the phase is done, is whole once the
+    /// phase is past, and still moves when the phase takes longer than the last time.
+    #[test]
+    fn progress_rises_and_waits_for_each_phase() {
+        let script = format!(
+            "{}\n{}",
+            super::PROGRESS,
+            r#"
+const at = (phase, now, elapsed) => progressOf({phases: ["code", "libraries"], phase: now, elapsed, expected: {code: 10, libraries: 30}}, phase);
+const seen = [];
+for (let t = 0; t <= 100; t += 0.5) seen.push(at("code", "code", t));
+const rises = seen.every((p, i) => i === 0 || p >= seen[i - 1]);
+const waits = at("code", "code", 1000) < 1 && at("libraries", "libraries", 1e6) < 1;
+const past = at("code", "libraries", 0) === 1 && at("libraries", "code", 50) === 0 && at("libraries", "ready", 0) === 1;
+const moves = at("libraries", "libraries", 60) > at("libraries", "libraries", 45);
+const even = Math.abs(at("code", "code", 5) - 2 * at("code", "code", 2.5)) < 1e-9;
+console.log(JSON.stringify({rises, waits, past, moves, even, start: at("code", "code", 0)}));
+"#
+        );
+        let out = std::process::Command::new("node").args(["-e", &script]).output().expect("node runs (it is on the PATH in CI)");
+        let said: serde_json::Value =
+            serde_json::from_slice(&out.stdout).unwrap_or_else(|_| panic!("{}", String::from_utf8_lossy(&out.stderr)));
+        assert_eq!(said, serde_json::json!({"rises": true, "waits": true, "past": true, "moves": true, "even": true, "start": 0}));
     }
 }

@@ -13,7 +13,7 @@ cargo install tauri-cli --version "^2" --locked
 
 Run it again after pulling to install the new build. The app is signed ad hoc on the machine that builds it; packages for other machines, signed and notarized, are #201.
 
-Studio opens the workspace it had open when it last closed. A folder named on its command line opens instead: `open -a "Atlas Studio" --args ~/code/project`. An app started from the Finder or the Dock takes the `PATH` of the user's login shell, so the sidecar, the lessons' Python and the terminal find what the shell profile adds.
+Studio opens the workspace it had open last. A folder named on its command line opens instead: `open -a "Atlas Studio" --args ~/code/project`. An app started from the Finder or the Dock takes the `PATH` of the user's login shell, so the sidecar, the lessons' Python and the terminal find what the shell profile adds.
 
 ## Run from the source
 
@@ -30,15 +30,35 @@ The bundled viewer contains D3, highlight.js, and ELK and can render without a n
 
 On Windows, run `./studio/prepare-sidecar.ps1` in PowerShell before the Tauri build. The app icon uses the repository's `docs/logo.svg`.
 
+## Workspaces
+
+Studio keeps the last twenty workspaces it opened. ⌘O (File › Open Workspace…) shows them, most recent first: type to filter, arrows and Enter to open one, × to take one off the list. **Open folder…** (⇧⌘O) opens a new one through the system's dialog. File › Open Recent lists the same workspaces, with Clear Recent. With no workspace open, the same page is where Studio starts. The list lives in Studio's configuration folder (`~/Library/Application Support/io.github.raoulg.atlas-studio/workspaces.json` on macOS).
+
+## The top bar
+
+In Studio the Atlas view draws no header of its own: its controls (the project, Flowchart / Type lattice / Signature flow, the entry point, what it counts, export, jump to a symbol) stand in Studio's top bar beside the workspace's name. The page opens with `?host=` and Studio's origin; it describes its controls to Studio and does what Studio's bar asks, as messages addressed to that origin only. In a browser the page keeps its header and its link to the history; in Studio the history is in the sidebar (⌘2, with ⌘1 for the Atlas view). **export** saves the page through the system's save dialog.
+
+While Atlas draws, a bar shows how far reading the project's code is; the picture opens when it is done, and a second bar in the picture follows the library calls. Each bar keeps even with the time its phase took at the last few starts of `atlas serve` for this repository (their median, kept in `.atlas/timings.json`), then slows down without arriving while the phase takes longer.
+
 ## Files
 
 The sidebar shows the workspace's files as Atlas reads them: what `atlas serve` answers at `/api/files`, the listing `Repo` reads, without hidden directories, what git ignores, dependencies and build output. A filled dot marks a file the graph defines something in (a module, class or function); an open dot marks a physical file only. The tree follows the working tree while the workspace is open.
 
-Selecting a file opens it in the preview at the right: source with line numbers, Markdown rendered (with **Source** beside it), HTML in a sandbox without scripts, images and PDF as they are. The preview's footer lists what the graph defines in the file; a name there, or a marked line number, points the Atlas view at its box, opening the way to it. The other way, the box selected in the Atlas view marks its file in the tree with ◇. Arrow keys move through the tree, Right and Left open and close a folder, Enter opens a file.
+A traced file opens where the picture has it: a module that is an entry point (a notebook, a script) on its route, as `atlas view notebook.ipynb` does, any other on its module's box. Any other file opens in the preview at the right, as a traced one does with alt-click, ⇧Enter or the ⧉ on its row. The box selected in the Atlas view marks its file in the tree with ◇. Arrow keys move through the tree, Right and Left open and close a folder, Enter opens a file.
+
+The preview shows:
+
+- source with line numbers, highlighted by highlight.js; a line where something the graph defines starts is marked, and points the Atlas view at its box;
+- Markdown rendered by marked, tables, lists and highlighted code included, through the same copy that keeps a lesson's HTML safe (no attribute but a code block's language survives, no script); **Source** shows the text, and a relative link opens the file it names;
+- HTML at Studio's own `preview:` address, in a sandbox: the page's images, styles and fonts load from the workspace, no script runs, and nothing loads from the network or from outside the workspace;
+- PDF drawn by pdf.js, the same on every platform, a page at a time as it comes into sight;
+- images as they are.
+
+The footer lists what the graph defines in the file, each a link to its box, or says that the file has no traced graph fact.
 
 ## Terminal
 
-**Terminal** in the status bar, or Ctrl+` anywhere but inside the Atlas view, opens a terminal under the picture. It runs the user's own login shell in the workspace, on a pseudo-terminal the Rust side owns; + opens another, a tab's × ends its shell, and the top edge drags to resize. Opening another workspace ends the shells of the one before, as quitting Studio ends them all.
+**Terminal** in the status bar, or View › Terminal (Ctrl+`, wherever the focus is), opens a terminal under the picture. It runs the user's own login shell in the workspace, on a pseudo-terminal the Rust side owns; + opens another, a tab's × ends its shell, and the top edge drags to resize. Opening another workspace ends the shells of the one before, as quitting Studio ends them all.
 
 ## Lessons
 

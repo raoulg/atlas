@@ -39,6 +39,12 @@ body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);font
 #resizer{position:absolute;right:0;top:0;bottom:0;width:7px;cursor:col-resize;z-index:3}
 #app.noaside{grid-template-columns:1fr 0}
 #app.noaside aside,#app.noaside #resizer{display:none}
+.hosted #app{grid-template-rows:1fr}
+.hosted #app > header{display:none}
+.hosted #fault,.hosted #laying,.hosted #readstate{top:8px}
+.hosted #readstate:not([hidden]) ~ #laying{top:56px}
+.hosted #app.noaside.peek aside{top:0}
+.hosted #app.noaside.peek #peekbar{top:10px}
 #app.lesson-embed{grid-template-rows:1fr;grid-template-columns:1fr 0}
 #app.lesson-embed > header{display:none}
 #app.lesson-embed main{grid-row:1;grid-column:1}
@@ -114,9 +120,7 @@ svg#canvas:active{cursor:grabbing}
 #readstate:not([hidden]) ~ #laying{top:100px}
 #readstate.error{border-color:var(--alert);color:var(--alert)}
 #readstate.working{padding-bottom:12px}
-#readstate.working::after{content:"";position:absolute;left:0;right:0;bottom:0;height:3px;background:linear-gradient(90deg,transparent 0%,var(--focus) 45%,transparent 90%);background-size:40% 100%;background-repeat:no-repeat;animation:reading-progress 1.6s ease-in-out infinite alternate}
-@keyframes reading-progress{from{background-position:0 0}to{background-position:100% 0}}
-@media (prefers-reduced-motion:reduce){#readstate.working::after{animation:none;background:var(--focus)}}
+#readstate.working::after{content:"";position:absolute;left:0;bottom:0;height:3px;width:var(--done,0%);background:var(--focus);transition:width .1s linear}
 #fault b{display:block;color:var(--ink);font-weight:600;margin-bottom:2px}
 #fault pre{font-family:var(--mono);font-size:11px;color:var(--ink);white-space:pre-wrap;word-break:break-word;margin:8px 0;max-height:180px;overflow:auto}
 #fault button{font:inherit;font-size:11px;color:var(--ink-2);background:var(--panel-2);border:1px solid var(--line);border-radius:3px;padding:2px 8px;cursor:pointer}
@@ -366,6 +370,9 @@ const lessonParams = new URLSearchParams(location.hash.slice(1));
 const lessonEmbed = lessonParams.get("embed") === "lesson";
 const lessonAt = lessonParams.get("at") || "";
 if (lessonEmbed) document.getElementById("app").classList.add("lesson-embed", "noaside");
+// in Atlas Studio (`?host=` names Studio's origin) the header's controls stand in Studio's own bar
+const HOST = (h => ["tauri://localhost", "http://tauri.localhost", "https://tauri.localhost"].includes(h) && window.parent !== window ? h : "")(new URLSearchParams(location.search).get("host"));
+document.documentElement.classList.toggle("hosted", !!HOST);
 const controller = new AbortController(), intervals = [];
 const listen = (target, event, handler, capture = false) => target.addEventListener(event, handler, {capture, signal: controller.signal});
 const every = (handler, delay) => intervals.push(setInterval(handler, delay));
@@ -2288,10 +2295,19 @@ if (D.served) {
   // note or a symbol to jump to, when the header says that the code changed instead
   const fresh = html("a", "histlink"), readState = document.getElementById("readstate"); fresh.id = "fresh"; fresh.hidden = true;
   fresh.onclick = redraw;
+/*__PROGRESS__*/
+  // the library round still under way once the project's own code is drawn: a bar of its own, which
+  // only rises
+  let working = D.preliminary ? "Showing project code · Following library calls…" : "";
+  const bar = progressBar("libraries", done => {
+    readState.style.setProperty("--done", `${done * 100}%`);
+    if (working) readState.textContent = `${working} ${Math.floor(done * 100)}%`;
+  });
+  controller.signal.addEventListener("abort", () => bar.stop());
   if (D.preliminary) {
     readState.hidden = false;
     readState.classList.add("working");
-    readState.textContent = "Step 2 of 3 · Showing project code · Following library calls…";
+    readState.textContent = working;
   }
   every(async () => {
     try {
@@ -2301,8 +2317,9 @@ if (D.served) {
       readState.hidden = !D.preliminary && !s.error;
       readState.classList.toggle("error", !!s.error);
       readState.classList.toggle("working", !!D.preliminary && !ready && !s.error && s.drawing);
-      if (s.error) readState.textContent = `Atlas could not complete the picture: ${s.error}`;
-      else if (D.preliminary) readState.textContent = ready ? "Step 3 of 3 · The complete picture is ready · Open it when you finish here." : "Step 2 of 3 · Showing project code · Following library calls…";
+      if (s.error) { working = ""; readState.textContent = `Atlas could not complete the picture: ${s.error}`; }
+      else if (D.preliminary && ready) { working = ""; readState.textContent = "The complete picture is ready · Open it when you finish here."; }
+      else if (D.preliminary) bar.seen(s);
       fresh.hidden = !ready && (!s.drawing || D.preliminary);
       fresh.textContent = ready ? (D.preliminary ? "complete picture ↻" : "the code changed ↻") : "the code changed · drawing…";
       fresh.title = ready ? "open the latest picture in this view" : "atlas serve is drawing the changed code; the page follows when it is done";
@@ -2316,6 +2333,51 @@ if (D.served) {
   ex.className = "histlink"; ex.title = "keep this picture as one HTML file, opened in this view";
   ex.onclick = () => { ex.href = "/export?v=" + encodeURIComponent(JSON.stringify(viewData())); };
   document.getElementById("search").before(fresh, hl, ex);
+  // hosted, the page says what its header holds and does what Studio's bar asks; the history is
+  // Studio's own. It speaks to Studio's origin only, so that no other page that frames it learns
+  // what it shows.
+  if (HOST) {
+    hl.remove();
+    const header = document.querySelector("#app > header"), search = document.getElementById("search");
+    const select = (key, sel) => {
+      const options = [...sel.querySelectorAll("option")].map(o => ({value: o.value, label: o.textContent, group: o.parentElement.tagName === "OPTGROUP" ? o.parentElement.label : ""}));
+      return {key, kind: "select", label: sel.getAttribute("aria-label"), value: sel.value, options, hidden: options.length < 2};
+    };
+    const pressed = (key, buttons, on) => ({key, kind: "tabs", items: [...buttons].map(b => ({value: b.dataset.view || b.dataset.side, label: b.textContent, selected: on(b)}))});
+    const describe = () => {
+      const diff = document.getElementById("diffbar"), stats = document.getElementById("stats");
+      return {atlas: "bar", controls: [
+        select("project", document.getElementById("project")),
+        pressed("view", header.querySelectorAll(".tabs button"), b => b.getAttribute("aria-selected") === "true"),
+        select("entry", entrySel),
+        {key: "readings", kind: "text", text: diff.hidden ? "" : [...diff.querySelectorAll(".badge,.hash,.arrow,.chip")].map(e => e.textContent).join(" "), hidden: diff.hidden},
+        {...pressed("side", diff.querySelectorAll(".seg button"), b => b.getAttribute("aria-pressed") === "true"), hidden: diff.hidden},
+        {key: "stats", kind: "text", text: stats.textContent, title: stats.title, hidden: stats.hidden},
+        {key: "fresh", kind: "button", label: fresh.textContent, title: fresh.title, hidden: fresh.hidden},
+        {key: "export", kind: "button", label: ex.textContent, title: ex.title},
+        {key: "search", kind: "search", placeholder: search.placeholder, options: [...document.querySelectorAll("#symbols option")].map(o => o.value)},
+      ]};
+    };
+    let said = "";
+    const tell = () => { const now = JSON.stringify(describe()); if (now !== said) { said = now; window.parent.postMessage(JSON.parse(now), HOST); } };
+    const watching = new MutationObserver(() => setTimeout(tell, 30));
+    watching.observe(header, {subtree: true, childList: true, attributes: true, characterData: true});
+    controller.signal.addEventListener("abort", () => watching.disconnect());
+    listen(window, "message", ev => {
+      if (ev.source !== window.parent || ev.origin !== HOST || ev.data?.atlas !== "do") return;
+      const {key, value} = ev.data;
+      const choose = sel => { sel.value = value; sel.dispatchEvent(new Event("change")); };
+      if (key === "describe") { said = ""; tell(); }
+      else if (key === "project") choose(document.getElementById("project"));
+      else if (key === "entry") choose(entrySel);
+      else if (key === "view") header.querySelector(`.tabs button[data-view="${CSS.escape(value)}"]`)?.click();
+      else if (key === "side") header.querySelector(`#diffbar .seg button[data-side="${CSS.escape(value)}"]`)?.click();
+      else if (key === "fresh") fresh.click();
+      else if (key === "export") window.parent.postMessage({atlas: "export", view: viewData()}, HOST);
+      else if (key === "search") { search.value = value; search.dispatchEvent(new Event("change")); }
+    });
+    tell();
+  }
   document.getElementById("hint").prepend(html("span", null, "alt-click: a note for the agent · "));
   const dl = document.querySelector("#keys dl");
   dl.append(html("dt", null, "alt-click a box or a line"), html("dd", null, "write a note on it for the agent (atlas serve); its answer shows once on the ring"));

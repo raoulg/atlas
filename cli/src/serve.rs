@@ -12,7 +12,7 @@ use std::hash::{Hash, Hasher};
 use std::net::{SocketAddr, TcpListener, TcpStream};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result};
 use atlas_engine::changes::{self, Named};
@@ -28,6 +28,11 @@ use crate::shared::{self, Note, State};
 
 const LOADING: &str = include_str!("../../viewer/loading.html");
 
+/// The loading page, with the measure of progress the page shares.
+fn loading() -> String {
+    LOADING.replacen("/*__PROGRESS__*/", page::PROGRESS, 1)
+}
+
 /// The working tree as far as Atlas reads it: each file by its size and the time it was written.
 type Stamps = BTreeMap<PathBuf, Stamp>;
 
@@ -42,12 +47,15 @@ struct Drawn {
 }
 
 /// What a graph defines in each file of the repository, by the file's path from the root: its
-/// modules, classes and functions, each with its id and the line it starts at.
+/// modules, classes and functions, each with its id, the line it starts at, and whether a route
+/// starts at it.
 type Facts = BTreeMap<String, Vec<Value>>;
 
+/// The phase the drawing is in, since when, and what went wrong.
 struct Progress {
     phase: &'static str,
     error: Option<String>,
+    since: Instant,
 }
 
 struct Server {
@@ -60,6 +68,8 @@ struct Server {
     progress: Mutex<Progress>,
     /// Held while the page is drawn: it is drawn once, however many ask for it at a time.
     drawing: Mutex<()>,
+    /// How long each phase took the last few times the server started, in seconds.
+    timings: Mutex<BTreeMap<String, Vec<f64>>>,
 }
 
 /// Serve the page of `repo` on this machine until the process stops, at `port`, else at the
@@ -79,8 +89,9 @@ pub fn serve(repo: &Path, port: Option<u16>, opts: &Options, shown: bool) -> Res
         hosts: vec![at.to_string(), format!("localhost:{}", at.port())],
         log: Arc::clone(&log),
         kept: Mutex::new(None),
-        progress: Mutex::new(Progress { phase: "code", error: None }),
+        progress: Mutex::new(Progress { phase: "code", error: None, since: Instant::now() }),
         drawing: Mutex::new(()),
+        timings: Mutex::new(shared::timings(repo)),
     });
     let url = format!("http://{at}/");
     // a note is for the work at hand: this page starts without the ones resolved before it
@@ -121,7 +132,7 @@ impl Server {
         }
         let json = |v: Result<Value>| v.map_or_else(Answer::failed, |v| Answer::json(v.to_string()));
         match (req.method.as_str(), req.path.as_str()) {
-            ("GET", "/") => Answer::page(self.kept().map_or_else(|| LOADING.to_string(), |_| Html::shell().into())),
+            ("GET", "/") => Answer::page(self.kept().map_or_else(loading, |_| Html::shell().into())),
             ("GET", "/api/drawn") => Answer::json(self.drawn().to_string()),
             ("GET", "/api/snapshot") => self.kept().map_or_else(Answer::none, |d| Answer::json(d.data.clone())),
             ("GET", "/api/files") => json(self.files()),
@@ -168,6 +179,7 @@ impl Server {
         }
         let id = name(&now);
         self.progress("code", None);
+        let mut took = BTreeMap::new();
         if self.opts.libraries > 0 {
             let mut local = self.opts.clone();
             local.libraries = 0;
@@ -175,13 +187,28 @@ impl Server {
                 Ok(d) => *self.kept.lock().unwrap_or_else(|e| e.into_inner()) = Some(Arc::new(d)),
                 Err(e) => self.log.say(Who::Atlas, &format!("could not draw local code: {e:#}")),
             }
-        }
-        if self.opts.libraries > 0 {
+            took.insert("code", self.since());
             self.progress("libraries", None);
         }
         let drawn = self.draw(&now, &id, &self.opts, false)?;
+        took.insert(if self.opts.libraries > 0 { "libraries" } else { "code" }, self.since());
         *self.kept.lock().unwrap_or_else(|e| e.into_inner()) = Some(Arc::new(drawn));
         self.progress("ready", None);
+        // what a start takes is what the bars are shown for: a drawing after a change reads most of
+        // it from the cache, and would make the next start look quick
+        if kept.is_some() {
+            return Ok(());
+        }
+        let mut timings = self.timings.lock().unwrap_or_else(|e| e.into_inner());
+        for (phase, secs) in took {
+            let times = timings.entry(phase.to_string()).or_default();
+            times.push(secs);
+            let gone = times.len().saturating_sub(STARTS);
+            times.drain(..gone);
+        }
+        if let Err(e) = shared::set_timings(&self.repo, &timings) {
+            self.log.say(Who::Atlas, &format!("could not keep how long the drawing took: {e:#}"));
+        }
         Ok(())
     }
 
@@ -220,15 +247,30 @@ impl Server {
     }
 
     fn progress(&self, phase: &'static str, error: Option<String>) {
-        *self.progress.lock().unwrap_or_else(|e| e.into_inner()) = Progress { phase, error };
+        *self.progress.lock().unwrap_or_else(|e| e.into_inner()) = Progress { phase, error, since: Instant::now() };
+    }
+
+    /// How long the phase under way has taken so far, in seconds.
+    fn since(&self) -> f64 {
+        self.progress.lock().unwrap_or_else(|e| e.into_inner()).since.elapsed().as_secs_f64()
     }
 
     /// Which page the server has drawn, and whether it is drawing one: the open page compares the
-    /// first with its own, and follows.
+    /// first with its own, and follows. Beside it, the phases a drawing goes through, the one it is in,
+    /// how long it has been in it and how long each took the last time: how far the drawing is.
     fn drawn(&self) -> Value {
         let progress = self.progress.lock().unwrap_or_else(|e| e.into_inner());
+        let phases: &[&str] = if self.opts.libraries > 0 { &["code", "libraries"] } else { &["code"] };
+        let expected: BTreeMap<String, f64> = self
+            .timings
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .iter()
+            .filter_map(|(phase, times)| Some((phase.clone(), median(times)?)))
+            .collect();
         json!({"drawn": self.kept().map(|d| d.id.clone()), "drawing": self.drawing.try_lock().is_err(),
-            "phase": progress.phase, "error": progress.error})
+            "phase": progress.phase, "error": progress.error, "phases": phases,
+            "elapsed": progress.since.elapsed().as_secs_f64(), "expected": expected})
     }
 
     /// The working tree, looked at every second: when a file Atlas reads has changed and has stayed
@@ -337,7 +379,7 @@ fn facts(read: &atlas_engine::repo::Repo, graph: &atlas_engine::model::Graph) ->
     let mut facts = Facts::new();
     for n in graph.nodes.iter().filter(|n| n.kind != atlas_engine::model::NodeKind::External) {
         let Ok(rel) = Path::new(&n.file).strip_prefix(read.root()) else { continue };
-        let fact = json!({"id": n.id, "name": n.name, "kind": n.kind, "line": n.span.map(|s| s.0)});
+        let fact = json!({"id": n.id, "name": n.name, "kind": n.kind, "line": n.span.map(|s| s.0), "entry": n.entry.is_some()});
         facts.entry(slashed(rel)).or_default().push(fact);
     }
     facts
@@ -346,6 +388,22 @@ fn facts(read: &atlas_engine::repo::Repo, graph: &atlas_engine::model::Graph) ->
 /// A path from a root, with `/` between its parts.
 fn slashed(p: &Path) -> String {
     p.components().map(|c| c.as_os_str().to_string_lossy()).collect::<Vec<_>>().join("/")
+}
+
+/// How many starts the expected time of a phase is taken from.
+const STARTS: usize = 5;
+
+/// The middle of `times`: what a phase is expected to take, which one start that was quick (all of it
+/// in the cache) or slow (the machine busy) does not move far.
+fn median(times: &[f64]) -> Option<f64> {
+    let mut sorted = times.to_vec();
+    sorted.sort_by(f64::total_cmp);
+    let n = sorted.len();
+    match n {
+        0 => None,
+        _ if n % 2 == 1 => Some(sorted[n / 2]),
+        _ => Some((sorted[n / 2 - 1] + sorted[n / 2]) / 2.0),
+    }
 }
 
 /// The name a page knows its drawing by: the stamps it was drawn from, hashed.
@@ -370,6 +428,13 @@ mod tests {
     use super::*;
 
     #[test]
+    fn one_quick_or_slow_start_moves_the_expected_time_little() {
+        assert_eq!(median(&[]), None);
+        assert_eq!(median(&[20.0, 0.3, 21.0]), Some(20.0));
+        assert_eq!(median(&[20.0, 22.0, 90.0, 21.0]), Some(21.5));
+    }
+
+    #[test]
     fn root_answers_with_progress_before_any_picture_exists() {
         let server = Server {
             repo: PathBuf::new(),
@@ -377,8 +442,9 @@ mod tests {
             hosts: vec!["localhost:8797".into()],
             log: Arc::new(Log::new()),
             kept: Mutex::new(None),
-            progress: Mutex::new(Progress { phase: "code", error: None }),
+            progress: Mutex::new(Progress { phase: "code", error: None, since: Instant::now() }),
             drawing: Mutex::new(()),
+            timings: Mutex::new(BTreeMap::new()),
         };
         let request = Request {
             method: "GET".into(),
@@ -391,7 +457,8 @@ mod tests {
         let answer = server.respond(&request);
         let page = String::from_utf8(answer.body).unwrap();
         assert_eq!(answer.status, "200 OK");
-        assert!(page.contains("The first picture is taking shape") && page.contains("Step 1 of 3"));
+        assert!(page.contains("The first picture is taking shape") && page.contains("function progressOf"));
+        assert!(!page.contains("/*__PROGRESS__*/"), "the loading page carries the measure of progress");
         assert!(!page.contains("http-equiv=\"refresh\""));
     }
 }

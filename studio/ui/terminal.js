@@ -80,7 +80,7 @@
       const shell = {term, fit: fitter, screen, id: null, ended: false, title: `shell ${++count}`};
       open.push(shell);
       select(shell);
-      // Ctrl+` belongs to Studio, not to the shell
+      // Ctrl+` belongs to Studio's menu, not to the shell
       term.attachCustomKeyEventHandler((event) => !(event.ctrlKey && event.key === '`'));
       const events = new bridge.Channel();
       events.onmessage = (event) => {

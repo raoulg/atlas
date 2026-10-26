@@ -203,6 +203,7 @@ fn the_files_are_listed_with_what_the_graph_defines_in_them() {
     let code = file("src/spots/__init__.py").expect("the code's file is listed");
     let named: Vec<&str> = code["facts"].as_array().unwrap().iter().filter_map(|f| f["name"].as_str()).collect();
     assert!(named.contains(&"count"), "the function is a fact of its file: {code}");
+    assert!(code["facts"].as_array().unwrap().iter().all(|f| f["entry"].is_boolean()), "each fact says whether a route starts at it");
     assert_eq!(file("README.md").expect("a file without code is listed")["facts"], json!([]));
     assert!(file("out/counts.csv").is_none(), "what git ignores is not listed");
     assert!(files.iter().all(|f| !f["path"].as_str().unwrap().starts_with(".git/")), "what git keeps is not listed");

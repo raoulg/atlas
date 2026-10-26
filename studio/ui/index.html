@@ -10,20 +10,24 @@
   <link rel="stylesheet" href="vendor/xterm.css">
   <script defer src="vendor/xterm.js"></script>
   <script defer src="vendor/addon-fit.js"></script>
+  <script defer src="vendor/marked.umd.js"></script>
+  <script defer src="vendor/highlight.min.js"></script>
   <script defer src="lesson.js"></script>
   <script defer src="lesson.html.js"></script>
   <script defer src="lesson.mount.js"></script>
   <script defer src="files.js"></script>
   <script defer src="terminal.js"></script>
+  <script defer src="workspaces.js"></script>
+  <script defer src="bar.js"></script>
   <script defer src="studio.js"></script>
 </head>
 <body>
   <div class="app">
     <header class="topbar">
       <div class="brand"><span class="mark">A</span> Atlas <span class="brand-light">/ studio</span></div>
-      <div class="project"><span id="project-name">No workspace</span><span id="project-path"></span></div>
+      <button id="workspace-button" class="workspace-button" type="button" title="Workspaces (⌘O)"><span id="project-name">No workspace</span><span class="chevron">▾</span></button>
+      <div id="atlas-bar" class="atlas-bar" aria-label="Atlas view" hidden></div>
       <button id="insert-atlas-view" class="open-button" type="button" hidden>Insert view in lesson</button>
-      <button id="open-workspace" class="open-button" type="button">Open workspace</button>
     </header>
     <div class="workbench">
       <nav class="sidebar" aria-label="Workspace sections">
@@ -39,13 +43,7 @@
       <main class="content">
         <div class="stage">
           <div class="center">
-            <div id="welcome" class="welcome">
-              <div class="welcome-mark">◇</div>
-              <p class="eyebrow">ATLAS STUDIO</p>
-              <h1>A place to read software together.</h1>
-              <p>Choose a repository to open its live Atlas view and history.</p>
-              <button id="welcome-open" class="primary-button" type="button">Open workspace <span>↗</span></button>
-            </div>
+            <section id="workspaces" class="workspaces" aria-label="Workspaces" hidden></section>
             <div id="loading" class="message" hidden>Opening workspace…</div>
             <div id="error" class="message error" role="alert" hidden></div>
             <section id="views" class="views" aria-label="Atlas workspace" hidden>

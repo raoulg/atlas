@@ -5,6 +5,11 @@ let workspace = null;
 let activeView = 'atlas';
 let currentLesson = null;
 
+// the served page, told that Studio hosts it (its controls then stand in Studio's bar); a new `t`
+// loads it anew where only the fragment changes
+const atlasPage = (hash = '') => `${workspace.url}/?host=${encodeURIComponent(location.origin)}&t=${Date.now()}${hash ? '#' + hash : ''}`;
+const viewHash = (view, at) => [view ? `v=${encodeURIComponent(JSON.stringify(view))}` : '', at ? `at=${encodeURIComponent(at)}` : ''].filter(Boolean).join('&');
+
 const lessonPanel = window.AtlasLesson.mount(byId('lesson-panel'), {
   workspaceUrl: () => workspace?.url || '',
   openLesson: (path) => invoke('open_lesson', { path }),
@@ -21,7 +26,7 @@ const lessonPanel = window.AtlasLesson.mount(byId('lesson-panel'), {
   runScript: (path) => invoke('run_lesson', {path}),
   openFullView: (view, at) => {
     if (!workspace) return;
-    byId('atlas-frame').src = `${workspace.url}/#v=${encodeURIComponent(JSON.stringify(view))}${at ? `&at=${encodeURIComponent(at)}` : ''}`;
+    byId('atlas-frame').src = atlasPage(viewHash(view, at));
     selectView('atlas');
   },
   openLink: (from, target) => {
@@ -37,7 +42,7 @@ async function pointAt(id) {
   if (!workspace) return;
   let view = null;
   try { view = JSON.parse(await invoke('current_atlas_view')).view || null; } catch {}
-  byId('atlas-frame').src = `${workspace.url}/?at=${Date.now()}#${view ? `v=${encodeURIComponent(JSON.stringify(view))}&` : ''}at=${encodeURIComponent(id)}`;
+  byId('atlas-frame').src = atlasPage(viewHash(view, id));
   selectView('atlas');
 }
 
@@ -48,9 +53,34 @@ const files = window.AtlasFiles.mount(byId('file-tree'), byId('preview'), {
   workspaceUrl: () => workspace?.url || '',
   openFullView: (view, at) => {
     if (!workspace) return;
-    byId('atlas-frame').src = `${workspace.url}/#v=${encodeURIComponent(JSON.stringify(view))}${at ? `&at=${encodeURIComponent(at)}` : ''}`;
+    byId('atlas-frame').src = atlasPage(viewHash(view, at));
     selectView('atlas');
   },
+});
+
+// the Atlas view's controls, in Studio's top bar: the page describes them, the bar answers
+const atlasFrame = byId('atlas-frame');
+const tellPage = (key, value) => atlasFrame.contentWindow?.postMessage({atlas: 'do', key, value}, new URL(workspace.url).origin);
+const bar = window.AtlasBar.mount(byId('atlas-bar'), tellPage);
+window.addEventListener('message', async (event) => {
+  if (!workspace || event.source !== atlasFrame.contentWindow || event.origin !== new URL(workspace.url).origin) return;
+  if (event.data?.atlas === 'bar') bar.draw(event.data.controls);
+  else if (event.data?.atlas === 'export') {
+    try {
+      const saved = await invoke('export_view', {view: JSON.stringify(event.data.view)});
+      if (saved) byId('status-text').textContent = `Exported ${saved}`;
+    } catch (error) { byId('status-text').textContent = String(error); }
+  }
+});
+atlasFrame.addEventListener('load', () => bar.clear());
+
+const workspaces = window.AtlasWorkspaces.mount(byId('workspaces'), {
+  list: () => invoke('recent_workspaces'),
+  current: () => workspace?.path,
+  open: (path) => openAt(path),
+  openFolder: () => openFolder(),
+  forget: (path) => invoke('forget_workspace', {path}),
+  closed: () => selectView(activeView),
 });
 
 const terminal = window.AtlasTerminal.mount(byId('terminal-panel'), {
@@ -108,13 +138,17 @@ setInterval(followView, 1000);
 window.addEventListener('focus', loadFiles);
 
 function showState(name, error = '') {
-  for (const section of ['welcome', 'loading', 'error', 'views']) byId(section).hidden = section !== name;
+  for (const section of ['loading', 'error', 'views']) byId(section).hidden = section !== name;
+  if (name === 'welcome') workspaces.show(false);
+  else if (name !== 'views' || workspace) byId('workspaces').hidden = true;
   byId('error').textContent = error;
   byId('status-text').textContent = name === 'views' ? 'Atlas · workspace open' : name === 'loading' ? 'Opening workspace' : name === 'error' ? 'Atlas stopped' : 'Ready';
 }
 
 function selectView(view) {
   activeView = view;
+  // going to a view leaves the workspaces page
+  if (workspace) byId('workspaces').hidden = true;
   for (const tab of document.querySelectorAll('.side-tab')) {
     const selected = tab.dataset.view === view;
     tab.classList.toggle('active', selected);
@@ -123,6 +157,7 @@ function selectView(view) {
   }
   for (const item of document.querySelectorAll('.side-lesson')) item.classList.toggle('active', view === 'lesson' && item.dataset.path === currentLesson);
   byId('atlas-frame').hidden = view !== 'atlas';
+  byId('atlas-bar').hidden = view !== 'atlas' || !workspace;
   byId('history-frame').hidden = view !== 'history';
   byId('lesson-panel').hidden = view !== 'lesson';
 }
@@ -166,9 +201,10 @@ function displayWorkspace(next) {
   byId('terminal-toggle').disabled = !next;
   if (!next) { showState('welcome'); return; }
   byId('project-name').textContent = next.name;
-  byId('project-path').textContent = next.path;
+  byId('workspace-button').title = `${next.path}\nWorkspaces (⌘O)`;
   byId('side-path').textContent = next.path;
-  byId('atlas-frame').src = `${next.url}/`;
+  bar.clear();
+  byId('atlas-frame').src = atlasPage();
   byId('history-frame').src = `${next.url}/history`;
   currentLesson = null;
   byId('insert-atlas-view').hidden = true;
@@ -178,35 +214,46 @@ function displayWorkspace(next) {
   loadFiles();
 }
 
-async function openWorkspace() {
-  byId('open-workspace').disabled = true;
+// a workspace opened: the one asked for by its path, or a folder chosen in the system's dialog
+async function opening(open) {
   const hadWorkspace = Boolean(workspace);
   if (!hadWorkspace) showState('loading');
+  else byId('status-text').textContent = 'Opening workspace…';
   try {
-    const chosen = await invoke('choose_workspace');
-    if (chosen) displayWorkspace(chosen);
+    const opened = await open();
+    if (opened) displayWorkspace(opened);
     else if (!hadWorkspace) showState('welcome');
+    else byId('status-text').textContent = 'Atlas · workspace open';
   } catch (error) {
     if (hadWorkspace) byId('status-text').textContent = String(error);
     else showState('error', String(error));
-  } finally {
-    byId('open-workspace').disabled = false;
   }
 }
+const openAt = (path) => opening(() => invoke('open_workspace_at', {path}));
+const openFolder = () => opening(() => invoke('choose_workspace'));
+// the workspaces page covers the view, and the view's controls step aside
+const showWorkspaces = () => { byId('atlas-bar').hidden = true; workspaces.show(Boolean(workspace)); };
 
-byId('open-workspace').addEventListener('click', openWorkspace);
 byId('insert-atlas-view').addEventListener('click', async () => {
   if (!currentLesson) return;
   await new Promise((resolve) => setTimeout(resolve, 350));
   try { await lessonPanel.insertCurrentView(); selectView('lesson'); }
   catch (error) { byId('status-text').textContent = String(error); }
 });
-byId('welcome-open').addEventListener('click', openWorkspace);
+byId('workspace-button').addEventListener('click', showWorkspaces);
 byId('terminal-toggle').addEventListener('click', () => showTerminal());
-window.addEventListener('keydown', (event) => {
-  if (event.ctrlKey && event.key === '`') { event.preventDefault(); showTerminal(); }
-});
 for (const tab of document.querySelectorAll('.side-tab')) tab.addEventListener('click', () => selectView(tab.dataset.view));
+// the menu bar's items, said by name
+listen('studio-menu', ({payload}) => {
+  const action = payload?.action;
+  if (action === 'workspace.page') showWorkspaces();
+  else if (action === 'workspace.folder') openFolder();
+  else if (action === 'open') openAt(payload.path);
+  else if (action === 'recents') { if (workspaces.isShown()) workspaces.refresh(); }
+  else if (action === 'view.atlas' && workspace) selectView('atlas');
+  else if (action === 'view.history' && workspace) selectView('history');
+  else if (action === 'view.terminal') showTerminal();
+});
 listen('studio-backend-stopped', () => { displayWorkspace(null); showState('error', 'Atlas stopped. Open the workspace again to restart it.'); });
 showState('loading');
 invoke('first_workspace').then(displayWorkspace).catch((error) => showState('error', String(error)));

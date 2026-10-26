@@ -1,6 +1,7 @@
 mod files;
 mod lesson;
 mod terminal;
+mod workspaces;
 
 use std::{path::PathBuf, sync::Mutex, time::Duration};
 use tauri::{ipc::Channel, Emitter, Manager};
@@ -39,26 +40,33 @@ async fn choose_workspace(app: tauri::AppHandle, state: tauri::State<'_, StudioS
 }
 
 /// The workspace Studio opens as it starts: the folder named on its command line
-/// (`open -a "Atlas Studio" --args ~/code/x`), else the one open when it last closed.
+/// (`open -a "Atlas Studio" --args ~/code/x`), else the one opened last.
 #[tauri::command]
 async fn first_workspace(app: tauri::AppHandle, state: tauri::State<'_, StudioState>) -> Result<Option<Workspace>, String> {
     if let Some(current) = state.0.lock().map_err(|e| e.to_string())?.as_ref() {
         return Ok(Some(current.workspace.clone()));
     }
     let named = std::env::args_os().skip(1).map(PathBuf::from).find(|path| path.is_dir());
-    let Some(path) = named.or_else(|| last_workspace(&app).filter(|path| path.is_dir())) else {
+    let last = workspaces::recent(&app).into_iter().map(|recent| PathBuf::from(recent.path)).find(|path| path.is_dir());
+    let Some(path) = named.or(last) else {
         return Ok(None);
     };
     open_workspace(&app, &state, path).await.map(Some)
 }
 
-/// The file that keeps the workspace open last, in the app's own configuration folder.
-fn last_workspace_file(app: &tauri::AppHandle) -> Option<PathBuf> {
-    app.path().app_config_dir().ok().map(|dir| dir.join("last-workspace"))
+#[tauri::command]
+fn recent_workspaces(app: tauri::AppHandle) -> Vec<workspaces::Recent> {
+    workspaces::recent(&app)
 }
 
-fn last_workspace(app: &tauri::AppHandle) -> Option<PathBuf> {
-    std::fs::read_to_string(last_workspace_file(app)?).ok().map(|path| PathBuf::from(path.trim()))
+#[tauri::command]
+async fn open_workspace_at(app: tauri::AppHandle, state: tauri::State<'_, StudioState>, path: String) -> Result<Workspace, String> {
+    open_workspace(&app, &state, PathBuf::from(path)).await
+}
+
+#[tauri::command]
+fn forget_workspace(app: tauri::AppHandle, path: String) -> Result<(), String> {
+    workspaces::forget(&app, &path)
 }
 
 async fn open_workspace(app: &tauri::AppHandle, state: &tauri::State<'_, StudioState>, path: PathBuf) -> Result<Workspace, String> {
@@ -68,10 +76,7 @@ async fn open_workspace(app: &tauri::AppHandle, state: &tauri::State<'_, StudioS
     if let Some(previous) = state.0.lock().map_err(|e| e.to_string())?.replace(started) {
         let _ = previous.child.kill();
     }
-    if let Some(file) = last_workspace_file(app) {
-        let _ = file.parent().map(std::fs::create_dir_all);
-        let _ = std::fs::write(file, path.to_string_lossy().as_bytes());
-    }
+    let _ = workspaces::remember(app, &path);
     Ok(workspace)
 }
 
@@ -226,6 +231,26 @@ async fn workspace_files(state: tauri::State<'_, StudioState>) -> Result<String,
     tauri::async_runtime::spawn_blocking(move || files::listing(&url)).await.map_err(|error| error.to_string())?
 }
 
+/// The Atlas view as one HTML file, opened in `view`, saved where the user chooses; the name it was
+/// saved as, or nothing when the user cancelled.
+#[tauri::command]
+async fn export_view(app: tauri::AppHandle, state: tauri::State<'_, StudioState>, view: String) -> Result<Option<String>, String> {
+    let url =
+        state.0.lock().map_err(|e| e.to_string())?.as_ref().map(|session| session.workspace.url.clone()).ok_or("Open a workspace first")?;
+    let path = format!("/export?v={}", files::query(&view));
+    let (html, name) = tauri::async_runtime::spawn_blocking(move || files::get(&url, &path)).await.map_err(|error| error.to_string())??;
+    let (sender, receiver) = tokio::sync::oneshot::channel();
+    app.dialog().file().set_file_name(name.unwrap_or_else(|| "atlas.html".into())).add_filter("HTML", &["html"]).save_file(move |file| {
+        let _ = sender.send(file);
+    });
+    let Some(file) = receiver.await.map_err(|error| error.to_string())? else {
+        return Ok(None);
+    };
+    let file = file.into_path().map_err(|error| error.to_string())?;
+    std::fs::write(&file, html).map_err(|error| format!("Cannot write {}: {error}", file.display()))?;
+    Ok(Some(file.display().to_string()))
+}
+
 #[tauri::command]
 fn read_workspace_file(state: tauri::State<'_, StudioState>, path: String) -> Result<tauri::ipc::Response, String> {
     files::read(&workspace_path(&state)?, &path).map(tauri::ipc::Response::new)
@@ -297,9 +322,32 @@ fn main() {
         .plugin(tauri_plugin_shell::init())
         .manage(StudioState::default())
         .manage(Terminals::default())
+        .register_uri_scheme_protocol("preview", |context, request| {
+            let state = context.app_handle().state::<StudioState>();
+            let workspace = state.0.lock().ok().and_then(|session| session.as_ref().map(|session| PathBuf::from(&session.workspace.path)));
+            files::preview(workspace.as_deref(), request.uri().path())
+        })
+        .menu(|app| workspaces::menu(app, &workspaces::recent(app)))
+        .on_menu_event(|app, event| {
+            // what the window does for a menu item, said to it by name; Clear Recent is the app's
+            let id = event.id().as_ref();
+            if id == "workspace.clear" {
+                let _ = workspaces::clear(app);
+                let _ = app.emit("studio-menu", serde_json::json!({"action": "recents"}));
+            } else if let Some(index) = id.strip_prefix(workspaces::RECENT).and_then(|index| index.parse::<usize>().ok()) {
+                if let Some(recent) = workspaces::recent(app).get(index) {
+                    let _ = app.emit("studio-menu", serde_json::json!({"action": "open", "path": recent.path}));
+                }
+            } else {
+                let _ = app.emit("studio-menu", serde_json::json!({"action": id}));
+            }
+        })
         .invoke_handler(tauri::generate_handler![
             choose_workspace,
             first_workspace,
+            recent_workspaces,
+            open_workspace_at,
+            forget_workspace,
             list_lessons,
             open_lesson,
             read_lesson_reference,
@@ -309,6 +357,7 @@ fn main() {
             save_lesson_view,
             run_lesson,
             workspace_files,
+            export_view,
             read_workspace_file,
             terminal_open,
             terminal_write,
