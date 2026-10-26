@@ -425,6 +425,7 @@ fn a_crate_is_read_as_far_as_the_program_calls_into_it() {
     let [none, one, two]: [Graph; 3] = crates("libraries", &files, &[rounds(0), rounds(1), rounds(2)]).try_into().ok().unwrap();
     let read = one.node("filekit.read.read_config").expect("the function the program calls is read");
     assert!(read.library, "a library's function is marked as one");
+    assert!(one.parts.iter().all(|p| !p.id.starts_with("filekit")), "a library is no part of the program");
     assert!(
         places(&one, "filekit.read.read_config").contains(&place("disk_read", "read_to_string", "settings.toml", &["app.main"])),
         "{:?}",
