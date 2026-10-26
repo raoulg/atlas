@@ -163,7 +163,7 @@ fn a_generic_s_arguments_are_its_values() {
 /// `clash` the binary defines, as `other()` calls `other`; the crate's own name is a module, which
 /// no call runs.
 #[test]
-#[ignore = "a call of a function named like its crate resolves to the crate's module"]
+#[ignore = "#220: a call of a function named like its crate resolves to the crate's module"]
 fn a_function_named_like_its_crate_is_called() {
     let g = read("clash");
     let main = g.node("clash.main").unwrap();
