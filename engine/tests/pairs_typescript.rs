@@ -119,8 +119,8 @@ fn doors_any_says_nothing() {
         assert_eq!(node(c, f).params.iter().map(|p| p.ty.as_str()).collect::<Vec<_>>(), ["unknown"], "{f}");
         assert!(node(c, f).entry.is_some() && !asked(c, "doors", f), "{f} is a door that says what it takes");
     }
-    let record = asked_anywhere(s, "doors").into_iter().find(|f| f.starts_with("expenses.ledger.Ledger.record ")).unwrap_or_default();
-    assert!(record.contains("`input`"), "{record}");
+    let record = findings(s).into_iter().find(|f| f.principle == "doors" && f.node == "expenses.ledger.Ledger.record");
+    assert_eq!(record.as_ref().map(|f| f.about("takes")), Some(vec!["input"]), "{record:?}");
 }
 
 /// A door says what comes out. TypeScript writes it as a return type on what the package exports
@@ -482,8 +482,12 @@ fn layers_run_one_way() {
     // implementation's class and the interface it implements, and the pick that builds both
     let cycle = ["expenses.rates.file", "expenses.rates.http", "expenses.rates.source"];
     assert!(cycle.contains(&layers[0].node.as_str()), "{}", layers[0].node);
-    for end in ["FileRates", "HttpRates", "RateSource", "rateSource"] {
-        assert!(layers[0].evidence.iter().any(|e| e.contains(end)), "{end}: {:?}", layers[0].evidence);
+    let mut blocks = layers[0].about("block");
+    blocks.sort();
+    assert_eq!(blocks, cycle, "{:?}", layers[0].about);
+    let links: Vec<&str> = layers[0].about("from").into_iter().chain(layers[0].about("to")).collect();
+    for end in ["rates.file.FileRates", "rates.http.HttpRates", "rates.source.RateSource", "rates.source.rateSource"] {
+        assert!(links.contains(&format!("expenses.{end}").as_str()), "{end}: {links:?}");
     }
     assert!(
         edge(s, EdgeKind::Instantiates, "rates.source.rateSource", "rates.file.FileRates")
@@ -609,9 +613,11 @@ fn lens_what_is_put_comes_back_inside_and_a_key_is_no_put() {
     };
     assert!(edge("store.Harvest", "store.Outage", EdgeKind::Has));
     assert!(edge("store.ReadingStore.summary", "store.ReadingStore.keepSummary", EdgeKind::Calls));
-    let lens = asked_anywhere(&s, "lens");
+    let lens: Vec<Finding> = findings(&s).into_iter().filter(|f| f.principle == "lens").collect();
     assert_eq!(lens.len(), 1, "{lens:?}");
-    assert!(lens[0].contains("Outage") && lens[0].contains("Day") && !lens[0].contains("Reading "), "{}", lens[0]);
+    let mut lost = lens[0].about("lost");
+    lost.sort();
+    assert_eq!(lost, ["harvest.store.Day", "harvest.store.Outage"], "the Outage and the Day, not the Reading");
 }
 
 // ---------- prophecy ----------
@@ -971,7 +977,7 @@ fn overrides_an_override_takes_what_its_base_takes_and_a_type_is_its_members() {
     // the base is asked, and its one override that breaks the promise is named
     let asked: Vec<Finding> = findings(&s).into_iter().filter(|f| f.principle == "overrides").collect();
     assert_eq!(asked.iter().map(|f| f.node.as_str()).collect::<Vec<_>>(), ["events.handlers.Handler.handle"], "{asked:#?}");
-    assert!(asked[0].evidence.len() == 1 && asked[0].evidence[0].contains("ClickHandler.handle"), "{:?}", asked[0].evidence);
+    assert_eq!(asked[0].about("breaks"), ["events.handlers.ClickHandler.handle"], "{:?}", asked[0].about);
     assert!(edge(&s, EdgeKind::Takes, "handlers.ClickHandler.handle", "handlers.Click"));
     assert!(edge(&s, EdgeKind::Inherits, "handlers.Click", "handlers.Event"));
 }
@@ -1117,7 +1123,11 @@ fn layers_a_test_file_is_no_layer() {
         assert!(edge(&g, EdgeKind::Calls, "money.round_test.posted", "ledger.post.post"), "{side}");
         assert!(edge(&g, EdgeKind::Calls, "money.__tests__.posting.postedTwice", "ledger.post.post"), "{side}");
         assert!(edge(&g, EdgeKind::Calls, "ledger.post.post", "money.round.round"), "{side}");
-        assert!(!asked(&g, "layers", "money") && asked_anywhere(&g, "layers").iter().all(|f| !f.contains("money")), "{side}");
+        // no cycle has money as a block, or a link from or to it
+        let money = format!("{}.money", g.root);
+        let in_money = |id: &str| id.strip_prefix(money.as_str()).is_some_and(|rest| rest.is_empty() || rest.starts_with(['.', '$']));
+        let layers: Vec<Finding> = findings(&g).into_iter().filter(|f| f.principle == "layers").collect();
+        assert!(!asked(&g, "layers", "money") && layers.iter().all(|f| f.about.iter().all(|a| !in_money(&a.id))), "{side}: {layers:?}");
     }
 }
 

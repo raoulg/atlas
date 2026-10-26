@@ -349,9 +349,10 @@ fn lens_what_a_lens_puts_it_gets_back() {
         .any(|t| t.artifact == "readings" && t.dir_name() == "read"));
 }
 
-/// What `lens` says of the store: what it puts and does not get back; empty when it asks nothing.
-fn lens_says(g: &Graph) -> String {
-    check(g).into_iter().find(|f| f.principle == "lens" && f.node == "harvest.store.ReadingStore").map(|f| f.what).unwrap_or_default()
+/// What `lens` asks of the store: the types it puts and does not get back; none when it asks nothing.
+fn lens_lost(g: &Graph) -> Option<Vec<String>> {
+    let f = check(g).into_iter().find(|f| f.principle == "lens" && f.node == "harvest.store.ReadingStore")?;
+    Some(f.about("lost").into_iter().map(String::from).collect())
 }
 
 /// What a lens puts, it gets back, also inside what a get gives. Both stores keep the outages of a
@@ -363,10 +364,10 @@ fn lens_what_a_lens_puts_it_gets_back_inside_what_it_gives() {
     assert!(edge(c, "harvest.store.ReadingStore.save_outage", "harvest.model.Outage", EdgeKind::Takes));
     assert!(edge(c, "harvest.store.ReadingStore.kept", "harvest.model.Harvest", EdgeKind::Returns));
     assert!(edge(c, "harvest.model.Harvest", "harvest.model.Outage", EdgeKind::Has));
-    assert_eq!(lens_says(c), "");
+    assert_eq!(lens_lost(c), None);
     assert!(edge(s, "harvest.store.ReadingStore.save_outage", "harvest.model.Outage", EdgeKind::Takes));
     assert_eq!(s.node("harvest.store.ReadingStore.outages").unwrap().returns.as_ref().unwrap().written, "list[dict]");
-    assert!(lens_says(s).contains("Outage"), "{}", lens_says(s));
+    assert!(lens_lost(s).unwrap_or_default().iter().any(|t| t == "harvest.model.Outage"), "{:?}", lens_lost(s));
 }
 
 /// What a lens puts is what reaches the place, not the key it looks a value up by. Both stores
@@ -383,12 +384,12 @@ fn lens_what_a_lens_puts_is_what_reaches_the_place() {
     assert!(touches(c, "harvest.store.ReadingStore.keep_summary", "db_sqlite")
         .iter()
         .any(|t| t.artifact == "summaries" && t.dir_name() == "write"));
-    assert_eq!(lens_says(c), "");
+    assert_eq!(lens_lost(c), None);
     assert!(edge(s, "harvest.store.ReadingStore.summary", "harvest.model.Day", EdgeKind::Takes));
     assert!(touches(s, "harvest.store.ReadingStore.summary", "db_sqlite")
         .iter()
         .any(|t| t.artifact == "summaries" && t.dir_name() == "write"));
-    assert!(lens_says(s).contains("Day"), "{}", lens_says(s));
+    assert!(lens_lost(s).unwrap_or_default().iter().any(|t| t == "harvest.model.Day"), "{:?}", lens_lost(s));
 }
 
 /// Every place carries a what: a request names the service it goes to. In Python the clean
@@ -1104,9 +1105,10 @@ fn club() -> &'static Pair {
     PAIR.get_or_init(|| common::pair("lens/python/club"))
 }
 
-/// What `lens` says of class `id` of the club: empty when it asks nothing.
-fn lens_of(g: &Graph, id: &str) -> String {
-    check(g).into_iter().find(|f| f.principle == "lens" && f.node == format!("club.{id}")).map(|f| f.what).unwrap_or_default()
+/// What `lens` asks of class `club.{id}`: the types it puts and does not get back; none when it asks nothing.
+fn lens_of(g: &Graph, id: &str) -> Option<Vec<String>> {
+    let f = check(g).into_iter().find(|f| f.principle == "lens" && f.node == format!("club.{id}"))?;
+    Some(f.about("lost").into_iter().map(String::from).collect())
 }
 
 /// Whether class `club.{cls}` takes a `club.model.{ty}` where it writes the place `at` (a table, or the value that holds a
@@ -1143,8 +1145,8 @@ fn lens_the_place_is_the_table() {
     assert_eq!(at(s, "Register.latest"), [("reports".to_string(), "read")]);
     assert!(edge(s, "club.model.Report", "club.model.Member", EdgeKind::Has));
     for (cls, ty, table) in [("desk.Desk", "Visit", "visits"), ("desk.Register", "Member", "members")] {
-        assert!(found(s, "lens").contains(&format!("club.{cls}")) && loses(s, cls, ty, table), "{cls}");
-        assert!(!loses(c, cls, ty, table), "{cls}");
+        assert_eq!(lens_of(s, cls), Some(vec![format!("club.model.{ty}")]), "{cls}");
+        assert!(loses(s, cls, ty, table) && !loses(c, cls, ty, table), "{cls}");
     }
 }
 
@@ -1158,8 +1160,9 @@ fn lens_the_place_is_the_file_the_code_names() {
     let (c, s) = (&club().clean, &club().shortcut);
     let record = c.node("club.files.Tape.record").unwrap();
     assert!(record.touches.iter().any(|t| t.artifact == "*.json" && t.kind_name() == "disk_write"), "{:?}", record.touches);
-    assert_eq!(lens_of(c, "files.Tape"), "");
-    assert!(found(s, "lens").contains(&"club.files.Tape".to_string()) && loses(s, "files.Tape", "Visit", "Tape.path"));
+    assert_eq!(lens_of(c, "files.Tape"), None);
+    assert_eq!(lens_of(s, "files.Tape"), Some(vec!["club.model.Visit".to_string()]));
+    assert!(loses(s, "files.Tape", "Visit", "Tape.path"));
     assert!(!loses(c, "files.Tape", "Visit", "Tape.path"));
 }
 
@@ -1173,8 +1176,9 @@ fn lens_a_get_gives_a_value_back() {
     let add = c.node("club.files.Log.add").unwrap();
     let kinds: Vec<&str> = add.touches.iter().map(|t| t.kind_name()).collect();
     assert!(kinds.contains(&"disk_read") && kinds.contains(&"disk_write"), "{:?}", add.touches);
-    assert_eq!(lens_of(c, "files.Log"), "");
-    assert!(found(s, "lens").contains(&"club.files.Log".to_string()) && loses(s, "files.Log", "Visit", "Log.path"));
+    assert_eq!(lens_of(c, "files.Log"), None);
+    assert_eq!(lens_of(s, "files.Log"), Some(vec!["club.model.Visit".to_string()]));
+    assert!(loses(s, "files.Log", "Visit", "Log.path"));
     assert!(!loses(c, "files.Log", "Visit", "Log.path"));
 }
 
@@ -1187,8 +1191,9 @@ fn lens_a_key_is_no_value_put() {
     let (c, s) = (&club().clean, &club().shortcut);
     assert!(edge(c, "club.desk.Visits.forget", "club.model.Member", EdgeKind::Takes));
     assert!(touches(c, "club.desk.Visits.forget", "db_sqlite").iter().any(|t| t.artifact == "visits" && t.dir_name() == "write"));
-    assert_eq!(lens_of(c, "desk.Visits"), "");
-    assert!(found(s, "lens").contains(&"club.desk.Visits".to_string()) && loses(s, "desk.Visits", "Member", "visits"));
+    assert_eq!(lens_of(c, "desk.Visits"), None);
+    assert_eq!(lens_of(s, "desk.Visits"), Some(vec!["club.model.Member".to_string()]));
+    assert!(loses(s, "desk.Visits", "Member", "visits"));
 }
 
 /// What a get gives back holds what was put: the class's own type, which a constructor gives, and
@@ -1202,12 +1207,12 @@ fn lens_a_get_gives_its_own_class_and_a_subclass_back() {
     assert!(c.node("club.files.Roster.load").unwrap().ctor);
     assert!(edge(c, "club.files.Roster", "club.model.Member", EdgeKind::Has));
     assert!(edge(c, "club.model.Notice", "club.model.Post", EdgeKind::Inherits));
-    assert_eq!(lens_of(c, "files.Roster"), "");
-    assert_eq!(lens_of(c, "files.Board"), "");
+    assert_eq!(lens_of(c, "files.Roster"), None);
+    assert_eq!(lens_of(c, "files.Board"), None);
     for (cls, ty) in [("files.Roster", "Member"), ("files.Board", "Notice")] {
         let file = format!("{}.path", cls.trim_start_matches("files."));
-        assert!(found(s, "lens").contains(&format!("club.{cls}")) && loses(s, cls, ty, &file), "{cls}");
-        assert!(!loses(c, cls, ty, &file), "{cls}");
+        assert_eq!(lens_of(s, cls), Some(vec![format!("club.model.{ty}")]), "{cls}");
+        assert!(loses(s, cls, ty, &file) && !loses(c, cls, ty, &file), "{cls}");
     }
 }
 
@@ -1576,8 +1581,11 @@ fn layers_a_test_inside_a_package_is_no_layer() {
     assert!(found(&shop_python("clean"), "layers").is_empty());
     let s = shop_python("shortcut");
     let kitchen = check(&s).into_iter().find(|f| f.principle == "layers" && f.node == "kitchen").expect("kitchen and shop are a cycle");
-    assert!(kitchen.evidence.iter().any(|e| e.contains("dish")), "{:?}", kitchen.evidence);
-    assert!(kitchen.evidence.iter().all(|e| !e.contains("boiled") && !e.contains("cooked")), "{:?}", kitchen.evidence);
+    let links: Vec<&str> = kitchen.about("from").into_iter().chain(kitchen.about("to")).collect();
+    assert!(links.contains(&"shop.menu.dish"), "{links:?}");
+    let test = |id: &str| s.node(id).is_some_and(|n| n.test || s.node(&n.module).is_some_and(|m| m.test));
+    assert!(test("shop.orders.test_lines.boiled") && test("shop.conftest.cooked"));
+    assert!(links.iter().all(|id| !test(id)), "{links:?}");
 }
 
 // ---------- prophecy: what leans, and what a name names ----------
