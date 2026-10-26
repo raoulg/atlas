@@ -134,7 +134,9 @@ Two long-lived branches, one release train. Everything else is a short-lived top
 3. **Promote**: when Raoul says so, `next` is merged into `main` (a merge commit), `main` is tagged
    `vX.Y.0` and pushed; the tag builds the stable release and, with the secret `TAP_TOKEN`, updates
    the tap. `main` then holds nothing `next` lacks. An agent prepares the promotion (conflicts
-   resolved, docs pictures drawn, checks green) and stops before the push.
+   resolved, docs pictures drawn, checks green, the release's notes `docs/releases/<version>.md`
+   gathered from `docs/changes/` and made a page by `uv run tools/release_page.py`, which must name no
+   point without a picture) and stops before the push.
    The release machinery (`release.yml`, `install.sh`, `install.ps1`, the tap job, `tools/tap_formula.py`)
    runs only on a `v*` tag, so a change to it on `next` is not exercised until the first tag after a
    promotion, and a fault in it breaks the formula for every stable user. A promotion that carries

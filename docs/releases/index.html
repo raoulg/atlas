@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Atlas releases</title>
+<link rel="icon" href="../logo.svg">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#F4F1EC;--panel:#FFFFFF;--ink:#111111;--ink-2:#5A544D;--ink-3:#857D73;--line:#E2DCD3;--accent:#C43A14;
+  --sans:"Outfit","Helvetica Neue",Helvetica,system-ui,sans-serif;--mono:"JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,monospace}
+@media(prefers-color-scheme:dark){:root{--bg:#141210;--panel:#1B1815;--ink:#F4F1EC;--ink-2:#B8B0A5;--ink-3:#8A8178;--line:#2B2621}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);font-size:17px;line-height:1.55}
+a{color:inherit}
+main{max-width:1040px;margin:0 auto;padding:48px 16px 96px}
+header{display:flex;align-items:center;gap:16px;margin-bottom:48px}
+header img{width:44px;height:44px}
+header .name{font-size:22px;font-weight:600;letter-spacing:-.01em}
+header nav{margin-left:auto;display:flex;gap:20px;font-family:var(--mono);font-size:13px}
+header nav a{text-decoration:none;color:var(--ink-2)}
+header nav a:hover{color:var(--ink)}
+.eyebrow{font-family:var(--mono);font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--accent);margin:0}
+h1{font-size:44px;font-weight:500;letter-spacing:-.02em;line-height:1.1;margin:10px 0 18px}
+.lede{font-size:19px;color:var(--ink-2);max-width:66ch;margin:0 0 56px}
+section{border-top:1px solid var(--line);padding:40px 0 8px}
+section h2{font-size:28px;font-weight:500;letter-spacing:-.01em;margin:0 0 14px;line-height:1.2}
+section p,section li{max-width:70ch;color:var(--ink-2)}
+section p{margin:0 0 14px}
+code{font-family:var(--mono);font-size:.86em;background:var(--panel);border:1px solid var(--line);padding:0 4px}
+.issues{font-family:var(--mono);font-size:12.5px;color:var(--ink-3);margin-top:6px}
+.issues a{color:var(--ink-3);text-decoration:none}
+.issues a:hover{color:var(--accent)}
+.pictures{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,420px),1fr));gap:16px;margin:22px 0 10px}
+.pictures a{display:block;background:var(--panel);border:1px solid var(--line);padding:6px}
+.pictures img{display:block;width:100%;height:auto}
+.list a{display:flex;gap:18px;align-items:baseline;padding:14px 0;border-top:1px solid var(--line);text-decoration:none}
+.list .v{font-family:var(--mono);font-size:15px;min-width:90px}
+.list .t{color:var(--ink-2)}
+footer{margin-top:64px;font-family:var(--mono);font-size:12px;color:var(--ink-3)}
+</style>
+</head>
+<body>
+<main>
+<header><img src="../logo.svg" alt=""><span class="name">Atlas</span><nav><a href="../">Atlas</a><a href="https://github.com/raoulg/atlas/releases">Downloads</a></nav></header>
+<p class="eyebrow">Releases</p>
+<h1>What changed, release by release</h1>
+<div class="list"><a href="0.68.0/"><span class="v">0.68.0</span><span class="t">Atlas Studio, a desktop app, Opening a repository: an index on disk, a picture sooner, no network, Zoom keeps its laws, and the tests check them, Values: what a</span></a></div>
+</main>
+</body>
+</html>

@@ -1,9 +1,11 @@
 # Changes, one file per issue
 
 Every issue that lands on `next` leaves a note here, `<issue>.md`, so that the report of a stable release is put
-together from what is already written rather than written afresh. A release report gathers the notes of the issues
-between the last tag and the promotion, beside the pictures `tools/release_report.py` draws of what changed in what
-Atlas reads, draws and checks; once released, the notes move into a folder named after the version.
+together from what is already written rather than written afresh. A stable release's notes are
+`docs/releases/<version>.md`: what the release is, and its main points, each gathering the issues it rests on and the
+pictures of their notes and of what `tools/release_report.py` draws of the changes in what Atlas reads, draws and
+checks. `tools/release_page.py` makes them a page of the documentation site, `releases/<version>/`, which the GitHub
+release links to and Atlas Studio shows when it offers the update.
 
 A note is short and written for someone who uses Atlas, not for its author:
 
