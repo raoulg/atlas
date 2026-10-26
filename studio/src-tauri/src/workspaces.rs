@@ -79,6 +79,11 @@ fn about() -> AboutMetadata<'static> {
 pub const RECENT: &str = "workspace.recent.";
 
 /// The menu bar: the app's own menu on macOS, File with the workspaces, Edit, View with the
+/// The menu item that shows what changed in the build that runs, by its version.
+fn whats_new<R: Runtime>(app: &AppHandle<R>) -> String {
+    format!("What's New in Atlas Studio {}", app.package_info().version)
+}
+
 /// terminal (a menu's shortcut works wherever the focus is, also inside the Atlas view), Window.
 pub fn menu<R: Runtime>(app: &AppHandle<R>, recent: &[Recent]) -> tauri::Result<Menu<R>> {
     let mut opened = SubmenuBuilder::new(app, "Open Recent");
@@ -119,6 +124,7 @@ pub fn menu<R: Runtime>(app: &AppHandle<R>, recent: &[Recent]) -> tauri::Result<
         let own = SubmenuBuilder::new(app, name)
             .about(Some(about()))
             .item(&MenuItemBuilder::with_id("update.check", "Check for Updates…").build(app)?)
+            .item(&MenuItemBuilder::with_id("update.notes", whats_new(app)).build(app)?)
             .separator()
             .item(&MenuItemBuilder::with_id("settings", "Settings…").accelerator("CmdOrCtrl+,").build(app)?)
             .separator()
@@ -138,7 +144,10 @@ pub fn menu<R: Runtime>(app: &AppHandle<R>, recent: &[Recent]) -> tauri::Result<
     bar.append(&window)?;
     #[cfg(not(target_os = "macos"))]
     bar.append(
-        &SubmenuBuilder::new(app, "Help").item(&MenuItemBuilder::with_id("update.check", "Check for Updates…").build(app)?).build()?,
+        &SubmenuBuilder::new(app, "Help")
+            .item(&MenuItemBuilder::with_id("update.check", "Check for Updates…").build(app)?)
+            .item(&MenuItemBuilder::with_id("update.notes", whats_new(app)).build(app)?)
+            .build()?,
     )?;
     Ok(bar)
 }

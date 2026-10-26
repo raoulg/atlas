@@ -121,7 +121,10 @@
 
     function drawVersion(build) {
       version.replaceChildren(node('h2', '', 'Version'));
-      version.append(node('p', '', build), button('secondary-button', 'Check for updates', () => bridge.checkUpdates()));
+      const buttons = node('div', 'settings-buttons');
+      buttons.append(button('secondary-button', 'Check for updates', () => bridge.checkUpdates()),
+        button('secondary-button', 'What’s new', () => { hide(); bridge.whatsNew(); }));
+      version.append(node('p', '', build), buttons);
     }
 
     async function refresh() {

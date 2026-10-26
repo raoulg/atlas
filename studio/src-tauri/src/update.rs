@@ -38,7 +38,8 @@ pub struct Latest {
     pub nightly: String,
 }
 
-/// A newer build than this one, as the window shows it.
+/// A newer build than this one, or this one itself (`current`), with what changed in it, as the window
+/// shows it.
 #[derive(Clone, Debug, PartialEq, Eq, serde::Serialize)]
 pub struct Newer {
     /// `0.69.0`, or the nightly's commit, short.
@@ -50,6 +51,8 @@ pub struct Newer {
     pub page: bool,
     /// Whether Studio can install it in place here.
     pub installs: bool,
+    /// Whether it is the build that runs, whose changes are asked for.
+    pub current: bool,
 }
 
 /// A version as numbers: `v0.66.3` and `0.66.3` are `(0, 66, 3)`.
@@ -68,13 +71,13 @@ pub fn newer(this: &Build, latest: &Latest) -> Option<Newer> {
         }
         let short = &sha[..sha.len().min(7)];
         let notes = format!("https://github.com/raoulg/atlas/compare/{}...{short}", this.commit);
-        return Some(Newer { version: short.to_string(), nightly: true, notes, page: false, installs });
+        return Some(Newer { version: short.to_string(), nightly: true, notes, page: false, installs, current: false });
     }
     let (theirs, ours) = (numbers(&latest.release)?, numbers(&this.version)?);
     (theirs > ours).then(|| {
         let version = latest.release.trim_start_matches('v').to_string();
         let notes = format!("https://raoulg.github.io/atlas/releases/{version}/");
-        Newer { version, nightly: false, notes, page: true, installs }
+        Newer { version, nightly: false, notes, page: true, installs, current: false }
     })
 }
 
@@ -86,6 +89,27 @@ pub fn shown(mut newer: Newer) -> Newer {
         newer.page = false;
     }
     newer
+}
+
+/// What changed in this build: its release's page of notes, in the window; else, in the browser, its
+/// release on GitHub, or for a build that is no release (a nightly, or one built here before its release)
+/// the commits it is made of.
+pub fn changes(this: &Build) -> Newer {
+    let version = this.version.clone();
+    let at =
+        |notes: String, page: bool| Newer { version: version.clone(), nightly: this.nightly, notes, page, installs: false, current: true };
+    if !this.nightly {
+        let page = format!("https://raoulg.github.io/atlas/releases/{version}/");
+        if answers(&page) {
+            return at(page, true);
+        }
+        let release = format!("https://github.com/raoulg/atlas/releases/tag/v{version}");
+        if answers(&release) {
+            return at(release, false);
+        }
+    }
+    let commit = if this.commit.is_empty() { "next" } else { this.commit.as_str() };
+    at(format!("https://github.com/raoulg/atlas/commits/{commit}"), false)
 }
 
 /// Whether a page is there.

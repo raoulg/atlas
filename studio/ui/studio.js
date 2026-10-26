@@ -293,6 +293,12 @@ const updates = window.AtlasUpdates.mount(byId('updates'), byId('update-button')
   closed: () => { if (workspace) selectView(activeView); },
 });
 listen('studio-update', ({payload}) => updates.found(payload));
+// what changed in the build that runs: its release's notes in the window, else on GitHub
+async function whatsNew() {
+  byId('status-text').textContent = 'Looking up what changed…';
+  try { updates.show(await invoke('whats_new')); byId('status-text').textContent = 'Ready'; }
+  catch (error) { byId('status-text').textContent = String(error); }
+}
 async function checkNow() {
   byId('status-text').textContent = 'Looking for a newer Studio…';
   try {
@@ -313,6 +319,7 @@ const settingsPage = window.AtlasSettings.mount(byId('settings'), {
   register: (id) => invoke('register_agent', {id}),
   build: () => buildSaid,
   checkUpdates: () => checkNow(),
+  whatsNew: () => whatsNew(),
   say: (text) => { byId('status-text').textContent = text; },
   closed: () => { if (workspace) selectView(activeView); else showState('welcome'); },
 });
@@ -329,6 +336,7 @@ listen('studio-menu', ({payload}) => {
   else if (action === 'view.terminal') showTerminal();
   else if (action === 'view.scheme') toggleScheme();
   else if (action === 'update.check') checkNow();
+  else if (action === 'update.notes') { if (settingsPage.isShown()) settingsPage.hide(); whatsNew(); }
   else if (action === 'settings') { byId('atlas-bar').hidden = true; settingsPage.show(); }
 });
 listen('appearance', ({payload}) => showAppearance(payload));
