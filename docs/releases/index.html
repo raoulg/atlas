@@ -39,6 +39,58 @@ code{font-family:var(--mono);font-size:.86em;background:var(--panel);border:1px 
 .list .v{font-family:var(--mono);font-size:15px;min-width:90px}
 .list .t{color:var(--ink-2)}
 footer{margin-top:64px;font-family:var(--mono);font-size:12px;color:var(--ink-3)}
+:root{--add:#2E8B57;--del:#C0361C;--edit:#B26A00;--key:#1D5A73}
+@media(prefers-color-scheme:dark){:root{--add:#6CC08C;--del:#F2643C;--edit:#E0A24A;--key:#86B9C9}}
+.legend{display:flex;flex-wrap:wrap;gap:8px 18px;font-size:14px;color:var(--ink-2);margin:-30px 0 48px}
+.legend span{display:inline-flex;align-items:center;gap:7px}
+.swatch{width:18px;height:12px;border:3px solid;border-radius:2px}
+.card{background:var(--panel);border:1px solid var(--line);padding:16px 18px;margin:20px 0}
+.card h3{font-size:16px;font-weight:500;margin:0 0 12px}
+.card h3 a{text-decoration:none;color:var(--ink-3);font-family:var(--mono);font-size:13px;margin-right:6px}
+.pair{display:grid;gap:12px}
+.pair figure{margin:0}
+.pair .shot{overflow-x:auto;border:1px solid var(--line);background:var(--bg);padding:6px}
+.pair .shot pre{border:0;background:none;margin:0;padding:4px;font-size:12px;max-width:none;max-height:340px}
+@media(min-width:900px){.pair:has(pre){grid-template-columns:1fr 1fr}}
+.pair img{display:block;max-width:100%;height:auto}
+figcaption{font-size:13.5px;color:var(--ink-2);margin-top:6px}
+.tag{font-family:var(--mono);font-size:11.5px;padding:1px 6px;border:1.5px solid;margin-right:6px}
+.tag.before{color:var(--del)}.tag.after{color:var(--add)}
+.where{font-family:var(--mono);font-size:12px;color:var(--ink-3);margin:0 0 8px}
+details{margin-top:12px}
+summary{cursor:pointer;font-size:13.5px;color:var(--ink-2)}
+pre{font-family:var(--mono);font-size:13px;background:var(--panel);border:1px solid var(--line);padding:12px 14px;overflow:auto;max-width:70ch}
+pre code{background:none;border:0;padding:0}
+.hero{margin:6px 0 24px;border:1px solid var(--line);background:var(--panel);padding:8px}
+.hero img{display:block;width:100%;height:auto}
+.example{margin:18px 0 6px}
+.example pre{margin:0 0 14px}
+@media(min-width:900px){.pair{grid-template-columns:1fr 1fr;align-items:start}}
+section ul{padding-left:20px;margin:0 0 16px}
+section li{margin:4px 0}
+.diagram{margin:22px 0;background:var(--panel);border:1px solid var(--line);padding:14px}
+.diagram svg{display:block;width:100%;height:auto;max-height:340px}
+.d-frame{fill:none;stroke:var(--ink-3);stroke-width:1.5}
+.d-box{fill:var(--bg);stroke:var(--line);stroke-width:1.5}
+.d-key{stroke:var(--key);stroke-width:2}
+.d-engine{fill:var(--panel);stroke:var(--ink-3)}
+.d-ground{fill:var(--line);stroke:none}
+.d-title{font:600 15px var(--sans);fill:var(--ink)}
+.d-name{font:500 14px var(--mono);fill:var(--ink)}
+.d-note{font:13px var(--sans);fill:var(--ink-2)}
+.d-label{font:13px var(--sans);fill:var(--ink-2)}
+.d-arrow{fill:none;stroke:var(--ink-3);stroke-width:1.6;marker-end:url(#d-head)}
+.d-before{stroke:var(--del)}.d-after{stroke:var(--add)}
+.d-law{font:28px var(--sans);fill:var(--key)}
+.d-broken{fill:var(--del)}
+.d-axis{stroke:var(--ink-3);stroke-width:1.4;fill:none}.d-grid{stroke:var(--line);stroke-dasharray:4 4}
+.d-curve{fill:none;stroke:var(--key);stroke-width:3}.d-dot{fill:var(--key)}
+.bars{margin:22px 0;background:var(--panel);border:1px solid var(--line);padding:16px 18px;max-width:760px}
+.bar{display:grid;grid-template-columns:minmax(120px,30%) 1fr;gap:12px;align-items:center;margin:8px 0}
+.bar .l{font-size:14px;color:var(--ink-2)}
+.bar .v{height:22px;background:var(--key);min-width:2px;position:relative}
+.bar .v span{position:absolute;left:calc(100% + 8px);top:1px;font-family:var(--mono);font-size:13px;color:var(--ink);white-space:nowrap}
+.bars .cap{font-size:13.5px;color:var(--ink-2);margin-top:10px}
 </style>
 </head>
 <body>
@@ -46,7 +98,7 @@ footer{margin-top:64px;font-family:var(--mono);font-size:12px;color:var(--ink-3)
 <header><img src="../logo.svg" alt=""><span class="name">Atlas</span><nav><a href="../">Atlas</a><a href="https://github.com/raoulg/atlas/releases">Downloads</a></nav></header>
 <p class="eyebrow">Releases</p>
 <h1>What changed, release by release</h1>
-<div class="list"><a href="0.68.0/"><span class="v">0.68.0</span><span class="t">Atlas Studio, a desktop app, Opening a repository: an index on disk, a picture sooner, no network, Zoom keeps its laws, and the tests check them, Values: what a</span></a></div>
+<div class="list"><a href="0.68.0/"><span class="v">0.68.0</span><span class="t">Atlas Studio: Atlas as an app, A hundred times faster, the second time, Which way data goes, The figures a program makes, How a program can fail, Zoom in, and n</span></a></div>
 </main>
 </body>
 </html>
