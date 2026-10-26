@@ -662,6 +662,8 @@ fn orders(ix: &Ix, id: &str, on: &str, above: &[&str], mut done: Option<&mut Mem
                     // a write in another arm of a choice the read is in never runs before it, and one in a loop
                     // the read is in runs again after it: the body changes what it found
                     o.updates |= lines.iter().any(|&w| apart(w, line) || looped(w, line));
+                    // a call in a loop that writes there runs again after what it found: its next round writes over it
+                    o.updates |= b.writes && looped(line, line);
                 }
             }
             if b.writes {
