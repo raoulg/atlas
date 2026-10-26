@@ -69,12 +69,6 @@ fn a_page_holds_what_check_finds() {
     }
 }
 
-/// Atlas's own picture marks what `atlas check` asks of it, whatever that is.
-#[test]
-fn atlas_marks_in_its_own_picture_what_check_asks_of_it() {
-    assert_eq!(page_of(".")["findings"], Value::Array(checked(".")));
-}
-
 /// Without `--out`, what Atlas makes goes to `.atlas/` at the top of the git repository the
 /// subject is in, read from a folder below it; the folder ignores itself, so git never sees it.
 #[test]

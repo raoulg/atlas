@@ -237,7 +237,7 @@ Two long-lived branches, one release train. Everything else is a short-lived top
 - `atlas check` is a signal to look critically at the code and at what the check claims, never an
   oracle and never a target. Zero findings on Atlas is no goal: never change Atlas's code, or bend a
   rule, to keep `atlas check .` quiet. Where a finding is wrong, repair the rule and let Atlas carry
-  what the rule then finds. `engine/tests/principles.rs` keeps Atlas's findings as a reviewed list,
+  what the rule then finds. `engine/tests/review.rs` keeps Atlas's findings as a reviewed list,
   `REVIEWED`, each with why it stands; it fails when the findings change, so that each change is
   read, not so that the list shrinks. A finding a change brings is answered there: the code changes
   for a reason of its own, the rule is repaired, or the list says why the finding stands.

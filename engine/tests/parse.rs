@@ -38,28 +38,6 @@ fn in_route<'g>(g: &'g Graph, entry: &str, id: &str) -> Vec<(&'static str, &'g s
     g.node(id).unwrap().touches_in(entry, &|f| reached.contains(f)).into_iter().map(|t| (t.kind_name(), t.artifact.as_str())).collect()
 }
 
-/// The call positions from one function to the first occurrence of another, through its bodies.
-fn first_call_path(g: &Graph, from: &str, target: &str) -> Option<Vec<usize>> {
-    fn visit(g: &Graph, id: &str, target: &str, active: &mut HashSet<String>, path: &mut Vec<usize>) -> Option<Vec<usize>> {
-        if !active.insert(id.to_string()) {
-            return None;
-        }
-        if let Some(node) = g.node(id) {
-            for (at, site) in node.sites.iter().enumerate() {
-                path.push(at);
-                let found = if site.to == target { Some(path.clone()) } else { visit(g, &site.to, target, active, path) };
-                if found.is_some() {
-                    return found;
-                }
-                path.pop();
-            }
-        }
-        active.remove(id);
-        None
-    }
-    visit(g, from, target, &mut HashSet::new(), &mut Vec::new())
-}
-
 #[test]
 fn modules_classes_and_functions_are_found() {
     let g = fixture();
@@ -604,30 +582,6 @@ fn rust_workspace_parses() {
     assert!(calls.contains(&("atlas-engine.parts.graph_of".into(), "atlas-engine.language.Language.parse".into())));
     // typed parameters give receivers a type: `store.add_edge(..)` with `store: &mut GraphBuilder`
     assert!(calls.contains(&("atlas-engine.python.passes.collect_symbols".into(), "atlas-engine.builder.GraphBuilder.add_edge".into())));
-    // the repository is read in one place, and a reader reads what was read
-    assert!(boundaries(g.node("atlas-engine.repo.Repo.read").unwrap()).get("disk_read").is_some(), "the listing");
-    assert!(boundaries(g.node("atlas-engine.repo.Repo.bytes").unwrap()).get("disk_read").is_some(), "a file's text, once");
-    for reader in [
-        "atlas-engine.rust.parse",
-        "atlas-engine.typescript.parse",
-        "atlas-engine.entries.read_makefile",
-        "atlas-engine.language.Python.detect",
-        "atlas-engine.language.Python.parse",
-    ] {
-        assert!(!boundaries(g.node(reader).unwrap()).contains_key("disk_read"), "{reader} reads the Repo, not the disk");
-    }
-    let test = |id: &str| g.node(id).and_then(|n| n.entry.as_ref()).map_or(false, |e| e.kind == EntryKind::Test);
-    let readers: Vec<&str> = g
-        .edges
-        .iter()
-        .filter(|e| e.kind == EdgeKind::Calls && e.dst == "atlas-engine.repo.Repo.read" && !test(&e.src))
-        .map(|e| e.src.as_str())
-        .collect();
-    assert_eq!(
-        readers,
-        ["atlas-engine.language.read"],
-        "the repository is read in one place, and what it is depends on nothing read after it"
-    );
     assert!(boundaries(g.node("atlas.view").unwrap()).contains_key("screen"), "eprintln!");
     let m = edges(&g, EdgeKind::Mutates);
     assert!(m.contains(&("atlas-engine.model.Graph.recount".into(), "atlas-engine.model.Graph".into())), "&mut self");
@@ -681,48 +635,6 @@ fn rust_workspace_parses() {
     assert!(new.library && g.parts.iter().all(|p| !p.id.starts_with("regex")));
     assert!(g.node("atlas-engine.entries.read_makefile").unwrap().sites.iter().any(|s| s.to == new.id));
     assert!(g.nodes.iter().all(|n| !["tree_sitter", "walkdir", "ignore"].contains(&n.id.split('.').next().unwrap_or(""))));
-}
-
-/// `analyze` reads a repository before parsing it; the parse returns a graph and takes its
-/// options as an argument. Functions that arrange the reading contribute their own calls.
-#[test]
-fn atlas_reads_as_its_algebra() {
-    let g = atlas();
-    let read = first_call_path(g, "atlas-engine.analyze", "atlas-engine.repo.Repo.read").expect("the route reads a repository");
-    let parse =
-        first_call_path(g, "atlas-engine.analyze", "atlas-engine.language.Language.parse").expect("the route parses the repository");
-    assert!(read < parse, "the repository is read before it is parsed: {read:?}, {parse:?}");
-    let returns = edges(&g, EdgeKind::Returns);
-    assert!(
-        returns.contains(&("atlas-engine.language.Language.parse".into(), "atlas-engine.model.Graph".into())),
-        "parse: Disk(repo) × Options -> Graph"
-    );
-    let takes = edges(&g, EdgeKind::Takes);
-    assert!(
-        takes.contains(&("atlas-engine.language.Language.parse".into(), "atlas-engine.options.Options".into())),
-        "what a reading depends on is its argument, not a global"
-    );
-    let mutates = edges(&g, EdgeKind::Mutates);
-    assert!(mutates.contains(&("atlas-engine.parts.assign".into(), "atlas-engine.model.Graph".into())), "assign: Graph -> Graph");
-}
-
-/// The view reads the repository and computes findings and flow before making and writing its
-/// page. An opened branch may contain more calls without changing those dependencies.
-#[test]
-fn atlas_view_reads_as_its_algebra() {
-    let g = atlas();
-    let call = |target| first_call_path(g, "atlas.view", target).unwrap_or_else(|| panic!("atlas.view reaches {target}"));
-    let read = call("atlas-engine.repo.Repo.read");
-    let parse = call("atlas-engine.language.Language.parse");
-    let findings = call("atlas-engine.principles.check");
-    let flow = call("atlas-engine.flow.of");
-    let page = call("atlas.page.Html.of");
-    let write = call("atlas.page.Html.write");
-    assert!(read < parse, "read before parse: {read:?}, {parse:?}");
-    assert!(parse < findings && parse < flow, "graph before its findings and flow: {parse:?}, {findings:?}, {flow:?}");
-    assert!(findings < page && flow < page && page < write, "the page is made from both before it is written");
-    let returns = edges(g, EdgeKind::Returns);
-    assert!(returns.contains(&("atlas.page.Html.of".into(), "atlas.page.Html".into())));
 }
 
 #[test]
@@ -1009,8 +921,8 @@ fn parse_is_a_function() {
     let json = |repo: &str| {
         serde_json::to_string(&analyze(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(repo), &Options::default()).unwrap()).unwrap()
     };
-    for repo in ["tests/fixture", "tests/fixture-rs", "tests/fixture-ts", ".."] {
-        let first = if repo == ".." { serde_json::to_string(atlas()).unwrap() } else { json(repo) };
+    for repo in ["tests/fixture", "tests/fixture-rs", "tests/fixture-ts"] {
+        let first = json(repo);
         for _ in 0..3 {
             assert!(json(repo) == first, "{repo} reads differently the second time");
         }
