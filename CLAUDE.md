@@ -137,12 +137,13 @@ Two long-lived branches, one release train. Everything else is a short-lived top
    resolved, docs pictures drawn, checks green, the release's notes `docs/releases/<version>.md`
    gathered from `docs/changes/` and made a page by `uv run tools/release_page.py`, which must name no
    point without a picture) and stops before the push.
-   The release machinery (`release.yml`, `install.sh`, `install.ps1`, the tap job, `tools/tap_formula.py`)
+   The release machinery (`release.yml`, `install.sh`, `install.ps1`, the tap job, `tools/tap_formula.py`, `tools/tap_cask.py`)
    runs only on a `v*` tag, so a change to it on `next` is not exercised until the first tag after a
    promotion, and a fault in it breaks the formula for every stable user. A promotion that carries
    such a change is reviewed by Raoul before the tag, and after the tag the agent checks that the
-   release has its five binaries, that the tap's `atlas-code` names the new version and its checksums,
-   and that `brew install raoulg/tap/atlas-code` and `install.sh` install it.
+   release has its five binaries, that the tap's `atlas-code` and `atlas-studio` name the new version and
+   their checksums, and that `brew install raoulg/tap/atlas-code`, `brew install --cask raoulg/tap/atlas-studio`
+   and `install.sh` install it.
 4. **Stable fix**: a bug in released behaviour is fixed on a branch from `main`, merged into `main`
    when Raoul says so, patch number raised, tagged `vX.Y.Z`; then `main` is merged into `next` at once.
    A fix to code that is not released yet is ordinary work on `next`.

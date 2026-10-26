@@ -89,21 +89,25 @@ jobs:
         shell: pwsh
         run: ./install.ps1; & "$env:LOCALAPPDATA\Programs\atlas\atlas.exe" --version
 
-  # The Homebrew tap (raoulg/homebrew-tap) takes the new version and the checksums of the release.
-  # It needs the secret TAP_TOKEN (a token with Contents: write on that repository only); without
-  # it the job says so and does nothing.
+  # The Homebrew tap (raoulg/homebrew-tap) takes the new version and the checksums of the release:
+  # the formula `atlas-code` from the CLI's archives, the cask `atlas-studio` from Studio's disk images
+  # (`tools/tap_cask.py`). It needs the secret TAP_TOKEN (a token with Contents: write on that
+  # repository only); without it the job says so and does nothing.
   tap:
-    needs: [build, install]
+    needs: [build, install, studio-upload]
     if: ${{ !contains(github.ref_name, '-') }}
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v7
+        with:
+          path: atlas
       - env:
           GH_TOKEN: ${{ github.token }}
           TAP_TOKEN: ${{ secrets.TAP_TOKEN }}
         run: |
           if [ -z "$TAP_TOKEN" ]; then echo "::warning::no TAP_TOKEN: the tap is not updated"; exit 0; fi
           version="${GITHUB_REF_NAME#v}"
-          gh release download "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --pattern '*.tar.gz' --dir assets
+          gh release download "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --pattern '*.tar.gz' --pattern 'atlas-studio-*.dmg' --dir assets
           git clone "https://x-access-token:${TAP_TOKEN}@github.com/raoulg/homebrew-tap.git" tap
           python3 - "$version" "$GITHUB_REF_NAME" <<'PY'
           import hashlib, pathlib, re, sys
@@ -119,10 +123,13 @@ jobs:
               )
           path.write_text(text)
           PY
+          mkdir -p tap/Casks
+          python3 atlas/tools/tap_cask.py assets "$version" > tap/Casks/atlas-studio.rb
           cd tap
           git config user.name "atlas release"
           git config user.email "atlas@users.noreply.github.com"
-          git diff --quiet && { echo "the tap already names ${version}"; exit 0; }
-          git commit -am "Atlas ${version}"
+          git add Formula/atlas-code.rb Casks/atlas-studio.rb
+          git diff --cached --quiet && { echo "the tap already names ${version}"; exit 0; }
+          git commit -m "Atlas ${version}"
           git pull --rebase
           git push

@@ -41,17 +41,30 @@ Atlas Studio is the desktop app around the same engine, with the matching `atlas
 needs no installed CLI. Every release and every nightly has a disk image per Mac,
 `atlas-studio-aarch64-apple-darwin.dmg` (Apple silicon) and `atlas-studio-x86_64-apple-darwin.dmg`
 (Intel), and a setup program for Windows, `atlas-studio-x86_64-pc-windows-msvc-setup.exe`. On a Mac
-the script puts the app in `~/Applications`:
+Homebrew puts the app in `/Applications`:
+
+```bash
+brew install --cask raoulg/tap/atlas-studio
+```
+
+`raoulg/tap/atlas-studio-nightly` is the nightly; the two replace each other. In a `Brewfile` it is
+`cask "raoulg/tap/atlas-studio"`. Studio is signed ad hoc, not with an Apple Developer ID. Homebrew
+marks what it downloads as from the internet, as a browser does, so that macOS checks the app, and
+macOS blocks its first start: open Studio once, then allow it in System Settings › Privacy & Security
+› Open Anyway. Studio installs its own updates (Atlas Studio › Check for Updates…), which open without
+asking again. Homebrew leaves an app that updates itself to do so: `brew upgrade` passes Studio by, and
+`brew upgrade --greedy` installs a new copy, which macOS asks about once more.
+
+The script puts the app in `~/Applications` instead:
 
 ```bash
 sh -c "$(curl -fsSL https://raw.githubusercontent.com/raoulg/atlas/main/install-studio.sh)"
 ```
 
 `ATLAS_CHANNEL=nightly` installs the nightly, `ATLAS_STUDIO_DIR` another folder. Run it again to
-update. Studio is signed ad hoc, not with an Apple Developer ID. The script downloads with `curl`,
-which leaves no mark of the internet on the app, so it opens as it is. A disk image downloaded in a
-browser does carry that mark: drag the app to Applications, open it once, and then allow it in System
-Settings › Privacy & Security › Open Anyway (or Control-click the app and choose Open).
+update. The script downloads with `curl`, which leaves no mark of the internet on the app, so it opens
+as it is. A disk image downloaded in a browser does carry that mark: drag the app to Applications,
+open it once, and then allow it in System Settings › Privacy & Security › Open Anyway.
 
 On Windows the script installs Studio for you alone, without administrator rights, in
 `%LOCALAPPDATA%\Atlas Studio`, with an entry in the Start menu:

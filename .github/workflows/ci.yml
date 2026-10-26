@@ -22,6 +22,13 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - run: cargo test --locked --no-fail-fast
 
+  # the casks the tap jobs write, as Homebrew reads them: the release they name and its checksums
+  tap:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v7
+      - run: python3 tools/test_tap_cask.py
+
   fmt:
     runs-on: ubuntu-latest
     steps:
