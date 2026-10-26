@@ -2369,3 +2369,16 @@ fn a_condition_names_the_field_it_tests() {
 fn a_projection_bound_to_a_name_is_still_the_projection() {
     common::a_projection_bound_to_a_name_is_still_the_projection("python", "charts.chart");
 }
+
+/// The recursion pair: a call into a function the route is already inside takes what its call hands it, and no value a body
+/// makes comes from beyond the route (#237); the shortcut's `FLOOR` alone does, as in Rust and TypeScript.
+#[test]
+fn a_recursive_call_takes_what_its_call_hands_it() {
+    common::a_recursive_call_takes_what_its_call_hands_it("python");
+}
+
+/// The literals pair: `[]` and `list()` make the same list, the body's (#237), as `vec![]` and `Vec::new()` do in Rust.
+#[test]
+fn a_list_made_by_a_literal_is_made_by_the_body() {
+    common::a_list_made_by_a_literal_is_made_by_the_body("python", "by_literal", "by_call", "by_constant");
+}

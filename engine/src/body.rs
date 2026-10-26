@@ -249,6 +249,8 @@ pub struct Steps<'t, 's> {
     converts: Option<String>,
     /// The names the steps so far have kept.
     pub kept: HashSet<String>,
+    /// The values the body binds a name to by a literal (`Steps::literal`), by where each is written.
+    literals: HashSet<Range>,
 }
 
 impl<'t, 's> Steps<'t, 's> {
@@ -270,6 +272,7 @@ impl<'t, 's> Steps<'t, 's> {
             tests: vec![],
             converts: None,
             kept: HashSet::new(),
+            literals: HashSet::new(),
         }
     }
 
@@ -489,6 +492,7 @@ impl<'t, 's> Steps<'t, 's> {
             }
         }
         self.read = (0..self.sites.len()).filter(|&i| self.read_by_own_code(i)).collect();
+        self.literals = self.literals(held);
         self.sets = self.sets(held);
         self.tests = self.tests(held);
         let mut once: Vec<Use> = vec![];
@@ -498,6 +502,43 @@ impl<'t, 's> Steps<'t, 's> {
             }
         }
         self.own = once;
+    }
+
+    /// The values the body binds a name to by a literal, outside its choices (`Node::binds`): a binding of names, no change of a
+    /// value, no update, no condition, whose value is made by no step and reads no value: no name, no instance it runs on, no
+    /// string that writes a name (`let mut held = vec![]`, `items = []`, `const xs: Item[] = []`), also in a function written in
+    /// place, whose steps are the body's. Such a value the body makes itself, as a call handed nothing makes it (`Vec::new()`,
+    /// `list()`). `held` is the reader's, as for `uses`.
+    fn literals(&self, held: &dyn Fn(TsNode<'t>) -> Vec<Held>) -> HashSet<Range> {
+        let u = self.uses;
+        let steps: Vec<Range> = self.sites.iter().filter(|s| s.span != (0, 0)).map(|s| (s.span.0 as usize, s.span.1 as usize)).collect();
+        let mut out = HashSet::new();
+        let mut stack = vec![self.body];
+        while let Some(b) = stack.pop() {
+            if b.id() != self.body.id() && u.nested.contains(&b.kind()) {
+                continue;
+            }
+            stack.extend(named_children(b).into_iter().rev());
+            let Some((targets, value)) = (u.binds)(b) else { continue };
+            if b.child_by_field_name("body").is_some()
+                || !walk(targets, u.keeps).is_empty()
+                || u.updates.contains(&b.kind())
+                || self.decides(b)
+            {
+                continue;
+            }
+            let v = beneath(value, u.wrappers);
+            if !self.arms(v).is_empty() || self.choices.contains_key(&v.id()) {
+                continue;
+            }
+            let made = steps.iter().any(|(a, z)| v.start_byte() <= *a && *z <= v.end_byte());
+            let reads =
+                walk(v, u.names).into_iter().any(|n| !(u.label)(n, self.src)) || walk(v, u.reads).into_iter().any(|r| !held(r).is_empty());
+            if !made && !reads {
+                out.insert((v.start_byte(), v.end_byte()));
+            }
+        }
+        out
     }
 
     /// What the body's own code sets a part of a value to (`Node::sets`): each binding whose target is a
@@ -1270,7 +1311,12 @@ impl<'t, 's> Steps<'t, 's> {
             }
             stack.extend(named_children(b).into_iter().rev());
             let Some((targets, value)) = (u.binds)(b) else { continue };
-            if b.child_by_field_name("body").is_some() || !walk(targets, u.keeps).is_empty() || self.in_function(b) {
+            // a function written in place binds its own names, but for what it binds by a literal: its steps are the body's
+            let literal = |v: TsNode| self.literals.contains(&(v.start_byte(), v.end_byte()));
+            if b.child_by_field_name("body").is_some()
+                || !walk(targets, u.keeps).is_empty()
+                || (self.in_function(b) && !literal(beneath(value, u.wrappers)))
+            {
                 continue;
             }
             let names: Vec<String> =
@@ -1281,7 +1327,8 @@ impl<'t, 's> Steps<'t, 's> {
                     continue;
                 }
                 let arms = self.arms(leaf);
-                for name in names.iter().filter(|_| !arms.is_empty()) {
+                let by_literal = arms.is_empty() && literal(leaf);
+                for name in names.iter().filter(|_| !arms.is_empty() || by_literal) {
                     let one = Use { name: name.clone(), ty: String::new(), arms: arms.clone(), param: false };
                     if !out.contains(&one) {
                         out.push(one);
@@ -1289,10 +1336,14 @@ impl<'t, 's> Steps<'t, 's> {
                 }
             }
         }
-        // a name a step gives elsewhere holds what the step gives
+        // a name a step gives elsewhere holds what the step gives; one a literal binds, what the name holds where a step is
+        // handed it or the body's own code reads it
         for b in out.iter_mut() {
+            let given = self.sites.iter().flat_map(|s| &s.gives);
+            let handed = self.sites.iter().flat_map(|s| &s.hands).filter(|_| b.arms.is_empty());
+            let read = self.own.iter().filter(|_| b.arms.is_empty()).filter(|u| u.name == b.name && !u.ty.is_empty()).map(|u| &u.ty);
             let types: HashSet<&String> =
-                self.sites.iter().flat_map(|s| &s.gives).filter(|g| g.name == b.name && !g.ty.is_empty()).map(|g| &g.ty).collect();
+                given.chain(handed).filter(|g| g.name == b.name && !g.ty.is_empty()).map(|g| &g.ty).chain(read).collect();
             if let [t] = types.into_iter().collect::<Vec<_>>()[..] {
                 b.ty = t.clone();
             }

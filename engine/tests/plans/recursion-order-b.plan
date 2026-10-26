@@ -12,6 +12,7 @@ line run/show/save > File(data/log.txt) own
 line run/show/save > File(data/log.txt) in run/show/save value
 line File(data/log.txt) in run/show/save > run/show/save/?1/show value
 line run/show/save/?1/show > Screen own
+line run/show/save/?1/show > File(data/log.txt) reached
 home File(data/log.txt) in run/show/save run/show/save
 
 side entry left
