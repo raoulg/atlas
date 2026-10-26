@@ -172,7 +172,11 @@ directory. A collection of paths is the set of terms its elements can be; iterat
 one of them. Substituting a parameter by the term a caller hands it is the term's evaluation, and
 a part no code determines is a named hole. A pattern below a directory (`D.glob("*/IO-*")`) is
 the fiber of `D` over the predicate "matches the pattern": the part of the directory the pattern
-holds.
+holds. A listing of all of `D` (`D.iterdir()`, `D.glob("*")`) is the fiber over the predicate that
+always holds, `D` itself, and each element it yields is `D/*`. An element of a collection is also
+what a function handed the collection to run on each element takes (`sorted(ps, key=lambda p: ..)`'s
+`p`) and what a pick of it gives (`max(ps)`, `ps[0]`). A lookup `d[k]` in a table the code writes is
+the value the key picks where the code decides `k`, and else the union of the values `d` holds.
 **In Atlas.** A place on the disk the code names only through a variable is drawn as the term it
 evaluates to (`assets/regelingen/*/IO-*`), not as the variable (`m`). The root is traced to a
 default or to a parameter wherever the code says it; what it cannot trace stays a hole in the

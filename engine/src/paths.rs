@@ -470,7 +470,19 @@ pub fn place(b: &Built, op: &str) -> Option<String> {
     let wild = |s: &str| s.contains(['*', '?', '[']);
     let unknown = |s: &str| s.contains('{') || (dir && wild(s));
     let p = p.trim_end_matches('/').to_string();
-    let parts: Vec<&str> = p.split('/').collect();
+    let mut parts: Vec<&str> = p.split('/').collect();
+    // a pattern below a directory is the part of the directory it holds: the place keeps it; one that
+    // holds everything below it (`iterdir()`, `glob("*")`, `rglob("*")`) is the fiber over a
+    // predicate that always holds, the whole directory, which is what is listed
+    let mut pattern = crate::knowledge::PATH_PATTERNS.iter().any(|(name, _, _)| *name == op);
+    if pattern && parts.len() > 1 && parts.last() == Some(&"*") {
+        parts.pop();
+        if parts.len() > 1 && parts.last() == Some(&"**") {
+            parts.pop();
+        }
+        pattern = false;
+    }
+    let p = parts.join("/");
     let any = || {
         parts
             .iter()
@@ -478,8 +490,6 @@ pub fn place(b: &Built, op: &str) -> Option<String> {
             .collect::<Vec<_>>()
             .join("/")
     };
-    // a pattern below a directory is the part of the directory it holds: the place keeps it
-    let pattern = crate::knowledge::PATH_PATTERNS.iter().any(|(name, _)| *name == op);
     let p = match parts.iter().position(|x| unknown(x)) {
         // the pattern's own wildcards stay; a part the code leaves unknown is one more
         _ if pattern && parts.iter().any(|x| unknown(x) || wild(x)) => any(),
@@ -1147,5 +1157,21 @@ mod tests {
         let written = join(&parent(&parent(&lit("a/b/c.xml"))), &lit("m.json"), "/");
         assert_eq!(handed.iter().map(|b| place(b, "read")).collect::<Vec<_>>(), [place(&written, "read")]);
         assert_eq!(place(&written, "read").as_deref(), Some("a/m.json"));
+    }
+
+    /// A pattern that holds everything below a directory is the fiber over a predicate that always
+    /// holds: the directory itself. `D.iterdir()`, `D.glob("*")` and `D.rglob("*")` list the place a
+    /// listing handed `D` lists, also below a part the code leaves unknown; a pattern that holds a
+    /// part of it stays that part.
+    #[test]
+    fn a_pattern_that_holds_everything_is_the_directory() {
+        for d in [lit("data/raw"), join(&lit("data"), &hole("kind"), "/")] {
+            let listed = place(&d, "listdir");
+            assert!(listed.is_some());
+            for (op, pattern) in [("iterdir", "*"), ("glob", "*"), ("rglob", "**/*")] {
+                assert_eq!(place(&join(&d, &lit(pattern), "/"), op), listed, "{op}({pattern}) of {d:?}");
+            }
+        }
+        assert_eq!(place(&lit("data/raw/*.csv"), "glob").as_deref(), Some("data/raw/*.csv"));
     }
 }

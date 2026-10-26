@@ -69,26 +69,40 @@ fn one_program_draws_one_set_of_places_in_every_language() {
 
 /// A client that names the paths it asks for is joined to the handlers that serve them, by
 /// method and path: its POST to `/api/orders` is not the GET of that path. One that looks its
-/// paths up by a key at run time, with an environment variable that may stand in for each, says
-/// no path: its requests go to an address the code does not say, and the paths in its table join
-/// nothing. So in TypeScript (`clean`, `shortcut`), Python (`pyclean`, `pyshortcut`) and Rust
-/// (`rsclean`, `rsshortcut`).
+/// paths and methods up in tables by a key, with an environment variable that may stand in for
+/// each path, asks an address the code does not say, and meets at most the routes at the paths its
+/// tables hold. Python reads a table the code writes, looked up by a key: `PATHS[key]`, `key` a
+/// parameter, is one of the paths the table holds, the variable standing in being an input with that
+/// default, and `item` meets the one route at its path; the method `METHODS["order"]` is handed to the request where the code does not say it
+/// as a method, so `order` meets each route at `/api/orders`. TypeScript and Rust do not read such
+/// a table yet (#236), and their shortcut meets no route. So in TypeScript (`clean`, `shortcut`),
+/// Python (`pyclean`, `pyshortcut`) and Rust (`rsclean`, `rsshortcut`).
 #[test]
 fn a_request_meets_the_route_it_names() {
     let g = pair("requests");
     let requests = |side: &str| -> Vec<(String, String)> {
         g.edges.iter().filter(|e| e.kind == EdgeKind::Requests && e.src.starts_with(side)).map(|e| (e.src.clone(), e.dst.clone())).collect()
     };
+    // the routes at the paths the shortcut's tables hold, `/api/items/{..}` and `/api/orders`
+    let tabled = ["shop.api.item", "shop.api.order", "shop.api.orders"];
     for (clean, shortcut) in [("clean", "shortcut"), ("pyclean", "pyshortcut"), ("rsclean", "rsshortcut")] {
         // a Rust crate's functions are its root module's
         let at = |side: &str, f: &str| if side.starts_with("rs") { format!("{side}.{f}") } else { format!("{side}.client.{f}") };
         let want = [(at(clean, "item"), "shop.api.item".to_string()), (at(clean, "order"), "shop.api.order".to_string())];
         assert_eq!(requests(&format!("{clean}.")), want);
-        assert_eq!(
-            requests(&format!("{shortcut}.")),
-            [],
-            "a path looked up at run time names no route, and a path in a table is no request"
+        let asked = requests(&format!("{shortcut}."));
+        assert!(
+            asked.iter().all(|(_, route)| tabled.contains(&route.as_str())),
+            "{shortcut}: a request meets a route its tables hold: {asked:?}"
         );
+        if shortcut == "pyshortcut" {
+            let picked = [
+                (at(shortcut, "item"), "shop.api.item".to_string()),
+                (at(shortcut, "order"), "shop.api.order".to_string()),
+                (at(shortcut, "order"), "shop.api.orders".to_string()),
+            ];
+            assert_eq!(asked, picked, "the key picks the path; a method the code does not say meets every route at it");
+        }
         for f in ["item", "order"].map(|f| at(shortcut, f)) {
             let net = g.node(&f).unwrap().touches.iter().find(|t| t.kind == World::Net).cloned();
             assert!(

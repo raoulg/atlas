@@ -74,6 +74,23 @@ impl<'a> Eval<'a> {
         })
     }
 
+    /// Whether ty types the value `e` as the class `class` of the library `lib`.
+    fn of_class(&self, m: &Module, e: TsNode, lib: &str, class: &str) -> bool {
+        self.types.of(&path_str(&m.path)).and_then(|x| x.value((e.start_byte(), e.end_byte()))).map_or(false, |v| {
+            v.names.iter().any(|n| n == class)
+                && v.classes.iter().any(|c| matches!(c, Target::Lib(x) if x == lib || x.starts_with(&format!("{lib}."))))
+        })
+    }
+
+    /// Whether calling `f` reaches a function of the library `lib`, in its module or below it.
+    fn of_library(&self, m: &Module, f: TsNode, lib: &str) -> bool {
+        self.types.of(&path_str(&m.path)).map_or(false, |x| {
+            x.callees((f.start_byte(), f.end_byte()))
+                .iter()
+                .any(|c| matches!(&c.target, Target::Lib(m) if m == lib || m.starts_with(&format!("{lib}."))))
+        })
+    }
+
     /// Whether calling `f`, named `name`, reaches a library's function that gives the directory a
     /// package ships its files in (knowledge::PACKAGE_FILES): in the library's module or below it.
     fn gives_package_files(&self, m: &Module, f: TsNode, name: &str) -> bool {
@@ -191,6 +208,10 @@ impl<'a> Eval<'a> {
                 match text(attr, src) {
                     "parent" => self.of(at, obj, depth + 1).iter().map(parent).collect(),
                     "stem" | "name" | "suffix" | "suffixes" | "parts" => vec![named()],
+                    // the path a listing's element is at: `entry.path` of `os.scandir(d)`'s `entry`
+                    a if knowledge::ELEMENT_PATHS.iter().any(|(lib, class, name)| *name == a && self.of_class(at.m, obj, lib, class)) => {
+                        self.of(at, obj, depth + 1)
+                    }
                     a => self.parsed(at, obj, a, depth).or_else(|| self.defined(at, e, depth)).unwrap_or_else(|| vec![named()]),
                 }
             }
@@ -219,7 +240,7 @@ impl<'a> Eval<'a> {
                                 held
                             }
                         }
-                        None => vec![named()],
+                        None => self.looked_up(at, e, depth).unwrap_or_else(|| vec![named()]),
                     },
                 }
             }
@@ -237,6 +258,101 @@ impl<'a> Eval<'a> {
             "none" => vec![],
             _ => vec![hole("value")],
         }
+    }
+
+    /// `d[k]`, `d` a collection the code writes out where it stands or where `d` is defined (a
+    /// mapping, a list, a tuple) or one that holds another's elements (`sorted(ps)`): the value `k`
+    /// picks where the code decides `k` and `d` is written out, else one of the values `d` holds, as
+    /// `for k in d: d[k]` is.
+    fn looked_up(&self, at: At, e: TsNode, depth: u32) -> Option<Vec<Built>> {
+        let (v, k) = (e.child_by_field_name("value")?, e.child_by_field_name("subscript")?);
+        let key = match self.of(at, k, depth + 1).as_slice() {
+            [b] if crate::paths::known(b) => Some(crate::paths::render(b)),
+            _ => None,
+        };
+        let index = text(k, &at.m.src).parse::<i64>().ok();
+        let values = self.collection(at, v, key.as_deref(), index, depth)?;
+        (!values.iter().all(|b| matches!(b.as_slice(), [Seg::Hole(_)]))).then_some(values)
+    }
+
+    /// The values of the collection `v` that the key or index picks, where the code writes `v` out
+    /// or makes it of another's elements, here or in the assignment that defines `v`; all of them
+    /// where neither picks one.
+    fn collection(&self, at: At, v: TsNode, key: Option<&str>, index: Option<i64>, depth: u32) -> Option<Vec<Built>> {
+        let held = |x: TsNode, src: &[u8]| match x.kind() {
+            "dictionary" | "list" | "tuple" | "list_comprehension" | "dictionary_comprehension" => true,
+            "call" => x
+                .child_by_field_name("function")
+                .map_or(false, |f| call_path(f, src).last().is_some_and(|l| knowledge::SAME_ELEMENTS.contains(&l.as_str()))),
+            _ => false,
+        };
+        if held(v, &at.m.src) {
+            return Some(self.picked(at, v, key, index, depth));
+        }
+        if !matches!(v.kind(), "identifier" | "attribute") {
+            return None;
+        }
+        let Target::Here { file, at: offset } = self.def(at.m, v)? else { return None };
+        let m = *self.by_file.get(&file)?;
+        let mut n = m.tree.root_node().descendant_for_byte_range(offset, offset)?;
+        if n.kind() != "identifier" {
+            n = n.parent().filter(|p| p.kind() == "identifier").unwrap_or(n);
+        }
+        let a = n.parent().filter(|a| a.kind() == "assignment" && a.child_by_field_name("left").map(|l| l.id()) == Some(n.id()))?;
+        let right = a.child_by_field_name("right").filter(|r| held(*r, &m.src))?;
+        Some(self.picked(at.of_definition(m, offset), right, key, index, depth))
+    }
+
+    /// What a key or an index picks of a collection the code writes out (a mapping by a key its
+    /// pairs write, a list or a tuple by its place), else every value it holds.
+    fn picked(&self, at: At, held: TsNode, key: Option<&str>, index: Option<i64>, depth: u32) -> Vec<Built> {
+        let picked = match held.kind() {
+            "dictionary" => key.and_then(|key| {
+                named_children(held).into_iter().filter(|p| p.kind() == "pair").find(|p| {
+                    p.child_by_field_name("key").map_or(false, |x| match self.of(at, x, depth + 1).as_slice() {
+                        [b] => crate::paths::known(b) && crate::paths::render(b) == key,
+                        _ => false,
+                    })
+                })
+            }),
+            "list" | "tuple" => index.and_then(|i| {
+                let items: Vec<TsNode> = named_children(held).into_iter().filter(|x| x.kind() != "comment").collect();
+                let i = if i < 0 { items.len() as i64 + i } else { i };
+                usize::try_from(i).ok().and_then(|i| items.get(i).copied())
+            }),
+            _ => None,
+        };
+        self.of(at, picked.unwrap_or(held), depth + 1)
+    }
+
+    /// The elements a call of the language's own runs the function `f` it is handed on, where its
+    /// parameter `slot` is the one an element fills (knowledge::PYTHON_EACH): what the call goes over
+    /// holds.
+    fn on_each(&self, at: At, f: TsNode, slot: usize, depth: u32) -> Option<Vec<Built>> {
+        let src = &at.m.src;
+        // where the call is handed `f`: by a keyword, or by its place
+        let (args, keyword, place) = match f.parent()? {
+            k if k.kind() == "keyword_argument" => (k.parent()?, k.child_by_field_name("name").map(|n| text(n, src)), None),
+            a if a.kind() == "argument_list" => (a, None, positional(a).iter().position(|x| x.id() == f.id())),
+            _ => return None,
+        };
+        let call = args.parent().filter(|c| c.kind() == "call")?;
+        let callee = call.child_by_field_name("function")?;
+        let name =
+            call_path(callee, src).last().cloned().or_else(|| callee.child_by_field_name("attribute").map(|a| text(a, src).to_string()))?;
+        let each = knowledge::PYTHON_EACH.iter().find(|e| {
+            e.name == name
+                && e.element as usize == slot
+                && match e.function {
+                    knowledge::Handed::Key(w) => keyword == Some(w),
+                    knowledge::Handed::At(i) => place == Some(i),
+                }
+        })?;
+        let over = match each.over {
+            Some(i) => *positional(args).get(i)?,
+            None => callee.child_by_field_name("object")?,
+        };
+        Some(self.of(at, over, depth + 1))
     }
 
     /// Whether the key of the subscript `e` of `value` is bound by a loop over `value`'s keys:
@@ -449,6 +565,13 @@ impl<'a> Eval<'a> {
                         .fold(vec![], |acc, x| union(acc, self.of(here, x, depth + 1))),
                 )
             }
+            // the parameter of a function handed to be called on each element of a collection
+            // (`sorted(ps, key=lambda p: ..)`): one of the elements, as in `for p in ps`
+            "lambda_parameters" => {
+                let slot = named_children(p).iter().position(|x| x.id() == n.id())?;
+                let values = self.on_each(at.of_definition(m, offset), p.parent().filter(|l| l.kind() == "lambda")?, slot, depth)?;
+                (!values.iter().all(|b| matches!(b.as_slice(), [Seg::Hole(_)]))).then_some(values)
+            }
             "parameters"
             | "default_parameter"
             | "typed_parameter"
@@ -517,15 +640,27 @@ impl<'a> Eval<'a> {
             }
             "with_name" => return cross(&receiver().iter().map(parent).collect::<Vec<_>>(), &joined(&positional), "/"),
             m if knowledge::SAME_PATH.contains(&m) => return receiver(),
-            // the paths below a directory that match a pattern
-            m if f.kind() == "attribute" && positional.len() == 1 && self.of_pathlib(at.m, f) => {
-                if let Some((_, start)) = knowledge::PATH_PATTERNS.iter().find(|(name, _)| *name == m) {
+            // the paths below a directory that match a pattern; `iterdir()` is `glob("*")`
+            m if f.kind() == "attribute" && self.of_pathlib(at.m, f) => {
+                if let Some((_, start, _)) = knowledge::PATH_PATTERNS.iter().find(|(name, _, n)| *name == m && *n == positional.len()) {
                     return cross(&receiver(), &cross(&[lit(start)], &joined(&positional), ""), "/");
                 }
             }
             // the elements of what it is handed: `sorted(paths)`, `dict.fromkeys(paths)`
             m if knowledge::SAME_ELEMENTS.contains(&m) && positional.len() == 1 => return self.of(at, positional[0], depth + 1),
+            // one of what it is handed: `max(paths, key=..)`, `next(paths, default)`
+            m if knowledge::ONE_OF_ELEMENTS.contains(&m) && !positional.is_empty() => {
+                return positional.iter().fold(vec![], |acc, a| union(acc, self.of(at, *a, depth + 1)));
+            }
             _ => {}
+        }
+        // a listing of a directory: each element is below it, `*`, as the path or as its name alone
+        // (a listing handed no directory lists the one the program runs in)
+        if let Some(l) = knowledge::LISTINGS_BELOW.iter().find(|l| l.function == last && self.of_library(at.m, f, l.library)) {
+            return match positional.first().filter(|_| !l.names) {
+                Some(d) => cross(&self.of(at, *d, depth + 1), &[lit("*")], "/"),
+                None => vec![lit("*")],
+            };
         }
         // a method of a path gives back something at that path: `p.open("w")`
         if f.kind() == "attribute" && self.of_pathlib(at.m, f) {
@@ -700,6 +835,14 @@ pub(super) fn entry_defaults<'t>(def: TsNode<'t>, src: &[u8]) -> Vec<(String, Ts
         }
     }
     out
+}
+
+/// The positional arguments of an argument list, in order.
+fn positional(args: TsNode) -> Vec<TsNode> {
+    named_children(args)
+        .into_iter()
+        .filter(|a| !matches!(a.kind(), "keyword_argument" | "list_splat" | "dictionary_splat" | "comment"))
+        .collect()
 }
 
 fn keyword<'t>(args: TsNode<'t>, src: &[u8], name: &str) -> Option<TsNode<'t>> {
