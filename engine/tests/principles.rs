@@ -9,6 +9,11 @@ fn findings(repo: &str) -> Vec<Finding> {
     check(&analyze(&root, &Options::default()).expect("parses"))
 }
 
+/// The names a finding's text holds: ids, types and paths, apart from the words and signs between them.
+fn names(text: &str) -> Vec<&str> {
+    text.split(|c: char| !(c.is_alphanumeric() || c == '_' || c == '.')).filter(|w| !w.is_empty()).collect()
+}
+
 fn by_principle(fs: &[Finding]) -> BTreeMap<&'static str, Vec<&str>> {
     let mut out: BTreeMap<&str, Vec<&str>> = BTreeMap::new();
     for f in fs {
@@ -95,16 +100,25 @@ fn each_principle_finds_its_case() {
 /// functions alone, and what it supersedes is still asked about, with the prophecy as the answer.
 #[test]
 fn a_prophecy_is_no_finding_and_answers_the_one_it_supersedes() {
-    let fs = findings("tests/fixture");
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixture");
+    let g = analyze(&root, &Options::default()).expect("parses");
+    let fs = check(&g);
     assert!(
         fs.iter().all(|f| f.node != "fixture.plans.tidy"),
         "{:?}",
         fs.iter().filter(|f| f.node == "fixture.plans.tidy").collect::<Vec<_>>()
     );
+    let said = |id: &str| g.node(id).unwrap().prophecy.clone().unwrap_or_else(|| panic!("{id} is a prophecy"));
+    assert_eq!(said("fixture.plans.stash").replaces.as_deref(), Some("fixture.plans.keep"));
     let keep = fs.iter().find(|f| f.node == "fixture.plans.keep").expect("the function a prophecy supersedes is still asked about");
-    assert!(keep.evidence.iter().any(|e| e.contains("answered by the prophecy `stash`")), "{:?}", keep.evidence);
-    let unmarked = fs.iter().filter(|f| f.principle == "prophecy").map(|f| f.what.as_str()).collect::<Vec<_>>();
-    assert!(unmarked[0].contains("`fixture.plans.gone`") && unmarked[1].contains("leans on `tidy`"), "{unmarked:?}");
+    assert!(keep.evidence.iter().any(|e| names(e).contains(&"stash")), "{:?}", keep.evidence);
+    // `forgotten` supersedes a name the code does not hold; `report` calls the prophecy `tidy`
+    let gone = said("fixture.plans.forgotten");
+    assert!(gone.supersedes.as_deref() == Some("fixture.plans.gone") && gone.replaces.is_none() && gone.candidates.is_empty(), "{gone:?}");
+    assert!(g.node("fixture.plans.gone").is_none());
+    assert!(g.node("fixture.plans.tidy").unwrap().prophecy.is_some());
+    assert!(g.edges.iter().any(|e| e.src == "fixture.plans.report" && e.dst == "fixture.plans.tidy" && e.kind == EdgeKind::Calls));
+    assert_eq!(by_principle(&fs)["prophecy"], ["fixture.plans.forgotten", "fixture.plans.report"]);
 }
 
 /// An override of a generic base keeps the promise its subclass fills in: `NodeLedger(Ledger[Node])`
@@ -125,9 +139,18 @@ fn an_override_of_a_generic_base_keeps_what_its_subclass_fills_in() {
         assert_eq!(keeps(&format!("fixture.generic.{broken}")), Some(false), "{broken}");
     }
     let fs = check(&g);
+    // `Ledger.from_row` is asked about the one override that breaks its promise, and `Box.fill` about its own
+    let overrides: Vec<&str> =
+        fs.iter().filter(|f| f.principle == "overrides" && f.file.ends_with("generic.py")).map(|f| f.node.as_str()).collect();
+    assert_eq!(overrides, ["fixture.generic.Ledger.from_row", "fixture.generic.Box.fill"]);
+    let breaking: Vec<&str> =
+        g.nodes.iter().filter(|n| n.breaks.as_deref() == Some("fixture.generic.Ledger.from_row")).map(|n| n.id.as_str()).collect();
+    assert_eq!(breaking, ["fixture.generic.CountLedger.from_row"]);
+    let returns = |id: &str| g.node(id).unwrap().returns.as_ref().map(|r| r.written.clone());
+    assert_eq!(returns("fixture.generic.Ledger.from_row").as_deref(), Some("Version[R]"));
+    assert_eq!(returns("fixture.generic.CountLedger.from_row").as_deref(), Some("Version[int]"));
     let ledger = fs.iter().find(|f| f.node == "fixture.generic.Ledger.from_row").expect("Ledger.from_row is asked about");
-    assert_eq!(ledger.what, "Ledger.from_row promises (row: tuple[str, int]) -> Version[R]; 1 override breaks it");
-    assert_eq!(ledger.evidence, ["CountLedger.from_row(row: tuple[str, int]) -> Version[int] (src/fixture/generic.py:49)"]);
+    assert!(matches!(ledger.evidence.as_slice(), [e] if names(e).contains(&"CountLedger.from_row")), "{:?}", ledger.evidence);
 }
 
 /// What a lens puts, it gets back, also inside what a get gives: a lens composed with the
@@ -163,7 +186,10 @@ fn a_lens_puts_what_reaches_the_place_not_the_key_it_looks_up_by() {
     let lens: Vec<Finding> = check(&g).into_iter().filter(|f| f.principle == "lens").collect();
     assert!(lens.iter().all(|f| f.node != "fixture.tiles.Tiles"), "{:#?}", lens);
     let notes = lens.iter().find(|f| f.node == "fixture.notes.Notes").expect("Notes is asked");
-    assert_eq!(notes.evidence, ["put Notes.put: Note × Disk(Notes.path) → Disk(Notes.path)", "get Notes.get: Disk(Notes.path) → dict"]);
+    // its put is `Notes.put`, putting the Note into the file at `Notes.path`, and its get `Notes.get`, getting a dict from it
+    let shown = |held: &[&str]| notes.evidence.iter().any(|e| held.iter().all(|n| names(e).contains(n)));
+    assert_eq!(notes.evidence.len(), 2, "{:?}", notes.evidence);
+    assert!(shown(&["Notes.put", "Note", "Notes.path"]) && shown(&["Notes.get", "dict", "Notes.path"]), "{:?}", notes.evidence);
 }
 
 /// The principles read Rust by what its types and entries mean: a trait's implementation has the
@@ -203,9 +229,10 @@ fn a_command_its_package_exports_is_a_door() {
         }],
         ..Default::default()
     };
-    let doors = |g: &Graph| check(g).into_iter().filter(|f| f.principle == "doors").map(|f| f.what).collect::<Vec<_>>();
-    assert_eq!(doors(&graph(true)), ["main does not say what `n` is"]);
-    assert_eq!(doors(&graph(false)), Vec::<String>::new());
+    let doors = |g: &Graph| check(g).into_iter().filter(|f| f.principle == "doors").collect::<Vec<_>>();
+    let asked = doors(&graph(true));
+    assert!(matches!(asked.as_slice(), [f] if f.node == "tool.main" && names(&f.what).contains(&"n")), "{asked:?}");
+    assert!(doors(&graph(false)).is_empty());
 }
 
 /// `src/` holds packages; a package called `src` has no name of its own yet, and that comes first.
@@ -213,7 +240,9 @@ fn a_command_its_package_exports_is_a_door() {
 fn a_package_called_src_is_asked_its_name() {
     let fs = findings("tests/srclayout");
     assert_eq!(by_principle(&fs)["doors"], ["src"]);
-    assert!(fs[0].what.contains("called src"), "{}", fs[0].what);
+    // only the sentence tells the name asked apart from the root that exports nothing
+    let asked = fs.iter().find(|f| f.principle == "doors").unwrap();
+    assert!(asked.what.contains("called src"), "{}", asked.what);
 }
 
 /// What `atlas check` asks of Atlas, each finding read: its principle, the node it is about, and

@@ -331,10 +331,16 @@ fn a_part_alone_keeps_its_names() {
 /// under its directory (`billing/src`), is still asked its name.
 #[test]
 fn a_part_named_apart_is_checked_as_it_is() {
-    let mut g = analyze(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/srclayout"), &Options::default()).unwrap();
-    g.rename(&|id| format!("billing/{id}"));
-    let doors: Vec<(String, String)> = check(&g).into_iter().filter(|f| f.principle == "doors").map(|f| (f.node, f.what)).collect();
-    assert!(matches!(doors.as_slice(), [(node, what)] if node == "billing/src" && what.contains("called src")), "{doors:?}");
+    let g = analyze(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/srclayout"), &Options::default()).unwrap();
+    let mut apart = g.clone();
+    apart.rename(&|id| format!("billing/{id}"));
+    // checking commutes with the rename: the part held apart is asked what the part alone is asked
+    let asked = |g: &Graph, rename: &dyn Fn(&str) -> String| {
+        check(g).into_iter().map(|f| (f.principle, rename(&f.node), f.what, f.evidence)).collect::<Vec<_>>()
+    };
+    let alone = asked(&g, &|id| format!("billing/{id}"));
+    assert_eq!(asked(&apart, &|id| id.to_string()), alone);
+    assert!(matches!(alone.as_slice(), [(principle, node, ..)] if *principle == "doors" && node == "billing/src"), "{alone:?}");
 }
 
 /// A rename reaches every id a graph holds: afterwards no field that names a node names one by its
