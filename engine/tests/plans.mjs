@@ -203,7 +203,8 @@ function pictures(F, openable, occ, homes, valueName) {
     for (const f of M.checkOpenings(F, view, foldable)) faults.push(`${at}: ${f}`);
     for (const f of quotient(F, view, set, homes, occ, valueName)) faults.push(`${at}: ${f}`);
   }
-  faults.push(...closing([[], ...steps.map(s => [s]), ...(steps.length > 1 ? [steps] : [])], occ));
+  // sampled, a large program's route is asked of the sets drawn for it; in full, of none, each step alone and all
+  faults.push(...closing(SAMPLED ? sets : [[], ...steps.map(s => [s]), ...(steps.length > 1 ? [steps] : [])], occ));
   V.open.steps = new Set();
   return faults;
 }
@@ -226,10 +227,10 @@ function sides(C) {
 }
 
 // Closing (mathematics.md, "Refinement keeps what it does not refine"): the picture is a function of the set of open steps,
-// not of the order they were opened in. Each set (none, each step alone, all of them) is drawn as the page draws it
-// (`plan`), once in order and once more after every other set was drawn, in the reverse order: both draw the same picture,
-// so closing a step draws the picture it was. Side: a place stands where the coarsest picture puts it, so it stands there
-// whatever is open.
+// not of the order they were opened in. Each set (none, each step alone, all of them; sampled, the sets drawn) is drawn as
+// the page draws it (`plan`), once in order and once more after every other set was drawn, in the reverse order: both draw
+// the same picture, so closing a step draws the picture it was. Side: a place stands where the coarsest picture puts it,
+// so it stands there whatever is open.
 function closing(sets, occ) {
   const out = [], first = new Map(), name = set => (set.length ? `with ${set.map(s => occ("n:" + s)).join(", ")} open` : "closed");
   for (const set of sets) {
