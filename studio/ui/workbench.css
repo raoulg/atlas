@@ -161,3 +161,16 @@ body.dragging{cursor:row-resize;user-select:none}
 .pdf-count{align-self:stretch;padding:0 16px;font:10.5px ui-monospace,monospace;color:#6d675f}
 .pdf-page{background:#fff;box-shadow:0 1px 3px rgba(33,30,27,.18)}
 .pdf-page canvas{display:block}
+.updates{position:absolute;inset:0;z-index:5;background:#fff;display:flex;flex-direction:column}
+.updates-head{display:flex;align-items:center;gap:24px;padding:22px 28px;border-bottom:1px solid #ddd7ce;background:#faf8f5}
+.updates-text{flex:1;min-width:0}
+.updates-text h1{font-size:24px;font-weight:500;letter-spacing:-.03em;margin:0 0 4px}
+.updates-text p{margin:0;color:#6d675f;font-size:13px}
+.updates-actions{display:flex;gap:10px;flex:none}
+.updates-actions .primary-button{margin-top:0}
+.updates-notes{flex:1;width:100%;border:0;background:#f4f1ec}
+.status-button.update{color:#fff;background:#1d5a73;margin-left:auto}
+.status-button.update:hover{background:#184b61}
+.status-button.update+.status-button{margin-left:8px}
+.updates.compact{bottom:auto;box-shadow:0 6px 18px rgba(33,30,27,.12)}
+.updates.compact .updates-notes{display:none}

@@ -147,8 +147,8 @@ function showState(name, error = '') {
 
 function selectView(view) {
   activeView = view;
-  // going to a view leaves the workspaces page
-  if (workspace) byId('workspaces').hidden = true;
+  // going to a view leaves the workspaces page and the update's
+  if (workspace) { byId('workspaces').hidden = true; byId('updates').hidden = true; }
   for (const tab of document.querySelectorAll('.side-tab')) {
     const selected = tab.dataset.view === view;
     tab.classList.toggle('active', selected);
@@ -243,6 +243,23 @@ byId('insert-atlas-view').addEventListener('click', async () => {
 byId('workspace-button').addEventListener('click', showWorkspaces);
 byId('terminal-toggle').addEventListener('click', () => showTerminal());
 for (const tab of document.querySelectorAll('.side-tab')) tab.addEventListener('click', () => selectView(tab.dataset.view));
+// a newer build of Studio's channel, looked for once an hour against an answer a day old at most
+const updates = window.AtlasUpdates.mount(byId('updates'), byId('update-button'), {
+  install: () => invoke('install_update'),
+  openOutside: (url) => invoke('plugin:opener|open_url', {url}),
+  closed: () => { if (workspace) selectView(activeView); },
+});
+listen('studio-update', ({payload}) => updates.found(payload));
+async function checkNow() {
+  byId('status-text').textContent = 'Looking for a newer Studio…';
+  try {
+    const newer = await invoke('check_update', {now: true});
+    updates.found(newer);
+    if (newer) updates.show();
+    byId('status-text').textContent = newer ? 'A newer Studio is out' : 'Atlas Studio is up to date';
+  } catch (error) { byId('status-text').textContent = String(error); }
+}
+
 // the menu bar's items, said by name
 listen('studio-menu', ({payload}) => {
   const action = payload?.action;
@@ -253,7 +270,10 @@ listen('studio-menu', ({payload}) => {
   else if (action === 'view.atlas' && workspace) selectView('atlas');
   else if (action === 'view.history' && workspace) selectView('history');
   else if (action === 'view.terminal') showTerminal();
+  else if (action === 'update.check') checkNow();
 });
 listen('studio-backend-stopped', () => { displayWorkspace(null); showState('error', 'Atlas stopped. Open the workspace again to restart it.'); });
 showState('loading');
-invoke('first_workspace').then(displayWorkspace).catch((error) => showState('error', String(error)));
+// the first look for a newer Studio waits for the first workspace, which opening would close it over
+invoke('first_workspace').then(displayWorkspace).catch((error) => showState('error', String(error)))
+  .finally(() => invoke('check_update', {now: false}).then((newer) => updates.found(newer)).catch(() => {}));
