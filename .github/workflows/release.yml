@@ -49,7 +49,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
 
-  # Atlas Studio for macOS, its disk images beside the CLI's archives.
+  # Atlas Studio for macOS and Windows, its disk images and setup program beside the CLI's archives.
   studio:
     needs: create
     uses: ./.github/workflows/studio.yml
@@ -65,7 +65,7 @@ jobs:
           pattern: atlas-studio-*
           path: dist
           merge-multiple: true
-      - run: gh release upload "$GITHUB_REF_NAME" dist/*.dmg --repo "$GITHUB_REPOSITORY"
+      - run: gh release upload "$GITHUB_REF_NAME" dist/* --repo "$GITHUB_REPOSITORY"
         env:
           GH_TOKEN: ${{ github.token }}
 

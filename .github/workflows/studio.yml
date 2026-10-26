@@ -1,13 +1,17 @@
 name: studio
 
-# Atlas Studio for macOS, as a disk image per architecture (`atlas-studio-<target>.dmg`), with the
-# atlas CLI of the same commit inside. The version is Atlas's own, from the root Cargo.toml. The app
-# is signed ad hoc, not with an Apple Developer ID, so a disk image downloaded in a browser opens
-# through System Settings › Privacy & Security › Open Anyway; `install-studio.sh` downloads it
-# without that step. `release.yml` and `nightly.yml` call this workflow and publish what it makes;
-# on a push to `next` that changes Studio or this workflow, or run by hand, it only keeps the images
-# as the run's artifacts (scheduled and dispatched runs take the workflow from `main`, so this push
-# is what builds Studio on `next` before a promotion carries the nightly's call to it).
+# Atlas Studio for macOS and Windows, with the atlas CLI of the same commit inside: a disk image per
+# Mac (`atlas-studio-<target>.dmg`) and a setup program for Windows
+# (`atlas-studio-x86_64-pc-windows-msvc-setup.exe`, an NSIS installer that installs for the user alone,
+# without administrator rights). The version is Atlas's own, from the root Cargo.toml. Neither is
+# signed by a paid identity: the Mac app is signed ad hoc, so a disk image downloaded in a browser
+# opens through System Settings › Privacy & Security › Open Anyway; a setup program downloaded in a
+# browser meets SmartScreen's "More info › Run anyway". `install-studio.sh` and `install-studio.ps1`
+# download without the mark of the internet, so neither step is needed. `release.yml` and
+# `nightly.yml` call this workflow and publish what it makes; on a push to `next` that changes Studio
+# or this workflow, or run by hand, it only keeps them as the run's artifacts (scheduled and dispatched
+# runs take the workflow from `main`, so this push is what builds Studio on `next` before a promotion
+# carries the nightly's call to it).
 
 on:
   push:
@@ -69,3 +73,41 @@ jobs:
         with:
           name: atlas-studio-${{ matrix.target }}
           path: atlas-studio-${{ matrix.target }}.dmg
+
+  setup:
+    runs-on: windows-latest
+    env:
+      TARGET: x86_64-pc-windows-msvc
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.ref || github.sha }}
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+      - name: the atlas CLI, as Studio's sidecar
+        shell: bash
+        run: |
+          cargo build --release --locked --target $TARGET -p atlas
+          mkdir -p studio/src-tauri/binaries
+          cp target/$TARGET/release/atlas.exe studio/src-tauri/binaries/atlas-$TARGET.exe
+      - name: the setup program
+        shell: bash
+        working-directory: studio
+        run: |
+          version=$(grep -m1 '^version' ../Cargo.toml | cut -d'"' -f2)
+          npx --yes @tauri-apps/cli@2.12.2 build --ci --target $TARGET --bundles nsis --config "{\"version\":\"$version\"}"
+          cp src-tauri/target/$TARGET/release/bundle/nsis/*-setup.exe "$GITHUB_WORKSPACE/atlas-studio-$TARGET-setup.exe"
+      - name: the setup program installs Studio and its atlas, for the user alone
+        shell: pwsh
+        run: |
+          Start-Process -Wait -FilePath ".\atlas-studio-$env:TARGET-setup.exe" -ArgumentList '/S'
+          $dir = Join-Path $env:LOCALAPPDATA 'Atlas Studio'
+          Get-ChildItem $dir | Select-Object Name, Length | Format-Table | Out-String | Write-Host
+          & (Join-Path $dir 'atlas.exe') --version
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+      - uses: actions/upload-artifact@v7
+        with:
+          name: atlas-studio-${{ env.TARGET }}
+          path: atlas-studio-${{ env.TARGET }}-setup.exe
