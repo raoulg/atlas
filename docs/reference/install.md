@@ -44,7 +44,7 @@ needs no installed CLI. Every release and every nightly has a disk image per Mac
 the script puts the app in `~/Applications`:
 
 ```bash
-sh -c "$(curl -fsSL https://raw.githubusercontent.com/raoulg/atlas/next/install-studio.sh)"
+sh -c "$(curl -fsSL https://raw.githubusercontent.com/raoulg/atlas/main/install-studio.sh)"
 ```
 
 `ATLAS_CHANNEL=nightly` installs the nightly, `ATLAS_STUDIO_DIR` another folder. Run it again to
@@ -57,7 +57,7 @@ On Windows the script installs Studio for you alone, without administrator right
 `%LOCALAPPDATA%\Atlas Studio`, with an entry in the Start menu:
 
 ```powershell
-irm https://raw.githubusercontent.com/raoulg/atlas/next/install-studio.ps1 | iex
+irm https://raw.githubusercontent.com/raoulg/atlas/main/install-studio.ps1 | iex
 ```
 
 `$env:ATLAS_CHANNEL = 'nightly'` installs the nightly; run it again to update. The setup program is
