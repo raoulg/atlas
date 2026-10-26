@@ -192,12 +192,8 @@ body.dragging{cursor:row-resize;user-select:none}
 .settings-theme{display:flex;flex-direction:column;gap:6px;padding:4px;border:1px solid transparent;background:transparent;text-align:left;cursor:pointer}
 .settings-theme:hover{border-color:var(--s18)}
 .settings-theme[aria-checked="true"]{border-color:var(--s2);box-shadow:0 0 0 1px var(--s2)}
-.settings-theme-look{display:block;height:64px;padding:10px 0 0 12px;border:1px solid var(--s4);overflow:hidden}
-.settings-theme-sheet{display:flex;flex-direction:column;gap:6px;height:100%;padding:7px 9px;box-shadow:0 1px 4px rgba(0,0,0,.18)}
-.settings-theme-sheet b{font-size:13px;font-weight:600;line-height:1}
-.settings-theme-line{display:block;width:60%;height:3px}
-.settings-theme-dots{display:flex;gap:3px}
-.settings-theme-dots i{display:block;width:8px;height:8px;border-radius:50%}
+.settings-theme-look{display:block;height:58px;padding:6px;border:1px solid var(--s4)}
+.settings-theme-look svg{display:block;width:100%;height:100%}
 .settings-theme-name{font-size:12px;color:var(--s15)}
 .settings-segment{border:0;background:var(--s3);padding:8px 16px;font-size:12.5px;color:var(--s15)}
 .settings-segment+.settings-segment{border-left:1px solid var(--s18)}

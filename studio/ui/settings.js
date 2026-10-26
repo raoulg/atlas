@@ -57,21 +57,31 @@
       appearance.append(node('p', 'settings-note', 'The Atlas view and the terminal follow it. ⇧⌘L, or ◐ in the status bar, switches between the two.'));
     }
 
-    // a theme in small: its background, a sheet of its panel with text in its ink, a line in its focus,
-    // and the colours it gives the kinds of place
+    // a theme in small: a piece of an Atlas picture on its background, drawn in its colours: a route that
+    // starts at a command, runs a function, and leaves a file and a row of a database behind
     function look(theme) {
-      const [background, panel, ink, focus, ...hues] = bridge.swatchOf(theme);
+      const [background, panel, ink, focus, green, orange, purple] = bridge.swatchOf(theme);
       const frame = node('span', 'settings-theme-look');
       frame.style.background = background;
-      const sheet = node('span', 'settings-theme-sheet');
-      sheet.style.background = panel;
-      sheet.style.color = ink;
-      const line = node('i', 'settings-theme-line');
-      line.style.background = focus;
-      const dots = node('span', 'settings-theme-dots');
-      for (const colour of hues) { const dot = node('i', ''); dot.style.background = colour; dots.append(dot); }
-      sheet.append(node('b', '', 'Aa'), line, dots);
-      frame.append(sheet);
+      const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+      svg.setAttribute('viewBox', '0 0 92 46');
+      svg.setAttribute('aria-hidden', 'true');
+      const draw = (tag, attributes) => {
+        const shape = document.createElementNS('http://www.w3.org/2000/svg', tag);
+        for (const [name, value] of Object.entries(attributes)) shape.setAttribute(name, value);
+        svg.append(shape);
+      };
+      const tinted = (colour) => `color-mix(in oklab, ${colour} 22%, ${panel})`;
+      // the lines first, under the boxes
+      draw('path', {d: 'M22 23 H32', stroke: ink, 'stroke-width': 1.2, fill: 'none', opacity: 0.55});
+      draw('path', {d: 'M58 19 C64 19 64 12 70 12', stroke: focus, 'stroke-width': 1.4, fill: 'none'});
+      draw('path', {d: 'M58 27 C64 27 64 34 70 34', stroke: ink, 'stroke-width': 1.2, fill: 'none', opacity: 0.55});
+      draw('rect', {x: 4, y: 17, width: 18, height: 12, rx: 6, fill: tinted(green), stroke: green, 'stroke-width': 1.2});
+      draw('rect', {x: 32, y: 13, width: 26, height: 20, rx: 2, fill: panel, stroke: ink, 'stroke-width': 1.2});
+      draw('path', {d: 'M37 20.5 H51 M37 25.5 H47', stroke: ink, 'stroke-width': 1.4, opacity: 0.7});
+      draw('rect', {x: 70, y: 6, width: 18, height: 12, rx: 1, fill: tinted(orange), stroke: orange, 'stroke-width': 1.2});
+      draw('rect', {x: 70, y: 28, width: 18, height: 12, rx: 1, fill: tinted(purple), stroke: purple, 'stroke-width': 1.2});
+      frame.append(svg);
       return frame;
     }
 
