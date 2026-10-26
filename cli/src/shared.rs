@@ -66,12 +66,41 @@ pub struct Note {
 
 /// A file of `.atlas/` at the top of the repository `repo` is in.
 /// How long each phase of drawing the page took the last few times `atlas serve` started, in
-/// seconds, the latest last: what the progress bars expect of the next start.
-pub fn timings(repo: &Path) -> BTreeMap<String, Vec<f64>> {
+/// seconds, the latest last: what the progress bars expect of the next start. A start that finds the
+/// index of its build of Atlas reads little (`warm`), one that does not reads all (`cold`), so the two
+/// kinds are kept apart.
+#[derive(Serialize, Deserialize, Default, Clone, Debug, PartialEq)]
+pub struct Timings {
+    #[serde(default)]
+    pub cold: BTreeMap<String, Vec<f64>>,
+    #[serde(default)]
+    pub warm: BTreeMap<String, Vec<f64>>,
+}
+
+impl Timings {
+    /// The times of starts of one kind, by phase.
+    pub fn of(&self, warm: bool) -> &BTreeMap<String, Vec<f64>> {
+        if warm {
+            &self.warm
+        } else {
+            &self.cold
+        }
+    }
+
+    pub fn of_mut(&mut self, warm: bool) -> &mut BTreeMap<String, Vec<f64>> {
+        if warm {
+            &mut self.warm
+        } else {
+            &mut self.cold
+        }
+    }
+}
+
+pub fn timings(repo: &Path) -> Timings {
     read(&file(repo, "timings.json")).and_then(|v| serde_json::from_value(v).ok()).unwrap_or_default()
 }
 
-pub fn set_timings(repo: &Path, timings: &BTreeMap<String, Vec<f64>>) -> Result<()> {
+pub fn set_timings(repo: &Path, timings: &Timings) -> Result<()> {
     write(&file(repo, "timings.json"), timings)
 }
 

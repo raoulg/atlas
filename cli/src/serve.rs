@@ -69,7 +69,10 @@ struct Server {
     /// Held while the page is drawn: it is drawn once, however many ask for it at a time.
     drawing: Mutex<()>,
     /// How long each phase took the last few times the server started, in seconds.
-    timings: Mutex<BTreeMap<String, Vec<f64>>>,
+    timings: Mutex<shared::Timings>,
+    /// Whether this start found the index of its build of Atlas, so reads little: the times it is
+    /// expected to take are those of starts of its kind.
+    warm: bool,
 }
 
 /// Serve the page of `repo` on this machine until the process stops, at `port`, else at the
@@ -92,6 +95,7 @@ pub fn serve(repo: &Path, port: Option<u16>, opts: &Options, shown: bool) -> Res
         progress: Mutex::new(Progress { phase: "code", error: None, since: Instant::now() }),
         drawing: Mutex::new(()),
         timings: Mutex::new(shared::timings(repo)),
+        warm: opts.cache.as_ref().and_then(|c| c.workspace(repo)).is_some_and(|c| c.holds_any()),
     });
     let url = format!("http://{at}/");
     // a note is for the work at hand: this page starts without the ones resolved before it
@@ -201,7 +205,7 @@ impl Server {
         }
         let mut timings = self.timings.lock().unwrap_or_else(|e| e.into_inner());
         for (phase, secs) in took {
-            let times = timings.entry(phase.to_string()).or_default();
+            let times = timings.of_mut(self.warm).entry(phase.to_string()).or_default();
             times.push(secs);
             let gone = times.len().saturating_sub(STARTS);
             times.drain(..gone);
@@ -261,13 +265,7 @@ impl Server {
     fn drawn(&self) -> Value {
         let progress = self.progress.lock().unwrap_or_else(|e| e.into_inner());
         let phases: &[&str] = if self.opts.libraries > 0 { &["code", "libraries"] } else { &["code"] };
-        let expected: BTreeMap<String, f64> = self
-            .timings
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .iter()
-            .filter_map(|(phase, times)| Some((phase.clone(), median(times)?)))
-            .collect();
+        let expected = expected(&self.timings.lock().unwrap_or_else(|e| e.into_inner()), self.warm);
         json!({"drawn": self.kept().map(|d| d.id.clone()), "drawing": self.drawing.try_lock().is_err(),
             "phase": progress.phase, "error": progress.error, "phases": phases,
             "elapsed": progress.since.elapsed().as_secs_f64(), "expected": expected})
@@ -393,6 +391,12 @@ fn slashed(p: &Path) -> String {
 /// How many starts the expected time of a phase is taken from.
 const STARTS: usize = 5;
 
+/// What each phase of a start is expected to take: the middle of what it took at starts of the same kind,
+/// with the index of their build of Atlas (`warm`) or without it.
+fn expected(timings: &shared::Timings, warm: bool) -> BTreeMap<String, f64> {
+    timings.of(warm).iter().filter_map(|(phase, times)| Some((phase.clone(), median(times)?))).collect()
+}
+
 /// The middle of `times`: what a phase is expected to take, which one start that was quick (all of it
 /// in the cache) or slow (the machine busy) does not move far.
 fn median(times: &[f64]) -> Option<f64> {
@@ -434,6 +438,21 @@ mod tests {
         assert_eq!(median(&[20.0, 22.0, 90.0, 21.0]), Some(21.5));
     }
 
+    /// A start is expected to take what starts of its kind took: one that reads everything is not hurried
+    /// by the quick ones that found their index, nor a quick one held up by them. What an older file kept
+    /// of both kinds together is no kind, and is forgotten.
+    #[test]
+    fn a_start_is_expected_to_take_what_starts_of_its_kind_took() {
+        let timings = shared::Timings {
+            cold: BTreeMap::from([("code".to_string(), vec![79.0, 81.0, 80.0])]),
+            warm: BTreeMap::from([("code".to_string(), vec![0.04, 0.003, 0.006, 0.004])]),
+        };
+        assert_eq!(expected(&timings, false)["code"], 80.0);
+        assert!(expected(&timings, true)["code"] < 0.01);
+        let older: shared::Timings = serde_json::from_str(r#"{"code": [79.4, 0.04, 0.003]}"#).unwrap();
+        assert_eq!(older, shared::Timings::default());
+    }
+
     #[test]
     fn root_answers_with_progress_before_any_picture_exists() {
         let server = Server {
@@ -444,7 +463,8 @@ mod tests {
             kept: Mutex::new(None),
             progress: Mutex::new(Progress { phase: "code", error: None, since: Instant::now() }),
             drawing: Mutex::new(()),
-            timings: Mutex::new(BTreeMap::new()),
+            timings: Mutex::new(shared::Timings::default()),
+            warm: false,
         };
         let request = Request {
             method: "GET".into(),
