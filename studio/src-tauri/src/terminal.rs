@@ -1,6 +1,9 @@
 //! Terminals: the user's own shell on a pseudo-terminal the Rust side owns, started in the open
 //! workspace. What the shell writes goes to the window over a channel; what the user types, and the
-//! terminal's size, come back by command. Closing a terminal, or the app, ends its shell.
+//! terminal's size, come back by command. Closing a terminal, or the app, ends its shell. When the
+//! app ends without closing them (a signal, a crash), the system closes its side of each terminal,
+//! and the shell on the other side ends: on Unix it is hung up (SIGHUP), on Windows the pseudo
+//! console ends the programs attached to it.
 
 use std::collections::HashMap;
 use std::io::{Read, Write};

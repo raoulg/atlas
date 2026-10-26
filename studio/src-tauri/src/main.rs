@@ -80,12 +80,14 @@ async fn open_workspace(app: &tauri::AppHandle, state: &tauri::State<'_, StudioS
     Ok(workspace)
 }
 
+/// Start `atlas serve` on the workspace. Its standard input is a pipe Studio holds and never writes:
+/// the system closes it when Studio ends, by Quit or by a signal, and the server ends with it.
 async fn start_workspace(app: &tauri::AppHandle, path: &PathBuf) -> Result<Session, String> {
     let command = app
         .shell()
         .sidecar("atlas")
         .map_err(|e| e.to_string())?
-        .args(["serve", &path.to_string_lossy(), "--port", "0", "--no-open"])
+        .args(["serve", &path.to_string_lossy(), "--port", "0", "--no-open", "--exit-on-stdin-close"])
         .env("NO_COLOR", "1")
         .env("ATLAS_NO_UPDATE_CHECK", "1");
     let (mut events, child) = command.spawn().map_err(|e| format!("Atlas kon niet starten: {e}"))?;
