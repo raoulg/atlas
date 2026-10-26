@@ -83,6 +83,20 @@ fn a_client_initializes_lists_and_calls() {
     assert_eq!(replies[6]["error"]["code"], -32602, "an unknown tool is a protocol error");
 }
 
+/// `check` with `json: true` gives the findings as data, the document `atlas check --json` prints: per
+/// part its findings, each with what it is about, by role and id.
+#[test]
+fn check_gives_the_findings_as_data() {
+    let replies = session(&[call(1, "check", json!({ "path": "engine/tests/fixture", "json": true }))]);
+    assert_ne!(replies[0]["result"]["isError"], true, "{}", text(&replies[0]));
+    let doc: Value = serde_json::from_str(text(&replies[0])).unwrap_or_else(|e| panic!("{e}: {}", text(&replies[0])));
+    let findings: Vec<&Value> =
+        doc["parts"].as_array().expect("parts").iter().flat_map(|p| p["findings"].as_array().expect("findings")).collect();
+    let about: Vec<&Value> = findings.iter().filter_map(|f| f["about"].as_array()).flatten().collect();
+    assert!(!about.is_empty(), "some finding says what it is about: {doc:#}");
+    assert!(about.iter().all(|a| a["role"].is_string() && a["id"].is_string()), "{about:?}");
+}
+
 /// An agent can request a route by its entry's id, and a route that is not there is the tool's
 /// error, said in words.
 #[test]

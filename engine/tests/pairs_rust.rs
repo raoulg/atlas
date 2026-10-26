@@ -67,17 +67,14 @@ fn touches<'g>(g: &'g Graph, f: &str, kind: &str) -> Vec<&'g Touch> {
     node(g, f).touches.iter().filter(|t| t.kind_name() == kind).collect()
 }
 
-/// The names a finding's text gives, as the code writes them (`Runner.batch`, `Level::Loud`,
-/// `visits`): what lies between spaces, brackets, quotes and commas.
-fn words(text: &str) -> impl Iterator<Item = &str> {
-    text.split(|c: char| !(c.is_alphanumeric() || matches!(c, '_' | '.' | ':')))
-        .map(|w| w.trim_matches(['.', ':']))
-        .filter(|w| !w.is_empty())
+/// The ids a `layers` finding's links run from and to.
+fn links(f: &Finding) -> Vec<&str> {
+    f.about("from").into_iter().chain(f.about("to")).collect()
 }
 
-/// Whether a line of a finding's evidence names `name`.
-fn cites(f: &Finding, name: &str) -> bool {
-    f.evidence.iter().any(|e| words(e).any(|w| w == name))
+/// Whether `id` is block `block` or stands inside it.
+fn within(id: &str, block: &str) -> bool {
+    id == block || id.strip_prefix(block).is_some_and(|rest| rest.starts_with('.'))
 }
 
 /// The comparisons of `f` that test `subject` against `case`, a literal or a member of a type.
@@ -122,7 +119,7 @@ fn choices_a_command_is_chosen_once() {
     let asked: Vec<_> = check(s).into_iter().filter(|f| f.principle == "choices" && f.node == "spend.run").collect();
     assert_eq!(asked.len(), 1, "{asked:#?}");
     // `kind` is tested against "report" in two places
-    assert!(cites(&asked[0], "kind"), "{asked:#?}");
+    assert_eq!((asked[0].about("subject"), asked[0].about("case")), (vec!["kind"], vec!["\"report\""]), "{asked:#?}");
     assert_eq!(tests_of(s, "spend.run", "kind", "report").len(), 2, "{:?}", node(s, "spend.run").compares);
     // the commands are still run
     for t in ["spend.expense.read_csv", "spend.rates.fetch", "spend.report.write"] {
@@ -150,7 +147,7 @@ fn zoom_a_family_is_a_base_type_with_its_kinds() {
     let families: Vec<_> = s.edges.iter().filter(|e| e.kind == EdgeKind::Inherits).map(|e| (&e.src, &e.dst)).collect();
     assert_eq!(families, [], "the formats are no family");
     let asked: Vec<_> = check(s).into_iter().filter(|f| f.principle == "choices" && f.node == "spend.report.write").collect();
-    assert!(asked.len() == 1 && cites(&asked[0], "format"), "{asked:#?}");
+    assert!(asked.len() == 1 && asked[0].about("subject") == ["format"], "{asked:#?}");
     assert_eq!(tests_of(s, "spend.report.write", "format", "csv").len(), 2, "{:?}", node(s, "spend.report.write").compares);
     // the report is still written
     assert!(!touches(s, "spend.report.write", "disk_write").is_empty());
@@ -355,7 +352,12 @@ fn layers_modules_depend_in_one_direction() {
     let asked: Vec<_> = check(s).into_iter().filter(|f| f.principle == "layers").collect();
     assert_eq!(asked.len(), 1, "{asked:#?}");
     // the cycle is report and store: each link in it joins the two
-    assert!(asked[0].evidence.iter().all(|e| words(e).any(|w| w == "report") && words(e).any(|w| w == "store")), "{asked:#?}");
+    let cycle = ["spend.report", "spend.store"];
+    assert_eq!(asked[0].about("block"), cycle, "{asked:#?}");
+    assert!(links(&asked[0]).iter().all(|id| cycle.iter().any(|b| within(id, b))), "{asked:#?}");
+    for block in cycle {
+        assert!(asked[0].about("from").iter().any(|id| within(id, block)), "a link runs from {block}: {asked:#?}");
+    }
     assert!(edge(s, EdgeKind::Calls, "spend.report.write", "spend.store.Store.rows"));
     assert!(edge(s, EdgeKind::Calls, "spend.store.Store.save", "spend.report.round2"));
 }
@@ -525,7 +527,7 @@ fn lens_what_is_put_comes_back_inside_and_a_key_is_no_put() {
     assert!(edge(&c, EdgeKind::Calls, "harvest.ReadingStore.summary", "harvest.ReadingStore.keep_summary"));
     assert_eq!(found(&s, "lens"), ["harvest.ReadingStore"]);
     let (types, _) = lens_of(&s, "harvest.ReadingStore").unwrap();
-    assert_eq!(types, ["Day", "Outage"], "the Outage and the Day, not the Reading");
+    assert_eq!(types, ["harvest.Day", "harvest.Outage"], "the Outage and the Day, not the Reading");
 }
 
 /// What follows an early return runs only where the guard's arm does not. The clean `summary`
@@ -862,15 +864,15 @@ fn choices_a_choice_is_made_once_across_bodies() {
         asked.iter().map(|f| f.node.as_str()).collect::<Vec<_>>(),
         ["runs.Runner", "runs.retries", "runs.verbosity", "runs.prefix", "runs.run"]
     );
-    // each finding cites the bodies that test one value against one case, and each of them tests it
+    // each finding is about the value tested and the bodies that test it against one case, and each of them tests it
     for (asked, value, case, bodies) in [
-        ("runs.Runner", "self.mode", "parallel", &["Runner.batch", "Runner.workers"][..]),
-        ("runs.retries", "mode", "parallel", &["retries", "timeout"]),
-        ("runs.prefix", "level", "Level::Loud", &["prefix", "suffix"]),
+        ("runs.Runner", "self.mode", "parallel", &["runs.Runner.batch", "runs.Runner.workers"][..]),
+        ("runs.retries", "mode", "parallel", &["runs.retries", "runs.timeout"]),
+        ("runs.prefix", "level", "Level::Loud", &["runs.prefix", "runs.suffix"]),
     ] {
+        assert_eq!((at(asked).about("subject"), at(asked).about("body")), (vec![value], bodies.to_vec()), "{asked}: {:#?}", at(asked));
         for body in bodies {
-            assert!(cites(at(asked), body), "{asked} cites {body}: {:#?}", at(asked));
-            assert_eq!(tests_of(&s, &format!("runs.{body}"), value, case).len(), 1, "{body} tests {value} against {case}");
+            assert_eq!(tests_of(&s, body, value, case).len(), 1, "{body} tests {value} against {case}");
         }
     }
     assert!(tests_of(&s, "runs.Runner.batch", "self.mode", "parallel")[0].receiver);
@@ -880,7 +882,7 @@ fn choices_a_choice_is_made_once_across_bodies() {
     // `run` picks where its Job comes from: `load` and `infer` are the arms of one choice
     let (load, infer) = (&step(&s, "runs.run", "runs.load").arms, &step(&s, "runs.run", "runs.infer").arms);
     assert!(load.len() == 1 && infer.len() == 1 && load[0].0 == infer[0].0 && load[0].1 != infer[0].1, "{load:?} {infer:?}");
-    assert!(cites(at("runs.run"), "load") && cites(at("runs.run"), "infer"), "{:#?}", at("runs.run"));
+    assert_eq!(at("runs.run").about("step"), ["runs.load", "runs.infer"], "{:#?}", at("runs.run"));
     // the shortcut still runs the job and sends its line
     assert!(edge(&s, EdgeKind::Calls, "runs.run", "runs.send") && edge(&s, EdgeKind::Calls, "runs.run", "runs.load"));
 }
@@ -893,18 +895,16 @@ fn club() -> &'static Pair {
     PAIR.get_or_init(|| common::pair("lens/rust/club"))
 }
 
-/// What `lens` asks of class `id`: the program's types its finding names, the class aside, and the
-/// places its methods touch that it names; none when it asks nothing.
+/// What `lens` asks of class `id`: the types it loses and the places it loses them at, each sorted;
+/// none when it asks nothing.
 fn lens_of(g: &Graph, id: &str) -> Option<(Vec<String>, Vec<String>)> {
     let f = check(g).into_iter().find(|f| f.principle == "lens" && f.node == id)?;
-    let class = node(g, id);
-    let named = |pick: &dyn Fn(&str) -> bool| -> Vec<String> {
-        let set: std::collections::BTreeSet<&str> = words(&f.what).filter(|w| pick(w)).collect();
-        set.into_iter().map(String::from).collect()
+    let sorted = |role: &str| -> Vec<String> {
+        let mut ids: Vec<String> = f.about(role).into_iter().map(String::from).collect();
+        ids.sort();
+        ids
     };
-    let ty = |w: &str| w != class.name && g.nodes.iter().any(|n| n.kind == atlas_engine::NodeKind::Class && !n.library && n.name == w);
-    let touched = |w: &str| g.nodes.iter().filter(|m| m.cls.as_deref() == Some(id)).flat_map(|m| &m.touches).any(|t| t.artifact == w);
-    Some((named(&ty), named(&touched)))
+    Some((sorted("lost"), sorted("place")))
 }
 
 /// What a lens puts, it gets back, at the table it puts to; and a key its statement finds rows by
@@ -923,9 +923,9 @@ fn lens_the_place_is_the_table_and_a_key_is_no_put() {
     assert_eq!(at("club.desk.Visits.forget"), [("visits".to_string(), "write")]);
     assert!(edge(c, EdgeKind::Takes, "club.desk.Visits.forget", "club.Member"));
     let lens = |id: &str, ty: &str, table: &str| assert_eq!(lens_of(s, id), Some((vec![ty.into()], vec![table.into()])), "{id}");
-    lens("club.desk.Desk", "Visit", "visits");
-    lens("club.desk.Register", "Member", "members");
-    lens("club.desk.Visits", "Member", "visits");
+    lens("club.desk.Desk", "club.Visit", "w:SQLite:visits");
+    lens("club.desk.Register", "club.Member", "w:SQLite:members");
+    lens("club.desk.Visits", "club.Member", "w:SQLite:visits");
 }
 
 /// A get gives a value back from the place; an operation that reads the place on its way to
@@ -938,7 +938,7 @@ fn lens_a_get_gives_a_value_back() {
     let kinds: Vec<&str> = node(c, "club.files.Log.add").touches.iter().map(|t| t.kind_name()).collect();
     assert!(kinds.contains(&"disk_read") && kinds.contains(&"disk_write"), "{kinds:?}");
     assert_eq!(lens_of(c, "club.files.Log"), None);
-    assert_eq!(lens_of(s, "club.files.Log").map(|(types, _)| types), Some(vec!["Visit".to_string()]));
+    assert_eq!(lens_of(s, "club.files.Log").map(|(types, _)| types), Some(vec!["club.Visit".to_string()]));
 }
 
 /// What a get gives back may be the class's own type, which a constructor gives. The clean
@@ -950,7 +950,7 @@ fn lens_a_get_gives_its_own_class_back() {
     assert!(node(c, "club.files.Roster.load").ctor);
     assert!(edge(c, EdgeKind::Has, "club.files.Roster", "club.Member"));
     assert_eq!(lens_of(c, "club.files.Roster"), None);
-    assert_eq!(lens_of(s, "club.files.Roster").map(|(types, _)| types), Some(vec!["Member".to_string()]));
+    assert_eq!(lens_of(s, "club.files.Roster").map(|(types, _)| types), Some(vec!["club.Member".to_string()]));
 }
 
 /// What a get gives back holds its fields, a library's type among them. `Ledger` puts a `Decimal`
@@ -1062,9 +1062,9 @@ fn layers_a_crates_root_and_its_types_depend_in_one_direction() {
     // `worth` takes the ledger's `Book`, which holds money's `Coin`
     let layers: Vec<_> = check(&s).into_iter().filter(|f| f.principle == "layers").collect();
     assert_eq!(layers.len(), 2, "{layers:#?}");
-    for links in [&["audit", "stamp", "rate"][..], &["worth", "Book", "Coin"]] {
-        let by: Vec<_> = layers.iter().filter(|f| links.iter().all(|l| cites(f, l))).collect();
-        assert_eq!(by.len(), 1, "one cycle through {links:?}: {layers:#?}");
+    for through in [&["cyc.audit", "cyc.stamp.stamp", "cyc.rate"][..], &["cyc.money.worth", "cyc.ledger.Book", "cyc.money.Coin"]] {
+        let by: Vec<_> = layers.iter().filter(|f| through.iter().all(|l| links(f).contains(l))).collect();
+        assert_eq!(by.len(), 1, "one cycle through {through:?}: {layers:#?}");
     }
     assert!(edge(&s, EdgeKind::Calls, "cyc.audit", "cyc.stamp.stamp"));
     assert!(edge(&s, EdgeKind::Calls, "cyc.stamp.stamp", "cyc.rate"));
@@ -1090,17 +1090,13 @@ fn layers_a_test_module_is_no_layer() {
         assert!(edge(&g, EdgeKind::Calls, "cyc.money.posted", "cyc.ledger.post"), "{side}");
         assert!(edge(&g, EdgeKind::Calls, "cyc.money.checks.posted_book", "cyc.ledger.post"), "{side}");
         assert!(!edge(&g, EdgeKind::Imports, "cyc.money", "cyc"), "{side}: the tests' `use super::*` is no import of money's");
-        // a cycle the layers find cites no test code; the clean side, whose money only takes the
-        // ledger from its tests, has none
+        // no link of a cycle the layers find runs from or to test code; the clean side, whose money
+        // only takes the ledger from its tests, has none
         let layers: Vec<_> = check(&g).into_iter().filter(|f| f.principle == "layers").collect();
-        let test_code: Vec<&str> = g
-            .nodes
-            .iter()
-            .filter(|n| n.module.starts_with("cyc.money") && tested(&g, &n.id))
-            .flat_map(|n| [n.name.as_str(), n.id.trim_start_matches("cyc.money.")])
-            .collect();
-        assert!(test_code.contains(&"posted") && test_code.contains(&"posted_book"), "{side}: {test_code:?}");
-        assert!(layers.iter().all(|f| test_code.iter().all(|t| !cites(f, t))), "{side}: {layers:#?}");
+        let test_code: Vec<&str> =
+            g.nodes.iter().filter(|n| n.module.starts_with("cyc.money") && tested(&g, &n.id)).map(|n| n.id.as_str()).collect();
+        assert!(test_code.contains(&"cyc.money.posted") && test_code.contains(&"cyc.money.checks.posted_book"), "{side}: {test_code:?}");
+        assert!(layers.iter().all(|f| links(f).iter().all(|id| !test_code.contains(id))), "{side}: {layers:#?}");
         assert_eq!(layers.is_empty(), side == "clean", "{side}: {layers:#?}");
     }
 }

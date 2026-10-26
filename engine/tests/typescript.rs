@@ -231,8 +231,10 @@ fn a_change_to_an_input_is_a_change() {
         assert!(g.node(&format!("fixture-ts.{builds}")).is_some(), "{builds} is in the graph");
         assert!(!m.iter().any(|(s, _)| s == builds), "{builds}: {m:?}");
     }
-    let asked: Vec<String> = check(&g).into_iter().filter(|f| f.principle == "changes").map(|f| f.what).collect();
-    assert!(asked.iter().any(|w| w.contains("verzamel")) && !asked.iter().any(|w| w.contains("Teller.tel")), "{asked:?}");
+    let asked: Vec<_> = check(&g).into_iter().filter(|f| f.principle == "changes").collect();
+    let verzamel = asked.iter().find(|f| f.node == "fixture-ts.lib.telling.verzamel").unwrap_or_else(|| panic!("{asked:#?}"));
+    assert_eq!((verzamel.about("changes"), verzamel.about("type")), (vec!["uit"], vec!["fixture-ts.lib.model.Regel"]));
+    assert!(asked.iter().all(|f| f.node != "fixture-ts.lib.telling.Teller.tel"), "{asked:#?}");
 }
 
 /// A TypeScript body lists its calls, each with what it is handed and the name it is kept by:
