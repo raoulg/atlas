@@ -625,7 +625,8 @@ which parameters of no type of the code's hold a value, `builder::settle_paramet
 **In Atlas.** A filter and a quotient commute exactly when the filter's predicate is saturated by
 the quotient's equivalence. Otherwise the order of a view is meaning, and Atlas takes the filter
 first, so the reader decides what exists before the quotient decides how it groups.
-**Where.** `design.md` §1, "When order matters".
+**Where.** `design.md` §1, "When order matters"; `engine/tests/laws.rs` holds both orders to each
+other on graphs `proptest` draws, and shows a filter that cuts a class in two.
 
 ## Type theory
 

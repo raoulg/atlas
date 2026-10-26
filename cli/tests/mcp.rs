@@ -43,7 +43,7 @@ fn a_client_initializes_lists_and_calls() {
         json!({ "jsonrpc": "2.0", "id": 2, "method": "tools/list" }),
         call(3, "check", json!({ "path": "engine/tests/fixture", "principle": "choices" })),
         call(4, "explain", json!({ "principle": "sums" })),
-        call(5, "route", json!({ "entry": "analyze" })),
+        call(5, "route", json!({ "path": "engine/tests/fixture", "entry": "build" })),
         call(6, "explain", json!({ "principle": "kiss" })),
         call(7, "nothing", json!({})),
     ]);
@@ -77,16 +77,23 @@ fn a_client_initializes_lists_and_calls() {
     assert!(text(&replies[2]).contains("prepare tests `mode`"), "{}", text(&replies[2]));
     assert!(!text(&replies[2]).contains("\ndoors ·"), "only the principle asked for");
     assert!(text(&replies[3]).starts_with("A sum type is unwrapped where it arises."));
-    assert!(text(&replies[4]).contains("atlas-engine.analyze"), "the route tool returns the requested entry");
+    assert_ne!(replies[4]["result"]["isError"], true, "{}", text(&replies[4]));
+    assert!(text(&replies[4]).contains("fixture.cli.build"), "the route tool returns the requested entry: {}", text(&replies[4]));
     assert_eq!(replies[5]["result"]["isError"], true, "an unknown principle is the tool's error, said in words");
     assert_eq!(replies[6]["error"]["code"], -32602, "an unknown tool is a protocol error");
 }
 
-/// An agent can request the route of `atlas view` by its entry name.
+/// An agent can request a route by its entry's id, and a route that is not there is the tool's
+/// error, said in words.
 #[test]
-fn an_agent_can_read_atlas_view_route() {
-    let replies = session(&[call(1, "route", json!({ "entry": "atlas.view" }))]);
-    assert!(text(&replies[0]).contains("atlas.view"), "{}", text(&replies[0]));
+fn an_agent_can_read_a_route_by_its_entry() {
+    let replies = session(&[
+        call(1, "route", json!({ "path": "engine/tests/fixture", "entry": "fixture.cli.build" })),
+        call(2, "route", json!({ "path": "engine/tests/fixture", "entry": "fixture.cli.nowhere" })),
+    ]);
+    assert_ne!(replies[0]["result"]["isError"], true, "{}", text(&replies[0]));
+    assert!(text(&replies[0]).contains("fixture.cli.build"), "{}", text(&replies[0]));
+    assert_eq!(replies[1]["result"]["isError"], true, "{}", text(&replies[1]));
 }
 
 /// `changes` over MCP: an agent sees what its edit did to the routes.
