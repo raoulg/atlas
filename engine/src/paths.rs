@@ -10,6 +10,7 @@
 //! statement whose verb and tables are written out is whole where it is built; the values it is
 //! built from name no place.
 
+use std::collections::HashSet;
 use std::sync::OnceLock;
 
 use regex::Regex;
@@ -290,6 +291,10 @@ pub fn parent(b: &Built) -> Built {
     for i in (0..b.len()).rev() {
         let (Seg::Lit(s) | Seg::Package(s)) = &b[i] else { continue };
         let t = s.trim_end_matches('/');
+        // the directory above `{p}/..` is one more step up, once the path is said
+        if t == ".." || t.ends_with("/..") {
+            return [b.clone(), lit("/..")].concat();
+        }
         if let Some(k) = t.rfind('/') {
             let mut out = b[..i].to_vec();
             let up = t[..k.max(1)].to_string();
@@ -344,10 +349,25 @@ pub fn is_statement(db: crate::model::Db, built: &[Built]) -> bool {
     crate::effects::reads_statements(db) && built.iter().any(starts)
 }
 
+/// The names Atlas gives a hole where the code gives it none: an expression it does not follow
+/// (`value`, `call`, `format`, `method`, `parent`) or one beyond its depth (`…`).
+const ANONYMOUS: &[&str] = &["value", "call", "format", "method", "parent", "…"];
+
+/// A hole as a place writes it: `{name}` where the code names it, `{}` where it does not.
+fn named_hole(hole: &str) -> String {
+    let name = hole.trim_start_matches('$').trim_start_matches('{').trim_end_matches('}');
+    if ANONYMOUS.contains(&name.trim_start_matches('$')) {
+        "{}".into()
+    } else {
+        hole.trim_start_matches('$').to_string()
+    }
+}
+
 /// The place a path names: the file, or for an operation on a directory that directory. A file
 /// whose name is known under a directory that is not (`artefacts/{variant}/report.json`,
-/// `{$DATA_DIR}/report.txt`) is that name under any such directory (`artefacts/*/report.json`,
-/// `*/report.txt`), so the hole stays in the term; a path whose last part is not known rests in
+/// `{$DATA_DIR}/report.txt`) is that name under that directory, the hole kept in the term by the
+/// name the code gives it; a hole the code gives no name (`{value}`) is `{}`, so it is never taken
+/// for a wildcard the code writes, nor two named holes for one directory; a path whose last part is not known rests in
 /// the directory before its first unknown part, so what is unpacked into `D/{kind}/{id}` and what
 /// lists `D` meet at `D/`. A pattern the code writes (`D.glob("*/IO-*")`) is the fiber below its
 /// directory, whatever operation it is handed to: the listing and the reads of what it yields are
@@ -380,7 +400,13 @@ pub fn place(b: &Built, op: &str) -> Option<String> {
     let unknown = |s: &str| s.contains('{') || (dir && wild(s));
     let p = p.trim_end_matches('/').to_string();
     let parts: Vec<&str> = p.split('/').collect();
-    let any = || parts.iter().map(|x| placeholder_re().replace_all(x, "*").into_owned()).collect::<Vec<_>>().join("/");
+    let any = || {
+        parts
+            .iter()
+            .map(|x| placeholder_re().replace_all(x, |c: &regex::Captures| named_hole(&c[0])).into_owned())
+            .collect::<Vec<_>>()
+            .join("/")
+    };
     // a pattern below a directory is the part of the directory it holds: the place keeps it
     let pattern = crate::knowledge::PATH_PATTERNS.iter().any(|(name, _)| *name == op);
     let p = match parts.iter().position(|x| unknown(x)) {
@@ -393,8 +419,16 @@ pub fn place(b: &Built, op: &str) -> Option<String> {
         Some(0) => return None,
         Some(i) => format!("{}/", parts[..i].join("/")),
     };
-    let names = p.split('/').any(|x| !matches!(x, "" | "." | "*" | "**"));
+    let names = p.split('/').any(|x| !matches!(x, "" | "." | "*" | "**" | "{}"));
     names.then_some(p)
+}
+
+/// The places the program names a place below, which are therefore directories: what
+/// `D.glob("*/IO-*")` lists and `io_dir / "Metadata.xml"` reads in is the directory `D/*/IO-*/`,
+/// so the listing and the files in it are one folder, whatever the operation that names it.
+pub fn folders<'a>(places: impl Iterator<Item = &'a str> + Clone) -> HashSet<String> {
+    let below: HashSet<&str> = places.clone().flat_map(|a| a.trim_end_matches('/').match_indices('/').map(move |(i, _)| &a[..i])).collect();
+    places.filter(|a| !a.ends_with('/') && below.contains(a)).map(str::to_string).collect()
 }
 
 /// The name of the one value `built` holds, where it is whole in `holder`, when it is one of
@@ -848,6 +882,19 @@ pub fn place_calls(store: &mut crate::builder::GraphBuilder, completed: Vec<Comp
             }
         }
     }
+    let disk: Vec<&str> = store
+        .nodes
+        .values()
+        .flat_map(|n| n.touches.iter().chain(&n.instead))
+        .filter(|t| t.kind == World::Disk)
+        .map(|t| t.artifact.as_str())
+        .collect();
+    let dirs = folders(disk.into_iter());
+    for t in store.nodes.values_mut().flat_map(|n| n.touches.iter_mut().chain(n.instead.iter_mut())) {
+        if t.kind == World::Disk && dirs.contains(&t.artifact) {
+            t.artifact.push('/');
+        }
+    }
 }
 
 #[cfg(test)]
@@ -945,18 +992,26 @@ mod tests {
         assert_eq!(place(&shipped, "read_text").as_deref(), Some("src/pages/template.html"));
     }
 
-    /// A part no code decides stays a hole in the term: a file whose name is known is that name
-    /// under any directory, wherever the unknown part stands; a pattern is one place, the fiber
-    /// below its directory, for the listing and for what is read of what it yields.
+    /// A part no code decides stays a hole in the term, by the name the code gives it: a file whose
+    /// name is known is that name under that directory, wherever the unknown part stands; a hole the
+    /// code gives no name is `{}`, never a wildcard; a pattern is one place, the fiber below its
+    /// directory, for the listing and for what is read of what it yields.
     #[test]
     fn a_hole_stays_in_the_term() {
         let env = |rest: &str| [environment("DATA_DIR"), lit(rest)].concat();
-        assert_eq!(place(&env("/report.txt"), "read_text").as_deref(), Some("*/report.txt"));
-        assert_eq!(place(&env("/sub/report.txt"), "open").as_deref(), Some("*/sub/report.txt"));
+        assert_eq!(place(&env("/report.txt"), "read_text").as_deref(), Some("{$DATA_DIR}/report.txt"));
+        assert_eq!(place(&env("/sub/report.txt"), "open").as_deref(), Some("{$DATA_DIR}/sub/report.txt"));
         assert_eq!(
             place(&[lit("artefacts/"), hole("variant"), lit("/report.json")].concat(), "open").as_deref(),
-            Some("artefacts/*/report.json")
+            Some("artefacts/{variant}/report.json")
         );
+        assert_ne!(
+            place(&[hole("base"), lit("/report.txt")].concat(), "read"),
+            place(&[hole("top"), lit("/report.txt")].concat(), "read"),
+            "two holes the code names are two directories"
+        );
+        assert_eq!(place(&[hole("value"), lit("/report.txt")].concat(), "read").as_deref(), Some("{}/report.txt"));
+        assert_ne!(place(&[hole("value"), lit("/x/*.xml")].concat(), "glob"), place(&lit("*/x/*.xml"), "glob"), "a hole is no wildcard");
         assert_eq!(place(&environment("DATA_DIR"), "read_text"), None, "nothing known is no place");
         assert_eq!(place(&[environment("DATA_DIR"), lit("/"), hole("name")].concat(), "read_text"), None);
         assert_eq!(place(&[lit("data/"), hole("name")].concat(), "read_text").as_deref(), Some("data/"));
@@ -968,5 +1023,25 @@ mod tests {
         let unset = or_else(vec![environment("DATA_DIR")], vec![lit("")]);
         let joined: Vec<Option<String>> = cross(&unset, &[lit("sub/report.txt")], "/").iter().map(|b| place(b, "read")).collect();
         assert_eq!(joined, [Some("sub/report.txt".into())], "the empty path joins as nothing, and the variable is its input");
+    }
+
+    /// A place the program names a place below is a directory, whatever operation names it: the
+    /// listing of `D/*/IO-*` and the files read in what it yields are one folder.
+    #[test]
+    fn a_place_with_places_below_is_a_folder() {
+        let places = ["D/*/IO-*", "D/*/IO-*/Metadata.xml", "D/x.csv", "D/*/IO-*/"];
+        assert_eq!(folders(places.into_iter()), HashSet::from(["D/*/IO-*".to_string()]));
+    }
+
+    /// Going up twice from a path a caller hands is going up twice from what the caller hands:
+    /// `x.parent.parent / "m.json"` with `x = a/b/c.xml` is `a/m.json`, the same as written out.
+    #[test]
+    fn a_parent_of_a_parent_is_two_steps_up() {
+        let x = vec![Seg::Param("x".into())];
+        let up = join(&parent(&parent(&x)), &lit("m.json"), "/");
+        let handed = substitute(&up, |_| vec![lit("a/b/c.xml")]);
+        let written = join(&parent(&parent(&lit("a/b/c.xml"))), &lit("m.json"), "/");
+        assert_eq!(handed.iter().map(|b| place(b, "read")).collect::<Vec<_>>(), [place(&written, "read")]);
+        assert_eq!(place(&written, "read").as_deref(), Some("a/m.json"));
     }
 }

@@ -1,15 +1,16 @@
-# A directory no code decides is a hole in the path, and the file is that name under any directory: the gap shows.
+# A directory no code decides is a hole in the path, kept by the name the code gives it: the file is that name under
+# that directory, and the gap shows.
 # What the environment holds stands in the term as its hole; it is no place of its own.
 
 route holeenv.run
 step run/Path                                               # `root = Path(os.environ["DATA_DIR"])`
 line entry > run call
-line File(*/report.txt) > run own
+line File({$DATA_DIR}/report.txt) > run own
 line run > Screen own
 line run/Path > _·root@run/Path value
 line _·root@run/Path > run value   # `(root / "report.txt").read_text()`
 home _·root@run/Path run
 
 side entry left
-side File(*/report.txt) left
+side File({$DATA_DIR}/report.txt) left
 side Screen right

@@ -179,11 +179,18 @@ variable with a fallback, a command-line option) is the caller's to choose; a fi
 where the package's code lies ships with it. The code decides a place in the frame of the
 function where the root becomes something it holds, a literal or a constant, which is where
 `places` asks. A file the term decides to the last part is a `File`; one whose name it decides
-below a directory it does not (`{$DATA_DIR}/report.txt`) is that name under any directory,
-`File(*/report.txt)`, the hole kept in the term, wherever in the term it stands. A pattern is the
-fiber below its directory, and what is read of what it yields is the same place.
-**Where.** `paths.rs` (`Seg`, `join`, `place`, `Callers`), `python/paths.rs` (`Eval::of`); the
-pairs `python/paths` and `places`.
+below a directory it does not is that name under that directory, the hole kept in the term by
+the name the code gives it, wherever in the term it stands: `File({$DATA_DIR}/report.txt)`. Two
+holes the code names differently are two directories, since nothing in the code says they are one;
+a hole the code gives no name (an expression Atlas does not follow) is `{}`, never `*`, which is
+a wildcard the code writes. A pattern is the fiber below its directory, and what is read of what
+it yields is the same place. A place the program names a place below is a directory (`D/*/IO-*/`,
+which `glob` lists and `io_dir / "Metadata.xml"` reads in), so the listing and what is read in it
+fold into one folder. The place is the term; its label says the term's patterns in words, from the
+file up (`every *.xml in OW-bestanden/ in each folder in {base_dir}/`), and the term is under the
+pointer. Words are a label, never an identity: two places are one when their terms are.
+**Where.** `paths.rs` (`Seg`, `join`, `place`, `folders`, `Callers`), `python/paths.rs`
+(`Eval::of`), `plan.js` (`pathWords`); the pairs `python/paths` and `places`.
 
 ### Yoneda: what changed
 **What.** An object is determined up to isomorphism by the arrows into it, `Hom(−, A)`, and
