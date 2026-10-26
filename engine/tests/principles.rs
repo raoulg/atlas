@@ -9,11 +9,6 @@ fn findings(repo: &str) -> Vec<Finding> {
     check(&analyze(&root, &Options::default()).expect("parses"))
 }
 
-/// The names a finding's text holds: ids, types and paths, apart from the words and signs between them.
-fn names(text: &str) -> Vec<&str> {
-    text.split(|c: char| !(c.is_alphanumeric() || c == '_' || c == '.')).filter(|w| !w.is_empty()).collect()
-}
-
 fn by_principle(fs: &[Finding]) -> BTreeMap<&'static str, Vec<&str>> {
     let mut out: BTreeMap<&str, Vec<&str>> = BTreeMap::new();
     for f in fs {
@@ -47,7 +42,7 @@ fn a_prophecy_is_no_finding_and_answers_the_one_it_supersedes() {
     let said = |id: &str| g.node(id).unwrap().prophecy.clone().unwrap_or_else(|| panic!("{id} is a prophecy"));
     assert_eq!(said("fixture.plans.stash").replaces.as_deref(), Some("fixture.plans.keep"));
     let keep = fs.iter().find(|f| f.node == "fixture.plans.keep").expect("the function a prophecy supersedes is still asked about");
-    assert!(keep.evidence.iter().any(|e| names(e).contains(&"stash")), "{:?}", keep.evidence);
+    assert_eq!(keep.about("answered_by"), ["fixture.plans.stash"], "{:?}", keep.about);
     // `forgotten` supersedes a name the code does not hold; `report` calls the prophecy `tidy`
     let gone = said("fixture.plans.forgotten");
     assert!(gone.supersedes.as_deref() == Some("fixture.plans.gone") && gone.replaces.is_none() && gone.candidates.is_empty(), "{gone:?}");
@@ -131,7 +126,7 @@ fn a_lens_puts_what_reaches_the_place_not_the_key_it_looks_up_by() {
         notes.about
     );
     // what a get gives back is no part of what the finding is about; only its sentence says it
-    assert!(notes.evidence.iter().any(|e| names(e).contains(&"Notes.get") && names(e).contains(&"dict")), "{:?}", notes.evidence);
+    assert_eq!(notes.about("got"), ["dict"], "{:?}", notes.about);
 }
 
 /// The principles read Rust by what its types and entries mean: a trait's implementation has the

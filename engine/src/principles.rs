@@ -289,6 +289,10 @@ pub fn check(g: &Graph) -> Vec<Finding> {
                 ix.node(&f.node).and_then(|n| answers.get(n.id.as_str()).or_else(|| n.cls.as_deref().and_then(|c| answers.get(c))))
             {
                 f.evidence.push(format!("answered by the prophecy `{}`, which supersedes it", ix.label(p)));
+                let answered = About { role: "answered_by", id: p.to_string() };
+                if !f.about.contains(&answered) {
+                    f.about.push(answered);
+                }
             }
         }
         found.sort_by(|a, b| (&a.file, a.line).cmp(&(&b.file, b.line)));
@@ -1726,7 +1730,7 @@ fn lens<'g>(ix: &Index<'g>) -> Vec<Finding> {
         for (place, label) in places {
             let (mut put, mut got, mut back): (BTreeMap<&str, Vec<String>>, Vec<String>, HashSet<&str>) =
                 (BTreeMap::new(), vec![], HashSet::new());
-            let (mut putters, mut getters): (Vec<String>, Vec<String>) = (vec![], vec![]);
+            let (mut putters, mut getters, mut gave): (Vec<String>, Vec<String>, Vec<String>) = (vec![], vec![], vec![]);
             for (m, puts, gets) in &ops {
                 if puts.contains_key(place) && ix.declares(&c.id, m) {
                     for t in put_types(c, m, place, &ids) {
@@ -1744,6 +1748,12 @@ fn lens<'g>(ix: &Index<'g>) -> Vec<Finding> {
                         types.iter().map(|t| ix.label(t)).collect::<Vec<_>>().join(", ")
                     };
                     got.push(format!("{}: {label} → {what}", ix.label(&m.id)));
+                    // what a get gives back: the types it returns, or the type as written where none is the program's
+                    gave.extend(if types.is_empty() {
+                        vec![written(m).to_string()]
+                    } else {
+                        types.iter().map(|t| t.to_string()).collect()
+                    });
                 }
             }
             let lost: Vec<&str> = put.keys().copied().filter(|t| !back.contains(t)).collect();
@@ -1760,6 +1770,7 @@ fn lens<'g>(ix: &Index<'g>) -> Vec<Finding> {
             about.push(("place", place.clone()));
             about.extend(putters.into_iter().map(|m| ("put", m)));
             about.extend(getters.into_iter().map(|m| ("get", m)));
+            about.extend(gave.into_iter().map(|t| ("got", t)));
             evidence.extend(put.values().flatten().map(|p| format!("put {p}")));
             evidence.extend(got.iter().map(|g| format!("get {g}")));
             for t in lost.iter().filter(|_| named(place)) {
