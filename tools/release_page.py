@@ -15,8 +15,9 @@ paragraphs (code in fences), an `Issues:` line, and the point's pictures:
   before and by this one (what only one of them draws outlined in its colour), and Atlas's own code
   where the change is. `--take <report dir> <version>` copies what the notes name of a report into
   `docs/releases/<version>/report/`.
-- `Diagram: releases/<version>/x.svg | caption`: a drawing of the point's structure, inline, so that it
-  takes the page's colours in the light and the dark, with what it shows beneath it.
+- `Diagram: releases/<version>/x.svg | caption; releases/<version>/y.svg`: drawings of the point's
+  structure, inline, so that they take the page's colours in the light and the dark, each with what it
+  shows beneath it.
 - `Bars: label = 18.9 s; label = 0.14 s | caption`: a bar chart of measured numbers.
 - `Pictures: changes/x.jpg`: screenshots, from the notes each issue leaves in `docs/changes/`.
 
@@ -217,10 +218,10 @@ def page(release: dict) -> str:
             body.append(example(release, point["example"]))
         if point.get("compare"):
             body.append(compare(point["compare"]))
-        drawings, _, caption = point.get("diagram", "").partition("|")
-        for diagram in [d.strip() for d in drawings.split(",") if d.strip()]:
+        for drawing in [d for d in point.get("diagram", "").split(";") if d.strip()]:
+            diagram, _, caption = drawing.partition("|")
             said = f"<figcaption>{inline(caption.strip())}</figcaption>" if caption.strip() else ""
-            body.append(f'<figure class="diagram">{svg(DOCS / diagram)}{said}</figure>')
+            body.append(f'<figure class="diagram">{svg(DOCS / diagram.strip())}{said}</figure>')
         if point.get("bars"):
             body.append(bars(point["bars"]))
         for n in re.findall(r"#(\d+)", point.get("atlas", "")):
