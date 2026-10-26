@@ -656,12 +656,13 @@ pub fn refs(decoration: &str) -> Vec<Ref> {
 }
 
 /// `n` commits of `repo`, after the newest `skip`: of every branch, remote branch and tag when
-/// `all`, else of HEAD's history.
+/// `all`, else of HEAD's history. A commit comes before its parents, and of two where neither is the
+/// other's ancestor, the newer comes first: the work of now stands on top, whichever branch it is on.
 pub fn log(repo: &Path, all: bool, n: usize, skip: usize) -> Result<Log> {
     let (count, skipped) = (format!("-n{n}"), format!("--skip={skip}"));
     let mut args = vec![
         "log",
-        "--topo-order",
+        "--date-order",
         "--decorate=full",
         "--format=%H%x1f%h%x1f%P%x1f%D%x1f%s%x1f%an%x1f%at%x1e",
         count.as_str(),
