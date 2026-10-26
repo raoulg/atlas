@@ -206,24 +206,35 @@ fn changed_options_select_an_independent_reading() {
     let _ = std::fs::remove_dir_all(root);
 }
 
+/// A part reads the library it imports from the environment the parts share, as code. The cache's
+/// law is that a warm reading is the cold one: when the library's code changes, the part that
+/// imports it reads the change, warm as cold. How many parts the change refreshes is how fine the cache is,
+/// no law: a cache that refreshed only `one` would be as right as one that refreshes both.
 #[test]
 fn a_shared_library_environment_refreshes_dependent_parts() {
     let root = two_parts();
+    std::fs::write(
+        root.join("one/src/index.ts"),
+        "import { value } from \"shared\";\n\nexport function one(): number {\n  return value();\n}\n",
+    )
+    .unwrap();
     let cold = Options { libraries: 1, ..Options::default() };
     let indexed = Options { cache: Some(Cache::at(&root.join("global"), "index-test")), ..cold.clone() };
-    let cache = indexed.cache.as_ref().unwrap();
-    read(&root, &indexed);
-    assert_eq!(cache.writes(), 2);
 
     let library = root.join("node_modules/shared");
     std::fs::create_dir_all(&library).unwrap();
-    std::fs::write(library.join("package.json"), "{\"name\":\"shared\",\"types\":\"index.d.ts\"}").unwrap();
-    std::fs::write(library.join("index.d.ts"), "export declare function value(): number;\n").unwrap();
-    same_reading(&read(&root, &indexed), &read(&root, &cold));
-    assert_eq!(cache.writes(), 4);
+    let code = |file: &str| {
+        format!("import {{ readFileSync }} from \"node:fs\";\n\nexport function value() {{\n  return readFileSync(\"{file}\");\n}}\n")
+    };
+    std::fs::write(library.join("package.json"), "{\"name\":\"shared\",\"main\":\"index.js\"}").unwrap();
+    std::fs::write(library.join("index.js"), code("first.txt")).unwrap();
+    let before = read(&root, &indexed);
+    same_reading(&before, &read(&root, &cold));
+    same_reading(&read(&root, &indexed), &before);
 
-    std::fs::write(library.join("index.d.ts"), "export declare function value(): string;\n").unwrap();
-    same_reading(&read(&root, &indexed), &read(&root, &cold));
-    assert_eq!(cache.writes(), 6);
+    std::fs::write(library.join("index.js"), code("second.txt")).unwrap();
+    let after = read(&root, &indexed);
+    same_reading(&after, &read(&root, &cold));
+    assert_ne!(serde_json::to_value(&before[0]).unwrap(), serde_json::to_value(&after[0]).unwrap(), "`one` reads what its library gives");
     let _ = std::fs::remove_dir_all(root);
 }

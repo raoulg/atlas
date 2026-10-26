@@ -31,6 +31,13 @@ fn edges(g: &Graph, kind: EdgeKind) -> HashSet<(String, String)> {
     g.edges.iter().filter(|e| e.kind == kind).map(|e| (e.src.clone(), e.dst.clone())).collect()
 }
 
+/// What `id` touches in the route that starts at `entry`, which runs it: each touch's kind and place.
+fn in_route<'g>(g: &'g Graph, entry: &str, id: &str) -> Vec<(&'static str, &'g str)> {
+    let reached = g.reach(entry);
+    assert!(reached.contains(id), "the route from {entry} runs {id}");
+    g.node(id).unwrap().touches_in(entry, &|f| reached.contains(f)).into_iter().map(|t| (t.kind_name(), t.artifact.as_str())).collect()
+}
+
 /// The call positions from one function to the first occurrence of another, through its bodies.
 fn first_call_path(g: &Graph, from: &str, target: &str) -> Option<Vec<usize>> {
     fn visit(g: &Graph, id: &str, target: &str, active: &mut HashSet<String>, path: &mut Vec<usize>) -> Option<Vec<usize>> {
@@ -214,10 +221,11 @@ fn an_object_holds_what_its_constructor_was_handed() {
     let keep: Vec<&str> = rs.node("handed.world.Store.keep").unwrap().touches.iter().map(|t| t.artifact.as_str()).collect();
     assert_eq!(keep, ["stock/kept.txt"], "`Store::new(PathBuf::from(\"stock\"))`");
     // the place is `stock`'s: a route that does not build the value sees the call as it was read
-    let stock = atlas_engine::story::route(&rs, "handed.world.stock", 3).unwrap();
-    assert!(stock.contains("writes stock/kept.txt"), "{stock}");
-    let own = atlas_engine::story::route(&rs, "handed.world.Store.keep", 3).unwrap();
-    assert!(own.contains("writes") && !own.contains("stock/kept.txt"), "{own}");
+    assert_eq!(in_route(&rs, "handed.world.stock", "handed.world.Store.keep"), [("disk_write", "stock/kept.txt")]);
+    let read: Vec<(&str, &str)> =
+        rs.node("handed.world.Store.keep").unwrap().instead.iter().map(|t| (t.kind_name(), t.artifact.as_str())).collect();
+    assert!(read.iter().any(|(kind, _)| *kind == "disk_write") && read.iter().all(|(_, place)| *place != "stock/kept.txt"), "{read:?}");
+    assert_eq!(in_route(&rs, "handed.world.Store.keep", "handed.world.Store.keep"), read);
 }
 
 /// A script's command line, run as written, holds the defaults its parser declares: `args.out_file`
@@ -499,8 +507,19 @@ fn an_arm_says_what_decides_it() {
     );
     let rs = analyze(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixture-rs"), &Options::default()).unwrap();
     assert_eq!(whens(&rs, "handed.choose.resolve"), [w(0, 0, "Some(p)"), w(0, 1, "None"), w(1, 1, "otherwise")]);
-    let text = atlas_engine::story::choices(&g, "fixture.build.prepare").unwrap();
-    assert!(text.contains("  a  when mode == \"fresh\":  build_graph") && text.contains("  b  otherwise:  empty"), "{text}");
+    // what each arm runs, beside what decides it
+    let bodies = atlas_engine::flow::bodies(&g);
+    let arms: Vec<(usize, &str, &str)> = bodies["fixture.build.prepare"]
+        .items
+        .iter()
+        .find_map(|it| match it {
+            atlas_engine::flow::Item::Choice { choice: 0, members, when } => {
+                Some(members.iter().map(|m| (m.branch, m.step.to.as_str(), when[m.branch].as_str())).collect())
+            }
+            _ => None,
+        })
+        .expect("the first choice of `prepare` runs steps");
+    assert_eq!(arms, [(0, "fixture.build.build_graph", "mode == \"fresh\""), (1, "fixture.build.empty", "otherwise")]);
 }
 
 /// Where data rests is named as precisely as the code allows: a literal file, else its format;
@@ -875,10 +894,8 @@ fn rust_reads_paths_as_built() {
     assert_eq!(t("prepare"), [here("db_sqlite", "seen")], "`conn.execute(SCHEMA, [])`");
     assert_eq!(t("run"), [users("db_sqlite", "run"), by("db_sqlite", "seen", "forget")], "`run(path, \"DELETE FROM seen\")`");
     // a route shows what its own calls hand
-    let publish = atlas_engine::story::route(&g, "handed.world.publish", 3).unwrap();
-    assert!(publish.contains("writes site/report.html") && !publish.contains("writes dir"), "{publish}");
-    let report = atlas_engine::story::route(&g, "handed.world.report", 3).unwrap();
-    assert!(!report.contains("site/report.html"), "{report}");
+    assert_eq!(in_route(&g, "handed.world.publish", "handed.world.report"), [("disk_write", "site/report.html")]);
+    assert_eq!(in_route(&g, "handed.world.report", "handed.world.report"), [("disk_write", "*/report.html")]);
 }
 
 /// `atlas check .` inside a crate reads the crate: the walk's root is read whatever it is called,

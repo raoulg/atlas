@@ -132,7 +132,12 @@ fn a_server_registers_its_routes() {
     );
     assert_eq!(entry("server.regels.regels.POST /"), Some((EntryKind::Route, "POST /api/regels".into())));
     assert!(g.node("fixture-ts.server.regels.regels").is_none(), "a router is no function");
-    assert_eq!(entry("server"), Some((EntryKind::Cli, "dev · serve".into())), "the scripts that run server/index.ts");
+    let (kind, scripts) = entry("server").expect("the scripts that run server/index.ts make it a command");
+    assert_eq!(kind, EntryKind::Cli);
+    assert!(
+        scripts.contains("dev") && scripts.contains("serve") && !scripts.contains("build"),
+        "the scripts that run server/index.ts, and not `build`: {scripts}"
+    );
     assert_eq!(entry("lib.api.laad"), Some((EntryKind::Export, "laad".into())), "`exports` → lib/index.ts → `export *`");
     assert_eq!(entry("lib.model.Laag"), Some((EntryKind::Export, "Kaartlaag".into())), "`export {{ Laag as Kaartlaag }}`");
     assert_eq!(entry("lib.thema.thema"), None, "not exported by the entry");
@@ -745,10 +750,22 @@ export function main(n: number): number {
     );
     let main = g.node(&format!("{}.main.main", g.root)).expect("main");
     let bx = format!("{}.model.Box", g.root);
-    let built: Vec<u32> = main.sites.iter().filter(|s| s.to == bx).map(|s| s.line).collect();
+    // Each literal that builds a Box, by where its value goes: the name that keeps it, or the call
+    // that is handed it.
+    let last = |id: &str| id.rsplit('.').next().unwrap_or(id).to_string();
+    let built: Vec<String> = main
+        .sites
+        .iter()
+        .filter(|s| s.to == bx)
+        .flat_map(|s| s.gives.iter())
+        .map(|h| match main.sites.iter().find(|c| h.name.starts_with('#') && c.hands.iter().any(|x| x.name == h.name)) {
+            Some(c) => last(&c.to),
+            None => h.name.clone(),
+        })
+        .collect();
     assert_eq!(
         built,
-        [21, 22, 23, 24, 24],
+        ["Shelf", "kept", "cast", "weigh", "put"],
         "`new Shelf({{..}})`, `satisfies`, `as`, `weigh({{..}})`, `shelf.put({{..}})`: {:#?}",
         main.sites
     );

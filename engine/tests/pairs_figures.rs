@@ -16,7 +16,7 @@ use std::path::PathBuf;
 use std::process::Command;
 use std::sync::OnceLock;
 
-use atlas_engine::{flow, parts, Graph, Options};
+use atlas_engine::{flow, parts, story, Graph, NodeKind, Options};
 
 fn figures() -> &'static Pair {
     static PAIR: OnceLock<Pair> = OnceLock::new();
@@ -55,14 +55,39 @@ fn the_clean_chart_keeps_its_figure_and_the_shortcut_makes_one_per_line() {
     assert!(arrows.get("charts.chart.Chart.line").map_or(true, |a| a.changes.is_empty()), "the shortcut's line keeps nothing");
 }
 
+/// The steps of a route that draw a figure, through the bodies its text and its picture are drawn from (`flow::bodies`),
+/// each with what decides it where it is an arm of a choice. Building a class runs its initializer.
+fn drawn_by(g: &Graph, entry: &str) -> BTreeSet<(String, String)> {
+    let (bodies, inits, drawn) = (flow::bodies(g), flow::initializers(g), flow::of(g).drawn);
+    let draws = |id: &str| drawn.get(id).is_some_and(|ws| ws.iter().any(|w| w.place.glyph == "screen" && w.side == flow::Side::Out));
+    let (mut out, mut seen, mut todo) = (BTreeSet::new(), BTreeSet::new(), vec![(flow::Step::of(entry), String::new())]);
+    while let Some((st, when)) = todo.pop() {
+        let built = g.node(&st.to).is_some_and(|n| n.kind == NodeKind::Class);
+        let Some(to) = (if built { inits.get(&st.to).cloned() } else { Some(st.to.clone()) }) else { continue };
+        if draws(&to) {
+            out.insert((to.clone(), when));
+        }
+        let key = flow::key(&to, &st.on);
+        let Some(body) = bodies.get(&key).filter(|_| seen.insert(key.clone())) else { continue };
+        for item in &body.items {
+            match item {
+                flow::Item::Step(s) => todo.push((s.clone(), String::new())),
+                flow::Item::Choice { members, when, .. } => {
+                    todo.extend(members.iter().map(|m| (m.step.clone(), when.get(m.branch).cloned().unwrap_or_default())))
+                }
+            }
+        }
+    }
+    out
+}
+
 /// The route says where the figure is made: in the clean chart, in an arm of `line`, only where the chart holds no
 /// axes; in the shortcut, by `line` on every call.
 #[test]
 fn the_route_says_where_each_figure_is_made() {
-    let clean = atlas_engine::story::route(&figures().clean, "charts.chart.compare", 4).expect("compare is a route");
-    assert!(clean.contains("Chart.create_figure()  ↻ Chart   ·   draws   ·   when self.ax is None"), "{clean}");
-    let shortcut = atlas_engine::story::route(&figures().shortcut, "charts.chart.compare", 4).expect("compare is a route");
-    assert!(shortcut.contains("Chart.line(xs, ys)   ·   draws") && !shortcut.contains("create_figure"), "{shortcut}");
+    let at = |id: &str, when: &str| BTreeSet::from([(id.to_string(), when.to_string())]);
+    assert_eq!(drawn_by(&figures().clean, "charts.chart.compare"), at("charts.chart.Chart.create_figure", "self.ax is None"));
+    assert_eq!(drawn_by(&figures().shortcut, "charts.chart.compare"), at("charts.chart.Chart.line", ""));
 }
 
 /// The figures on the screen of the notebook that draws the chart, as the viewer's model plans its route: `side` facts
@@ -108,15 +133,62 @@ fn screen_at(program: &str, route: &str, budget: Option<usize>) -> BTreeSet<Stri
         .collect()
 }
 
+/// A figure on a notebook's screen: the names the code gives what holds it (the class of the value and the path to it in
+/// the notebook, or the step that made it), and the side of the route it stands on.
+type Figure = (Vec<String>, String);
+
+/// The figures of a screen, each by the names its place carries and its side; how the page numbers and spells its places
+/// is the page's.
+fn figures_on(screen: &BTreeSet<String>) -> Vec<Figure> {
+    let name = |w: &&str| w.starts_with(|c: char| c.is_alphabetic() || c == '_');
+    let mut out: Vec<Figure> = screen
+        .iter()
+        .map(|f| {
+            let (place, side) = f.rsplit_once(' ').expect("a side fact ends in its side");
+            let names = place.split(|c: char| !(c.is_alphanumeric() || c == '_' || c == '.')).filter(name).skip(1);
+            (names.map(String::from).collect(), side.to_string())
+        })
+        .collect();
+    out.sort();
+    out
+}
+
+/// Figures on the right of a route, each by the names of what holds it.
+fn right<S: AsRef<str>>(held: &[impl AsRef<[S]>]) -> Vec<Figure> {
+    let names = |h: &[S]| h.iter().map(|n| n.as_ref().to_string()).collect();
+    let mut out: Vec<Figure> = held.iter().map(|h| (names(h.as_ref()), "right".to_string())).collect();
+    out.sort();
+    out
+}
+
+/// The budgets a route is cut at, as a large program's plan is cut.
+const BUDGETS: [usize; 4] = [1, 2, 3, 5];
+
+/// The screen of a route planned uncut, held to be the screen of the same route cut at every budget: a step planned by
+/// itself beyond the cut is the image of its body, and the caller says which value it runs on (`docs/reference/
+/// mathematics.md`, "One fine plan, every picture its image").
+fn beyond_every_cut(what: &str, screen: impl Fn(Option<usize>) -> BTreeSet<String>) -> BTreeSet<String> {
+    let fine = screen(None);
+    for b in BUDGETS {
+        assert_eq!(screen(Some(b)), fine, "{what}: cut at {b} as uncut");
+    }
+    fine
+}
+
+/// The screen of a notebook's route of both sides of a pair, held to be one screen at every budget: the sides differ in
+/// who does the work, not in the figures it makes.
+fn one_screen(pair: &str, route: &str) -> BTreeSet<String> {
+    let [clean, shortcut] = ["clean", "shortcut"].map(|side| beyond_every_cut(side, |b| screen_of(pair, side, route, b)));
+    assert_eq!(clean, shortcut, "{pair}: the clean screen is the shortcut's");
+    clean
+}
+
 /// Five functions on one figure are one figure, five plots five (#11): the clean notebook's screen shows the one figure
 /// the chart holds, named by the chart, and the shortcut's a figure for each line, named by the call that made it.
 #[test]
 fn a_notebook_shows_a_figure_for_each_thing_that_holds_one() {
-    assert_eq!(screen("clean", None), BTreeSet::from(["Figure 1 · Chart · chart right".to_string()]));
-    assert_eq!(
-        screen("shortcut", None),
-        BTreeSet::from(["Figure 1 · Chart.line right".to_string(), "Figure 2 · Chart.line right".to_string()])
-    );
+    assert_eq!(figures_on(&screen("clean", None)), right(&[&["Chart", "chart"]]));
+    assert_eq!(figures_on(&screen("shortcut", None)), right(&[&["Chart.line"], &["Chart.line"]]));
 }
 
 /// Across the cut the figures are the same (#11): a step planned by itself does not know the value its caller hands it,
@@ -124,13 +196,8 @@ fn a_notebook_shows_a_figure_for_each_thing_that_holds_one() {
 /// clean notebook still shows the chart's one figure and the shortcut a figure for each line.
 #[test]
 fn a_figure_is_held_by_the_same_value_beyond_the_cut() {
-    for budget in [1, 2, 3, 5] {
-        assert_eq!(screen("clean", Some(budget)), BTreeSet::from(["Figure 1 · Chart · chart right".to_string()]), "budget {budget}");
-        assert_eq!(
-            screen("shortcut", Some(budget)),
-            BTreeSet::from(["Figure 1 · Chart.line right".to_string(), "Figure 2 · Chart.line right".to_string()]),
-            "budget {budget}"
-        );
+    for (side, figures) in [("clean", 1), ("shortcut", 2)] {
+        assert_eq!(beyond_every_cut(side, |b| screen(side, b)).len(), figures, "{side}");
     }
 }
 
@@ -139,20 +206,18 @@ fn a_figure_is_held_by_the_same_value_beyond_the_cut() {
 /// own (its doors). The first `line` is then the one that shows what it runs.
 #[test]
 fn building_a_class_opens_into_its_initializer_in_the_route_s_text() {
-    let r = atlas_engine::story::route(&figures().clean, "charts.chart.compare", 4).expect("compare is a route");
-    let lines: Vec<&str> = r.lines().collect();
-    assert_eq!(
-        lines[2..],
-        [
-            "1  Chart()",
-            "2  Chart.line(xs, ys)  ↻ Chart",
-            "  2.1a  Chart.create_figure()  ↻ Chart   ·   draws   ·   when self.ax is None",
-            "3  Chart.line  → see 2"
-        ],
-        "{r}"
-    );
-    let doors = atlas_engine::story::route(&figures().clean, "charts.chart.Chart", 2).expect("Chart is a route");
-    assert!(doors.contains("Chart.create_figure()") && doors.contains("Chart.line(xs, ys)"), "the class's own route is its doors\n{doors}");
+    let g = &figures().clean;
+    let bodies = flow::bodies(g);
+    let steps = |id: &str| -> Vec<String> { bodies[id].steps().iter().map(|s| s.to.clone()).collect() };
+    let chart = |m: &str| format!("charts.chart.Chart.{m}");
+    assert_eq!(steps("charts.chart.Chart"), ["__init__", "create_figure", "line"].map(chart), "the class's own route is its doors");
+    assert_eq!(flow::initializers(g).get("charts.chart.Chart"), Some(&chart("__init__")), "building it runs its initializer");
+    assert!(!bodies.contains_key(&chart("__init__")), "which calls nothing");
+    // in the route's text, `Chart()` opens into none of the doors, and the second `line` is the first again: each call of
+    // `line` is named, and the `create_figure` the first runs once
+    let r = story::route(g, "charts.chart.compare", 4).expect("compare is a route");
+    let lines = steps("charts.chart.compare").iter().filter(|s| **s == chart("line")).count();
+    assert_eq!((r.matches("Chart.line").count(), r.matches("Chart.create_figure").count()), (lines, 1), "{r}");
 }
 
 /// The lent pair (`tests/pairs/figures/lent`): a figure handed between charts through a field (#11). The clean first chart
@@ -162,12 +227,7 @@ fn building_a_class_opens_into_its_initializer_in_the_route_s_text() {
 /// beyond the cut; what tells them apart is who sets the second chart's fields.
 #[test]
 fn a_figure_lent_through_a_field_is_the_one_figure() {
-    let one = BTreeSet::from(["Figure 1 · Chart · first right".to_string()]);
-    for side in ["clean", "shortcut"] {
-        for budget in [None, Some(1), Some(2), Some(3), Some(5)] {
-            assert_eq!(screen_of("figures/lent", side, "notebooks.overlay", budget), one, "{side}, budget {budget:?}");
-        }
-    }
+    assert_eq!(figures_on(&one_screen("figures/lent", "notebooks.overlay")), right(&[&["Chart", "first"]]));
     let lent = common::pair("figures/lent");
     assert_eq!(sets(&lent.clean, "charts.chart.Chart.take"), [("", "fig", ""), ("", "ax", "")], "the second chart sets its own fields");
     assert!(sets(&lent.clean, "charts.chart.Chart.lend").is_empty(), "the first hands them to it");
@@ -192,12 +252,8 @@ fn sets<'g>(g: &'g Graph, id: &str) -> Vec<(&'g str, &'g str, &'g str)> {
 /// set is named, so a figure follows only the fields that hold it.
 #[test]
 fn a_field_that_holds_no_figure_lends_none() {
-    let two = BTreeSet::from(["Figure 1 · Chart · first right".to_string(), "Figure 2 · Chart · second right".to_string()]);
-    for side in ["clean", "shortcut"] {
-        for budget in [None, Some(1), Some(2), Some(3), Some(5)] {
-            assert_eq!(screen_of("figures/titled", side, "notebooks.side_by_side", budget), two, "{side}, budget {budget:?}");
-        }
-    }
+    let two = right(&[&["Chart", "first"], &["Chart", "second"]]);
+    assert_eq!(figures_on(&one_screen("figures/titled", "notebooks.side_by_side")), two);
     let titled = common::pair("figures/titled");
     assert_eq!(sets(&titled.clean, "charts.chart.Chart.create_figure"), [("", "fig", ""), ("", "ax", "")], "where the figure rests");
     assert_eq!(sets(&titled.clean, "charts.chart.Chart.retitle"), [("", "title", "")], "the second chart sets its own title");
@@ -229,10 +285,8 @@ fn a_parameter_filled_through_a_field_that_holds_no_figure_lends_none() {
     let program = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/plans/takes-a-title");
     let titled = atlas_engine::analyze(&program, &Options::default()).expect("reads the program");
     assert_eq!(handed_through(&titled, "charts.chart.Chart.lend", "charts.chart.Chart.take"), first(&[("{at:0}", "title")]));
-    let two = BTreeSet::from(["Figure 1 · Chart · first right".to_string(), "Figure 2 · Chart · second right".to_string()]);
-    for budget in [None, Some(1), Some(2), Some(3), Some(5)] {
-        assert_eq!(screen_at("plans/takes-a-title", "notebooks.overlay", budget), two, "budget {budget:?}");
-    }
+    let screen = beyond_every_cut("takes-a-title", |b| screen_at("plans/takes-a-title", "notebooks.overlay", b));
+    assert_eq!(figures_on(&screen), right(&[&["Chart", "first"], &["Chart", "second"]]));
 }
 
 /// The panels pair (`tests/pairs/figures/panels`): two charts side by side on a board, each on a figure of its own. The
@@ -242,12 +296,8 @@ fn a_parameter_filled_through_a_field_that_holds_no_figure_lends_none() {
 /// tells the sides apart is what the board calls on each part.
 #[test]
 fn a_figure_kept_in_a_part_rests_in_that_part() {
-    let two = BTreeSet::from(["Figure 1 · Board · board.left right".to_string(), "Figure 2 · Board · board.right right".to_string()]);
-    for side in ["clean", "shortcut"] {
-        for budget in [None, Some(1), Some(2), Some(3), Some(5)] {
-            assert_eq!(screen_of("figures/panels", side, "notebooks.side_by_side", budget), two, "{side}, budget {budget:?}");
-        }
-    }
+    let two = right(&[&["Board", "board.left"], &["Board", "board.right"]]);
+    assert_eq!(figures_on(&one_screen("figures/panels", "notebooks.side_by_side")), two);
     let panels = common::pair("figures/panels");
     let parts = |g: &Graph, to: &str| -> Vec<String> {
         handed_through(g, "charts.chart.Board.draw", to).into_iter().flat_map(|(_, t)| t.into_iter().map(|(_, f)| f)).collect()
@@ -257,10 +307,10 @@ fn a_figure_kept_in_a_part_rests_in_that_part() {
     assert!(parts(&panels.shortcut, "charts.chart.Chart.line").is_empty());
 }
 
-/// The lines of `id`'s body that make a figure: each call of `plt.subplots()`, also where one touch stands for two.
-fn figure_calls(g: &Graph, id: &str) -> Vec<u32> {
+/// How many calls in `id`'s body make a figure: each call of `plt.subplots()`, also where one touch stands for two.
+fn figure_calls(g: &Graph, id: &str) -> usize {
     let n = g.node(id).unwrap_or_else(|| panic!("{id} is in the graph"));
-    n.touches.iter().filter(|t| t.kind_name() == "figure").flat_map(|t| std::iter::once(t.line).chain(t.also_at.iter().copied())).collect()
+    n.touches.iter().filter(|t| t.kind_name() == "figure").map(|t| 1 + t.also_at.len()).sum()
 }
 
 /// The apart pair (`tests/pairs/figures/apart`): two series, each on a figure of its own (#175). The clean `compare` calls
@@ -270,15 +320,15 @@ fn figure_calls(g: &Graph, id: &str) -> Vec<u32> {
 /// steps of one figure, or one step of two.
 #[test]
 fn two_calls_that_make_a_figure_make_two() {
-    let two = |by: &str| BTreeSet::from([format!("Figure 1 · {by} right"), format!("Figure 2 · {by} right")]);
-    for budget in [None, Some(1), Some(2), Some(3), Some(5)] {
-        assert_eq!(screen_of("figures/apart", "clean", "notebooks.compare", budget), two("plot"), "budget {budget:?}");
-        assert_eq!(screen_of("figures/apart", "shortcut", "notebooks.compare", budget), two("compare"), "budget {budget:?}");
+    for (side, by) in [("clean", "plot"), ("shortcut", "compare")] {
+        let screen = beyond_every_cut(side, |b| screen_of("figures/apart", side, "notebooks.compare", b));
+        assert_eq!(figures_on(&screen), right(&[&[by], &[by]]), "{side}");
     }
     let apart = common::pair("figures/apart");
-    assert_eq!(figure_calls(&apart.clean, "charts.chart.plot"), [7], "one call, run once for each series");
-    assert!(figure_calls(&apart.clean, "charts.chart.compare").is_empty());
-    assert_eq!(figure_calls(&apart.shortcut, "charts.chart.compare"), [7, 10], "two calls in one body");
+    assert_eq!(figure_calls(&apart.clean, "charts.chart.plot"), 1, "one call, run once for each series");
+    assert_eq!(figure_calls(&apart.clean, "charts.chart.compare"), 0);
+    assert_eq!(figure_touches(&apart.shortcut, "charts.chart.compare"), ["subplots"], "one touch");
+    assert_eq!(figure_calls(&apart.shortcut, "charts.chart.compare"), 2, "two calls in one body");
 }
 
 /// The built pair (`tests/pairs/figures/built`): a board of two charts (#176). The clean board is handed its charts; the
@@ -289,12 +339,8 @@ fn two_calls_that_make_a_figure_make_two() {
 /// are made, and what the initializer sets its fields from: its parameters, or the results of its own steps.
 #[test]
 fn a_value_an_initializer_keeps_in_a_field_is_taken() {
-    let two = BTreeSet::from(["Figure 1 · Board · board.left right".to_string(), "Figure 2 · Board · board.right right".to_string()]);
-    for side in ["clean", "shortcut"] {
-        for budget in [None, Some(1), Some(2), Some(3), Some(5)] {
-            assert_eq!(screen_of("figures/built", side, "notebooks.side_by_side", budget), two, "{side}, budget {budget:?}");
-        }
-    }
+    let two = right(&[&["Board", "board.left"], &["Board", "board.right"]]);
+    assert_eq!(figures_on(&one_screen("figures/built", "notebooks.side_by_side")), two);
     let built = common::pair("figures/built");
     let init = "charts.chart.Board.__init__";
     let from = |g: &Graph| -> Vec<(String, String)> {
@@ -325,20 +371,20 @@ fn a_projection_bound_to_a_name_is_still_the_projection() {
         "`take(fig, ax)` is `take(self.fig, self.ax)`"
     );
     assert_eq!(sets(&bound.shortcut, lend), sets(&lent.shortcut, lend), "`other.fig = fig` is `other.fig = self.fig`");
-    let one = BTreeSet::from(["Figure 1 · Chart · first right".to_string()]);
-    let two = BTreeSet::from(["Figure 1 · Chart · first right".to_string(), "Figure 2 · Chart · second right".to_string()]);
     let program = |name: &str| {
         let at = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/plans").join(name);
         atlas_engine::analyze(&at, &Options::default()).expect("reads the program")
     };
     let (direct, named) = (program("takes-a-title"), program("takes-a-bound-title"));
     assert_eq!(handed_through(&named, lend, take), handed_through(&direct, lend, take), "`take(t, None)` is `take(self.title, None)`");
-    for budget in [None, Some(1), Some(2), Some(3), Some(5)] {
-        for side in ["clean", "shortcut"] {
-            assert_eq!(screen_of("figures/bound", side, "notebooks.overlay", budget), one, "{side}, budget {budget:?}");
-        }
-        assert_eq!(screen_at("plans/takes-a-bound-title", "notebooks.overlay", budget), two, "budget {budget:?}");
-    }
+    // the screens with the name are the screens without it: one figure where the fields that hold it are lent, two where
+    // the title is lent in their place
+    let bound = one_screen("figures/bound", "notebooks.overlay");
+    assert_eq!(bound, screen_of("figures/lent", "clean", "notebooks.overlay", None), "the bound pair is the lent pair");
+    assert_eq!(bound.len(), 1);
+    let named = beyond_every_cut("takes-a-bound-title", |b| screen_at("plans/takes-a-bound-title", "notebooks.overlay", b));
+    assert_eq!(named, screen_at("plans/takes-a-title", "notebooks.overlay", None), "`take(t, None)` is `take(self.title, None)`");
+    assert_eq!(named.len(), 2);
 }
 
 /// The shared pair (`tests/pairs/figures/shared`): two charts of a board on one figure (#173). The clean left chart lends its
@@ -350,12 +396,7 @@ fn a_projection_bound_to_a_name_is_still_the_projection() {
 /// own `lend`, or the board's call.
 #[test]
 fn a_figure_lent_between_two_parts_of_one_value_is_the_one_figure() {
-    let one = BTreeSet::from(["Figure 1 · Board · board.left right".to_string()]);
-    for side in ["clean", "shortcut"] {
-        for budget in [None, Some(1), Some(2), Some(3), Some(5)] {
-            assert_eq!(screen_of("figures/shared", side, "notebooks.overlay", budget), one, "{side}, budget {budget:?}");
-        }
-    }
+    assert_eq!(figures_on(&one_screen("figures/shared", "notebooks.overlay")), right(&[&["Board", "board.left"]]));
     let shared = common::pair("figures/shared");
     let chart = "charts.chart.Chart".to_string();
     let holds = &shared.clean.node("charts.chart.Board").expect("the board is in the graph").holds;
@@ -395,10 +436,9 @@ fn bindings(g: &Graph, id: &str) -> Vec<Vec<String>> {
 /// of the fit, or two slots of one value.
 #[test]
 fn two_figures_one_value_keeps_in_different_fields_are_two() {
-    let fit = |a: &str, b: &str| BTreeSet::from([format!("Figure 1 · Fit · fit.{a} right"), format!("Figure 2 · Fit · fit.{b} right")]);
-    for budget in [None, Some(1), Some(2), Some(3), Some(5)] {
-        assert_eq!(screen_of("figures/two", "clean", "notebooks.residuals", budget), fit("data", "residuals"), "budget {budget:?}");
-        assert_eq!(screen_of("figures/two", "shortcut", "notebooks.residuals", budget), fit("fig", "res_fig"), "budget {budget:?}");
+    for (side, held) in [("clean", ["fit.data", "fit.residuals"]), ("shortcut", ["fit.fig", "fit.res_fig"])] {
+        let screen = beyond_every_cut(side, |b| screen_of("figures/two", side, "notebooks.residuals", b));
+        assert_eq!(figures_on(&screen), right(&held.map(|h| ["Fit", h])), "{side}");
     }
     let two = common::pair("figures/two");
     assert_eq!(bindings(&two.clean, "charts.chart.Chart.create_figure"), [["fig", "ax"]], "a chart keeps one figure");
@@ -415,10 +455,10 @@ fn two_figures_one_value_keeps_in_different_fields_are_two() {
 /// part, or the caller's chart.
 #[test]
 fn a_chart_set_whole_into_a_part_draws_there_on_the_figure_it_holds() {
-    let two = |left: &str| BTreeSet::from([format!("Figure 1 · {left} right"), "Figure 2 · Board · board.right right".to_string()]);
-    for budget in [None, Some(1), Some(2), Some(3), Some(5)] {
-        assert_eq!(screen_of("figures/handed", "clean", "notebooks.side_by_side", budget), two("Board · board.left"), "budget {budget:?}");
-        assert_eq!(screen_of("figures/handed", "shortcut", "notebooks.side_by_side", budget), two("Chart · left"), "budget {budget:?}");
+    let two = |left: [&str; 2]| right(&[&left, &["Board", "board.right"]]);
+    for (side, left) in [("clean", ["Board", "board.left"]), ("shortcut", ["Chart", "left"])] {
+        let screen = beyond_every_cut(side, |b| screen_of("figures/handed", side, "notebooks.side_by_side", b));
+        assert_eq!(figures_on(&screen), two(left), "{side}");
     }
     let handed = common::pair("figures/handed");
     let init = "charts.chart.Board.__init__";
@@ -439,15 +479,10 @@ fn a_chart_set_whole_into_a_part_draws_there_on_the_figure_it_holds() {
     // the part is the chart either way round: a figure lent to the chart after the put is the part's (`tests/plans/
     // lent-after-the-put`), and one the board makes through the part is the chart's, which its own name draws on again
     // (`tests/plans/drawn-after-the-put`)
-    for budget in [None, Some(1), Some(2), Some(3), Some(5)] {
-        let lent = BTreeSet::from(["Figure 1 · Chart · first right".to_string(), "Figure 2 · Board · board.right right".to_string()]);
-        assert_eq!(screen_at("plans/lent-after-the-put", "notebooks.side_by_side", budget), lent, "budget {budget:?}");
-        assert_eq!(
-            screen_at("plans/drawn-after-the-put", "notebooks.side_by_side", budget),
-            two("Board · board.left"),
-            "budget {budget:?}"
-        );
-    }
+    let lent = beyond_every_cut("lent-after-the-put", |b| screen_at("plans/lent-after-the-put", "notebooks.side_by_side", b));
+    assert_eq!(figures_on(&lent), two(["Chart", "first"]));
+    let drawn = beyond_every_cut("drawn-after-the-put", |b| screen_at("plans/drawn-after-the-put", "notebooks.side_by_side", b));
+    assert_eq!(figures_on(&drawn), two(["Board", "board.left"]));
 }
 
 /// The guarded pair (`tests/pairs/figures/guarded`): two fits, each keeping a figure for itself and one for its residuals; the
@@ -459,14 +494,12 @@ fn a_chart_set_whole_into_a_part_draws_there_on_the_figure_it_holds() {
 /// What tells the sides apart is which field each condition tests (`Node::tests`).
 #[test]
 fn a_condition_makes_sure_only_of_the_figure_whose_field_it_tests() {
-    let fit = |names: &[&str]| -> BTreeSet<String> {
-        names.iter().enumerate().map(|(i, n)| format!("Figure {} · Fit · {n} right", i + 1)).collect()
-    };
-    for budget in [None, Some(1), Some(2), Some(3), Some(5)] {
-        let clean = fit(&["fit.fig", "fit.res_fig", "other.fig"]);
-        let shortcut = fit(&["fit.fig", "fit.res_fig", "other.fig", "other.res_fig"]);
-        assert_eq!(screen_of("figures/guarded", "clean", "notebooks.residuals", budget), clean, "budget {budget:?}");
-        assert_eq!(screen_of("figures/guarded", "shortcut", "notebooks.residuals", budget), shortcut, "budget {budget:?}");
+    let fit = |names: &[&str]| right(&names.iter().map(|n| ["Fit", n]).collect::<Vec<_>>());
+    let clean = fit(&["fit.fig", "fit.res_fig", "other.fig"]);
+    let shortcut = fit(&["fit.fig", "fit.res_fig", "other.fig", "other.res_fig"]);
+    for (side, figures) in [("clean", clean), ("shortcut", shortcut)] {
+        let screen = beyond_every_cut(side, |b| screen_of("figures/guarded", side, "notebooks.residuals", b));
+        assert_eq!(figures_on(&screen), figures, "{side}");
     }
     let guarded = common::pair("figures/guarded");
     let tests = |g: &Graph| -> Vec<(u32, String)> {
@@ -486,12 +519,8 @@ fn a_condition_makes_sure_only_of_the_figure_whose_field_it_tests() {
 /// its own `lend`, or the board's call.
 #[test]
 fn a_figure_lent_through_a_parameter_filled_with_a_part_is_the_lender_s() {
-    let two = BTreeSet::from(["Figure 1 · Chart · first right".to_string(), "Figure 2 · Board · board.right right".to_string()]);
-    for side in ["clean", "shortcut"] {
-        for budget in [None, Some(1), Some(2), Some(3), Some(5)] {
-            assert_eq!(screen_of("figures/borrowed", side, "notebooks.side_by_side", budget), two, "{side}, budget {budget:?}");
-        }
-    }
+    let two = right(&[&["Chart", "first"], &["Board", "board.right"]]);
+    assert_eq!(figures_on(&one_screen("figures/borrowed", "notebooks.side_by_side")), two);
     let borrowed = common::pair("figures/borrowed");
     let through =
         |fields: &[(&str, &str)]| -> Vec<(String, String)> { fields.iter().map(|(s, f)| (s.to_string(), f.to_string())).collect() };
