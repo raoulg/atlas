@@ -185,14 +185,24 @@ below a directory it does not is that name under that directory, the hole kept i
 the name the code gives it, wherever in the term it stands: `File({$DATA_DIR}/report.txt)`. Two
 holes the code names differently are two directories, since nothing in the code says they are one;
 a hole the code gives no name (an expression Atlas does not follow) is `{}`, never `*`, which is
-a wildcard the code writes. A pattern is the fiber below its directory, and what is read of what
+a wildcard the code writes. The name a hole has is the name the code binds the value to
+(`let folder = notes_folder()?`, `folder = notes_folder()`), the first one, which every later name
+of the value hands on, so one value is one hole however many names it passes through. A call is no
+name of what it gives: a callee names an operation (`trim`, `new`, `TemporaryDirectory`), so a
+call no name holds is `{}` in every language. A suffix a path is given (`with_suffix`,
+`with_extension`) is part of the term, applied to what a caller hands once the caller says it,
+as `parent` is. A pattern is the fiber below its directory, and what is read of what
 it yields is the same place. A place the program names a place below is a directory (`D/*/IO-*/`,
 which `glob` lists and `io_dir / "Metadata.xml"` reads in), so the listing and what is read in it
-fold into one folder. The place is the term; its label says the term's patterns in words, from the
+fold into one folder. One file is one place, whatever operation touches it: the data read or
+written, a test whether it is there, a copy or a move into it or out of it, its removal
+(`File({folder}/note.json)` for the rename that moves a note in, the read and the `remove_file`
+alike). The place is the term; its label says the term's patterns in words, from the
 file up (`every *.xml in OW-bestanden/ in each folder in {base_dir}/`), and the term is under the
 pointer. Words are a label, never an identity: two places are one when their terms are.
-**Where.** `paths.rs` (`Seg`, `join`, `place`, `folders`, `Callers`), `python/paths.rs`
-(`Eval::of`), `plan.js` (`pathWords`); the pairs `python/paths` and `places`.
+**Where.** `paths.rs` (`Seg`, `join`, `place`, `folders`, `bound`, `with_suffix`, `Callers`),
+the readers' `paths.rs` (`Eval::of`), `flow.rs` (`Touch::place`), `plan.js` (`pathWords`); the
+pairs `python/paths`, `places` and `kept`.
 
 ### Yoneda: what changed
 **What.** An object is determined up to isomorphism by the arrows into it, `Hom(−, A)`, and

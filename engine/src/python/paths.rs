@@ -13,7 +13,7 @@ use crate::pytypes::{FileArg, Param, Target, Types};
 use crate::tree::{beneath, named_children, path_str, text, unquote, walk};
 
 use crate::knowledge;
-use crate::paths::{cross, environment, hole, lit, or_else, parent, substitute, union};
+use crate::paths::{bound as named_by, cross, environment, hole, lit, or_else, parent, substitute, union};
 pub(super) use crate::paths::{Built, Seg};
 
 const DEPTH: u32 = 40;
@@ -310,7 +310,7 @@ impl<'a> Eval<'a> {
         if name == "__file__" {
             return vec![vec![Seg::Package(self.file(at.m))]];
         }
-        self.defined(at, e, depth).unwrap_or_else(|| vec![hole(name)])
+        self.defined(at, e, depth).map(|v| named_by(name, v)).unwrap_or_else(|| vec![hole(name)])
     }
 
     /// An attribute of the object a command-line parser gives (`args.out`): the option, holding the
@@ -496,7 +496,7 @@ impl<'a> Eval<'a> {
             });
             return match named.and_then(|p| self.package_dir(&p)) {
                 Some(dir) => vec![vec![Seg::Package(dir)]],
-                None => vec![hole(last)],
+                None => vec![hole("call")],
             };
         }
         match last {
@@ -513,17 +513,7 @@ impl<'a> Eval<'a> {
             }
             "with_suffix" => {
                 let suffix = positional.first().map(|a| unquote(text(*a, src))).unwrap_or_default();
-                return receiver()
-                    .into_iter()
-                    .map(|mut b| {
-                        if let Some(s) = crate::paths::last_lit(&mut b) {
-                            let stem_end = s.rfind('.').filter(|&i| i > s.rfind('/').map_or(0, |j| j + 1)).unwrap_or(s.len());
-                            s.truncate(stem_end);
-                            s.push_str(&suffix);
-                        }
-                        b
-                    })
-                    .collect();
+                return receiver().iter().map(|b| crate::paths::with_suffix(b, &lit(&suffix))).collect();
             }
             "with_name" => return cross(&receiver().iter().map(parent).collect::<Vec<_>>(), &joined(&positional), "/"),
             m if knowledge::SAME_PATH.contains(&m) => return receiver(),
@@ -557,7 +547,7 @@ impl<'a> Eval<'a> {
                 return v;
             }
         }
-        vec![hole(last)]
+        vec![hole("call")]
     }
 }
 

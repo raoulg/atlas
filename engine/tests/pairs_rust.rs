@@ -1229,6 +1229,68 @@ fn places_a_file_compiled_in_is_no_place_and_one_found_where_the_crate_was_built
     assert!(found(&s, "places").contains(&"stock.page".to_string()), "{:?}", found(&s, "places"));
 }
 
+/// The kept pair, `kept/rust`: a note kept in a file in the folder `where.txt` names, read, and
+/// taken once. The clean side writes it whole beside its file and renames it in, and names the
+/// folder (`let folder = kept::notes_folder()?`); the shortcut writes it straight in and names
+/// no folder (`note_file(&kept::notes_folder()?)`).
+fn kept(side: &str) -> Graph {
+    analyze(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/pairs/kept/rust").join(side), &Options::default()).unwrap()
+}
+
+/// One file is one place, whatever operation touches it (`docs/reference/mathematics.md`, "Paths
+/// as terms"): the file a note is written to, renamed into, read from and removed is one place,
+/// and two files are two. On each side the place a touch draws is a function of the file it names,
+/// and one to one; none is the disk beside its file. What `read` reads and `take` removes is a
+/// place `keep` writes; on the clean side the partial file `keep` writes and moves out of is a
+/// place of its own, the same for the write and for the rename.
+#[test]
+fn places_one_file_is_one_place_whatever_touches_it() {
+    use atlas_engine::flow::Side;
+    use atlas_engine::World;
+    use std::collections::{BTreeMap, BTreeSet};
+    for side in ["clean", "shortcut"] {
+        let g = kept(side);
+        let named: Vec<(&str, &Touch)> = g
+            .nodes
+            .iter()
+            .flat_map(|n| n.touches.iter().map(move |t| (n.id.as_str(), t)))
+            .filter(|(_, t)| t.kind == World::Disk && !t.artifact.is_empty())
+            .collect();
+        let mut by_file: BTreeMap<&str, BTreeSet<String>> = BTreeMap::new();
+        for (_, t) in &named {
+            by_file.entry(t.artifact.as_str()).or_default().insert(t.place().id);
+        }
+        assert!(by_file.values().all(|p| p.len() == 1), "{side}: one file, one place: {by_file:?}");
+        let places: BTreeSet<&String> = by_file.values().flatten().collect();
+        assert_eq!(places.len(), by_file.len(), "{side}: two files, two places: {by_file:?}");
+        assert!(places.iter().all(|p| !p.starts_with("w:Disk")), "{side}: {places:?}");
+        let at = |f: &str, s: Option<Side>| -> BTreeSet<String> {
+            named.iter().filter(|(n, t)| *n == f && s.map_or(true, |s| t.side() == s)).map(|(_, t)| t.place().id).collect()
+        };
+        let (read, taken, kept) = (at("kept.read", None), at("kept.take", None), at("kept.keep", Some(Side::Out)));
+        assert!(!read.is_empty() && read == taken && read.is_subset(&kept), "{side}: {read:?} {taken:?} {kept:?}");
+        if side == "clean" {
+            let partial: BTreeSet<String> = at("kept.keep", Some(Side::In));
+            assert!(partial.len() == 1 && partial.is_subset(&kept) && partial.is_disjoint(&read), "{partial:?} {kept:?} {read:?}");
+        }
+    }
+}
+
+/// A hole keeps the name the code gives the value (`docs/reference/mathematics.md`, "Paths as
+/// terms"): the folder `where.txt` names is no value the code decides, and the clean side binds it
+/// (`let folder = ..`), so the note's file is `{folder}/note.json`, through every name it is handed
+/// on by (`note_file(folder: &Path)`, `keep(path: &Path)`). The shortcut binds it to no name: its
+/// hole is `{}`, never the name of the function that gives it (`notes_folder`) or of a method (`trim`).
+#[test]
+fn places_a_value_the_code_names_is_a_hole_by_that_name() {
+    use std::collections::BTreeSet;
+    let files = |g: &Graph| -> BTreeSet<String> {
+        g.nodes.iter().flat_map(|n| n.touches.iter()).filter(|t| t.artifact.ends_with("note.json")).map(|t| t.artifact.clone()).collect()
+    };
+    assert_eq!(files(&kept("clean")), BTreeSet::from(["{folder}/note.json".to_string()]));
+    assert_eq!(files(&kept("shortcut")), BTreeSet::from(["{}/note.json".to_string()]));
+}
+
 /// One side of the shadows pair (`tests/pairs/shadows/rust`): letters sorted onto a pile, by a
 /// body whose locals are named apart from the module's functions on the clean side and like them
 /// on the shortcut.

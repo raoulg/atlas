@@ -11,7 +11,7 @@ use tree_sitter::Node as TsNode;
 use super::module::{def_node, expand, path_parts, resolve, resolve_value, shadowed, Module};
 use crate::knowledge::{self, PathFn, PathMethod};
 use crate::model::{Node, NodeKind};
-use crate::paths::{cross, environment_named, hole, lit, or_else, parent, substitute, union, Built, Seg};
+use crate::paths::{bound as named_by, cross, environment_named, hole, lit, or_else, parent, substitute, union, Built, Seg};
 use crate::tree::{beneath, named_children, text, unquote, walk};
 
 const DEPTH: u32 = 12;
@@ -112,7 +112,7 @@ impl<'a> Eval<'a> {
         let src = &at.m.src;
         if let Some(scope) = at.scope {
             match bound(scope, name, pos, src) {
-                Some(Bound::Value(v)) => return self.of(at, v, depth + 1),
+                Some(Bound::Value(v)) => return named_by(name, self.of(at, v, depth + 1)),
                 Some(Bound::Field(pattern, field, value)) => {
                     return self.taken_apart(at, pattern, &field, value, depth).unwrap_or_else(|| vec![hole(name)])
                 }
@@ -122,7 +122,7 @@ impl<'a> Eval<'a> {
                 return vec![vec![Seg::Param(name.to_string())]];
             }
             if let Some(v) = const_in(scope, name, src) {
-                return self.of(at, v, depth + 1);
+                return named_by(name, self.of(at, v, depth + 1));
             }
         }
         self.constant(at.m, &[name.to_string()], depth).unwrap_or_else(|| vec![hole(name)])
@@ -143,7 +143,7 @@ impl<'a> Eval<'a> {
             [] => return None,
         };
         let v = const_in(home.tree.root_node(), name, &home.src)?;
-        Some(self.of(At { m: home, scope: None, params: &[] }, v, depth + 1))
+        Some(named_by(name, self.of(At { m: home, scope: None, params: &[] }, v, depth + 1)))
     }
 
     /// A field of the value a method runs on, as the struct literals that build that type set it
@@ -418,7 +418,7 @@ impl<'a> Eval<'a> {
                 // what an `Option` or a `Result` holds, or what it falls back to where it holds nothing
                 None if super::module::OR_ELSE.contains(&method) && !method.starts_with("map") => or_else(on(), arg(0)),
                 None if knowledge::hands_on(method) && !matches!(method, "map" | "and_then") => on(),
-                None => vec![hole(method)],
+                None => vec![hole("call")],
             };
         }
         let parts = expand(at.m, &path_parts(Some(f), src));
@@ -444,10 +444,8 @@ impl<'a> Eval<'a> {
             Some(PathFn::Home) => vec![lit("~")],
             Some(PathFn::Here) => vec![lit(".")],
             Some(PathFn::Temp) => vec![lit(knowledge::TEMP_DIR)],
-            Some(PathFn::Environment) => {
-                vec![environment_named(&arg(0)).unwrap_or_else(|| hole(parts.last().map(String::as_str).unwrap_or("call")))]
-            }
-            None => self.given(at, f, &args, depth).unwrap_or_else(|| vec![hole(parts.last().map(String::as_str).unwrap_or("call"))]),
+            Some(PathFn::Environment) => vec![environment_named(&arg(0)).unwrap_or_else(|| hole("call"))],
+            None => self.given(at, f, &args, depth).unwrap_or_else(|| vec![hole("call")]),
         }
     }
 
@@ -478,7 +476,7 @@ impl<'a> Eval<'a> {
     fn macro_value(&self, at: At<'a, '_>, mac: TsNode<'a>, depth: u32) -> Vec<Built> {
         let src = &at.m.src;
         let name = mac.child_by_field_name("macro").map(|x| path_parts(Some(x), src)).and_then(|p| p.last().cloned()).unwrap_or_default();
-        let Some(tt) = named_children(mac).into_iter().find(|x| x.kind() == "token_tree") else { return vec![hole(&name)] };
+        let Some(tt) = named_children(mac).into_iter().find(|x| x.kind() == "token_tree") else { return vec![hole("call")] };
         let groups = token_groups(tt);
         // the directory the crate's manifest is in, fixed where the program is built
         let built_in = |var: &str| matches!(groups.first().map(Vec::as_slice), Some([x]) if unquote(text(*x, src)) == var);
@@ -486,7 +484,7 @@ impl<'a> Eval<'a> {
             "format" | "format_args" => self.format(at, mac.start_byte(), &groups, depth),
             "concat" => groups.iter().fold(vec![vec![]], |acc, g| cross(&acc, &self.tokens(at, g, depth), "")),
             m if knowledge::RUST_BUILD_DIRS.iter().any(|(mac, var)| *mac == m && built_in(var)) => vec![lit(&at.m.manifest_dir)],
-            _ => vec![hole(&name)],
+            _ => vec![hole("call")],
         }
     }
 
@@ -559,7 +557,8 @@ impl<'a> Eval<'a> {
             {
                 self.of(at, *x, depth + 1)
             }
-            _ => vec![hole(g.iter().find(|t| t.kind() == "identifier").map(|t| text(*t, src)).unwrap_or("value"))],
+            // an expression written as tokens that none of these is: no value the code names
+            _ => vec![hole("value")],
         }
     }
 }
@@ -733,21 +732,11 @@ fn returns(body: TsNode) -> Vec<TsNode> {
     out
 }
 
-/// A path with another extension: `page.json` with `html` is `page.html`.
+/// A path with another extension: `page.json` with `html` is `page.html`, with an extension the
+/// code builds (`format!("{}.part", id)`) `page.{}.part`, and with none `page`.
 fn with_extension(b: &Built, ext: &Built) -> Built {
-    let [Seg::Lit(ext)] = ext.as_slice() else { return b.clone() };
-    let mut out = b.clone();
-    if let Some(s) = crate::paths::last_lit(&mut out) {
-        let name_at = s.rfind('/').map_or(0, |i| i + 1);
-        if let Some(dot) = s[name_at..].rfind('.').filter(|d| *d > 0) {
-            s.truncate(name_at + dot);
-        }
-        if !ext.is_empty() {
-            s.push('.');
-            s.push_str(ext);
-        }
-    }
-    out
+    let none = matches!(ext.as_slice(), [Seg::Lit(e)] if e.is_empty());
+    crate::paths::with_suffix(b, &if none { vec![] } else { [lit("."), ext.clone()].concat() })
 }
 
 /// One call of a function of the program, with the argument each parameter is handed.

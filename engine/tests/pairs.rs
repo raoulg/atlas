@@ -36,6 +36,37 @@ fn two_parts_are_named_apart() {
     }
 }
 
+/// Isomorphic is the same (`CLAUDE.md`): one program draws one set of places in every language.
+/// The kept pair (`kept/{python,rust,typescript}`) keeps a note in a file in the folder `where.txt`
+/// names, reads it and takes it; the clean side writes it whole beside its file and renames it in
+/// and binds the folder to a name, the shortcut writes it straight in and binds it to none. A value
+/// no code Atlas follows decides is a hole by the name the code binds it to, else `{}`, in each
+/// language alike; a move into a file, its removal and its reading rest at that one file. So the
+/// places each reading draws, with what each touch does there, are the same in all three.
+#[test]
+fn one_program_draws_one_set_of_places_in_every_language() {
+    use std::collections::BTreeSet;
+    for side in ["clean", "shortcut"] {
+        let places = |language: &str| -> BTreeSet<(String, String)> {
+            let g = pair(&format!("kept/{language}/{side}"));
+            g.nodes
+                .iter()
+                .filter(|n| !n.library)
+                .flat_map(|n| n.touches.iter())
+                .filter(|t| t.kind == World::Disk && !t.artifact.is_empty())
+                .map(|t| {
+                    let w = t.drawn();
+                    (w.place.label, w.verb)
+                })
+                .collect()
+        };
+        let rust = places("rust");
+        assert!(!rust.is_empty(), "{side}");
+        assert_eq!(places("python"), rust, "{side}: Python and Rust");
+        assert_eq!(places("typescript"), rust, "{side}: TypeScript and Rust");
+    }
+}
+
 /// A client that names the paths it asks for is joined to the handlers that serve them, by
 /// method and path: its POST to `/api/orders` is not the GET of that path. One that looks its
 /// paths up by a key at run time, with an environment variable that may stand in for each, says
