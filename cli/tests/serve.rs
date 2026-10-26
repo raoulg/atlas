@@ -182,6 +182,35 @@ fn the_page_follows_the_code() {
     let _ = std::fs::remove_dir_all(repo.parent().unwrap());
 }
 
+/// Beside the page, the files Atlas reads, each with what the graph defines in it: the code's file
+/// holds its function, a file the graph defines nothing in is listed with none, and what git keeps
+/// or ignores is not listed.
+#[test]
+fn the_files_are_listed_with_what_the_graph_defines_in_them() {
+    let repo = repository("files");
+    std::fs::write(repo.join("README.md"), "# spots\n").unwrap();
+    std::fs::write(repo.join(".gitignore"), "out/\n").unwrap();
+    std::fs::create_dir_all(repo.join("out")).unwrap();
+    std::fs::write(repo.join("out/counts.csv"), "n\n1\n").unwrap();
+    let (mut server, at) = serve(&repo);
+
+    complete(&at);
+    let (status, body) = send(&at, "GET", "/api/files", None, false);
+    assert_eq!(status, "HTTP/1.1 200 OK");
+    let listed: Value = serde_json::from_str(&body).unwrap();
+    let files: Vec<&Value> = listed["files"].as_array().unwrap().iter().collect();
+    let file = |path: &str| files.iter().find(|f| f["path"] == path).copied();
+    let code = file("src/spots/__init__.py").expect("the code's file is listed");
+    let named: Vec<&str> = code["facts"].as_array().unwrap().iter().filter_map(|f| f["name"].as_str()).collect();
+    assert!(named.contains(&"count"), "the function is a fact of its file: {code}");
+    assert_eq!(file("README.md").expect("a file without code is listed")["facts"], json!([]));
+    assert!(file("out/counts.csv").is_none(), "what git ignores is not listed");
+    assert!(files.iter().all(|f| !f["path"].as_str().unwrap().starts_with(".git/")), "what git keeps is not listed");
+
+    server.kill().ok();
+    let _ = std::fs::remove_dir_all(repo.parent().unwrap());
+}
+
 /// An agent shows a change as the files it would write, and the page draws the working tree
 /// and the vision as one picture, the vision's step marked; the working tree stays as it was,
 /// and once the vision is retracted the page draws the working tree alone.

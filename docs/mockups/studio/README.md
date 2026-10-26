@@ -18,6 +18,10 @@ The `atlas view .` diagram states the intended route: `Disk(repo) → Repo.read 
 3. Select a history row to change the commit context label. The diagrams in this mockup are illustrative and do not recompute a historical graph.
 4. Click `Language.parse` or the plus button to expose its family. The minus button closes it.
 
+## As built
+
+`files.jpg` shows Studio with the file tree as Atlas reads it, a source preview, and the facts the graph defines in the file; `markdown-preview.jpg` a README in the preview. `studio/README.md` describes the app.
+
 ## Implementation boundary
 
 The desktop app hosts the current `viewer/index.html`, `viewer/history.html`, and `viewer/plan.js` over the shared workspace index. The center panel in this mockup is a visual placeholder for that viewer, not a second rendering engine. File-tree selection and graph selection share source spans and IDs; previews receive only the selected file's content. HTML previews use an isolated context without Atlas commands or general filesystem access. The native shell, Git actions, and agent harness have separate surfaces and scopes in #197–#200.

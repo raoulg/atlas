@@ -23,6 +23,8 @@
         const image = document.createElement('img');
         image.alt = original.getAttribute('alt') || '';
         const filename = original.getAttribute('src') || '';
+        // a lesson reads its own files, never the network: an image elsewhere is its description
+        if (/^[a-z][a-z0-9+.-]*:/i.test(filename)) return image.alt ? document.createTextNode(image.alt) : null;
         try { image.src = await context.readArtifact(filename); }
         catch (error) { return document.createTextNode(`Image unavailable: ${error}`); }
         return image;
