@@ -118,9 +118,13 @@
       const frame = document.createElement('iframe');
       frame.title = title.textContent;
       frame.referrerPolicy = 'no-referrer';
-      frame.src = context.workspaceUrl + '/#v=' + encodeURIComponent(JSON.stringify(spec)) + (block.at ? '&at=' + encodeURIComponent(block.at) : '');
+      frame.src = context.workspaceUrl + '/#v=' + encodeURIComponent(JSON.stringify(spec)) + (block.at ? '&at=' + encodeURIComponent(block.at) : '') + '&embed=lesson';
       section.append(frame);
-      head.append(button('Full view ↗', () => context.openFullView(spec)));
+      const hint = document.createElement('div');
+      hint.className = 'lesson-view-hint';
+      hint.textContent = 'Drag to explore · Hover a step and press Space for its code';
+      section.append(hint);
+      head.append(button('Full view ↗', () => context.openFullView(spec, block.at)));
       if (context.openSource) head.append(button('Source', () => context.openSource(block.source || context.script)));
     } catch (error) {
       section.append(message('Atlas view unavailable: ' + error));

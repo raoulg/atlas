@@ -66,6 +66,16 @@ with Server(("127.0.0.1", 0), handler) as server:
         page.locator('.side-lesson[data-path$="lesson.md"]').click()
         page.locator('.lesson-article h1').wait_for()
         assert page.locator('.lesson-view iframe').count() == 1
+        assert 'embed=lesson' in page.locator('.lesson-view iframe').first.get_attribute('src')
+        assert page.locator('.lesson-view iframe').first.bounding_box()['width'] > 950
+        assert page.locator('.lesson-source').is_hidden()
+        page.get_by_role('button', name='Full view ↗').first.click()
+        assert 'at=_root.demo.nearest' in page.locator('#atlas-frame').get_attribute('src')
+        page.locator('.side-lesson[data-path$="lesson.md"]').click()
+        page.get_by_role('button', name='Source', exact=True).first.click()
+        page.locator('.lesson-source').wait_for(state='visible')
+        page.get_by_role('button', name='Close', exact=True).click()
+        assert page.locator('.lesson-source').is_hidden()
         assert "Image unavailable" in page.locator('.lesson-article').inner_text()
         page.get_by_role("button", name="Run script").click()
         page.locator('.lesson-article img[src^="blob:"]').wait_for()

@@ -36,7 +36,7 @@ An embedded Atlas view points to a saved sight:
 <atlas-view ref="views/predict.json" title="One prediction" />
 ```
 
-The view file is JSON in Atlas's view format, for example `{"route":"demo","open":{"functions":["demo.nearest"]}}`. In Studio, arrange a route in the full Atlas view, then use **Insert view in lesson**. Studio saves the sight in the lesson's `views/` directory and inserts its reference in the lesson file. The embedded view opens the full Atlas view when requested; space in Atlas opens the function's code.
+The view file is JSON in Atlas's view format. A sight inside a script route names each opened ancestor step as well as the function it opens, for example `{"route":"demo","open":{"steps":["demo/0"],"functions":["demo.nearest"]}}`. Add `at="demo.nearest"` to the `atlas-view` element to frame that step in the lesson reader. The embedded diagram keeps Atlas drag, zoom, and Space-to-code interaction; **Full view** opens the complete route. In Studio, arrange a route in the full Atlas view, then use **Insert view in lesson**. Studio saves the sight in the lesson's `views/` directory and inserts its reference in the lesson file.
 
 A script can write figures into the lesson's `output/` directory. Markdown uses `![PCA](output/pca.png)`; HTML uses `<img src="output/pca.png" alt="PCA">`. Run the script and the lesson refreshes these images. The script needs no Atlas decorator.
 

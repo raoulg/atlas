@@ -19,9 +19,9 @@ const lessonPanel = window.AtlasLesson.mount(byId('lesson-panel'), {
   currentView: () => invoke('current_atlas_view'),
   saveView: (path, name, view) => invoke('save_lesson_view', {path, name, view}),
   runScript: (path) => invoke('run_lesson', {path}),
-  openFullView: (view) => {
+  openFullView: (view, at) => {
     if (!workspace) return;
-    byId('atlas-frame').src = `${workspace.url}/#v=${encodeURIComponent(JSON.stringify(view))}`;
+    byId('atlas-frame').src = `${workspace.url}/#v=${encodeURIComponent(JSON.stringify(view))}${at ? `&at=${encodeURIComponent(at)}` : ''}`;
     selectView('atlas');
   },
   openLink: (from, target) => {

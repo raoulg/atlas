@@ -39,6 +39,14 @@ body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);font
 #resizer{position:absolute;right:0;top:0;bottom:0;width:7px;cursor:col-resize;z-index:3}
 #app.noaside{grid-template-columns:1fr 0}
 #app.noaside aside,#app.noaside #resizer{display:none}
+#app.lesson-embed{grid-template-rows:1fr;grid-template-columns:1fr 0}
+#app.lesson-embed > header{display:none}
+#app.lesson-embed main{grid-row:1;grid-column:1}
+#app.lesson-embed #crumbs,#app.lesson-embed #zoomctl,#app.lesson-embed #legend,#app.lesson-embed #hint,#app.lesson-embed #resizer{display:none}
+#app.lesson-embed:not(.lesson-framed) #scene{visibility:hidden}
+#app.lesson-embed.noaside.peek aside{top:0;width:min(560px,80vw)}
+#app.lesson-embed.noaside.peek #peekbar{top:10px}
+#app.lesson-embed #peekpin{display:none}
 /* the peek: the inspector over the picture for a moment, while the panel is closed */
 #app.noaside.peek aside{display:block;position:fixed;right:0;top:46px;bottom:0;width:min(var(--aside-w,820px),62vw);z-index:20;box-shadow:-18px 0 40px rgba(0,0,0,.28)}
 #peekbar{display:none}
@@ -354,6 +362,10 @@ const template = document.getElementById("app").cloneNode(true);
 let dispose = () => {};
 function mount(data, resume = null) {
 window.DATA = data;
+const lessonParams = new URLSearchParams(location.hash.slice(1));
+const lessonEmbed = lessonParams.get("embed") === "lesson";
+const lessonAt = lessonParams.get("at") || "";
+if (lessonEmbed) document.getElementById("app").classList.add("lesson-embed", "noaside");
 const controller = new AbortController(), intervals = [];
 const listen = (target, event, handler, capture = false) => target.addEventListener(event, handler, {capture, signal: controller.signal});
 const every = (handler, delay) => intervals.push(setInterval(handler, delay));
@@ -433,6 +445,27 @@ svg.call(zoom).on("dblclick.zoom", null);
 svg.on("dblclick.pins", ev => { if (pinned.size && !ev.target.closest("g.tstep, g.tnode")) { pinned.clear(); repaintPins(); crumbs(); } });
 // the height the state bar takes at the top of the canvas, when it shows
 const barHeight = () => { const C = document.getElementById("crumbs"); return C.style.display === "none" ? 0 : C.offsetHeight + 14; };
+function frameLesson(at) {
+  const canvas = svg.node(), W = canvas.clientWidth, H = canvas.clientHeight;
+  if (W < 200 || H < 200) return;
+  const frames = [...scene.node().querySelectorAll(".frame")];
+  const frame = frames.find(node => {
+    const title = node.querySelector(".ftitle")?.textContent?.replace(/^[▾▸]\s*/, "").trim();
+    return title && at.endsWith("." + title);
+  });
+  const candidates = [...scene.node().querySelectorAll("[data-id]")].filter(node => node.dataset.id === at || node.dataset.id === "n:" + at);
+  const target = frame || candidates[0];
+  const current = d3.zoomTransform(canvas), canvasRect = canvas.getBoundingClientRect();
+  const bounds = target?.getBoundingClientRect();
+  const box = bounds && bounds.width && bounds.height ? bounds : scene.node().getBoundingClientRect();
+  if (!box.width || !box.height) { document.getElementById("app").classList.add("lesson-framed"); return; }
+  const cx = (box.left - canvasRect.left + box.width / 2 - current.x) / current.k;
+  const cy = (box.top - canvasRect.top + box.height / 2 - current.y) / current.k;
+  const width = box.width / current.k + (frame ? 120 : 0), height = box.height / current.k + (frame ? 100 : 0);
+  const scale = Math.max(0.8, Math.min((W - 48) / width, (H - 48) / height, 1.15));
+  svg.call(zoom.transform, d3.zoomIdentity.translate(W / 2 - scale * cx, H / 2 - scale * cy).scale(scale));
+  document.getElementById("app").classList.add("lesson-framed");
+}
 function fit(animate = false, pad = 40, tries = 0) {
   const W = svg.node().clientWidth, H = svg.node().clientHeight;
   if ((W < 200 || H < 200) && tries < 30) { setTimeout(() => fit(animate, pad, tries + 1), 100); return; }
@@ -449,7 +482,7 @@ document.getElementById("zout").onclick = () => svg.transition().duration(150).c
 document.getElementById("zone").onclick = () => { const t = d3.zoomTransform(svg.node()); svg.transition().duration(200).call(zoom.transform, d3.zoomIdentity.translate(t.x, t.y).scale(1)); };
 let userZoomed = false;
 zoom.on("zoom.user", ev => { if (ev.sourceEvent) userZoomed = true; });
-listen(window, "resize", () => { if (!userZoomed) fit(); });
+listen(window, "resize", () => { if (!userZoomed) { if (lessonEmbed) frameLesson(lessonAt); else fit(); } });
 { const rz = document.getElementById("resizer"); let drag = false;
   rz.addEventListener("mousedown", e => { drag = true; e.preventDefault(); document.body.style.cursor = "col-resize"; });
   listen(window, "mousemove", e => { if (!drag) return; const w = Math.max(360, Math.min(window.innerWidth - 420, window.innerWidth - e.clientX)); document.documentElement.style.setProperty("--aside-w", w + "px"); });
@@ -458,9 +491,9 @@ let defs = el("defs", {}, svg.node());
 // the code panel opens on demand (space shows the code over the picture); opened, the canvas gives it
 // room, and the choice is remembered in this browser
 { const app = document.getElementById("app"), btn = document.getElementById("codetoggle");
-  const set = open => { app.classList.toggle("noaside", !open); btn.textContent = open ? "hide code" : "show code"; try { localStorage.setItem("atlas.code", open ? "1" : "0"); } catch {} };
+  const set = open => { app.classList.toggle("noaside", !open); btn.textContent = open ? "hide code" : "show code"; if (!lessonEmbed) try { localStorage.setItem("atlas.code", open ? "1" : "0"); } catch {} };
   let saved = null; try { saved = localStorage.getItem("atlas.code"); } catch {}
-  set(saved === "1");
+  set(saved === "1" && !lessonEmbed);
   btn.onclick = () => { set(app.classList.contains("noaside")); if (!userZoomed) setTimeout(() => fit(true), 30); }; }
 
 // every key and click on one card: `?` opens and closes it, Esc or a click beside it closes it
@@ -679,7 +712,7 @@ function setView(o) {
 if (resume?.state) setView(resume.state);
 // the reading a union's picture shows: A, B, or both ("u"); written to the address beside the view
 let SHOWN = DIFF ? (location.hash.match(/[#&]d=([ab])/) || [])[1] || "u" : "u";
-const writeView = () => { const o = viewData(); try { history.replaceState(null, "", `#p=${current}` + (Object.keys(o).length ? `&v=${encodeURIComponent(JSON.stringify(o))}` : "") + (SHOWN !== "u" ? `&d=${SHOWN}` : "")); } catch {} };
+const writeView = () => { const o = viewData(); try { history.replaceState(null, "", `#p=${current}` + (Object.keys(o).length ? `&v=${encodeURIComponent(JSON.stringify(o))}` : "") + (SHOWN !== "u" ? `&d=${SHOWN}` : "") + (lessonEmbed ? `&embed=lesson&at=${encodeURIComponent(lessonAt)}` : "")); } catch {} };
 
 // one glyph and one hue per kind of place: where a route starts, files, databases, the web, the screen, programs, models
 const GLYPH = {
@@ -2056,6 +2089,7 @@ const boxOf = id => { const g = PICTURE.boxes.get(id); return {id: g?.dataset.id
 let reportTimer = null;
 // what the page shows, a moment after it changes: the view, the selected box, the boxes and lines
 function report() {
+  if (lessonEmbed) return;
   clearTimeout(reportTimer);
   reportTimer = setTimeout(() => {
     const boxes = [...PICTURE.boxes.keys()].map(boxOf);
@@ -2160,7 +2194,7 @@ async function point(at) {
   if (!a && byId.has(at)) select(at);
   target.classList.remove("pointed"); void target.getBBox(); target.classList.add("pointed");
   setTimeout(() => target.classList.remove("pointed"), 2400);
-  if (!a) setTimeout(() => centre(at), SETTLED);
+  if (!a && !lessonEmbed) setTimeout(() => centre(at), SETTLED);
 }
 // A served reading installs its own model and event handlers; the view survives a new reading.
 let back = null;
@@ -2287,8 +2321,11 @@ if (D.served) {
   dl.append(html("dt", null, "alt-click a box or a line"), html("dd", null, "write a note on it for the agent (atlas serve); its answer shows once on the ring"));
 }
 // a link to a place (`#v=…&at=…`, the place of a note) points at it once the picture is drawn
-const linkedAt = (location.hash.match(/[#&]at=([^&]*)/) || [])[1];
-render().then(comeBack).then(() => { if (linkedAt) point(decodeURIComponent(linkedAt)); });
+const linkedAt = lessonAt || decodeURIComponent((location.hash.match(/[#&]at=([^&]*)/) || [])[1] || "");
+render().then(comeBack).then(async () => {
+  if (linkedAt) await point(linkedAt);
+  if (lessonEmbed) setTimeout(() => frameLesson(linkedAt), SETTLED);
+});
 dispose = () => { controller.abort(); intervals.forEach(clearInterval); noteEl.remove(); renderSeq++; };
 }
 if (window.DATA) mount(window.DATA);
