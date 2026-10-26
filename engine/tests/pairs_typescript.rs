@@ -14,11 +14,12 @@ mod common;
 
 use common::Pair;
 
+use std::collections::BTreeSet;
 use std::path::PathBuf;
 use std::sync::OnceLock;
 
 use atlas_engine::principles::{check, Finding};
-use atlas_engine::{analyze, EdgeKind, Graph, Node, Options, Touch};
+use atlas_engine::{analyze, flow, EdgeKind, Graph, Node, NodeKind, Options, Touch};
 
 fn side(name: &str) -> Graph {
     let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/pairs/typescript").join(name);
@@ -60,6 +61,16 @@ fn asked(g: &Graph, principle: &str, id: &str) -> bool {
 
 fn asked_anywhere(g: &Graph, principle: &str) -> Vec<String> {
     findings(g).into_iter().filter(|f| f.principle == principle).map(|f| format!("{} {}", f.node, f.what)).collect()
+}
+
+/// The nodes `principle` asks about, in the order it asks.
+fn asked_nodes(g: &Graph, principle: &str) -> Vec<String> {
+    findings(g).into_iter().filter(|f| f.principle == principle).map(|f| f.node).collect()
+}
+
+/// What a body does that Atlas does not see, as the body writes it (`Node::unseen`).
+fn unseen<'g>(g: &'g Graph, id: &str) -> Vec<&'g str> {
+    node(g, id).unseen.iter().map(|(_, what)| what.as_str()).collect()
 }
 
 /// The places a function's touches of `kind` name, with the functions that make them whole.
@@ -140,10 +151,7 @@ fn gives_a_used_value_has_a_type() {
     assert!(asked_anywhere(c, "gives").is_empty(), "{:?}", asked_anywhere(c, "gives"));
     // the shortcut: a missing type
     assert!(node(s, "rates.http.getJson").returns.is_none());
-    assert_eq!(
-        asked_anywhere(s, "gives"),
-        ["expenses.rates.http.getJson getJson gives back a value its callers use, and does not say what it is"]
-    );
+    assert_eq!(asked_nodes(s, "gives"), ["expenses.rates.http.getJson"], "{:?}", asked_anywhere(s, "gives"));
     assert!(!s.edges.iter().any(|e| e.kind == EdgeKind::Returns && e.src == "expenses.rates.http.getJson"));
     // still the step that asks the service
     assert!(edge(s, EdgeKind::Calls, "rates.http.HttpRates.latest", "rates.http.getJson"));
@@ -420,9 +428,15 @@ fn nothing_a_call_leaves_something_behind() {
         |f: &str, dir: &str| touches(s, f, "global").iter().any(|t| t.artifact == "expenses.config.current" && t.dir_name() == dir);
     assert!(global("config.configure", "write") && global("config.settings", "read"));
     assert_eq!(
-        asked_anywhere(s, "nothing"),
-        ["expenses.ledger.Ledger.exportReport Ledger.exportReport gives nothing back, and Atlas cannot see what `EXPORTERS[format](..)` does"],
-        "a call that keeps its value in a global leaves it behind"
+        asked_nodes(s, "nothing"),
+        ["expenses.ledger.Ledger.exportReport"],
+        "a call that keeps its value in a global leaves it behind: {:?}",
+        asked_anywhere(s, "nothing")
+    );
+    let unseen = unseen(s, "ledger.Ledger.exportReport");
+    assert!(
+        unseen.len() == 1 && unseen[0].contains("EXPORTERS[format]"),
+        "the exporter looked up by name is what Atlas cannot see: {unseen:?}"
     );
     assert!(
         edge(s, EdgeKind::Calls, "cli.run", "config.configure") && edge(s, EdgeKind::Calls, "server", "config.configure"),
@@ -464,7 +478,13 @@ fn layers_run_one_way() {
     assert!(!file.is_empty() && !http.is_empty() && file != http, "the command picks one: {file:?} | {http:?}");
     let layers: Vec<Finding> = findings(s).into_iter().filter(|f| f.principle == "layers").collect();
     assert_eq!(layers.len(), 1, "{layers:?}");
-    assert!(layers[0].what.contains("file, http and source"), "{}", layers[0].what);
+    // the cycle runs through the three modules: asked at one of them, its links named by the code at their ends, each
+    // implementation's class and the interface it implements, and the pick that builds both
+    let cycle = ["expenses.rates.file", "expenses.rates.http", "expenses.rates.source"];
+    assert!(cycle.contains(&layers[0].node.as_str()), "{}", layers[0].node);
+    for end in ["FileRates", "HttpRates", "RateSource", "rateSource"] {
+        assert!(layers[0].evidence.iter().any(|e| e.contains(end)), "{end}: {:?}", layers[0].evidence);
+    }
     assert!(
         edge(s, EdgeKind::Instantiates, "rates.source.rateSource", "rates.file.FileRates")
             && edge(s, EdgeKind::Instantiates, "rates.source.rateSource", "rates.http.HttpRates")
@@ -732,11 +752,18 @@ fn sums_a_union_written_in_place_is_a_sum() {
         assert_eq!(variants.len(), 2, "{sum}: {variants:?}");
         assert!(g.edges.iter().any(|e| e.kind == EdgeKind::Returns && e.src.ends_with(".fitter.fit") && e.dst == sum));
     }
-    assert!(asked_anywhere(&c, "sums").is_empty(), "one copairing is where the sum is taken apart");
-    assert_eq!(
-        asked_anywhere(&s, "sums"),
-        [format!("({r}.model.Failed | {r}.model.Fit) Fit | Failed is handed on unopened: points and line take it", r = s.root)]
-    );
+    let takers = |g: &Graph| -> Vec<String> {
+        let sum = format!("({root}.model.Failed | {root}.model.Fit)", root = g.root);
+        g.edges
+            .iter()
+            .filter(|e| e.kind == EdgeKind::Takes && e.dst == sum)
+            .map(|e| e.src.replacen(&format!("{}.", g.root), "", 1))
+            .collect()
+    };
+    assert_eq!(takers(&c), ["report.describe"], "one copairing is where the sum is taken apart");
+    assert!(asked_anywhere(&c, "sums").is_empty(), "{:?}", asked_anywhere(&c, "sums"));
+    assert_eq!(takers(&s), ["plot.points", "report.line"], "each chooses again");
+    assert_eq!(asked_nodes(&s, "sums"), [format!("({r}.model.Failed | {r}.model.Fit)", r = s.root)], "{:?}", asked_anywhere(&s, "sums"));
 }
 
 /// One side of the choices pair (`tests/pairs/choices/typescript`): a job run in one of two modes,
@@ -760,19 +787,43 @@ fn choices_a_choice_is_made_once_across_bodies() {
     assert!(asked_anywhere(&c, "choices").is_empty(), "{:?}", asked_anywhere(&c, "choices"));
     let made = format!("{}.runs.Message", c.root);
     let message: Vec<&[(u32, u32)]> = node(&c, "runs.report").sites.iter().filter(|s| s.to == made).map(|s| s.arms.as_slice()).collect();
-    assert_eq!(message, [&[(0, 0)][..], &[(0, 1)][..]], "one constructor in each arm of one choice");
+    // two arms of one choice, one constructor in each
+    let one_choice = |a: &[(u32, u32)], b: &[(u32, u32)]| a.len() == 1 && b.len() == 1 && a[0].0 == b[0].0 && a[0].1 != b[0].1;
+    assert!(message.len() == 2 && one_choice(message[0], message[1]), "one constructor in each arm of one choice: {message:?}");
 
-    let asked: Vec<Finding> = findings(&s).into_iter().filter(|f| f.principle == "choices").collect();
-    let at = |id: &str| {
-        let id = format!("{}.{id}", s.root);
-        asked.iter().find(|f| f.node == id).unwrap_or_else(|| panic!("{id} is asked: {asked:#?}"))
+    // each is asked once, where the value is defined
+    let mut asked: Vec<String> = asked_nodes(&s, "choices").into_iter().map(|n| n.replacen(&format!("{}.", s.root), "", 1)).collect();
+    asked.sort();
+    assert_eq!(
+        asked,
+        ["runs.Report.line", "runs.Runner", "runs.prefix", "runs.retries", "runs.run"],
+        "{:#?}",
+        asked_anywhere(&s, "choices")
+    );
+    // what each place tests, as it writes it, and what against: the value a method runs on, a parameter, a literal, a member
+    let tests = |id: &str| -> Vec<(String, String, Vec<String>)> {
+        node(&s, id)
+            .compares
+            .iter()
+            .map(|c| (c.subject.clone(), c.written.clone(), [c.cases.clone(), c.members.clone()].concat()))
+            .collect()
     };
-    assert_eq!(asked.len(), 5, "{asked:#?}");
-    assert_eq!(at("runs.Runner").what, "Runner.batch and Runner.workers test `this.mode` in 2 places; \"parallel\" (2×) come back");
-    assert_eq!(at("runs.Report.line").evidence, ["line 41: l (this.level) against \"loud\"", "line 41: l (this.level) against \"loud\""]);
-    assert_eq!(at("runs.retries").what, "retries and timeout test `mode` in 2 places; \"parallel\" (2×) come back");
-    assert_eq!(at("runs.prefix").what, "prefix and suffix test `level` in 2 places; Level.Loud (2×) come back");
-    assert!(at("runs.run").what.contains("(load | infer)"), "{}", at("runs.run").what);
+    let tested = |subject: &str, written: &str, against: &str| (subject.to_string(), written.to_string(), vec![against.to_string()]);
+    for (places, subject, against) in [
+        (["runs.Runner.batch", "runs.Runner.workers"], "this.mode", "parallel"),
+        (["runs.retries", "runs.timeout"], "mode", "parallel"),
+        (["runs.prefix", "runs.suffix"], "level", "Level.Loud"),
+    ] {
+        for f in places {
+            assert_eq!(tests(f), [tested(subject, "", against)], "{f}");
+        }
+    }
+    let line = &node(&s, "runs.Report.line").compares;
+    assert_eq!(tests("runs.Report.line"), vec![tested("this.level", "l", "loud"); 2], "`this.level` twice, through `l`");
+    assert_ne!(line[0].choice, line[1].choice, "in two choices");
+    let arms = |to: &str| node(&s, "runs.run").sites.iter().find(|x| x.to == format!("{}.runs.{to}", s.root)).map(|x| x.arms.clone());
+    let (load, infer) = (arms("load").unwrap_or_default(), arms("infer").unwrap_or_default());
+    assert!(one_choice(&load, &infer), "where the Job comes from is one choice between the steps of run: {load:?} | {infer:?}");
     // the shortcut still runs the job and sends its line
     assert!(edge(&s, EdgeKind::Calls, "runs.run", "runs.send") && edge(&s, EdgeKind::Calls, "runs.run", "runs.load"));
 }
@@ -785,9 +836,32 @@ fn club() -> &'static Pair {
     PAIR.get_or_init(|| common::pair("lens/typescript/club"))
 }
 
-/// What `lens` says of class `id` of the club: empty when it asks nothing.
-fn lens_of(g: &Graph, id: &str) -> String {
-    findings(g).into_iter().find(|f| f.principle == "lens" && f.node == format!("{}.{id}", g.root)).map(|f| f.what).unwrap_or_default()
+/// What the methods of class `id` of the club write and read, as the graph holds it: each type of the program a method that
+/// writes takes, with the place it writes; and what each method that only reads gives back, with the place it reads. A place
+/// is the table a statement names, or what names the file. Which written type a statement puts as a value and which it finds
+/// rows by, a key, `lens` reads from the statement.
+#[allow(clippy::type_complexity)]
+fn written_and_read(g: &Graph, id: &str) -> (Vec<(String, String)>, Vec<(String, String)>) {
+    let place = |t: &Touch| if t.artifact.is_empty() { t.what.clone() } else { t.artifact.clone() };
+    let writes = |t: &&Touch| t.dir_name() == "write" || t.kind_name() == "disk_write";
+    let (mut written, mut read) = (vec![], vec![]);
+    for m in &node(g, id).methods {
+        let n = node(g, &format!("{id}.{m}"));
+        let at: Vec<&Touch> = n.touches.iter().filter(writes).collect();
+        let takes = g.edges.iter().filter(|e| e.kind == EdgeKind::Takes && e.src == n.id);
+        let takes: Vec<&str> = takes.filter_map(|e| e.dst.strip_prefix(&format!("{}.", g.root))).collect();
+        if !at.is_empty() {
+            written.extend(takes.iter().flat_map(|ty| at.iter().map(|t| (ty.to_string(), place(t)))));
+        } else if let Some(r) = &n.returns {
+            read.extend(n.touches.iter().map(|t| (place(t), r.written.clone())));
+        }
+    }
+    (written, read)
+}
+
+/// A list of pairs of names, as `written_and_read` gives them.
+fn pairs(names: &[(&str, &str)]) -> Vec<(String, String)> {
+    names.iter().map(|(a, b)| (a.to_string(), b.to_string())).collect()
 }
 
 /// What a lens puts, it gets back, at the table it puts to; and a key its statement finds rows by
@@ -804,9 +878,21 @@ fn lens_the_place_is_the_table_and_a_key_is_no_put() {
     assert_eq!(at("desk.Desk.members"), [("members".to_string(), "read")]);
     assert_eq!(at("desk.Visits.forget"), [("visits".to_string(), "write")]);
     assert!(edge(c, EdgeKind::Takes, "desk.Visits.forget", "model.Member"));
-    assert_eq!(lens_of(s, "desk.Desk"), "Desk puts Visit into SQLite(visits) and gets no Visit back");
-    assert_eq!(lens_of(s, "desk.Register"), "Register puts Member into SQLite(members) and gets no Member back");
-    assert_eq!(lens_of(s, "desk.Visits"), "Visits puts Member into SQLite(visits) and gets no Member back");
+    // the shortcut's Desk puts a Visit into `visits` and reads back records; its Register puts a Member into `members` and
+    // reads back names, a Member only inside the Report `reports` holds
+    assert!(asked(s, "lens", "desk.Desk"), "{:?}", asked_anywhere(s, "lens"));
+    assert_eq!(written_and_read(s, "desk.Desk"), (pairs(&[("model.Visit", "visits")]), pairs(&[("visits", "Record<string, unknown>[]")])));
+    assert!(asked(s, "lens", "desk.Register"), "{:?}", asked_anywhere(s, "lens"));
+    assert_eq!(
+        written_and_read(s, "desk.Register"),
+        (pairs(&[("model.Member", "members")]), pairs(&[("members", "string[]"), ("reports", "Report")]))
+    );
+    // Visits writes a Member into `visits` on both sides and reads back Visits: by the Member, a key, on the clean side, as a
+    // value on the shortcut's
+    let visits = (pairs(&[("model.Visit", "visits"), ("model.Member", "visits")]), pairs(&[("visits", "Visit[]")]));
+    assert_eq!(written_and_read(c, "desk.Visits"), visits);
+    assert_eq!(written_and_read(s, "desk.Visits"), visits);
+    assert!(asked(s, "lens", "desk.Visits"), "{:?}", asked_anywhere(s, "lens"));
 }
 
 /// A get gives a value back from the place; an operation that reads the place on its way to
@@ -818,8 +904,10 @@ fn lens_a_get_gives_a_value_back() {
     let (c, s) = (&club().clean, &club().shortcut);
     let kinds: Vec<&str> = node(c, "files.Log.add").touches.iter().map(|t| t.kind_name()).collect();
     assert!(kinds.contains(&"disk_read") && kinds.contains(&"disk_write"), "{kinds:?}");
-    assert_eq!(lens_of(c, "files.Log"), "");
-    assert_eq!(lens_of(s, "files.Log"), "Log puts Visit into Disk(Log.path) and gets no Visit back");
+    assert_eq!(written_and_read(c, "files.Log"), (pairs(&[("model.Visit", "Log.path")]), vec![]), "a put, and no get");
+    assert!(!asked(c, "lens", "files.Log"));
+    assert_eq!(written_and_read(s, "files.Log"), (pairs(&[("model.Visit", "Log.path")]), pairs(&[("Log.path", "string[]")])));
+    assert!(asked(s, "lens", "files.Log"), "{:?}", asked_anywhere(s, "lens"));
 }
 
 /// What a get gives back holds what was put: the class's own type, which a constructor gives, and
@@ -833,10 +921,15 @@ fn lens_a_get_gives_its_own_class_and_a_subclass_back() {
     assert!(node(c, "files.Roster.load").ctor);
     assert!(edge(c, EdgeKind::Has, "files.Roster", "model.Member"));
     assert!(edge(c, EdgeKind::Inherits, "model.Notice", "model.Post"));
-    assert_eq!(lens_of(c, "files.Roster"), "");
-    assert_eq!(lens_of(c, "files.Board"), "");
-    assert_eq!(lens_of(s, "files.Roster"), "Roster puts Member into Disk(Roster.path) and gets no Member back");
-    assert_eq!(lens_of(s, "files.Board"), "Board puts Notice into Disk(Board.path) and gets no Notice back");
+    assert!(!asked(c, "lens", "files.Roster") && !asked(c, "lens", "files.Board"), "{:?}", asked_anywhere(c, "lens"));
+    // the shortcut's Roster gives a Roster back that holds no Member, and its Board records
+    let roster = (pairs(&[("model.Member", "Roster.path")]), pairs(&[("Roster.path", "Roster")]));
+    assert_eq!(written_and_read(s, "files.Roster"), roster);
+    assert!(!edge(s, EdgeKind::Has, "files.Roster", "model.Member"));
+    assert!(asked(s, "lens", "files.Roster"), "{:?}", asked_anywhere(s, "lens"));
+    let board = (pairs(&[("model.Notice", "Board.path")]), pairs(&[("Board.path", "Record<string, unknown>[]")]));
+    assert_eq!(written_and_read(s, "files.Board"), board);
+    assert!(asked(s, "lens", "files.Board"), "{:?}", asked_anywhere(s, "lens"));
 }
 
 /// Building a value runs the constructor of its class, and `super(..)` in it runs the one its base
@@ -875,10 +968,10 @@ fn overrides_an_override_takes_what_its_base_takes_and_a_type_is_its_members() {
     assert_eq!(node(&c, "handlers.Click").fields, ["x"]);
     assert_eq!(node(&c, "handlers.Event").fields, ["name"]);
     assert!(edge(&c, EdgeKind::Takes, "handlers.ClickHandler.log", "handlers.Named"));
-    assert_eq!(
-        asked_anywhere(&s, "overrides"),
-        ["events.handlers.Handler.handle Handler.handle promises (e: Event) -> string; 1 override breaks it"]
-    );
+    // the base is asked, and its one override that breaks the promise is named
+    let asked: Vec<Finding> = findings(&s).into_iter().filter(|f| f.principle == "overrides").collect();
+    assert_eq!(asked.iter().map(|f| f.node.as_str()).collect::<Vec<_>>(), ["events.handlers.Handler.handle"], "{asked:#?}");
+    assert!(asked[0].evidence.len() == 1 && asked[0].evidence[0].contains("ClickHandler.handle"), "{:?}", asked[0].evidence);
     assert!(edge(&s, EdgeKind::Takes, "handlers.ClickHandler.handle", "handlers.Click"));
     assert!(edge(&s, EdgeKind::Inherits, "handlers.Click", "handlers.Event"));
 }
@@ -1005,7 +1098,8 @@ fn cyc_typescript(side: &str) -> Graph {
 fn layers_a_directorys_own_index_depends_in_one_direction() {
     let (c, s) = (cyc_typescript("clean"), cyc_typescript("shortcut"));
     assert!(asked_anywhere(&c, "layers").is_empty(), "{:?}", asked_anywhere(&c, "layers"));
-    assert_eq!(asked_anywhere(&s, "layers"), ["cyc.orders orders itself and lines depend on one another"]);
+    // the index is a block of its own, asked for the cycle it makes with `lines` below it
+    assert_eq!(asked_nodes(&s, "layers"), ["cyc.orders"], "{:?}", asked_anywhere(&s, "layers"));
     assert!(edge(&s, EdgeKind::Calls, "orders.total", "orders.lines.price"));
     assert!(edge(&s, EdgeKind::Calls, "orders.lines.price", "orders.tax"));
 }
@@ -1044,7 +1138,8 @@ fn prophecy_a_test_leans_on_a_prophecy_freely() {
     assert!(findings(&c).is_empty(), "{:?}", findings(&c).iter().map(|f| format!("{} {}", f.principle, f.what)).collect::<Vec<_>>());
     assert!(edge(&c, EdgeKind::Calls, "index_test.sealedTwice", "seal"));
     assert!(edge(&c, EdgeKind::Calls, "__tests__.sealed.sealed", "seal"));
-    assert_eq!(asked_anywhere(&s, "prophecy"), ["archive.check.sealedTwice sealedTwice leans on `seal`, which is not built"]);
+    assert!(node(&s, "seal").prophecy.is_some() && edge(&s, EdgeKind::Calls, "check.sealedTwice", "seal"), "built code calls the prophecy");
+    assert_eq!(asked_nodes(&s, "prophecy"), ["archive.check.sealedTwice"], "{:?}", asked_anywhere(&s, "prophecy"));
 }
 
 /// A name the prophecy's `supersedes` writes names one node, by its whole id or by the one id that
@@ -1058,10 +1153,10 @@ fn prophecy_a_name_that_names_several_nodes_is_ambiguous() {
     let replaces = |g: &Graph, id: &str| node(g, id).prophecy.as_ref().and_then(|p| p.replaces.clone());
     assert_eq!(replaces(&c, "savePosted").as_deref(), Some("archive.ledger.save"));
     assert_eq!(replaces(&c, "saveKept").as_deref(), Some("archive.shelf.save"));
-    assert_eq!(
-        asked_anywhere(&s, "prophecy"),
-        ["archive.savePosted savePosted supersedes `save`, which names 2 nodes: `archive.ledger.save` and `archive.shelf.save`"]
-    );
+    let said = node(&s, "savePosted").prophecy.as_ref().expect("savePosted is a prophecy");
+    assert_eq!((said.supersedes.as_deref(), said.replaces.as_deref()), (Some("save"), None), "the name replaces none");
+    assert_eq!(said.candidates, ["archive.ledger.save", "archive.shelf.save"], "it names both");
+    assert_eq!(asked_nodes(&s, "prophecy"), ["archive.savePosted"], "{:?}", asked_anywhere(&s, "prophecy"));
 }
 
 // ---------- doors: every declaration a door is made of ----------
@@ -1087,7 +1182,10 @@ fn doors_every_declaration_of_a_door_says_what_goes_in_and_out() {
     assert!(fs.is_empty(), "{:#?}", fs.iter().map(|f| format!("{} {}: {}", f.principle, f.node, f.what)).collect::<Vec<_>>());
     // one node per name: the implementation with the overloads its callers see, the property's getter
     let scale = node(&c, "core.scale");
-    assert_eq!(scale.overloads.iter().map(|o| o.line).collect::<Vec<_>>(), [22, 23]);
+    let typed: Vec<Vec<&str>> = scale.overloads.iter().map(|o| o.params.iter().map(|p| p.ty.as_str()).collect()).collect();
+    assert_eq!(typed, [["number", "number"], ["bigint", "bigint"]], "two typed overloads");
+    let body = scale.span.expect("the implementation has a body").0;
+    assert!(scale.overloads.iter().all(|o| o.line < body), "written before the implementation");
     assert_eq!(scale.params.iter().map(|p| (p.ty.as_str(), p.unchecked)).collect::<Vec<_>>(), [("any", true), ("any", true)]);
     assert_eq!(node(&c, "core.Length.meters").returns.as_ref().map(|r| r.written.as_str()), Some("number"));
     assert_eq!(node(&c, "core.Length").methods, ["constructor", "meters", "plus"]);
@@ -1100,7 +1198,16 @@ fn doors_every_declaration_of_a_door_says_what_goes_in_and_out() {
         .filter(|f| f.principle == "doors")
         .map(|f| (f.node.trim_start_matches("units.").to_string(), f.line))
         .collect();
-    let want = [("core.Length.meters", 9), ("core.scale", 23), ("core.log", 28), ("core.parse", 32)];
+    // the getter, log and parse at their own declarations; scale at its overload without types, the second
+    let declared = |id: &str| node(&s, id).span.expect("a declaration has a span").0;
+    let open = &node(&s, "core.scale").overloads;
+    assert!(open.len() == 2 && !open[0].params[0].ty.is_empty() && open[1].params[0].ty.is_empty(), "{open:?}");
+    let want = [
+        ("core.Length.meters", declared("core.Length.meters")),
+        ("core.scale", open[1].line),
+        ("core.log", declared("core.log")),
+        ("core.parse", declared("core.parse")),
+    ];
     assert_eq!(asked, want.map(|(n, l)| (n.to_string(), l)));
     assert!(node(&s, "core.parse").returns.as_ref().is_some_and(|r| r.written == "any" && r.unchecked), "`any` is drawn as written");
 }
@@ -1124,23 +1231,22 @@ fn jobs(side: &str) -> Graph {
 #[test]
 fn nothing_says_what_atlas_cannot_see() {
     let (c, s) = (jobs("clean"), jobs("shortcut"));
-    let asked = |g: &Graph| -> Vec<(String, String)> {
-        check(g)
-            .into_iter()
-            .filter(|f| f.principle == "nothing")
-            .map(|f| (f.node.replacen(&format!("{}.", g.root), "", 1), f.what))
-            .collect()
-    };
-    assert!(asked(&c).is_empty(), "{:#?}", asked(&c));
+    let asked =
+        |g: &Graph| -> Vec<String> { asked_nodes(g, "nothing").into_iter().map(|n| n.replacen(&format!("{}.", g.root), "", 1)).collect() };
+    assert!(asked(&c).is_empty(), "{:#?}", asked_anywhere(&c, "nothing"));
     assert!(node(&c, "runner.stop").raises, "ending the run is what `stop` leaves behind");
-    let want = [
-        ("runner.runTask", "runTask gives nothing back, and Atlas cannot see what `Task.run` does"),
-        ("runner.Job.finish", "Job.finish gives nothing back, and Atlas cannot see what `this.onDone(..)` does"),
-        ("runner.count", "count gives nothing back, and Atlas cannot see what `Counter.runs += 1` does"),
-        ("runner.settle", "settle gives nothing back, and Atlas sees no change and no place it reaches"),
-    ]
-    .map(|(f, what)| (f.to_string(), what.to_string()));
-    assert_eq!(asked(&s), want);
+    assert_eq!(asked(&s), ["runner.runTask", "runner.Job.finish", "runner.count", "runner.settle"], "{:#?}", asked_anywhere(&s, "nothing"));
+    // what each cannot be seen through: a method only declared, the callback a field keeps, the static a class keeps; and
+    // `settle`, which runs nothing Atlas cannot see
+    assert!(edge(&s, EdgeKind::Calls, "runner.runTask", "runner.Task.run") && unseen(&s, "runner.runTask").is_empty());
+    let one = |id: &str, what: &str| {
+        let unseen = unseen(&s, id);
+        assert!(unseen.len() == 1 && unseen[0].contains(what), "{id}: {unseen:?}");
+    };
+    one("runner.Job.finish", "this.onDone");
+    one("runner.count", "Counter.runs");
+    let settle = node(&s, "runner.settle");
+    assert!(settle.unseen.is_empty() && settle.sites.is_empty() && settle.touches.is_empty(), "{settle:?}");
     // what is only declared has no body to ask about, and what implements it is still drawn
     assert!(node(&s, "runner.Task.run").declared && node(&c, "runner.Task.run").declared);
     assert_eq!(touches(&s, "runner.Echo.run", "screen").len(), 1);
@@ -1250,6 +1356,30 @@ fn diamond_a_feed_hands_its_arguments_to_the_constructor_it_runs() {
     assert!(edge(&news("clean"), EdgeKind::Calls, "sources.Feed.constructor", "sources.Cached.constructor"));
 }
 
+/// What a route runs, through the bodies its text and its picture are drawn from (`flow::bodies`): each function a step
+/// reaches and each library operation, by its id, and the steps that may run an override in their place. Building a class
+/// runs its initializer.
+fn route_runs(g: &Graph, entry: &str) -> (BTreeSet<String>, usize) {
+    let (bodies, inits) = (flow::bodies(g), flow::initializers(g));
+    let (mut runs, mut seen, mut alternatives) = (BTreeSet::new(), BTreeSet::new(), 0);
+    let mut todo = vec![flow::Step::of(entry)];
+    while let Some(st) = todo.pop() {
+        let built = g.node(&st.to).is_some_and(|n| n.kind == NodeKind::Class);
+        let Some(to) = (if built { inits.get(&st.to).cloned() } else { Some(st.to.clone()) }) else { continue };
+        if !seen.insert(flow::key(&to, &st.on)) {
+            continue;
+        }
+        if !built {
+            let instead = st.runs_instead(&bodies);
+            alternatives += usize::from(!instead.is_empty());
+            todo.extend(instead);
+        }
+        todo.extend(bodies.get(&flow::key(&to, &st.on)).into_iter().flat_map(|b| b.steps()).cloned());
+        runs.insert(to);
+    }
+    (runs, alternatives)
+}
+
 /// A feed runs the `read` its bases name, `Cached`'s, from the code of `Buffered`, whose call
 /// names `Source.read`: the route reads the file the cache keeps, in the terms of the route that
 /// builds the feed, and fetches nothing.
@@ -1257,8 +1387,12 @@ fn diamond_a_feed_hands_its_arguments_to_the_constructor_it_runs() {
 fn diamond_a_feed_runs_the_read_its_bases_name() {
     for side in ["clean", "shortcut"] {
         let g = news(side);
-        let r = atlas_engine::story::route(&g, &format!("{}.read.headlines", g.root), 4).expect("headlines is a route");
-        assert!(r.contains("reads {cache}/") && !r.contains("calls this.url"), "{side}: {r}");
+        let (runs, _) = route_runs(&g, &format!("{}.read.headlines", g.root));
+        let id = |f: &str| format!("{}.{f}", g.root);
+        assert!(runs.contains(&id("sources.Cached.read")) && runs.contains(&id("store.Store.get")), "{side}: {runs:?}");
+        assert!(!runs.contains(&id("sources.Source.read")) && !runs.contains("op:fetch"), "{side}: it fetches nothing: {runs:?}");
+        let kinds: BTreeSet<&str> = runs.iter().filter_map(|f| g.node(f)).flat_map(|n| n.touches.iter().map(|t| t.kind_name())).collect();
+        assert_eq!(kinds, BTreeSet::from(["disk_read"]), "{side}: the route only reads the file the cache keeps");
     }
 }
 
@@ -1313,9 +1447,12 @@ fn cooperative_super_and_a_call_through_a_prototype_run_one_method() {
         let read = &bodies[&format!("{}.sources.Feed.read", g.root)];
         let ran: Vec<(&str, bool)> = read.steps().iter().filter(|s| !s.to.starts_with("op:")).map(|s| (s.to.as_str(), s.named)).collect();
         assert_eq!(ran, [(format!("{}.sources.{next}.read", g.root).as_str(), true)], "{side}");
-        let r = atlas_engine::story::route(&g, "headlines", 4).expect("a route");
-        assert!(!r.contains("one of") && !r.contains("prototype"), "{side}: {r}");
-        assert_eq!(r.contains("Store.get(key)"), side == "clean", "{side}: {r}");
+        // the route runs no step that may run an override in its place, no operation but the fetch, and reads the store
+        // on the clean side alone
+        let (runs, alternatives) = route_runs(&g, &format!("{}.read.headlines", g.root));
+        assert_eq!(alternatives, 0, "{side}: {runs:?}");
+        assert_eq!(runs.iter().filter(|f| f.starts_with("op:")).collect::<Vec<_>>(), ["op:fetch"], "{side}");
+        assert_eq!(runs.contains(&format!("{}.store.Store.get", g.root)), side == "clean", "{side}: {runs:?}");
     }
 }
 
@@ -1608,7 +1745,12 @@ fn a_function_s_parameter_is_each_element_of_the_array_it_maps() {
     assert_eq!(drawn_on(&method.clean), ["g"], "each touch is a part of the graph the function is handed");
     assert!(ops(&method.clean).is_empty(), "`flatMap` and `map` on arrays are no steps: {:?}", ops(&method.clean));
     assert_eq!(drawn_on(&method.shortcut), ["t"], "the loop's touch, a value the body makes");
-    assert_eq!(ops(&method.shortcut), ["for n of g.nodes", "for t of n.touches", "push"]);
+    // a step for each loop, each handed what it goes over and giving its element by the loop's name, then the push
+    let named = |hs: &[atlas_engine::Held]| -> Vec<String> { hs.iter().map(|h| h.name.clone()).filter(|n| !n.starts_with('#')).collect() };
+    let sites = node(&method.shortcut, "drawn").sites.iter().filter(|s| !s.op.is_empty());
+    let steps: Vec<(Vec<String>, Vec<String>)> = sites.map(|s| (named(&s.hands), named(&s.gives))).collect();
+    let step = |over: &str, each: &str| (vec![over.to_string()], vec![each.to_string()]);
+    assert_eq!(steps, [step("g", "n"), step("n", "t"), step("out", "out")], "{:?}", ops(&method.shortcut));
     let push = node(&method.shortcut, "drawn").sites.iter().find(|s| s.op == "push").expect("the shortcut pushes");
     assert!(
         push.changes && push.gives.iter().any(|g| g.name == "out" && g.ty.ends_with(".Where")),
