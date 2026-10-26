@@ -503,7 +503,7 @@ const dirsOf = p => { const segs = p.replace(/\/$/, "").split("/"), out = []; fo
 function foldDirs(paths) {
   const to = new Map(), n = new Map();
   if (paths.length <= 6) return {to, n};
-  const holds = d => paths.filter(p => p.startsWith(d)).length;
+  const counts = new Map(), holds = d => { if (!counts.has(d)) counts.set(d, paths.filter(p => p.startsWith(d)).length); return counts.get(d); };
   for (const p of paths) {
     const ds = dirsOf(p);
     let at = p;

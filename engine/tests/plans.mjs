@@ -155,7 +155,8 @@ function familyOpenings() {
 // "Refinement keeps what it does not refine"): opening a folded directory as the page opens it (a click adds the box's
 // directory to the open ones) refines the fold in one step, so that each file the box held stands as itself or in a
 // directory below the box, and every other file stands where it stood. Asked of every fold reached by opening one box
-// after another (#227); that closing it draws the box again is asked of the page, which closes it (`pictures.py topology`)
+// after another (#227), or where a large program's pictures are sampled, of each box of the closed fold; that closing
+// it draws the box again is asked of the page, which closes it (`pictures.py topology`)
 function folderOpenings(paths) {
   const out = [], seen = new Set();
   const fold = open => { V.open.dirs = new Set(open); return M.foldDirs(paths).to; };
@@ -170,7 +171,7 @@ function folderOpenings(paths) {
         const a = A.get(p) || p, b = B.get(p) || p;
         if (a === d ? !(b === p || (b.startsWith(d) && b !== d)) : b !== a) out.push(`${at}: ${p} stands in ${b}, closed in ${a}`);
       }
-      walk([...open, d]);
+      if (!SAMPLED) walk([...open, d]);
     }
   };
   walk([]);
