@@ -344,6 +344,16 @@ a process, the screen, a figure) and the way the data goes (`Dir`: read or write
 call says. In the JSON a file's direction is part of its kind (`disk_read`, `disk_write`,
 `disk` when the call does not say), another place's stands beside it (`dir`).
 
+**Sites and what they hold** — the steps of a body, in the order they run: each `Site` is one
+call, with what it is handed (`hands`) and what it gives back (`gives`). Each of those is a
+`Held`: a value by its type and the name the code holds it by (`DataFrame · frame`), or, for a
+value no name holds (one call's result handed straight to the next), by the step that makes it.
+A route's lines between steps are drawn from these: a value one step gives and a later step is
+handed is the line between them. Where a `Touch` is a call that leaves the program for a place,
+a `Held` is a value that stays in it, passing from step to step in memory. On Atlas's own
+picture, the readers fill a `Site`'s `hands` and `gives` as they read a body, and `graph_of`
+turns them into lines.
+
 **Edges** — `contains`, `imports`, `inherits`, `calls`, `instantiates`, `takes`,
 `returns`, `has`, `mutates`, `variant`, `requests`; later `yields`, `raises`,
 `decorates`.
