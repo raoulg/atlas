@@ -417,6 +417,13 @@ async fn studio_build(app: tauri::AppHandle) -> Result<update::Build, String> {
     this_build(&app).await
 }
 
+/// What changed in the build that runs, as the window shows it.
+#[tauri::command]
+async fn whats_new(app: tauri::AppHandle) -> Result<update::Newer, String> {
+    let build = this_build(&app).await?;
+    tauri::async_runtime::spawn_blocking(move || update::changes(&build)).await.map_err(|e| e.to_string())
+}
+
 #[tauri::command]
 async fn check_update(app: tauri::AppHandle, now: bool) -> Result<Option<update::Newer>, String> {
     newer_build(&app, now).await
@@ -585,6 +592,7 @@ fn main() {
             workspace_files,
             export_view,
             check_update,
+            whats_new,
             studio_build,
             get_settings,
             set_appearance,
