@@ -286,7 +286,10 @@ line or a box that appears or disappears means:
    `X · in S`, made by those writers and taken by the reader, standing in the step's frame; closed, it
    is internal to the step. A closed step's reads of what it wrote itself are no read of the place, so
    the place keeps the side of what the step leaves there: a store that writes a table and counts its
-   rows stands where its other end products stand.
+   rows stands where its other end products stand. What it wrote is what it wrote at the places the route
+   touches (rule 5): a helper that writes the path its caller makes whole writes that caller's file, not
+   the file it names alone, so a read of the latter is no read back. A step's arrow stands in every context
+   of callers that make a path it reaches whole, and reads back what it reads back in any one of them (#217).
 5. **Reach is computed on the fine graph.** Quotienting identifies vertices and can make a path that
    no fine path has (`a → b`, `c → d`, `b ≡ c` gives `[a] → [d]`). What a step reaches is the closure
    of its calls in the fine graph, drawn apart from its own arrow (sentence 6), and never read off a

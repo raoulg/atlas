@@ -7,7 +7,7 @@
 //! that is written; what follows is the same in every language.
 
 use std::cell::RefCell;
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 use indexmap::IndexMap;
 use serde::Serialize;
@@ -570,13 +570,19 @@ struct Memo {
 const ROUNDS: usize = 8;
 
 /// What `id` does at each place, run on a value of class `on` (none where that is not known), its own touches and its
-/// calls in line order (`Memo`, by the body's `key`): on a known class a call on the body's receiver or a `super()` call
-/// runs the one method that class runs. Its calls in a loop run again after what follows them there. A read reads back
-/// what was written when the write ran whenever it did: unconditionally, or in an arm of a choice
-/// the read is in too; a write in one arm says nothing of a read outside it. Without `done`, its
-/// own body alone, its calls left out.
-fn orders(ix: &Ix, id: &str, on: &str, mut done: Option<&mut Memo>) -> BTreeMap<String, Order> {
-    let k = key(id, on);
+/// calls in line order (`Memo`, by the body's `key` and the callers above it that make a path whole): on a known class a
+/// call on the body's receiver or a `super()` call runs the one method that class runs. Its calls in a loop run again
+/// after what follows them there. A read reads back what was written when the write ran whenever it did:
+/// unconditionally, or in an arm of a choice the read is in too; a write in one arm says nothing of a read outside it.
+/// Without `done`, its own body alone, its calls left out. `above` is the chain of calls that leads to it from the
+/// function whose arrow is worked out: a touch a caller makes whole is at that caller's place where the caller is on
+/// the chain, and as it was read where none is (`Node::touches_in`, mathematics.md rule 5), so a read reads back only
+/// what was written at the place the route touches.
+fn orders(ix: &Ix, id: &str, on: &str, above: &[&str], mut done: Option<&mut Memo>) -> BTreeMap<String, Order> {
+    let chain: Vec<&str> = above.iter().copied().chain(std::iter::once(id)).collect();
+    // which callers on the chain make a path whole, as a set: a recursive cycle comes back to the same key
+    let made: BTreeSet<&str> = chain.iter().copied().filter(|f| ix.makers.contains(f)).collect();
+    let k = if made.is_empty() { key(id, on) } else { format!("{}|{}", key(id, on), made.into_iter().collect::<Vec<_>>().join(",")) };
     if let Some(m) = done.as_deref_mut() {
         if let Some(o) = m.done.get(&k) {
             return o.clone();
@@ -603,9 +609,8 @@ fn orders(ix: &Ix, id: &str, on: &str, mut done: Option<&mut Memo>) -> BTreeMap<
     // a touch that stands for several calls runs on the line of each
     // a call whose place a caller makes whole is read as written where no such caller runs (`instead`): at each place
     let mut events: Vec<(u32, Event)> = n
-        .touches
-        .iter()
-        .chain(&n.instead)
+        .touches_in(chain[0], &|f: &str| chain.contains(&f))
+        .into_iter()
         .filter(|t| t.dir.is_some() && !t.shape())
         .flat_map(|t| std::iter::once(t.line).chain(t.also_at.iter().copied()).map(move |l| (l, Event::Touch(t))))
         .collect();
@@ -632,7 +637,9 @@ fn orders(ix: &Ix, id: &str, on: &str, mut done: Option<&mut Memo>) -> BTreeMap<
                 let writes = t.dir == Some(Dir::Write);
                 vec![(t.place().id, Order { finds: !writes, writes, always_writes: writes, ..Order::default() })]
             }
-            Event::Call(to, _) => one_of(to.iter().map(|(t, c)| orders(ix, t, c, done.as_deref_mut())).collect()).into_iter().collect(),
+            Event::Call(to, _) => {
+                one_of(to.iter().map(|(t, c)| orders(ix, t, c, &chain, done.as_deref_mut())).collect()).into_iter().collect()
+            }
         };
         let conditional = match e {
             Event::Touch(_) => at.is_some(),
@@ -693,6 +700,61 @@ fn one_of(runs: Vec<BTreeMap<String, Order>>) -> BTreeMap<String, Order> {
         }
     }
     out.into_iter().map(|(p, (o, always))| (p, Order { always_writes: always == all, ..o })).collect()
+}
+
+/// What `id` does at places in each context its arrow stands in, together: with no caller above it that makes a path
+/// whole, and under each such caller a touch it reaches names (`Touch::by`). In one context every touch is at one place
+/// (`orders`); an arrow stands in all of them, so it reads back, or changes, what it does in any one.
+fn in_every_context(
+    ix: &Ix,
+    id: &str,
+    on: &str,
+    own: bool,
+    done: &mut Memo,
+    of: fn(BTreeMap<String, Order>) -> Vec<String>,
+) -> Vec<String> {
+    let mut out: Vec<String> = vec![];
+    for above in contexts(ix, id) {
+        let o = if own { orders(ix, id, on, &above, None) } else { orders(ix, id, on, &above, Some(&mut *done)) };
+        for p in of(o) {
+            if !out.contains(&p) {
+                out.push(p);
+            }
+        }
+    }
+    out.sort();
+    out
+}
+
+/// The callers above `id` that may make a path it reaches whole: none, and each set a touch it reaches names in `by`.
+fn contexts<'g>(ix: &Ix<'g>, id: &str) -> Vec<Vec<&'g str>> {
+    let mut out: Vec<Vec<&'g str>> = vec![vec![]];
+    let mut seen: HashSet<&str> = HashSet::new();
+    let mut stack: Vec<&str> = vec![id];
+    while let Some(f) = stack.pop() {
+        if !seen.insert(f) {
+            continue;
+        }
+        let Some(&n) = ix.nodes.get(f) else { continue };
+        for t in &n.touches {
+            for by in &t.by {
+                let mut makers: Vec<&'g str> = by.split('&').filter_map(|m| ix.nodes.get_key_value(m).map(|(k, _)| *k)).collect();
+                makers.sort();
+                if !makers.is_empty() && !out.contains(&makers) {
+                    out.push(makers);
+                }
+            }
+        }
+        stack.extend(
+            ix.out
+                .get(f)
+                .into_iter()
+                .flatten()
+                .filter(|e| matches!(e.kind, EdgeKind::Calls | EdgeKind::Instantiates))
+                .map(|e| e.dst.as_str()),
+        );
+    }
+    out
 }
 
 /// The places where what is read is only what was written.
@@ -784,9 +846,9 @@ fn arrow_of(ix: &Ix, n: &Node, done: &mut Memo) -> Arrow {
     // reads back of what it wrote
     if n.kind == NodeKind::Module {
         return Arrow {
-            reads_back: reads_back(orders(ix, &n.id, "", Some(done))),
-            own_reads_back: reads_back(orders(ix, &n.id, "", None)),
-            updates: updates(orders(ix, &n.id, "", Some(done))),
+            reads_back: in_every_context(ix, &n.id, "", false, done, reads_back),
+            own_reads_back: in_every_context(ix, &n.id, "", true, done, reads_back),
+            updates: in_every_context(ix, &n.id, "", false, done, updates),
             ..Default::default()
         };
     }
@@ -811,9 +873,9 @@ fn arrow_of(ix: &Ix, n: &Node, done: &mut Memo) -> Arrow {
             names
         },
         returns_value,
-        reads_back: reads_back(orders(ix, &n.id, "", Some(done))),
-        own_reads_back: reads_back(orders(ix, &n.id, "", None)),
-        updates: updates(orders(ix, &n.id, "", Some(done))),
+        reads_back: in_every_context(ix, &n.id, "", false, done, reads_back),
+        own_reads_back: in_every_context(ix, &n.id, "", true, done, reads_back),
+        updates: in_every_context(ix, &n.id, "", false, done, updates),
         runs: String::new(),
         on: BTreeMap::new(),
     }
@@ -835,10 +897,10 @@ pub fn arrows(g: &Graph) -> BTreeMap<String, Arrow> {
     let mut done = Memo::default();
     for round in 1..=ROUNDS {
         for n in g.nodes.iter().filter(kinds) {
-            orders(&ix, &n.id, "", Some(&mut done));
+            orders(&ix, &n.id, "", &[], Some(&mut done));
         }
         for (f, c) in &on {
-            orders(&ix, f, c, Some(&mut done));
+            orders(&ix, f, c, &[], Some(&mut done));
         }
         if done.done == done.before || round == ROUNDS {
             break;
@@ -847,8 +909,10 @@ pub fn arrows(g: &Graph) -> BTreeMap<String, Arrow> {
     }
     let mut out: BTreeMap<String, Arrow> = g.nodes.iter().filter(kinds).map(|n| (n.id.clone(), arrow_of(&ix, n, &mut done))).collect();
     for (f, c) in &on {
-        let o = orders(&ix, f, c, Some(&mut done));
-        let at = Orders { reads_back: reads_back(o.clone()), updates: updates(o) };
+        let at = Orders {
+            reads_back: in_every_context(&ix, f, c, false, &mut done, reads_back),
+            updates: in_every_context(&ix, f, c, false, &mut done, updates),
+        };
         if let Some(a) = out.get_mut(f).filter(|a| a.reads_back != at.reads_back || a.updates != at.updates) {
             a.on.insert(c.clone(), at);
         }
@@ -1038,6 +1102,9 @@ struct Ix<'g> {
     mro: RefCell<HashMap<&'g str, Vec<&'g str>>>,
     /// What each part's language leaves its author to write, by the part's id, the first part's for a node of none.
     leaves: Vec<(&'g str, Leaves)>,
+    /// The callers some touch is made whole by (`Touch::by`, `Touch::users_of`): the only functions on a chain of calls
+    /// that change what a function touches below them.
+    makers: HashSet<&'g str>,
 }
 
 impl<'g> Ix<'g> {
@@ -1049,7 +1116,14 @@ impl<'g> Ix<'g> {
             into.entry(e.dst.as_str()).or_default().push(e);
         }
         let leaves = g.parts.iter().map(|p| (p.id.as_str(), p.leaves)).collect();
-        Ix { nodes: g.nodes.iter().map(|n| (n.id.as_str(), n)).collect(), out, into, mro: RefCell::default(), leaves }
+        let makers = g
+            .nodes
+            .iter()
+            .flat_map(|n| {
+                n.touches.iter().flat_map(|t| t.by.iter().flat_map(|f| f.split('&')).chain(t.users_of.iter().map(String::as_str)))
+            })
+            .collect();
+        Ix { nodes: g.nodes.iter().map(|n| (n.id.as_str(), n)).collect(), out, into, mro: RefCell::default(), leaves, makers }
     }
 
     /// Whether `n`'s signature does not say what it gives back: its language leaves that to the author, and the author
