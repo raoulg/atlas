@@ -1,0 +1,38 @@
+# A helper writes the path its caller hands: under `publish`, `stage` writes the metadata into the folder `publish`
+# makes (`*/meta.json`), not the JSON file `json.dump` writes as read alone (`*.json`, mathematics.md rule 5). The card
+# `card` loads comes from a file no code names, so it is read from the world: no step of `publish` wrote it, and it is
+# no read back (rule 4), whether `publish` is closed, open or cut.
+
+route publish.run
+step run/publish
+step run/publish/TemporaryDirectory
+step run/publish/stage
+step run/publish/stage/open
+step run/publish/open
+step run/publish/card
+
+line entry > run call
+line run/publish/TemporaryDirectory > TemporaryDirectory·tmp@run/publish/TemporaryDirectory value
+line TemporaryDirectory·tmp@run/publish/TemporaryDirectory > run/publish value             # `Path(tmp)`
+line TemporaryDirectory·tmp@run/publish/TemporaryDirectory > run/publish/stage/open value   # `dest / "meta.json"`
+line run/publish/stage/open > TextIOWrapper·f@run/publish/stage/open value
+line TextIOWrapper·f@run/publish/stage/open > run/publish/stage value                      # `json.dump(.., f)`
+line run/publish/stage > File(*/meta.json) own
+line File(CARD) > run/publish own                                                         # `open(os.environ["CARD"])`
+line run/publish/open > TextIOWrapper·f@run/publish/open value
+line TextIOWrapper·f@run/publish/open > run/publish value
+line TextIOWrapper·f@run/publish/open > run/publish/card value
+line File(*.json) > run/publish/card own                                                  # read from the world
+line run/publish/card > run/publish back
+line run/publish > run back
+line run > Screen own
+
+home TemporaryDirectory·tmp@run/publish/TemporaryDirectory run/publish
+home TextIOWrapper·f@run/publish/stage/open run/publish/stage
+home TextIOWrapper·f@run/publish/open run/publish
+
+side entry left
+side File(CARD) left
+side File(*.json) left
+side File(*/meta.json) right
+side Screen right
