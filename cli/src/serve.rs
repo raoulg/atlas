@@ -30,7 +30,7 @@ const LOADING: &str = include_str!("../../viewer/loading.html");
 
 /// The loading page, with the measure of progress the page shares.
 fn loading() -> String {
-    LOADING.replacen("/*__PROGRESS__*/", page::PROGRESS, 1)
+    LOADING.replacen("/*__PROGRESS__*/", page::PROGRESS, 1).replacen("/*__PALETTE__*/", page::PALETTE, 1)
 }
 
 /// The working tree as far as Atlas reads it: each file by its size and the time it was written.

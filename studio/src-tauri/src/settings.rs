@@ -6,32 +6,66 @@
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
-use tauri::{AppHandle, Manager, Runtime, Theme};
+use tauri::{AppHandle, Emitter, Manager, Runtime, Theme};
 
 fn file<R: Runtime>(app: &AppHandle<R>) -> Option<PathBuf> {
     app.path().app_config_dir().ok().map(|dir| dir.join("settings.json"))
 }
 
-/// The theme chosen: `system`, `light` or `dark`.
-pub fn theme<R: Runtime>(app: &AppHandle<R>) -> String {
-    file(app)
-        .and_then(|file| std::fs::read(file).ok())
-        .and_then(|bytes| serde_json::from_slice::<serde_json::Value>(&bytes).ok())
-        .and_then(|value| value["theme"].as_str().map(str::to_string))
-        .filter(|theme| ["system", "light", "dark"].contains(&theme.as_str()))
-        .unwrap_or_else(|| "system".into())
+/// How Studio looks: the mode (`system`, `light` or `dark`) and the theme it shows in each of light and
+/// dark, by the id `ui/themes.js` gives it; a theme Studio does not know is shown as Atlas's own.
+#[derive(serde::Serialize, serde::Deserialize, Clone, Debug, PartialEq)]
+pub struct Appearance {
+    pub theme: String,
+    pub light: String,
+    pub dark: String,
 }
 
-/// Set the theme on every window, the Atlas views in them too, and keep it.
-pub fn set_theme<R: Runtime>(app: &AppHandle<R>, theme: &str) -> Result<(), String> {
-    apply(app, theme);
+impl Default for Appearance {
+    fn default() -> Appearance {
+        Appearance { theme: "system".into(), light: "atlas-light".into(), dark: "atlas-dark".into() }
+    }
+}
+
+impl Appearance {
+    /// The appearance with each field as Studio knows it: a mode of the three, a theme's id a name of letters, digits
+    /// and dashes; anything else as it was by default.
+    fn checked(self) -> Appearance {
+        let id = |s: &str| !s.is_empty() && s.len() <= 40 && s.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-');
+        let fallback = Appearance::default();
+        Appearance {
+            theme: if ["system", "light", "dark"].contains(&self.theme.as_str()) { self.theme } else { fallback.theme },
+            light: if id(&self.light) { self.light } else { fallback.light },
+            dark: if id(&self.dark) { self.dark } else { fallback.dark },
+        }
+    }
+}
+
+/// The appearance chosen.
+pub fn appearance<R: Runtime>(app: &AppHandle<R>) -> Appearance {
+    let read = file(app)
+        .and_then(|file| std::fs::read(file).ok())
+        .and_then(|bytes| serde_json::from_slice::<serde_json::Value>(&bytes).ok())
+        .unwrap_or_default();
+    let field = |key: &str, fallback: String| read[key].as_str().map_or(fallback, str::to_string);
+    let fallback = Appearance::default();
+    Appearance { theme: field("theme", fallback.theme), light: field("light", fallback.light), dark: field("dark", fallback.dark) }
+        .checked()
+}
+
+/// Set the appearance on every window, the Atlas views in them too, and keep it.
+pub fn set_appearance<R: Runtime>(app: &AppHandle<R>, chosen: Appearance) -> Result<(), String> {
+    let chosen = chosen.checked();
+    apply(app, &chosen.theme);
+    let _ = app.emit("appearance", &chosen);
     let file = file(app).ok_or("Studio has no configuration folder")?;
     if let Some(dir) = file.parent() {
         std::fs::create_dir_all(dir).map_err(|error| error.to_string())?;
     }
-    std::fs::write(file, serde_json::json!({ "theme": theme }).to_string()).map_err(|error| error.to_string())
+    std::fs::write(file, serde_json::to_string(&chosen).map_err(|error| error.to_string())?).map_err(|error| error.to_string())
 }
 
+/// The mode on every window: the system's, or light or dark.
 pub fn apply<R: Runtime>(app: &AppHandle<R>, theme: &str) {
     app.set_theme(match theme {
         "light" => Some(Theme::Light),
@@ -153,6 +187,19 @@ mod tests {
         assert!(!names_atlas(&config));
         assert!(!names_atlas(&dir.join("missing.json")));
         std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// An appearance read from the file is one Studio can show: a mode it does not know is the system's, a
+    /// theme's id that is no name is Atlas's own; a known one is kept as it was written.
+    #[test]
+    fn an_appearance_is_checked_field_by_field() {
+        let read =
+            |theme: &str, light: &str, dark: &str| Appearance { theme: theme.into(), light: light.into(), dark: dark.into() }.checked();
+        assert_eq!(
+            read("dark", "catppuccin-latte", "nord"),
+            Appearance { theme: "dark".into(), light: "catppuccin-latte".into(), dark: "nord".into() }
+        );
+        assert_eq!(read("sepia", "../x", ""), Appearance::default());
     }
 
     #[test]

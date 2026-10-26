@@ -9,7 +9,34 @@ let currentLesson = null;
 
 // the served page, told that Studio hosts it (its controls then stand in Studio's bar); a new `t`
 // loads it anew where only the fragment changes
-const atlasPage = (hash = '') => `${workspace.url}/?host=${encodeURIComponent(location.origin)}&t=${Date.now()}${hash ? '#' + hash : ''}`;
+const atlasPage = (hash = '') => `${workspace.url}/?host=${encodeURIComponent(location.origin)}&palette=${palette()}&t=${Date.now()}${hash ? '#' + hash : ''}`;
+
+// how Studio looks: the mode, and a theme for light and one for dark (Settings › Appearance). The theme
+// of the scheme in force colours Studio, its terminal, and the pages it frames, which take its roles in
+// their address and as a message when it changes.
+const Themes = window.AtlasThemes;
+let appearance = {theme: 'system', light: 'atlas-light', dark: 'atlas-dark'};
+let shownTheme = Themes.byId('atlas-light', 'light');
+const palette = () => encodeURIComponent(JSON.stringify(Themes.paletteOf(shownTheme)));
+function showAppearance(next) {
+  appearance = next;
+  shownTheme = Themes.show(appearance);
+  terminal?.setTheme(Themes.terminalOf(shownTheme));
+  if (workspace) {
+    for (const frame of [byId('atlas-frame'), byId('history-frame')]) {
+      frame.contentWindow?.postMessage({atlas: 'palette', palette: Themes.paletteOf(shownTheme)}, new URL(workspace.url).origin);
+    }
+  }
+  const other = shownTheme.scheme === 'dark' ? 'light' : 'dark';
+  byId('scheme-toggle').title = `${shownTheme.name}: switch to ${Themes.byId(appearance[other], other).name} (⇧⌘L)`;
+}
+async function setAppearance(next) {
+  showAppearance(next);
+  try { await invoke('set_appearance', {appearance: next}); }
+  catch (error) { byId('status-text').textContent = String(error); }
+}
+// the other scheme, in its theme: from the system's, the one it does not show
+const toggleScheme = () => setAppearance({...appearance, theme: Themes.schemeOf(appearance) === 'dark' ? 'light' : 'dark'});
 const viewHash = (view, at) => [view ? `v=${encodeURIComponent(JSON.stringify(view))}` : '', at ? `at=${encodeURIComponent(at)}` : ''].filter(Boolean).join('&');
 
 const lessonPanel = window.AtlasLesson.mount(byId('lesson-panel'), {
@@ -208,7 +235,7 @@ function displayWorkspace(next) {
   byId('side-path').textContent = next.path;
   bar.clear();
   byId('atlas-frame').src = atlasPage();
-  byId('history-frame').src = `${next.url}/history`;
+  byId('history-frame').src = `${next.url}/history?palette=${palette()}`;
   currentLesson = null;
   byId('insert-atlas-view').hidden = true;
   selectView('atlas');
@@ -278,7 +305,10 @@ async function checkNow() {
 // Studio's settings (⌘,): the theme, the coding agents with Atlas, the version
 const settingsPage = window.AtlasSettings.mount(byId('settings'), {
   get: () => invoke('get_settings'),
-  setTheme: (theme) => invoke('set_theme', {theme}),
+  appearance: () => appearance,
+  themes: Themes.THEMES,
+  swatchOf: Themes.swatchOf,
+  setAppearance,
   register: (id) => invoke('register_agent', {id}),
   build: () => buildSaid,
   checkUpdates: () => checkNow(),
@@ -296,9 +326,14 @@ listen('studio-menu', ({payload}) => {
   else if (action === 'view.atlas' && workspace) selectView('atlas');
   else if (action === 'view.history' && workspace) selectView('history');
   else if (action === 'view.terminal') showTerminal();
+  else if (action === 'view.scheme') toggleScheme();
   else if (action === 'update.check') checkNow();
   else if (action === 'settings') { byId('atlas-bar').hidden = true; settingsPage.show(); }
 });
+listen('appearance', ({payload}) => showAppearance(payload));
+Themes.darkSystem.addEventListener('change', () => { if (appearance.theme === 'system') showAppearance(appearance); });
+byId('scheme-toggle').addEventListener('click', toggleScheme);
+invoke('get_settings').then((settings) => showAppearance(settings.appearance)).catch(() => showAppearance(appearance));
 listen('studio-backend-stopped', () => { displayWorkspace(null); showState('error', 'Atlas stopped. Open the workspace again to restart it.'); });
 showState('loading');
 // the first look for a newer Studio waits for the first workspace, which opening would close it over

@@ -76,7 +76,9 @@ pub fn respond(repo: &Path, opts: &Options, req: &Request, at: &str) -> Option<A
         return None;
     }
     Some(match req.path.as_str() {
-        p if p == at => Answer::page(PAGE.replacen("/*__FONTS__*/", crate::page::FONTS, 1)),
+        p if p == at => {
+            Answer::page(PAGE.replacen("/*__FONTS__*/", crate::page::FONTS, 1).replacen("/*__PALETTE__*/", crate::page::PALETTE, 1))
+        }
         "/api/log" => log(repo, req).map_or_else(Answer::failed, Answer::json),
         "/view" => view(repo, opts, req).map_or_else(Answer::failed, Answer::page),
         _ => return None,

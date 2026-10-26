@@ -55,4 +55,5 @@ jobs:
       - run: cargo check --locked --manifest-path studio/src-tauri/Cargo.toml
       - run: cargo test --locked --manifest-path studio/src-tauri/Cargo.toml
       - run: node studio/tests/files.test.js
+      - run: node studio/tests/themes.test.js
       - run: node studio/tests/lessons/lesson.test.js

@@ -48,7 +48,9 @@ Every window is one workspace, with its own `atlas serve` and its own terminals.
 
 Atlas Studio › Settings… (⌘,; File › Settings… on Windows and Linux):
 
-- **Appearance**: System, Light or Dark, for every window and the Atlas view in it.
+- **Appearance**: System, Light or Dark, and the theme shown in each: Atlas Light, Catppuccin Latte, GitHub Light, Gruvbox Light or Solarized Light; Atlas Dark, Catppuccin Mocha, Dracula, Gruvbox Dark, Nord or Solarized Dark. Every window follows it, with its terminal and the Atlas view, history and loading page in it. View › Light or Dark (⇧⌘L, Ctrl+Shift+L elsewhere), or ◐ in the status bar, switches between the two themes.
+
+A theme names the roles Atlas's colours go by (`--bg`, `--ink`, `--focus`, the hues, the colours of the kinds of place), from its own published palette (`ui/themes.js`); Studio's colours (`ui/theme.css`) are mixes of those roles. The pages Studio frames know no themes: they take the roles in their address (`palette=`) and, when the theme changes, as a message from Studio's origin, each value checked to be a colour (`viewer/palette.js`).
 - **Coding agents**: whether Claude Code and Codex have Atlas's MCP server, registered once for every project as `docs/reference/install.md` says. **Add Atlas** runs that command, with the `atlas` on the `PATH`, else Studio's own; the agent connects to it in a new session (or `/mcp` in Claude Code).
 - **Version**, and a check for updates.
 

@@ -19,6 +19,7 @@
   };
 
   function mount(host, bridge) {
+    let theme = THEME;
     const bar = node('div', 'terminal-bar');
     const tabs = node('div', 'terminal-tabs');
     tabs.setAttribute('role', 'tablist');
@@ -72,7 +73,7 @@
       screens.append(screen);
       const term = new root.Terminal({
         fontFamily: '"JetBrains Mono", "SF Mono", ui-monospace, Menlo, monospace', fontSize: 12, lineHeight: 1.15,
-        cursorBlink: true, scrollback: 10000, macOptionIsMeta: true, allowProposedApi: false, theme: THEME,
+        cursorBlink: true, scrollback: 10000, macOptionIsMeta: true, allowProposedApi: false, theme,
       });
       const fitter = new root.FitAddon.FitAddon();
       term.loadAddon(fitter);
@@ -134,6 +135,17 @@
       start,
       closeAll,
       fit,
+      // the colours of a theme, or Atlas's own terminal colours for none; the bar above the shells is
+      // drawn from the same
+      setTheme: (colours) => {
+        theme = colours || THEME;
+        for (const shell of open) shell.term.options.theme = theme;
+        const mix = (share) => `color-mix(in oklab, ${theme.foreground} ${share}%, ${theme.background})`;
+        const chrome = colours ? {'--t-bg': theme.background, '--t-fg': theme.foreground, '--t-bar': mix(7), '--t-rule': mix(14),
+          '--t-dim': mix(60), '--t-faint': theme.brightBlack, '--t-line': theme.black} : {};
+        for (const name of ['--t-bg', '--t-fg', '--t-bar', '--t-rule', '--t-dim', '--t-faint', '--t-line']) host.style.removeProperty(name);
+        for (const [name, value] of Object.entries(chrome)) host.style.setProperty(name, value);
+      },
       shown: () => { if (!open.length) start(); else { fit(); active?.term.focus(); } },
     };
   }

@@ -20,6 +20,8 @@ const VIEWER: &str = include_str!("../../viewer/index.html");
 const PLAN: &str = include_str!("../../viewer/plan.js");
 /// How far a drawing of `atlas serve` is: the viewer and the loading page measure it alike.
 pub(crate) const PROGRESS: &str = include_str!("../../viewer/progress.js");
+/// The colours a host such as Studio hands a page it frames, which every served page applies.
+pub(crate) const PALETTE: &str = include_str!("../../viewer/palette.js");
 const D3: &str = include_str!("../../viewer/vendor/d3.min.js");
 const HIGHLIGHT: &str = include_str!("../../viewer/vendor/highlight.min.js");
 const ELK: &str = include_str!("../../viewer/vendor/elk.bundled.js");
@@ -194,6 +196,7 @@ impl Html {
         VIEWER
             .replacen("/*__PLAN__*/", PLAN, 1)
             .replacen("/*__PROGRESS__*/", PROGRESS, 1)
+            .replacen("/*__PALETTE__*/", PALETTE, 1)
             .replacen("/*__FONTS__*/", FONTS, 1)
             .replacen("/*__D3__*/", D3, 1)
             .replacen("/*__HIGHLIGHT__*/", HIGHLIGHT, 1)
@@ -264,7 +267,7 @@ mod tests {
     #[test]
     fn viewer_carries_its_scripts_for_offline_opening() {
         let page: String = Html::shell().into();
-        for marker in ["/*__D3__*/", "/*__HIGHLIGHT__*/", "/*__ELK__*/", "/*__ELK_WORKER__*/null", "/*__PROGRESS__*/"] {
+        for marker in ["/*__D3__*/", "/*__HIGHLIGHT__*/", "/*__ELK__*/", "/*__ELK_WORKER__*/null", "/*__PROGRESS__*/", "/*__PALETTE__*/"] {
             assert!(!page.contains(marker), "missing embedded asset: {marker}");
         }
         assert!(page.contains("https://d3js.org v7.9.0"));

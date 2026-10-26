@@ -4,23 +4,24 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Atlas · reading code</title>
 <style>
-  :root{font-family:system-ui,-apple-system,sans-serif;color:#111;background:#f4f1ec}
-  @media(prefers-color-scheme:dark){:root{color:#f4f1ec;background:#141210}}
+  :root{--bg:#f4f1ec;--panel:#fff;--ink:#111;--ink-2:#5a544d;--ink-3:#857d73;--line:#e2dcd3;--accent:#c43a14;
+    font-family:system-ui,-apple-system,sans-serif;color:var(--ink);background:var(--bg)}
+  @media(prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#141210;--panel:#1b1815;--ink:#f4f1ec;--ink-2:#b8b0a5;--line:#2b2621;--accent:#f2643c}}
+  :root[data-theme="dark"]{--bg:#141210;--panel:#1b1815;--ink:#f4f1ec;--ink-2:#b8b0a5;--line:#2b2621;--accent:#f2643c}
   body{margin:0;min-height:100vh;display:grid;grid-template-rows:46px 1fr}
-  header{display:flex;align-items:center;padding:0 16px;background:#fff;border-bottom:1px solid #e2dcd3;font-weight:600}
-  @media(prefers-color-scheme:dark){header{background:#1b1815;border-color:#2b2621}}
+  header{display:flex;align-items:center;padding:0 16px;background:var(--panel);border-bottom:1px solid var(--line);font-weight:600}
   main{display:grid;place-content:center;padding:24px}
   .card{width:min(540px,calc(100vw - 48px))}
-  .eyebrow{font:11px ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:.08em;text-transform:uppercase;color:#857d73}
+  .eyebrow{font:11px ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-3)}
   h1{font-size:24px;font-weight:550;line-height:1.2;margin:14px 0 10px}
-  p{line-height:1.55;color:#5a544d;max-width:48ch}
-  @media(prefers-color-scheme:dark){p{color:#b8b0a5}}
-  .track{height:3px;background:#e2dcd3;overflow:hidden;margin:26px 0 8px}
-  .track::before{content:"";display:block;width:var(--done,0%);height:100%;background:#c43a14;transition:width .1s linear}
-  .step{font:11px ui-monospace,SFMono-Regular,Menlo,monospace;color:#857d73;text-align:right;margin:0 0 22px}
-  #error{white-space:pre-wrap;color:#c43a14}
+  p{line-height:1.55;color:var(--ink-2);max-width:48ch}
+  .track{height:3px;background:var(--line);overflow:hidden;margin:26px 0 8px}
+  .track::before{content:"";display:block;width:var(--done,0%);height:100%;background:var(--accent);transition:width .1s linear}
+  .step{font:11px ui-monospace,SFMono-Regular,Menlo,monospace;color:var(--ink-3);text-align:right;margin:0 0 22px}
+  #error{white-space:pre-wrap;color:var(--accent)}
   .hosted body{grid-template-rows:1fr}.hosted header{display:none}
 </style>
+<script>/*__PALETTE__*/</script>
 <header>atlas</header>
 <main><div class="card">
   <div class="eyebrow">Your repository</div>
