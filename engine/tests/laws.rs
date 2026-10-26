@@ -3,18 +3,23 @@
 //! made here, never a program: a handful of functions in modules of two packages, so that a failure
 //! points at a law and never at what some program happens to contain. Each law holds for every
 //! graph `proptest` draws (`PROPTEST_CASES` sets how many, 256 by default); a graph it breaks on is
-//! shrunk to the smallest one that still breaks it. The counterexample is a graph written out.
+//! shrunk to the smallest one that still breaks it. The counterexample is a graph written out. The
+//! laws themselves are `laws/views.rs`, which `sample.rs` asks of real programs.
 //!
 //! A view is a fiber (keep where a predicate holds) or a quotient (identify the nodes a map sends to
 //! one class). Fibers commute with each other; quotients compose; a fiber and a quotient commute
 //! exactly when the fiber's predicate is saturated by the quotient's classes ("Saturation: when the
 //! order of a view does not matter"), and otherwise Atlas takes the fiber first.
 
-use std::collections::{BTreeMap, BTreeSet};
+#[path = "laws/views.rs"]
+mod views;
 
-use atlas_engine::view::{by_module, Compose, Fiber, Quotient, View};
+use std::collections::BTreeSet;
+
+use atlas_engine::view::{by_module, Fiber, View};
 use atlas_engine::{Edge, EdgeKind, Graph, Node, NodeKind};
 use proptest::prelude::*;
+use views::{facts, then};
 
 fn function(id: &str, private: bool) -> Node {
     let module = id.rsplit_once('.').unwrap().0.to_string();
@@ -87,114 +92,36 @@ fn subject() -> Graph {
     g
 }
 
-/// A graph as the facts a law compares: its nodes, and its edges with the number each stands for.
-fn facts(g: &Graph) -> (Vec<String>, Vec<(String, String, String, u32)>) {
-    let mut nodes: Vec<String> = g.nodes.iter().map(|n| n.id.clone()).collect();
-    let mut edges: Vec<_> =
-        g.edges.iter().map(|e| (e.src.clone(), e.dst.clone(), format!("{:?}", e.kind), e.weight.unwrap_or(1))).collect();
-    nodes.sort();
-    edges.sort();
-    (nodes, edges)
-}
-
-fn then(first: impl View + 'static, second: impl View + 'static) -> Compose {
-    Compose(vec![Box::new(first), Box::new(second)])
-}
-
-/// One node per top-level package: a coarser quotient than `by_module`.
-fn by_package() -> impl View {
-    Quotient(|n: &Node| {
-        let package = n.module.split('.').next().unwrap_or(&n.module).to_string();
-        Some(Node { id: package.clone(), kind: NodeKind::Module, module: package, ..Default::default() })
-    })
-}
-
-/// The lines of a quotient by `by_module`, counted on the fine graph: for each pair of different
-/// modules and each kind, the fine lines between them whose two ends satisfy `keep`.
-fn crossing(g: &Graph, keep: impl Fn(&Node) -> bool) -> BTreeMap<(String, String, String), u32> {
-    let mut out = BTreeMap::new();
-    for e in &g.edges {
-        let (a, b) = (g.node(&e.src).unwrap(), g.node(&e.dst).unwrap());
-        if a.module != b.module && keep(a) && keep(b) {
-            *out.entry((a.module.clone(), b.module.clone(), format!("{:?}", e.kind))).or_insert(0) += 1;
-        }
-    }
-    out
-}
-
-fn weights(g: &Graph) -> BTreeMap<(String, String, String), u32> {
-    g.edges.iter().map(|e| ((e.src.clone(), e.dst.clone(), format!("{:?}", e.kind)), e.weight.unwrap_or(1))).collect()
+/// The node ids of `g` whose bit in `bits` is set.
+fn subset(g: &Graph, bits: u16) -> BTreeSet<String> {
+    g.nodes.iter().enumerate().filter(|(i, _)| bits >> (i % 16) & 1 == 1).map(|(_, n)| n.id.clone()).collect()
 }
 
 proptest! {
-    /// Two fibers commute, and both are the fiber of the conjunction; a fiber taken twice is the
-    /// fiber taken once.
     #[test]
     fn fibers_commute_and_meet_in_the_conjunction(g in graphs(), one in any::<u16>(), other in any::<u16>()) {
-        let ids: Vec<String> = g.nodes.iter().map(|n| n.id.clone()).collect();
-        let set = |bits: u16| ids.iter().enumerate().filter(|(i, _)| bits >> (i % 16) & 1 == 1).map(|(_, id)| id.clone()).collect::<BTreeSet<_>>();
-        let (p, q) = (set(one), set(other));
-        let (pp, qq, pq) = (p.clone(), q.clone(), (p.clone(), q.clone()));
-        let ab = then(Fiber(move |n: &Node| pp.contains(&n.id)), Fiber(move |n: &Node| qq.contains(&n.id))).apply(&g);
-        let (pp, qq) = (p.clone(), q.clone());
-        let ba = then(Fiber(move |n: &Node| qq.contains(&n.id)), Fiber(move |n: &Node| pp.contains(&n.id))).apply(&g);
-        let both = Fiber(move |n: &Node| pq.0.contains(&n.id) && pq.1.contains(&n.id)).apply(&g);
-        prop_assert_eq!(facts(&ab), facts(&ba), "fibers commute");
-        prop_assert_eq!(facts(&ab), facts(&both), "two fibers are the fiber of the conjunction");
-        let pp = p.clone();
-        let once = Fiber(move |n: &Node| pp.contains(&n.id)).apply(&g);
-        let pp = p.clone();
-        prop_assert_eq!(facts(&Fiber(move |n: &Node| pp.contains(&n.id)).apply(&once)), facts(&once), "a fiber is idempotent");
+        views::fibers_commute(&g, &subset(&g, one), &subset(&g, other)).map_err(TestCaseError::fail)?;
     }
 
-    /// Coarsening in two steps is coarsening in one: the classes of packages over the classes of
-    /// modules are the classes of packages, and each line between two packages counts the fine lines
-    /// it stands for, whichever way it was reached. A quotient is idempotent on its image.
     #[test]
     fn quotients_compose(g in graphs()) {
-        prop_assert_eq!(facts(&then(by_module(), by_package()).apply(&g)), facts(&by_package().apply(&g)));
-        prop_assert_eq!(facts(&by_module().apply(&by_module().apply(&g))), facts(&by_module().apply(&g)));
+        views::quotients_compose(&g).map_err(TestCaseError::fail)?;
     }
 
-    /// The closed picture is the pushforward of the fine one: a line inside one block is gone, and
-    /// the lines of one kind between two blocks are one bundle that counts them. Counted on the fine
-    /// graph, the bundles carry every fine line that crosses a border, and no other.
     #[test]
     fn a_quotient_counts_the_lines_that_cross_its_borders(g in graphs()) {
-        let q = by_module().apply(&g);
-        prop_assert!(q.edges.iter().all(|e| e.src != e.dst), "a line inside a block is no line");
-        prop_assert_eq!(weights(&q), crossing(&g, |_| true));
+        views::a_quotient_counts_the_lines_that_cross_its_borders(&g).map_err(TestCaseError::fail)?;
     }
 
-    /// A predicate that depends only on a node's module never cuts a module in two, so filtering the
-    /// fine graph and quotienting gives what quotienting and filtering the classes gives.
     #[test]
     fn a_saturated_fiber_commutes_with_the_quotient(g in graphs(), kept in proptest::collection::btree_set(0..MODULES.len(), 0..=MODULES.len())) {
         let modules: BTreeSet<String> = kept.iter().map(|m| MODULES[*m].to_string()).collect();
-        let (a, b) = (modules.clone(), modules.clone());
-        let fiber_first = then(Fiber(move |n: &Node| a.contains(&n.module)), by_module()).apply(&g);
-        let quotient_first = then(by_module(), Fiber(move |n: &Node| b.contains(&n.module))).apply(&g);
-        prop_assert_eq!(facts(&fiber_first), facts(&quotient_first));
+        views::a_saturated_fiber_commutes(&g, &modules).map_err(TestCaseError::fail)?;
     }
 
-    /// Whatever the predicate, fiber first counts the fine lines whose two ends it keeps, and
-    /// quotient first, with the predicate's image on the classes, the fine lines between two classes
-    /// it keeps a member of. The two agree whenever the predicate is saturated, and the first never
-    /// counts more than the second.
     #[test]
     fn a_fiber_before_a_quotient_counts_only_what_it_keeps(g in graphs(), bits in any::<u16>()) {
-        let kept: BTreeSet<String> = g.nodes.iter().enumerate().filter(|(i, _)| bits >> (i % 16) & 1 == 1).map(|(_, n)| n.id.clone()).collect();
-        let image: BTreeSet<String> = g.nodes.iter().filter(|n| kept.contains(&n.id)).map(|n| n.module.clone()).collect();
-        let saturated = g.nodes.iter().all(|n| kept.contains(&n.id) == image.contains(&n.module));
-        let (k, i) = (kept.clone(), image.clone());
-        let fiber_first = weights(&then(Fiber(move |n: &Node| k.contains(&n.id)), by_module()).apply(&g));
-        let quotient_first = weights(&then(by_module(), Fiber(move |n: &Node| i.contains(&n.id))).apply(&g));
-        prop_assert_eq!(&fiber_first, &crossing(&g, |n| kept.contains(&n.id)));
-        prop_assert_eq!(&quotient_first, &crossing(&g, |n| image.contains(&n.module)));
-        prop_assert!(fiber_first.iter().all(|(line, w)| quotient_first.get(line).map_or(false, |v| w <= v)));
-        if saturated {
-            prop_assert_eq!(fiber_first, quotient_first);
-        }
+        views::a_fiber_before_a_quotient_counts_only_what_it_keeps(&g, &subset(&g, bits)).map_err(TestCaseError::fail)?;
     }
 }
 
