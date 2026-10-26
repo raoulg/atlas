@@ -15,8 +15,8 @@ paragraphs (code in fences), an `Issues:` line, and the point's pictures:
   before and by this one (what only one of them draws outlined in its colour), and Atlas's own code
   where the change is. `--take <report dir> <version>` copies what the notes name of a report into
   `docs/releases/<version>/report/`.
-- `Diagram: releases/<version>/x.svg`: a drawing of the point's structure, inline, so that it takes the
-  page's colours in the light and the dark.
+- `Diagram: releases/<version>/x.svg | caption`: a drawing of the point's structure, inline, so that it
+  takes the page's colours in the light and the dark, with what it shows beneath it.
 - `Bars: label = 18.9 s; label = 0.14 s | caption`: a bar chart of measured numbers.
 - `Pictures: changes/x.jpg`: screenshots, from the notes each issue leaves in `docs/changes/`.
 
@@ -100,6 +100,7 @@ section ul{padding-left:20px;margin:0 0 16px}
 section li{margin:4px 0}
 .diagram{margin:22px 0;background:var(--panel);border:1px solid var(--line);padding:14px}
 .diagram svg{display:block;width:100%;height:auto;max-height:340px}
+.diagram figcaption{font-size:14px;color:var(--ink-3);margin-top:10px}
 .d-frame{fill:none;stroke:var(--ink-3);stroke-width:1.5}
 .d-box{fill:var(--bg);stroke:var(--line);stroke-width:1.5}
 .d-key{stroke:var(--key);stroke-width:2}
@@ -216,8 +217,10 @@ def page(release: dict) -> str:
             body.append(example(release, point["example"]))
         if point.get("compare"):
             body.append(compare(point["compare"]))
-        for diagram in [d.strip() for d in point.get("diagram", "").split(",") if d.strip()]:
-            body.append(f'<figure class="diagram">{svg(DOCS / diagram)}</figure>')
+        drawings, _, caption = point.get("diagram", "").partition("|")
+        for diagram in [d.strip() for d in drawings.split(",") if d.strip()]:
+            said = f"<figcaption>{inline(caption.strip())}</figcaption>" if caption.strip() else ""
+            body.append(f'<figure class="diagram">{svg(DOCS / diagram)}{said}</figure>')
         if point.get("bars"):
             body.append(bars(point["bars"]))
         for n in re.findall(r"#(\d+)", point.get("atlas", "")):
