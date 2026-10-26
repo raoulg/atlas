@@ -115,6 +115,7 @@ fn tools() -> Value {
             "inputSchema": { "type": "object", "properties": {
                 "path": path,
                 "principle": { "type": "string", "description": "Only this principle's findings: an id from `principles`." },
+                "json": { "type": "boolean", "description": "The findings as data, as `atlas check --json` prints them: each with `about`, the ids it is about by the part each plays (`breaks`, `variant`, `put`, `lost`), to read without the sentences." },
             } },
             "annotations": read_only,
         },
@@ -282,6 +283,10 @@ fn call(name: &str, args: &Value, opts: &Options) -> Option<Result<String, Strin
                 .iter()
                 .map(|g| (g.root.clone(), principles::check(g).into_iter().filter(|f| asked.iter().any(|p| p.id == f.principle)).collect()))
                 .collect();
+            if args.get("json").and_then(Value::as_bool) == Some(true) {
+                let reports: Vec<Value> = parts.iter().map(|(root, findings)| json!({ "root": root, "findings": findings })).collect();
+                return Ok(serde_json::to_string_pretty(&json!({ "parts": reports })).unwrap_or_default());
+            }
             let look = principles::Look::plain();
             let reports: Vec<String> = parts.iter().map(|(root, findings)| principles::report(root, findings, &look)).collect();
             let counted: Vec<(&str, &[principles::Finding])> = parts.iter().map(|(r, f)| (r.as_str(), f.as_slice())).collect();

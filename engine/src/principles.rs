@@ -50,6 +50,36 @@ pub struct Finding {
     pub evidence: Vec<String>,
     /// What the author could ask of the code.
     pub question: String,
+    /// What the finding is about beyond its node, as data: each id the graph holds that shows it (a node, a type, a
+    /// place) or each name the code writes (a parameter, what a choice tests), by the part it plays. `what` and
+    /// `evidence` say the same in a sentence; whoever asks what a finding is about reads it here.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub about: Vec<About>,
+}
+
+/// One thing a finding is about: its part in the finding (`breaks`, `variant`, `put`, `lost`) and the id or name.
+#[derive(Serialize, Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub struct About {
+    pub role: &'static str,
+    pub id: String,
+}
+
+impl Finding {
+    /// The finding with `ids` in `role`, each once, in the order given.
+    pub fn with(mut self, role: &'static str, ids: impl IntoIterator<Item = impl Into<String>>) -> Finding {
+        for id in ids {
+            let about = About { role, id: id.into() };
+            if !self.about.contains(&about) {
+                self.about.push(about);
+            }
+        }
+        self
+    }
+
+    /// The ids in `role`, in order.
+    pub fn about(&self, role: &str) -> Vec<&str> {
+        self.about.iter().filter(|a| a.role == role).map(|a| a.id.as_str()).collect()
+    }
 }
 
 /// `docs/reference/principles.md`, the explanation of every principle, carried in the binary.
@@ -330,7 +360,16 @@ impl<'g> Index<'g> {
     }
 
     fn finding(&self, principle: &'static str, n: &Node, what: String, evidence: Vec<String>, question: String) -> Finding {
-        Finding { principle, node: n.id.clone(), file: self.file(n), line: n.span.map_or(1, |s| s.0), what, evidence, question }
+        Finding {
+            principle,
+            node: n.id.clone(),
+            file: self.file(n),
+            line: n.span.map_or(1, |s| s.0),
+            what,
+            evidence,
+            question,
+            about: vec![],
+        }
     }
 
     fn file(&self, n: &Node) -> String {
@@ -491,7 +530,8 @@ fn doors(ix: &Index) -> Vec<Finding> {
                 "the package is called src, the folder packages live in".into(),
                 vec![format!("{}: the layout folder is the import name, `from src.… import …`", ix.file(root))],
                 "Under src/<name>/ with a build system in pyproject.toml, `uv sync` installs it as <name>, and `from <name> import …` works the same in a script, a test and a notebook. What is this package called?".into(),
-            ));
+            )
+            .with("named", [root.name.clone()]));
         }
     } else if exports.is_empty() && declared {
         if let Some(root) = ix.node(&g.root) {
@@ -535,7 +575,7 @@ fn doors(ix: &Index) -> Vec<Finding> {
             (false, false) => format!("{} does not say what {} {are}", ix.label(&f.id), list(&untyped)),
             _ => format!("{} does not say what it gives", ix.label(&f.id)),
         };
-        let mut finding = ix.finding(
+        let finding = ix.finding(
             "doors",
             f,
             what,
@@ -545,6 +585,10 @@ fn doors(ix: &Index) -> Vec<Finding> {
                 ix.label(&f.id)
             ),
         );
+        // the parameters it does not type, by their names, and itself where it does not say what it gives
+        let mut finding = finding
+            .with("takes", untyped.iter().map(|p| p.trim_matches('`').to_string()))
+            .with("gives", gives_unknown.then(|| f.id.clone()));
         finding.line = first.line;
         out.push(finding);
     }
@@ -590,13 +634,20 @@ fn sums(ix: &Index) -> Vec<Finding> {
         };
         // a union written in place says its variants in its name
         let sum = if s.name.contains('|') { s.name.clone() } else { format!("{} ({})", s.name, variants.join(" | ")) };
-        out.push(ix.finding(
-            "sums",
-            if library { consumers[0] } else { s },
-            format!("{sum} is handed on unopened: {} take it", list(&taken_by)),
-            evidence,
-            choose,
-        ));
+        let variant_ids = ix.targets(&s.id, EdgeKind::Variant);
+        out.push(
+            ix.finding(
+                "sums",
+                if library { consumers[0] } else { s },
+                format!("{sum} is handed on unopened: {} take it", list(&taken_by)),
+                evidence,
+                choose,
+            )
+            .with("sum", [s.id.clone()])
+            .with("variant", variant_ids.iter().map(|v| v.to_string()))
+            .with("returned_by", producers.iter().filter(|p| !p.private).map(|p| p.id.clone()))
+            .with("taken_by", consumers.iter().map(|c| c.id.clone())),
+        );
     }
     out
 }
@@ -644,6 +695,7 @@ fn overrides(ix: &Index) -> Vec<Finding> {
                     if classes.len() == 1 { "does it use" } else { "do they use" },
                 ),
             )
+            .with("breaks", ms.iter().map(|m| m.id.clone()))
         })
         .collect()
 }
@@ -873,7 +925,9 @@ fn places(ix: &Index) -> Vec<Finding> {
                 "Taken as a parameter, a script, a test and a notebook can each choose. Who should decide where this lives: {}, or whoever calls it?",
                 ix.label(&n.id)
             ),
-        ));
+        )
+        .with("place", touches.iter().map(|(_, t)| t.place().id))
+        .with("in", touches.iter().filter(|(owner, _)| owner.id != n.id).map(|(owner, _)| owner.id.clone())));
     }
     out
 }
@@ -905,7 +959,9 @@ fn changes(ix: &Index) -> Vec<Finding> {
                 "Nothing in the signature shows that `{input}` changes. Should the {ty} change itself through a method of its own, or should {} hand back a new {ty}?",
                 ix.label(&f.id)
             ),
-        ));
+        )
+        .with("changes", [input.to_string()])
+        .with("type", [e.dst.clone()]));
     }
     out
 }
@@ -920,6 +976,14 @@ fn gives(ix: &Index) -> Vec<Finding> {
     let doors: HashSet<&str> = door_fns(ix).into_iter().map(|f| f.id.as_str()).collect();
     let mut out = vec![];
     for f in ix.g.nodes.iter().filter(|f| is_function(f) && ix.gives_unknown(f, f.returns.as_ref()) && !doors.contains(f.id.as_str())) {
+        let used_by: Vec<String> = ix
+            .into
+            .get(f.id.as_str())
+            .into_iter()
+            .flatten()
+            .filter(|e| e.kind == EdgeKind::Calls && e.uses)
+            .map(|e| e.src.clone())
+            .collect();
         let mut users: Vec<String> = ix
             .into
             .get(f.id.as_str())
@@ -937,15 +1001,18 @@ fn gives(ix: &Index) -> Vec<Finding> {
         if more > 0 {
             users.push(format!("{more} more"));
         }
-        out.push(ix.finding(
-            "gives",
-            f,
-            format!("{name} gives back a value its callers use, and does not say what it is"),
-            vec![signature(f), format!("used by {}", list(&users))],
-            format!(
-                "Without a return annotation, what its callers get has no type, and the route stops there. What does {name} give back?"
-            ),
-        ));
+        out.push(
+            ix.finding(
+                "gives",
+                f,
+                format!("{name} gives back a value its callers use, and does not say what it is"),
+                vec![signature(f), format!("used by {}", list(&users))],
+                format!(
+                    "Without a return annotation, what its callers get has no type, and the route stops there. What does {name} give back?"
+                ),
+            )
+            .with("used_by", used_by),
+        );
     }
     out
 }
@@ -1074,7 +1141,10 @@ fn repeated(ix: &Index) -> Vec<Finding> {
             format!(
                 "What each case means is spelled out again in each place, so a new case is a change in all of them. Could the choice be made once, in a table or a type that says what each `{subject}` stands for?"
             ),
-        ));
+        )
+        .with("subject", [subject.clone()])
+        .with("body", fns.iter().map(|f| f.id.clone()))
+        .with("case", places.iter().filter(|(_, ps)| ps.len() > 1).map(|(c, _)| c.clone())));
     }
     out
 }
@@ -1125,25 +1195,30 @@ fn unnamed<'g>(ix: &Index<'g>, f: &'g Node) -> Vec<Finding> {
                 for (arm, steps) in arms {
                     all.entry(arm).or_default().extend(steps);
                 }
-                let label = ix.label(&next.to);
-                if !nexts.contains(&label) {
-                    nexts.push(label);
+                if !nexts.contains(&next.to) {
+                    nexts.push(next.to.clone());
                 }
             }
         }
         for (t, (arms, next)) in by_type {
             let steps: Vec<String> = arms.values().flatten().map(|s| ix.label(s)).collect();
             let ty = ix.label(t);
-            out.push(ix.finding(
-                "choices",
-                f,
-                format!("{} chooses where its {ty} comes from ({}) and goes on with it", ix.label(&f.id), steps.join(" | ")),
-                vec![format!("alternatives: {}", steps.join(" | ")), format!("then: {}", list(&next))],
-                format!(
-                    "Where the {ty} comes from is a step of its own, with {} as its arms. What would that step be called?",
-                    list(&steps)
-                ),
-            ));
+            let then: Vec<String> = next.iter().map(|n| ix.label(n)).collect();
+            out.push(
+                ix.finding(
+                    "choices",
+                    f,
+                    format!("{} chooses where its {ty} comes from ({}) and goes on with it", ix.label(&f.id), steps.join(" | ")),
+                    vec![format!("alternatives: {}", steps.join(" | ")), format!("then: {}", list(&then))],
+                    format!(
+                        "Where the {ty} comes from is a step of its own, with {} as its arms. What would that step be called?",
+                        list(&steps)
+                    ),
+                )
+                .with("type", [t.to_string()])
+                .with("step", arms.values().flatten().map(|s| s.to_string()))
+                .with("then", next),
+            );
         }
     }
     out
@@ -1240,7 +1315,9 @@ fn nothing(ix: &Index) -> Vec<Finding> {
                 format!(
                     "Atlas sees all that {name} runs, and none of it leaves anything behind. Is it dead, or does it change a value it is handed through a field, an item or a loop, which no call shows? Could it hand back what it makes, or let that value change itself through a method of its own?"
                 ),
-            ));
+            )
+            .with("called_by", callers.iter().map(|c| c.to_string()))
+            .with("runs", runs.iter().map(|r| r.to_string())));
             continue;
         }
         let what: Vec<String> = blind.iter().map(|b| format!("`{}`", b.what)).collect();
@@ -1258,7 +1335,10 @@ fn nothing(ix: &Index) -> Vec<Finding> {
             format!(
                 "Atlas sees no change and no place in what {name} runs, but it cannot see what {shown} {does}. Does that leave something behind which the picture lacks (a log, a change in a library's or a class's value, a wait), or is {name} dead?"
             ),
-        ));
+        )
+        .with("called_by", callers.iter().map(|c| c.to_string()))
+        .with("runs", runs.iter().map(|r| r.to_string()))
+        .with("unseen", blind.iter().map(|b| b.what.clone())));
     }
     out
 }
@@ -1306,7 +1386,8 @@ fn prophecy(ix: &Index) -> Vec<Finding> {
                 format!("{} supersedes `{named}`, which the code does not hold", ix.label(&p.id)),
                 vec![format!("supersedes `{named}`")],
                 format!("A prophecy that replaces nothing is built or false. Is `{named}` gone already, or is its name written otherwise?"),
-            ),
+            )
+            .with("supersedes", [named.to_string()]),
             candidates => ix.finding(
                 "prophecy",
                 p,
@@ -1320,7 +1401,9 @@ fn prophecy(ix: &Index) -> Vec<Finding> {
                 format!(
                     "A prophecy replaces one thing, and `{named}` names more than one. Which of them does it replace, named by its whole path?"
                 ),
-            ),
+            )
+            .with("supersedes", [named.to_string()])
+            .with("candidate", candidates.iter().cloned()),
         };
         out.push(finding);
     }
@@ -1341,17 +1424,20 @@ fn prophecy(ix: &Index) -> Vec<Finding> {
         let mut evidence: Vec<String> = leaned.iter().map(|(to, k)| format!("{k:?} `{}`, which is not built", ix.label(&to.id))).collect();
         evidence.sort();
         evidence.dedup();
-        out.push(ix.finding(
-            "prophecy",
-            from,
-            format!("{} leans on {}, which is not built", ix.label(id), list(&names)),
-            evidence,
-            format!(
+        out.push(
+            ix.finding(
+                "prophecy",
+                from,
+                format!("{} leans on {}, which is not built", ix.label(id), list(&names)),
+                evidence,
+                format!(
                 "Production would run on a stub here. Build {} first, or is {} meant to change with it, as a prophecy that supersedes it?",
                 list(&names),
                 ix.label(id)
             ),
-        ));
+            )
+            .with("leans_on", leaned.iter().map(|(to, _)| to.id.clone())),
+        );
     }
     out
 }
@@ -1461,13 +1547,19 @@ fn layers(ix: &Index) -> Vec<Finding> {
                 }
                 _ => "Which of these links runs against the flow, and where does what it uses belong?".to_string(),
             };
-            out.push(ix.finding(
-                "layers",
-                at,
-                format!("{} depend on one another", list(&members)),
-                evidence,
-                format!("Packages in a cycle have no order: none can be read, tested or replaced without the others. {ask}"),
-            ));
+            out.push(
+                ix.finding(
+                    "layers",
+                    at,
+                    format!("{} depend on one another", list(&members)),
+                    evidence,
+                    format!("Packages in a cycle have no order: none can be read, tested or replaced without the others. {ask}"),
+                )
+                // the blocks of the cycle (`pkg$` a package's own module), and what each link runs from and to
+                .with("block", cycle.iter().cloned())
+                .with("from", links.iter().flat_map(|(_, _, es)| es.iter().map(|e| e.src.clone())))
+                .with("to", links.iter().flat_map(|(_, _, es)| es.iter().map(|e| e.dst.clone()))),
+            );
         }
     }
     out
@@ -1629,16 +1721,21 @@ fn lens<'g>(ix: &Index<'g>) -> Vec<Finding> {
         let places: BTreeMap<&String, &String> =
             ops.iter().flat_map(|(_, puts, _)| puts.iter()).filter(|(p, _)| ops.iter().any(|(_, _, gets)| gets.contains_key(*p))).collect();
         let (mut lost_all, mut labels, mut evidence): (Vec<String>, Vec<String>, Vec<String>) = (vec![], vec![], vec![]);
+        // what the finding is about, as the graph holds it: the types lost, the places, the puts and the gets there
+        let mut about: Vec<(&'static str, String)> = vec![];
         for (place, label) in places {
             let (mut put, mut got, mut back): (BTreeMap<&str, Vec<String>>, Vec<String>, HashSet<&str>) =
                 (BTreeMap::new(), vec![], HashSet::new());
+            let (mut putters, mut getters): (Vec<String>, Vec<String>) = (vec![], vec![]);
             for (m, puts, gets) in &ops {
                 if puts.contains_key(place) && ix.declares(&c.id, m) {
                     for t in put_types(c, m, place, &ids) {
                         put.entry(t).or_default().push(format!("{}: {} × {label} → {label}", ix.label(&m.id), ix.label(t)));
+                        putters.push(m.id.clone());
                     }
                 }
                 if gets.contains_key(place) {
+                    getters.push(m.id.clone());
                     let types = given(c, m);
                     back.extend(types.iter().flat_map(|t| holds(ix, t)));
                     let what = if types.is_empty() {
@@ -1659,6 +1756,10 @@ fn lens<'g>(ix: &Index<'g>) -> Vec<Finding> {
                 }
             }
             labels.push(label.clone());
+            about.extend(lost.iter().map(|t| ("lost", t.to_string())));
+            about.push(("place", place.clone()));
+            about.extend(putters.into_iter().map(|m| ("put", m)));
+            about.extend(getters.into_iter().map(|m| ("get", m)));
             evidence.extend(put.values().flatten().map(|p| format!("put {p}")));
             evidence.extend(got.iter().map(|g| format!("get {g}")));
             for t in lost.iter().filter(|_| named(place)) {
@@ -1678,13 +1779,17 @@ fn lens<'g>(ix: &Index<'g>) -> Vec<Finding> {
             continue;
         }
         let (types, at) = (list(&lost_all), list(&labels));
-        out.push(ix.finding(
+        let mut finding = ix.finding(
             "lens",
             c,
             format!("{name} puts {types} into {at} and gets no {types} back"),
             evidence,
             format!("A lens gives back what it is given: put then get. {name} puts {types}, and none of its gets gives that back. What does {at} hold, and could {name} get it back as it went in?"),
-        ));
+        );
+        for (role, id) in about {
+            finding = finding.with(role, [id]);
+        }
+        out.push(finding);
     }
     out
 }
