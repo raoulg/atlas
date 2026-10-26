@@ -7,9 +7,11 @@ set -eu
 studio=$(cd "$(dirname "$0")" && pwd)
 "$studio/prepare-sidecar.sh" --release
 cd "$studio/src-tauri"
+# Studio's version is Atlas's own
+version=$(grep -m1 '^version' "$studio/../Cargo.toml" | cut -d'"' -f2)
 case "$(uname -s)" in
   Darwin)
-    cargo tauri build --bundles app
+    cargo tauri build --bundles app --config "{\"version\":\"$version\"}"
     app="$studio/src-tauri/target/release/bundle/macos/Atlas Studio.app"
     into=${1:-"$HOME/Applications"}
     mkdir -p "$into"
@@ -19,7 +21,7 @@ case "$(uname -s)" in
     echo "Installed $into/Atlas Studio.app"
     ;;
   *)
-    cargo tauri build
+    cargo tauri build --config "{\"version\":\"$version\"}"
     echo "Packages in $studio/src-tauri/target/release/bundle"
     ;;
 esac

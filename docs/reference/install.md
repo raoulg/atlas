@@ -35,6 +35,23 @@ brew "atlas-code-nightly"                 # the nightly; `brew "atlas-code"` is 
 
 `atlas --version` says which one you have: `0.66.2`, or `0.67.0-nightly (b0ead14)`.
 
+## Atlas Studio on macOS
+
+Atlas Studio is the desktop app around the same engine, with the matching `atlas` inside it: it
+needs no installed CLI. Every release and every nightly has a disk image per Mac,
+`atlas-studio-aarch64-apple-darwin.dmg` (Apple silicon) and `atlas-studio-x86_64-apple-darwin.dmg`
+(Intel). The script puts the app in `~/Applications`:
+
+```bash
+sh -c "$(curl -fsSL https://raw.githubusercontent.com/raoulg/atlas/next/install-studio.sh)"
+```
+
+`ATLAS_CHANNEL=nightly` installs the nightly, `ATLAS_STUDIO_DIR` another folder. Run it again to
+update. Studio is signed ad hoc, not with an Apple Developer ID. The script downloads with `curl`,
+which leaves no mark of the internet on the app, so it opens as it is. A disk image downloaded in a
+browser does carry that mark: drag the app to Applications, open it once, and then allow it in System
+Settings › Privacy & Security › Open Anyway (or Control-click the app and choose Open).
+
 ## Updates
 
 Once a day, `atlas serve`, `view`, `check`, `changes`, `history` and `revelation` tell you on stderr when a
