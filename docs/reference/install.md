@@ -35,12 +35,13 @@ brew "atlas-code-nightly"                 # the nightly; `brew "atlas-code"` is 
 
 `atlas --version` says which one you have: `0.66.2`, or `0.67.0-nightly (b0ead14)`.
 
-## Atlas Studio on macOS
+## Atlas Studio
 
 Atlas Studio is the desktop app around the same engine, with the matching `atlas` inside it: it
 needs no installed CLI. Every release and every nightly has a disk image per Mac,
 `atlas-studio-aarch64-apple-darwin.dmg` (Apple silicon) and `atlas-studio-x86_64-apple-darwin.dmg`
-(Intel). The script puts the app in `~/Applications`:
+(Intel), and a setup program for Windows, `atlas-studio-x86_64-pc-windows-msvc-setup.exe`. On a Mac
+the script puts the app in `~/Applications`:
 
 ```bash
 sh -c "$(curl -fsSL https://raw.githubusercontent.com/raoulg/atlas/next/install-studio.sh)"
@@ -51,6 +52,18 @@ update. Studio is signed ad hoc, not with an Apple Developer ID. The script down
 which leaves no mark of the internet on the app, so it opens as it is. A disk image downloaded in a
 browser does carry that mark: drag the app to Applications, open it once, and then allow it in System
 Settings › Privacy & Security › Open Anyway (or Control-click the app and choose Open).
+
+On Windows the script installs Studio for you alone, without administrator rights, in
+`%LOCALAPPDATA%\Atlas Studio`, with an entry in the Start menu:
+
+```powershell
+irm https://raw.githubusercontent.com/raoulg/atlas/next/install-studio.ps1 | iex
+```
+
+`$env:ATLAS_CHANNEL = 'nightly'` installs the nightly; run it again to update. The setup program is
+not signed with a paid identity either. Downloaded by the script it carries no mark of the internet
+and runs as it is; downloaded in a browser, SmartScreen asks first: choose More info, then Run anyway.
+Windows › Settings › Apps removes Studio again.
 
 ## Updates
 
