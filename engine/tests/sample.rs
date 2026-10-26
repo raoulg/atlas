@@ -15,6 +15,7 @@
 //!   are asked where the budget leaves room for them.
 //! - `ATLAS_SAMPLE_SEED`: the seed; drawn and printed when none is given.
 //! - `ATLAS_SAMPLE_OPENINGS`: how many sets of open steps a route is asked at (8).
+//! - `ATLAS_SAMPLE_DATA`: a folder to keep each program's page data in, to ask `plans.mjs` of it by hand.
 //! - `ATLAS_SAMPLE_OUT`: where the report goes (the system's temporary folder by default): the Atlas build,
 //!   the seed, each program's revision, and every site with its law and what broke.
 //!
@@ -271,7 +272,13 @@ fn the_laws_hold_at_sampled_sites() {
         let graph = parts::analyze_repo(&[path.clone()], &Options::default()).unwrap_or_else(|e| panic!("reads {}: {e}", path.display()));
         let mut data = serde_json::to_value(&graph).unwrap();
         data["flow"] = serde_json::to_value(flow::of(&graph)).unwrap();
-        let file = std::env::temp_dir().join(format!("atlas-sample-{}-{}.json", std::process::id(), programs.len()));
+        // `ATLAS_SAMPLE_DATA=dir` keeps each program's data there, for `node plans.mjs ../viewer/plan.js DATA ROUTE` by hand
+        let kept = var("ATLAS_SAMPLE_DATA").map(PathBuf::from);
+        let name = path.file_name().map_or("program".into(), |n| n.to_string_lossy().to_string());
+        let file = kept.as_ref().map_or_else(
+            || std::env::temp_dir().join(format!("atlas-sample-{}-{}.json", std::process::id(), programs.len())),
+            |d| d.join(format!("{name}.json")),
+        );
         std::fs::write(&file, data.to_string()).unwrap();
         let routes: Vec<String> =
             graph.nodes.iter().filter(|n| n.entry.as_ref().is_some_and(|e| e.kind != EntryKind::Test)).map(|n| n.id.clone()).collect();
@@ -334,8 +341,10 @@ fn the_laws_hold_at_sampled_sites() {
         }
     }
     sites.sort_by_key(|s| s.number);
-    for p in &programs {
-        let _ = std::fs::remove_file(&p.data);
+    if var("ATLAS_SAMPLE_DATA").is_none() {
+        for p in &programs {
+            let _ = std::fs::remove_file(&p.data);
+        }
     }
 
     // the report: what was asked where, and what broke
@@ -385,6 +394,7 @@ fn the_laws_hold_at_sampled_sites() {
             })
         })
         .collect();
+    assert!(!all.is_empty(), "the budget left no site to ask: reading the programs took {:.1?}", start.elapsed());
     assert!(
         broken.is_empty(),
         "{} of {} sites broke a law; each is a question, about the law, the code or this sampler:\n\n{}",

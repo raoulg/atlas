@@ -1220,7 +1220,8 @@ for (const P of pills.values()) for (const nm of P.none || []) latestSet("v:" + 
 const bound = (P, k, nm = (P.dn && P.dn.get(k)) || "", within = false) => {
   const pl = places.get(k);
   // what a cut step takes by a name its body did not make: the value of that name here, else one the body made, inside it
-  if (pl?.cond) { const v = latestGet(kindKey(k) + "|" + pl.name, P, within); return v || (alone ? null : false); }
+  // (`k` is that value's own key and a `?`: a value of no type of the code's has its kind in the key, not in its type)
+  if (pl?.cond) { const v = latestGet(kindKey(k.slice(0, -1)) + "|" + pl.name, P, within); return v || (alone ? null : false); }
   if (!isMem(k) || P.beyond?.has(k) || inside(k)) return null;
   // a parameter its call fills with no value holds none (#157)
   if (holdsNone(P, k, nm, within)) return false;
@@ -1570,7 +1571,12 @@ for (const P of pills.values()) {
   // a value the body uses itself is the one its name holds there, made inside or handed in; a name that holds none (a
   // result that went back, a literal) adds nothing
   // a use in an arm of a choice finds what that arm holds (`arms`, numbered as a site's)
+  // an initializer runs on the value it builds, or, called by another (`super().__init__()`), on the one its caller builds:
+  // a use of that value is of what the build makes, no value from beyond it
+  const usesOf = treeInfo.get(P.own ? frames.get(P.parent)?.step : P.steps[0]), receiverName = (byId.get(stepAt(P))?.params || []).find(p => p.receiver)?.name;
+  const building = !!usesOf && (!!usesOf.built || isInit(usesOf.step));
   for (const u of P.uses || []) {
+    if (building && (!u.name || u.name === receiverName)) continue;
     const base = u.type ? `t:${u.type}~${u.name}` : "v:" + u.name, sum = u.type && SUM_OF.get(u.type);
     const arms = new Map([...armsAbove(P), ...(u.arms || []).map(([c, b]) => [`n:${frames.get(P.parent).step}~c${c}`, b])]);
     let v = latestGet(kindKey(base) + "|" + u.name, P, true, arms) || (sum && latestGet("t:" + kindOf(sum) + "|" + u.name, P, true, arms));
