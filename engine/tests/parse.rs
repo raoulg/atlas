@@ -881,11 +881,19 @@ fn rust_reads_paths_as_built() {
     assert!(!report.contains("site/report.html"), "{report}");
 }
 
-/// `atlas check .` inside a crate reads the crate: the walk's root is read whatever it is called.
+/// `atlas check .` inside a crate reads the crate: the walk's root is read whatever it is called,
+/// so the crate read as `.` from its own directory is the crate read by its full path.
 #[test]
 fn a_crate_reads_from_inside() {
-    let g = analyze(std::path::Path::new("."), &Options::default()).expect("the engine crate, from its own directory");
-    assert!(g.nodes.iter().filter(|n| n.kind == NodeKind::Module).count() > 10);
+    let ids = |g: &Graph| {
+        let mut ids: Vec<String> = g.nodes.iter().map(|n| n.id.clone()).collect();
+        ids.sort();
+        ids
+    };
+    let inside = analyze(std::path::Path::new("."), &Options::default()).expect("the crate, from its own directory");
+    let named = analyze(&PathBuf::from(env!("CARGO_MANIFEST_DIR")), &Options::default()).unwrap();
+    assert!(inside.nodes.iter().any(|n| n.kind == NodeKind::Module), "`.` is read");
+    assert_eq!(ids(&inside), ids(&named));
 }
 
 /// A file call's file is what its library types as one: the path a method of a path is called
@@ -1020,11 +1028,34 @@ fn a_body_is_what_a_route_runs() {
         "`self.sink.write(..)` on the sink the pipeline holds: {run:?}"
     );
 
-    let atlas = atlas();
-    let bodies = atlas_engine::flow::bodies(&atlas);
-    let mut alts = bodies["atlas-engine.language.Language.parse"].alts.clone();
+    // a call on a `&dyn Language` runs whichever implementation the value has: the alternatives
+    // of the trait's method are the `parse` of each type that implements it, read off the graph's
+    // `inherits` lines
+    let g = dispatch();
+    let bodies = atlas_engine::flow::bodies(&g);
+    let mut alts = bodies["dispatch.Language.parse"].alts.clone();
     alts.sort();
-    assert_eq!(alts, ["atlas-engine.language.Python.parse", "atlas-engine.language.Rust.parse", "atlas-engine.language.TypeScript.parse"]);
+    let mut implementations: Vec<String> = g
+        .edges
+        .iter()
+        .filter(|e| e.kind == EdgeKind::Inherits && e.dst == "dispatch.Language")
+        .map(|e| format!("{}.parse", e.src))
+        .collect();
+    implementations.sort();
+    assert_eq!(implementations.len(), 3, "{implementations:?}");
+    assert_eq!(alts, implementations);
+    assert!(edges(&g, EdgeKind::Calls).contains(&("dispatch.count".into(), "dispatch.Language.parse".into())));
+}
+
+/// A call on a value whose type is known runs that type's method, whatever made the value.
+#[test]
+#[ignore = "#207: a value made by a unit struct's name has no type"]
+fn a_call_on_a_known_value_runs_its_type_s_method() {
+    assert!(edges(&dispatch(), EdgeKind::Calls).contains(&("dispatch.words".into(), "dispatch.Words.parse".into())));
+}
+
+fn dispatch() -> Graph {
+    analyze(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/laws/dispatch"), &Options::default()).unwrap()
 }
 
 /// A subclass stands in the place of the base the program uses as a type, and a family whose

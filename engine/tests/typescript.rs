@@ -222,7 +222,10 @@ fn a_change_to_an_input_is_a_change() {
     assert!(has(&m, "lib.telling.verzamel", "lib.model.Regel"), "`uit.push(r)`: {m:?}");
     assert!(has(&m, "lib.telling.hernoem", "lib.model.Regel"), "`regel.id = id`");
     assert!(has(&m, "lib.telling.Teller.tel", "lib.telling.Teller"), "`this.aantal++`");
-    assert!(!m.iter().any(|(s, _)| s == "lib.telling.telAlles" || s == "lib.telling.Teller.__init__"), "{m:?}");
+    for builds in ["lib.telling.telAlles", "lib.telling.Teller.constructor"] {
+        assert!(g.node(&format!("fixture-ts.{builds}")).is_some(), "{builds} is in the graph");
+        assert!(!m.iter().any(|(s, _)| s == builds), "{builds}: {m:?}");
+    }
     let asked: Vec<String> = check(&g).into_iter().filter(|f| f.principle == "changes").map(|f| f.what).collect();
     assert!(asked.iter().any(|w| w.contains("verzamel")) && !asked.iter().any(|w| w.contains("Teller.tel")), "{asked:?}");
 }

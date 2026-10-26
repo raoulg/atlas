@@ -33,12 +33,3 @@ fn a_call_not_followed_is_bound_somewhere() {
     // a handler's parameter
     assert_eq!(buckets(&read("tests/fixture-ts")), Unresolved { builtin: 11, library: 34, local: 5, unknown: 0 });
 }
-
-/// Atlas reads itself: of the calls it does not follow, all but a few are the prelude's, a
-/// crate's, or a closure or function the body declares.
-#[test]
-fn atlas_follows_nearly_all_of_its_own_calls() {
-    let g = read("..");
-    let u = buckets(&g);
-    assert!(g.stats.unknown_share() < 0.05, "{u:?} of {}", g.stats.unresolved_calls_total);
-}

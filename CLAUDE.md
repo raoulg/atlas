@@ -48,7 +48,8 @@ The rigorous half and the visual half are the same structure. Read `docs/referen
   differ, ask which is wrong. A box that comes from how the code happens to be written (three
   `String`s in a tuple, an untyped value, a step that does two jobs) means the code changes. An arrow
   the code really computes and the line does not name means the line changes: the line is derived
-  from what Atlas does, never an axiom the code is cut to. `cargo test` pins the self-picture.
+  from what Atlas does, never an axiom the code is cut to. The self-picture is looked at, never
+  pinned by a test: a test that reads Atlas's own code fails when Atlas is rewritten, not when a law breaks.
 - **If the code is good, the picture is good, automatically.** Views are computed
   from types and effects, never from file layout. Hierarchies in the code
   (base classes, composition) are the zoom levels; there is no other source of
@@ -59,6 +60,15 @@ The rigorous half and the visual half are the same structure. Read `docs/referen
   benchmark: settle "Atlas or the code?" with a pair in `engine/tests/pairs`, the same program
   once as good practice writes it and once with the usual shortcut. The clean side must read as
   the algebra says, the shortcut must show as a shortcut (`engine/tests/pairs.rs`).
+- **A test holds a law, never an outcome.** Each test names the law, principle, reader fact or
+  interface contract it holds, and its subject is made for it: a small program, a pair, a graph
+  drawn by `proptest`. Where a law says two routes agree (fibers commute, quotients compose, a
+  saturated filter commutes with its quotient, a graph read back from code it was written as), the
+  test computes both and compares them; where it says they differ, a counterexample shows it.
+  A test that pins what Atlas happens to say (a finding's wording, a route's text, a count of a
+  subject's parts) or how a subject happens to be written is no law. A test that changes is read as
+  a question, never as an instruction to change the code or the test: which law moved, and is it the
+  one this change meant to move?
 - **Every change to Atlas moves the pairs.** The mockups in `engine/tests/pairs` (one program
   per language, clean and sloppy) grow with Atlas. For every change to what Atlas reads, draws or
   checks, answer three questions in them before it lands: what does this lay bare, how does the
