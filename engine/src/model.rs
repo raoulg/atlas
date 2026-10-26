@@ -328,8 +328,9 @@ pub struct Param {
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub unchecked: bool,
     /// The types its type holds as values, as its language reads the type, each by the last part of
-    /// its name as written: `dict[Mode, Plan]` holds a `Plan` by its `Mode`, `Option<Vec<Node>>` a
-    /// `Node`, `VectorCache[TVectorizer]` a `VectorCache`.
+    /// its name: `dict[Mode, Plan]` holds a `Plan` by its `Mode`, `Option<Vec<Node>>` a `Node`,
+    /// `VectorCache[TVectorizer]` a `VectorCache`. A name written through an alias is held by the name
+    /// of the type it stands for (`Order as Parcel` holds an `Order`), once the reader resolves it.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub holds: Vec<String>,
 }
@@ -354,6 +355,35 @@ impl Param {
             }
         }
         out
+    }
+}
+
+/// The names of `held`, each as the last part of the type it resolves to: a type written through an
+/// alias (`Order as Parcel`, `use tree_sitter::Node as TsNode`) is the type it stands for, held by that
+/// type's name, as the `takes` it resolves to names it. A name that resolves to nothing stays as written.
+pub fn resolve_held(held: &[String], resolve: &impl Fn(&str) -> Option<String>) -> Vec<String> {
+    let mut out: Vec<String> = vec![];
+    for h in held {
+        let name = resolve(h).map_or(h.clone(), |id| id.strip_prefix("ext:").unwrap_or(&id).rsplit('.').next().unwrap_or(&id).to_string());
+        if !out.contains(&name) {
+            out.push(name);
+        }
+    }
+    out
+}
+
+/// What the parameters and the result of `n` hold, each name resolved by `resolve` (`resolve_held`);
+/// `set_holds` puts them back once the reader no longer borrows the graph to resolve them.
+pub fn holds_resolved(n: &Node, resolve: impl Fn(&str) -> Option<String>) -> (Vec<Vec<String>>, Option<Vec<String>>) {
+    (n.params.iter().map(|p| resolve_held(&p.holds, &resolve)).collect(), n.returns.as_ref().map(|r| resolve_held(&r.holds, &resolve)))
+}
+
+pub fn set_holds(n: &mut Node, (params, returns): (Vec<Vec<String>>, Option<Vec<String>>)) {
+    for (p, h) in n.params.iter_mut().zip(params) {
+        p.holds = h;
+    }
+    if let (Some(r), Some(h)) = (n.returns.as_mut(), returns) {
+        r.holds = h;
     }
 }
 

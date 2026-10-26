@@ -970,6 +970,9 @@ pub(super) fn link(modules: &IndexMap<String, Module>, store: &mut GraphBuilder,
                     store.add_edge(id, &r, kind, None);
                 }
             }
+            // a type written through an alias is held by the name of the type it stands for
+            let held = crate::model::holds_resolved(&store.nodes[id], |h| resolve(m, &[h.to_string()], modules, &store.nodes));
+            crate::model::set_holds(store.nodes.get_mut(id).expect("a node of the graph"), held);
         }
     }
     // the class a function hands on, for typing what a body holds
