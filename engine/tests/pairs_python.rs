@@ -40,6 +40,11 @@ fn found(g: &Graph, principle: &str) -> Vec<String> {
     check(g).into_iter().filter(|f: &Finding| f.principle == principle).map(|f| f.node).collect()
 }
 
+/// The nodes `check` asks about under `principle` in the module `module` (`board.core`).
+fn found_in(g: &Graph, principle: &str, module: &str) -> Vec<String> {
+    found(g, principle).into_iter().filter(|n| n.strip_prefix(module).is_some_and(|rest| rest.starts_with('.'))).collect()
+}
+
 /// The touches of node `id` of the kind the graph's JSON names (`disk_read`, `net`, `db_sqlite`).
 fn touches<'g>(g: &'g Graph, id: &str, kind: &str) -> Vec<&'g Touch> {
     g.node(id).unwrap_or_else(|| panic!("{id} is in the graph")).touches.iter().filter(|t| t.kind_name() == kind).collect()
@@ -1219,8 +1224,9 @@ fn lens_a_library_type_comes_back_inside_what_a_get_gives() {
 }
 
 /// One side of the overrides pair (`tests/pairs/overrides`): readers of bytes, documents that parse
-/// themselves and a count, each family once as its author keeps its bases' promises and once as a
-/// hurried author writes it.
+/// themselves, a count, a catalog of entries, ledgers and boxes over a type their subclasses fill
+/// in, and encoders of arrays of a shape, each family once as its author keeps its bases' promises
+/// and once as a hurried author writes it.
 fn reading() -> &'static Pair {
     static PAIR: OnceLock<Pair> = OnceLock::new();
     PAIR.get_or_init(|| common::pair("overrides/python"))
@@ -1290,6 +1296,67 @@ fn overrides_a_type_ignore_with_codes_is_the_code_saying_it_knows() {
     assert_eq!(c.node("reading.counts.Kennel.count").unwrap().returns.as_ref().map(|r| r.written.as_str()), Some("str"));
 }
 
+/// An override keeps its base's promise when it says it in other words, and breaks it when it
+/// gives one of what was promised a list of. On both sides `Catalog` says what `Index` promises in
+/// other words (`List[Entry]` for `list[Entry]`, `Entry | None` for `Optional[Entry]`, an
+/// `Annotated[str, ..]` for a `str`) or narrower (a list for a `Sequence`, a `Catalog` for an
+/// `Index`), as ty decides, and none of that is asked. The clean `Catalog.head` gives the
+/// `list[Entry]` `Index.head` promises; the shortcut's gives one `Entry`, and `Index.head` is asked.
+#[test]
+fn overrides_a_promise_said_in_other_words_is_kept_and_one_of_a_list_breaks_it() {
+    let (c, s) = (&reading().clean, &reading().shortcut);
+    assert!(found_in(c, "overrides", "reading.catalogs").is_empty(), "{:?}", found_in(c, "overrides", "reading.catalogs"));
+    assert_eq!(found_in(s, "overrides", "reading.catalogs"), ["reading.catalogs.Index.head"]);
+    for g in [c, s] {
+        for m in ["entries", "roots", "find", "title", "copy"] {
+            assert_eq!(g.node(&format!("reading.catalogs.Catalog.{m}")).unwrap().keeps, Some(true), "{m}");
+        }
+    }
+    let head = |g: &Graph| g.node("reading.catalogs.Catalog.head").map(|n| (n.keeps, n.returns.as_ref().map(|r| r.written.clone())));
+    assert_eq!(head(c), Some((Some(true), Some("list[Entry]".into()))));
+    assert_eq!(head(s), Some((Some(false), Some("Entry".into()))));
+}
+
+/// An override of a generic base keeps the promise its subclass fills the base in with, in both
+/// forms of a type parameter: `Ledger[R]` and `Box(ABC, Generic[T])`. The clean `CountLedger`
+/// fills `Ledger` in with an int and gives a `Version[int]`, and `Numbers` fills `Box` in with an
+/// int and takes `list[int]`. The shortcut's `CountLedger` fills `Ledger` in with an `Entry` and
+/// still gives a `Version[int]`, and its `Numbers` takes strings: `Ledger.from_row` is asked about
+/// what one override gives, `Box.fill` about what one takes. `EntryLedger` keeps its promise on both.
+#[test]
+fn overrides_an_override_of_a_generic_base_keeps_what_its_subclass_fills_in() {
+    let (c, s) = (&reading().clean, &reading().shortcut);
+    assert!(found_in(c, "overrides", "reading.ledgers").is_empty(), "{:?}", found_in(c, "overrides", "reading.ledgers"));
+    assert_eq!(found_in(s, "overrides", "reading.ledgers"), ["reading.ledgers.Ledger.from_row", "reading.ledgers.Box.fill"]);
+    let keeps = |g: &Graph, id: &str| g.node(&format!("reading.ledgers.{id}")).unwrap_or_else(|| panic!("{id} is in the graph")).keeps;
+    for g in [c, s] {
+        assert_eq!(keeps(g, "EntryLedger.from_row"), Some(true));
+    }
+    for m in ["CountLedger.from_row", "Numbers.fill"] {
+        assert_eq!((keeps(c, m), keeps(s, m)), (Some(true), Some(false)), "{m}");
+    }
+    let breaks = |id: &str| s.node(&format!("reading.ledgers.{id}")).unwrap().breaks.clone();
+    assert_eq!(breaks("CountLedger.from_row").as_deref(), Some("reading.ledgers.Ledger.from_row"));
+    assert_eq!(breaks("Numbers.fill").as_deref(), Some("reading.ledgers.Box.fill"));
+}
+
+/// An array's shape is a promise no type checker reads, and an override keeps it as it keeps a
+/// type: `MeanEncoder.encode` gives `batch dim` where `Encoder.encode` promises any shape (`...`).
+/// The clean `PatchEncoder` keeps every dim and extends `Encoder`, whose `...` admits it; the
+/// shortcut's extends `MeanEncoder`, whose `batch dim` it breaks with three dims, and
+/// `MeanEncoder.encode` is asked.
+#[test]
+fn overrides_an_array_s_shape_is_a_promise() {
+    let (c, s) = (&reading().clean, &reading().shortcut);
+    assert!(found_in(c, "overrides", "reading.encoders").is_empty(), "{:?}", found_in(c, "overrides", "reading.encoders"));
+    assert_eq!(found_in(s, "overrides", "reading.encoders"), ["reading.encoders.MeanEncoder.encode"]);
+    assert!(edge(c, "reading.encoders.PatchEncoder", "reading.encoders.Encoder", EdgeKind::Inherits));
+    assert!(edge(s, "reading.encoders.PatchEncoder", "reading.encoders.MeanEncoder", EdgeKind::Inherits));
+    let gives = |g: &Graph| g.node("reading.encoders.PatchEncoder.encode").and_then(|n| n.returns.as_ref().map(|r| r.written.clone()));
+    assert_eq!(gives(c), gives(s));
+    assert_eq!(gives(s).as_deref(), Some("Float[Tensor, \"batch seq dim\"]"));
+}
+
 /// A library's operation is a step where the body names what it gives or where it changes the
 /// value it runs on; what it gives without a name goes into the call around it. On the clean
 /// board `renamed` names the copy it makes (`board = copy.copy(board)`, a value made anew, no
@@ -1335,7 +1402,8 @@ fn a_library_operation_is_a_step_where_its_result_is_named_or_it_changes_a_value
 }
 
 /// One side of the change pair (`tests/pairs/changes`): a scoreboard of cells and scores, whose
-/// functions change what they are handed, in Python, Rust and TypeScript alike.
+/// functions change what they are handed, in Python, Rust and TypeScript alike; in Python also the
+/// edits of `board.edits`, a tally among them.
 fn board(side: &str) -> Graph {
     analyze(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/pairs/changes/python").join(side), &Options::default()).unwrap()
 }
@@ -1359,7 +1427,7 @@ fn changes_a_change_to_an_input_of_any_type_shows_in_the_signature() {
     let fs = check(&c);
     assert!(fs.is_empty(), "{:#?}", fs.iter().map(|f| format!("{} {} {}", f.principle, f.node, f.what)).collect::<Vec<_>>());
     assert!(c.edges.iter().filter(|e| e.kind == EdgeKind::Mutates).all(|e| e.via.as_deref() == Some("self")), "only methods change");
-    let mut asked = found(&s, "changes");
+    let mut asked = found_in(&s, "changes", "board.core");
     asked.sort();
     let want = [
         "Board.take_from",
@@ -1428,6 +1496,29 @@ fn changes_a_call_gives_what_it_changes_under_the_name_it_was_handed() {
     assert_eq!(gives(&c, "board.core.Board.reset"), held(&[(board_, "board")]));
     assert!(gives(&c, "board.core.renamed").iter().all(|(_, n)| n != "board"), "{:?}", gives(&c, "board.core.renamed"));
     assert!(gives(&c, "board.core.extended").is_empty(), "{:?}", gives(&c, "board.core.extended"));
+}
+
+/// A function changes what it is handed by whatever changes it: a method of the value's own that
+/// changes it (`tally.add(n)`), `setattr`, `del`. The clean edits hand back a new value
+/// (`dataclasses.replace`, a new `Tally`) and leave the change to the method itself; on both sides
+/// `deeper` calls a method named `update` that hands back a new value and changes nothing. The
+/// shortcut's `tally_up`, `rename` and `forget` change the value they are handed, and each is asked.
+#[test]
+fn changes_a_method_setattr_and_del_change_what_a_function_is_handed() {
+    let (c, s) = (board("clean"), board("shortcut"));
+    assert!(found_in(&c, "changes", "board.edits").is_empty(), "{:?}", found_in(&c, "changes", "board.edits"));
+    assert_eq!(found_in(&s, "changes", "board.edits"), ["board.edits.tally_up", "board.edits.rename", "board.edits.forget"]);
+    let changes = |g: &Graph, f: &str, ty: &str, via: &str| {
+        g.edges.iter().any(|e| e.kind == EdgeKind::Mutates && e.src == f && e.dst == ty && e.via.as_deref() == Some(via))
+    };
+    assert!(changes(&s, "board.edits.tally_up", "board.edits.Tally", "tally"));
+    assert!(changes(&s, "board.edits.rename", "board.core.Board", "board"));
+    assert!(changes(&s, "board.edits.forget", "board.core.Board", "board"));
+    for g in [&c, &s] {
+        assert!(changes(g, "board.edits.Tally.add", "board.edits.Tally", "self"), "a method changes its own value");
+        assert!(edge(g, "board.edits.deeper", "board.edits.Settings.update", EdgeKind::Calls));
+        assert!(g.edges.iter().all(|e| !(e.kind == EdgeKind::Mutates && e.src == "board.edits.deeper")), "`update` changes nothing");
+    }
 }
 
 // ---------- layers: the package quotient the picture draws ----------
@@ -1526,11 +1617,26 @@ fn prophecy_a_name_that_names_several_nodes_is_ambiguous() {
     let replaces = |g: &Graph, id: &str| g.node(id).and_then(|n| n.prophecy.as_ref()).and_then(|p| p.replaces.clone());
     assert_eq!(replaces(&c, "archive.plan.save_posted").as_deref(), Some("archive.ledger.save"));
     assert_eq!(replaces(&c, "archive.plan.save_kept").as_deref(), Some("archive.shelf.save"));
-    assert_eq!(found(&s, "prophecy"), ["archive.plan.save_posted"]);
+    assert_eq!(found_in(&s, "prophecy", "archive.plan"), ["archive.plan.save_posted"]);
     // `save` names both, and the prophecy replaces neither: it names both rather than call the name one the code does not hold
     let posted = s.node("archive.plan.save_posted").and_then(|n| n.prophecy.clone()).expect("a prophecy");
     assert_eq!(posted.supersedes.as_deref(), Some("save"));
     assert_eq!((posted.replaces, posted.candidates), (None, vec!["archive.ledger.save".to_string(), "archive.shelf.save".to_string()]));
+}
+
+/// A name the prophecy's `supersedes` writes names a node the code holds. The clean `total_posted`
+/// supersedes `archive.totals.total`, and replaces it; the shortcut's names `archive.totals.sum_all`,
+/// which the code does not hold, and Atlas asks whether it is gone already or written otherwise.
+#[test]
+fn prophecy_a_name_that_names_no_node_is_asked() {
+    let (c, s) = (prophecy_python("names", "clean"), prophecy_python("names", "shortcut"));
+    let said = |g: &Graph| g.node("archive.totals.total_posted").and_then(|n| n.prophecy.clone()).expect("a prophecy");
+    assert!(found_in(&c, "prophecy", "archive.totals").is_empty(), "{:?}", found_in(&c, "prophecy", "archive.totals"));
+    assert_eq!(said(&c).replaces.as_deref(), Some("archive.totals.total"));
+    assert_eq!(found_in(&s, "prophecy", "archive.totals"), ["archive.totals.total_posted"]);
+    let gone = said(&s);
+    assert_eq!((gone.supersedes.as_deref(), gone.replaces, gone.candidates), (Some("archive.totals.sum_all"), None, vec![]));
+    assert!(s.node("archive.totals.sum_all").is_none() && s.node("archive.totals.total").is_some());
 }
 
 /// A request to a route leans on its handler as a call does. In each side a client part asks the
@@ -1559,7 +1665,8 @@ fn prophecy_a_request_to_a_prophesied_route_leans_on_it() {
 // ---------- doors: every declaration a door is made of ----------
 
 /// One side of the doors pair (`tests/pairs/doors`): lengths in metres, read from text, scaled,
-/// added up and logged, the package's doors brought to its root with `from .. import *`.
+/// added up and logged, and the squares they measure, the package's doors brought to its root with
+/// `from .. import *`.
 fn units(side: &str) -> Graph {
     analyze(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/pairs/doors/python").join(side), &Options::default()).unwrap()
 }
@@ -1597,7 +1704,11 @@ fn doors_every_declaration_of_a_door_says_what_goes_in_and_out() {
     let steps: Vec<String> = atlas_engine::flow::bodies(&c)["units.core.Length"].steps().iter().map(|s| s.to.clone()).collect();
     assert_eq!(steps, ["__init__", "meters", "__add__", "__eq__"].map(|m| format!("units.core.Length.{m}")));
     // the shortcut: each door left open is asked, at the declaration that leaves it open
-    let asked: Vec<(String, u32)> = check(&s).into_iter().filter(|f| f.principle == "doors").map(|f| (f.node, f.line)).collect();
+    let asked: Vec<(String, u32)> = check(&s)
+        .into_iter()
+        .filter(|f| f.principle == "doors" && !f.node.starts_with("units.shapes."))
+        .map(|f| (f.node, f.line))
+        .collect();
     let declared = |id: &str| s.node(id).and_then(|n| n.span).map(|(start, _)| start).unwrap();
     // of `scale`, the declaration left open is its overload without types
     let open_overload = s.node("units.core.scale").unwrap().overloads.iter().find(|o| o.params.iter().any(|p| p.ty.is_empty())).unwrap();
@@ -1616,9 +1727,35 @@ fn doors_every_declaration_of_a_door_says_what_goes_in_and_out() {
     assert!(parse.returns.as_ref().is_some_and(|r| r.written == "Any" && r.unchecked));
 }
 
+/// A class's doors are the names a user may run on it, its own and those it inherits. Both
+/// sides export `Square`, which inherits `show` from the mixin `Shown` that the package does not
+/// export. The clean `Square.area` and `Shown.show` say what they give; the shortcut leaves both
+/// unsaid, and each is asked where it is declared, the inherited one in its mixin. `label` uses
+/// what `area` gives, and a door is asked by `doors`, not again by `gives`.
+#[test]
+fn doors_a_method_of_a_door_says_what_it_gives_and_so_does_what_it_inherits() {
+    let (c, s) = (units("clean"), units("shortcut"));
+    assert!(found_in(&c, "doors", "units.shapes").is_empty(), "{:?}", found_in(&c, "doors", "units.shapes"));
+    assert_eq!(found_in(&s, "doors", "units.shapes"), ["units.shapes.Shown.show", "units.shapes.Square.area"]);
+    for g in [&c, &s] {
+        assert_eq!(g.node("units.shapes.Square").unwrap().entry.as_ref().map(|e| e.kind), Some(EntryKind::Export));
+        assert!(g.node("units.shapes.Shown").unwrap().entry.is_none(), "the mixin is no door of its own");
+        assert!(edge(g, "units.shapes.Square", "units.shapes.Shown", EdgeKind::Inherits));
+    }
+    // the methods left open are in the graph, and what `area` gives is used
+    for m in ["units.shapes.Shown.show", "units.shapes.Square.area"] {
+        assert_eq!(s.node(m).unwrap_or_else(|| panic!("{m} is in the graph")).returns, None, "{m}");
+    }
+    assert!(s
+        .edges
+        .iter()
+        .any(|e| e.kind == EdgeKind::Calls && e.uses && e.src == "units.shapes.label" && e.dst == "units.shapes.Square.area"));
+    assert!(found_in(&s, "gives", "units.shapes").is_empty(), "{:?}", found_in(&s, "gives", "units.shapes"));
+}
+
 /// One side of the nothing pair (`tests/pairs/nothing`): a job runner that runs a task, says when a
 /// job is done, reports, counts its runs, settles its log and stops the run, in Python, Rust and
-/// TypeScript alike.
+/// TypeScript alike; in Python also a worker that trims names and closes when its work is done.
 fn jobs(side: &str) -> Graph {
     analyze(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/pairs/nothing/python").join(side), &Options::default()).unwrap()
 }
@@ -1640,7 +1777,7 @@ fn nothing_says_what_atlas_cannot_see() {
         assert!(g.node("jobs.runner.stop").unwrap().raises, "ending the run is what `stop` leaves behind");
     }
     let want = ["run_task", "Job.finish", "report", "count", "settle"].map(|f| format!("jobs.runner.{f}"));
-    assert_eq!(found(&s, "nothing"), want);
+    assert_eq!(found_in(&s, "nothing", "jobs.runner"), want);
     // what each runs that Atlas cannot see into, as the code writes it: a method only declared, a call on a field, a call
     // into a library no table describes, a value its class keeps; `settle` runs nothing at all
     assert!(edge(&s, "jobs.runner.run_task", "jobs.runner.Task.run", EdgeKind::Calls));
@@ -1657,8 +1794,32 @@ fn nothing_says_what_atlas_cannot_see() {
     assert_eq!(s.node("jobs.runner.settle").unwrap().entry.as_ref().map(|e| e.kind), Some(EntryKind::Export), "settle is a door");
 }
 
+/// A call leaves something behind, also a call through `self` that a subclass makes to what it
+/// inherits, and a call whose body computes a value only to drop it. On both sides `Worker.work`
+/// trims each name and closes, `close` inherited from `Closing`. The clean `close` writes its log
+/// and `trim` gives the trimmed name; the shortcut's `close` is `pass` and its `trim` drops what
+/// `strip` gives. Atlas sees all that each runs, and asks whether each is dead.
+#[test]
+fn nothing_an_inherited_method_that_does_nothing_and_a_body_that_drops_its_value() {
+    let (c, s) = (jobs("clean"), jobs("shortcut"));
+    assert!(found_in(&c, "nothing", "jobs.closing").is_empty(), "{:?}", found_in(&c, "nothing", "jobs.closing"));
+    assert_eq!(found_in(&s, "nothing", "jobs.closing"), ["jobs.closing.Closing.close", "jobs.closing.trim"]);
+    for g in [&c, &s] {
+        assert!(
+            edge(g, "jobs.closing.Worker.work", "jobs.closing.Closing.close", EdgeKind::Calls),
+            "`self.close()` runs the inherited close"
+        );
+        assert!(edge(g, "jobs.closing.Worker.work", "jobs.closing.trim", EdgeKind::Calls));
+    }
+    assert!(touches(&c, "jobs.closing.Closing.close", "disk_write").len() == 1, "the clean close writes its log");
+    for f in ["jobs.closing.Closing.close", "jobs.closing.trim"] {
+        let n = s.node(f).unwrap_or_else(|| panic!("{f} is in the graph"));
+        assert!(n.touches.is_empty() && n.unseen.is_empty(), "{f}: Atlas sees all it runs: {n:?}");
+    }
+}
+
 /// One side of the gives pair (`tests/pairs/gives`): readings kept in a file, how many there are,
-/// and the readings ranked, in Python and TypeScript alike.
+/// and the readings ranked, in Python and TypeScript alike; in Python also a journal kept in SQLite.
 fn readings(side: &str) -> Graph {
     analyze(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/pairs/gives/python").join(side), &Options::default()).unwrap()
 }
@@ -1672,7 +1833,7 @@ fn readings(side: &str) -> Graph {
 fn gives_a_key_handed_on_is_a_value_used() {
     let (c, s) = (readings("clean"), readings("shortcut"));
     assert!(found(&c, "gives").is_empty(), "{:?}", found(&c, "gives"));
-    assert_eq!(found(&s, "gives"), ["readings.store.get_store", "readings.store.score"]);
+    assert_eq!(found_in(&s, "gives", "readings.store"), ["readings.store.get_store", "readings.store.score"]);
     for g in [&c, &s] {
         assert!(
             g.edges
@@ -1691,6 +1852,27 @@ fn gives_a_key_handed_on_is_a_value_used() {
 #[ignore = "gap (b): a property read is no call in the graph, so an untyped property is not asked"]
 fn gives_a_property_read_is_a_value_used() {
     assert!(found(&readings("shortcut"), "gives").contains(&"readings.store.Store.size".to_string()));
+}
+
+/// A method whose value its own class uses says what it gives, as a function does. On both sides
+/// `Journal.entries` runs its statement on the connection `self.connection()` gives. The clean
+/// `connection` says it is a `sqlite3.Connection`; the shortcut's says nothing, and is asked.
+#[test]
+fn gives_a_method_its_own_class_uses_says_what_it_gives() {
+    let (c, s) = (readings("clean"), readings("shortcut"));
+    assert!(found_in(&c, "gives", "readings.journal").is_empty(), "{:?}", found_in(&c, "gives", "readings.journal"));
+    assert_eq!(found_in(&s, "gives", "readings.journal"), ["readings.journal.Journal.connection"]);
+    for g in [&c, &s] {
+        assert!(g.edges.iter().any(|e| e.kind == EdgeKind::Calls
+            && e.uses
+            && e.src == "readings.journal.Journal.entries"
+            && e.dst == "readings.journal.Journal.connection"));
+    }
+    assert_eq!(
+        c.node("readings.journal.Journal.connection").unwrap().returns.as_ref().map(|r| r.written.as_str()),
+        Some("sqlite3.Connection")
+    );
+    assert_eq!(s.node("readings.journal.Journal.connection").unwrap().returns, None);
 }
 
 /// Where the program starts may name places, and a program `pyproject.toml` declares is where it
@@ -1720,8 +1902,9 @@ fn places_a_declared_program_is_a_command_flat_or_in_a_package() {
     assert!(package.node("tally.cli.main").is_some_and(|n| !n.exported), "{:?}", package.node("tally.cli.main").map(|n| &n.entry));
 }
 
-/// The places pair, `places/python`: rows read and kept, and pages made from a template the
-/// package ships, the same on both sides but for where the rows come from.
+/// The places pair, `places/python`: rows read and kept, pages made from a template the package
+/// ships, a report a command writes, rows kept by kind and a cache, the same on both sides but for
+/// who decides where each lives.
 fn stock(side: &str) -> Graph {
     analyze(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/pairs/places/python").join(side), &Options::default()).unwrap()
 }
@@ -1735,7 +1918,7 @@ fn stock(side: &str) -> Graph {
 fn places_the_function_that_writes_the_path_decides_it() {
     let (c, s) = (stock("clean"), stock("shortcut"));
     assert!(found(&c, "places").is_empty(), "{:?}", found(&c, "places"));
-    assert_eq!(found(&s, "places"), ["stock.rows.default_rows"]);
+    assert_eq!(found_in(&s, "places", "stock.rows"), ["stock.rows.default_rows"]);
     let read = |g: &Graph, by: &str| {
         touches(g, "stock.rows.read_rows", "disk_read").iter().any(|t| t.artifact == "data/rows.csv" && !t.fixed && t.fixed_by == [by])
     };
@@ -1781,6 +1964,69 @@ fn places_a_file_shipped_with_the_package_is_part_of_it() {
         assert!(read.iter().any(|t| t.artifact == "src/stock/template.html" && !t.fixed && t.fixed_by.is_empty()), "{f}: {read:?}");
     }
     assert!(found(&c, "places").is_empty(), "{:?}", found(&c, "places"));
+}
+
+/// Where the program starts is the entry itself; a function beside it is library code. On both
+/// sides the command `report` names the file it writes, as an entry may, and is asked nothing.
+/// The clean command hands `summary` the file it writes; the shortcut's `summary` names its own,
+/// and is asked.
+#[test]
+fn places_a_function_beside_a_command_is_library_code() {
+    let (c, s) = (stock("clean"), stock("shortcut"));
+    assert!(found_in(&c, "places", "stock.report").is_empty(), "{:?}", found_in(&c, "places", "stock.report"));
+    assert_eq!(found_in(&s, "places", "stock.report"), ["stock.report.summary"]);
+    for g in [&c, &s] {
+        assert_eq!(g.node("stock.report.report").unwrap().entry.as_ref().map(|e| e.kind), Some(EntryKind::Cli));
+        assert!(touches(g, "stock.report.report", "disk_write").iter().any(|t| t.artifact == "out/report.txt" && t.fixed));
+        assert!(edge(g, "stock.report.report", "stock.report.summary", EdgeKind::Calls));
+    }
+    let written =
+        |g: &Graph| touches(g, "stock.report.summary", "disk_write").iter().map(|t| (t.artifact.clone(), t.fixed)).collect::<Vec<_>>();
+    assert_eq!(written(&s), [("out/summary.txt".to_string(), true)]);
+    assert!(written(&c).iter().all(|(_, fixed)| !fixed), "{:?}", written(&c));
+}
+
+/// A module's constant is a place the library decides itself. The shortcut's `kept` keeps its
+/// rows under `DATA = Path("data")`, and each function that reaches a file through it is asked:
+/// one that lists `data/raw/`, one that writes and one that reads `data/{kind}/report.json`, one
+/// that copies to `data/config.toml` with `shutil`, one that writes `data/frame.csv` with pandas;
+/// and so is `Sink.write`, a method that names its own file. The clean `kept` takes the folder,
+/// and its `Sink` the file, from whoever calls.
+#[test]
+fn places_a_module_s_constant_decides_where_data_lives() {
+    let (c, s) = (stock("clean"), stock("shortcut"));
+    assert!(found_in(&c, "places", "stock.kept").is_empty(), "{:?}", found_in(&c, "places", "stock.kept"));
+    let want = ["kinds", "report", "read_report", "install", "export", "Sink.write"].map(|f| format!("stock.kept.{f}"));
+    assert_eq!(found_in(&s, "places", "stock.kept"), want);
+    // each still reaches its file, in the direction its call goes
+    for (f, kind, file) in [
+        ("kinds", "disk_read", "data/raw/"),
+        ("report", "disk_write", "data/*/report.json"),
+        ("read_report", "disk_read", "data/*/report.json"),
+        ("install", "disk_write", "data/config.toml"),
+        ("export", "disk_write", "data/frame.csv"),
+        ("Sink.write", "disk_write", "out.json"),
+    ] {
+        let at = touches(&s, &format!("stock.kept.{f}"), kind);
+        assert!(at.iter().any(|t| t.artifact == file && t.fixed), "{f}: {at:?}");
+    }
+}
+
+/// A function that builds a value on a folder decides the place the value's method writes under,
+/// as it would had it written the file itself. On both sides a `Cache` keeps entries under the
+/// root its initializer is handed, and a `Bin`, a dataclass, under its field `root`; each default
+/// is an option and asked nothing. The clean `warm` and `tidy` hand on the root they are handed;
+/// the shortcut's build theirs on `Path("warm")` and `Path("tidy")`, and are asked.
+#[test]
+fn places_a_folder_handed_to_a_constructor_is_decided_by_the_function_that_hands_it() {
+    let (c, s) = (stock("clean"), stock("shortcut"));
+    assert!(found_in(&c, "places", "stock.cache").is_empty(), "{:?}", found_in(&c, "places", "stock.cache"));
+    assert_eq!(found_in(&s, "places", "stock.cache"), ["stock.cache.warm", "stock.cache.tidy"]);
+    for (method, by, file) in [("Cache.keep", "warm", "warm/a.txt"), ("Bin.drop", "tidy", "tidy/x.txt")] {
+        let at = touches(&s, &format!("stock.cache.{method}"), "disk_write");
+        assert!(at.iter().any(|t| t.artifact == file && t.fixed_by == [format!("stock.cache.{by}")]), "{method}: {at:?}");
+        assert!(!touches(&c, &format!("stock.cache.{method}"), "disk_write").iter().any(|t| t.fixed || !t.fixed_by.is_empty()), "{method}");
+    }
 }
 
 /// One side of the diamond pair (`tests/pairs/diamond`): a feed that is a buffered and a cached

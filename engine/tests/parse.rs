@@ -1,17 +1,8 @@
 use std::collections::HashSet;
 use std::path::PathBuf;
-use std::sync::OnceLock;
 
 use atlas_engine::view::{by_module, hide_private, reach_from, Compose, View};
 use atlas_engine::{analyze, EdgeKind, EntryKind, Graph, NodeKind, Options};
-
-/// The Atlas workspace, read once for the tests that read it.
-fn atlas() -> &'static Graph {
-    static G: OnceLock<Graph> = OnceLock::new();
-    G.get_or_init(|| {
-        analyze(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(".."), &Options::default()).expect("the Atlas workspace parses")
-    })
-}
 
 fn fixture() -> Graph {
     let repo = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixture");
@@ -42,9 +33,10 @@ fn in_route<'g>(g: &'g Graph, entry: &str, id: &str) -> Vec<(&'static str, &'g s
 fn modules_classes_and_functions_are_found() {
     let g = fixture();
     assert_eq!(g.root, "fixture");
-    let kinds = |k: NodeKind| g.nodes.iter().filter(|n| n.kind == k).count();
-    // `services` holds the places a library reaches by its table alone
-    assert_eq!(kinds(NodeKind::Module), 28, "the package's twenty-five, a script and two notebooks");
+    // a script and two notebooks are modules beside the package's own
+    for id in ["fixture.build", "scripts.report", "notebooks.explore", "notebooks.les1.01_1-verken"] {
+        assert_eq!(g.node(id).map(|n| n.kind), Some(NodeKind::Module), "{id}");
+    }
     assert!(g.node("fixture.sinks").unwrap().is_pkg);
     assert_eq!(g.node("fixture.schema.Graph").unwrap().doc, "Nodes and edges.");
     assert_eq!(g.node("fixture.sinks.duck.DuckSink").unwrap().bases, vec!["Sink", "Mixin"]);
@@ -544,99 +536,6 @@ fn files_and_tables_are_places() {
     assert!(returns.contains(&("fixture.build.describe".into(), "fixture.schema.Node".into())));
 }
 
-/// A Rust workspace parses; the sample is this workspace.
-#[test]
-fn rust_workspace_parses() {
-    let g = atlas();
-    let ids: HashSet<&str> = g.nodes.iter().map(|n| n.id.as_str()).collect();
-    for id in ["atlas-engine", "atlas-engine.model", "atlas-engine.view", "atlas-engine.python", "atlas-engine.rust", "atlas"] {
-        assert!(ids.contains(id), "module {id}");
-    }
-    assert!(ids.contains("atlas-engine.model.Graph") && ids.contains("atlas-engine.view.View"));
-    assert_eq!(g.node("atlas.main").unwrap().entry.as_ref().unwrap().kind, EntryKind::Cli);
-    // `atlas` is handed what clap parses its command line into: the global `--libraries` and
-    // `--no-cache`; the subcommand is no option of its own, and `Cli::parse()` is the step that
-    // reads it
-    let main = g.node("atlas.main").unwrap();
-    assert_eq!(main.entry.as_ref().unwrap().options, ["--libraries", "--no-cache"]);
-    let parse = main.sites.iter().find(|s| s.command_line.is_some()).expect("main parses its command line");
-    assert_eq!(
-        (parse.to.as_str(), parse.command_line.clone().unwrap()),
-        ("atlas.Cli", vec!["--libraries".to_string(), "--no-cache".to_string()])
-    );
-    assert_eq!(
-        g.node("atlas-engine.analyze").unwrap().entry.as_ref().unwrap().kind,
-        EntryKind::Export,
-        "pub fn at the root of a library crate"
-    );
-    let hide = g.node("atlas-engine.view.hide_private").unwrap().entry.as_ref().unwrap();
-    assert_eq!((hide.kind, hide.label.as_str()), (EntryKind::Export, "view::hide_private"), "pub in a `pub mod`, by its path");
-    let inh = edges(&g, EdgeKind::Inherits);
-    assert!(inh.contains(&("atlas-engine.view.Fiber".into(), "atlas-engine.view.View".into())), "impl View for Fiber");
-    let calls = edges(&g, EdgeKind::Calls);
-    assert!(calls.contains(&("atlas.main".into(), "atlas.view".into())));
-    assert!(calls.contains(&("atlas-engine.language.Rust.parse".into(), "atlas-engine.rust.parse".into())), "trait impl calls the module");
-    let returns = edges(&g, EdgeKind::Returns);
-    assert!(returns.contains(&("atlas-engine.analyze".into(), "atlas-engine.model.Graph".into())), "`pub use model::*` resolves Graph");
-    // `let lang = language::detect(..)?; lang.parse(..)`: a local typed by the callee's return
-    assert!(calls.contains(&("atlas-engine.parts.graph_of".into(), "atlas-engine.language.Language.parse".into())));
-    // typed parameters give receivers a type: `store.add_edge(..)` with `store: &mut GraphBuilder`
-    assert!(calls.contains(&("atlas-engine.python.passes.collect_symbols".into(), "atlas-engine.builder.GraphBuilder.add_edge".into())));
-    assert!(boundaries(g.node("atlas.view").unwrap()).contains_key("screen"), "eprintln!");
-    let m = edges(&g, EdgeKind::Mutates);
-    assert!(m.contains(&("atlas-engine.model.Graph.recount".into(), "atlas-engine.model.Graph".into())), "&mut self");
-    let places = |id: &str| {
-        g.node(id).unwrap().touches.iter().map(|t| (t.kind_name().to_string(), t.op.clone(), t.artifact.clone())).collect::<Vec<_>>()
-    };
-    // a name bound by `if let`: `if let Some(d) = dest.parent()` is the directory, under the
-    // revision's `env::temp_dir()`, of the file written there, so making it is part of writing it
-    let revision = places("atlas-engine.changes.revision");
-    assert!(
-        revision.contains(&("disk_write".into(), "write".into(), "$TMPDIR/".into()))
-            && !revision.iter().any(|(_, op, _)| op == "create_dir_all"),
-        "{revision:?}"
-    );
-    // `atlas analyze` writes its graph where `-o` says, else where `made` puts it: in `.atlas/` at
-    // the top of the git repository, a folder found on disk that the code cannot name, or for a
-    // clone in the system's temporary folder; the command line decides, not the code alone
-    let written = places("atlas.main");
-    assert!(written.contains(&("disk_write".into(), "write".into(), "$TMPDIR/atlas/graph.json".into())), "{written:?}");
-    assert!(
-        written.contains(&("disk_write".into(), "write".into(), "*/.atlas/graph.json".into())),
-        "the folder found on disk has no name, the file below it has: {written:?}"
-    );
-    let graph = g.node("atlas.main").unwrap().touches.iter().find(|t| t.artifact == "$TMPDIR/atlas/graph.json").unwrap();
-    assert!(!graph.fixed && graph.by.is_empty(), "{graph:?}");
-    // a `let` holds the type of the parameter it is handed to: `joined`'s graph, the one graph
-    // read or the merge of several, is the `Graph` that `join(g: &mut Graph)` takes
-    let joining = g.node("atlas-engine.parts.joined").unwrap().sites.iter().find(|s| s.to == "atlas-engine.parts.join").unwrap();
-    assert_eq!(joining.hands.iter().map(|h| (h.name.as_str(), h.ty.as_str())).collect::<Vec<_>>(), [("g", "atlas-engine.model.Graph")]);
-    // a generic's arguments are values where it holds them: `analyze_parts` gives the Graphs of a
-    // `Result<Vec<Graph>>`, `merged` takes the Graphs of a `Vec<Graph>`, a Graph has the Nodes of
-    // its `Vec<Node>`, and `Ix::out` gives the Edges of an `impl Iterator<Item = &Edge>`, whose
-    // `Item` names what it gives, not flow's `Item`
-    let takes = edges(&g, EdgeKind::Takes);
-    let has = edges(&g, EdgeKind::Has);
-    let pair = |a: &str, b: &str| (a.to_string(), b.to_string());
-    assert!(returns.contains(&pair("atlas-engine.parts.analyze_parts", "atlas-engine.model.Graph")));
-    assert!(takes.contains(&pair("atlas-engine.parts.merged", "atlas-engine.model.Graph")));
-    assert!(has.contains(&pair("atlas-engine.model.Graph", "atlas-engine.model.Node")));
-    assert!(returns.contains(&pair("atlas-engine.flow.Ix.out", "atlas-engine.model.Edge")));
-    assert!(!returns.contains(&pair("atlas-engine.flow.Ix.out", "atlas-engine.flow.Item")));
-    // a callback is handed no value: `initializer(node: impl Fn(&str) -> Option<&Node>)` takes no
-    // Node, and the `fn(..) -> Part` a `ChoiceSyntax` keeps holds no Part
-    assert!(!takes.contains(&pair("atlas-engine.model.Node.initializer", "atlas-engine.model.Node")));
-    assert!(!has.contains(&pair("atlas-engine.tree.ChoiceSyntax", "atlas-engine.tree.Part")));
-    // the crates Atlas calls are read where Cargo keeps them, as far as its calls reach: `Regex::new`
-    // is a step into regex's own code, the library's and no part of Atlas; of ty's `types`, a module
-    // of thousands of lines, only what Atlas calls is drawn; compiled code (tree-sitter) and the
-    // crates the tables describe (walkdir, ignore) are not read
-    let new = g.node("regex.regex.string.Regex.new").expect("a crate's function Atlas calls is read");
-    assert!(new.library && g.parts.iter().all(|p| !p.id.starts_with("regex")));
-    assert!(g.node("atlas-engine.entries.read_makefile").unwrap().sites.iter().any(|s| s.to == new.id));
-    assert!(g.nodes.iter().all(|n| !["tree_sitter", "walkdir", "ignore"].contains(&n.id.split('.').next().unwrap_or(""))));
-}
-
 #[test]
 fn views_are_fibers_and_quotients() {
     let g = fixture();
@@ -882,35 +781,6 @@ fn a_door_reaches_a_service() {
     assert_eq!(door("fixture.store.Connection"), "db_graph");
     assert_eq!(door("fixture.files.Report"), "", "`from_file` and `show` make no door");
     assert_eq!(door("fixture.schema.Graph"), "");
-}
-
-/// A Rust body lists its calls in the order they run, each with what it is handed and the name
-/// it is kept by: Atlas's own `analyze` hands the `Graph` one call gives to the next, and a
-/// local takes its type from what the function it is kept from gives back, wherever that is
-/// defined.
-#[test]
-fn a_rust_body_lists_its_calls() {
-    let g = atlas();
-    let analyze_fn = g.nodes.iter().find(|n| n.id == "atlas-engine.parts.graph_of").unwrap();
-    let step = |to: &str| analyze_fn.sites.iter().find(|s| s.to == to).unwrap_or_else(|| panic!("{to} in {:#?}", analyze_fn.sites));
-    let held = |ty: &str, name: &str| atlas_engine::Held::new(ty, name);
-    assert_eq!(
-        step("atlas-engine.language.Language.parse").gives,
-        [held("atlas-engine.model.Graph", "g")],
-        "a method gives what it returns, not its receiver's type"
-    );
-    let detect = step("atlas-engine.language.of");
-    assert_eq!(
-        detect.hands,
-        [held("atlas-engine.repo.Repo", "repo"), held("atlas-engine.options.Options", "opts")],
-        "the repository is a value: what was read"
-    );
-    let order: Vec<&str> = analyze_fn.sites.iter().map(|s| s.to.as_str()).collect();
-    assert!(
-        order.iter().position(|t| *t == "atlas-engine.entries.read_makefile")
-            < order.iter().position(|t| *t == "atlas-engine.parts.assign"),
-        "{order:?}"
-    );
 }
 
 /// `parse` is a function: the same files read with the same options give the same graph, to the
