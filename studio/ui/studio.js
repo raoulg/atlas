@@ -1,5 +1,7 @@
 const { invoke, Channel } = window.__TAURI__.core;
-const { listen } = window.__TAURI__.event;
+// events for this window: each window is one workspace, and a menu item acts on the window in front
+const thisWindow = window.__TAURI__.webviewWindow.getCurrentWebviewWindow();
+const listen = (event, handler) => thisWindow.listen(event, handler);
 const byId = (id) => document.getElementById(id);
 let workspace = null;
 let activeView = 'atlas';
@@ -80,6 +82,7 @@ const workspaces = window.AtlasWorkspaces.mount(byId('workspaces'), {
   open: (path) => openAt(path),
   openFolder: () => openFolder(),
   forget: (path) => invoke('forget_workspace', {path}),
+  elsewhere: () => invoke('open_elsewhere'),
   closed: () => selectView(activeView),
 });
 
@@ -148,7 +151,7 @@ function showState(name, error = '') {
 function selectView(view) {
   activeView = view;
   // going to a view leaves the workspaces page and the update's
-  if (workspace) { byId('workspaces').hidden = true; byId('updates').hidden = true; }
+  if (workspace) { byId('workspaces').hidden = true; byId('updates').hidden = true; byId('settings').hidden = true; }
   for (const tab of document.querySelectorAll('.side-tab')) {
     const selected = tab.dataset.view === view;
     tab.classList.toggle('active', selected);
@@ -220,6 +223,8 @@ async function opening(open) {
   if (!hadWorkspace) showState('loading');
   else byId('status-text').textContent = 'Opening workspace…';
   try {
+    // nothing opened: the dialog was cancelled, or the workspace is open in another window, which came
+    // to the front
     const opened = await open();
     if (opened) displayWorkspace(opened);
     else if (!hadWorkspace) showState('welcome');
@@ -229,10 +234,12 @@ async function opening(open) {
     else showState('error', String(error));
   }
 }
-const openAt = (path) => opening(() => invoke('open_workspace_at', {path}));
+// a workspace open in another window brings that window to the front, and this one goes back to its own
+const openAt = (path) => opening(() => invoke('open_workspace_at', {path})).then(() => { if (workspace && workspaces.isShown()) selectView(activeView); });
 const openFolder = () => opening(() => invoke('choose_workspace'));
 // the workspaces page covers the view, and the view's controls step aside
 const showWorkspaces = () => { byId('atlas-bar').hidden = true; workspaces.show(Boolean(workspace)); };
+byId('open-workspace').addEventListener('click', showWorkspaces);
 
 byId('insert-atlas-view').addEventListener('click', async () => {
   if (!currentLesson) return;
@@ -243,6 +250,14 @@ byId('insert-atlas-view').addEventListener('click', async () => {
 byId('workspace-button').addEventListener('click', showWorkspaces);
 byId('terminal-toggle').addEventListener('click', () => showTerminal());
 for (const tab of document.querySelectorAll('.side-tab')) tab.addEventListener('click', () => selectView(tab.dataset.view));
+// which build this is, at the right of the status bar: its version, and for a nightly its commit
+let buildSaid = 'Atlas Studio';
+invoke('studio_build').then((build) => {
+  buildSaid = `Atlas Studio ${build.version}` + (build.nightly ? ` · nightly ${build.commit}` : '');
+  byId('studio-version').textContent = `Atlas Studio ${build.version}` + (build.nightly ? ` · nightly ${build.commit}` : '');
+  byId('studio-version').title = `atlas ${build.version}${build.nightly ? '-nightly' : ''}${build.commit ? ` (${build.commit})` : ''}`;
+}).catch(() => {});
+
 // a newer build of Studio's channel, looked for once an hour against an answer a day old at most
 const updates = window.AtlasUpdates.mount(byId('updates'), byId('update-button'), {
   install: () => invoke('install_update'),
@@ -260,6 +275,17 @@ async function checkNow() {
   } catch (error) { byId('status-text').textContent = String(error); }
 }
 
+// Studio's settings (⌘,): the theme, the coding agents with Atlas, the version
+const settingsPage = window.AtlasSettings.mount(byId('settings'), {
+  get: () => invoke('get_settings'),
+  setTheme: (theme) => invoke('set_theme', {theme}),
+  register: (id) => invoke('register_agent', {id}),
+  build: () => buildSaid,
+  checkUpdates: () => checkNow(),
+  say: (text) => { byId('status-text').textContent = text; },
+  closed: () => { if (workspace) selectView(activeView); else showState('welcome'); },
+});
+
 // the menu bar's items, said by name
 listen('studio-menu', ({payload}) => {
   const action = payload?.action;
@@ -271,6 +297,7 @@ listen('studio-menu', ({payload}) => {
   else if (action === 'view.history' && workspace) selectView('history');
   else if (action === 'view.terminal') showTerminal();
   else if (action === 'update.check') checkNow();
+  else if (action === 'settings') { byId('atlas-bar').hidden = true; settingsPage.show(); }
 });
 listen('studio-backend-stopped', () => { displayWorkspace(null); showState('error', 'Atlas stopped. Open the workspace again to restart it.'); });
 showState('loading');

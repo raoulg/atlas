@@ -91,13 +91,16 @@ pub fn menu<R: Runtime>(app: &AppHandle<R>, recent: &[Recent]) -> tauri::Result<
     }
     let clear = MenuItemBuilder::with_id("workspace.clear", "Clear Recent").enabled(!recent.is_empty()).build(app)?;
     let file = SubmenuBuilder::new(app, "File")
+        .item(&MenuItemBuilder::with_id("window.new", "New Window").accelerator("CmdOrCtrl+N").build(app)?)
+        .separator()
         .item(&MenuItemBuilder::with_id("workspace.page", "Open Workspace…").accelerator("CmdOrCtrl+O").build(app)?)
         .item(&MenuItemBuilder::with_id("workspace.folder", "Open Folder…").accelerator("CmdOrCtrl+Shift+O").build(app)?)
         .item(&opened.item(&clear).build()?)
         .separator()
         .close_window();
     #[cfg(not(target_os = "macos"))]
-    let file = file.separator().quit();
+    let file =
+        file.separator().item(&MenuItemBuilder::with_id("settings", "Settings…").accelerator("CmdOrCtrl+,").build(app)?).separator().quit();
     let edit = SubmenuBuilder::new(app, "Edit").undo().redo().separator().cut().copy().paste().select_all().build()?;
     let view = SubmenuBuilder::new(app, "View")
         .item(&MenuItemBuilder::with_id("view.atlas", "Atlas View").accelerator("CmdOrCtrl+1").build(app)?)
@@ -114,6 +117,8 @@ pub fn menu<R: Runtime>(app: &AppHandle<R>, recent: &[Recent]) -> tauri::Result<
         let own = SubmenuBuilder::new(app, name)
             .about(Some(about()))
             .item(&MenuItemBuilder::with_id("update.check", "Check for Updates…").build(app)?)
+            .separator()
+            .item(&MenuItemBuilder::with_id("settings", "Settings…").accelerator("CmdOrCtrl+,").build(app)?)
             .separator()
             .services()
             .separator()

@@ -68,7 +68,8 @@
         item.classList.toggle('current', workspace.path === bridge.current());
         const text = node('div', 'workspace-text');
         text.append(node('strong', '', workspace.name), node('span', '', workspace.path));
-        const when = node('span', 'workspace-when', workspace.path === bridge.current() ? 'open now' : ago(workspace.opened));
+        const when = node('span', 'workspace-when',
+          workspace.path === bridge.current() ? 'open now' : elsewhere.has(workspace.path) ? 'open in another window' : ago(workspace.opened));
         const forget = node('button', 'workspace-forget', '×');
         forget.type = 'button';
         forget.title = 'Remove from this list';
@@ -92,8 +93,11 @@
       bridge.open(workspace.path);
     }
 
+    let elsewhere = new Set();
+
     async function refresh() {
       try { recent = await bridge.list(); } catch { recent = []; }
+      try { elsewhere = new Set(await bridge.elsewhere()); } catch { elsewhere = new Set(); }
       draw();
     }
 

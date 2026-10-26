@@ -13,7 +13,7 @@ const DAY: u64 = 24 * 60 * 60;
 const API: &str = "https://api.github.com/repos/raoulg/atlas/releases";
 
 /// Which build this is: `0.68.0`, nightly or not, and the commit it is made from.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize)]
 pub struct Build {
     pub version: String,
     pub nightly: bool,
