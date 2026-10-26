@@ -32,6 +32,10 @@ The bundled viewer contains D3, highlight.js, and ELK and can render without a n
 
 On Windows, run `./studio/prepare-sidecar.ps1` in PowerShell before the Tauri build. The app icon uses the repository's `docs/logo.svg`.
 
+## Updates
+
+Once a day Studio asks GitHub whether a newer build of its channel is out, as the CLI does: a release for a release build, the newest nightly for a nightly build (and for a build of `next`). Which build Studio is, its own `atlas` says (`atlas --version`), which is of the same commit and channel. When one is, a button in the status bar says so, and a page shows what changed: the release's page of notes (`releases/<version>/` on the documentation site), or for a nightly, or a release without a page, a link to the changes on GitHub. The page opens by itself once per newer build. **Update and restart** installs it where Studio is: on macOS through `install-studio.sh` into the app's own folder, then Studio starts again; on Windows the setup program runs, passive, and starts Studio again. Atlas Studio › Check for Updates… (Help › Check for Updates… on Windows and Linux) asks at once. `ATLAS_NO_UPDATE_CHECK` set turns the daily look off.
+
 ## Workspaces
 
 Studio keeps the last twenty workspaces it opened. ⌘O (File › Open Workspace…) shows them, most recent first: type to filter, arrows and Enter to open one, × to take one off the list. **Open folder…** (⇧⌘O) opens a new one through the system's dialog. File › Open Recent lists the same workspaces, with Clear Recent. With no workspace open, the same page is where Studio starts. The list lives in Studio's configuration folder (`~/Library/Application Support/io.github.raoulg.atlas-studio/workspaces.json` on macOS).

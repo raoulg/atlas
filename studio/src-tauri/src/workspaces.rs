@@ -100,6 +100,7 @@ pub fn menu<R: Runtime>(app: &AppHandle<R>, recent: &[Recent]) -> tauri::Result<
         let name = app.package_info().name.clone();
         let own = SubmenuBuilder::new(app, name)
             .about(None)
+            .item(&MenuItemBuilder::with_id("update.check", "Check for Updates…").build(app)?)
             .separator()
             .services()
             .separator()
@@ -115,6 +116,10 @@ pub fn menu<R: Runtime>(app: &AppHandle<R>, recent: &[Recent]) -> tauri::Result<
     bar.append(&edit)?;
     bar.append(&view.build()?)?;
     bar.append(&window)?;
+    #[cfg(not(target_os = "macos"))]
+    bar.append(
+        &SubmenuBuilder::new(app, "Help").item(&MenuItemBuilder::with_id("update.check", "Check for Updates…").build(app)?).build()?,
+    )?;
     Ok(bar)
 }
 

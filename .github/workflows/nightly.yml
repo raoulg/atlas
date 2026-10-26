@@ -99,6 +99,7 @@ jobs:
     uses: ./.github/workflows/studio.yml
     with:
       ref: ${{ needs.decide.outputs.sha }}
+      channel: nightly
 
   publish:
     needs: [decide, build, studio]

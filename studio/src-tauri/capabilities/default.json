@@ -3,5 +3,5 @@
   "identifier": "main",
   "description": "The local Atlas Studio shell",
   "windows": ["main"],
-  "permissions": ["core:default"]
+  "permissions": ["core:default", "opener:default"]
 }

@@ -1,6 +1,7 @@
 mod files;
 mod lesson;
 mod terminal;
+mod update;
 mod workspaces;
 
 use std::{path::PathBuf, sync::Mutex, time::Duration};
@@ -284,6 +285,67 @@ fn terminal_close(terminals: tauri::State<'_, Terminals>, id: u32) -> Result<(),
     terminals.close(id)
 }
 
+/// Which build Studio is, as its sidecar says: the same commit and channel.
+async fn this_build(app: &tauri::AppHandle) -> Result<update::Build, String> {
+    let out = app.shell().sidecar("atlas").map_err(|e| e.to_string())?.args(["--version"]).output().await.map_err(|e| e.to_string())?;
+    update::build_of(&String::from_utf8_lossy(&out.stdout)).ok_or_else(|| "Studio's atlas does not say which build it is".into())
+}
+
+/// Whether a newer build of Studio's channel is out: from the answer kept, asked of GitHub again when
+/// it is a day old or `now` asks for it.
+async fn newer_build(app: &tauri::AppHandle, now: bool) -> Result<Option<update::Newer>, String> {
+    let build = this_build(app).await?;
+    let file = app.path().app_config_dir().map_err(|e| e.to_string())?.join("update.json");
+    let mut asked = update::read(&file);
+    if now || asked.stale(update::now()) {
+        let asking = build.clone();
+        let latest = tauri::async_runtime::spawn_blocking(move || update::ask(&asking)).await.map_err(|e| e.to_string())?;
+        if let Some(latest) = latest {
+            asked = update::Asked { checked: update::now(), latest };
+            update::keep(&file, &asked);
+        } else if now {
+            return Err("GitHub did not answer; try again later".into());
+        }
+    }
+    let newer = update::newer(&build, &asked.latest);
+    tauri::async_runtime::spawn_blocking(move || newer.map(update::shown)).await.map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn check_update(app: tauri::AppHandle, now: bool) -> Result<Option<update::Newer>, String> {
+    newer_build(&app, now).await
+}
+
+/// Install the newer build, then start Studio on it: again here on macOS, by the setup program on
+/// Windows, which Studio closes for.
+#[tauri::command]
+async fn install_update(app: tauri::AppHandle) -> Result<(), String> {
+    let build = this_build(&app).await?;
+    tauri::async_runtime::spawn_blocking(move || update::install(&build)).await.map_err(|e| e.to_string())??;
+    if cfg!(target_os = "windows") {
+        app.exit(0);
+    } else {
+        app.restart();
+    }
+    Ok(())
+}
+
+/// Once an hour Studio looks whether its answer is a day old, and says so when a newer build is out:
+/// a day after it was last asked, whether Studio ran in between or not.
+fn watch_updates(app: tauri::AppHandle) {
+    if std::env::var_os("ATLAS_NO_UPDATE_CHECK").is_some() {
+        return;
+    }
+    tauri::async_runtime::spawn(async move {
+        loop {
+            if let Ok(Some(newer)) = newer_build(&app, false).await {
+                let _ = app.emit("studio-update", newer);
+            }
+            tokio::time::sleep(Duration::from_secs(60 * 60)).await;
+        }
+    });
+}
+
 /// An app started from the Finder or the Dock gets the system's bare `PATH`, without what the
 /// user's shell profile adds (Homebrew, `uv`, `cargo`). The sidecar, the lessons' Python and the
 /// terminals take the `PATH` the user's login shell has, as a terminal application does.
@@ -322,6 +384,7 @@ fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_shell::init())
+        .plugin(tauri_plugin_opener::init())
         .manage(StudioState::default())
         .manage(Terminals::default())
         .register_uri_scheme_protocol("preview", |context, request| {
@@ -330,6 +393,10 @@ fn main() {
             files::preview(workspace.as_deref(), request.uri().path())
         })
         .menu(|app| workspaces::menu(app, &workspaces::recent(app)))
+        .setup(|app| {
+            watch_updates(app.handle().clone());
+            Ok(())
+        })
         .on_menu_event(|app, event| {
             // what the window does for a menu item, said to it by name; Clear Recent is the app's
             let id = event.id().as_ref();
@@ -360,6 +427,8 @@ fn main() {
             run_lesson,
             workspace_files,
             export_view,
+            check_update,
+            install_update,
             read_workspace_file,
             terminal_open,
             terminal_write,

@@ -23,6 +23,10 @@ on:
         description: "The commit to build"
         type: string
         required: true
+      channel:
+        description: "The channel the build is of: `release` or `nightly`"
+        type: string
+        default: nightly
   workflow_dispatch:
     inputs:
       ref:
@@ -32,6 +36,11 @@ on:
 
 permissions:
   contents: read
+
+# The channel a build is of, which its atlas names (`0.68.0-nightly (sha)`) and by which Studio looks
+# for its updates: a release's, or the nightly's, which a build of `next` pushed or run by hand is too.
+env:
+  ATLAS_CHANNEL: ${{ inputs.channel != 'release' && 'nightly' || '' }}
 
 jobs:
   dmg:

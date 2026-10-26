@@ -19,6 +19,7 @@
   <script defer src="terminal.js"></script>
   <script defer src="workspaces.js"></script>
   <script defer src="bar.js"></script>
+  <script defer src="updates.js"></script>
   <script defer src="studio.js"></script>
 </head>
 <body>
@@ -44,6 +45,7 @@
         <div class="stage">
           <div class="center">
             <section id="workspaces" class="workspaces" aria-label="Workspaces" hidden></section>
+            <section id="updates" class="updates" aria-label="Update" hidden></section>
             <div id="loading" class="message" hidden>Opening workspace…</div>
             <div id="error" class="message error" role="alert" hidden></div>
             <section id="views" class="views" aria-label="Atlas workspace" hidden>
@@ -59,7 +61,7 @@
         </section>
       </main>
     </div>
-    <footer class="statusbar"><span class="status-dot"></span><span id="status-text">Ready</span><button id="terminal-toggle" class="status-button" type="button" title="Show or hide the terminal (Ctrl+`)" disabled>▸_ Terminal</button><span class="status-right">Atlas Studio</span></footer>
+    <footer class="statusbar"><span class="status-dot"></span><span id="status-text">Ready</span><button id="update-button" class="status-button update" type="button" hidden></button><button id="terminal-toggle" class="status-button" type="button" title="Show or hide the terminal (Ctrl+`)" disabled>▸_ Terminal</button><span class="status-right">Atlas Studio</span></footer>
   </div>
 </body>
 </html>

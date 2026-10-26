@@ -60,6 +60,7 @@ jobs:
     uses: ./.github/workflows/studio.yml
     with:
       ref: ${{ github.sha }}
+      channel: release
 
   studio-upload:
     needs: studio
