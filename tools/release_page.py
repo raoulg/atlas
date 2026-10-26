@@ -95,6 +95,7 @@ pre code{background:none;border:0;padding:0}
 .example{margin:18px 0 6px}
 .example pre{margin:0 0 14px}
 @media(min-width:900px){.pair{grid-template-columns:1fr 1fr;align-items:start}}
+.pair.stack{grid-template-columns:1fr}
 section ul{padding-left:20px;margin:0 0 16px}
 section li{margin:4px 0}
 .diagram{margin:22px 0;background:var(--panel);border:1px solid var(--line);padding:14px}
@@ -278,7 +279,7 @@ def example(release: dict, name: str) -> str:
 
 
 def compare(spec: str) -> str:
-    """`img = label; img = label`: pictures side by side, each with its label."""
+    """`img = label; img = label`: pictures one above the other, each at the page's width with its label."""
     figures = []
     for item in [i for i in spec.split(";") if "=" in i]:
         path, label = (x.strip() for x in item.split("=", 1))
@@ -286,7 +287,7 @@ def compare(spec: str) -> str:
             f'<figure><div class="shot"><img src="../../{html.escape(path)}" alt="" loading="lazy"></div>'
             f'<figcaption><span class="tag after">{inline(label)}</span></figcaption></figure>'
         )
-    return f'<div class="pair">{"".join(figures)}</div>'
+    return f'<div class="pair stack">{"".join(figures)}</div>'
 
 
 def svg(path: pathlib.Path) -> str:

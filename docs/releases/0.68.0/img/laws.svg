@@ -1,32 +1,48 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 920 300" role="img" aria-label="A law comes from Atlas's mathematics. Where it can hold by construction, one function every picture uses keeps it, tested on small graphs drawn at random. Where no proof reaches, it is sampled every night on real programs, at random places within a time budget, and a broken place comes back with its seed.">
-  <g style="font-family:var(--sans);font-size:15px">
-    <!-- the mathematics -->
-    <rect x="16" y="112" width="190" height="72" rx="4" style="fill:var(--bg);stroke:var(--ink-3)"/>
-    <text x="32" y="142" style="fill:var(--ink);font-weight:500">The mathematics</text>
-    <text x="32" y="164" style="fill:var(--ink-3);font-size:13px">six sentences, one home</text>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 920 380" role="img" aria-label="A law as a commuting square: keeping whole modules and then grouping by module gives the same picture as grouping by module and then keeping. Atlas computes both routes on every small graph a test draws, and every night on real programs at places drawn at random within a time budget. Where keeping cuts a module in two, the routes differ, and the smallest counterexample shows it.">
+  <g style="font-family:var(--sans)">
+    <!-- the two ways the square is asked -->
+    <rect x="16" y="30" width="270" height="104" rx="4" style="fill:var(--bg);stroke:var(--key);stroke-width:1.5"/>
+    <text x="32" y="58" style="fill:var(--key);font-size:15px;font-weight:600">Every small graph</text>
+    <text x="32" y="82" style="fill:var(--ink-2);font-size:14px">that a test draws at random;</text>
+    <text x="32" y="102" style="fill:var(--ink-2);font-size:14px">a break shrinks to the smallest</text>
+    <text x="32" y="122" style="fill:var(--ink-3);font-size:13px">graph that still breaks it</text>
 
-    <line x1="206" y1="148" x2="256" y2="148" style="stroke:var(--ink-3);stroke-width:1.5" marker-end="url(#d-head)"/>
+    <rect x="16" y="200" width="270" height="104" rx="4" style="fill:var(--bg);stroke:var(--edit);stroke-width:1.5;stroke-dasharray:5 4"/>
+    <text x="32" y="228" style="fill:var(--edit);font-size:15px;font-weight:600">Real programs, every night</text>
+    <text x="32" y="252" style="fill:var(--ink-2);font-size:14px">at places drawn at random,</text>
+    <text x="32" y="272" style="fill:var(--ink-2);font-size:14px">within a time budget;</text>
+    <text x="32" y="292" style="fill:var(--ink-3);font-size:13px">a break comes back with its seed</text>
 
-    <!-- a law -->
-    <rect x="262" y="112" width="200" height="72" rx="4" style="fill:var(--bg);stroke:var(--ink-3)"/>
-    <text x="278" y="142" style="fill:var(--ink);font-weight:500">A law</text>
-    <text x="278" y="164" style="fill:var(--ink-3);font-size:13px">opening a box moves</text>
-    <text x="278" y="180" style="fill:var(--ink-3);font-size:13px">nothing else</text>
+    <path d="M286 82 C 340 82, 350 72, 404 72" style="fill:none;stroke:var(--key);stroke-width:1.8" marker-end="url(#d-head)"/>
+    <path d="M286 252 C 360 252, 350 90, 404 84" style="fill:none;stroke:var(--edit);stroke-width:1.8;stroke-dasharray:5 4" marker-end="url(#d-head)"/>
 
-    <!-- by construction -->
-    <path d="M462 136 C 500 136, 500 66, 536 66" style="fill:none;stroke:var(--key);stroke-width:1.8" marker-end="url(#d-head)"/>
-    <rect x="542" y="18" width="362" height="100" rx="4" style="fill:var(--bg);stroke:var(--key);stroke-width:1.5"/>
-    <text x="558" y="46" style="fill:var(--key);font-weight:600">First, from principle</text>
-    <text x="558" y="70" style="fill:var(--ink-2);font-size:14px">one function every picture uses keeps it,</text>
-    <text x="558" y="90" style="fill:var(--ink-2);font-size:14px">tested on small graphs drawn at random,</text>
-    <text x="558" y="108" style="fill:var(--ink-3);font-size:13px">so it holds for every picture</text>
-
-    <!-- by sampling -->
-    <path d="M462 162 C 500 162, 500 232, 536 232" style="fill:none;stroke:var(--edit);stroke-width:1.8;stroke-dasharray:5 4" marker-end="url(#d-head)"/>
-    <rect x="542" y="180" width="362" height="104" rx="4" style="fill:var(--bg);stroke:var(--edit);stroke-width:1.5;stroke-dasharray:5 4"/>
-    <text x="558" y="208" style="fill:var(--edit);font-weight:600">Where no proof reaches, by chance</text>
-    <text x="558" y="232" style="fill:var(--ink-2);font-size:14px">every night, on real programs, at places</text>
-    <text x="558" y="252" style="fill:var(--ink-2);font-size:14px">drawn at random, within a time budget;</text>
-    <text x="558" y="272" style="fill:var(--ink-3);font-size:13px">a broken place comes back with its seed</text>
+    <!-- the square -->
+    <g style="font-size:15px">
+      <rect x="410" y="56" width="130" height="40" rx="4" style="fill:var(--panel);stroke:var(--ink-3)"/>
+      <text x="475" y="81" style="fill:var(--ink);text-anchor:middle">a graph</text>
+      <rect x="730" y="56" width="150" height="40" rx="4" style="fill:var(--panel);stroke:var(--ink-3)"/>
+      <text x="805" y="81" style="fill:var(--ink);text-anchor:middle">what is kept</text>
+      <rect x="410" y="236" width="130" height="40" rx="4" style="fill:var(--panel);stroke:var(--ink-3)"/>
+      <text x="475" y="261" style="fill:var(--ink);text-anchor:middle">its modules</text>
+      <rect x="730" y="236" width="150" height="40" rx="4" style="fill:var(--panel);stroke:var(--ink);stroke-width:1.5"/>
+      <text x="805" y="261" style="fill:var(--ink);text-anchor:middle;font-weight:600">the picture</text>
+    </g>
+    <g style="stroke:var(--ink-3);stroke-width:1.5">
+      <line x1="540" y1="76" x2="724" y2="76" marker-end="url(#d-head)"/>
+      <line x1="805" y1="96" x2="805" y2="230" marker-end="url(#d-head)"/>
+      <line x1="475" y1="96" x2="475" y2="230" marker-end="url(#d-head)"/>
+      <line x1="540" y1="256" x2="724" y2="256" marker-end="url(#d-head)"/>
+    </g>
+    <g style="fill:var(--ink-2);font-size:13px">
+      <text x="632" y="66" style="text-anchor:middle">keep whole modules</text>
+      <text x="815" y="160">group by</text>
+      <text x="815" y="176">module</text>
+      <text x="465" y="160" style="text-anchor:end">group by</text>
+      <text x="465" y="176" style="text-anchor:end">module</text>
+      <text x="632" y="276" style="text-anchor:middle">keep whole modules</text>
+    </g>
+    <text x="640" y="182" style="fill:var(--ink);font-size:34px;text-anchor:middle">↻</text>
+    <text x="645" y="322" style="fill:var(--ink);font-size:15px;text-anchor:middle">keep, then group  =  group, then keep</text>
+    <text x="645" y="352" style="fill:var(--del);font-size:13px;text-anchor:middle">≠ where keeping cuts a module in two: the order is then meaning, and the test shows the counterexample</text>
   </g>
 </svg>
