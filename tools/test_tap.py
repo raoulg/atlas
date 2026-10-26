@@ -1,13 +1,15 @@
 #!/usr/bin/env python3
-"""The contract between the casks `tap_cask.py` writes and the release they name, as Homebrew reads them.
+"""The contract between what the tap jobs write and the release they name, as Homebrew reads it: the casks of
+`tap_cask.py` and the nightly formula of `tap_formula.py`.
 
-For a release and for a nightly: on every macOS and architecture Homebrew knows, the cask resolves to
-a disk image of that build's release (the tag `v<version>`, or the pre-release `nightly-<stamp>`), for
-that architecture, with that file's checksum; Homebrew's own `brew style` and `brew audit` accept the
-cask; and the release and the nightly install side by side, each its own app with its own data. Homebrew reads a cask only from a tap, so the test makes one and removes it again. It needs
-`brew`, and skips without it (CI runs it on macOS).
+On every platform and architecture Homebrew knows, each resolves to a file of that build's release (the tag
+`v<version>`, or the pre-release `nightly-<stamp>`), for that architecture, with that file's checksum;
+Homebrew's own `brew style` and `brew audit` accept it; and the release and the nightly install side by
+side: two apps with their own data, and a nightly CLI that excludes no release. Homebrew reads a cask or
+formula only from a tap, so the test makes one and removes it again. It needs `brew`, and skips without it
+(CI runs it on macOS).
 
-    python3 tools/test_tap_cask.py
+    python3 tools/test_tap.py
 """
 
 import json
@@ -21,10 +23,18 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
 from tap_cask import ARCHES, DMG, cask, sha256  # noqa: E402
+from tap_formula import TARGETS, formula  # noqa: E402
 
 RELEASES = "https://github.com/raoulg/atlas/releases/download/"
 BREW = shutil.which("brew")
-ENV = {**os.environ, "HOMEBREW_NO_AUTO_UPDATE": "1", "HOMEBREW_NO_INSTALL_FROM_API": "1", "HOMEBREW_NO_ENV_HINTS": "1"}
+# The test's own configuration folder, where `brew trust` keeps its trust of the test's taps.
+ENV = {
+    **os.environ,
+    "HOMEBREW_NO_AUTO_UPDATE": "1",
+    "HOMEBREW_NO_INSTALL_FROM_API": "1",
+    "HOMEBREW_NO_ENV_HINTS": "1",
+    "XDG_CONFIG_HOME": tempfile.mkdtemp(),
+}
 
 
 def brew(*args: str) -> str:
@@ -32,6 +42,12 @@ def brew(*args: str) -> str:
     if done.returncode != 0:
         raise AssertionError(f"brew {' '.join(args)}:\n{done.stdout}{done.stderr}")
     return done.stdout
+
+
+def tap_new(name: str) -> None:
+    """A tap of the test's own that Homebrew loads (a Homebrew from before tap trust loads it anyway)."""
+    brew("tap-new", "--no-git", name)
+    subprocess.run([BREW, "trust", "--tap", name], env=ENV, capture_output=True)
 
 
 @unittest.skipUnless(BREW, "needs Homebrew")
@@ -42,7 +58,7 @@ class CaskNamesItsBuild(unittest.TestCase):
         for arch in ARCHES.values():
             (cls.dist / DMG.format(arch=arch)).write_bytes(f"the disk image for {arch}".encode())
         cls.tap = f"atlas-test/cask-{os.getpid()}"
-        brew("tap-new", "--no-git", cls.tap)
+        tap_new(cls.tap)
         cls.casks = Path(brew("--repo", cls.tap).strip()) / "Casks"
         cls.casks.mkdir(exist_ok=True)
 
@@ -105,6 +121,49 @@ class CaskNamesItsBuild(unittest.TestCase):
         self.assertFalse(apps(release) & apps(nightly), "both install one app")
         self.assertTrue(data(release) and data(nightly))
         self.assertFalse(data(release) & data(nightly), "zapping one removes the other's data")
+
+
+@unittest.skipUnless(BREW, "needs Homebrew")
+class NightlyFormulaNamesItsBuild(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.dist = Path(tempfile.mkdtemp())
+        for target in TARGETS.values():
+            (cls.dist / f"atlas-{target}.tar.gz").write_bytes(f"the archive for {target}".encode())
+        cls.tap = f"atlas-test/formula-{os.getpid()}"
+        tap_new(cls.tap)
+        cls.formulae = Path(brew("--repo", cls.tap).strip()) / "Formula"
+        cls.formulae.mkdir(exist_ok=True)
+        (cls.formulae / "atlas-code-nightly.rb").write_text(formula(cls.dist, "1.3.0", "202610261819"))
+        cls.name = f"{cls.tap}/atlas-code-nightly"
+
+    @classmethod
+    def tearDownClass(cls):
+        brew("untap", "--force", cls.tap)
+        shutil.rmtree(cls.dist)
+
+    def test_each_platform_gets_its_archive(self):
+        read = json.loads(brew("info", "--formula", "--json=v2", "--variations", self.name))["formulae"][0]
+        self.assertEqual(read["versions"]["stable"], "1.3.0-nightly.202610261819")
+        by_file = {f"atlas-{target}.tar.gz": sha256(self.dist / f"atlas-{target}.tar.gz") for target in TARGETS.values()}
+        seen = set()
+        for name, variation in [("this machine", read), *(read.get("variations") or {}).items()]:
+            stable = (variation.get("urls") or read["urls"])["stable"]
+            url, sha = stable["url"], stable["checksum"]
+            self.assertTrue(url.startswith(f"{RELEASES}nightly-202610261819/"), f"{name}: {url}")
+            file = url.rsplit("/", 1)[1]
+            self.assertEqual(sha, by_file.get(file), f"{name}: {file} with another file's checksum")
+            seen.add(file)
+        self.assertEqual(seen, set(by_file), "an archive no platform installs")
+
+    def test_it_excludes_no_release(self):
+        read = json.loads(brew("info", "--formula", "--json=v2", self.name))["formulae"][0]
+        self.assertEqual(read["conflicts_with"], [], "the nightly installs `atlas-nightly`, beside `atlas`")
+
+    def test_homebrew_accepts_it(self):
+        brew("style", self.name)
+        brew("audit", "--formula", "--strict", self.name)
+
 
 if __name__ == "__main__":
     unittest.main()

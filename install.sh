@@ -1,6 +1,7 @@
 #!/bin/sh
 # Install the latest atlas binary for this machine into $ATLAS_INSTALL_DIR (default ~/.local/bin).
-# ATLAS_CHANNEL=nightly installs the nightly build of `next` instead of the latest release.
+# ATLAS_CHANNEL=nightly installs the nightly build of `next` instead of the latest release, as
+# `atlas-nightly` beside the release's `atlas`.
 set -eu
 
 case "$(uname -s)-$(uname -m)" in
@@ -15,10 +16,13 @@ esac
 
 dir="${ATLAS_INSTALL_DIR:-$HOME/.local/bin}"
 mkdir -p "$dir"
-if [ "${ATLAS_CHANNEL:-}" = nightly ]; then from=download/nightly; else from=latest/download; fi
-curl -fsSL "https://github.com/raoulg/atlas/releases/$from/atlas-$target.tar.gz" | tar -xz -C "$dir" atlas
-echo "atlas installed in $dir/atlas"
+if [ "${ATLAS_CHANNEL:-}" = nightly ]; then from=download/nightly name=atlas-nightly; else from=latest/download name=atlas; fi
+work=$(mktemp -d)
+trap 'rm -rf "$work"' EXIT
+curl -fsSL "https://github.com/raoulg/atlas/releases/$from/atlas-$target.tar.gz" | tar -xz -C "$work" atlas
+mv "$work/atlas" "$dir/$name"
+echo "atlas installed in $dir/$name"
 case ":$PATH:" in
   *":$dir:"*) ;;
-  *) echo "add $dir to your PATH to run it as 'atlas'" ;;
+  *) echo "add $dir to your PATH to run it as '$name'" ;;
 esac

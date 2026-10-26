@@ -6,8 +6,9 @@ how updates reach you, and how your coding agent gets Atlas.
 ## Stable and nightly
 
 `main` is the stable line: only fixes, each a tagged release. `next` is where new work lands; a
-nightly build is made of it when its tests are green. The scripts take the channel from
-`ATLAS_CHANNEL`:
+nightly build is made of it when its tests are green. The nightly installs as a command of its own,
+`atlas-nightly`, beside the release's `atlas`, so the two can be installed together and the release is
+at hand when a nightly breaks. The scripts take the channel from `ATLAS_CHANNEL`:
 
 ```bash
 ATLAS_CHANNEL=nightly sh -c "$(curl -fsSL https://raw.githubusercontent.com/raoulg/atlas/next/install.sh)"
@@ -18,22 +19,23 @@ $env:ATLAS_CHANNEL = 'nightly'; irm https://raw.githubusercontent.com/raoulg/atl
 ```
 
 Homebrew has no channel variable; the nightly is a formula of its own, built from the binaries of the
-nightly release, and it replaces the stable one (both install `atlas`). On the command line, and in a
-`Brewfile`:
+nightly release. On the command line, and in a `Brewfile`:
 
 ```bash
-brew install raoulg/tap/atlas-code-nightly
+brew install raoulg/tap/atlas-code raoulg/tap/atlas-code-nightly
 brew upgrade atlas-code-nightly
 ```
 
 ```ruby
-tap "raoulg/tap"
-brew "atlas-code-nightly"                 # the nightly; `brew "atlas-code"` is the stable release
+brew "raoulg/tap/atlas-code"              # the release: `atlas`
+brew "raoulg/tap/atlas-code-nightly"      # the nightly, beside it: `atlas-nightly`
 ```
 
-`brew install --HEAD raoulg/tap/atlas-code` builds `next` from source instead (it needs Rust).
+Homebrew loads a formula from a tap it does not ship only once it is trusted; naming it in full, as
+here, trusts that formula alone. `brew install --HEAD raoulg/tap/atlas-code` builds `next` from source
+instead (it needs Rust), and installs it as `atlas`, as `cargo install` does.
 
-`atlas --version` says which one you have: `0.66.2`, or `0.67.0-nightly (b0ead14)`.
+`atlas --version` says `atlas 0.68.0`, `atlas-nightly --version` says `atlas 0.69.0-nightly (b0ead14)`.
 
 ## Atlas Studio
 
@@ -98,6 +100,10 @@ Your agent gets Atlas through `atlas mcp`. Register it once, for every project:
 claude mcp add --scope user atlas -- atlas mcp
 codex mcp add atlas -- "$(command -v atlas)" mcp
 ```
+
+An agent has one server called `atlas`: give it the nightly with `atlas-nightly mcp` in place of
+`atlas mcp`. Studio's Settings › Coding agents registers the CLI of its own channel, else its own
+`atlas`, so that the agent's `atlas mcp` is of the channel of the `atlas serve` it shares the page with.
 
 Claude Code's `--scope user` makes it available in every project. Codex keeps its servers in one
 configuration for all projects and starts them without your shell's `PATH`, so it is given the
