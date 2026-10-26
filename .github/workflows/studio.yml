@@ -5,9 +5,14 @@ name: studio
 # is signed ad hoc, not with an Apple Developer ID, so a disk image downloaded in a browser opens
 # through System Settings › Privacy & Security › Open Anyway; `install-studio.sh` downloads it
 # without that step. `release.yml` and `nightly.yml` call this workflow and publish what it makes;
-# run by hand, it only keeps the images as the run's artifacts.
+# on a push to `next` that changes Studio or this workflow, or run by hand, it only keeps the images
+# as the run's artifacts (scheduled and dispatched runs take the workflow from `main`, so this push
+# is what builds Studio on `next` before a promotion carries the nightly's call to it).
 
 on:
+  push:
+    branches: [next]
+    paths: ["studio/**", ".github/workflows/studio.yml"]
   workflow_call:
     inputs:
       ref:
@@ -33,7 +38,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
-          ref: ${{ inputs.ref }}
+          ref: ${{ inputs.ref || github.sha }}
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target }}
