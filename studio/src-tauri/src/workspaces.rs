@@ -5,7 +5,7 @@
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use tauri::menu::{Menu, MenuItemBuilder, SubmenuBuilder};
+use tauri::menu::{AboutMetadata, Menu, MenuItemBuilder, SubmenuBuilder};
 use tauri::{AppHandle, Manager, Runtime};
 
 /// How many workspaces Studio keeps.
@@ -62,6 +62,19 @@ pub fn clear<R: Runtime>(app: &AppHandle<R>) -> Result<(), String> {
     keep(app, &[])
 }
 
+/// What the About panel says beside the logo.
+const ABOUT: &str = "31 mathematical principles in action, to visualise your code.\n\nThe logo is Rule 30: wholly deterministic, and still a source of real randomness. Much like working with an agent.";
+
+fn about() -> AboutMetadata<'static> {
+    AboutMetadata {
+        credits: Some(ABOUT.into()),
+        comments: Some(ABOUT.into()),
+        website: Some("https://raoulg.github.io/atlas/".into()),
+        website_label: Some("raoulg.github.io/atlas".into()),
+        ..Default::default()
+    }
+}
+
 /// The id of the menu item that opens the recent workspace at `index`.
 pub const RECENT: &str = "workspace.recent.";
 
@@ -99,7 +112,7 @@ pub fn menu<R: Runtime>(app: &AppHandle<R>, recent: &[Recent]) -> tauri::Result<
     {
         let name = app.package_info().name.clone();
         let own = SubmenuBuilder::new(app, name)
-            .about(None)
+            .about(Some(about()))
             .item(&MenuItemBuilder::with_id("update.check", "Check for Updates…").build(app)?)
             .separator()
             .services()
