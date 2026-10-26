@@ -286,7 +286,7 @@ impl<'t, 's> Steps<'t, 's> {
     fn site(&self, c: TsNode, site: Site) -> Site {
         let (handed_on, explicit, raises) = (self.handed_on(c), self.uses.propagates.is_some(), self.raised(c));
         // what the body gives back as a call gives it, the call's error among it, the body fails with
-        let fails = self.converts.clone().filter(|_| explicit && (handed_on || !raises && self.gives_back(c)));
+        let fails = self.converts.clone().filter(|_| explicit && (handed_on || !raises && self.gives_back(c))).into_iter().collect();
         // the error a constructor builds to raise is a value of its class, whether or not a name holds it
         let mut gives = site.gives;
         if raises && gives.is_empty() && !site.to.is_empty() {
@@ -388,7 +388,7 @@ impl<'t, 's> Steps<'t, 's> {
             let around =
                 self.sites.iter_mut().filter(|s| s.span != (0, 0) && s.span.0 <= a && b <= s.span.1).min_by_key(|s| s.span.1 - s.span.0);
             match around {
-                Some(s) if s.fails.is_none() && !s.raises => s.fails = Some(error.clone()),
+                Some(s) if s.fails.is_empty() && !s.raises => s.fails = vec![error.clone()],
                 Some(_) => {}
                 None => self.fails = Some(error.clone()),
             }

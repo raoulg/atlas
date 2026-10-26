@@ -1,7 +1,7 @@
 //! A `Graph` under construction: what a language module fills while it parses, with the
 //! scratch it needs for resolution. It never leaves `Language::parse`.
 
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 use indexmap::IndexMap;
 
@@ -450,6 +450,9 @@ fn settle_parameters(nodes: &mut IndexMap<String, Node>, family: &Family) {
             below.entry(b.as_str()).or_default().push(m.as_str());
         }
     }
+    for overrides in below.values_mut() {
+        overrides.sort();
+    }
     let runs = |s: &Site| -> Vec<String> {
         let Some(n) = nodes.get(&s.to) else { return vec![] };
         match n.kind {
@@ -712,6 +715,9 @@ fn settle_fails(nodes: &mut IndexMap<String, Node>, edges: &[Edge], family: &Fam
             below.entry(b.as_str()).or_default().push(m.as_str());
         }
     }
+    for overrides in below.values_mut() {
+        overrides.sort();
+    }
     let runs = |s: &Site| -> Vec<String> {
         let Some(n) = nodes.get(&s.to) else { return vec![] };
         match n.kind {
@@ -723,11 +729,14 @@ fn settle_fails(nodes: &mut IndexMap<String, Node>, edges: &[Edge], family: &Fam
                 .collect(),
         }
     };
-    let handed = |s: &Site, ends: &HashMap<String, Vec<String>>| -> Option<String> {
-        if !s.handed_on || s.fails.is_some() {
+    // the errors a call hands on: each that what it runs can end with, uncaught around the call
+    let handed = |s: &Site, ends: &HashMap<String, Vec<String>>| -> Vec<String> {
+        if !s.handed_on || !s.fails.is_empty() {
             return s.fails.clone();
         }
-        runs(s).iter().flat_map(|f| ends.get(f).into_iter().flatten()).find(|e| !caught(&s.caught, e)).cloned()
+        let errors: BTreeSet<String> =
+            runs(s).iter().flat_map(|f| ends.get(f).into_iter().flatten()).filter(|e| !caught(&s.caught, e)).cloned().collect();
+        errors.into_iter().collect()
     };
     // what each function's body ends with uncaught, grown to the fixpoint: a call that hands on what
     // its callee ends with makes the caller end with it too
@@ -754,13 +763,13 @@ fn settle_fails(nodes: &mut IndexMap<String, Node>, edges: &[Edge], family: &Fam
             break;
         }
     }
-    let fails: Vec<(String, usize, String)> = nodes
+    let fails: Vec<(String, usize, Vec<String>)> = nodes
         .values()
-        .flat_map(|n| n.sites.iter().enumerate().filter_map(|(i, s)| handed(s, &ends).map(|e| (n.id.clone(), i, e))).collect::<Vec<_>>())
+        .flat_map(|n| n.sites.iter().enumerate().map(|(i, s)| (n.id.clone(), i, handed(s, &ends))).collect::<Vec<_>>())
         .collect();
     for (id, i, e) in fails {
         if let Some(s) = nodes.get_mut(&id).and_then(|n| n.sites.get_mut(i)) {
-            s.fails = Some(e);
+            s.fails = e;
         }
     }
 }

@@ -105,20 +105,49 @@ fn errors_a_raise_is_a_step_and_each_call_hands_it_on() {
         let raised = site(&p.clean, &parse, error);
         assert!(raised.raises, "{language}: the constructor raises");
         assert_eq!(raised.gives.iter().map(|g| g.ty.as_str()).collect::<Vec<_>>(), [error], "{language}: of its class");
-        assert_eq!(site(&p.clean, &total, &parse).fails.as_deref(), Some(error), "{language}: total hands on what parse raises");
-        assert_eq!(site(&p.clean, route, &total).fails.as_deref(), Some(error), "{language}: and the route's call of total");
+        assert_eq!(site(&p.clean, &total, &parse).fails, [error], "{language}: total hands on what parse raises");
+        assert_eq!(site(&p.clean, route, &total).fails, [error], "{language}: and the route's call of total");
         let builtin = site(&p.shortcut, &parse, library);
         assert!(builtin.raises && builtin.gives.iter().all(|g| g.ty.starts_with("ext:")), "{language}: a library's class: {builtin:#?}");
-        assert_eq!(site(&p.shortcut, &total, &parse).fails, None, "{language}: the handler around the call catches it");
-        assert_eq!(site(&p.shortcut, route, &total).fails, None, "{language}: so the route never hears of it");
+        assert_eq!(site(&p.shortcut, &total, &parse).fails, Vec::<String>::new(), "{language}: the handler around the call catches it");
+        assert_eq!(site(&p.shortcut, route, &total).fails, Vec::<String>::new(), "{language}: so the route never hears of it");
     }
     let p = common::pair("errors/rust");
     let raised = site(&p.clean, "counts.parse", "counts.Error");
     assert!(raised.raises, "the arm's `Err(Error::NotACount(..))`, the last value of parse, raises it");
-    assert_eq!(site(&p.clean, "counts.total", "counts.parse").fails.as_deref(), Some("counts.Error"), "`?` hands it on as the program's");
-    assert_eq!(site(&p.clean, "counts.main", "counts.total").fails.as_deref(), Some("counts.Error"));
-    assert_eq!(site(&p.shortcut, "counts.total", "counts.parse").fails.as_deref(), Some(""), "a `Box<dyn Error>` is no type of the code's");
-    assert_eq!(site(&p.shortcut, "counts.main", "counts.total").fails.as_deref(), Some(""));
+    assert_eq!(site(&p.clean, "counts.total", "counts.parse").fails, ["counts.Error"], "`?` hands it on as the program's");
+    assert_eq!(site(&p.clean, "counts.main", "counts.total").fails, ["counts.Error"]);
+    assert_eq!(site(&p.shortcut, "counts.total", "counts.parse").fails, [""], "a `Box<dyn Error>` is no type of the code's");
+    assert_eq!(site(&p.shortcut, "counts.main", "counts.total").fails, [""]);
+}
+
+/// A call into a family runs the method or one of its overrides, decided at run time, so it fails with each error any of
+/// them can end with: its codomain is the coproduct of theirs (#213). The clean sources fail as their base says a source
+/// fails, with the program's one error; the shortcut's fail each their own way, and the call through the base, and the
+/// route's call of it, hand on both. A reading is a function of the code: two readings hand on the same errors.
+#[test]
+fn errors_a_call_into_a_family_fails_with_what_each_override_can() {
+    let ids = [
+        ("python", "settings.", "settings.run", ["settings.SourceError"], ["ext:builtins.RuntimeError", "ext:builtins.ValueError"]),
+        (
+            "typescript",
+            "settings.cli.",
+            "settings.cli.main",
+            ["settings.cli.SourceError"],
+            ["ext:javascript.Error", "ext:javascript.TypeError"],
+        ),
+    ];
+    for (language, own, route, clean, shortcut) in ids {
+        let (p, again) = (common::pair(&format!("failures/{language}")), common::pair(&format!("failures/{language}")));
+        let (load, settings) = (format!("{own}Source.load"), format!("{own}settings"));
+        for (g, want) in [(&p.clean, &clean[..]), (&p.shortcut, &shortcut[..])] {
+            assert_eq!(site(g, &settings, &load).fails, want, "{language}: the call through the base");
+            assert_eq!(site(g, route, &settings).fails, want, "{language}: and the route's call of it");
+        }
+        for (one, other) in [(&p.clean, &again.clean), (&p.shortcut, &again.shortcut)] {
+            assert_eq!(site(one, &settings, &load).fails, site(other, &settings, &load).fails, "{language}: two readings alike");
+        }
+    }
 }
 
 /// A call hands each value to the parameter its argument fills (#157), by where the call writes it, never by its type:

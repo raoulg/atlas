@@ -446,10 +446,12 @@ pub struct Site {
     /// or a `return Err(..)` ends the body with.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub raises: bool,
-    /// The call hands on its callee's error, outside a handler that catches it: the error's type,
-    /// `""` where it is no type of the code's.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub fails: Option<String>,
+    /// The errors the call hands on, outside a handler that catches them: each error what it runs
+    /// can end with, by its type, `""` where it is no type of the code's. A call into a family hands
+    /// on what any of the overrides it may run can end with; a Rust `?` the one error its signature
+    /// converts to. Sorted, so that a reading is a function of the code.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub fails: Vec<String>,
     /// The call hands on what its callee's body raises, as a `raise` propagates in its language: read
     /// where the call stands, and `fails` is settled from what the callee's body ends with once the
     /// graph is whole. A call `?` hands on fails as the reader reads it.
