@@ -73,7 +73,7 @@ the same table, the same way, as one that binds them.
 A finding is a signal to look critically at the code and at what the rule claims; it is never
 an oracle and never a target. Each section below says what its rule computes and what it cannot
 see, so that no finding means only that the code avoids the forms the rule reads. Atlas is its own
-first subject: what `atlas check` asks of Atlas is a reviewed list in `engine/tests/principles.rs`,
+first subject: what `atlas check` asks of Atlas is a reviewed list in `engine/tests/review.rs`,
 each finding with why it stands, and the test shows when the list changes.
 
 ## A package names its doors, and each door says what goes in and what comes out.
