@@ -14,7 +14,12 @@ jobs:
       - uses: actions/checkout@v7
       - run: |
           case "$GITHUB_REF_NAME" in *-*) pre=--prerelease ;; *) pre= ;; esac
-          gh release create "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME" --generate-notes $pre
+          notes=""
+          # a stable release has a page of release notes with pictures (tools/release_page.py)
+          if [ -z "$pre" ] && [ -f "docs/releases/${GITHUB_REF_NAME#v}.md" ]; then
+            notes="**What changed, with pictures:** https://raoulg.github.io/atlas/releases/${GITHUB_REF_NAME#v}/"
+          fi
+          gh release create "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME" --generate-notes --notes "$notes" $pre
         env:
           GH_TOKEN: ${{ github.token }}
 
