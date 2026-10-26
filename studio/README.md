@@ -58,7 +58,7 @@ A theme names the roles Atlas's colours go by (`--bg`, `--ink`, `--focus`, the h
 
 In Studio the Atlas view draws no header of its own: its controls (the project, Flowchart / Type lattice / Signature flow, the entry point, what it counts, export, jump to a symbol) stand in Studio's top bar beside the workspace's name. The page opens with `?host=` and Studio's origin; it describes its controls to Studio and does what Studio's bar asks, as messages addressed to that origin only. In a browser the page keeps its header and its link to the history; in Studio the history is in the sidebar (⌘2, with ⌘1 for the Atlas view). **export** saves the page through the system's save dialog.
 
-While Atlas draws, a bar shows how far reading the project's code is; the picture opens when it is done, and a second bar in the picture follows the library calls. Each bar keeps even with the time its phase took at the last few starts of `atlas serve` for this repository (their median, kept in `.atlas/timings.json`), then slows down without arriving while the phase takes longer.
+While Atlas draws, a bar shows how far reading the project's code is; the picture opens when it is done, and a second bar in the picture follows the library calls. Each bar keeps even with the time its phase took at the last few starts of `atlas serve` for this repository of the same kind (their median, kept in `.atlas/timings.json`): a start that finds the index of its build of Atlas apart from one that reads everything, as the first start after a new build does. Then it slows down without arriving while the phase takes longer.
 
 ## Files
 

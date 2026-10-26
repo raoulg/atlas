@@ -55,6 +55,11 @@ impl Cache {
         Some(Cache { dir: home(dir).join("index").join(build), hits: self.hits.clone(), writes: self.writes.clone() })
     }
 
+    /// Whether it keeps anything yet: a reading with a cache that keeps nothing reads everything.
+    pub fn holds_any(&self) -> bool {
+        std::fs::read_dir(&self.dir).is_ok_and(|mut entries| entries.next().is_some())
+    }
+
     /// The value kept of `kind` under `key`.
     pub fn get(&self, kind: &str, key: &str) -> Option<Vec<u8>> {
         let bytes = std::fs::read(self.file(kind, key)).ok()?;
