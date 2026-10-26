@@ -598,6 +598,42 @@ fn a_place_a_caller_makes_whole_is_the_callers_arrow() {
     done(&repo);
 }
 
+/// The history as the page lists it: a commit above its parents, and of two where neither is the other's
+/// ancestor the newer above, so a branch worked on now stands at the top however old the commit it
+/// starts from.
+#[test]
+fn the_newest_work_stands_at_the_top() {
+    let repo = repository("dates", &format!("{FRAME}{PLOT}"));
+    let at = |when: &str, args: &[&str]| {
+        let done = Command::new("git")
+            .args(args)
+            .current_dir(&repo)
+            .env("GIT_AUTHOR_DATE", when)
+            .env("GIT_COMMITTER_DATE", when)
+            .status()
+            .unwrap();
+        assert!(done.success(), "git {args:?}");
+    };
+    // the two branches take turns: each has work older and newer than the other's
+    git(&repo, &["checkout", "-q", "-b", "side"]);
+    git(&repo, &["checkout", "-q", "main"]);
+    at("2030-01-02T00:00:00", &["commit", "-q", "--allow-empty", "-m", "main one"]);
+    git(&repo, &["checkout", "-q", "side"]);
+    at("2030-01-03T00:00:00", &["commit", "-q", "--allow-empty", "-m", "side one"]);
+    git(&repo, &["checkout", "-q", "main"]);
+    at("2030-01-04T00:00:00", &["commit", "-q", "--allow-empty", "-m", "main two"]);
+    git(&repo, &["checkout", "-q", "side"]);
+    at("2030-01-05T00:00:00", &["commit", "-q", "--allow-empty", "-m", "side, now"]);
+    let log = changes::log(&repo, true, 300, 0).unwrap();
+    let subjects: Vec<&str> = log.commits.iter().map(|c| c.subject.as_str()).collect();
+    assert_eq!(subjects, ["side, now", "main two", "side one", "main one", "first"]);
+    let place = |hash: &str| log.commits.iter().position(|c| c.hash == hash);
+    for (i, c) in log.commits.iter().enumerate() {
+        assert!(c.parents.iter().all(|p| place(p).is_some_and(|j| j > i)), "{} stands above its parents", c.subject);
+    }
+    done(&repo);
+}
+
 /// The history as the page lists it: newest first, each commit with its parents and the names that
 /// point at it, by kind; `all` adds the branches HEAD's history does not hold.
 #[test]
