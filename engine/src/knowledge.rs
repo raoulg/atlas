@@ -1236,6 +1236,7 @@ pub const FILE_READS: &[&str] = &[
     "readlines",
     "safe_load",
     "listdir",
+    "scandir",
     "walk",
     "open",
 ];
@@ -1596,13 +1597,36 @@ pub const PACKAGE_FILES: &[(&str, &str)] = &[("importlib.resources", "files"), (
 pub const SAME_PATH: &[&str] = &["resolve", "absolute", "expanduser", "as_posix", "__fspath__"];
 
 /// A path's methods that give the paths below the one they are called on that match a pattern,
-/// with what the pattern starts with: `glob("*/IO-*")` is `*/IO-*` below it, `rglob("*.gml")` is
-/// `**/*.gml`.
-pub const PATH_PATTERNS: &[(&str, &str)] = &[("glob", ""), ("rglob", "**/")];
+/// with what the pattern starts with and how many arguments write the rest of it:
+/// `glob("*/IO-*")` is `*/IO-*` below it, `rglob("*.gml")` is `**/*.gml`, and `iterdir()`, handed
+/// nothing, is `*`, as `glob("*")` is.
+pub const PATH_PATTERNS: &[(&str, &str, usize)] = &[("glob", "", 1), ("rglob", "**/", 1), ("iterdir", "*", 0)];
+
+/// A library's function that lists the directory it is handed, as a path's `iterdir()` does: each
+/// element is below the directory, `*`. Where `names` holds, an element is the name alone, which
+/// the code puts back below the directory itself (`os.path.join(d, name)`); else it is the path
+/// (`os.scandir(d)`, whose entries are paths).
+pub struct Listing {
+    pub library: &'static str,
+    pub function: &'static str,
+    pub names: bool,
+}
+
+pub const LISTINGS_BELOW: &[Listing] =
+    &[Listing { library: "os", function: "listdir", names: true }, Listing { library: "os", function: "scandir", names: false }];
+
+/// The attributes of a listing's element that are the path the element is at, by the library and
+/// the element's class: `entry.path` of an `os.DirEntry`.
+pub const ELEMENT_PATHS: &[(&str, &str, &str)] = &[("os", "DirEntry", "path")];
 
 /// Functions that give back the elements of the collection they are handed, in another order or
 /// kind: `sorted(paths)` holds the paths `paths` holds.
 pub const SAME_ELEMENTS: &[&str] = &["sorted", "list", "set", "tuple", "frozenset", "reversed", "iter", "fromkeys"];
+
+/// Functions that give back one of the values they are handed: one element of the collection
+/// (`max(paths, key=..)`, `next(paths)`), or one of the values themselves (`min(a, b)`), or the
+/// default `next` is handed.
+pub const ONE_OF_ELEMENTS: &[&str] = &["max", "min", "next"];
 
 /// What a path library's function makes of what it is handed.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]

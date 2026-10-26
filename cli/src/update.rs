@@ -225,6 +225,15 @@ mod tests {
         );
         assert_eq!(up("/opt/homebrew/bin/atlas", true, false), "brew upgrade atlas-code-nightly", "a link on the PATH");
         assert_eq!(up("/opt/homebrew/bin/atlas", false, false), "brew upgrade atlas-code");
+        assert_eq!(
+            up("/opt/homebrew/Cellar/atlas-code-nightly/0.68.0-nightly.202610270300/bin/atlas-nightly", true, false),
+            "brew upgrade atlas-code-nightly",
+            "the nightly beside the release"
+        );
+        assert_eq!(up("/opt/homebrew/bin/atlas-nightly", true, false), "brew upgrade atlas-code-nightly");
+        assert!(up("/home/x/.local/bin/atlas-nightly", true, false).contains("| ATLAS_CHANNEL=nightly sh"));
+        assert!(up("C:\\Users\\x\\AppData\\Local\\Programs\\atlas\\atlas-nightly.exe", true, true)
+            .starts_with("$env:ATLAS_CHANNEL = 'nightly'; "));
         assert!(up("/home/x/.cargo/bin/atlas", true, false).contains("--branch next"));
         assert!(up("/home/x/.local/bin/atlas", false, false).ends_with("install.sh | sh"));
         assert!(up("/home/x/.local/bin/atlas", true, false).contains("| ATLAS_CHANNEL=nightly sh"));

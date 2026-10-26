@@ -1,0 +1,19 @@
+# A listing of all a directory holds lists the directory: `iterdir()` lists what `glob("*")` lists, the fiber over a
+# predicate that always holds, and each element is one of the folders below it, `*`. `KINDS[..]` with a key the
+# environment says is one of the values the mapping holds: two directories. A sort key's parameter is one of the paths
+# it orders: `p.stat()` reads at the place `m.glob("*.xml")` holds, as `max(..)`'s file, read after it, is.
+
+route listed.run
+line entry > run call
+line File(assets/regelingen/) > run own                  # (..).iterdir() lists the directory
+line File(assets/ontwerp_regelingen/) > run own
+line File(assets/regelingen/*/*.xml) > run own           # m.glob(..), p.stat(), max(..).read_text()
+line File(assets/ontwerp_regelingen/*/*.xml) > run own
+line run > Screen own
+
+side entry left
+side File(assets/regelingen/) left
+side File(assets/ontwerp_regelingen/) left
+side File(assets/regelingen/*/*.xml) left
+side File(assets/ontwerp_regelingen/*/*.xml) left
+side Screen right

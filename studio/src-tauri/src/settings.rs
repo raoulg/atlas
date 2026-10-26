@@ -82,9 +82,19 @@ fn which(program: &str) -> Option<PathBuf> {
         .find(|path| path.is_file())
 }
 
-/// The `atlas` an agent starts: the one on the `PATH`, else Studio's own.
+/// The command the CLI of a channel is installed as: the nightly's `atlas-nightly`, beside the release's `atlas`.
+fn command_of(channel: &str) -> &'static str {
+    if channel == "nightly" {
+        "atlas-nightly"
+    } else {
+        "atlas"
+    }
+}
+
+/// The `atlas` an agent starts: the CLI of Studio's own channel on the `PATH`, else Studio's own, so that
+/// the agent's `atlas mcp` is of the channel of the `atlas serve` it shares a page with.
 fn atlas() -> Option<PathBuf> {
-    which("atlas").or_else(|| {
+    which(command_of(env!("ATLAS_CHANNEL"))).or_else(|| {
         let own = std::env::current_exe().ok()?.with_file_name(if cfg!(windows) { "atlas.exe" } else { "atlas" });
         own.is_file().then_some(own)
     })
@@ -200,6 +210,13 @@ mod tests {
             Appearance { theme: "dark".into(), light: "catppuccin-latte".into(), dark: "nord".into() }
         );
         assert_eq!(read("sepia", "../x", ""), Appearance::default());
+    }
+
+    /// The release's and the nightly's CLI stand side by side on one `PATH`: each Studio looks for its own.
+    #[test]
+    fn each_channel_looks_for_its_own_cli() {
+        assert_eq!(command_of(""), "atlas");
+        assert_ne!(command_of("nightly"), command_of(""));
     }
 
     #[test]
