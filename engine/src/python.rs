@@ -16,7 +16,6 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result};
 use indexmap::IndexMap;
 use tree_sitter::{Node as TsNode, Parser};
-use walkdir::WalkDir;
 
 mod body;
 mod module;
@@ -26,6 +25,7 @@ mod paths;
 pub use crate::builder::{foreign_type, ClassInfo, Declared, GraphBuilder, SigInfo};
 use crate::knowledge;
 use crate::model::{Entry, EntryKind, Node, NodeKind};
+use crate::places::Environment;
 use crate::pytypes::{Ty, Types};
 use crate::repo::Repo;
 use crate::tree::named_children;
@@ -369,7 +369,7 @@ fn read_libraries(
     for round in 1..=depth {
         let mut fresh = vec![];
         for (mid, path) in std::mem::take(&mut reached) {
-            if modules.contains_key(&mid) || !used.contains(&package_of(&mid)) || !readable.reads(&mid, &path) {
+            if modules.contains_key(&mid) || !used.contains(&package_of(&mid)) || !readable.reads(&ty.env, &mid, &path) {
                 continue;
             }
             // a library in the project's environment is named from the project, like its own files
@@ -418,7 +418,7 @@ struct Readable {
 impl Readable {
     /// Whether the module `mid` at `path` is read: Python source, in a package the effect
     /// tables do not describe and that holds no compiled code.
-    fn reads(&mut self, mid: &str, path: &Path) -> bool {
+    fn reads(&mut self, env: &Environment, mid: &str, path: &Path) -> bool {
         if path.extension().and_then(|x| x.to_str()) != Some("py") {
             return false;
         }
@@ -428,13 +428,7 @@ impl Readable {
         }
         let is_pkg = path.file_stem().and_then(|s| s.to_str()) == Some("__init__");
         let Some(top) = path.ancestors().nth(parts - 1 + usize::from(is_pkg)).map(Path::to_path_buf) else { return false };
-        let compiled = self.compiled.entry(top.clone()).or_insert_with(|| {
-            let compiled = knowledge::compiled(knowledge::Registry::PyPi);
-            WalkDir::new(&top)
-                .into_iter()
-                .flatten()
-                .any(|e| e.path().extension().and_then(|x| x.to_str()).map_or(false, |x| compiled.contains(&x)))
-        });
+        let compiled = self.compiled.entry(top.clone()).or_insert_with(|| env.compiled(&top, knowledge::Registry::PyPi));
         !*compiled
     }
 }

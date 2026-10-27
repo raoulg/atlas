@@ -154,6 +154,16 @@ impl Environment {
         std::fs::canonicalize(path).ok()
     }
 
+    /// Whether the folder of a library holds compiled code its `registry` ships (`.so`, `.node`),
+    /// which Atlas does not read as code.
+    pub fn compiled(&self, folder: &Path, registry: crate::knowledge::Registry) -> bool {
+        let compiled = crate::knowledge::compiled(registry);
+        walkdir::WalkDir::new(folder)
+            .into_iter()
+            .flatten()
+            .any(|e| e.path().extension().and_then(|x| x.to_str()).map_or(false, |x| compiled.contains(&x)))
+    }
+
     /// A library's source file, as it is.
     pub fn source(&self, file: &Path) -> Option<Vec<u8>> {
         std::fs::read(file).ok()

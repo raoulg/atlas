@@ -17,7 +17,6 @@ use std::path::{Path, PathBuf};
 
 use indexmap::IndexMap;
 use tree_sitter::{Parser, Tree};
-use walkdir::WalkDir;
 
 use super::body::Body;
 use super::module::{attrs_of, def_node, definitions, module_doc, new_parser, type_parameters, Crate, Module};
@@ -59,11 +58,7 @@ impl Environment {
         if manifest.get("package").and_then(|p| p.get("links")).is_some() {
             return None;
         }
-        let compiled = knowledge::compiled(Registry::Crates);
-        let holds = WalkDir::new(package_dir)
-            .into_iter()
-            .flatten()
-            .any(|e| e.path().extension().and_then(|x| x.to_str()).map_or(false, |x| compiled.contains(&x)));
+        let holds = self.compiled(package_dir, Registry::Crates);
         let lib = manifest.get("lib").and_then(|l| l.get("path")).and_then(|p| p.as_str()).unwrap_or("src/lib.rs");
         let file = normal(&package_dir.join(lib));
         (!holds && file.is_file()).then_some(file)
