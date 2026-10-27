@@ -9,8 +9,26 @@ use std::process::{Command, Stdio};
 
 use tauri::{AppHandle, Emitter, Manager, Runtime, Theme};
 
+/// Studio's configuration folder: the user's choices, `settings.json`, and the workspaces opened,
+/// `workspaces.json`.
+pub struct Settings {
+    dir: PathBuf,
+}
+
+impl Settings {
+    /// The configuration folder of the app that runs; none where the platform has none.
+    pub fn of<R: Runtime>(app: &AppHandle<R>) -> Option<Settings> {
+        app.path().app_config_dir().ok().map(|dir| Settings { dir })
+    }
+
+    /// One file kept there.
+    pub fn file(&self, name: &str) -> PathBuf {
+        self.dir.join(name)
+    }
+}
+
 fn file<R: Runtime>(app: &AppHandle<R>) -> Option<PathBuf> {
-    app.path().app_config_dir().ok().map(|dir| dir.join("settings.json"))
+    Some(Settings::of(app)?.file("settings.json"))
 }
 
 /// The settings kept: one object, each setting a field of it.

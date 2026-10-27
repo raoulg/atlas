@@ -19,6 +19,7 @@ pub mod model;
 pub mod options;
 pub mod parts;
 pub mod paths;
+pub mod places;
 pub mod principles;
 pub mod prophecy;
 pub mod python;

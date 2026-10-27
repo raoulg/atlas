@@ -18,6 +18,7 @@ use std::sync::Arc;
 use serde::{Deserialize, Serialize};
 
 use crate::model::Graph;
+use crate::places::Workbench;
 
 /// Where one build of Atlas keeps what does not change.
 #[derive(Clone, Debug)]
@@ -52,7 +53,7 @@ impl Cache {
     /// The same build's index for the working tree containing `dir`.
     pub fn workspace(&self, dir: &Path) -> Option<Cache> {
         let build = self.dir.file_name()?;
-        Some(Cache { dir: home(dir).join("index").join(build), hits: self.hits.clone(), writes: self.writes.clone() })
+        Some(Cache { dir: Workbench::of(dir).index(build), hits: self.hits.clone(), writes: self.writes.clone() })
     }
 
     /// Whether it keeps anything yet: a reading with a cache that keeps nothing reads everything.
@@ -124,17 +125,6 @@ impl Cache {
             }
         }
     }
-}
-
-/// Where Atlas keeps generated files for `dir`, at its Git worktree root when one exists.
-pub fn home(dir: &Path) -> PathBuf {
-    let dir = crate::repo::normal(&std::path::absolute(dir).unwrap_or_else(|_| dir.to_path_buf()));
-    let top = dir.ancestors().find(|a| a.join(".git").exists()).unwrap_or(&dir);
-    let home = top.join(".atlas");
-    if std::fs::create_dir_all(&home).is_ok() && !home.join(".gitignore").exists() {
-        let _ = std::fs::write(home.join(".gitignore"), "# Generated Atlas files.\n*\n");
-    }
-    home
 }
 
 /// What the directory of a build with edits has in its name.
