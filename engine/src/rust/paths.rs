@@ -418,7 +418,7 @@ impl<'a> Eval<'a> {
                 // what an `Option` or a `Result` holds, or what it falls back to where it holds nothing
                 None if super::module::OR_ELSE.contains(&method) && !method.starts_with("map") => or_else(on(), arg(0)),
                 None if knowledge::hands_on(method) && !matches!(method, "map" | "and_then") => on(),
-                None => vec![hole("call")],
+                None => self.method_given(at, recv, method, &args, depth).unwrap_or_else(|| vec![hole("call")]),
             };
         }
         let parts = expand(at.m, &path_parts(Some(f), src));
@@ -470,6 +470,76 @@ impl<'a> Eval<'a> {
         let args = if takes_self(def) { args.get(1..).unwrap_or_default() } else { args };
         let handed: HashMap<&str, Vec<Built>> = names.iter().zip(args).map(|(p, a)| (p.as_str(), self.of(at, *a, depth + 1))).collect();
         Some(gives.iter().flat_map(|b| substitute(b, |p| handed.get(p).cloned().unwrap_or_else(|| vec![hole(p)]))).collect())
+    }
+
+    /// What one of the program's methods gives back, called on a value whose type the code says
+    /// (`Workbench::of(dir).file(name)`): its parameters bound to what the call hands them, and
+    /// what it reads of `self` as the values of its type hold it.
+    fn method_given(&self, at: At<'a, '_>, recv: TsNode<'a>, method: &str, args: &[TsNode<'a>], depth: u32) -> Option<Vec<Built>> {
+        let ty = self.type_of(at, recv, depth + 1)?;
+        let n = self.nodes.get(&format!("{ty}.{method}")).filter(|n| n.kind == NodeKind::Method)?;
+        let home = self.modules.get(&n.module)?;
+        let def = def_node(home, n)?;
+        let names = param_names(def, &home.src);
+        let inner = At { m: home, scope: Some(def), params: &names };
+        let gives = returns(def.child_by_field_name("body")?).into_iter().fold(vec![], |acc, x| union(acc, self.of(inner, x, depth + 1)));
+        if gives.is_empty() {
+            return None;
+        }
+        let handed: HashMap<&str, Vec<Built>> = names.iter().zip(args).map(|(p, a)| (p.as_str(), self.of(at, *a, depth + 1))).collect();
+        Some(gives.iter().flat_map(|b| substitute(b, |p| handed.get(p).cloned().unwrap_or_else(|| vec![hole(p)]))).collect())
+    }
+
+    /// The program's type of the value `e` is, where the code says it: what one of the program's
+    /// functions or methods gives back by its signature, a binding of such a value, or a parameter
+    /// by its declared type.
+    fn type_of(&self, at: At<'a, '_>, e: TsNode<'a>, depth: u32) -> Option<String> {
+        if depth > DEPTH {
+            return None;
+        }
+        let e = beneath(e, super::module::WRAPPERS);
+        let src = &at.m.src;
+        let own = |id: &str| self.nodes.get(id).filter(|n| n.kind == NodeKind::Class && !n.library).map(|_| id.to_string());
+        let gives = |n: &Node| -> Option<String> {
+            let r = n.returns.as_ref()?;
+            if r.own {
+                return n.cls.clone();
+            }
+            let home = self.modules.get(&n.module)?;
+            let parts: Vec<String> = r.value.split("::").map(str::to_string).collect();
+            resolve(home, &parts, self.modules, &self.nodes, self.crate_ids).and_then(|id| own(&id))
+        };
+        match e.kind() {
+            "call_expression" => {
+                let f = e.child_by_field_name("function")?;
+                let n = if f.kind() == "field_expression" {
+                    let ty = self.type_of(at, f.child_by_field_name("value")?, depth + 1)?;
+                    self.nodes.get(&format!("{ty}.{}", text(f.child_by_field_name("field")?, src)))?
+                } else {
+                    let id = resolve_value(at.m, &path_parts(Some(f), src), self.modules, &self.nodes, self.crate_ids)?;
+                    self.nodes.get(&id)?
+                };
+                gives(n)
+            }
+            "identifier" => {
+                let name = text(e, src);
+                let scope = at.scope?;
+                if let Some(Bound::Value(v)) = bound(scope, name, e.start_byte(), src) {
+                    return self.type_of(at, v, depth + 1);
+                }
+                let ps = scope.child_by_field_name("parameters")?;
+                let declared = named_children(ps).into_iter().find(|p| {
+                    p.kind() == "parameter"
+                        && p.child_by_field_name("pattern").map(|x| text(x, src).trim_start_matches("mut ")) == Some(name)
+                })?;
+                let mut t = declared.child_by_field_name("type")?;
+                while t.kind() == "reference_type" {
+                    t = t.child_by_field_name("type")?;
+                }
+                resolve(at.m, &path_parts(Some(t), src), self.modules, &self.nodes, self.crate_ids).and_then(|id| own(&id))
+            }
+            _ => None,
+        }
     }
 
     /// `format!` and `concat!`: their text with each argument evaluated in its place.
