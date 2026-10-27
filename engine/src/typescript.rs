@@ -121,7 +121,7 @@ fn jsonc(text: &str) -> String {
 /// What a reading of the package at `repo` takes from its dependency directories: its own
 /// `node_modules` and those above it, which Node finds from its files as well.
 pub fn environment(repo: &Repo) -> Vec<crate::cache::Check> {
-    let root = std::fs::canonicalize(repo.root()).unwrap_or_else(|_| repo.root().to_path_buf());
+    let root = crate::repo::Repo::real(&repo.root());
     root.ancestors().map(|a| crate::cache::Check::Tree(a.join(knowledge::NODE_PACKAGES))).collect()
 }
 

@@ -119,7 +119,7 @@ impl Language for Python {
         let package = opts.package.clone().or_else(|| python::packages(repo).into_iter().next())?;
         let root = package.ancestors().take(python::PROJECT_ABOVE).find(|p| match p.starts_with(repo.root()) {
             true => python::is_project(repo, p),
-            false => python::project_files(p).any(|f| f.is_file()),
+            false => knowledge::PYTHON_PROJECT_FILES.iter().any(|f| Repo::has(p, f)),
         })?;
         (!root.starts_with(repo.root())).then(|| (root.to_path_buf(), package.clone()))
     }

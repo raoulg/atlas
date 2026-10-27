@@ -100,7 +100,7 @@ impl Reading {
         let name = self
             .repos
             .first()
-            .and_then(|r| std::fs::canonicalize(r).ok())
+            .and_then(|r| atlas_engine::repo::Repo::resolved(r))
             .and_then(|p| p.file_name().map(|n| n.to_string_lossy().to_string()))
             .unwrap_or_else(|| "repo".into());
         let (graph, diff) = atlas_engine::diff::union(&name, since.parts, self.parts);

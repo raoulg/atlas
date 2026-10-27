@@ -16,7 +16,6 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result};
 use indexmap::IndexMap;
 use tree_sitter::{Node as TsNode, Parser};
-use walkdir::WalkDir;
 
 mod body;
 mod module;
@@ -26,6 +25,7 @@ mod paths;
 pub use crate::builder::{foreign_type, ClassInfo, Declared, GraphBuilder, SigInfo};
 use crate::knowledge;
 use crate::model::{Entry, EntryKind, Node, NodeKind};
+use crate::places::Environment;
 use crate::pytypes::{Ty, Types};
 use crate::repo::Repo;
 use crate::tree::named_children;
@@ -193,7 +193,7 @@ fn single_module(repo: &Repo, d: &Path) -> bool {
 
 /// The name a package is imported by: its directory's, or its one module's without `.py`.
 fn import_name(repo: &Repo, d: &Path) -> Option<String> {
-    let full = std::fs::canonicalize(d).unwrap_or_else(|_| d.to_path_buf());
+    let full = crate::repo::Repo::real(&d);
     let name = if single_module(repo, d) { full.file_stem() } else { full.file_name() };
     name.and_then(|n| n.to_str()).map(str::to_string)
 }
@@ -363,20 +363,20 @@ fn read_libraries(
     let mut reached = types.libs.clone();
     let used: HashSet<String> = reached.iter().map(|(m, _)| package_of(m)).collect();
     let mut readable = Readable::default();
-    let here = std::fs::canonicalize(root_dir).unwrap_or_else(|_| root_dir.to_path_buf());
+    let here = crate::repo::Repo::real(&root_dir);
     let project = files.len();
     let depth = opts.libraries;
     for round in 1..=depth {
         let mut fresh = vec![];
         for (mid, path) in std::mem::take(&mut reached) {
-            if modules.contains_key(&mid) || !used.contains(&package_of(&mid)) || !readable.reads(&mid, &path) {
+            if modules.contains_key(&mid) || !used.contains(&package_of(&mid)) || !readable.reads(&ty.env, &mid, &path) {
                 continue;
             }
             // a library in the project's environment is named from the project, like its own files
             let shown = path.strip_prefix(&here).map(|r| root_dir.join(r)).unwrap_or_else(|_| path.clone());
             let is_pkg = path.file_stem().and_then(|s| s.to_str()) == Some("__init__");
             // a library's code is the environment's, not the repository's
-            let Ok(text) = std::fs::read(&path) else { continue };
+            let Some(text) = ty.env.source(&path) else { continue };
             let Ok(m) = load_module(parser, &mid, &shown, is_pkg, &text) else { continue };
             store.files.insert(crate::tree::path_str(&shown), String::from_utf8_lossy(&m.src).to_string());
             store.add_node(Node {
@@ -418,7 +418,7 @@ struct Readable {
 impl Readable {
     /// Whether the module `mid` at `path` is read: Python source, in a package the effect
     /// tables do not describe and that holds no compiled code.
-    fn reads(&mut self, mid: &str, path: &Path) -> bool {
+    fn reads(&mut self, env: &Environment, mid: &str, path: &Path) -> bool {
         if path.extension().and_then(|x| x.to_str()) != Some("py") {
             return false;
         }
@@ -428,13 +428,7 @@ impl Readable {
         }
         let is_pkg = path.file_stem().and_then(|s| s.to_str()) == Some("__init__");
         let Some(top) = path.ancestors().nth(parts - 1 + usize::from(is_pkg)).map(Path::to_path_buf) else { return false };
-        let compiled = self.compiled.entry(top.clone()).or_insert_with(|| {
-            let compiled = knowledge::compiled(knowledge::Registry::PyPi);
-            WalkDir::new(&top)
-                .into_iter()
-                .flatten()
-                .any(|e| e.path().extension().and_then(|x| x.to_str()).map_or(false, |x| compiled.contains(&x)))
-        });
+        let compiled = self.compiled.entry(top.clone()).or_insert_with(|| env.compiled(&top, knowledge::Registry::PyPi));
         !*compiled
     }
 }

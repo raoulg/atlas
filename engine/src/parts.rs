@@ -181,7 +181,7 @@ fn indexed_graph(part: &Repo, opts: &Options) -> Result<(Graph, Witness)> {
     };
     let key = format!(
         "{}\n{}\n{}\n{}\n{:?}\n{:?}",
-        std::fs::canonicalize(part.root()).unwrap_or_else(|_| part.root().to_path_buf()).display(),
+        crate::repo::Repo::real(&part.root()).display(),
         part.language().unwrap_or(""),
         part.asked().map_or_else(String::new, |p| p.display().to_string()),
         opts.libraries,
@@ -294,12 +294,7 @@ pub fn analyze_repo(repos: &[PathBuf], opts: &Options) -> Result<Graph> {
 pub fn merged(repos: &[PathBuf], graphs: Vec<Graph>) -> Graph {
     let name = repos
         .iter()
-        .map(|r| {
-            std::fs::canonicalize(r)
-                .ok()
-                .and_then(|p| p.file_name().map(|n| n.to_string_lossy().to_string()))
-                .unwrap_or_else(|| "repo".into())
-        })
+        .map(|r| Repo::resolved(r).and_then(|p| p.file_name().map(|n| n.to_string_lossy().to_string())).unwrap_or_else(|| "repo".into()))
         .collect::<Vec<_>>()
         .join("+");
     joined(&name, graphs)

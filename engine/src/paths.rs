@@ -822,19 +822,13 @@ pub fn place_calls(store: &mut crate::builder::GraphBuilder, completed: Vec<Comp
     for (f, t, built, found) in completed {
         // the type whose code gives the path its root: one whose value holds it (`self.root`), or
         // whose constructor takes it, as a constructor's parameter is its class's (`Store.path`)
-        let held = built
-            .iter()
-            .flatten()
-            .find_map(|s| match s {
-                Seg::Held(g, _) => class_of.get(g).cloned(),
-                _ => None,
-            })
-            .or_else(|| store.nodes.get(&f).filter(|n| n.ctor && !n.library).and_then(|n| n.cls.clone()))
-            // or one of whose methods builds the path: more than the parameter it is handed
-            .or_else(|| {
-                let handed = built.iter().all(|b| matches!(b.as_slice(), [Seg::Param(_)]));
-                (!handed).then(|| class_of.get(&f).cloned()).flatten()
-            });
+        let held = built.iter().flatten().find_map(|s| match s {
+            Seg::Held(g, _) => class_of.get(g).cloned(),
+            _ => None,
+        });
+        // else the one whose constructor takes the path, as a constructor's parameter is its class's
+        // (`Store.path`), or one of whose methods touches it: the type whose code goes to the disk there
+        let own = store.nodes.get(&f).filter(|n| n.ctor && !n.library).and_then(|n| n.cls.clone()).or_else(|| class_of.get(&f).cloned());
         // what each place of completion makes of it: the alternatives one caller hands are one
         let mut wholes: Vec<&Whole> = vec![];
         for (w, _, _, _) in &found {
@@ -849,7 +843,12 @@ pub fn place_calls(store: &mut crate::builder::GraphBuilder, completed: Vec<Comp
             let dir = if t.kind == World::Net { way_of_request(built.iter()).or(t.dir) } else { t.dir };
             store.instead(
                 &f,
-                Touch { what: what.unwrap_or_else(|| t.what.clone()), dir, holder: held.clone().unwrap_or_default(), ..t.clone() },
+                Touch {
+                    what: what.unwrap_or_else(|| t.what.clone()),
+                    dir,
+                    holder: held.clone().or_else(|| own.clone()).unwrap_or_default(),
+                    ..t.clone()
+                },
             );
         }
         for whole in wholes {
@@ -863,10 +862,13 @@ pub fn place_calls(store: &mut crate::builder::GraphBuilder, completed: Vec<Comp
             };
             // the way a request goes, where the method its alternatives say gives one
             let alternatives = found.iter().filter(|(w, _, _, _)| w == whole).map(|(_, b, _, _)| b);
-            // else one whose value a caller's object holds, set up where the completion went through
-            let held = held.clone().or_else(|| {
-                found.iter().filter(|(w, _, _, _)| w == whole).find_map(|(_, _, _, set_up)| class_of.get(set_up.as_ref()?).cloned())
-            });
+            // or one whose value a caller's object holds, set up where the completion went through
+            let held = held
+                .clone()
+                .or_else(|| {
+                    found.iter().filter(|(w, _, _, _)| w == whole).find_map(|(_, _, _, set_up)| class_of.get(set_up.as_ref()?).cloned())
+                })
+                .or_else(|| own.clone());
             let way = if t.kind == World::Net { way_of_request(alternatives).or(t.dir) } else { t.dir };
             // each place with the functions whose own code decides it
             let mut placed: Vec<(String, Option<crate::model::Dir>, Vec<String>)> = vec![];

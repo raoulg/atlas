@@ -25,16 +25,32 @@ impl Settings {
     pub fn file(&self, name: &str) -> PathBuf {
         self.dir.join(name)
     }
+
+    /// What one of its files keeps, as it was kept.
+    pub fn read(&self, name: &str) -> Option<Vec<u8>> {
+        std::fs::read(self.file(name)).ok()
+    }
+
+    /// Keep `bytes` in one of its files, in place of what it kept.
+    pub fn keep(&self, name: &str, bytes: &[u8]) -> Result<(), String> {
+        std::fs::create_dir_all(&self.dir).map_err(|error| error.to_string())?;
+        std::fs::write(self.file(name), bytes).map_err(|error| error.to_string())
+    }
+
+    /// A coding agent's own settings file, as it is: Claude Code's `~/.claude.json`, a project's
+    /// `.mcp.json`, Codex's `config.toml`.
+    pub fn agent(config: &Path) -> Option<String> {
+        std::fs::read_to_string(config).ok()
+    }
 }
 
-fn file<R: Runtime>(app: &AppHandle<R>) -> Option<PathBuf> {
-    Some(Settings::of(app)?.file("settings.json"))
-}
+/// The file Studio keeps the user's choices in.
+const FILE: &str = "settings.json";
 
 /// The settings kept: one object, each setting a field of it.
 fn read<R: Runtime>(app: &AppHandle<R>) -> serde_json::Value {
-    file(app)
-        .and_then(|file| std::fs::read(file).ok())
+    Settings::of(app)
+        .and_then(|settings| settings.read(FILE))
         .and_then(|bytes| serde_json::from_slice::<serde_json::Value>(&bytes).ok())
         .unwrap_or_default()
 }
@@ -53,12 +69,9 @@ fn merged(kept: serde_json::Value, fields: serde_json::Value) -> serde_json::Val
 
 /// Keep `fields` in the settings, beside the settings they do not name.
 fn keep<R: Runtime>(app: &AppHandle<R>, fields: serde_json::Value) -> Result<(), String> {
-    let file = file(app).ok_or("Studio has no configuration folder")?;
-    if let Some(dir) = file.parent() {
-        std::fs::create_dir_all(dir).map_err(|error| error.to_string())?;
-    }
+    let settings = Settings::of(app).ok_or("Studio has no configuration folder")?;
     let kept = merged(read(app), fields);
-    std::fs::write(file, serde_json::to_string(&kept).map_err(|error| error.to_string())?).map_err(|error| error.to_string())
+    settings.keep(FILE, serde_json::to_string(&kept).map_err(|error| error.to_string())?.as_bytes())
 }
 
 /// How Studio looks: the mode (`system`, `light` or `dark`) and the theme it shows in each of light and
@@ -184,9 +197,8 @@ pub struct Agent {
 
 /// Whether `config` (Claude Code's `~/.claude.json`, or a project's `.mcp.json`) names a server `atlas`.
 fn names_atlas(config: &Path) -> bool {
-    std::fs::read(config)
-        .ok()
-        .and_then(|bytes| serde_json::from_slice::<serde_json::Value>(&bytes).ok())
+    Settings::agent(config)
+        .and_then(|text| serde_json::from_str::<serde_json::Value>(&text).ok())
         .is_some_and(|value| value["mcpServers"].get("atlas").is_some())
 }
 
@@ -202,7 +214,7 @@ pub fn agents(workspace: Option<&Path>) -> Vec<Agent> {
         || workspace.is_some_and(|w| names_atlas(&w.join(".mcp.json")));
     let codex = home
         .as_ref()
-        .and_then(|home| std::fs::read_to_string(home.join(".codex").join("config.toml")).ok())
+        .and_then(|home| Settings::agent(&home.join(".codex").join("config.toml")))
         .is_some_and(|text| text.lines().any(|line| line.trim() == "[mcp_servers.atlas]"));
     vec![
         Agent {
