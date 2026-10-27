@@ -189,9 +189,11 @@ below a directory it does not is that name under that directory, the hole kept i
 the name the code gives it, wherever in the term it stands: `File({$DATA_DIR}/report.txt)`. Two
 holes the code names differently are two directories, since nothing in the code says they are one;
 a hole the code gives no name (an expression Atlas does not follow) is `{}`, never `*`, which is
-a wildcard the code writes. The name a hole has is the name the code binds the value to
-(`let folder = notes_folder()?`, `folder = notes_folder()`), the first one, which every later name
-of the value hands on, so one value is one hole however many names it passes through. A call is no
+a wildcard the code writes. The name a hole has is the name the code binds the value to, in the
+function that binds it (`let folder = notes_folder()?` in `main` is `{main.folder}`), the first one,
+which every later name of the value hands on, so one value is one hole however many names it passes
+through. A binding is a name a function gives a value, as a parameter is (`analyze.dir`): two
+functions that each bind a `file` hold two values, and two places. A call is no
 name of what it gives: a callee names an operation (`trim`, `new`, `TemporaryDirectory`), so a
 call no name holds is `{}` in every language. A suffix a path is given (`with_suffix`,
 `with_extension`) is part of the term, applied to what a caller hands once the caller says it,
@@ -200,13 +202,32 @@ it yields is the same place. A place the program names a place below is a direct
 which `glob` lists and `io_dir / "Metadata.xml"` reads in), so the listing and what is read in it
 fold into one folder. One file is one place, whatever operation touches it: the data read or
 written, a test whether it is there, a copy or a move into it or out of it, its removal
-(`File({folder}/note.json)` for the rename that moves a note in, the read and the `remove_file`
+(`File({main.folder}/note.json)` for the rename that moves a note in, the read and the `remove_file`
 alike). The place is the term; its label says the term's patterns in words, from the
 file up (`every *.xml in OW-bestanden/ in each folder in {base_dir}/`), and the term is under the
 pointer. Words are a label, never an identity: two places are one when their terms are.
 **Where.** `paths.rs` (`Seg`, `join`, `place`, `folders`, `bound`, `with_suffix`, `Callers`),
 the readers' `paths.rs` (`Eval::of`), `flow.rs` (`Touch::place`), `plan.js` (`pathWords`); the
 pairs `python/paths`, `places` and `kept`.
+
+### Places by the type that holds them
+**What.** A quotient of the places by the program's type whose code builds each place's path: the
+type a value of which holds its root (its field, `self.root`, also of a value whose type the code
+says, `tmp.root`); else the type whose constructor takes it, as a constructor's parameter is its
+class's (`Store.path`); else the type one of whose methods touches it, the type whose code goes to
+the disk there (`Tmp::new` making its folder, `Environment::manifest` reading a library's manifest).
+A library's types keep none of the program's places. It is a map from places to the program's types, defined where the
+code says it and nowhere else; its fibers are the places each type keeps.
+**In Atlas.** A type of the program that keeps places is a group of them, as a directory is a
+group of files: closed, `Workbench · 7` stands for the files whose paths a `Workbench` builds;
+opened, it splits into them, and they fold further into their directories. A place no type holds
+is in no such group. The group is a quotient of the picture, never a fact of its own: the places
+and their terms are the same with it closed or open, and two programs that keep the same files,
+one through a type and one through bare paths, keep the same places (isomorphic is the same);
+only the first draws the group, since only its code says the files belong together.
+**Where.** `paths.rs` (`place_calls`, the holder of a touch), `model.rs` (`Touch::holder`),
+`flow.rs` (`Touch::place`, its coarse place), `index.html` (the storage quotient); the pair
+`workbench`.
 
 ### Yoneda: what changed
 **What.** An object is determined up to isomorphism by the arrows into it, `Hom(−, A)`, and

@@ -3,6 +3,7 @@ mod lesson;
 mod settings;
 mod terminal;
 mod update;
+mod workspace;
 mod workspaces;
 
 use std::{
@@ -70,8 +71,8 @@ async fn first_workspace(
     if window.label() != "main" {
         return Ok(None);
     }
-    let named = std::env::args_os().skip(1).map(PathBuf::from).find(|path| path.is_dir());
-    let last = workspaces::recent(&app).into_iter().map(|recent| PathBuf::from(recent.path)).find(|path| path.is_dir());
+    let named = std::env::args_os().skip(1).map(PathBuf::from).find(|path| workspace::Workspace::is(path));
+    let last = workspaces::recent(&app).into_iter().map(|recent| PathBuf::from(recent.path)).find(|path| workspace::Workspace::is(path));
     let Some(path) = named.or(last) else {
         return Ok(None);
     };
@@ -114,7 +115,7 @@ async fn open_workspace(
     label: &str,
     path: PathBuf,
 ) -> Result<Option<Workspace>, String> {
-    let path = path.canonicalize().map_err(|e| e.to_string())?;
+    let path = workspace::Workspace::open(&path)?.root().to_path_buf();
     let shown = path.display().to_string();
     let elsewhere =
         state.0.lock().map_err(|e| e.to_string())?.iter().find(|(l, s)| *l != label && s.workspace.path == shown).map(|(l, _)| l.clone());
@@ -378,14 +379,14 @@ async fn this_build(app: &tauri::AppHandle) -> Result<update::Build, String> {
 /// it is a day old or `now` asks for it.
 async fn newer_build(app: &tauri::AppHandle, now: bool) -> Result<Option<update::Newer>, String> {
     let build = this_build(app).await?;
-    let file = app.path().app_config_dir().map_err(|e| e.to_string())?.join("update.json");
-    let mut asked = update::read(&file);
+    let cache = update::Cache::of(app).ok_or("Studio has no cache folder")?;
+    let mut asked = cache.asked();
     if now || asked.stale(update::now()) {
         let asking = build.clone();
         let latest = tauri::async_runtime::spawn_blocking(move || update::ask(&asking)).await.map_err(|e| e.to_string())?;
         if let Some(latest) = latest {
             asked = update::Asked { checked: update::now(), latest };
-            update::keep(&file, &asked);
+            cache.keep(&asked);
         } else if now {
             return Err("GitHub did not answer; try again later".into());
         }
@@ -394,11 +395,21 @@ async fn newer_build(app: &tauri::AppHandle, now: bool) -> Result<Option<update:
     tauri::async_runtime::spawn_blocking(move || newer.map(update::shown)).await.map_err(|e| e.to_string())
 }
 
-/// Studio's settings, for the window that asks: its appearance, and the coding agents with Atlas or without.
+/// Studio's settings, for the window that asks: its appearance, where its terminal docks, and the coding agents
+/// with Atlas or without.
 #[tauri::command]
 fn get_settings(window: tauri::Window, app: tauri::AppHandle, state: tauri::State<'_, StudioState>) -> serde_json::Value {
     let workspace = workspace_path(&state, window.label()).ok();
-    serde_json::json!({"appearance": settings::appearance(&app), "agents": settings::agents(workspace.as_deref())})
+    serde_json::json!({
+        "appearance": settings::appearance(&app),
+        "terminal": settings::terminal_dock(&app),
+        "agents": settings::agents(workspace.as_deref()),
+    })
+}
+
+#[tauri::command]
+fn set_terminal_dock(app: tauri::AppHandle, dock: settings::Dock) -> Result<(), String> {
+    settings::set_terminal_dock(&app, dock)
 }
 
 #[tauri::command]
@@ -596,6 +607,7 @@ fn main() {
             studio_build,
             get_settings,
             set_appearance,
+            set_terminal_dock,
             register_agent,
             install_update,
             read_workspace_file,

@@ -13,6 +13,7 @@ use std::path::{Path, PathBuf};
 
 use anyhow::Result;
 use atlas_engine::changes;
+use atlas_engine::repo::Repo;
 use atlas_engine::sight::Sight;
 use atlas_engine::{parts, principles, remote, Graph, Options};
 use clap::builder::styling::{AnsiColor, Effects, Style, Styles};
@@ -318,7 +319,7 @@ fn view(
 
 /// The route of a file named on the command line: the entry that lies in one of the `named`, by its id.
 fn named_route(graph: &Graph, named: &[PathBuf]) -> Option<String> {
-    let lies_in = |file: &str| std::fs::canonicalize(file).is_ok_and(|f| named.contains(&f));
+    let lies_in = |file: &str| Repo::resolved(std::path::Path::new(file)).is_some_and(|f| named.contains(&f));
     graph.nodes.iter().find(|n| n.entry.is_some() && lies_in(&n.file)).map(|n| n.id.clone())
 }
 
@@ -328,12 +329,12 @@ fn named_route(graph: &Graph, named: &[PathBuf]) -> Option<String> {
 /// with a manifest, else its own folder. It is read even where git ignores it, and the page opens
 /// on its route.
 fn project_of(file: &std::path::Path) -> PathBuf {
-    let file = std::fs::canonicalize(file).unwrap_or_else(|_| file.to_path_buf());
+    let file = Repo::real(file);
     let dir = file.parent().unwrap_or(&file);
     let manifests = atlas_engine::language::manifests();
-    let root = dir.ancestors().find(|d| manifests.iter().any(|m| d.join(m).exists())).unwrap_or(dir);
+    let root = dir.ancestors().find(|d| manifests.iter().any(|m| Repo::has(d, m))).unwrap_or(dir);
     // the project is written from where atlas runs, as a folder named on the command line is
-    let here = std::env::current_dir().ok().and_then(|c| std::fs::canonicalize(c).ok());
+    let here = std::env::current_dir().ok().and_then(|c| Repo::resolved(&c));
     match here.as_deref().and_then(|h| root.strip_prefix(h).ok()) {
         Some(r) if r.as_os_str().is_empty() => PathBuf::from("."),
         Some(r) => PathBuf::from(".").join(r),
@@ -346,7 +347,7 @@ fn local(arg: PathBuf, opts: &mut Options) -> Result<(PathBuf, Option<remote::Cl
     let spec = arg.to_string_lossy().to_string();
     if !remote::is_url(&spec) {
         if arg.is_file() {
-            opts.named.extend(std::fs::canonicalize(&arg).ok());
+            opts.named.extend(Repo::resolved(&arg));
             return Ok((project_of(&arg), None));
         }
         return Ok((arg, None));

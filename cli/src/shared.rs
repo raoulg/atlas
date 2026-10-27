@@ -255,11 +255,7 @@ pub fn issue_state(repo: &Path, issue: &str) -> Option<(atlas_engine::revelation
 /// Files written into the tree, each by its path from the repository's root.
 pub fn write_files(repo: &Path, files: &std::collections::BTreeMap<PathBuf, String>) -> Result<()> {
     for (rel, text) in files {
-        let dest = repo.join(rel);
-        if let Some(dir) = dest.parent() {
-            std::fs::create_dir_all(dir)?;
-        }
-        std::fs::write(&dest, text).with_context(|| format!("writing {}", rel.display()))?;
+        atlas_engine::repo::Repo::write_at(&repo.join(rel), text).with_context(|| format!("writing {}", rel.display()))?;
     }
     Ok(())
 }

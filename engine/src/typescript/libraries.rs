@@ -22,6 +22,7 @@ use super::module::{function_of, is_code, member_parts, module_id, package_of, s
 use super::passes::{collect_imports, collect_symbols, collect_wrapped};
 use crate::builder::GraphBuilder;
 use crate::effects;
+use crate::environment::Environment;
 use crate::knowledge::{self, Registry};
 use crate::model::{Node, NodeKind};
 use crate::repo::{normal, Repo};
@@ -46,15 +47,16 @@ struct Package {
     by_id: HashMap<String, PathBuf>,
 }
 
-impl Package {
-    /// The package at `package_dir`, unless Atlas does not read it: one the tables describe, or one
-    /// with compiled code.
-    fn read(package_dir: &Path) -> Option<Package> {
-        let manifest: Value = serde_json::from_str(&std::fs::read_to_string(package_dir.join("package.json")).ok()?).ok()?;
-        let name = manifest["name"].as_str()?.to_string();
-        if effects::described(&name, Registry::Npm) {
-            return None;
-        }
+impl Environment {
+    /// Node's environment seen from `dir`: the `node_modules` beside it and beside each directory
+    /// above it, nearest first, as Node looks.
+    fn node(dir: &Path) -> Environment {
+        Environment::new(dir.ancestors().map(|a| a.join(knowledge::NODE_PACKAGES)).collect())
+    }
+
+    /// The code files of the package at `package_dir`, not those of the packages it holds in a
+    /// `node_modules` of its own; none for one with compiled code.
+    fn package_code(&self, package_dir: &Path) -> Option<Vec<PathBuf>> {
         let compiled = knowledge::compiled(Registry::Npm);
         let mut paths = vec![];
         for e in
@@ -69,6 +71,20 @@ impl Package {
             }
         }
         paths.sort();
+        Some(paths)
+    }
+}
+
+impl Package {
+    /// The package at `package_dir` in `env`, unless Atlas does not read it: one the tables
+    /// describe, or one with compiled code.
+    fn read(env: &Environment, package_dir: &Path) -> Option<Package> {
+        let manifest: Value = serde_json::from_str(&env.manifest(package_dir, "package.json")?).ok()?;
+        let name = manifest["name"].as_str()?.to_string();
+        if effects::described(&name, Registry::Npm) {
+            return None;
+        }
+        let paths = env.package_code(package_dir)?;
         let root = name.split('/').map(segment).collect::<Vec<_>>().join(".");
         let (mut files, mut by_id) = (HashMap::new(), HashMap::new());
         for p in paths {
@@ -153,6 +169,8 @@ type Def = (PathBuf, String, usize);
 
 /// The packages the program uses, read as far as their code is asked for.
 struct Libraries {
+    /// Where Node keeps them.
+    env: Environment,
     /// The repository as the caller named it, and on disk: a package below it is shown below it.
     root: PathBuf,
     here: PathBuf,
@@ -173,8 +191,9 @@ struct Libraries {
 impl Libraries {
     fn new(root: &Path) -> Libraries {
         Libraries {
+            env: Environment::default(),
             root: root.to_path_buf(),
-            here: std::fs::canonicalize(root).unwrap_or_else(|_| root.to_path_buf()),
+            here: crate::repo::Repo::real(&root),
             packages: HashMap::new(),
             found: HashMap::new(),
             owner: HashMap::new(),
@@ -189,19 +208,17 @@ impl Libraries {
     /// The package `name` as Node finds it from a file: in `node_modules` beside the file's
     /// directory or beside one above it.
     fn locate(&mut self, from: &Path, name: &str) -> Option<PathBuf> {
-        let dir = std::fs::canonicalize(from).ok()?.parent()?.to_path_buf();
+        let dir = self.env.real(from)?.parent()?.to_path_buf();
         let key = (dir.clone(), name.to_string());
-        if let Some(f) = self.found.get(&key) {
-            return f.clone();
+        if let Some(known) = self.found.get(&key) {
+            return known.clone();
         }
-        let found = dir
-            .ancestors()
-            .map(|a| a.join(knowledge::NODE_PACKAGES).join(name))
-            .find(|package_dir| package_dir.join("package.json").is_file());
+        let found = Environment::node(&dir).package(name, "package.json");
         // a package of the repository's own, linked into `node_modules` (a workspace's member), is
         // read as its own part
         let own = |d: &PathBuf| {
-            std::fs::canonicalize(d)
+            self.env
+                .real(d)
                 .map_or(false, |abs| abs.starts_with(&self.here) && !abs.components().any(|c| c.as_os_str() == knowledge::NODE_PACKAGES))
         };
         // a package below the repository is named from it, like its own files
@@ -212,7 +229,7 @@ impl Libraries {
 
     fn package(&mut self, package_dir: &Path) -> Option<&Package> {
         if !self.packages.contains_key(package_dir) {
-            let p = Package::read(package_dir);
+            let p = Package::read(&self.env, package_dir);
             for f in p.iter().flat_map(|p| p.files.keys()) {
                 self.owner.insert(f.clone(), package_dir.to_path_buf());
             }
@@ -244,7 +261,7 @@ impl Libraries {
     /// A file of a package, parsed: its module with what it imports, binds and defines.
     fn parse(&mut self, file: &Path) -> Option<Module> {
         let id = self.holding(file)?.files.get(file)?.clone();
-        let src = std::fs::read(file).ok()?;
+        let src = self.env.source(file)?;
         let jsx = matches!(file.extension().and_then(|e| e.to_str()), Some("tsx" | "jsx" | "js" | "mjs" | "cjs"));
         let tree = (if jsx { self.tsx.as_mut() } else { self.ts.as_mut() })?.parse(&src, None)?;
         let mut m = Module::new(id, file.to_path_buf(), src, tree);

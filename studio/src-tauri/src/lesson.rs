@@ -2,10 +2,11 @@
 
 use std::{
     collections::BTreeMap,
-    fs,
     path::{Path, PathBuf},
     time::SystemTime,
 };
+
+use crate::workspace::Workspace;
 
 const MAX_TEXT_BYTES: u64 = 2 * 1024 * 1024;
 const MAX_ARTIFACT_BYTES: u64 = 16 * 1024 * 1024;
@@ -24,25 +25,14 @@ pub struct Run {
     pub artifacts: Vec<PathBuf>,
 }
 
-fn root(workspace: &Path) -> Result<PathBuf, String> {
-    workspace.canonicalize().map_err(|error| format!("Cannot open workspace: {error}"))
+/// A path of a lesson, resolved, where it stays in the open workspace.
+fn inside(workspace: &Workspace, path: &Path) -> Result<PathBuf, String> {
+    workspace.inside(path, &path.display().to_string(), "Lesson references must stay in the open workspace")
 }
 
-fn inside(workspace: &Path, path: &Path) -> Result<PathBuf, String> {
-    let root = root(workspace)?;
-    let path = path.canonicalize().map_err(|error| format!("Cannot open {}: {error}", path.display()))?;
-    if !path.starts_with(&root) {
-        return Err("Lesson references must stay in the open workspace".into());
-    }
-    Ok(path)
-}
-
-fn text(path: &Path) -> Result<String, String> {
-    let size = path.metadata().map_err(|error| error.to_string())?.len();
-    if size > MAX_TEXT_BYTES {
-        return Err("This lesson file is too large to show in Studio".into());
-    }
-    fs::read_to_string(path).map_err(|error| format!("Cannot read {}: {error}", path.display()))
+/// A lesson file's text, small enough to show.
+fn text(workspace: &Workspace, path: &Path) -> Result<String, String> {
+    workspace.text(path, MAX_TEXT_BYTES, "This lesson file is too large to show in Studio")
 }
 
 fn script_name(document: &str) -> Option<&str> {
@@ -65,96 +55,96 @@ fn script_name(document: &str) -> Option<&str> {
     None
 }
 
-pub fn open(workspace: &Path, filename: &Path) -> Result<Lesson, String> {
-    let path = inside(workspace, &workspace.join(filename))?;
+pub fn open(folder: &Path, filename: &Path) -> Result<Lesson, String> {
+    let workspace = Workspace::open(folder)?;
+    let path = inside(&workspace, &folder.join(filename))?;
     if !matches!(path.extension().and_then(|extension| extension.to_str()), Some("md" | "html")) {
         return Err("A lesson is a Markdown or HTML file".into());
     }
-    let markdown = text(&path)?;
+    let markdown = text(&workspace, &path)?;
     let name = script_name(&markdown).ok_or("The lesson needs an atlas-script header")?;
     if name.is_empty() {
         return Err("The atlas-script header needs a Python filename".into());
     }
-    let script = inside(workspace, &path.parent().ok_or("Lesson has no parent folder")?.join(name))?;
+    let script = inside(&workspace, &path.parent().ok_or("Lesson has no parent folder")?.join(name))?;
     if script.extension().and_then(|extension| extension.to_str()) != Some("py") {
         return Err("The first lesson runner supports Python scripts".into());
     }
     Ok(Lesson { path, script, text: markdown })
 }
 
-pub fn read_reference(workspace: &Path, lesson: &Path, reference: &str) -> Result<String, String> {
-    let base = inside(workspace, &workspace.join(lesson))?;
-    let path = inside(workspace, &base.parent().ok_or("Lesson has no parent folder")?.join(reference))?;
-    text(&path)
+pub fn read_reference(folder: &Path, lesson: &Path, reference: &str) -> Result<String, String> {
+    let workspace = Workspace::open(folder)?;
+    let base = inside(&workspace, &folder.join(lesson))?;
+    let path = inside(&workspace, &base.parent().ok_or("Lesson has no parent folder")?.join(reference))?;
+    text(&workspace, &path)
 }
 
-pub fn read_asset(workspace: &Path, lesson: &Path, reference: &Path) -> Result<Vec<u8>, String> {
-    let base = inside(workspace, &workspace.join(lesson))?;
-    let path = inside(workspace, &base.parent().ok_or("Lesson has no parent folder")?.join(reference))?;
-    if path.metadata().map_err(|error| error.to_string())?.len() > MAX_ARTIFACT_BYTES {
-        return Err("This artifact is too large to show in Studio".into());
-    }
-    fs::read(&path).map_err(|error| format!("Cannot read {}: {error}", path.display()))
+pub fn read_asset(folder: &Path, lesson: &Path, reference: &Path) -> Result<Vec<u8>, String> {
+    let workspace = Workspace::open(folder)?;
+    let base = inside(&workspace, &folder.join(lesson))?;
+    let path = inside(&workspace, &base.parent().ok_or("Lesson has no parent folder")?.join(reference))?;
+    workspace.bytes(&path, MAX_ARTIFACT_BYTES, "This artifact is too large to show in Studio".into(), &path.display().to_string())
 }
 
-pub fn save_document(workspace: &Path, filename: &Path, markdown: &str) -> Result<(), String> {
+pub fn save_document(folder: &Path, filename: &Path, markdown: &str) -> Result<(), String> {
     if markdown.len() as u64 > MAX_TEXT_BYTES {
         return Err("This lesson is too large to save in Studio".into());
     }
-    let path = inside(workspace, &workspace.join(filename))?;
+    let workspace = Workspace::open(folder)?;
+    let path = inside(&workspace, &folder.join(filename))?;
     if !matches!(path.extension().and_then(|extension| extension.to_str()), Some("md" | "html")) {
         return Err("A lesson is a Markdown or HTML file".into());
     }
-    fs::write(&path, markdown).map_err(|error| format!("Cannot save {}: {error}", path.display()))
+    workspace.write(&path, markdown)
 }
 
-pub fn current_view(workspace: &Path) -> Result<String, String> {
-    let path = inside(workspace, &root(workspace)?.join(".atlas").join("shown.json"))?;
-    text(&path)
+pub fn current_view(folder: &Path) -> Result<String, String> {
+    let workspace = Workspace::open(folder)?;
+    let path = inside(&workspace, &workspace.root().join(".atlas").join("shown.json"))?;
+    text(&workspace, &path)
 }
 
-pub fn save_view(workspace: &Path, lesson: &Path, name: &str, view: &str) -> Result<String, String> {
+pub fn save_view(folder: &Path, lesson: &Path, name: &str, view: &str) -> Result<String, String> {
     if name.is_empty() || !name.chars().all(|character| character.is_ascii_alphanumeric() || character == '-' || character == '_') {
         return Err("A view name contains only letters, digits, '-' or '_'".into());
     }
     if view.len() > 65536 || !view.trim_start().starts_with('{') {
         return Err("The selected Atlas view is not valid JSON".into());
     }
-    let lesson = inside(workspace, &workspace.join(lesson))?;
+    let workspace = Workspace::open(folder)?;
+    let lesson = inside(&workspace, &folder.join(lesson))?;
     let parent = lesson.parent().ok_or("Lesson has no parent folder")?;
-    let folder = parent.join("views");
-    fs::create_dir_all(&folder).map_err(|error| error.to_string())?;
-    let folder = inside(workspace, &folder)?;
-    let path = folder.join(format!("{name}.json"));
-    if path.exists() {
+    let views = parent.join("views");
+    workspace.folder(&views)?;
+    let views = inside(&workspace, &views)?;
+    let path = views.join(format!("{name}.json"));
+    if workspace.has(&path) {
         return Err(format!("A view named {name} already exists"));
     }
-    fs::write(&path, view).map_err(|error| format!("Cannot save {}: {error}", path.display()))?;
+    workspace.write(&path, view)?;
     Ok(format!("views/{name}.json"))
 }
 
-fn pictures(folder: &Path, depth: usize, found: &mut BTreeMap<PathBuf, (u64, Option<SystemTime>)>) {
+fn pictures(workspace: &Workspace, folder: &Path, depth: usize, found: &mut BTreeMap<PathBuf, (u64, Option<SystemTime>)>) {
     if depth == 0 {
         return;
     }
-    let Ok(entries) = fs::read_dir(folder) else { return };
-    for entry in entries.flatten() {
-        let Ok(kind) = entry.file_type() else { continue };
+    for (path, kind) in workspace.entries(folder) {
         if kind.is_symlink() {
             continue;
         }
-        let path = entry.path();
         if kind.is_dir() {
             if !path.file_name().is_some_and(|name| name.to_string_lossy().starts_with('.')) {
-                pictures(&path, depth - 1, found);
+                pictures(workspace, &path, depth - 1, found);
             }
         } else if path
             .extension()
             .and_then(|extension| extension.to_str())
             .is_some_and(|extension| matches!(extension.to_ascii_lowercase().as_str(), "png" | "jpg" | "jpeg" | "svg" | "webp" | "gif"))
         {
-            if let Ok(metadata) = path.metadata() {
-                found.insert(path, (metadata.len(), metadata.modified().ok()));
+            if let Some(stamp) = workspace.stamp(&path) {
+                found.insert(path, stamp);
             }
         }
     }
@@ -171,21 +161,22 @@ fn uv_command() -> PathBuf {
     candidates.into_iter().find(|path| path.is_file()).unwrap_or_else(|| PathBuf::from("uv"))
 }
 
-pub fn run_python(workspace: &Path, filename: &Path) -> Result<Run, String> {
+pub fn run_python(folder: &Path, filename: &Path) -> Result<Run, String> {
     use std::{
         io::Read,
         process::{Command, Stdio},
     };
 
-    let lesson = open(workspace, filename)?;
-    let root = root(workspace)?;
-    let virtual_python = if cfg!(windows) { root.join(".venv/Scripts/python.exe") } else { root.join(".venv/bin/python") };
-    let has_virtual_python = virtual_python.is_file();
-    let mut command = if has_virtual_python { Command::new(virtual_python) } else { Command::new(uv_command()) };
+    let lesson = open(folder, filename)?;
+    let workspace = Workspace::open(folder)?;
+    let root = workspace.root();
+    let python = if cfg!(windows) { ".venv/Scripts/python.exe" } else { ".venv/bin/python" };
+    let has_virtual_python = workspace.holds(python);
+    let mut command = if has_virtual_python { Command::new(root.join(python)) } else { Command::new(uv_command()) };
     if !has_virtual_python {
         command.arg("run");
-        if root.join("pyproject.toml").is_file() {
-            if root.join("uv.lock").is_file() {
+        if workspace.holds("pyproject.toml") {
+            if workspace.holds("uv.lock") {
                 command.arg("--frozen");
             }
             command.arg("--project").arg(&root);
@@ -196,7 +187,7 @@ pub fn run_python(workspace: &Path, filename: &Path) -> Result<Run, String> {
     let script_dir = lesson.script.parent().ok_or("Script has no parent folder")?;
     command.arg(&lesson.script).current_dir(script_dir).stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::piped());
     let mut before = BTreeMap::new();
-    pictures(script_dir, 3, &mut before);
+    pictures(&workspace, script_dir, 3, &mut before);
     let mut process = command.spawn().map_err(|error| format!("Cannot start Python: {error}"))?;
     let stdout = process.stdout.take().ok_or("Python has no stdout")?;
     let stderr = process.stderr.take().ok_or("Python has no stderr")?;
@@ -220,7 +211,7 @@ pub fn run_python(workspace: &Path, filename: &Path) -> Result<Run, String> {
     let stdout = out.join().map_err(|_| "Cannot read Python stdout")?;
     let stderr = err.join().map_err(|_| "Cannot read Python stderr")?;
     let mut after = BTreeMap::new();
-    pictures(script_dir, 3, &mut after);
+    pictures(&workspace, script_dir, 3, &mut after);
     let artifacts = after.into_iter().filter(|(path, stamp)| before.get(path) != Some(stamp)).map(|(path, _)| path).collect();
     Ok(Run { stdout, stderr, code: status.code(), artifacts })
 }
@@ -228,6 +219,7 @@ pub fn run_python(workspace: &Path, filename: &Path) -> Result<Run, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::fs;
 
     #[test]
     fn opens_markdown_and_saves_a_view() {
@@ -262,29 +254,26 @@ mod tests {
     }
 }
 
-pub fn list(workspace: &Path) -> Result<Vec<PathBuf>, String> {
-    let root = root(workspace)?;
+pub fn list(folder: &Path) -> Result<Vec<PathBuf>, String> {
+    let workspace = Workspace::open(folder)?;
     let mut lessons = Vec::new();
-    fn visit(root: &Path, folder: &Path, depth: usize, lessons: &mut Vec<PathBuf>) {
+    fn visit(workspace: &Workspace, folder: &Path, depth: usize, lessons: &mut Vec<PathBuf>) {
         if depth == 0 || lessons.len() >= 200 {
             return;
         }
-        let Ok(entries) = fs::read_dir(folder) else { return };
-        for entry in entries.flatten() {
-            let Ok(kind) = entry.file_type() else { continue };
+        for (path, kind) in workspace.entries(folder) {
             if kind.is_symlink() {
                 continue;
             }
-            let path = entry.path();
             if kind.is_dir() {
-                let name = entry.file_name().to_string_lossy().into_owned();
+                let name = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
                 if !name.starts_with('.') && !matches!(name.as_str(), "target" | "node_modules" | "dist" | "build") {
-                    visit(root, &path, depth - 1, lessons);
+                    visit(workspace, &path, depth - 1, lessons);
                 }
             } else if matches!(path.extension().and_then(|extension| extension.to_str()), Some("md" | "html")) {
-                if let Ok(markdown) = text(&path) {
+                if let Ok(markdown) = text(workspace, &path) {
                     if script_name(&markdown).is_some() {
-                        if let Ok(relative) = path.strip_prefix(root) {
+                        if let Ok(relative) = path.strip_prefix(workspace.root()) {
                             lessons.push(relative.to_path_buf());
                         }
                     }
@@ -295,7 +284,7 @@ pub fn list(workspace: &Path) -> Result<Vec<PathBuf>, String> {
             }
         }
     }
-    visit(&root, &root, 8, &mut lessons);
+    visit(&workspace, workspace.root(), 8, &mut lessons);
     lessons.sort();
     Ok(lessons)
 }

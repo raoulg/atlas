@@ -271,19 +271,25 @@ impl<'a> Eval<'a> {
         if depth > DEPTH {
             return None;
         }
-        let src = &at.m.src;
         let e = beneath(e, WRAPPERS);
-        match e.kind() {
-            "object" => Some(e),
-            "identifier" | "shorthand_property_identifier" => {
-                let (v, scope) = self
-                    .declared(at, text(e, src), e.start_byte())
-                    .into_iter()
-                    .find(|(v, _)| v.child_by_field_name("name").map_or(false, |p| p.kind() == "identifier"))?;
-                self.object(At { scope, ..at }, v.child_by_field_name("value")?, depth + 1)
-            }
-            _ => None,
+        if e.kind() == "object" {
+            return Some(e);
         }
+        let (at, v) = self.named_value(at, e)?;
+        self.object(at, v, depth + 1)
+    }
+
+    /// What a name stands for where `e` reads it: the value its declaration in scope there gives
+    /// it, in that declaration's scope.
+    fn named_value<'s>(&self, at: At<'s, 's>, e: TsNode<'s>) -> Option<(At<'s, 's>, TsNode<'s>)> {
+        if !matches!(e.kind(), "identifier" | "shorthand_property_identifier") {
+            return None;
+        }
+        let (v, scope) = self
+            .declared(at, text(e, &at.m.src), e.start_byte())
+            .into_iter()
+            .find(|(v, _)| v.child_by_field_name("name").map_or(false, |p| p.kind() == "identifier"))?;
+        Some((At { scope, ..at }, v.child_by_field_name("value")?))
     }
 
     /// The field `name` of the value `e` is read on, the body's own receiver: the field the first
@@ -373,7 +379,7 @@ impl<'a> Eval<'a> {
                 .into_iter()
                 .find(|v| v.child_by_field_name("name").map(|n| text(n, src)) == Some(name.as_str()) && v.start_byte() < e.start_byte());
             if let Some(v) = local.and_then(|v| v.child_by_field_name("value")) {
-                return named_by(&name, self.of(at, v, depth + 1));
+                return named_by(&local_name(scope, &name, src), self.of(at, v, depth + 1));
             }
             if at.params.contains(&name) {
                 return vec![vec![Seg::Param(name)]];
@@ -426,7 +432,89 @@ impl<'a> Eval<'a> {
             None if last == "toString" => {
                 f.child_by_field_name("object").map(|o| self.of(at, o, depth + 1)).unwrap_or_else(|| vec![hole("value")])
             }
-            None => self.given(at, &parts, &args, depth).unwrap_or_else(|| vec![hole("call")]),
+            None => self
+                .given(at, &parts, &args, depth)
+                .or_else(|| self.method_given(at, f, &args, depth))
+                .unwrap_or_else(|| vec![hole("call")]),
+        }
+    }
+
+    /// What one of the program's methods gives back, its parameters bound to what the call hands
+    /// them: a static method called on its class (`Workbench.of(dir)`), or a method called on a
+    /// value whose class the code says (`Workbench.of(dir).file(name)`, `bench.file(name)`), what
+    /// it reads of `this` as the instances of that class hold it.
+    fn method_given<'s>(&'s self, at: At<'s, 's>, f: TsNode<'s>, args: &[TsNode<'s>], depth: u32) -> Option<Vec<Built>> {
+        if f.kind() != "member_expression" {
+            return None;
+        }
+        let name = text(f.child_by_field_name("property")?, &at.m.src);
+        let object = f.child_by_field_name("object")?;
+        let (home, class) = self.class_called(at, object).or_else(|| self.class_of(at, object, depth + 1))?;
+        let def = named_children(class.child_by_field_name("body")?)
+            .into_iter()
+            .find(|x| x.kind() == "method_definition" && x.child_by_field_name("name").map(|n| text(n, &home.src)) == Some(name))?;
+        let names = param_names(def, &home.src);
+        let inner = At { m: home, scope: Some(def), params: &names };
+        let gives = returns(def).into_iter().fold(vec![], |acc, x| union(acc, self.of(inner, x, depth + 1)));
+        if gives.is_empty() {
+            return None;
+        }
+        let handed: HashMap<&str, Vec<Built>> = names.iter().zip(args).map(|(p, a)| (p.as_str(), self.of(at, *a, depth + 1))).collect();
+        Some(gives.iter().flat_map(|b| substitute(b, |p| handed.get(p).cloned().unwrap_or_else(|| vec![hole(p)]))).collect())
+    }
+
+    /// The program's class a name is, where `e` names one: declared in the module, or imported from
+    /// another of its modules.
+    fn class_called<'s>(&'s self, at: At<'s, '_>, e: TsNode<'_>) -> Option<(&'s Module, TsNode<'s>)> {
+        if e.kind() != "identifier" {
+            return None;
+        }
+        let name = text(e, &at.m.src);
+        if let Some(c) = class_named(at.m, name) {
+            return Some((at.m, c));
+        }
+        let mut bound = at.m.bindings.get(name).cloned();
+        for _ in 0..8 {
+            let Some(Bound::Own(target)) = bound else { break };
+            let (mid, n) = target.rsplit_once('.')?;
+            let home = self.modules.get(mid)?;
+            if let Some(c) = class_named(home, n) {
+                return Some((home, c));
+            }
+            bound = home.bindings.get(n).cloned();
+        }
+        None
+    }
+
+    /// The program's class of the value `e` is, where the code says it: a `new` of it, what one of
+    /// the program's methods gives back by its declared type, or a local that holds such a value.
+    fn class_of<'s>(&'s self, at: At<'s, 's>, e: TsNode<'s>, depth: u32) -> Option<(&'s Module, TsNode<'s>)> {
+        if depth > DEPTH {
+            return None;
+        }
+        let src = &at.m.src;
+        let e = beneath(e, WRAPPERS);
+        match e.kind() {
+            "new_expression" => self.class_called(at, e.child_by_field_name("constructor")?),
+            "call_expression" => {
+                let f = e.child_by_field_name("function").filter(|f| f.kind() == "member_expression")?;
+                let name = text(f.child_by_field_name("property")?, src);
+                let object = f.child_by_field_name("object")?;
+                let (home, class) = self.class_called(at, object).or_else(|| self.class_of(at, object, depth + 1))?;
+                let def = named_children(class.child_by_field_name("body")?)
+                    .into_iter()
+                    .find(|x| x.kind() == "method_definition" && x.child_by_field_name("name").map(|n| text(n, &home.src)) == Some(name))?;
+                let returned = def.child_by_field_name("return_type").and_then(|t| named_children(t).into_iter().next())?;
+                self.class_called(At { m: home, scope: None, params: &[] }, returned).or_else(|| {
+                    (returned.kind() == "type_identifier")
+                        .then(|| class_named(home, text(returned, &home.src)).map(|c| (home, c)))
+                        .flatten()
+                })
+            }
+            _ => {
+                let (at, v) = self.named_value(at, e)?;
+                self.class_of(at, v, depth + 1)
+            }
         }
     }
 
@@ -568,5 +656,24 @@ impl crate::paths::Handing for Evaluated<'_, '_> {
             Some(Bound::Ext(_)) => None,
             None => m.symbols.get(name).cloned(),
         }
+    }
+}
+
+/// The name a value bound in a function goes by beyond it: the binding's with the function's
+/// (`main.folder`, `Store.open.root`), as a parameter's is (`analyze.dir`), so that two functions'
+/// `file`s are two values. A function without a name of its own (an arrow held by nothing) leaves
+/// the binding's.
+fn local_name(scope: TsNode, name: &str, src: &[u8]) -> String {
+    let own = scope
+        .child_by_field_name("name")
+        .or_else(|| scope.parent().filter(|p| p.kind() == "variable_declarator").and_then(|p| p.child_by_field_name("name")));
+    let Some(own) = own.map(|n| text(n, src).to_string()) else { return name.to_string() };
+    let mut p = scope.parent();
+    while let Some(x) = p.filter(|x| !matches!(x.kind(), "class_declaration" | "class" | "abstract_class_declaration")) {
+        p = x.parent();
+    }
+    match p.and_then(|c| c.child_by_field_name("name")) {
+        Some(class) if scope.kind() == "method_definition" => format!("{}.{own}.{name}", text(class, src)),
+        _ => format!("{own}.{name}"),
     }
 }

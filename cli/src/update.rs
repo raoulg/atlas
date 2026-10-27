@@ -6,10 +6,12 @@
 //! command never waits for it longer than a moment at its end, and a failure says nothing.
 
 use std::io::IsTerminal;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::process::{Command, Stdio};
 use std::sync::mpsc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
+
+use atlas_engine::cache::Cache;
 
 const DAY: u64 = 24 * 60 * 60;
 const API: &str = "https://api.github.com/repos/raoulg/atlas/releases";
@@ -86,21 +88,16 @@ pub fn upgrade(exe: &Path, nightly: bool, windows: bool) -> String {
     format!("curl -fsSL https://raw.githubusercontent.com/raoulg/atlas/{branch}/install.sh | {set}sh")
 }
 
-fn cache_file() -> Option<PathBuf> {
-    let base = std::env::var_os("XDG_CACHE_HOME")
-        .map(PathBuf::from)
-        .or_else(|| std::env::var_os("LOCALAPPDATA").map(PathBuf::from))
-        .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".cache")))?;
-    Some(base.join("atlas").join("update.json"))
-}
+/// The last answer about updates, kept in the machine's cache beside the answers the engine keeps.
+const ANSWER: &str = "update.json";
 
 fn now() -> u64 {
     SystemTime::now().duration_since(UNIX_EPOCH).map_or(0, |d| d.as_secs())
 }
 
 /// What the cache holds: when it was made, for which build, and what it found.
-fn read(file: &Path) -> Option<(u64, String, Latest)> {
-    let v: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(file).ok()?).ok()?;
+fn read(text: &str) -> Option<(u64, String, Latest)> {
+    let v: serde_json::Value = serde_json::from_str(text).ok()?;
     let text = |k: &str| v[k].as_str().unwrap_or_default().to_string();
     Some((v["checked"].as_u64()?, text("for"), Latest { release: text("release"), nightly: text("nightly") }))
 }
@@ -154,8 +151,8 @@ pub fn begin() -> Check {
     if !wanted() {
         return Check(None);
     }
-    let (this, Some(file)) = (Build::this(), cache_file()) else { return Check(None) };
-    let cached = read(&file).filter(|(_, built, _)| *built == key(&this));
+    let this = Build::this();
+    let cached = Cache::answer(ANSWER).as_deref().and_then(read).filter(|(_, built, _)| *built == key(&this));
     if let Some((_, _, latest)) = &cached {
         if let Some(line) = newer(&this, latest) {
             // the executable as installed, not the link on the PATH that points to it (`/opt/homebrew/bin/atlas`)
@@ -171,10 +168,7 @@ pub fn begin() -> Check {
     std::thread::spawn(move || {
         if let Some(latest) = ask(&this) {
             let body = serde_json::json!({ "checked": now(), "for": key(&this), "release": latest.release, "nightly": latest.nightly });
-            if let Some(dir) = file.parent() {
-                let _ = std::fs::create_dir_all(dir);
-            }
-            let _ = std::fs::write(&file, body.to_string());
+            Cache::keep_answer(ANSWER, &body.to_string());
         }
         let _ = tx.send(());
     });

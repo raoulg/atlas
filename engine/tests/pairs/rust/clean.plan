@@ -89,7 +89,7 @@ line Store@main/Store.open/Store() > main/Store.open value
 line main/Store.open > Store·store@main/Store.open value
 
 # ---------- import ----------
-line Disk(path) > main/?1/read_csv own
+line Disk(read_csv.path) > main/?1/read_csv own
 line main/?1/read_csv/read_to_string > _·text@main/?1/read_csv/read_to_string value
 line _·text@main/?1/read_csv/read_to_string > main/?1/read_csv/Expense.parse/splitn value    # each line, through map
 line _·text@main/?1/read_csv/read_to_string > main/?1/read_csv/Expense.parse/?1/Error() value
@@ -280,7 +280,7 @@ home _·out@main/?1/write/Render.render/Csv.render/from main/?1/write/Render.ren
 
 side entry left
 side File(spend.toml) left
-side Disk(path) left
+side Disk(read_csv.path) left
 side Web(api.frankfurter.app) left
 side SQLite(expenses) both        # import writes it, report reads and uses it: arms of one choice, neither after the other
 side SQLite(rates) both           # rates writes it, report reads and uses it

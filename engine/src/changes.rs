@@ -17,7 +17,9 @@ use crate::cache::{Cache, Check, Written};
 use crate::diff::{self, Reading, Status};
 use crate::flow::Drawn;
 use crate::model::{EdgeKind, Graph, NodeKind, Touch, World};
+use crate::places::Tmp;
 use crate::principles::Finding;
+use crate::repo::Repo;
 use crate::story;
 
 /// How one route differs between two revisions.
@@ -162,15 +164,14 @@ pub fn parts_at(repo: &Path, rev: Option<&str>, opts: &crate::Options) -> Result
     if let Some(parts) = opts.cache.as_ref().zip(key.as_ref()).and_then(|(cache, key)| kept(cache, key)) {
         return Ok(parts);
     }
-    let (base, root) = revision(repo, &commit)?;
+    let (tmp, root) = revision(repo, &commit)?;
     // what the reading takes from outside the commit, asked before it reads: a change while it
     // reads is a change the next reading sees
-    let witness = opts.cache.as_ref().map(|_| outside(repo, &base, &root, opts));
+    let witness = opts.cache.as_ref().map(|_| outside(repo, &tmp.root, &root, opts));
     let parts = crate::parts::analyze_parts(&[root], opts);
     if let (Ok(parts), Some(cache), Some(key), Some(witness)) = (&parts, &opts.cache, &key, witness) {
-        keep(cache, &key, &base, witness, parts);
+        keep(cache, &key, &tmp.root, witness, parts);
     }
-    let _ = std::fs::remove_dir_all(&base);
     parts
 }
 
@@ -195,9 +196,9 @@ const REVISION: &str = "revision";
 /// resolves it and as it was named, each with `/` and as the platform writes it. The resolved
 /// ones come first, since the other may stand inside them (`/private/var/..` and `/var/..`).
 fn written_as(base: &Path) -> [String; 4] {
-    let resolved = std::fs::canonicalize(base.parent().unwrap_or(base))
+    let resolved = Repo::resolved(base.parent().unwrap_or(base))
         .map(|p| p.join(base.file_name().unwrap_or_default()))
-        .unwrap_or_else(|_| base.to_path_buf());
+        .unwrap_or_else(|| base.to_path_buf());
     [
         crate::tree::path_str(&resolved),
         resolved.to_string_lossy().to_string(),
@@ -229,7 +230,8 @@ fn kept(cache: &Cache, key: &str) -> Option<Vec<Graph>> {
     if !crate::cache::holds(&kept.witness) {
         return None;
     }
-    let forms = written_as(&std::env::temp_dir().join(reading_dir()));
+    let tmp = Tmp::new("revision").ok()?;
+    let forms = written_as(&tmp.root);
     let pairs: Vec<(String, &str)> = forms.iter().enumerate().map(|(i, f)| (standing(i), f.as_str())).collect();
     let mut parts = kept.parts;
     replaced(&mut parts, &pairs.iter().map(|(s, f)| (s.as_str(), *f)).collect::<Vec<_>>());
@@ -256,7 +258,7 @@ fn keep(cache: &Cache, key: &str, base: &Path, witness: Vec<(Check, String)>, pa
 fn outside(repo: &Path, base: &Path, root: &Path, opts: &crate::Options) -> Vec<(Check, String)> {
     let mut checks = crate::parts::environment(root, opts).unwrap_or_default();
     checks.push(Check::Names(repo.join(".venv")));
-    let resolved = std::fs::canonicalize(base).unwrap_or_else(|_| base.to_path_buf());
+    let resolved = Repo::real(&base);
     let inside = |c: &Check| c.path().map_or(false, |p| p.starts_with(base) || p.starts_with(&resolved));
     crate::cache::witness(checks).into_iter().filter(|(c, _)| !inside(c)).collect()
 }
@@ -727,18 +729,10 @@ pub fn resolve(repo: &Path, rev: &str) -> Result<(String, Named)> {
 /// repository sits in it.
 fn located(repo: &Path) -> Result<(PathBuf, PathBuf, std::ffi::OsString)> {
     let top = PathBuf::from(String::from_utf8_lossy(&git(repo, &["rev-parse", "--show-toplevel"])?).trim());
-    let resolved = |p: &Path| std::fs::canonicalize(p).unwrap_or_else(|_| p.to_path_buf());
+    let resolved = |p: &Path| Repo::real(&p);
     let rel = resolved(repo).strip_prefix(resolved(&top)).unwrap_or(Path::new("")).to_path_buf();
     let name = resolved(repo).file_name().map(|n| n.to_os_string()).unwrap_or_else(|| "repo".into());
     Ok((top, rel, name))
-}
-
-/// The name of a directory of its own for one reading of a revision, also when a process reads
-/// several at once.
-fn reading_dir() -> String {
-    static READ: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
-    let n = READ.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-    format!("atlas-changes-{}-{n}", std::process::id())
 }
 
 /// A vision: the working tree of `repo` with `files` written otherwise, each path from the
@@ -751,70 +745,49 @@ pub fn envisioned(repo: &Path, files: &BTreeMap<PathBuf, Option<String>>, opts: 
             bail!("a vision names files from the repository's root, inside it: {}", rel.display());
         }
     }
-    let repo = std::fs::canonicalize(repo).unwrap_or_else(|_| repo.to_path_buf());
+    let repo = Repo::real(repo);
     // what is read: the repository, or for a package named on its own the project it is in
     let listing = crate::language::read(&repo, opts)?;
-    let top = std::fs::canonicalize(listing.root()).unwrap_or_else(|_| listing.root().to_path_buf());
+    let top = Repo::real(listing.root());
     let inner = repo.strip_prefix(&top).unwrap_or(Path::new("")).to_path_buf();
     let name = top.file_name().map(|n| n.to_os_string()).unwrap_or_else(|| "repo".into());
-    let base = std::env::temp_dir().join(reading_dir());
-    let _ = std::fs::remove_dir_all(&base);
-    let root = base.join(name);
-    let write = |rel: &Path, text: Option<&[u8]>, from: Option<&Path>| -> Result<()> {
-        let dest = root.join(rel);
-        if let Some(d) = dest.parent() {
-            std::fs::create_dir_all(d)?;
-        }
-        match (text, from) {
-            (Some(t), _) => std::fs::write(&dest, t)?,
-            (None, Some(f)) => {
-                std::fs::copy(f, &dest)?;
-            }
-            (None, None) => {}
-        }
-        Ok(())
-    };
+    let tmp = Tmp::new("vision")?;
+    let laid = PathBuf::from(name);
     for f in listing.files_under("") {
         let rel = f.strip_prefix(listing.root()).unwrap_or(&f).to_path_buf();
         if !rel.strip_prefix(&inner).map_or(false, |r| files.contains_key(r)) {
-            write(&rel, None, Some(&f))?;
+            tmp.copy_in(&f, &laid.join(&rel))?;
         }
     }
     for (rel, text) in files {
         if let Some(text) = text {
-            write(&inner.join(rel), Some(text.as_bytes()), None)?;
+            tmp.write(&laid.join(&inner).join(rel), text.as_bytes())?;
         }
     }
-    std::fs::create_dir_all(&root)?;
+    tmp.folder(&laid)?;
     // the environment beside the repository stands beside the vision too: its `.venv`, and what a
     // path out of it reaches (`extra-paths = ["../typings"]`)
-    #[cfg(unix)]
-    {
-        if top.join(".venv").is_dir() {
-            let _ = std::os::unix::fs::symlink(top.join(".venv"), root.join(".venv"));
-        }
-        if let Some(Ok(siblings)) = top.parent().map(std::fs::read_dir) {
-            for s in siblings.flatten().filter(|s| s.path() != top) {
-                let _ = std::os::unix::fs::symlink(s.path(), base.join(s.file_name()));
-            }
+    if Repo::has(&top, ".venv") {
+        tmp.link(&top.join(".venv"), &laid.join(".venv"));
+    }
+    for beside in Repo::beside(&top) {
+        if let Some(name) = beside.file_name() {
+            tmp.link(&beside, Path::new(name));
         }
     }
-    let parts = crate::parts::analyze_parts(&[root.join(&inner)], opts);
-    let _ = std::fs::remove_dir_all(&base);
-    parts
+    crate::parts::analyze_parts(&[tmp.root.join(&laid).join(&inner)], opts)
 }
 
-/// The repository as it was at `rev`, written to a directory of its own under the same name,
-/// so the graph's names agree: (the directory to remove afterwards, the repository in it). A
+/// The repository as it was at `rev`, written to a `Tmp` of its own under the same name, so the
+/// graph's names agree: (the `Tmp`, removed when it is dropped, and the repository in it). A
 /// Python environment beside the repository is linked in, so its types are read the same way.
-fn revision(repo: &Path, rev: &str) -> Result<(PathBuf, PathBuf)> {
+fn revision(repo: &Path, rev: &str) -> Result<(Tmp, PathBuf)> {
     let (top, rel, name) = located(repo)?;
-    let repo = std::fs::canonicalize(repo).unwrap_or_else(|_| repo.to_path_buf());
+    let repo = Repo::real(repo);
     let rel_git = crate::tree::path_str(&rel);
-    let base = std::env::temp_dir().join(reading_dir());
-    let _ = std::fs::remove_dir_all(&base);
-    let root = base.join(name);
-    std::fs::create_dir_all(&root)?;
+    let tmp = Tmp::new("revision")?;
+    let laid = PathBuf::from(name);
+    tmp.folder(&laid)?;
     let listed = git(&top, &["ls-tree", "-r", "-z", rev, "--", if rel_git.is_empty() { "." } else { &rel_git }])?;
     // `<mode> blob <sha>\t<path>`; links and submodules are not files of the revision
     let blobs: Vec<(String, PathBuf)> = listed
@@ -853,17 +826,13 @@ fn revision(repo: &Path, rev: &str) -> Result<(PathBuf, PathBuf)> {
         reader.read_exact(&mut content)?;
         let mut newline = [0u8; 1];
         reader.read_exact(&mut newline)?;
-        let dest = root.join(path.strip_prefix(&rel).unwrap_or(path));
-        if let Some(d) = dest.parent() {
-            std::fs::create_dir_all(d)?;
-        }
-        std::fs::write(&dest, content)?;
+        tmp.write(&laid.join(path.strip_prefix(&rel).unwrap_or(path)), &content)?;
     }
     writer.join().map_err(|_| anyhow::anyhow!("writing to git"))??;
     cat.wait()?;
-    #[cfg(unix)]
-    if repo.join(".venv").is_dir() {
-        let _ = std::os::unix::fs::symlink(repo.join(".venv"), root.join(".venv"));
+    if Repo::has(&repo, ".venv") {
+        tmp.link(&repo.join(".venv"), &laid.join(".venv"));
     }
-    Ok((base, root))
+    let root = tmp.root.join(&laid);
+    Ok((tmp, root))
 }

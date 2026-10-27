@@ -7,6 +7,8 @@ use std::net::TcpStream;
 use std::path::Path;
 use std::time::Duration;
 
+use crate::workspace::Workspace;
+
 /// The largest file a preview reads.
 const MOST: u64 = 8 << 20;
 
@@ -52,17 +54,11 @@ pub fn query(text: &str) -> String {
 }
 
 /// The bytes of the file at `relative` in `workspace`, for a preview.
-pub fn read(workspace: &Path, relative: &str) -> Result<Vec<u8>, String> {
-    let root = workspace.canonicalize().map_err(|error| format!("Cannot open workspace: {error}"))?;
-    let path = root.join(relative).canonicalize().map_err(|error| format!("Cannot open {relative}: {error}"))?;
-    if !path.starts_with(&root) {
-        return Err("Studio reads files inside the open workspace only".into());
-    }
-    let size = std::fs::metadata(&path).map_err(|error| error.to_string())?.len();
-    if size > MOST {
-        return Err(format!("{relative} is {} MB, more than a preview reads", size >> 20));
-    }
-    std::fs::read(&path).map_err(|error| format!("Cannot read {relative}: {error}"))
+pub fn read(folder: &Path, relative: &str) -> Result<Vec<u8>, String> {
+    let workspace = Workspace::open(folder)?;
+    let path = workspace.inside(&workspace.root().join(relative), relative, "Studio reads files inside the open workspace only")?;
+    let size = workspace.stamp(&path).map_or(0, |(size, _)| size);
+    workspace.bytes(&path, MOST, format!("{relative} is {} MB, more than a preview reads", size >> 20), relative)
 }
 
 /// What a page at `preview:` may load: files of the workspace, styles written in it, and nothing

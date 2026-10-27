@@ -2382,3 +2382,28 @@ fn a_recursive_call_takes_what_its_call_hands_it() {
 fn a_list_made_by_a_literal_is_made_by_the_body() {
     common::a_list_made_by_a_literal_is_made_by_the_body("python", "by_literal", "by_call", "by_constant");
 }
+
+/// The workbench pair, `workbench/python`: what the program makes, kept in a folder of the project's
+/// own. The clean side gives the folder a class whose method names each file in it
+/// (`Workbench.of(project).file("report.txt")`); the shortcut hands the folder around as a bare path (`made_dir(project) / "report.txt"`).
+/// Isomorphic is the same: a path a class's method builds from the field its constructor sets is the
+/// path written out with bare paths, so the two sides name the same files, at the same places, fixed
+/// by the same function. The method is followed on the value another call gives back and on a
+/// binding of it, and `cls(..)` in the classmethod builds the class.
+#[test]
+fn places_a_path_a_class_builds_is_the_path_written_out() {
+    let read = |side: &str| {
+        analyze(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/pairs/workbench/python").join(side), &Options::default()).unwrap()
+    };
+    let files = |g: &Graph| -> Vec<(String, String, Vec<String>)> {
+        let mut out: Vec<(String, String, Vec<String>)> = ["bench.keep.save_report", "bench.keep.save_log"]
+            .iter()
+            .flat_map(|f| touches(g, f, "disk_write").into_iter().map(move |t| (f.to_string(), t.artifact.clone(), t.fixed_by.clone())))
+            .collect();
+        out.sort();
+        out
+    };
+    let (c, s) = (files(&read("clean")), files(&read("shortcut")));
+    assert_eq!(c, s);
+    assert!(c.iter().any(|(f, a, by)| f == "bench.keep.save_report" && a == ".made/report.txt" && by == &["bench.cli.main"]), "{c:?}");
+}

@@ -18,6 +18,7 @@ use std::sync::Arc;
 use serde::{Deserialize, Serialize};
 
 use crate::model::Graph;
+use crate::places::Workbench;
 
 /// Where one build of Atlas keeps what does not change.
 #[derive(Clone, Debug)]
@@ -52,7 +53,7 @@ impl Cache {
     /// The same build's index for the working tree containing `dir`.
     pub fn workspace(&self, dir: &Path) -> Option<Cache> {
         let build = self.dir.file_name()?;
-        Some(Cache { dir: home(dir).join("index").join(build), hits: self.hits.clone(), writes: self.writes.clone() })
+        Some(Cache { dir: Workbench::of(dir).index(build), hits: self.hits.clone(), writes: self.writes.clone() })
     }
 
     /// Whether it keeps anything yet: a reading with a cache that keeps nothing reads everything.
@@ -85,13 +86,13 @@ impl Cache {
         static SWEPT: std::sync::Once = std::sync::Once::new();
         SWEPT.call_once(|| self.sweep());
         let file = self.file(kind, key);
-        let Some(dir) = file.parent() else { return };
-        if std::fs::create_dir_all(dir).is_err() {
+        if std::fs::create_dir_all(self.dir.join(kind)).is_err() {
             return;
         }
-        let partial = dir.join(format!(
-            ".{}-{}-{}",
-            file.file_name().and_then(|n| n.to_str()).unwrap_or("entry"),
+        // written whole beside the entry, by this process alone, before it is renamed into place
+        let partial = self.dir.join(kind).join(format!(
+            ".{}-{}-{}.part",
+            digest(key.as_bytes()),
             std::process::id(),
             WRITTEN.fetch_add(1, Ordering::Relaxed)
         ));
@@ -126,15 +127,19 @@ impl Cache {
     }
 }
 
-/// Where Atlas keeps generated files for `dir`, at its Git worktree root when one exists.
-pub fn home(dir: &Path) -> PathBuf {
-    let dir = crate::repo::normal(&std::path::absolute(dir).unwrap_or_else(|_| dir.to_path_buf()));
-    let top = dir.ancestors().find(|a| a.join(".git").exists()).unwrap_or(&dir);
-    let home = top.join(".atlas");
-    if std::fs::create_dir_all(&home).is_ok() && !home.join(".gitignore").exists() {
-        let _ = std::fs::write(home.join(".gitignore"), "# Generated Atlas files.\n*\n");
+impl Cache {
+    /// An answer the machine keeps beside the builds' entries (`update.json`), as it was kept.
+    pub fn answer(name: &str) -> Option<String> {
+        std::fs::read_to_string(root()?.join(name)).ok()
     }
-    home
+
+    /// Keep an answer beside the builds' entries, in place of the one kept before.
+    pub fn keep_answer(name: &str, text: &str) {
+        let Some(root) = root() else { return };
+        if std::fs::create_dir_all(&root).is_ok() {
+            let _ = std::fs::write(root.join(name), text);
+        }
+    }
 }
 
 /// What the directory of a build with edits has in its name.
@@ -147,13 +152,16 @@ fn head(key: &str) -> String {
 
 /// The user's cache directory for Atlas: `$XDG_CACHE_HOME/atlas`, else the platform's.
 pub fn root() -> Option<PathBuf> {
-    let var = |k: &str| std::env::var_os(k).filter(|v| !v.is_empty()).map(PathBuf::from);
-    let base = var("XDG_CACHE_HOME").filter(|p| p.is_absolute()).or_else(|| match () {
-        _ if cfg!(target_os = "macos") => var("HOME").map(|h| h.join("Library").join("Caches")),
-        _ if cfg!(windows) => var("LOCALAPPDATA"),
-        _ => var("HOME").map(|h| h.join(".cache")),
-    })?;
-    Some(base.join("atlas"))
+    let xdg = std::env::var_os("XDG_CACHE_HOME").filter(|v| !v.is_empty()).map(PathBuf::from).filter(|p| p.is_absolute());
+    let home = std::env::var_os("HOME").filter(|v| !v.is_empty()).map(PathBuf::from);
+    let platform = if cfg!(target_os = "macos") {
+        home.map(|h| h.join("Library").join("Caches"))
+    } else if cfg!(windows) {
+        std::env::var_os("LOCALAPPDATA").filter(|v| !v.is_empty()).map(PathBuf::from)
+    } else {
+        home.map(|h| h.join(".cache"))
+    };
+    Some(xdg.or(platform)?.join("atlas"))
 }
 
 /// A fingerprint of bytes: 128 bits, in hex.

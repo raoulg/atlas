@@ -116,7 +116,7 @@ Two long-lived branches, one release train. Everything else is a short-lived top
 
 | Branch | Holds | Version | Built as | Who moves it |
 | --- | --- | --- | --- | --- |
-| `next` | integration: everything finished | the next minor, `X.Y.0` | nightly, `X.Y.0-nightly.<timestamp>` | any agent, by merging a topic branch whose tests pass |
+| `next` | integration: everything finished | the next minor, `X.Y.0` | nightly, `X.Y.0-nightly.<timestamp>` | the integrating agent, by merging the topic branches of a round and testing them once |
 | `main` | what is released | the released `X.Y.Z` | stable, tag `vX.Y.Z` | Raoul only |
 | `<topic>` | one piece of work | none | nothing | its owner |
 
@@ -131,12 +131,16 @@ Two long-lived branches, one release train. Everything else is a short-lived top
    the issue's note, `docs/changes/<issue>.md`, with its picture (`docs/changes/README.md`): what a
    user sees differently, drawn with Atlas where Atlas draws it. A release report is put together
    from these notes, never written afresh.
-   **The whole suite runs once per landing, never once per branch.** While a topic is built, its
-   owner runs only the tests of what it changes. Work done in parallel lands through one queue: each
-   topic branch is pushed, not merged, and the integrating agent merges the finished branches into
-   one branch from `origin/next`, runs `cargo fmt --check`, `cargo test` (and for a viewer change
-   `walk` and `topology`) once on the whole, and lands that. A failure there is found by testing the
-   branches in it, not by running the suite again for each. When `next` moves before the push, merge
+   **The whole suite runs once per landing, never once per branch or per commit.** One agent
+   integrates: the session that started the others, or the agent that works alone. A topic's owner
+   (a subagent, or a session the integrator started) runs only the test files of what it changes
+   (`cargo test -p atlas-engine --test pairs_python`, `--lib` for the unit tests), never the whole
+   `cargo test`, never before a commit and never as a last check; it pushes its branch, lands
+   nothing, and reports the branch and the tests it ran. The integrator writes this into every brief.
+   It waits until every topic of the round has reported, merges the branches into one branch from
+   `origin/next`, runs `cargo fmt --check`, `cargo test` (and for a viewer change `walk` and
+   `topology`) once on the whole, fixes there what fails, and lands that. A failure there is found by
+   testing the branches in it, not by running the suite again for each. When `next` moves before the push, merge
    it again and run again only the suites its new commits touch: documentation and CI touch none.
 3. **Promote**: when Raoul says so, `next` is merged into `main` (a merge commit), `main` is tagged
    `vX.Y.0` and pushed; the tag builds the stable release and, with the secret `TAP_TOKEN`, updates
@@ -207,13 +211,13 @@ Two long-lived branches, one release train. Everything else is a short-lived top
   environment, so a new worktree does not compile the dependencies again.
 - Disk: cargo names Atlas's builds by its version and by the hash of its dependencies and toolchain,
   so every raise, dependency update or new Rust leaves a full set of builds behind (they reached
-  260 GB). `lefthook.yml` runs `tools/clean-old-builds.sh` after each commit and merge, in the
-  worktree it is made in (`lefthook install` once per clone; worktrees share it): a commit that raises
-  the version removes Atlas's builds of the old one, and `cargo sweep` (from the Brewfile) keeps
-  `target` below 15 GB by removing the least recently used builds. Dependencies stay, so the next
-  build stays quick.
-  When `df -h ~` still runs low, `cargo clean -p atlas -p atlas-engine` (and with `--release`) in
-  your own worktree; never another session's target. The larger cost is the number of worktrees,
+  260 GB). `sh tools/clean-old-builds.sh`, run by hand in your own worktree, removes the builds of a
+  toolchain no longer installed and then the least recently used builds until `target` is below
+  15 GB (`cargo sweep`, from the Brewfile): an earlier version's builds go, today's and the
+  dependencies stay, so the next build stays quick. Run it after a version raise has landed, or when
+  `df -h ~` runs low; never while a build or a test runs there, and never in another session's
+  worktree. No git hook removes builds: a hook runs while a build is made or used (a sidecar copied,
+  a release binary a report needs), and a removed build fails far from its cause. The larger cost is the number of worktrees,
   each with its own `target` of 3 to 18 GB: remove a worktree when its branch is merged (see
   Branches). In an agent's shell `rm` is `rip`: `rm -rf target` moves the files to
   `/tmp/graveyard-$USER` and frees nothing (it reached 201 GB). Take build output away with `cargo clean`,

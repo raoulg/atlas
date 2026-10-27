@@ -1471,7 +1471,7 @@
    ],
    [
     "atlas-engine.parts.graph_of",
-    "\u25b8 graph_of \u00b7 +25 types7"
+    "\u25b8 graph_of \u00b7 +16 types7"
    ],
    [
     "e:atlas-engine.analyze",
@@ -1482,8 +1482,16 @@
     "\u25be Library analyze"
    ],
    [
-    "t:atlas-engine.effects.Facts",
-    "effects.Facts (3)"
+    "t:atlas-engine.knowledge.CliFramework",
+    "CliFramework (2)"
+   ],
+   [
+    "t:atlas-engine.model.Crossing~DISK_READ",
+    "Crossing (3) \u00b7 DISK_READ"
+   ],
+   [
+    "t:atlas-engine.model.Crossing~DISK_WRITE",
+    "Crossing (3) \u00b7 DISK_WRITE"
    ],
    [
     "t:atlas-engine.model.Graph@n:atlas-engine.analyze",
@@ -1494,22 +1502,6 @@
     "Graph (7)"
    ],
    [
-    "t:atlas-engine.model.Held~gives",
-    "Held (2) \u00b7 gives"
-   ],
-   [
-    "t:atlas-engine.model.Held~hands",
-    "Held (2) \u00b7 hands"
-   ],
-   [
-    "t:atlas-engine.model.Held~held",
-    "Held (2) \u00b7 held"
-   ],
-   [
-    "t:atlas-engine.model.Held~out",
-    "Held (2) \u00b7 out"
-   ],
-   [
     "t:atlas-engine.options.Options",
     "Options (2)"
    ],
@@ -1518,28 +1510,20 @@
     "Repo (2) \u00b7 repo"
    ],
    [
+    "w:Disk:Environment.real.path",
+    "Disk(Environment.real.path)"
+   ],
+   [
     "w:Disk:in",
     "from disk"
    ],
    [
-    "w:File:{a}/Cargo.toml",
-    "File({a}/Cargo.toml)"
+    "w:Type:atlas-engine.environment.Environment",
+    "Environment"
    ],
    [
-    "w:File:{dir}/Cargo.toml",
-    "File({dir}/Cargo.toml)"
-   ],
-   [
-    "w:File:{d}/package.json",
-    "File({d}/package.json)"
-   ],
-   [
-    "w:File:{locate}/package.json",
-    "File({locate}/package.json)"
-   ],
-   [
-    "w:File:{new}/Cargo.toml",
-    "File({new}/Cargo.toml)"
+    "w:Type:atlas-engine.repo.Repo",
+    "Repo"
    ]
   ],
   "edges": [
@@ -1568,28 +1552,20 @@
     "t:atlas-engine.model.Graph@n:atlas-engine.analyze"
    ],
    [
-    "t:atlas-engine.effects.Facts",
+    "t:atlas-engine.knowledge.CliFramework",
+    "n:atlas-engine.analyze/1"
+   ],
+   [
+    "t:atlas-engine.model.Crossing~DISK_READ",
+    "n:atlas-engine.analyze/1"
+   ],
+   [
+    "t:atlas-engine.model.Crossing~DISK_WRITE",
     "n:atlas-engine.analyze/1"
    ],
    [
     "t:atlas-engine.model.Graph@n:atlas-engine.analyze/1",
     "o:atlas-engine.analyze"
-   ],
-   [
-    "t:atlas-engine.model.Held~gives",
-    "n:atlas-engine.analyze/1"
-   ],
-   [
-    "t:atlas-engine.model.Held~hands",
-    "n:atlas-engine.analyze/1"
-   ],
-   [
-    "t:atlas-engine.model.Held~held",
-    "n:atlas-engine.analyze/1"
-   ],
-   [
-    "t:atlas-engine.model.Held~out",
-    "n:atlas-engine.analyze/1"
    ],
    [
     "t:atlas-engine.options.Options",
@@ -1608,31 +1584,23 @@
     "n:atlas-engine.analyze/1"
    ],
    [
+    "w:Disk:Environment.real.path",
+    "n:atlas-engine.analyze/1"
+   ],
+   [
     "w:Disk:in",
+    "n:atlas-engine.analyze/1"
+   ],
+   [
+    "w:Type:atlas-engine.environment.Environment",
+    "n:atlas-engine.analyze/1"
+   ],
+   [
+    "w:Type:atlas-engine.repo.Repo",
     "n:atlas-engine.analyze/0"
    ],
    [
-    "w:Disk:in",
-    "n:atlas-engine.analyze/1"
-   ],
-   [
-    "w:File:{a}/Cargo.toml",
-    "n:atlas-engine.analyze/1"
-   ],
-   [
-    "w:File:{dir}/Cargo.toml",
-    "n:atlas-engine.analyze/1"
-   ],
-   [
-    "w:File:{d}/package.json",
-    "n:atlas-engine.analyze/1"
-   ],
-   [
-    "w:File:{locate}/package.json",
-    "n:atlas-engine.analyze/1"
-   ],
-   [
-    "w:File:{new}/Cargo.toml",
+    "w:Type:atlas-engine.repo.Repo",
     "n:atlas-engine.analyze/1"
    ]
   ]

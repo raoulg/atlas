@@ -426,7 +426,28 @@ impl<'a> Eval<'a> {
         if name == "__file__" {
             return vec![vec![Seg::Package(self.file(at.m))]];
         }
-        self.defined(at, e, depth).map(|v| named_by(name, v)).unwrap_or_else(|| vec![hole(name)])
+        let named = self.local(at.m, e).unwrap_or_else(|| name.to_string());
+        self.defined(at, e, depth).map(|v| named_by(&named, v)).unwrap_or_else(|| vec![hole(name)])
+    }
+
+    /// The name a value bound in a function goes by beyond it: the binding's with the function's
+    /// (`main.folder`, `Store.open.root`), as a parameter's is (`analyze.dir`), so that two functions'
+    /// `file`s are two values. None for a module's name.
+    fn local(&self, m: &Module, e: TsNode) -> Option<String> {
+        let Target::Here { file, at: offset } = self.def(m, e)? else { return None };
+        let home = *self.by_file.get(&file)?;
+        let n = home.tree.root_node().descendant_for_byte_range(offset, offset)?;
+        let f = enclosing_def(n)?;
+        let src = &home.src;
+        let mut owner = text(f.child_by_field_name("name")?, src).to_string();
+        let mut p = f.parent();
+        while let Some(x) = p.filter(|x| x.kind() != "class_definition" && x.kind() != "function_definition") {
+            p = x.parent();
+        }
+        if let Some(class) = p.filter(|x| x.kind() == "class_definition").and_then(|c| c.child_by_field_name("name")) {
+            owner = format!("{}.{owner}", text(class, src));
+        }
+        Some(format!("{owner}.{}", text(n, src)))
     }
 
     /// An attribute of the object a command-line parser gives (`args.out`): the option, holding the

@@ -470,6 +470,8 @@ pub(super) struct Seen<'a> {
     pub(super) own: &'a Own,
     /// The class whose instance `self` holds, in a method that runs on one.
     pub(super) receiver: Option<String>,
+    /// The class `cls` holds, in a method that runs on its class (`@classmethod`).
+    pub(super) class: Option<String>,
 }
 
 impl<'a> Seen<'a> {
@@ -481,7 +483,7 @@ impl<'a> Seen<'a> {
         store: &'a GraphBuilder,
         own: &'a Own,
     ) -> Self {
-        Seen { m, facts: types.of(&crate::tree::path_str(&m.path)), sites, modules, store, own, receiver: None }
+        Seen { m, facts: types.of(&crate::tree::path_str(&m.path)), sites, modules, store, own, receiver: None, class: None }
     }
 
     fn range(n: TsNode) -> (usize, usize) {
@@ -506,6 +508,10 @@ impl<'a> Seen<'a> {
     /// defines is what that binds: without an environment, `requests.get` is still `get` of the
     /// module `requests`.
     pub(super) fn callee(&self, f: TsNode) -> Option<Callee> {
+        // `cls(..)` in a method on its class builds an instance of that class
+        if let Some(class) = self.class.as_ref().filter(|_| f.kind() == "identifier" && text(f, &self.m.src) == "cls") {
+            return Some(Callee::Def(class.clone()));
+        }
         let reached = self.facts.map_or(&[][..], |x| x.callees(Self::range(f)));
         let mut lib = None;
         for c in reached {
@@ -1012,6 +1018,7 @@ pub(super) fn link_calls<'t>(
     let read = {
         let mut seen = Seen::new(m, types, sites, modules, store, own);
         seen.receiver = n.cls.clone().filter(|_| n.kind == NodeKind::Method && !n.on_class && n.params.iter().any(|p| p.receiver));
+        seen.class = n.cls.clone().filter(|_| n.kind == NodeKind::Method && n.on_class);
         let mut b = Body::new(seen, modules, ext, eval, changing, &n, d, body);
         for r in b.steps() {
             let c = match r {
