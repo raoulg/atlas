@@ -1510,16 +1510,20 @@
     "Repo (2) \u00b7 repo"
    ],
    [
+    "w:Disk:Environment.real.path",
+    "Disk(Environment.real.path)"
+   ],
+   [
     "w:Disk:in",
     "from disk"
    ],
    [
-    "w:File:{package_dir}/Cargo.toml",
-    "File({package_dir}/Cargo.toml)"
+    "w:Type:atlas-engine.environment.Environment",
+    "Environment"
    ],
    [
-    "w:File:{package_dir}/package.json",
-    "File({package_dir}/package.json)"
+    "w:Type:atlas-engine.repo.Repo",
+    "Repo"
    ]
   ],
   "edges": [
@@ -1580,19 +1584,23 @@
     "n:atlas-engine.analyze/1"
    ],
    [
+    "w:Disk:Environment.real.path",
+    "n:atlas-engine.analyze/1"
+   ],
+   [
     "w:Disk:in",
+    "n:atlas-engine.analyze/1"
+   ],
+   [
+    "w:Type:atlas-engine.environment.Environment",
+    "n:atlas-engine.analyze/1"
+   ],
+   [
+    "w:Type:atlas-engine.repo.Repo",
     "n:atlas-engine.analyze/0"
    ],
    [
-    "w:Disk:in",
-    "n:atlas-engine.analyze/1"
-   ],
-   [
-    "w:File:{package_dir}/Cargo.toml",
-    "n:atlas-engine.analyze/1"
-   ],
-   [
-    "w:File:{package_dir}/package.json",
+    "w:Type:atlas-engine.repo.Repo",
     "n:atlas-engine.analyze/1"
    ]
   ]
