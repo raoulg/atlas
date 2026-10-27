@@ -94,6 +94,38 @@ fn a_name_two_functions_share_is_two_places() {
     }
 }
 
+/// Places by the type that holds them (`docs/reference/mathematics.md`): the workbench pair
+/// (`workbench/{python,rust,typescript}`) keeps a report and a log in a folder of the project's own.
+/// The clean side gives the folder a type, whose method names each file in it; the shortcut hands
+/// the folder around as a bare path. Both keep the same files at the same places, and only the clean
+/// side's code says they belong together: there each place is the `Workbench`'s, a group the
+/// picture folds, and on the shortcut none is any type's.
+#[test]
+fn the_places_a_type_builds_are_its_group() {
+    use std::collections::BTreeSet;
+    for language in ["python", "rust", "typescript"] {
+        let read = |side: &str| -> Vec<(String, String, String)> {
+            let g = pair(&format!("workbench/{language}/{side}"));
+            let mut out: Vec<(String, String, String)> = g
+                .nodes
+                .iter()
+                .filter(|n| !n.library)
+                .flat_map(|n| n.touches.iter())
+                .filter(|t| t.kind == World::Disk && !t.artifact.is_empty())
+                .map(|t| (t.artifact.clone(), t.holder.clone(), t.place().group))
+                .collect();
+            out.sort();
+            out.dedup();
+            out
+        };
+        let (clean, shortcut) = (read("clean"), read("shortcut"));
+        let files = |side: &[(String, String, String)]| -> BTreeSet<String> { side.iter().map(|(a, _, _)| a.clone()).collect() };
+        assert_eq!(files(&clean), files(&shortcut), "{language}: the same files");
+        assert!(clean.iter().all(|(_, h, g)| h.ends_with(".Workbench") && *g == format!("w:Type:{h}")), "{language}: {clean:?}");
+        assert!(shortcut.iter().all(|(_, h, g)| h.is_empty() && !g.starts_with("w:Type:")), "{language}: {shortcut:?}");
+    }
+}
+
 /// A client that names the paths it asks for is joined to the handlers that serve them, by
 /// method and path: its POST to `/api/orders` is not the GET of that path. One that looks its
 /// paths and methods up in tables by a key, with an environment variable that may stand in for

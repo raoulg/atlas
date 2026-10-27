@@ -920,6 +920,10 @@ pub struct Touch {
     /// What the call gives goes to nothing its function hands on: it only decides a choice, goes
     /// to an error, or is dropped. A read that checks what is there, not one that uses it.
     pub checks: bool,
+    /// The program's type whose code gives the path its root, when one does: a value of it holds
+    /// the root (`self.root`), or one of its methods writes it. Its places are a group the picture
+    /// folds (`mathematics.md`, "Places by the type that holds them").
+    pub holder: String,
 }
 
 impl Touch {
@@ -941,6 +945,7 @@ impl Touch {
             by: vec![],
             users_of: vec![],
             checks: false,
+            holder: String::new(),
         }
     }
 
@@ -998,6 +1003,8 @@ pub struct TouchJson {
     pub users_of: Vec<String>,
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub checks: bool,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub holder: String,
 }
 
 impl From<Touch> for TouchJson {
@@ -1019,6 +1026,7 @@ impl From<Touch> for TouchJson {
             by: t.by,
             users_of: t.users_of,
             checks: t.checks,
+            holder: t.holder,
         }
     }
 }
@@ -1043,6 +1051,7 @@ impl TryFrom<TouchJson> for Touch {
             by: j.by,
             users_of: j.users_of,
             checks: j.checks,
+            holder: j.holder,
         })
     }
 }

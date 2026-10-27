@@ -210,6 +210,23 @@ pointer. Words are a label, never an identity: two places are one when their ter
 the readers' `paths.rs` (`Eval::of`), `flow.rs` (`Touch::place`), `plan.js` (`pathWords`); the
 pairs `python/paths`, `places` and `kept`.
 
+### Places by the type that holds them
+**What.** A quotient of the places by the type whose code gives each place's path its root: the
+type a value of which holds the root (its field, `self.root`), or whose method writes the root
+itself (`Tmp::new` joining `$TMPDIR` with a name of its own). It is a map from places to the
+program's types, defined where the code says it and nowhere else; its fibers are the places each
+type keeps.
+**In Atlas.** A type of the program that keeps places is a group of them, as a directory is a
+group of files: closed, `Workbench · 7` stands for the files whose paths a `Workbench` builds;
+opened, it splits into them, and they fold further into their directories. A place no type holds
+is in no such group. The group is a quotient of the picture, never a fact of its own: the places
+and their terms are the same with it closed or open, and two programs that keep the same files,
+one through a type and one through bare paths, keep the same places (isomorphic is the same);
+only the first draws the group, since only its code says the files belong together.
+**Where.** `paths.rs` (`place_calls`, the holder of a touch), `model.rs` (`Touch::holder`),
+`flow.rs` (`Touch::place`, its coarse place), `index.html` (the storage quotient); the pair
+`workbench`.
+
 ### Yoneda: what changed
 **What.** An object is determined up to isomorphism by the arrows into it, `Hom(−, A)`, and
 dually by the arrows out of it.

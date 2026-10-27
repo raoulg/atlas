@@ -570,7 +570,9 @@ let worldShown = new Map();
 function worldPlaceOf(t, fine = false) {
   let p = t.place;
   if (!fine && worldShown.has(p.id)) p = worldShown.get(p.id);
-  const q = p.file ? filePlace(p.file) : {id: p.id, label: p.label, short: p.short, kind: "world", coarse: p.coarse, group: p.group};
+  // a file a type keeps stays in that type's group (`Touch::holder`) until the reader splits it
+  const kept = p.coarse && p.group?.startsWith("w:Type:") ? {coarse: p.coarse, group: p.group} : {};
+  const q = p.file ? {...filePlace(p.file), ...kept} : {id: p.id, label: p.label, short: p.short, kind: "world", coarse: p.coarse, group: p.group};
   placeGlyph.set(q.id, p.glyph);
   return q;
 }
