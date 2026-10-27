@@ -1069,17 +1069,17 @@ mod tests {
         use crate::model::Dir;
         let none = |_: &str, _: &str| vec![];
         let handed = [Call("rows", "read", vec![("path", lit("data/rows.csv"))]), Call("main", "rows", vec![])];
-        assert_eq!(completed(&handed, &none, Dir::Read), [(Whole::In("rows".into()), lit("data/rows.csv"), Some("rows".into()))]);
+        assert_eq!(completed(&handed, &none, Dir::Read), [(Whole::In("rows".into()), lit("data/rows.csv"), Some("rows".into()), None)]);
         let through = [
             Call("rows", "read", vec![("path", vec![Seg::Param("dir".into()), Seg::Lit("/rows.csv".into())])]),
             Call("main", "rows", vec![("dir", lit("data"))]),
         ];
-        assert_eq!(completed(&through, &none, Dir::Read), [(Whole::In("main".into()), lit("data/rows.csv"), Some("main".into()))]);
+        assert_eq!(completed(&through, &none, Dir::Read), [(Whole::In("main".into()), lit("data/rows.csv"), Some("main".into()), None)]);
         let left_out = [Call("main", "read", vec![])];
         let default = |_: &str, p: &str| if p == "path" { vec![lit("out.csv")] } else { vec![] };
         assert_eq!(
             completed(&left_out, &default, Dir::Read),
-            [(Whole::In("main".into()), vec![Seg::Option("path".into(), lit("out.csv"))], None)],
+            [(Whole::In("main".into()), vec![Seg::Option("path".into(), lit("out.csv"))], None, None)],
             "the parameter's default is an option of whoever calls it"
         );
     }
