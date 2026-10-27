@@ -5,7 +5,7 @@
 //! answer is kept in Studio's configuration folder. Updating runs the install script of the channel
 //! into the folder Studio runs from (macOS), or the setup program (Windows).
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -162,16 +162,32 @@ impl Asked {
     }
 }
 
-pub fn read(file: &Path) -> Asked {
-    std::fs::read(file).ok().and_then(|bytes| serde_json::from_slice(&bytes).ok()).unwrap_or_default()
+/// Studio's cache folder: the answers it keeps, apart from the user's settings.
+pub struct Cache {
+    dir: PathBuf,
 }
 
-pub fn keep(file: &Path, asked: &Asked) {
-    if let Some(dir) = file.parent() {
-        let _ = std::fs::create_dir_all(dir);
+impl Cache {
+    /// The cache folder of the app that runs; none where the platform has none.
+    pub fn of<R: tauri::Runtime>(app: &tauri::AppHandle<R>) -> Option<Cache> {
+        use tauri::Manager;
+        app.path().app_cache_dir().ok().map(|dir| Cache { dir })
     }
-    let _ = serde_json::to_vec(asked).map(|bytes| std::fs::write(file, bytes));
+
+    /// The last answer about updates, as it was kept.
+    pub fn asked(&self) -> Asked {
+        std::fs::read(self.dir.join(ANSWER)).ok().and_then(|bytes| serde_json::from_slice(&bytes).ok()).unwrap_or_default()
+    }
+
+    /// Keep the answer about updates, in place of the last.
+    pub fn keep(&self, asked: &Asked) {
+        let _ = std::fs::create_dir_all(&self.dir);
+        let _ = serde_json::to_vec(asked).map(|bytes| std::fs::write(self.dir.join(ANSWER), bytes));
+    }
 }
+
+/// The file the answer about updates is kept in.
+const ANSWER: &str = "update.json";
 
 /// The folder the running app lives in, where an update installs it: `~/Applications` for
 /// `~/Applications/Atlas Studio.app/Contents/MacOS/atlas-studio`.

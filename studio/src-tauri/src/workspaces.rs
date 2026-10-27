@@ -2,11 +2,13 @@
 //! and the menu bar that offers them: File › Open Workspace… (the page of them), Open Folder…,
 //! Open Recent.
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use tauri::menu::{AboutMetadata, Menu, MenuItemBuilder, SubmenuBuilder};
 use tauri::{AppHandle, Runtime};
+
+use crate::settings::Settings;
 
 /// How many workspaces Studio keeps.
 const MOST: usize = 20;
@@ -20,21 +22,17 @@ pub struct Recent {
     pub opened: u64,
 }
 
-fn file<R: Runtime>(app: &AppHandle<R>) -> Option<PathBuf> {
-    Some(crate::settings::Settings::of(app)?.file("workspaces.json"))
-}
+/// The file Studio keeps the workspaces it opened in.
+const FILE: &str = "workspaces.json";
 
 /// The workspaces opened before, most recent first.
 pub fn recent<R: Runtime>(app: &AppHandle<R>) -> Vec<Recent> {
-    file(app).and_then(|file| std::fs::read(file).ok()).and_then(|bytes| serde_json::from_slice(&bytes).ok()).unwrap_or_default()
+    Settings::of(app).and_then(|settings| settings.read(FILE)).and_then(|bytes| serde_json::from_slice(&bytes).ok()).unwrap_or_default()
 }
 
 fn keep<R: Runtime>(app: &AppHandle<R>, recent: &[Recent]) -> Result<(), String> {
-    let file = file(app).ok_or("Studio has no configuration folder")?;
-    if let Some(dir) = file.parent() {
-        std::fs::create_dir_all(dir).map_err(|error| error.to_string())?;
-    }
-    std::fs::write(file, serde_json::to_vec_pretty(recent).map_err(|error| error.to_string())?).map_err(|error| error.to_string())?;
+    let settings = Settings::of(app).ok_or("Studio has no configuration folder")?;
+    settings.keep(FILE, &serde_json::to_vec_pretty(recent).map_err(|error| error.to_string())?)?;
     let _ = app.set_menu(menu(app, recent).map_err(|error| error.to_string())?);
     Ok(())
 }
