@@ -503,9 +503,9 @@ impl<'a> Eval<'a> {
         Some(gives.iter().flat_map(|b| substitute(b, |p| handed.get(p).cloned().unwrap_or_else(|| vec![hole(p)]))).collect())
     }
 
-    /// The program's type of the value `e` is, where the code says it: what one of the program's
-    /// functions or methods gives back by its signature, a binding of such a value, or a parameter
-    /// by its declared type.
+    /// The program's type of the value `e` is, where the code says it: the value a method runs on,
+    /// what one of the program's functions or methods gives back by its signature, a binding of
+    /// such a value, or a parameter by its declared type.
     fn type_of(&self, at: At<'a, '_>, e: TsNode<'a>, depth: u32) -> Option<String> {
         if depth > DEPTH {
             return None;
@@ -523,6 +523,8 @@ impl<'a> Eval<'a> {
             resolve(home, &parts, self.modules, &self.nodes, self.crate_ids).and_then(|id| own(&id))
         };
         match e.kind() {
+            // the value a method runs on
+            "self" => self.impl_type(at.m, at.scope?),
             "call_expression" => {
                 let f = e.child_by_field_name("function")?;
                 let n = if f.kind() == "field_expression" {

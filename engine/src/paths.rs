@@ -513,8 +513,9 @@ pub fn folders<'a>(places: impl Iterator<Item = &'a str> + Clone) -> HashSet<Str
 }
 
 /// The name of the one value `built` holds, where it is whole in `holder`, when it is one of
-/// `holder`'s parameters: the parameter a constructor takes is its class's (`Store.path`), any
-/// other function's its own (`main.out`). Nothing when the alternatives hold more than one value,
+/// `holder`'s parameters, by the function's owner (`GraphBuilder::owner`): the parameter a
+/// constructor takes is its class's (`Store.path`), a method's its class's and its own
+/// (`Repo.read.dir`), any other function's its own (`main.out`). Nothing when the alternatives hold more than one value,
 /// or a value with a literal part.
 fn by_value<'b>(store: &crate::builder::GraphBuilder, holder: &str, mut built: impl Iterator<Item = &'b Built>) -> Option<String> {
     let name = |b: &Built| match b.as_slice() {
@@ -527,12 +528,8 @@ fn by_value<'b>(store: &crate::builder::GraphBuilder, holder: &str, mut built: i
     }
     // a value of one of the holder's parameters; anything else unknown (what the environment
     // says) keeps the name the code gives it
-    let n = store.nodes.get(holder).filter(|n| n.params.iter().any(|p| !p.receiver && p.name == first))?;
-    let owner = match (n.ctor, n.cls.as_deref()) {
-        (true, Some(cls)) => cls.rsplit('.').next().unwrap_or(cls),
-        _ => n.name.as_str(),
-    };
-    Some(format!("{owner}.{first}"))
+    store.nodes.get(holder).filter(|n| n.params.iter().any(|p| !p.receiver && p.name == first))?;
+    Some(format!("{}.{first}", store.owner(holder)?))
 }
 
 /// The deepest a value is followed out through the callers.

@@ -67,6 +67,33 @@ fn one_program_draws_one_set_of_places_in_every_language() {
     }
 }
 
+/// A name a function gives a value is the function's (`docs/reference/mathematics.md`, "Paths as
+/// terms"), as its parameters are: the owned pair (`owned/{python,rust,typescript}`) keeps a report
+/// and a log where whoever runs the program says, which no code decides. The clean side names each
+/// value for what it holds (`report`, `log`), the shortcut names both `file`. A name decides no place,
+/// so each side draws two places, one per function, in every language: the shortcut's two `file`s
+/// are not one file.
+#[test]
+fn a_name_two_functions_share_is_two_places() {
+    use std::collections::BTreeSet;
+    for language in ["python", "rust", "typescript"] {
+        for side in ["clean", "shortcut"] {
+            let g = pair(&format!("owned/{language}/{side}"));
+            let places: BTreeSet<(String, String)> = g
+                .nodes
+                .iter()
+                .filter(|n| !n.library)
+                .flat_map(|n| n.touches.iter().map(move |t| (n.id.clone(), t)))
+                .filter(|(_, t)| t.kind == World::Disk)
+                .map(|(f, t)| (f, t.place().id))
+                .collect();
+            let ids: BTreeSet<&String> = places.iter().map(|(_, p)| p).collect();
+            assert_eq!(places.len(), 2, "{language} {side}: {places:?}");
+            assert_eq!(ids.len(), 2, "{language} {side}: one place for each function: {places:?}");
+        }
+    }
+}
+
 /// A client that names the paths it asks for is joined to the handlers that serve them, by
 /// method and path: its POST to `/api/orders` is not the GET of that path. One that looks its
 /// paths and methods up in tables by a key, with an environment variable that may stand in for
