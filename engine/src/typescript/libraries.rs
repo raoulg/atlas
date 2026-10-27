@@ -191,8 +191,8 @@ impl Libraries {
     fn locate(&mut self, from: &Path, name: &str) -> Option<PathBuf> {
         let dir = std::fs::canonicalize(from).ok()?.parent()?.to_path_buf();
         let key = (dir.clone(), name.to_string());
-        if let Some(f) = self.found.get(&key) {
-            return f.clone();
+        if let Some(known) = self.found.get(&key) {
+            return known.clone();
         }
         let found = dir
             .ancestors()

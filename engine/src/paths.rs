@@ -10,7 +10,7 @@
 //! statement whose verb and tables are written out is whole where it is built; the values it is
 //! built from name no place.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::sync::OnceLock;
 
 use regex::Regex;
@@ -588,9 +588,10 @@ pub struct Callers<'c, H> {
     pub decides: &'c dyn Fn(&Built) -> bool,
 }
 
-/// A completion: where the value is whole, what it is there, and the function whose own code
-/// decides it, if one does.
-type Completion = (Whole, Built, Option<String>);
+/// A completion: where the value is whole, what it is there, the function whose own code
+/// decides it, if one does, and the function that set up the object whose field holds the value's
+/// root, if one does (`Workbench.at` for what `self.root` holds).
+type Completion = (Whole, Built, Option<String>, Option<String>);
 
 impl<H: Handing> Callers<'_, H> {
     /// What a value built from the parameters of `f` is at each call that hands them, followed out
@@ -619,16 +620,16 @@ impl<H: Handing> Callers<'_, H> {
             _ => None,
         }) {
             let held = if depth > DEPTH {
-                vec![(Whole::In(f.to_string()), hole(&p), None)]
+                vec![(Whole::In(f.to_string()), hole(&p), None, None)]
             } else {
                 self.at(&g, &vec![Seg::Param(p.clone())], depth + 1)
             };
             let mut out = vec![];
-            for (w, v, built) in held {
+            for (w, v, built, _) in held {
                 for x in fill(b, &g, &p, &v) {
                     // a value that what the object holds decides is decided where the object was built
                     let by = here.clone().or_else(|| (self.decides)(&x).then_some(built.clone()).flatten());
-                    for (w2, y, decider) in self.of(f, &x, None, by.as_deref(), depth + 1) {
+                    for (w2, y, decider, set_up) in self.of(f, &x, None, by.as_deref(), depth + 1) {
                         // whole where both are: a route reaches the one that built the object and
                         // the one that handed `f` the rest
                         let both = match (&w, w2) {
@@ -636,7 +637,7 @@ impl<H: Handing> Callers<'_, H> {
                             (Whole::In(a), Whole::In(x)) if a != f && *a != x => Whole::In(format!("{x}&{a}")),
                             (_, w2) => w2,
                         };
-                        out.push((both, y, decider));
+                        out.push((both, y, decider, set_up.or_else(|| Some(g.clone()))));
                         if out.len() >= COMPLETIONS {
                             return out;
                         }
@@ -646,7 +647,7 @@ impl<H: Handing> Callers<'_, H> {
             return out;
         }
         if !b.iter().any(|s| matches!(s, Seg::Param(_))) {
-            return vec![(Whole::In(f.to_string()), b.clone(), here)];
+            return vec![(Whole::In(f.to_string()), b.clone(), here, None)];
         }
         let (calls, family) = (self.calls, self.family);
         // a parameter a call leaves out holds its default, an input its callers may override
@@ -680,10 +681,10 @@ impl<H: Handing> Callers<'_, H> {
             })
             .collect();
         if sites.is_empty() || depth > DEPTH {
-            return substitute(b, unknown).into_iter().map(|x| (Whole::In(f.to_string()), x, here.clone())).collect();
+            return substitute(b, unknown).into_iter().map(|x| (Whole::In(f.to_string()), x, here.clone(), None)).collect();
         }
         let mut out: Vec<Completion> = if (self.entry)(f) {
-            substitute(b, unknown).into_iter().map(|x| (Whole::Users(f.to_string()), x, here.clone())).collect()
+            substitute(b, unknown).into_iter().map(|x| (Whole::Users(f.to_string()), x, here.clone(), None)).collect()
         } else {
             vec![]
         };
@@ -722,8 +723,9 @@ fn fill(b: &Built, g: &str, p: &str, v: &Built) -> Vec<Built> {
 pub type Waiting = (String, crate::model::Touch, Vec<Built>);
 
 /// A waiting call with its path, URL or statement as built, and at each call that completes it,
-/// with where it is whole and the function whose own code decides it, if one does.
-pub type Completed = (String, crate::model::Touch, Vec<Built>, Vec<(Whole, Built, Option<String>)>);
+/// with where it is whole, the function whose own code decides it and the function that set up
+/// the object whose field holds its root, if one does.
+pub type Completed = (String, crate::model::Touch, Vec<Built>, Vec<Completion>);
 
 /// The way a request goes by the method it is built with (`knowledge::REQUEST_WAYS`), where every
 /// alternative says the same; none where one does not say its method.
@@ -781,7 +783,7 @@ pub fn complete<H: Handing>(
             let found = built
                 .iter()
                 .flat_map(|b| match names_its_places(b, t.kind) {
-                    true => vec![(Whole::In(f.clone()), b.clone(), decides(b).then(|| f.clone()))],
+                    true => vec![(Whole::In(f.clone()), b.clone(), decides(b).then(|| f.clone()), None)],
                     false => callers.at(&f, b, 0),
                 })
                 .collect();
@@ -809,10 +811,33 @@ pub fn place_calls(store: &mut crate::builder::GraphBuilder, completed: Vec<Comp
             Some((n.id.clone(), method.to_string(), path.to_string()))
         })
         .collect();
+    // the class each of the program's methods is of: the type whose code it is; a library's types
+    // keep no places of the program
+    let class_of: HashMap<String, String> = store
+        .nodes
+        .values()
+        .filter(|n| n.kind == crate::model::NodeKind::Method && !n.library)
+        .filter_map(|n| Some((n.id.clone(), n.cls.clone()?)))
+        .collect();
     for (f, t, built, found) in completed {
+        // the type whose code gives the path its root: one whose value holds it (`self.root`), or
+        // whose constructor takes it, as a constructor's parameter is its class's (`Store.path`)
+        let held = built
+            .iter()
+            .flatten()
+            .find_map(|s| match s {
+                Seg::Held(g, _) => class_of.get(g).cloned(),
+                _ => None,
+            })
+            .or_else(|| store.nodes.get(&f).filter(|n| n.ctor && !n.library).and_then(|n| n.cls.clone()))
+            // or one of whose methods builds the path: more than the parameter it is handed
+            .or_else(|| {
+                let handed = built.iter().all(|b| matches!(b.as_slice(), [Seg::Param(_)]));
+                (!handed).then(|| class_of.get(&f).cloned()).flatten()
+            });
         // what each place of completion makes of it: the alternatives one caller hands are one
         let mut wholes: Vec<&Whole> = vec![];
-        for (w, _, _) in &found {
+        for (w, _, _, _) in &found {
             if !wholes.contains(&w) {
                 wholes.push(w);
             }
@@ -822,7 +847,10 @@ pub fn place_calls(store: &mut crate::builder::GraphBuilder, completed: Vec<Comp
         if wholes.iter().any(|w| **w != Whole::In(f.clone())) {
             let what = if t.kind == World::Disk { by_value(store, &f, built.iter()) } else { None };
             let dir = if t.kind == World::Net { way_of_request(built.iter()).or(t.dir) } else { t.dir };
-            store.instead(&f, Touch { what: what.unwrap_or_else(|| t.what.clone()), dir, ..t.clone() });
+            store.instead(
+                &f,
+                Touch { what: what.unwrap_or_else(|| t.what.clone()), dir, holder: held.clone().unwrap_or_default(), ..t.clone() },
+            );
         }
         for whole in wholes {
             let (by, users_of) = match whole {
@@ -834,7 +862,11 @@ pub fn place_calls(store: &mut crate::builder::GraphBuilder, completed: Vec<Comp
                 Whole::In(h) | Whole::Users(h) => h,
             };
             // the way a request goes, where the method its alternatives say gives one
-            let alternatives = found.iter().filter(|(w, _, _)| w == whole).map(|(_, b, _)| b);
+            let alternatives = found.iter().filter(|(w, _, _, _)| w == whole).map(|(_, b, _, _)| b);
+            // else one whose value a caller's object holds, set up where the completion went through
+            let held = held.clone().or_else(|| {
+                found.iter().filter(|(w, _, _, _)| w == whole).find_map(|(_, _, _, set_up)| class_of.get(set_up.as_ref()?).cloned())
+            });
             let way = if t.kind == World::Net { way_of_request(alternatives).or(t.dir) } else { t.dir };
             // each place with the functions whose own code decides it
             let mut placed: Vec<(String, Option<crate::model::Dir>, Vec<String>)> = vec![];
@@ -845,7 +877,7 @@ pub fn place_calls(store: &mut crate::builder::GraphBuilder, completed: Vec<Comp
             let mut opened = String::new();
             // a file the term names with a part no code decides, by the term the code writes
             let mut terms: Vec<(String, String)> = vec![];
-            for (b, decider) in found.iter().filter(|(w, _, _)| w == whole).map(|(_, b, d)| (b, d)) {
+            for (b, decider) in found.iter().filter(|(w, _, _, _)| w == whole).map(|(_, b, d, _)| (b, d)) {
                 let rendered = render(b);
                 let before = placed.len();
                 let fixed: Vec<String> = decider.iter().cloned().collect();
@@ -915,8 +947,10 @@ pub fn place_calls(store: &mut crate::builder::GraphBuilder, completed: Vec<Comp
                 deciders.sort();
                 deciders.dedup();
                 let fixed = deciders.contains(&f);
+                // else one of whose methods writes the root itself (`Tmp::new`)
+                let holder = held.clone().or_else(|| deciders.iter().find_map(|d| class_of.get(d).cloned())).unwrap_or_default();
                 deciders.retain(|d| *d != f);
-                Touch { artifact, dir, fixed, fixed_by: deciders, by: by.clone(), users_of: users_of.clone(), ..t.clone() }
+                Touch { artifact, dir, fixed, fixed_by: deciders, by: by.clone(), users_of: users_of.clone(), holder, ..t.clone() }
             };
             // a file whose path is one value no literal makes is named by that value where it is
             // whole, so every call handed it touches the same place: `path` in a helper and
@@ -937,7 +971,7 @@ pub fn place_calls(store: &mut crate::builder::GraphBuilder, completed: Vec<Comp
                     (!terms.is_empty()).then(|| terms.join("|"))
                 })
             };
-            let all: Vec<&Built> = found.iter().filter(|(w, _, _)| w == whole).map(|(_, b, _)| b).collect();
+            let all: Vec<&Built> = found.iter().filter(|(w, _, _, _)| w == whole).map(|(_, b, _, _)| b).collect();
             let (value, unnamed_value) = (named(&all), named(&unnamed));
             if placed.is_empty() {
                 if !requested {
@@ -1017,7 +1051,7 @@ mod tests {
         calls: &[Call],
         default: &dyn Fn(&str, &str) -> Vec<Built>,
         dir: crate::model::Dir,
-    ) -> Vec<(Whole, Built, Option<String>)> {
+    ) -> Vec<(Whole, Built, Option<String>, Option<String>)> {
         let t = crate::model::Touch::new(crate::model::World::Disk, Some(dir));
         let decides = |b: &Built| decided(b, &t);
         let family = crate::builder::Family::default();

@@ -86,13 +86,13 @@ impl Cache {
         static SWEPT: std::sync::Once = std::sync::Once::new();
         SWEPT.call_once(|| self.sweep());
         let file = self.file(kind, key);
-        let Some(dir) = file.parent() else { return };
-        if std::fs::create_dir_all(dir).is_err() {
+        if std::fs::create_dir_all(self.dir.join(kind)).is_err() {
             return;
         }
-        let partial = dir.join(format!(
-            ".{}-{}-{}",
-            file.file_name().and_then(|n| n.to_str()).unwrap_or("entry"),
+        // written whole beside the entry, by this process alone, before it is renamed into place
+        let partial = self.dir.join(kind).join(format!(
+            ".{}-{}-{}.part",
+            digest(key.as_bytes()),
             std::process::id(),
             WRITTEN.fetch_add(1, Ordering::Relaxed)
         ));
@@ -137,13 +137,16 @@ fn head(key: &str) -> String {
 
 /// The user's cache directory for Atlas: `$XDG_CACHE_HOME/atlas`, else the platform's.
 pub fn root() -> Option<PathBuf> {
-    let var = |k: &str| std::env::var_os(k).filter(|v| !v.is_empty()).map(PathBuf::from);
-    let base = var("XDG_CACHE_HOME").filter(|p| p.is_absolute()).or_else(|| match () {
-        _ if cfg!(target_os = "macos") => var("HOME").map(|h| h.join("Library").join("Caches")),
-        _ if cfg!(windows) => var("LOCALAPPDATA"),
-        _ => var("HOME").map(|h| h.join(".cache")),
-    })?;
-    Some(base.join("atlas"))
+    let xdg = std::env::var_os("XDG_CACHE_HOME").filter(|v| !v.is_empty()).map(PathBuf::from).filter(|p| p.is_absolute());
+    let home = std::env::var_os("HOME").filter(|v| !v.is_empty()).map(PathBuf::from);
+    let platform = if cfg!(target_os = "macos") {
+        home.map(|h| h.join("Library").join("Caches"))
+    } else if cfg!(windows) {
+        std::env::var_os("LOCALAPPDATA").filter(|v| !v.is_empty()).map(PathBuf::from)
+    } else {
+        home.map(|h| h.join(".cache"))
+    };
+    Some(xdg.or(platform)?.join("atlas"))
 }
 
 /// A fingerprint of bytes: 128 bits, in hex.

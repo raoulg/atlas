@@ -398,19 +398,37 @@ impl Touch {
                 place(format!("w:open:{what}"), shown(what), shown(what), "proc")
             }
             World::Disk => {
+                // the type whose code gives the path its root keeps the place: its group, closed
+                let held = (!self.holder.is_empty()).then(|| {
+                    let short = self.holder.rsplit('.').next().unwrap_or(&self.holder).to_string();
+                    place(format!("w:Type:{}", self.holder), short.clone(), short, "file")
+                });
                 let lists = crate::effects::fs_op(&self.op) == crate::effects::FsOp::Lists;
                 if !self.artifact.is_empty() && (!lists || self.artifact.ends_with('/') || self.artifact.contains('*')) {
                     let a = &self.artifact;
-                    return Place { file: a.clone(), ..place(format!("w:File:{a}"), format!("File({a})"), a.clone(), "file") };
+                    let file = Place { file: a.clone(), ..place(format!("w:File:{a}"), format!("File({a})"), a.clone(), "file") };
+                    return match held {
+                        Some(h) => Place { group: h.id.clone(), coarse: Some(Box::new(h)), ..file },
+                        None => file,
+                    };
                 }
                 let coarse = self.side().disk();
-                if self.what.is_empty() {
+                if self.what.is_empty() && held.is_none() {
                     return coarse;
                 }
-                let w = &self.what;
+                // a place only its type names is named by that type
+                let w = match &held {
+                    Some(h) if self.what.is_empty() => h.label.clone(),
+                    _ => self.what.clone(),
+                };
+                let w = w.as_str();
+                let (group, coarse) = match held {
+                    Some(h) => (h.id.clone(), h),
+                    None => ("w:Disk".to_string(), coarse),
+                };
                 Place {
                     coarse: Some(Box::new(coarse)),
-                    group: "w:Disk".into(),
+                    group,
                     ..place(format!("w:Disk:{w}"), format!("Disk({})", shown(w)), shown(w), "file")
                 }
             }

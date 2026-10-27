@@ -81,7 +81,10 @@ impl<'a> Eval<'a> {
                 let field = e.child_by_field_name("field").map(|f| text(f, src)).unwrap_or("value");
                 let held = match e.child_by_field_name("value") {
                     Some(v) if v.kind() == "self" => self.held(at, field, depth),
-                    Some(v) => self.parsed(at, v, depth).and_then(|ty| self.option(&ty, None, field, depth)),
+                    Some(v) => self
+                        .parsed(at, v, depth)
+                        .and_then(|ty| self.option(&ty, None, field, depth))
+                        .or_else(|| self.type_of(at, v, depth + 1).and_then(|ty| self.held_in(&ty, field, depth))),
                     None => None,
                 };
                 held.unwrap_or_else(|| vec![hole(field)])
@@ -162,7 +165,14 @@ impl<'a> Eval<'a> {
     /// A field of the value a method runs on, as the struct literals that build that type set it
     /// (`Self { root }` in `new(root)`), from what the functions they are in are handed.
     fn held(&self, at: At<'a, '_>, field: &str, depth: u32) -> Option<Vec<Built>> {
-        let ty = self.impl_type(at.m, at.scope?)?;
+        self.held_in(&self.impl_type(at.m, at.scope?)?, field, depth)
+    }
+
+    /// A field of a value of the program's type `ty`, as the struct literals that build that type set
+    /// it, from what the functions they are in are handed: of the value a method runs on, or of any
+    /// value whose type the code says (`tmp.root` of a `Tmp`).
+    fn held_in(&self, ty: &str, field: &str, depth: u32) -> Option<Vec<Built>> {
+        let ty = ty.to_string();
         let mut out = vec![];
         // a library's code builds none of the program's types
         let own = self.nodes.get(&ty).map_or(true, |n| !n.library);
