@@ -1306,18 +1306,19 @@ fn places_one_file_is_one_place_whatever_touches_it() {
     }
 }
 
-/// A hole keeps the name the code gives the value (`docs/reference/mathematics.md`, "Paths as
-/// terms"): the folder `where.txt` names is no value the code decides, and the clean side binds it
-/// (`let folder = ..`), so the note's file is `{folder}/note.json`, through every name it is handed
-/// on by (`note_file(folder: &Path)`, `keep(path: &Path)`). The shortcut binds it to no name: its
-/// hole is `{}`, never the name of the function that gives it (`notes_folder`) or of a method (`trim`).
+/// A hole keeps the name the code gives the value, in the function that gives it
+/// (`docs/reference/mathematics.md`, "Paths as terms"): the folder `where.txt` names is no value the
+/// code decides, and the clean side's `main` binds it (`let folder = ..`), so the note's file is
+/// `{main.folder}/note.json`, through every name it is handed on by (`note_file(folder: &Path)`,
+/// `keep(path: &Path)`). The shortcut binds it to no name: its hole is `{}`, never the name of the
+/// function that gives it (`notes_folder`) or of a method (`trim`).
 #[test]
 fn places_a_value_the_code_names_is_a_hole_by_that_name() {
     use std::collections::BTreeSet;
     let files = |g: &Graph| -> BTreeSet<String> {
         g.nodes.iter().flat_map(|n| n.touches.iter()).filter(|t| t.artifact.ends_with("note.json")).map(|t| t.artifact.clone()).collect()
     };
-    assert_eq!(files(&kept("clean")), BTreeSet::from(["{folder}/note.json".to_string()]));
+    assert_eq!(files(&kept("clean")), BTreeSet::from(["{main.folder}/note.json".to_string()]));
     assert_eq!(files(&kept("shortcut")), BTreeSet::from(["{}/note.json".to_string()]));
 }
 

@@ -64,14 +64,9 @@ fn moved_by(ty: &[String], op: &str) -> Option<Crossing> {
 /// message said when a value is missing (`expect`) names none.
 fn place_literals(n: TsNode, src: &[u8]) -> Vec<String> {
     // a message said when the value is missing names no place: only what the method is called on
-    let message = n.kind() == "call_expression"
-        && n.child_by_field_name("function").is_some_and(|f| {
-            f.kind() == "field_expression"
-                && f.child_by_field_name("field").is_some_and(|m| knowledge::RUST_MESSAGES.contains(&text(m, src)))
-        });
-    if message {
-        let on = n.child_by_field_name("function").and_then(|f| f.child_by_field_name("value"));
-        return on.map(|v| place_literals(v, src)).unwrap_or_default();
+    let method = function(n).filter(|f| f.kind() == "field_expression");
+    if method.and_then(|f| f.child_by_field_name("field")).is_some_and(|m| knowledge::RUST_MESSAGES.contains(&text(m, src))) {
+        return method.and_then(|f| f.child_by_field_name("value")).map(|v| place_literals(v, src)).unwrap_or_default();
     }
     match n.kind() {
         "closure_expression" => vec![],

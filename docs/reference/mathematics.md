@@ -189,9 +189,11 @@ below a directory it does not is that name under that directory, the hole kept i
 the name the code gives it, wherever in the term it stands: `File({$DATA_DIR}/report.txt)`. Two
 holes the code names differently are two directories, since nothing in the code says they are one;
 a hole the code gives no name (an expression Atlas does not follow) is `{}`, never `*`, which is
-a wildcard the code writes. The name a hole has is the name the code binds the value to
-(`let folder = notes_folder()?`, `folder = notes_folder()`), the first one, which every later name
-of the value hands on, so one value is one hole however many names it passes through. A call is no
+a wildcard the code writes. The name a hole has is the name the code binds the value to, in the
+function that binds it (`let folder = notes_folder()?` in `main` is `{main.folder}`), the first one,
+which every later name of the value hands on, so one value is one hole however many names it passes
+through. A binding is a name a function gives a value, as a parameter is (`analyze.dir`): two
+functions that each bind a `file` hold two values, and two places. A call is no
 name of what it gives: a callee names an operation (`trim`, `new`, `TemporaryDirectory`), so a
 call no name holds is `{}` in every language. A suffix a path is given (`with_suffix`,
 `with_extension`) is part of the term, applied to what a caller hands once the caller says it,
@@ -200,7 +202,7 @@ it yields is the same place. A place the program names a place below is a direct
 which `glob` lists and `io_dir / "Metadata.xml"` reads in), so the listing and what is read in it
 fold into one folder. One file is one place, whatever operation touches it: the data read or
 written, a test whether it is there, a copy or a move into it or out of it, its removal
-(`File({folder}/note.json)` for the rename that moves a note in, the read and the `remove_file`
+(`File({main.folder}/note.json)` for the rename that moves a note in, the read and the `remove_file`
 alike). The place is the term; its label says the term's patterns in words, from the
 file up (`every *.xml in OW-bestanden/ in each folder in {base_dir}/`), and the term is under the
 pointer. Words are a label, never an identity: two places are one when their terms are.
