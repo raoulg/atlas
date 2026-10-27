@@ -28,25 +28,46 @@ use crate::cache::Check;
 use crate::effects;
 use crate::knowledge::{self, Registry};
 use crate::model::{Node, NodeKind};
+use crate::places::Environment;
 use crate::repo::{normal, Repo};
 use crate::tree::{named_children, span, text, unquote, walk};
 
 /// How many re-exports a path is followed through.
 const DEPTH: u32 = 8;
 
-/// The directories Cargo keeps the source of fetched crates in: one per registry, below Cargo's
-/// home (`CARGO_HOME`, else `.cargo` in the user's home). What decides them is noted in `asked`.
-fn sources(asked: &mut Vec<Check>) -> Vec<PathBuf> {
-    asked.extend(["CARGO_HOME", "HOME", "USERPROFILE"].map(|v| Check::Var(v.to_string())));
-    let user = || ["HOME", "USERPROFILE"].iter().find_map(std::env::var_os).map(|h| PathBuf::from(h).join(".cargo"));
-    let home = std::env::var_os("CARGO_HOME").map(PathBuf::from).or_else(user);
-    let Some(home) = home else { return vec![] };
-    let dir = knowledge::CARGO_SOURCES.iter().fold(home, |d, p| d.join(p));
-    asked.push(Check::Names(dir.clone()));
-    let mut registries: Vec<PathBuf> =
-        std::fs::read_dir(dir).map(|r| r.flatten().map(|e| e.path()).filter(|p| p.is_dir()).collect()).unwrap_or_default();
-    registries.sort();
-    registries
+impl Environment {
+    /// Cargo's environment: the directories it keeps the source of fetched crates in, one per
+    /// registry, below Cargo's home (`CARGO_HOME`, else `.cargo` in the user's home), with what decides
+    /// them noted as asked.
+    fn cargo() -> Environment {
+        let mut asked: Vec<Check> = ["CARGO_HOME", "HOME", "USERPROFILE"].map(|v| Check::Var(v.to_string())).into();
+        let user = || ["HOME", "USERPROFILE"].iter().find_map(std::env::var_os).map(|h| PathBuf::from(h).join(".cargo"));
+        let home = std::env::var_os("CARGO_HOME").map(PathBuf::from).or_else(user);
+        let Some(home) = home else { return Environment { checks: asked, ..Environment::default() } };
+        let sources = knowledge::CARGO_SOURCES.iter().fold(home, |d, p| d.join(p));
+        asked.push(Check::Names(sources.clone()));
+        let mut registries: Vec<PathBuf> =
+            std::fs::read_dir(sources).map(|r| r.flatten().map(|e| e.path()).filter(|p| p.is_dir()).collect()).unwrap_or_default();
+        registries.sort();
+        Environment { checks: asked, ..Environment::new(registries) }
+    }
+
+    /// The file of a fetched crate's root: its library target's, unless Atlas does not read the crate:
+    /// one that links a native library, one that holds compiled code.
+    fn crate_root(&self, package_dir: &Path) -> Option<PathBuf> {
+        let manifest: toml::Table = self.manifest(package_dir, "Cargo.toml")?.parse().ok()?;
+        if manifest.get("package").and_then(|p| p.get("links")).is_some() {
+            return None;
+        }
+        let compiled = knowledge::compiled(Registry::Crates);
+        let holds = WalkDir::new(package_dir)
+            .into_iter()
+            .flatten()
+            .any(|e| e.path().extension().and_then(|x| x.to_str()).map_or(false, |x| compiled.contains(&x)));
+        let lib = manifest.get("lib").and_then(|l| l.get("path")).and_then(|p| p.as_str()).unwrap_or("src/lib.rs");
+        let file = normal(&package_dir.join(lib));
+        (!holds && file.is_file()).then_some(file)
+    }
 }
 
 /// A manifest's tables of the crates its code may call: its dependencies, those of its tests,
@@ -82,15 +103,14 @@ fn version<'l>(locked: Option<&'l toml::Table>, packages: &[&'l toml::Table], pa
 /// names in Cargo's registry sources. A crate of the repository is read as its own part. With
 /// them, what was asked of the disk to find them: a path dependency's code, which changes without
 /// a version, and whether each locked version is fetched, whose code is its version's.
-fn dependencies(repo: &Repo, crates: &[Crate]) -> (HashMap<String, PathBuf>, Vec<Check>) {
+fn dependencies(repo: &Repo, crates: &[Crate]) -> (HashMap<String, PathBuf>, Environment) {
     let lock: toml::Table = repo.text("Cargo.lock").and_then(|t| t.parse().ok()).unwrap_or_default();
     let packages: Vec<&toml::Table> =
         lock.get("package").and_then(|p| p.as_array()).into_iter().flatten().filter_map(|p| p.as_table()).collect();
     let root: toml::Table = repo.text("Cargo.toml").and_then(|t| t.parse().ok()).unwrap_or_default();
     let shared = root.get("workspace").and_then(|w| w.get("dependencies")).and_then(|d| d.as_table());
     let here = std::fs::canonicalize(repo.root()).unwrap_or_else(|_| repo.root().to_path_buf());
-    let mut asked = vec![];
-    let sources = sources(&mut asked);
+    let mut env = Environment::cargo();
     let mut out = HashMap::new();
     for c in crates {
         let Some(manifest) = repo.text(c.dir.join("Cargo.toml")).and_then(|t| t.parse::<toml::Table>().ok()) else { continue };
@@ -114,7 +134,7 @@ fn dependencies(repo: &Repo, crates: &[Crate]) -> (HashMap<String, PathBuf>, Vec
                         let d = normal(&base.join(p));
                         let inside = std::fs::canonicalize(&d).map(|abs| abs.starts_with(&here));
                         if !matches!(inside, Ok(true)) {
-                            asked.push(Check::Tree(d.clone()));
+                            env.checks.push(Check::Tree(d.clone()));
                         }
                         if inside.unwrap_or(true) {
                             continue;
@@ -123,11 +143,7 @@ fn dependencies(repo: &Repo, crates: &[Crate]) -> (HashMap<String, PathBuf>, Vec
                     }
                     None => {
                         let Some(v) = version(locked, &packages, package) else { continue };
-                        let fetched: Vec<PathBuf> = sources.iter().map(|s| s.join(format!("{package}-{v}"))).collect();
-                        asked.extend(fetched.iter().map(|package_dir| Check::File(package_dir.join("Cargo.toml"))));
-                        let Some(package_dir) = fetched.into_iter().find(|package_dir| package_dir.join("Cargo.toml").is_file()) else {
-                            continue;
-                        };
+                        let Some(package_dir) = env.package(&format!("{package}-{v}"), "Cargo.toml") else { continue };
                         package_dir
                     }
                 };
@@ -135,17 +151,19 @@ fn dependencies(repo: &Repo, crates: &[Crate]) -> (HashMap<String, PathBuf>, Vec
             }
         }
     }
-    (out, asked)
+    (out, env)
 }
 
 /// What a reading of the workspace's crates takes from where Cargo keeps the crates they depend
 /// on, as checks of how each stands.
 pub(super) fn environment(repo: &Repo, crates: &[Crate]) -> Vec<Check> {
-    dependencies(repo, crates).1
+    dependencies(repo, crates).1.checks
 }
 
 /// The crates the workspace depends on, as read for their code.
 struct Libraries {
+    /// Where Cargo keeps them.
+    env: Environment,
     deps: HashMap<String, PathBuf>,
     /// The root file of each crate Atlas reads, by its name in the code; none for one it does not.
     roots: HashMap<String, Option<PathBuf>>,
@@ -167,20 +185,7 @@ impl Libraries {
         if let Some(r) = self.roots.get(ident) {
             return r.clone();
         }
-        let r = self.deps.get(ident).filter(|_| !effects::described(ident, Registry::Crates)).and_then(|package_dir| {
-            let manifest: toml::Table = std::fs::read_to_string(package_dir.join("Cargo.toml")).ok()?.parse().ok()?;
-            if manifest.get("package").and_then(|p| p.get("links")).is_some() {
-                return None;
-            }
-            let compiled = knowledge::compiled(Registry::Crates);
-            let holds = WalkDir::new(package_dir)
-                .into_iter()
-                .flatten()
-                .any(|e| e.path().extension().and_then(|x| x.to_str()).map_or(false, |x| compiled.contains(&x)));
-            let lib = manifest.get("lib").and_then(|l| l.get("path")).and_then(|p| p.as_str()).unwrap_or("src/lib.rs");
-            let file = normal(&package_dir.join(lib));
-            (!holds && file.is_file()).then_some(file)
-        });
+        let r = self.deps.get(ident).filter(|_| !effects::described(ident, Registry::Crates)).and_then(|d| self.env.crate_root(d));
         self.roots.insert(ident.to_string(), r.clone());
         r
     }
@@ -188,7 +193,7 @@ impl Libraries {
     /// A library's module from its file, before its symbols and imports are collected.
     fn module(&mut self, id: &str, file: &Path) -> Option<Module> {
         if !self.trees.contains_key(file) {
-            let src = std::fs::read(file).ok()?;
+            let src = self.env.source(file)?;
             let tree = self.parser.as_mut()?.parse(&src, None)?;
             self.trees.insert(file.to_path_buf(), (src, tree));
         }
@@ -200,11 +205,7 @@ impl Libraries {
         Some(Module {
             id: id.to_string(),
             krate,
-            manifest_dir: file
-                .ancestors()
-                .find(|package_dir| package_dir.join("Cargo.toml").is_file())
-                .map(crate::tree::path_str)
-                .unwrap_or_default(),
+            manifest_dir: self.env.manifest_dir(file, "Cargo.toml").as_deref().map(crate::tree::path_str).unwrap_or_default(),
             parent,
             path: file.to_path_buf(),
             src,
@@ -266,11 +267,12 @@ impl Libraries {
             let onward = |to: &str, from: &[String]| -> Vec<String> {
                 to.trim_start_matches("ext:").split('.').map(String::from).chain(from.iter().cloned()).collect()
             };
-            let (child, defines) = (children(m).remove(seg), m.symbols.contains_key(seg));
+            let (candidates, defines) = (children(m).remove(seg), m.symbols.contains_key(seg));
             let next: Vec<Vec<String>> = match m.bindings.get(seg) {
                 Some(b) => vec![onward(b, &path[i + 1..])],
                 None => m.globs.iter().map(|g| onward(g, &path[i..])).collect(),
             };
+            let child = candidates.map(|c| self.env.first_file(c));
             match child {
                 Some(Some(f)) => {
                     let id = format!("{cur}.{seg}");
@@ -335,7 +337,7 @@ impl Libraries {
 /// The modules a module declares, by name: the file of each one declared `mod x;` (beside a
 /// crate's root or a `mod.rs`, else in the directory named after the file, or where `#[path]`
 /// says), none for one written inline.
-fn children(m: &Module) -> HashMap<String, Option<PathBuf>> {
+fn children(m: &Module) -> HashMap<String, Vec<PathBuf>> {
     let dir = m.path.parent().unwrap_or(Path::new(""));
     let stem = m.path.file_stem().and_then(|s| s.to_str()).unwrap_or("");
     let base = if m.is_root || stem == "mod" { dir.to_path_buf() } else { dir.join(stem) };
@@ -343,7 +345,7 @@ fn children(m: &Module) -> HashMap<String, Option<PathBuf>> {
     for item in named_children(m.tree.root_node()).into_iter().filter(|x| x.kind() == "mod_item") {
         let Some(name) = item.child_by_field_name("name").map(|n| text(n, &m.src).to_string()) else { continue };
         if item.child_by_field_name("body").is_some() {
-            out.insert(name, None);
+            out.insert(name, vec![]);
             continue;
         }
         let at =
@@ -352,7 +354,7 @@ fn children(m: &Module) -> HashMap<String, Option<PathBuf>> {
             Some(p) => vec![dir.join(p)],
             None => vec![base.join(format!("{name}.rs")), base.join(&name).join("mod.rs")],
         };
-        out.insert(name, candidates.into_iter().map(|c| normal(&c)).find(|c| c.is_file()));
+        out.insert(name, candidates.into_iter().map(|c| normal(&c)).collect());
     }
     out
 }
@@ -391,11 +393,12 @@ pub(super) fn read(
     if depth == 0 {
         return;
     }
-    let (deps, _) = dependencies(repo, crates);
+    let (deps, env) = dependencies(repo, crates);
     if deps.is_empty() {
         return;
     }
     let mut lib = Libraries {
+        env,
         deps,
         roots: HashMap::new(),
         files: HashMap::new(),

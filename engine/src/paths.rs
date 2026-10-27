@@ -830,11 +830,8 @@ pub fn place_calls(store: &mut crate::builder::GraphBuilder, completed: Vec<Comp
                 _ => None,
             })
             .or_else(|| store.nodes.get(&f).filter(|n| n.ctor && !n.library).and_then(|n| n.cls.clone()))
-            // or one of whose methods builds the path: more than the parameter it is handed
-            .or_else(|| {
-                let handed = built.iter().all(|b| matches!(b.as_slice(), [Seg::Param(_)]));
-                (!handed).then(|| class_of.get(&f).cloned()).flatten()
-            });
+            // or one of whose methods touches it: the type whose code goes to the disk there
+            .or_else(|| class_of.get(&f).cloned());
         // what each place of completion makes of it: the alternatives one caller hands are one
         let mut wholes: Vec<&Whole> = vec![];
         for (w, _, _, _) in &found {

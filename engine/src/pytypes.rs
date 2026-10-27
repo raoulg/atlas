@@ -44,6 +44,7 @@ use ty_python_semantic::{
 };
 
 use crate::cache::{Cache, Check, Imports};
+use crate::places::Environment;
 
 /// Where a definition lives: in the project, at its name, or in a library's module.
 #[derive(Clone, Debug, PartialEq)]
@@ -376,6 +377,8 @@ pub struct Ty {
     said: RefCell<HashMap<String, Arc<Said>>>,
     keys: RefCell<HashMap<PathBuf, String>>,
     kept: Option<Kept>,
+    /// Where the project's libraries are.
+    pub env: Environment,
 }
 
 /// Where what ty says of an installed library's file is kept: under everything ty finds the
@@ -407,7 +410,7 @@ impl Kept {
         if !self.holds(key) {
             return None;
         }
-        let bytes = std::fs::read(key).ok()?;
+        let bytes = self.setup.env.source(Path::new(key))?;
         let environment = self.environment.get_or_init(|| self.setup.fingerprint());
         Some(format!("{environment}\n{key}\n{}", crate::cache::digest(&bytes)))
     }
@@ -439,10 +442,10 @@ impl Ty {
     pub fn new(root: &Path, own: &[(String, PathBuf)], cache: Option<&Cache>) -> Option<Ty> {
         let root = absolute(root)?;
         let (db, setup) = TyDb::new(&root);
-        let environment = setup.environment;
+        let (environment, env) = (setup.environment, setup.env.clone());
         let kept = cache.map(|c| Kept::new(c, setup));
         let own = own.iter().filter_map(|(_, p)| absolute(p)).map(|p| key(p.as_std_path())).collect();
-        Some(Ty { db, environment, own, said: RefCell::default(), keys: RefCell::default(), kept })
+        Some(Ty { db, environment, own, said: RefCell::default(), keys: RefCell::default(), kept, env })
     }
 
     /// Ask about `files`, with `project` the files Atlas reads: a call into one of them goes to
@@ -770,6 +773,8 @@ struct Setup {
     version: PythonVersion,
     /// Whether an environment with libraries was found.
     environment: bool,
+    /// Where its libraries are: the site-packages directories, as the file system resolves them.
+    env: Environment,
 }
 
 impl Setup {
@@ -835,13 +840,15 @@ impl Setup {
             }
         };
         let venv = found.is_some().then_some(venv);
-        let setup = Setup { root: root.to_path_buf(), search, found, venv, version: version.unwrap_or(PythonVersion::PY313), environment };
+        let env = Environment::new(search.site_packages_paths.iter().map(|p| resolved(p.as_std_path())).collect());
+        let setup =
+            Setup { root: root.to_path_buf(), search, found, venv, version: version.unwrap_or(PythonVersion::PY313), environment, env };
         (setup, paths)
     }
 
     /// The site-packages directories, as the file system resolves them.
     fn installed(&self) -> Vec<PathBuf> {
-        self.search.site_packages_paths.iter().map(|p| resolved(p.as_std_path())).collect()
+        self.env.roots.clone()
     }
 
     /// The places ty looks for a module in, in its order, each once: the extra paths, the project's
@@ -869,18 +876,9 @@ impl Setup {
         add(PathBuf::new(), Whose::Standard);
         for site in &installed {
             add(site.clone(), Whose::Installed);
-            for pth in files_with(site, "pth") {
-                let text = std::fs::read_to_string(&pth).unwrap_or_default();
-                for line in text.lines().map(str::trim_end) {
-                    if line.is_empty() || line.starts_with('#') || line.starts_with("import ") || line.starts_with("import\t") {
-                        continue;
-                    }
-                    let p = resolved(&site.join(line));
-                    if p.is_dir() {
-                        let w = whose(&p);
-                        add(p, w);
-                    }
-                }
+            for p in self.env.added(site) {
+                let w = whose(&p);
+                add(p, w);
             }
         }
         out
@@ -894,7 +892,7 @@ impl Setup {
     fn checks(&self) -> Vec<(Whose, Check)> {
         let places = self.places();
         let offers: Vec<BTreeMap<String, Offer>> =
-            places.iter().map(|(p, w)| if *w == Whose::Standard { standard(self.version) } else { offered(p) }).collect();
+            places.iter().map(|(p, w)| if *w == Whose::Standard { standard(self.version) } else { self.env.offered(p) }).collect();
         let mut out = vec![];
         if let Some(v) = &self.venv {
             out.push((Whose::Installed, Check::File(v.join("pyvenv.cfg").into_std_path_buf())));
@@ -904,19 +902,19 @@ impl Setup {
                 Whose::Standard => {}
                 Whose::Installed => {
                     out.push((Whose::Installed, Check::Listing(p.clone(), vec![BYTECODE.to_string()])));
-                    out.extend(files_with(p, "pth").into_iter().map(|f| (Whose::Installed, Check::File(f))));
+                    out.extend(self.env.files_with(p, "pth").into_iter().map(|f| (Whose::Installed, Check::File(f))));
                 }
                 Whose::Own => {
                     out.push((Whose::Own, modules_in(p)));
                     let shared = offers[i].iter().filter(|(n, o)| o.regular && offers[i + 1..].iter().any(|later| later.contains_key(*n)));
                     for (_, offer) in shared {
-                        out.extend(offer.code(Whose::Own));
+                        out.extend(self.env.code(offer, Whose::Own));
                     }
                 }
                 Whose::Elsewhere => {
                     let earlier: Vec<PathBuf> = places[..i].iter().filter(|(_, w)| *w != Whose::Standard).map(|(q, _)| q.clone()).collect();
                     let held = |n: &str| offers[..i].iter().any(|o| o.get(n).map_or(false, |x| x.regular));
-                    elsewhere(p, &earlier, &held, 0, &mut out);
+                    self.env.elsewhere(p, &earlier, &held, 0, &mut out);
                 }
             }
         }
@@ -968,13 +966,6 @@ struct Offer {
     paths: Vec<PathBuf>,
 }
 
-impl Offer {
-    /// Checks of its code: a package's whole directory, a module's files.
-    fn code(&self, whose: Whose) -> Vec<(Whose, Check)> {
-        self.paths.iter().map(|p| (whose, if p.is_dir() { Check::Tree(p.clone()) } else { Check::File(p.clone()) })).collect()
-    }
-}
-
 /// The extensions of the files Python imports, and the files that make a directory a package.
 const SOURCES: &[&str] = &["py", "pyi", "so", "pyd"];
 const MARKS: &[&str] = &["__init__.py", "__init__.pyi"];
@@ -989,34 +980,6 @@ const NAMESPACE_DEPTH: usize = 8;
 fn modules_in(dir: &Path) -> Check {
     let strings = |xs: &[&str]| xs.iter().map(|s| s.to_string()).collect();
     Check::Offered(dir.to_path_buf(), Imports { sources: strings(SOURCES), marks: strings(MARKS), skip: strings(&[BYTECODE]) })
-}
-
-/// The modules a directory offers an import, by name.
-fn offered(dir: &Path) -> BTreeMap<String, Offer> {
-    let mut out: BTreeMap<String, Offer> = BTreeMap::new();
-    let identifier =
-        |s: &str| s.chars().next().map_or(false, |c| c.is_alphabetic() || c == '_') && s.chars().all(|c| c.is_alphanumeric() || c == '_');
-    for e in std::fs::read_dir(dir).into_iter().flatten().flatten().filter(|e| e.file_name() != BYTECODE) {
-        let (path, file) = (e.path(), e.file_name().to_string_lossy().to_string());
-        let (name, regular) = if path.is_dir() {
-            match file.strip_suffix("-stubs") {
-                Some(stem) => (stem.to_string(), true),
-                None => (file.clone(), MARKS.iter().any(|m| path.join(m).is_file())),
-            }
-        } else {
-            let Some((stem, ext)) = file.split_once('.') else { continue };
-            if !SOURCES.iter().any(|s| ext == *s || ext.ends_with(&format!(".{s}"))) {
-                continue;
-            }
-            (stem.to_string(), true)
-        };
-        if identifier(&name) {
-            let o = out.entry(name).or_default();
-            o.regular |= regular;
-            o.paths.push(path);
-        }
-    }
-    out
 }
 
 /// The modules of the standard library at `version`, as ty's typeshed lists them.
@@ -1039,41 +1002,96 @@ fn standard(version: PythonVersion) -> BTreeMap<String, Offer> {
     out
 }
 
-/// The checks of code elsewhere at `dir`: the modules it offers, and the code of each that the
-/// places before it (`earlier`, the same name's directories in each) do not hold. A namespace
-/// package is read from all its portions in order, so its modules are asked the same way.
-fn elsewhere(dir: &Path, earlier: &[PathBuf], held: &dyn Fn(&str) -> bool, depth: usize, out: &mut Vec<(Whose, Check)>) {
-    out.push((Whose::Elsewhere, modules_in(dir)));
-    if depth >= NAMESPACE_DEPTH {
-        out.push((Whose::Elsewhere, Check::Tree(dir.to_path_buf())));
-        return;
+/// Python's environment, asked for what its directories offer an import.
+impl Environment {
+    /// Checks of what an import name is offered as: a package's whole directory, a module's files.
+    fn code(&self, offer: &Offer, whose: Whose) -> Vec<(Whose, Check)> {
+        offer.paths.iter().map(|p| (whose, if p.is_dir() { Check::Tree(p.clone()) } else { Check::File(p.clone()) })).collect()
     }
-    for (name, offer) in offered(dir) {
-        if held(&name) {
-            continue;
-        }
-        if offer.regular {
-            out.extend(offer.code(Whose::Elsewhere));
-            continue;
-        }
-        let portions: Vec<PathBuf> = earlier.iter().map(|e| e.join(&name)).filter(|p| p.is_dir()).collect();
-        let inner: Vec<BTreeMap<String, Offer>> = portions.iter().map(|p| offered(p)).collect();
-        let held = |n: &str| inner.iter().any(|o| o.get(n).map_or(false, |x| x.regular));
-        elsewhere(&dir.join(&name), &portions, &held, depth + 1, out);
-    }
-}
 
-/// The files of a directory with an extension, in order.
-fn files_with(dir: &Path, ext: &str) -> Vec<PathBuf> {
-    let mut out: Vec<PathBuf> = std::fs::read_dir(dir)
-        .into_iter()
-        .flatten()
-        .flatten()
-        .map(|e| e.path())
-        .filter(|p| p.is_file() && p.extension().and_then(|x| x.to_str()) == Some(ext))
-        .collect();
-    out.sort();
-    out
+    /// The directories the `.pth` files of the site-packages directory `site` add, where they are.
+    fn added(&self, site: &Path) -> Vec<PathBuf> {
+        let mut out = vec![];
+        for pth in self.files_with(site, "pth") {
+            let text = std::fs::read_to_string(&pth).unwrap_or_default();
+            for line in text.lines().map(str::trim_end) {
+                if line.is_empty() || line.starts_with('#') || line.starts_with("import ") || line.starts_with("import\t") {
+                    continue;
+                }
+                let p = resolved(&site.join(line));
+                if p.is_dir() {
+                    out.push(p);
+                }
+            }
+        }
+        out
+    }
+
+    /// The modules a directory offers an import, by name.
+    fn offered(&self, dir: &Path) -> BTreeMap<String, Offer> {
+        let mut out: BTreeMap<String, Offer> = BTreeMap::new();
+        let identifier = |s: &str| {
+            s.chars().next().map_or(false, |c| c.is_alphabetic() || c == '_') && s.chars().all(|c| c.is_alphanumeric() || c == '_')
+        };
+        for e in std::fs::read_dir(dir).into_iter().flatten().flatten().filter(|e| e.file_name() != BYTECODE) {
+            let (path, file) = (e.path(), e.file_name().to_string_lossy().to_string());
+            let (name, regular) = if path.is_dir() {
+                match file.strip_suffix("-stubs") {
+                    Some(stem) => (stem.to_string(), true),
+                    None => (file.clone(), MARKS.iter().any(|m| path.join(m).is_file())),
+                }
+            } else {
+                let Some((stem, ext)) = file.split_once('.') else { continue };
+                if !SOURCES.iter().any(|s| ext == *s || ext.ends_with(&format!(".{s}"))) {
+                    continue;
+                }
+                (stem.to_string(), true)
+            };
+            if identifier(&name) {
+                let o = out.entry(name).or_default();
+                o.regular |= regular;
+                o.paths.push(path);
+            }
+        }
+        out
+    }
+
+    /// The checks of code elsewhere at `dir`: the modules it offers, and the code of each that the
+    /// places before it (`earlier`, the same name's directories in each) do not hold. A namespace
+    /// package is read from all its portions in order, so its modules are asked the same way.
+    fn elsewhere(&self, dir: &Path, earlier: &[PathBuf], held: &dyn Fn(&str) -> bool, depth: usize, out: &mut Vec<(Whose, Check)>) {
+        out.push((Whose::Elsewhere, modules_in(dir)));
+        if depth >= NAMESPACE_DEPTH {
+            out.push((Whose::Elsewhere, Check::Tree(dir.to_path_buf())));
+            return;
+        }
+        for (name, offer) in self.offered(dir) {
+            if held(&name) {
+                continue;
+            }
+            if offer.regular {
+                out.extend(self.code(&offer, Whose::Elsewhere));
+                continue;
+            }
+            let portions: Vec<PathBuf> = earlier.iter().map(|e| e.join(&name)).filter(|p| p.is_dir()).collect();
+            let inner: Vec<BTreeMap<String, Offer>> = portions.iter().map(|p| self.offered(p)).collect();
+            let held = |n: &str| inner.iter().any(|o| o.get(n).map_or(false, |x| x.regular));
+            self.elsewhere(&dir.join(&name), &portions, &held, depth + 1, out);
+        }
+    }
+
+    /// The files of a directory with an extension, in order.
+    fn files_with(&self, dir: &Path, ext: &str) -> Vec<PathBuf> {
+        let mut out: Vec<PathBuf> = std::fs::read_dir(dir)
+            .into_iter()
+            .flatten()
+            .flatten()
+            .map(|e| e.path())
+            .filter(|p| p.is_file() && p.extension().and_then(|x| x.to_str()) == Some(ext))
+            .collect();
+        out.sort();
+        out
+    }
 }
 
 /// A path as the file system resolves it, where it is there.

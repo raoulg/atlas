@@ -376,7 +376,7 @@ fn read_libraries(
             let shown = path.strip_prefix(&here).map(|r| root_dir.join(r)).unwrap_or_else(|_| path.clone());
             let is_pkg = path.file_stem().and_then(|s| s.to_str()) == Some("__init__");
             // a library's code is the environment's, not the repository's
-            let Ok(text) = std::fs::read(&path) else { continue };
+            let Some(text) = ty.env.source(&path) else { continue };
             let Ok(m) = load_module(parser, &mid, &shown, is_pkg, &text) else { continue };
             store.files.insert(crate::tree::path_str(&shown), String::from_utf8_lossy(&m.src).to_string());
             store.add_node(Node {
