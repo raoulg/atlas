@@ -23,9 +23,9 @@ mod passes;
 mod paths;
 
 pub use crate::builder::{foreign_type, ClassInfo, Declared, GraphBuilder, SigInfo};
+use crate::environment::Environment;
 use crate::knowledge;
 use crate::model::{Entry, EntryKind, Node, NodeKind};
-use crate::places::Environment;
 use crate::pytypes::{Ty, Types};
 use crate::repo::Repo;
 use crate::tree::named_children;

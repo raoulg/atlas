@@ -22,9 +22,9 @@ use super::module::{function_of, is_code, member_parts, module_id, package_of, s
 use super::passes::{collect_imports, collect_symbols, collect_wrapped};
 use crate::builder::GraphBuilder;
 use crate::effects;
+use crate::environment::Environment;
 use crate::knowledge::{self, Registry};
 use crate::model::{Node, NodeKind};
-use crate::places::Environment;
 use crate::repo::{normal, Repo};
 use crate::tree::{span, text, walk};
 

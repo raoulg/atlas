@@ -1376,6 +1376,9 @@ impl Graph {
                     *f = f.split('&').map(to).collect::<Vec<_>>().join("&");
                 }
                 t.users_of.iter_mut().chain(t.fixed_by.iter_mut()).for_each(&m);
+                if !t.holder.is_empty() {
+                    m(&mut t.holder);
+                }
             }
         }
         for e in &mut self.edges {

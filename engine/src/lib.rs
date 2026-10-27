@@ -11,6 +11,7 @@ pub mod decide;
 pub mod diff;
 pub mod effects;
 pub mod entries;
+pub mod environment;
 pub mod families;
 pub mod flow;
 pub mod knowledge;

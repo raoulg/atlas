@@ -44,7 +44,7 @@ use ty_python_semantic::{
 };
 
 use crate::cache::{Cache, Check, Imports};
-use crate::places::Environment;
+use crate::environment::Environment;
 use crate::repo::Repo;
 
 /// Where a definition lives: in the project, at its name, or in a library's module.

@@ -25,9 +25,9 @@ use super::paths::Eval;
 use crate::builder::GraphBuilder;
 use crate::cache::Check;
 use crate::effects;
+use crate::environment::Environment;
 use crate::knowledge::{self, Registry};
 use crate::model::{Node, NodeKind};
-use crate::places::Environment;
 use crate::repo::{normal, Repo};
 use crate::tree::{named_children, span, text, unquote, walk};
 
