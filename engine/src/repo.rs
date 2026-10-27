@@ -43,6 +43,41 @@ pub struct Repo {
 }
 
 impl Repo {
+    /// A path of a repository as the file system resolves it, where it is there.
+    pub fn resolved(path: &Path) -> Option<PathBuf> {
+        std::fs::canonicalize(path).ok()
+    }
+
+    /// A path of a repository as the file system resolves it, else as it is named.
+    pub fn real(path: &Path) -> PathBuf {
+        Repo::resolved(path).unwrap_or_else(|| path.to_path_buf())
+    }
+
+    /// Whether the directory `dir` of a repository has `name` in it: its `.git`, a manifest.
+    pub fn has(dir: &Path, name: &str) -> bool {
+        dir.join(name).exists()
+    }
+
+    /// What lies beside the repository at `top`, in the folder it is in.
+    pub fn beside(top: &Path) -> Vec<PathBuf> {
+        let Some(Ok(entries)) = top.parent().map(std::fs::read_dir) else { return vec![] };
+        entries.flatten().map(|e| e.path()).filter(|p| p != top).collect()
+    }
+
+    /// The text of a file of a repository that no reading lists: a file a prophecy is written into.
+    pub fn text_at(path: &Path) -> Option<String> {
+        std::fs::read_to_string(path).ok()
+    }
+
+    /// Write `text` into the file at `path` of a repository, with the directories it is in: what a
+    /// vision or a prophecy puts in its tree.
+    pub fn write_at(path: &Path, text: &str) -> std::io::Result<()> {
+        if let Some(dir) = path.parent() {
+            std::fs::create_dir_all(dir)?;
+        }
+        std::fs::write(path, text)
+    }
+
     /// Read the listing of `dir`, and the files of `named` (canonical) under it, wherever git
     /// ignores them.
     pub fn read(dir: &Path, named: &[PathBuf]) -> Result<Repo> {

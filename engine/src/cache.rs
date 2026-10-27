@@ -127,6 +127,21 @@ impl Cache {
     }
 }
 
+impl Cache {
+    /// An answer the machine keeps beside the builds' entries (`update.json`), as it was kept.
+    pub fn answer(name: &str) -> Option<String> {
+        std::fs::read_to_string(root()?.join(name)).ok()
+    }
+
+    /// Keep an answer beside the builds' entries, in place of the one kept before.
+    pub fn keep_answer(name: &str, text: &str) {
+        let Some(root) = root() else { return };
+        if std::fs::create_dir_all(&root).is_ok() {
+            let _ = std::fs::write(root.join(name), text);
+        }
+    }
+}
+
 /// What the directory of a build with edits has in its name.
 const EDITED: &str = "-edited-";
 

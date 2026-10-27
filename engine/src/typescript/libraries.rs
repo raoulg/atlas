@@ -193,7 +193,7 @@ impl Libraries {
         Libraries {
             env: Environment::default(),
             root: root.to_path_buf(),
-            here: std::fs::canonicalize(root).unwrap_or_else(|_| root.to_path_buf()),
+            here: crate::repo::Repo::real(&root),
             packages: HashMap::new(),
             found: HashMap::new(),
             owner: HashMap::new(),

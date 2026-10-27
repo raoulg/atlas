@@ -1,6 +1,8 @@
 //! A vision decided: its files written into the tree, what it adds marked as prophecy.
 
 use crate::model::{Graph, Node, NodeKind};
+use crate::repo::Repo;
+use anyhow::Context;
 
 /// A vision decided: its files as they are written into the tree, every item the vision adds marked
 /// as a prophecy in the language of its file.
@@ -44,7 +46,7 @@ pub fn prophetize(
     for (rel, text) in vision {
         let Some(text) = text else { bail!("a vision that removes `{}` is no prophecy: nothing is written for a removal", rel.display()) };
         let lines: Vec<&str> = text.lines().collect();
-        let tree_text = std::fs::read_to_string(repo.join(rel)).unwrap_or_default();
+        let tree_text = Repo::text_at(&repo.join(rel)).unwrap_or_default();
         let tree_lines: Vec<&str> = tree_text.lines().collect();
         let slice = |ls: &[&str], n: &Node| -> String {
             n.span.map(|(a, b)| ls.get(a as usize - 1..(b as usize).min(ls.len())).unwrap_or(&[]).join("\n")).unwrap_or_default()
@@ -136,7 +138,7 @@ pub fn prophetize(
                     if !imported && !in_file(rel, &at) {
                         body = with_import(&body, &h.module);
                         if let Some(module) = top.first().map(|n| n.module.as_str()) {
-                            let helper_text = std::fs::read_to_string(repo.join(&at)).unwrap_or_default();
+                            let helper_text = Repo::text_at(&repo.join(&at)).unwrap_or_default();
                             // the package a relative import in the helper's file is taken from
                             let package = if at.file_name().is_some_and(|f| f == "__init__.py") {
                                 h.module.as_str()
@@ -271,7 +273,7 @@ pub fn unseal(g: &Graph, ids: &[String]) -> anyhow::Result<std::collections::BTr
         let lines = match files.entry(rel) {
             std::collections::btree_map::Entry::Occupied(e) => e.into_mut(),
             std::collections::btree_map::Entry::Vacant(e) => {
-                let text = std::fs::read_to_string(&n.file)?;
+                let text = Repo::text_at(std::path::Path::new(&n.file)).with_context(|| format!("reading {}", n.file))?;
                 e.insert(text.lines().map(str::to_string).collect())
             }
         };
@@ -284,7 +286,7 @@ pub fn unseal(g: &Graph, ids: &[String]) -> anyhow::Result<std::collections::BTr
             seal.replace(&lines[i], "").replace("(, ", "(").replace("prophecy: ", "prophecy:").replace("prophecy:\"", "prophecy:\"");
         lines[i] = broken.replace("prophecy:  ", "prophecy: ").trim_end().to_string();
     }
-    let keep_newline = |p: &std::path::Path| std::fs::read_to_string(p).map_or(true, |t| t.ends_with('\n'));
+    let keep_newline = |p: &std::path::Path| Repo::text_at(p).map_or(true, |t| t.ends_with('\n'));
     Ok(files
         .into_iter()
         .map(|(rel, lines)| {

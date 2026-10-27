@@ -109,7 +109,7 @@ fn dependencies(repo: &Repo, crates: &[Crate]) -> (HashMap<String, PathBuf>, Env
         lock.get("package").and_then(|p| p.as_array()).into_iter().flatten().filter_map(|p| p.as_table()).collect();
     let root: toml::Table = repo.text("Cargo.toml").and_then(|t| t.parse().ok()).unwrap_or_default();
     let shared = root.get("workspace").and_then(|w| w.get("dependencies")).and_then(|d| d.as_table());
-    let here = std::fs::canonicalize(repo.root()).unwrap_or_else(|_| repo.root().to_path_buf());
+    let here = crate::repo::Repo::real(&repo.root());
     let mut env = Environment::cargo();
     let mut out = HashMap::new();
     for c in crates {
@@ -132,8 +132,8 @@ fn dependencies(repo: &Repo, crates: &[Crate]) -> (HashMap<String, PathBuf>, Env
                 let dir = match spec.get("path").and_then(|p| p.as_str()) {
                     Some(p) => {
                         let d = normal(&base.join(p));
-                        let inside = std::fs::canonicalize(&d).map(|abs| abs.starts_with(&here));
-                        if !matches!(inside, Ok(true)) {
+                        let inside = Repo::resolved(&d).map(|abs| abs.starts_with(&here));
+                        if inside != Some(true) {
                             env.checks.push(Check::Tree(d.clone()));
                         }
                         if inside.unwrap_or(true) {

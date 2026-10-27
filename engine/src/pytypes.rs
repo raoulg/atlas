@@ -45,6 +45,7 @@ use ty_python_semantic::{
 
 use crate::cache::{Cache, Check, Imports};
 use crate::places::Environment;
+use crate::repo::Repo;
 
 /// Where a definition lives: in the project, at its name, or in a library's module.
 #[derive(Clone, Debug, PartialEq)]
@@ -689,7 +690,7 @@ fn overrides(classes: &[Class], here: &HashMap<String, String>) -> Vec<Override>
 /// A file as one key whatever way its path is written: resolved, and on Windows without the
 /// verbatim prefix (`\\?\`) and in one case, as the file system compares it.
 fn key(p: &Path) -> String {
-    keyed_as(&std::fs::canonicalize(p).unwrap_or_else(|_| p.to_path_buf()))
+    keyed_as(&Repo::real(p))
 }
 
 /// A path as a key, as it is written: the key of a path the file system resolves to itself.
@@ -704,7 +705,7 @@ fn keyed_as(p: &Path) -> String {
 }
 
 fn absolute(p: &Path) -> Option<SystemPathBuf> {
-    SystemPathBuf::from_path_buf(std::fs::canonicalize(p).ok()?).ok()
+    SystemPathBuf::from_path_buf(Repo::resolved(p)?).ok()
 }
 
 /// The parts of a project's ty configuration that change what ty sees: `[tool.ty.environment]`
@@ -723,7 +724,7 @@ struct Settings {
 
 impl Settings {
     fn of(root: &SystemPath) -> Settings {
-        let read = |name: &str| std::fs::read_to_string(root.join(name).as_std_path()).ok().and_then(|s| s.parse::<toml::Table>().ok());
+        let read = |name: &str| Repo::text_at(root.join(name).as_std_path()).and_then(|s| s.parse::<toml::Table>().ok());
         let (table, file) = match read("ty.toml") {
             Some(t) => (t.get("environment").cloned(), root.join("ty.toml")),
             None => {
@@ -1096,7 +1097,7 @@ impl Environment {
 
 /// A path as the file system resolves it, where it is there.
 fn resolved(p: &Path) -> PathBuf {
-    std::fs::canonicalize(p).unwrap_or_else(|_| p.to_path_buf())
+    Repo::real(p)
 }
 
 /// ty's database over the files on disk.

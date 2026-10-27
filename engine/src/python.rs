@@ -193,7 +193,7 @@ fn single_module(repo: &Repo, d: &Path) -> bool {
 
 /// The name a package is imported by: its directory's, or its one module's without `.py`.
 fn import_name(repo: &Repo, d: &Path) -> Option<String> {
-    let full = std::fs::canonicalize(d).unwrap_or_else(|_| d.to_path_buf());
+    let full = crate::repo::Repo::real(&d);
     let name = if single_module(repo, d) { full.file_stem() } else { full.file_name() };
     name.and_then(|n| n.to_str()).map(str::to_string)
 }
@@ -363,7 +363,7 @@ fn read_libraries(
     let mut reached = types.libs.clone();
     let used: HashSet<String> = reached.iter().map(|(m, _)| package_of(m)).collect();
     let mut readable = Readable::default();
-    let here = std::fs::canonicalize(root_dir).unwrap_or_else(|_| root_dir.to_path_buf());
+    let here = crate::repo::Repo::real(&root_dir);
     let project = files.len();
     let depth = opts.libraries;
     for round in 1..=depth {

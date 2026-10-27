@@ -50,7 +50,7 @@ impl Workbench {
 
 /// The top of the git worktree `subject` is in: the nearest ancestor that holds `.git`, else `subject`.
 pub fn worktree_top(subject: &Path) -> &Path {
-    subject.ancestors().find(|ancestor| ancestor.join(".git").exists()).unwrap_or(subject)
+    subject.ancestors().find(|ancestor| crate::repo::Repo::has(ancestor, ".git")).unwrap_or(subject)
 }
 
 /// A subject Atlas lays out itself under `$TMPDIR`, of one kind (`clone`, `revision`, `vision`),
@@ -69,6 +69,38 @@ impl Tmp {
         let _ = std::fs::remove_dir_all(&root);
         std::fs::create_dir_all(&root)?;
         Ok(Tmp { root })
+    }
+}
+
+impl Tmp {
+    /// Write `bytes` to the file at `rel` in it, with the folders it is in.
+    pub fn write(&self, rel: &Path, bytes: &[u8]) -> std::io::Result<()> {
+        let file = self.root.join(rel);
+        if let Some(folder) = file.parent() {
+            std::fs::create_dir_all(folder)?;
+        }
+        std::fs::write(file, bytes)
+    }
+
+    /// Copy the file at `from` to `rel` in it, with the folders it is in.
+    pub fn copy_in(&self, from: &Path, rel: &Path) -> std::io::Result<()> {
+        let file = self.root.join(rel);
+        if let Some(folder) = file.parent() {
+            std::fs::create_dir_all(folder)?;
+        }
+        std::fs::copy(from, file).map(|_| ())
+    }
+
+    /// Make the folder at `rel` in it.
+    pub fn folder(&self, rel: &Path) -> std::io::Result<()> {
+        std::fs::create_dir_all(self.root.join(rel))
+    }
+
+    /// Link `rel` in it to `to`, which stays where it is: what lies beside the subject it lays out
+    /// (its `.venv`), read through the link and never written.
+    pub fn link(&self, to: &Path, rel: &Path) {
+        #[cfg(unix)]
+        let _ = std::os::unix::fs::symlink(to, self.root.join(rel));
     }
 }
 

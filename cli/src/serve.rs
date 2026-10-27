@@ -346,7 +346,7 @@ fn watch_notes(repo: &Path, log: &Log) {
 /// to a place in it (one an agent put in an issue) keeps working, and another repository's
 /// apart. From its path, by FNV-1a, into 8700–8899.
 fn own_port(repo: &Path) -> u16 {
-    let path = std::fs::canonicalize(repo).unwrap_or_else(|_| repo.to_path_buf());
+    let path = atlas_engine::repo::Repo::real(repo);
     let hash = path.to_string_lossy().bytes().fold(0xcbf29ce484222325u64, |h, b| (h ^ b as u64).wrapping_mul(0x100000001b3));
     8700 + (hash % 200) as u16
 }
