@@ -211,11 +211,13 @@ the readers' `paths.rs` (`Eval::of`), `flow.rs` (`Touch::place`), `plan.js` (`pa
 pairs `python/paths`, `places` and `kept`.
 
 ### Places by the type that holds them
-**What.** A quotient of the places by the type whose code gives each place's path its root: the
-type a value of which holds the root (its field, `self.root`), or whose method writes the root
-itself (`Tmp::new` joining `$TMPDIR` with a name of its own). It is a map from places to the
-program's types, defined where the code says it and nowhere else; its fibers are the places each
-type keeps.
+**What.** A quotient of the places by the program's type whose code builds each place's path: the
+type a value of which holds its root (its field, `self.root`, also of a value whose type the code
+says, `tmp.root`); else the type whose constructor takes it, as a constructor's parameter is its
+class's (`Store.path`); else the type one of whose methods builds the path from more than the
+parameter it is handed (`Tmp::new` joining `$TMPDIR` with a name of its own). A library's types keep
+none of the program's places. It is a map from places to the program's types, defined where the
+code says it and nowhere else; its fibers are the places each type keeps.
 **In Atlas.** A type of the program that keeps places is a group of them, as a directory is a
 group of files: closed, `Workbench · 7` stands for the files whose paths a `Workbench` builds;
 opened, it splits into them, and they fold further into their directories. A place no type holds

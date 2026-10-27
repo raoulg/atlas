@@ -811,11 +811,12 @@ pub fn place_calls(store: &mut crate::builder::GraphBuilder, completed: Vec<Comp
             Some((n.id.clone(), method.to_string(), path.to_string()))
         })
         .collect();
-    // the class each method is of: the type whose code it is
+    // the class each of the program's methods is of: the type whose code it is; a library's types
+    // keep no places of the program
     let class_of: HashMap<String, String> = store
         .nodes
         .values()
-        .filter(|n| n.kind == crate::model::NodeKind::Method)
+        .filter(|n| n.kind == crate::model::NodeKind::Method && !n.library)
         .filter_map(|n| Some((n.id.clone(), n.cls.clone()?)))
         .collect();
     for (f, t, built, found) in completed {
@@ -828,7 +829,12 @@ pub fn place_calls(store: &mut crate::builder::GraphBuilder, completed: Vec<Comp
                 Seg::Held(g, _) => class_of.get(g).cloned(),
                 _ => None,
             })
-            .or_else(|| store.nodes.get(&f).filter(|n| n.ctor).and_then(|n| n.cls.clone()));
+            .or_else(|| store.nodes.get(&f).filter(|n| n.ctor && !n.library).and_then(|n| n.cls.clone()))
+            // or one of whose methods builds the path: more than the parameter it is handed
+            .or_else(|| {
+                let handed = built.iter().all(|b| matches!(b.as_slice(), [Seg::Param(_)]));
+                (!handed).then(|| class_of.get(&f).cloned()).flatten()
+            });
         // what each place of completion makes of it: the alternatives one caller hands are one
         let mut wholes: Vec<&Whole> = vec![];
         for (w, _, _, _) in &found {
