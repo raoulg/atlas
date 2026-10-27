@@ -518,21 +518,25 @@ list.addEventListener("click", e => {
 });
 
 /* ---- reading the history ---- */
-let asked = 0;
-async function load() {
+// `quiet`: a look whether git moved (a commit, a push, a fetch, a checkout), which redraws only what differs
+let asked = 0, read = "", asking = false;
+async function load(quiet) {
+  if (quiet && asking) return;
   const n = PAGE * S.pages, ask = ++asked;
-  more.disabled = true;
-  statusEl.textContent = "reading the history…";
-  let log;
+  if (!quiet) { asking = true; more.disabled = true; statusEl.textContent = "reading the history…"; }
+  let log, text;
   try {
     const r = await fetch(`/api/log?all=${S.all ? 1 : 0}&n=${n}`);
     if (!r.ok) throw new Error(`${r.status} ${r.statusText}`.trim());
-    log = await r.json();
+    text = await r.text();
+    log = JSON.parse(text);
   } catch (err) {
-    if (ask === asked) { statusEl.textContent = "the history could not be read: " + err.message; more.disabled = false; }
+    if (ask === asked && !quiet) { asking = false; statusEl.textContent = "the history could not be read: " + err.message; more.disabled = false; }
     return;
   }
-  if (ask !== asked) return;
+  if (ask === asked && !quiet) asking = false;
+  if (ask !== asked || (quiet && text === read)) return;
+  read = text;
   const commits = log.commits || [];
   for (const c of commits) S.known.set(c.hash, c);
   const keep = S.rows[S.cursor] ? S.rows[S.cursor].hash : null;
@@ -596,6 +600,16 @@ allBox.addEventListener("change", () => {
 paint();
 if (served && !own.get("a") && !own.get("b")) $("pick").hidden = false; else show();
 load();
+// git changes beside the page: while it is in view, it looks every few seconds and whenever it comes back
+{ let looking = false;
+  const look = async () => {
+    if (document.hidden || looking || S.first) return;
+    looking = true;
+    try { await load(true); } finally { looking = false; }
+  };
+  setInterval(look, 3000);
+  document.addEventListener("visibilitychange", look);
+  window.addEventListener("focus", look); }
 })();
 </script>
 </html>
