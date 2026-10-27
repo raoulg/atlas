@@ -16,3 +16,7 @@ pub fn save_log(project: &Path, text: &str) -> io::Result<()> {
     let dir = made_dir(project);
     fs::write(dir.join("log.txt"), text)
 }
+
+pub fn clear(project: &Path) -> io::Result<()> {
+    fs::remove_dir_all(made_dir(project).join("report.txt").parent().expect("a file lies in a folder"))
+}

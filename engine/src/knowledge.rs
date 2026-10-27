@@ -1382,6 +1382,9 @@ pub const RUST_FS_WRITES: &[&str] = &[
     "copy",
     "set_permissions",
 ];
+/// Methods whose argument is a message said when the value is missing or an error, never a value
+/// the call gives: `path.parent().expect("a file is in a folder")`, anyhow's `.context("reading")`.
+pub const RUST_MESSAGES: &[&str] = &["expect", "expect_err", "context"];
 pub const RUST_PATH_READS: &[&str] = &["exists", "try_exists", "is_file", "is_dir", "read_dir", "canonicalize", "symlink_metadata"];
 pub const RUST_FILE_TREES: &[&str] = &["walkdir", "WalkDir", "ignore", "glob", "notify", "git2", "gix"];
 /// A crate's type whose function opens the file at the path it is handed first, and which way:

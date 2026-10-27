@@ -60,8 +60,14 @@ fn moved_by(ty: &[String], op: &str) -> Option<Crossing> {
     }
 }
 
-/// The string literals under a node that can name a place: a closure's are its own code's.
+/// The string literals under a node that can name a place: a closure's are its own code's, and a
+/// message said when a value is missing (`expect`) names none.
 fn place_literals(n: TsNode, src: &[u8]) -> Vec<String> {
+    // a message said when the value is missing names no place: only what the method is called on
+    let method = function(n).filter(|f| f.kind() == "field_expression");
+    if method.and_then(|f| f.child_by_field_name("field")).is_some_and(|m| knowledge::RUST_MESSAGES.contains(&text(m, src))) {
+        return method.and_then(|f| f.child_by_field_name("value")).map(|v| place_literals(v, src)).unwrap_or_default();
+    }
     match n.kind() {
         "closure_expression" => vec![],
         "string_literal" | "raw_string_literal" => vec![unquote(text(n, src))],

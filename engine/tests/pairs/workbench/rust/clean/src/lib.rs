@@ -27,3 +27,7 @@ pub fn save_log(project: &Path, text: &str) -> io::Result<()> {
     let bench = Workbench::of(project);
     fs::write(bench.file("log.txt"), text)
 }
+
+pub fn clear(project: &Path) -> io::Result<()> {
+    fs::remove_dir_all(Workbench::of(project).file("report.txt").parent().expect("a file lies in a folder"))
+}

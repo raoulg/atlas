@@ -379,7 +379,7 @@ impl<'a> Eval<'a> {
                 .into_iter()
                 .find(|v| v.child_by_field_name("name").map(|n| text(n, src)) == Some(name.as_str()) && v.start_byte() < e.start_byte());
             if let Some(v) = local.and_then(|v| v.child_by_field_name("value")) {
-                return named_by(&name, self.of(at, v, depth + 1));
+                return named_by(&local_name(scope, &name, src), self.of(at, v, depth + 1));
             }
             if at.params.contains(&name) {
                 return vec![vec![Seg::Param(name)]];
@@ -656,5 +656,24 @@ impl crate::paths::Handing for Evaluated<'_, '_> {
             Some(Bound::Ext(_)) => None,
             None => m.symbols.get(name).cloned(),
         }
+    }
+}
+
+/// The name a value bound in a function goes by beyond it: the binding's with the function's
+/// (`main.folder`, `Store.open.root`), as a parameter's is (`analyze.dir`), so that two functions'
+/// `file`s are two values. A function without a name of its own (an arrow held by nothing) leaves
+/// the binding's.
+fn local_name(scope: TsNode, name: &str, src: &[u8]) -> String {
+    let own = scope
+        .child_by_field_name("name")
+        .or_else(|| scope.parent().filter(|p| p.kind() == "variable_declarator").and_then(|p| p.child_by_field_name("name")));
+    let Some(own) = own.map(|n| text(n, src).to_string()) else { return name.to_string() };
+    let mut p = scope.parent();
+    while let Some(x) = p.filter(|x| !matches!(x.kind(), "class_declaration" | "class" | "abstract_class_declaration")) {
+        p = x.parent();
+    }
+    match p.and_then(|c| c.child_by_field_name("name")) {
+        Some(class) if scope.kind() == "method_definition" => format!("{}.{own}.{name}", text(class, src)),
+        _ => format!("{own}.{name}"),
     }
 }

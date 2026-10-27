@@ -83,7 +83,7 @@ line Store@main/?1/run/Store.open/Store() > main/?1/run/Store.open value
 line main/?1/run/Store.open > Store·store@main/?1/run/Store.open value
 
 # ---------- import ----------
-line Disk(path) > main/?1/run/?1/read_csv own
+line Disk(read_csv.path) > main/?1/run/?1/read_csv own
 line main/?1/run/?1/read_csv/unwrap > _·text@main/?1/run/?1/read_csv/unwrap value
 line _·text@main/?1/run/?1/read_csv/unwrap > main/?1/run/?1/read_csv/Expense.parse/collect value   # each line, through map
 line main/?1/run/?1/read_csv/Expense.parse/collect > _·fields@main/?1/run/?1/read_csv/Expense.parse/collect value
@@ -196,7 +196,7 @@ home _·select@main/?1/run/?2/Store.rows/unwrap main/?1/run/?2/Store.rows
 
 side entry left
 side File(spend.toml) left
-side Disk(path) left
+side Disk(read_csv.path) left
 side Web left
 side SQLite(expenses) both        # import writes it, report reads and uses it: arms of one choice; the count after is no use
 side SQLite(rates) both           # rates writes it, report reads and uses it

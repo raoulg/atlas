@@ -112,9 +112,11 @@ impl<'a> Eval<'a> {
         let src = &at.m.src;
         if let Some(scope) = at.scope {
             match bound(scope, name, pos, src) {
-                Some(Bound::Value(v)) => return named_by(name, self.of(at, v, depth + 1)),
+                Some(Bound::Value(v)) => return named_by(&self.local(at.m, scope, name), self.of(at, v, depth + 1)),
                 Some(Bound::Field(pattern, field, value)) => {
-                    return self.taken_apart(at, pattern, &field, value, depth).unwrap_or_else(|| vec![hole(name)])
+                    return self
+                        .taken_apart(at, pattern, &field, value, depth)
+                        .unwrap_or_else(|| vec![hole(&self.local(at.m, scope, name))])
                 }
                 None => {}
             }
@@ -126,6 +128,17 @@ impl<'a> Eval<'a> {
             }
         }
         self.constant(at.m, &[name.to_string()], depth).unwrap_or_else(|| vec![hole(name)])
+    }
+
+    /// The name a value bound in a function goes by beyond it: the binding's with the function's
+    /// (`begin.file`, `Settings.of.dir`), as a parameter's is (`analyze.dir`), so that two functions'
+    /// `file`s are two values.
+    fn local(&self, m: &'a Module, scope: TsNode<'a>, name: &str) -> String {
+        let Some(f) = scope.child_by_field_name("name").map(|n| text(n, &m.src)) else { return name.to_string() };
+        match self.impl_type(m, scope) {
+            Some(ty) => format!("{}.{f}.{name}", ty.rsplit('.').next().unwrap_or(&ty)),
+            None => format!("{f}.{name}"),
+        }
     }
 
     /// The value of the `const` or `static` a path names: in the module, where its `use` leads,
@@ -490,9 +503,9 @@ impl<'a> Eval<'a> {
         Some(gives.iter().flat_map(|b| substitute(b, |p| handed.get(p).cloned().unwrap_or_else(|| vec![hole(p)]))).collect())
     }
 
-    /// The program's type of the value `e` is, where the code says it: what one of the program's
-    /// functions or methods gives back by its signature, a binding of such a value, or a parameter
-    /// by its declared type.
+    /// The program's type of the value `e` is, where the code says it: the value a method runs on,
+    /// what one of the program's functions or methods gives back by its signature, a binding of
+    /// such a value, or a parameter by its declared type.
     fn type_of(&self, at: At<'a, '_>, e: TsNode<'a>, depth: u32) -> Option<String> {
         if depth > DEPTH {
             return None;
@@ -510,6 +523,8 @@ impl<'a> Eval<'a> {
             resolve(home, &parts, self.modules, &self.nodes, self.crate_ids).and_then(|id| own(&id))
         };
         match e.kind() {
+            // the value a method runs on
+            "self" => self.impl_type(at.m, at.scope?),
             "call_expression" => {
                 let f = e.child_by_field_name("function")?;
                 let n = if f.kind() == "field_expression" {

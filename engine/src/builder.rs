@@ -234,6 +234,7 @@ impl GraphBuilder {
     /// Record a boundary call on a node; the same call again counts up.
     /// A call as it was read, for the routes that reach none of the callers that make it whole.
     pub fn instead(&mut self, id: &str, t: Touch) {
+        let t = self.owned(id, t);
         let Some(n) = self.nodes.get_mut(id) else { return };
         if !n.instead.iter().any(|x| x.kind == t.kind && x.what == t.what && x.op == t.op && x.line == t.line) {
             n.instead.push(Touch { n: 1, by: vec![], users_of: vec![], ..t });
@@ -274,7 +275,37 @@ impl GraphBuilder {
         }
     }
 
+    /// The name a function goes by in the names of its values: a constructor's is its class's
+    /// (`Store`), a method's its class's and its own (`Repo.read`), any other function's its own.
+    pub fn owner(&self, id: &str) -> Option<String> {
+        let n = self.nodes.get(id)?;
+        let class = n.cls.as_deref().map(|c| c.rsplit('.').next().unwrap_or(c));
+        Some(match (n.ctor, class) {
+            (true, Some(c)) => c.to_string(),
+            (false, Some(c)) => format!("{c}.{}", n.name),
+            _ => n.name.clone(),
+        })
+    }
+
+    /// A function's own touch of a file the code names only by a name of the function's
+    /// (`fs::write(&file, ..)`), named with the function's (`Settings.keep.file`), as a parameter's
+    /// value is: two functions' `file`s are two places.
+    fn owned(&self, id: &str, t: Touch) -> Touch {
+        // a name, also as a reference to it (`&file`); an expression names more than a value
+        let name = t.what.trim_start_matches('&');
+        let plain =
+            name.chars().next().is_some_and(|c| c.is_alphabetic() || c == '_') && name.chars().all(|c| c.is_alphanumeric() || c == '_');
+        if t.kind != World::Disk || !t.artifact.is_empty() || !plain {
+            return t;
+        }
+        match self.owner(id) {
+            Some(owner) => Touch { what: format!("{owner}.{name}"), ..t },
+            None => t,
+        }
+    }
+
     pub fn touch(&mut self, id: &str, t: Touch) {
+        let t = self.owned(id, t);
         let Some(n) = self.nodes.get_mut(id) else { return };
         // only what is read can be a check
         let t = Touch { checks: t.checks && t.dir == Some(Dir::Read), ..t };

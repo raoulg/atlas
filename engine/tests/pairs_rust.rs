@@ -1240,11 +1240,12 @@ fn bench(side: &str) -> Graph {
 /// Isomorphic is the same: a path a type's method builds from the field its constructor sets is
 /// the path written out with bare paths, so the two sides name the same files, at the same places,
 /// fixed by the same function. The method is followed on the value another call gives back
-/// (`Workbench::of(project).file(..)`) and on a binding of it (`bench.file(..)`).
+/// (`Workbench::of(project).file(..)`) and on a binding of it (`bench.file(..)`). What `expect` is
+/// handed is a message said when the value is missing: the folder `clear` removes is `.made/`.
 #[test]
 fn places_a_path_a_type_builds_is_the_path_written_out() {
     let files = |g: &Graph| -> Vec<(String, String, Vec<String>)> {
-        let mut out: Vec<(String, String, Vec<String>)> = ["bench.save_report", "bench.save_log"]
+        let mut out: Vec<(String, String, Vec<String>)> = ["bench.save_report", "bench.save_log", "bench.clear"]
             .iter()
             .flat_map(|f| touches(g, f, "disk_write").into_iter().map(move |t| (f.to_string(), t.artifact.clone(), t.fixed_by.clone())))
             .collect();
@@ -1255,6 +1256,7 @@ fn places_a_path_a_type_builds_is_the_path_written_out() {
     assert_eq!(c, s);
     assert!(c.iter().any(|(f, a, by)| f == "bench.save_report" && a == ".made/report.txt" && by == &["bench.main.main"]), "{c:?}");
     assert!(c.iter().any(|(f, a, _)| f == "bench.save_log" && a == "{project}/.made/log.txt"), "{c:?}");
+    assert!(c.iter().any(|(f, a, _)| f == "bench.clear" && a == ".made/"), "{c:?}");
 }
 
 /// The kept pair, `kept/rust`: a note kept in a file in the folder `where.txt` names, read, and
@@ -1304,18 +1306,19 @@ fn places_one_file_is_one_place_whatever_touches_it() {
     }
 }
 
-/// A hole keeps the name the code gives the value (`docs/reference/mathematics.md`, "Paths as
-/// terms"): the folder `where.txt` names is no value the code decides, and the clean side binds it
-/// (`let folder = ..`), so the note's file is `{folder}/note.json`, through every name it is handed
-/// on by (`note_file(folder: &Path)`, `keep(path: &Path)`). The shortcut binds it to no name: its
-/// hole is `{}`, never the name of the function that gives it (`notes_folder`) or of a method (`trim`).
+/// A hole keeps the name the code gives the value, in the function that gives it
+/// (`docs/reference/mathematics.md`, "Paths as terms"): the folder `where.txt` names is no value the
+/// code decides, and the clean side's `main` binds it (`let folder = ..`), so the note's file is
+/// `{main.folder}/note.json`, through every name it is handed on by (`note_file(folder: &Path)`,
+/// `keep(path: &Path)`). The shortcut binds it to no name: its hole is `{}`, never the name of the
+/// function that gives it (`notes_folder`) or of a method (`trim`).
 #[test]
 fn places_a_value_the_code_names_is_a_hole_by_that_name() {
     use std::collections::BTreeSet;
     let files = |g: &Graph| -> BTreeSet<String> {
         g.nodes.iter().flat_map(|n| n.touches.iter()).filter(|t| t.artifact.ends_with("note.json")).map(|t| t.artifact.clone()).collect()
     };
-    assert_eq!(files(&kept("clean")), BTreeSet::from(["{folder}/note.json".to_string()]));
+    assert_eq!(files(&kept("clean")), BTreeSet::from(["{main.folder}/note.json".to_string()]));
     assert_eq!(files(&kept("shortcut")), BTreeSet::from(["{}/note.json".to_string()]));
 }
 
