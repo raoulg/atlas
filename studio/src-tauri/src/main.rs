@@ -394,11 +394,21 @@ async fn newer_build(app: &tauri::AppHandle, now: bool) -> Result<Option<update:
     tauri::async_runtime::spawn_blocking(move || newer.map(update::shown)).await.map_err(|e| e.to_string())
 }
 
-/// Studio's settings, for the window that asks: its appearance, and the coding agents with Atlas or without.
+/// Studio's settings, for the window that asks: its appearance, where its terminal docks, and the coding agents
+/// with Atlas or without.
 #[tauri::command]
 fn get_settings(window: tauri::Window, app: tauri::AppHandle, state: tauri::State<'_, StudioState>) -> serde_json::Value {
     let workspace = workspace_path(&state, window.label()).ok();
-    serde_json::json!({"appearance": settings::appearance(&app), "agents": settings::agents(workspace.as_deref())})
+    serde_json::json!({
+        "appearance": settings::appearance(&app),
+        "terminal": settings::terminal_dock(&app),
+        "agents": settings::agents(workspace.as_deref()),
+    })
+}
+
+#[tauri::command]
+fn set_terminal_dock(app: tauri::AppHandle, dock: settings::Dock) -> Result<(), String> {
+    settings::set_terminal_dock(&app, dock)
 }
 
 #[tauri::command]
@@ -596,6 +606,7 @@ fn main() {
             studio_build,
             get_settings,
             set_appearance,
+            set_terminal_dock,
             register_agent,
             install_update,
             read_workspace_file,

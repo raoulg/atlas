@@ -26,7 +26,7 @@ Prepare the debug sidecar, then run the Tauri crate:
 cargo run --manifest-path studio/src-tauri/Cargo.toml
 ```
 
-The generated sidecar binary and Tauri build directory are ignored by Git. The sidecar filename includes the Rust host target triple, as required by Tauri. `cargo test --manifest-path studio/src-tauri/Cargo.toml` and `node studio/tests/files.test.js` test the app.
+The generated sidecar binary and Tauri build directory are ignored by Git. The sidecar filename includes the Rust host target triple, as required by Tauri. `cargo test --manifest-path studio/src-tauri/Cargo.toml` and `node studio/tests/*.test.js` (each file on its own) test the app.
 
 The bundled viewer contains D3, highlight.js, and ELK and can render without a network connection.
 
@@ -54,6 +54,8 @@ A theme names the roles Atlas's colours go by (`--bg`, `--ink`, `--focus`, the h
 - **Coding agents**: whether Claude Code and Codex have Atlas's MCP server, registered once for every project as `docs/reference/install.md` says. **Add Atlas** runs that command, with the CLI of Studio's own channel on the `PATH` (`atlas`, or `atlas-nightly` for Atlas Studio Nightly), else Studio's own; the agent connects to it in a new session (or `/mcp` in Claude Code).
 - **Version**, and a check for updates.
 
+`settings.json` in Studio's configuration folder keeps the appearance and where the terminal docks (`terminal`: `bottom`, `left` or `right`).
+
 ## The top bar
 
 In Studio the Atlas view draws no header of its own: its controls (the project, Flowchart / Type lattice / Signature flow, the entry point, what it counts, export, jump to a symbol) stand in Studio's top bar beside the workspace's name. The page opens with `?host=` and Studio's origin; it describes its controls to Studio and does what Studio's bar asks, as messages addressed to that origin only. In a browser the page keeps its header and its link to the history; in Studio the history is in the sidebar (⌘2, with ⌘1 for the Atlas view). **export** saves the page through the system's save dialog.
@@ -78,7 +80,7 @@ The footer lists what the graph defines in the file, each a link to its box, or 
 
 ## Terminal
 
-**Terminal** in the status bar, or View › Terminal (Ctrl+`, wherever the focus is), opens a terminal under the picture. It runs the user's own login shell in the workspace, on a pseudo-terminal the Rust side owns; + opens another, a tab's × ends its shell, and the top edge drags to resize. Opening another workspace ends the shells of the one before, as quitting Studio ends them all.
+**Terminal** in the status bar, or View › Terminal (Ctrl+`, wherever the focus is), opens a terminal beside the picture. It runs the user's own login shell in the workspace, on a pseudo-terminal the Rust side owns; + opens another, a tab's × ends its shell. The three buttons at the right of its bar dock it under the picture or beside it on the left or the right, in every window, and Studio keeps the choice in its settings; the edge that faces the picture drags to resize. Opening another workspace ends the shells of the one before, as quitting Studio ends them all.
 
 ## Lessons
 
