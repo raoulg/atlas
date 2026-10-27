@@ -278,10 +278,11 @@ byId('insert-atlas-view').addEventListener('click', async () => {
 byId('workspace-button').addEventListener('click', showWorkspaces);
 byId('terminal-toggle').addEventListener('click', () => showTerminal());
 for (const tab of document.querySelectorAll('.side-tab')) tab.addEventListener('click', () => selectView(tab.dataset.view));
-// which build this is, at the right of the status bar: its version, and for a nightly its commit
+// which build this is, at the right of the status bar: its version, and for a nightly its commit;
+// the settings name the commit of every build
 let buildSaid = 'Atlas Studio';
 invoke('studio_build').then((build) => {
-  buildSaid = `Atlas Studio ${build.version}` + (build.nightly ? ` · nightly ${build.commit}` : '');
+  buildSaid = `Atlas Studio ${build.version}` + (build.nightly ? ' · nightly' : '') + (build.commit ? ` · ${build.commit}` : '');
   byId('studio-version').textContent = `Atlas Studio ${build.version}` + (build.nightly ? ` · nightly ${build.commit}` : '');
   byId('studio-version').title = `atlas ${build.version}${build.nightly ? '-nightly' : ''}${build.commit ? ` (${build.commit})` : ''}`;
 }).catch(() => {});
