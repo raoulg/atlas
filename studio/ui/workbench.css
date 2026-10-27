@@ -1,7 +1,9 @@
 .workbench{grid-template-columns:264px minmax(0,1fr)}
 .sidebar{padding-bottom:0}
-.content{display:grid;grid-template-rows:minmax(0,1fr) auto}
-.stage{display:grid;grid-template-columns:minmax(0,1fr) auto;min-height:0}
+.content{display:grid;grid-template-rows:minmax(0,1fr) auto;grid-template-columns:minmax(0,1fr);grid-template-areas:"stage" "terminal"}
+.content[data-dock="left"]{grid-template-rows:minmax(0,1fr);grid-template-columns:auto minmax(0,1fr);grid-template-areas:"terminal stage"}
+.content[data-dock="right"]{grid-template-rows:minmax(0,1fr);grid-template-columns:minmax(0,1fr) auto;grid-template-areas:"stage terminal"}
+.stage{grid-area:stage;display:grid;grid-template-columns:minmax(0,1fr) auto;min-height:0}
 .center{position:relative;min-width:0;min-height:0}
 .files-label{display:flex;align-items:baseline;justify-content:space-between;padding-top:18px;border-top:1px solid var(--s4);margin-top:10px}
 .files-legend{font-size:9px;letter-spacing:0;color:var(--s14)}
@@ -69,16 +71,26 @@
 .preview-facts .fact{border:1px solid var(--s23);background:var(--s3);color:var(--s2);padding:2px 7px;font:10.5px ui-monospace,monospace}
 .preview-facts .fact:hover{background:var(--s7)}
 .preview-facts .fact.class{border-style:dashed}
-.terminal-panel{position:relative;height:var(--terminal-height,280px);min-height:120px;display:flex;flex-direction:column;background:var(--t-bg,#211e1b);border-top:1px solid var(--t-line,#ddd7ce)}
+.terminal-panel{grid-area:terminal;position:relative;height:var(--terminal-height,280px);min-height:120px;min-width:0;display:flex;flex-direction:column;background:var(--t-bg,#211e1b);border-top:1px solid var(--t-line,#ddd7ce)}
 .terminal-grip{position:absolute;left:0;right:0;top:-4px;height:8px;cursor:row-resize;z-index:2}
+.content[data-dock="left"] .terminal-panel,.content[data-dock="right"] .terminal-panel{height:auto;min-height:0;width:var(--terminal-width,480px);min-width:240px;border-top:0}
+.content[data-dock="left"] .terminal-panel{border-right:1px solid var(--t-line,#ddd7ce)}
+.content[data-dock="right"] .terminal-panel{border-left:1px solid var(--t-line,#ddd7ce)}
+.content[data-dock="left"] .terminal-grip,.content[data-dock="right"] .terminal-grip{top:0;bottom:0;left:auto;right:auto;width:8px;height:auto;cursor:col-resize}
+.content[data-dock="left"] .terminal-grip{right:-4px}
+.content[data-dock="right"] .terminal-grip{left:-4px}
 .terminal-bar{display:flex;align-items:stretch;height:30px;background:var(--t-bar,#2c2824);border-bottom:1px solid var(--t-rule,#3a3530)}
 .terminal-tabs{display:flex;min-width:0;overflow-x:auto}
 .terminal-tab{display:flex;align-items:center;gap:8px;border:0;border-right:1px solid var(--t-rule,#3a3530);background:transparent;color:var(--t-dim,#aaa298);padding:0 10px 0 13px;font:11px ui-monospace,monospace;white-space:nowrap}
 .terminal-tab.active{background:var(--t-bg,#211e1b);color:var(--t-fg,#ebe6de)}
 .terminal-tab.ended{color:var(--t-faint,#6d675f);font-style:italic}
-.terminal-add,.terminal-hide{border:0;background:transparent;color:var(--t-dim,#aaa298);padding:0 11px;font-size:15px}
-.terminal-hide{margin-left:auto}
+.terminal-add,.terminal-hide{flex:none;border:0;background:transparent;color:var(--t-dim,#aaa298);padding:0 11px;font-size:15px}
 .terminal-add:hover,.terminal-hide:hover{color:var(--t-fg,#fff)}
+.terminal-docks{display:flex;align-items:center;gap:2px;margin-left:auto;padding:0 4px;flex:none}
+.terminal-dock{display:grid;place-items:center;width:22px;height:20px;border:0;padding:0;background:transparent;color:var(--t-faint,#6d675f)}
+.terminal-dock svg{width:14px;height:12px}
+.terminal-dock:hover{color:var(--t-fg,#fff)}
+.terminal-dock[aria-checked="true"]{color:var(--t-fg,#ebe6de);background:var(--t-bg,#211e1b);box-shadow:inset 0 0 0 1px var(--t-rule,#3a3530)}
 .terminal-screens{flex:1;min-height:0;position:relative}
 .terminal-screen{position:absolute;inset:6px 4px 2px 10px}
 .status-button{margin-left:auto;border:0;background:transparent;color:var(--s2);font:10px ui-monospace,monospace;padding:3px 7px}
@@ -88,7 +100,9 @@
 .status-button+.status-right{margin-left:12px}
 .status-button.scheme{margin-left:4px}
 body.dragging iframe{pointer-events:none}
-body.dragging{cursor:row-resize;user-select:none}
+body.dragging{user-select:none}
+body.dragging-y{cursor:row-resize}
+body.dragging-x{cursor:col-resize}
 @media(max-width:720px){.workbench{grid-template-columns:50px minmax(0,1fr)}.files-label,.file-tree-host{display:none}.preview{position:absolute;inset:0;width:auto;z-index:3}.stage{position:relative}}
 .app{grid-template-columns:minmax(0,1fr)}
 .topbar{gap:0;padding-right:12px;min-width:0;overflow:hidden}

@@ -1,8 +1,42 @@
 (function (root) {
   'use strict';
 
-  // Terminals under the picture: each runs the user's own shell in the open workspace, on a
+  // Terminals beside the picture: each runs the user's own shell in the open workspace, on a
   // pseudo-terminal the Rust side owns. A tab per shell; closing a tab ends its shell.
+
+  // Where the panel docks: under the main view, or beside it on the left or the right. Its size runs
+  // across the dock (a height at the bottom, a width at a side), and its inner edge, the one that faces
+  // the view, follows the pointer.
+  const DOCKS = {
+    bottom: {label: 'at the bottom', hide: '⌄', size: '--terminal-height', least: 120, axis: 'y', grows: -1},
+    left: {label: 'on the left', hide: '‹', size: '--terminal-width', least: 240, axis: 'x', grows: 1},
+    right: {label: 'on the right', hide: '›', size: '--terminal-width', least: 240, axis: 'x', grows: -1},
+  };
+  const dockOf = (value) => Object.hasOwn(DOCKS, value) ? value : 'bottom';
+
+  // The panel's size once its inner edge is dragged from `from` to `to` (pointer positions, {x, y}):
+  // as much larger as the edge moved away from the panel, within its least size and `most`.
+  function dragged(dock, size, from, to, most) {
+    const {axis, grows, least} = DOCKS[dockOf(dock)];
+    return Math.max(least, Math.min(Math.max(least, most), size + grows * (to[axis] - from[axis])));
+  }
+
+  // A dock's button: the window in small, the panel's side filled.
+  const SVG = 'http://www.w3.org/2000/svg';
+  function glyph(dock) {
+    const svg = document.createElementNS(SVG, 'svg');
+    svg.setAttribute('viewBox', '0 0 14 12');
+    svg.setAttribute('aria-hidden', 'true');
+    const shape = (tag, attributes) => {
+      const made = document.createElementNS(SVG, tag);
+      for (const [name, value] of Object.entries(attributes)) made.setAttribute(name, value);
+      svg.append(made);
+    };
+    shape('rect', {x: 0.5, y: 0.5, width: 13, height: 11, fill: 'none', stroke: 'currentColor'});
+    const side = {bottom: {x: 1, y: 7, width: 12, height: 4}, left: {x: 1, y: 1, width: 5, height: 10}, right: {x: 8, y: 1, width: 5, height: 10}}[dock];
+    shape('rect', {...side, fill: 'currentColor'});
+    return svg;
+  }
 
   const node = (tag, className, label) => {
     const element = document.createElement(tag);
@@ -26,10 +60,24 @@
     const add = node('button', 'terminal-add', '+');
     add.type = 'button';
     add.title = 'New terminal';
+    const docks = node('div', 'terminal-docks');
+    docks.setAttribute('role', 'radiogroup');
+    docks.setAttribute('aria-label', 'Dock the terminal');
+    const dockButtons = Object.entries(DOCKS).map(([dock, {label}]) => {
+      const button = node('button', 'terminal-dock');
+      button.type = 'button';
+      button.dataset.dock = dock;
+      button.title = `Dock the terminal ${label}`;
+      button.setAttribute('role', 'radio');
+      button.append(glyph(dock));
+      button.addEventListener('click', () => bridge.dock(dock));
+      return button;
+    });
+    docks.append(...dockButtons);
     const hide = node('button', 'terminal-hide', '⌄');
     hide.type = 'button';
     hide.title = 'Hide the terminal (Ctrl+`)';
-    bar.append(tabs, add, hide);
+    bar.append(tabs, add, docks, hide);
     const screens = node('div', 'terminal-screens');
     host.append(bar, screens);
 
@@ -64,7 +112,7 @@
     }
 
     function fit() {
-      if (!active || host.hidden || !host.offsetHeight) return;
+      if (!active || host.hidden || !host.offsetHeight || !host.offsetWidth) return;
       try { active.fit.fit(); } catch {}
     }
 
@@ -147,8 +195,13 @@
         for (const [name, value] of Object.entries(chrome)) host.style.setProperty(name, value);
       },
       shown: () => { if (!open.length) start(); else { fit(); active?.term.focus(); } },
+      // the dock in force, marked among the buttons; the hide button points the way the panel goes
+      setDock: (dock) => {
+        for (const button of dockButtons) button.setAttribute('aria-checked', String(button.dataset.dock === dock));
+        hide.textContent = DOCKS[dockOf(dock)].hide;
+      },
     };
   }
 
-  root.AtlasTerminal = {mount};
+  root.AtlasTerminal = {mount, DOCKS, dockOf, dragged};
 })(typeof window !== 'undefined' ? window : globalThis);
