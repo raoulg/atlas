@@ -1229,6 +1229,34 @@ fn places_a_file_compiled_in_is_no_place_and_one_found_where_the_crate_was_built
     assert!(found(&s, "places").contains(&"stock.page".to_string()), "{:?}", found(&s, "places"));
 }
 
+/// The workbench pair, `workbench/rust`: what the program makes, kept in a folder of the project's
+/// own. The clean side gives the folder a type whose method names each file in it
+/// (`Workbench::of(project).file("report.txt")`); the shortcut hands the folder around as a bare
+/// path (`made_dir(project).join("report.txt")`).
+fn bench(side: &str) -> Graph {
+    analyze(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/pairs/workbench/rust").join(side), &Options::default()).unwrap()
+}
+
+/// Isomorphic is the same: a path a type's method builds from the field its constructor sets is
+/// the path written out with bare paths, so the two sides name the same files, at the same places,
+/// fixed by the same function. The method is followed on the value another call gives back
+/// (`Workbench::of(project).file(..)`) and on a binding of it (`bench.file(..)`).
+#[test]
+fn places_a_path_a_type_builds_is_the_path_written_out() {
+    let files = |g: &Graph| -> Vec<(String, String, Vec<String>)> {
+        let mut out: Vec<(String, String, Vec<String>)> = ["bench.save_report", "bench.save_log"]
+            .iter()
+            .flat_map(|f| touches(g, f, "disk_write").into_iter().map(move |t| (f.to_string(), t.artifact.clone(), t.fixed_by.clone())))
+            .collect();
+        out.sort();
+        out
+    };
+    let (c, s) = (files(&bench("clean")), files(&bench("shortcut")));
+    assert_eq!(c, s);
+    assert!(c.iter().any(|(f, a, by)| f == "bench.save_report" && a == ".made/report.txt" && by == &["bench.main.main"]), "{c:?}");
+    assert!(c.iter().any(|(f, a, _)| f == "bench.save_log" && a == "{project}/.made/log.txt"), "{c:?}");
+}
+
 /// The kept pair, `kept/rust`: a note kept in a file in the folder `where.txt` names, read, and
 /// taken once. The clean side writes it whole beside its file and renames it in, and names the
 /// folder (`let folder = kept::notes_folder()?`); the shortcut writes it straight in and names

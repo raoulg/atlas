@@ -51,7 +51,7 @@ fn cached(dir: &Path) -> Options {
 fn shown(parts: &[Graph]) -> String {
     let flows: Vec<serde_json::Value> = parts.iter().map(|g| serde_json::to_value(atlas_engine::flow::of(g)).unwrap()).collect();
     let text = serde_json::to_string(&(parts, flows)).unwrap();
-    regex::Regex::new(r"atlas-changes-\d+-\d+").unwrap().replace_all(&text, "atlas-changes").to_string()
+    regex::Regex::new(r"atlas-(revision|vision)-\d+-\d+").unwrap().replace_all(&text, "atlas-$1").to_string()
 }
 
 /// A crate the app depends on by a path outside the repository, written by its absolute path, so

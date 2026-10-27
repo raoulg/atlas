@@ -17,6 +17,7 @@ use crate::cache::{Cache, Check, Written};
 use crate::diff::{self, Reading, Status};
 use crate::flow::Drawn;
 use crate::model::{EdgeKind, Graph, NodeKind, Touch, World};
+use crate::places::Tmp;
 use crate::principles::Finding;
 use crate::story;
 
@@ -162,15 +163,14 @@ pub fn parts_at(repo: &Path, rev: Option<&str>, opts: &crate::Options) -> Result
     if let Some(parts) = opts.cache.as_ref().zip(key.as_ref()).and_then(|(cache, key)| kept(cache, key)) {
         return Ok(parts);
     }
-    let (base, root) = revision(repo, &commit)?;
+    let (tmp, root) = revision(repo, &commit)?;
     // what the reading takes from outside the commit, asked before it reads: a change while it
     // reads is a change the next reading sees
-    let witness = opts.cache.as_ref().map(|_| outside(repo, &base, &root, opts));
+    let witness = opts.cache.as_ref().map(|_| outside(repo, &tmp.root, &root, opts));
     let parts = crate::parts::analyze_parts(&[root], opts);
     if let (Ok(parts), Some(cache), Some(key), Some(witness)) = (&parts, &opts.cache, &key, witness) {
-        keep(cache, &key, &base, witness, parts);
+        keep(cache, &key, &tmp.root, witness, parts);
     }
-    let _ = std::fs::remove_dir_all(&base);
     parts
 }
 
@@ -229,7 +229,8 @@ fn kept(cache: &Cache, key: &str) -> Option<Vec<Graph>> {
     if !crate::cache::holds(&kept.witness) {
         return None;
     }
-    let forms = written_as(&std::env::temp_dir().join(reading_dir()));
+    let tmp = Tmp::new("revision").ok()?;
+    let forms = written_as(&tmp.root);
     let pairs: Vec<(String, &str)> = forms.iter().enumerate().map(|(i, f)| (standing(i), f.as_str())).collect();
     let mut parts = kept.parts;
     replaced(&mut parts, &pairs.iter().map(|(s, f)| (s.as_str(), *f)).collect::<Vec<_>>());
@@ -733,14 +734,6 @@ fn located(repo: &Path) -> Result<(PathBuf, PathBuf, std::ffi::OsString)> {
     Ok((top, rel, name))
 }
 
-/// The name of a directory of its own for one reading of a revision, also when a process reads
-/// several at once.
-fn reading_dir() -> String {
-    static READ: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
-    let n = READ.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-    format!("atlas-changes-{}-{n}", std::process::id())
-}
-
 /// A vision: the working tree of `repo` with `files` written otherwise, each path from the
 /// repository's root given whole or, where it is none, removed. It is read as a revision is, from a
 /// directory of its own under the same name, so the graph's names agree with the working tree's; a
@@ -757,9 +750,8 @@ pub fn envisioned(repo: &Path, files: &BTreeMap<PathBuf, Option<String>>, opts: 
     let top = std::fs::canonicalize(listing.root()).unwrap_or_else(|_| listing.root().to_path_buf());
     let inner = repo.strip_prefix(&top).unwrap_or(Path::new("")).to_path_buf();
     let name = top.file_name().map(|n| n.to_os_string()).unwrap_or_else(|| "repo".into());
-    let base = std::env::temp_dir().join(reading_dir());
-    let _ = std::fs::remove_dir_all(&base);
-    let root = base.join(name);
+    let tmp = Tmp::new("vision")?;
+    let root = tmp.root.join(name);
     let write = |rel: &Path, text: Option<&[u8]>, from: Option<&Path>| -> Result<()> {
         let dest = root.join(rel);
         if let Some(d) = dest.parent() {
@@ -795,25 +787,22 @@ pub fn envisioned(repo: &Path, files: &BTreeMap<PathBuf, Option<String>>, opts: 
         }
         if let Some(Ok(siblings)) = top.parent().map(std::fs::read_dir) {
             for s in siblings.flatten().filter(|s| s.path() != top) {
-                let _ = std::os::unix::fs::symlink(s.path(), base.join(s.file_name()));
+                let _ = std::os::unix::fs::symlink(s.path(), tmp.root.join(s.file_name()));
             }
         }
     }
-    let parts = crate::parts::analyze_parts(&[root.join(&inner)], opts);
-    let _ = std::fs::remove_dir_all(&base);
-    parts
+    crate::parts::analyze_parts(&[root.join(&inner)], opts)
 }
 
-/// The repository as it was at `rev`, written to a directory of its own under the same name,
-/// so the graph's names agree: (the directory to remove afterwards, the repository in it). A
+/// The repository as it was at `rev`, written to a `Tmp` of its own under the same name, so the
+/// graph's names agree: (the `Tmp`, removed when it is dropped, and the repository in it). A
 /// Python environment beside the repository is linked in, so its types are read the same way.
-fn revision(repo: &Path, rev: &str) -> Result<(PathBuf, PathBuf)> {
+fn revision(repo: &Path, rev: &str) -> Result<(Tmp, PathBuf)> {
     let (top, rel, name) = located(repo)?;
     let repo = std::fs::canonicalize(repo).unwrap_or_else(|_| repo.to_path_buf());
     let rel_git = crate::tree::path_str(&rel);
-    let base = std::env::temp_dir().join(reading_dir());
-    let _ = std::fs::remove_dir_all(&base);
-    let root = base.join(name);
+    let tmp = Tmp::new("revision")?;
+    let root = tmp.root.join(name);
     std::fs::create_dir_all(&root)?;
     let listed = git(&top, &["ls-tree", "-r", "-z", rev, "--", if rel_git.is_empty() { "." } else { &rel_git }])?;
     // `<mode> blob <sha>\t<path>`; links and submodules are not files of the revision
@@ -865,5 +854,5 @@ fn revision(repo: &Path, rev: &str) -> Result<(PathBuf, PathBuf)> {
     if repo.join(".venv").is_dir() {
         let _ = std::os::unix::fs::symlink(repo.join(".venv"), root.join(".venv"));
     }
-    Ok((base, root))
+    Ok((tmp, root))
 }

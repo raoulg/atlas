@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use tauri::menu::{AboutMetadata, Menu, MenuItemBuilder, SubmenuBuilder};
-use tauri::{AppHandle, Manager, Runtime};
+use tauri::{AppHandle, Runtime};
 
 /// How many workspaces Studio keeps.
 const MOST: usize = 20;
@@ -21,7 +21,7 @@ pub struct Recent {
 }
 
 fn file<R: Runtime>(app: &AppHandle<R>) -> Option<PathBuf> {
-    app.path().app_config_dir().ok().map(|dir| dir.join("workspaces.json"))
+    Some(crate::settings::Settings::of(app)?.file("workspaces.json"))
 }
 
 /// The workspaces opened before, most recent first.

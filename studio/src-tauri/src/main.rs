@@ -378,7 +378,8 @@ async fn this_build(app: &tauri::AppHandle) -> Result<update::Build, String> {
 /// it is a day old or `now` asks for it.
 async fn newer_build(app: &tauri::AppHandle, now: bool) -> Result<Option<update::Newer>, String> {
     let build = this_build(app).await?;
-    let file = app.path().app_config_dir().map_err(|e| e.to_string())?.join("update.json");
+    // the last answer, in the app's cache folder: an answer, kept apart from the user's settings
+    let file = app.path().app_cache_dir().map_err(|e| e.to_string())?.join("update.json");
     let mut asked = update::read(&file);
     if now || asked.stale(update::now()) {
         let asking = build.clone();
