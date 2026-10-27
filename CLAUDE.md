@@ -207,13 +207,13 @@ Two long-lived branches, one release train. Everything else is a short-lived top
   environment, so a new worktree does not compile the dependencies again.
 - Disk: cargo names Atlas's builds by its version and by the hash of its dependencies and toolchain,
   so every raise, dependency update or new Rust leaves a full set of builds behind (they reached
-  260 GB). `lefthook.yml` runs `tools/clean-old-builds.sh` after each commit and merge, in the
-  worktree it is made in (`lefthook install` once per clone; worktrees share it): a commit that raises
-  the version removes Atlas's builds of the old one, and `cargo sweep` (from the Brewfile) keeps
-  `target` below 15 GB by removing the least recently used builds. Dependencies stay, so the next
-  build stays quick.
-  When `df -h ~` still runs low, `cargo clean -p atlas -p atlas-engine` (and with `--release`) in
-  your own worktree; never another session's target. The larger cost is the number of worktrees,
+  260 GB). `sh tools/clean-old-builds.sh`, run by hand in your own worktree, removes the builds of a
+  toolchain no longer installed and then the least recently used builds until `target` is below
+  15 GB (`cargo sweep`, from the Brewfile): an earlier version's builds go, today's and the
+  dependencies stay, so the next build stays quick. Run it after a version raise has landed, or when
+  `df -h ~` runs low; never while a build or a test runs there, and never in another session's
+  worktree. No git hook removes builds: a hook runs while a build is made or used (a sidecar copied,
+  a release binary a report needs), and a removed build fails far from its cause. The larger cost is the number of worktrees,
   each with its own `target` of 3 to 18 GB: remove a worktree when its branch is merged (see
   Branches). In an agent's shell `rm` is `rip`: `rm -rf target` moves the files to
   `/tmp/graveyard-$USER` and frees nothing (it reached 201 GB). Take build output away with `cargo clean`,
