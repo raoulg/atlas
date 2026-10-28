@@ -809,6 +809,122 @@ fn through_a_call_runs_the_same_functions_for_the_route_its_parameters_and_its_e
     }
 }
 
+// ---------- a library's facts hold where ty finds that library ----------
+
+/// The files `id` touches, each by its kind and the term its path is (`~/data/{name}`).
+fn terms(g: &Graph, id: &str) -> BTreeSet<(String, String)> {
+    let n = g.node(id).unwrap_or_else(|| panic!("{id} is in the graph"));
+    n.touches.iter().filter(|t| t.kind_name() != "screen").map(|t| (t.kind_name().to_string(), t.what.clone())).collect()
+}
+
+/// A subject of its own, `files` written below a fresh directory, read, and removed.
+fn subject(name: &str, files: &[(&str, &str)]) -> Graph {
+    let root = std::env::temp_dir().join(format!("atlas-python-{name}-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&root);
+    for (path, text) in files {
+        let file = root.join(path);
+        std::fs::create_dir_all(file.parent().expect("has a parent")).expect("makes the directory");
+        std::fs::write(file, text).expect("writes the file");
+    }
+    let g = analyze(&root, &Options::default());
+    let _ = std::fs::remove_dir_all(&root);
+    g.unwrap_or_else(|e| panic!("{name} reads: {e}"))
+}
+
+/// A path method holds where ty finds the call goes into the path's library
+/// (`knowledge::PYTHON_PATH_METHODS`), never by its name alone. The receivers pair
+/// (`tests/pairs/receivers/python`) finds a data file below the directory `data_dir()` gives and
+/// writes its count beside it. The clean side annotates `data_dir() -> Path`, so `joinpath` and
+/// `with_suffix` are pathlib's and the places are the terms the code builds. The shortcut leaves the
+/// annotations out: ty does not know what `data_dir()` gives, so nothing says `.joinpath(name)` is a
+/// path's, and the place stays a hole by the name the code gives it rather than a guess. The calls
+/// that open the files are in both graphs.
+#[test]
+fn places_a_path_method_holds_where_ty_finds_a_path() {
+    let p = common::pair("receivers/python");
+    let summarise = "shelf.summary.summarise";
+    let clean = terms(&p.clean, summarise);
+    for (kind, what) in [
+        ("disk_read", "~/data/{name}"),
+        ("disk_read", "{$SHELF_DATA}/{name}"),
+        ("disk_write", "~/data/{name}.count"),
+        ("disk_write", "{$SHELF_DATA}/{name}.count"),
+    ] {
+        assert!(clean.contains(&(kind.to_string(), what.to_string())), "{kind} {what} in {clean:?}");
+    }
+    let shortcut = terms(&p.shortcut, summarise);
+    assert!(shortcut.iter().any(|(k, _)| k == "disk_read") && shortcut.iter().any(|(k, _)| k == "disk_write"), "{shortcut:?}");
+    assert!(shortcut.iter().all(|(_, what)| !what.contains("data")), "no place is guessed from a method's name: {shortcut:?}");
+}
+
+/// A method of the project's own is the project's, whatever its name: a class whose methods are
+/// named as pathlib's (`home`, `with_name`) reads what a class with other names for the same
+/// methods reads, and neither is the user's home.
+#[test]
+fn places_a_project_method_named_as_a_librarys_is_the_projects() {
+    let site = |home: &str, sibling: &str| {
+        format!(
+            "class Site:\n    def {home}(self) -> str:\n        return \"index.html\"\n\n    def {sibling}(self, name: str) -> str:\n        return \"pages/\" + name\n\n\ndef run(site: Site) -> None:\n    print(open(site.{home}()).read())\n    print(open(site.{sibling}(\"about.html\")).read())\n"
+        )
+    };
+    let named = terms(&program("own-named", &site("home", "with_name")), "demo.core.run");
+    let other = terms(&program("own-other", &site("index", "page")), "demo.core.run");
+    // the same term, a hole named by the call the code writes
+    let renamed: BTreeSet<(String, String)> =
+        other.into_iter().map(|(k, what)| (k, what.replace(".index(", ".home(").replace(".page(", ".with_name("))).collect();
+    assert_eq!(named, renamed);
+    assert!(named.iter().all(|(_, what)| !what.starts_with('~')), "{named:?}");
+}
+
+/// A notebook reads as the script its code cells make, its IPython escape commands aside
+/// (`%matplotlib`, `!pip`): only what ruff parses as an escape command is blanked. A line Black wraps
+/// before a binary operator (`    % len(..)`, `    != ..`) is Python, and the notebook reads the files
+/// the same code reads as a script.
+#[test]
+fn a_notebook_reads_as_the_script_its_cells_make() {
+    let code = "report = (\n    \"rows: %d\"\n    % len(open(\"data/rows.csv\").read().splitlines())\n)\nchanged = (\n    open(\"data/old.csv\").read()\n    != open(\"data/new.csv\").read()\n)\nprint(report, changed)\n";
+    let cell = |source: &str| {
+        let lines: Vec<String> = source.split_inclusive('\n').map(|l| serde_json::to_string(l).expect("a string")).collect();
+        format!(
+            "{{\"cell_type\": \"code\", \"execution_count\": null, \"metadata\": {{}}, \"outputs\": [], \"source\": [{}]}}",
+            lines.join(", ")
+        )
+    };
+    let notebook = format!(
+        "{{\"cells\": [{}, {}], \"metadata\": {{}}, \"nbformat\": 4, \"nbformat_minor\": 5}}",
+        cell("%matplotlib inline\n!pip install rows\n"),
+        cell(code)
+    );
+    let manifest = "[project]\nname = \"rows\"\nversion = \"0\"\n";
+    let g = subject(
+        "notebook-escapes",
+        &[("pyproject.toml", manifest), ("src/rows/__init__.py", ""), ("notebooks/report.ipynb", &notebook), ("scripts/report.py", code)],
+    );
+    let (as_notebook, as_script) = (terms(&g, "notebooks.report"), terms(&g, "scripts.report"));
+    assert_eq!(as_notebook, as_script);
+    for file in ["data/rows.csv", "data/old.csv", "data/new.csv"] {
+        assert!(as_notebook.contains(&("disk_read".to_string(), file.to_string())), "{file} in {as_notebook:?}");
+    }
+}
+
+/// A script or a notebook that does not load is left out with a warning, and the rest of the
+/// subject is read as it is without it: a notebook whose JSON does not parse fails nothing.
+#[test]
+fn a_notebook_that_does_not_load_is_left_out() {
+    let files = [
+        ("pyproject.toml", "[project]\nname = \"rows\"\nversion = \"0\"\n"),
+        ("src/rows/__init__.py", "def count(path: str) -> int:\n    return len(open(path).read().splitlines())\n"),
+        ("scripts/run.py", "from rows import count\n\nprint(count(\"data/rows.csv\"))\n"),
+    ];
+    let ids = |g: &Graph| g.nodes.iter().map(|n| n.id.clone()).collect::<BTreeSet<_>>();
+    let without = subject("notebook-without", &files);
+    let mut broken = files.to_vec();
+    broken.push(("notebooks/broken.ipynb", "{\"cells\": [ not json"));
+    let with = subject("notebook-broken", &broken);
+    assert_eq!(ids(&with), ids(&without));
+    assert_eq!(terms(&with, "scripts.run"), terms(&without, "scripts.run"));
+}
+
 // ---------- prophecy ----------
 
 /// One side of the prophecy pair (`tests/pairs/prophecy`): a report `Sink` that only writes, and

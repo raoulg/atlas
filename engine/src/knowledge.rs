@@ -1569,6 +1569,51 @@ pub const BROWSER_STORES: &[&str] = &["localStorage", "sessionStorage"];
 pub const BROWSER_STORE_OPS: &[&str] = &["getItem", "setItem", "removeItem", "clear"];
 pub const CLIENT_MAKERS: &[&str] = &["create", "createClient"];
 
+/// How a TypeScript or JavaScript package's function that makes a client is named, by what its
+/// name starts with or by the whole name: `createClient()`, `mysql.createPool()`, `connect()`,
+/// `open()`. What a package's other calls give back is a result, not a client.
+pub struct Makers {
+    pub starts: &'static [&'static str],
+    pub names: &'static [&'static str],
+}
+
+impl Makers {
+    /// Whether a function of this name makes a client.
+    pub fn makes(&self, name: &str) -> bool {
+        self.starts.iter().any(|s| name.starts_with(s)) || self.names.contains(&name)
+    }
+}
+
+pub const TYPESCRIPT_CLIENT_MAKERS: Makers = Makers { starts: &["create"], names: &["connect", "open"] };
+
+/// A test file by the conventions of a language's test runners: by a mark in its name, or by a
+/// directory of tests it is below.
+pub struct TestFiles {
+    pub marks: &'static [&'static str],
+    pub dirs: &'static [&'static str],
+}
+
+impl TestFiles {
+    /// Whether the file at `path` is a test file.
+    pub fn holds(&self, path: &std::path::Path) -> bool {
+        let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+        self.marks.iter().any(|m| name.contains(m))
+            || path.components().any(|c| c.as_os_str().to_str().is_some_and(|d| self.dirs.contains(&d)))
+    }
+}
+
+/// TypeScript's and JavaScript's test files, as Jest, Vitest and Mocha find them: `rows.test.ts`,
+/// `rows.spec.js`, and any file below `__tests__`.
+pub const TYPESCRIPT_TEST_FILES: TestFiles = TestFiles { marks: &[".test.", ".spec."], dirs: &["__tests__"] };
+
+/// The conditions of a package's `exports` that an import of the package's code meets: Node's
+/// (`node`, `import`, `require`), a bundler's (`module`, `browser`), and `default`, which every
+/// import meets. Which of them an import takes is the package's to say: Node goes through the
+/// conditions in the order the package writes them and takes the first the import meets, so this
+/// table is a set, not an order. `types` names declarations (a `.d.ts`), not code, and is no
+/// condition an import of code meets.
+pub const EXPORT_CONDITIONS: &[&str] = &["node", "import", "require", "module", "browser", "default"];
+
 /// Parts of the world a library reaches only through a client the code made from it: its other
 /// functions are helpers (a language model's SDK formats a file or a schema without asking the
 /// model anything).
@@ -1595,9 +1640,6 @@ pub const PATH_LIBRARIES: &[&str] = &["pathlib", "importlib"];
 /// name, by the library's module and the function's name: `importlib.resources.files("pages")`.
 /// What is read from there is part of the package.
 pub const PACKAGE_FILES: &[(&str, &str)] = &[("importlib.resources", "files"), ("importlib_resources", "files")];
-
-/// A path's methods that give back the path they are called on, written another way.
-pub const SAME_PATH: &[&str] = &["resolve", "absolute", "expanduser", "as_posix", "__fspath__"];
 
 /// A path's methods that give the paths below the one they are called on that match a pattern,
 /// with what the pattern starts with and how many arguments write the rest of it:
@@ -1761,6 +1803,41 @@ pub const RUST_PATH_FUNCTIONS: &[(&str, &str, PathFn)] = &[
     ("env", "var", PathFn::Environment),
     ("env", "var_os", PathFn::Environment),
 ];
+
+/// Python's path functions, by the library module ty finds the call goes into (or one above it)
+/// and their name: `Path.cwd()`, `os.getenv("DATA", "data")`, `os.path.join(a, b)` (`os.path` is
+/// `posixpath` or `ntpath`, by the platform). A function of the project's own of the same name is
+/// no path function.
+pub const PYTHON_PATH_FUNCTIONS: &[(&str, &str, PathFn)] = &[
+    ("pathlib", "cwd", PathFn::Here),
+    ("pathlib", "home", PathFn::Home),
+    ("os", "getenv", PathFn::Environment),
+    ("os", "fspath", PathFn::Same),
+    ("builtins", "str", PathFn::Same),
+    ("posixpath", "join", PathFn::Join),
+    ("ntpath", "join", PathFn::Join),
+];
+
+/// Python's methods of a path, by the library module ty finds the call goes into (or one above it)
+/// and their name: pathlib's, and importlib's for what a package ships
+/// (`files("pages").joinpath("template.html")`). A method of the same name on any other value is
+/// no path method.
+pub const PYTHON_PATH_METHODS: &[(&str, &str, PathMethod)] = &[
+    ("pathlib", "joinpath", PathMethod::Join),
+    ("importlib", "joinpath", PathMethod::Join),
+    ("pathlib", "with_suffix", PathMethod::Extension),
+    ("pathlib", "with_name", PathMethod::Sibling),
+    ("pathlib", "resolve", PathMethod::Same),
+    ("pathlib", "absolute", PathMethod::Same),
+    ("pathlib", "expanduser", PathMethod::Same),
+    ("pathlib", "as_posix", PathMethod::Same),
+    ("pathlib", "__fspath__", PathMethod::Same),
+];
+
+/// Python's mapping of the environment's variables, by its library, the class ty types it as, and
+/// the method that reads a variable with a default: `os.environ["DATA"]`,
+/// `os.environ.get("DATA", "data")`.
+pub const PYTHON_ENVIRONMENT: &[(&str, &str, &str)] = &[("os", "_Environ", "get")];
 
 /// The macros that give, where the program is built, the directory its crate's manifest is in,
 /// by the macro and the variable Cargo sets: `env!("CARGO_MANIFEST_DIR")`. Read at run time, it
