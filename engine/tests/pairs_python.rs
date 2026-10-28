@@ -777,6 +777,38 @@ fn a_place_carries_a_what_a_key_no_code_decides_is_one_of_a_mappings_values() {
     assert!(written.is_subset(&every), "{written:?} in {every:?}");
 }
 
+// ---------- through: what a call runs is one answer ----------
+
+/// The through pair (`tests/pairs/through/python`): `report` reads a heading from a file and shows it on a section, a
+/// `Boxed` section among them. The clean side calls `section.show(heading)`, which on a boxed section runs `Boxed.show`;
+/// the shortcut calls `Section.show(section, heading)`, a call through a class, which runs `Section.show` and no override
+/// of it (`mathematics.md`, "Method resolution order"), so a boxed section is never shown boxed.
+fn through() -> &'static Pair {
+    static PAIR: OnceLock<Pair> = OnceLock::new();
+    PAIR.get_or_init(|| common::pair("through/python"))
+}
+
+/// What a call runs is one answer (#263): the route's steps, what a parameter holds and what a call hands on all ask
+/// which functions a call may run, and each follows the calls the route draws. On each side the test computes the three
+/// and compares them: the call of `report` may run `Boxed.show` in its place exactly where `Boxed.show`'s `heading`
+/// holds the heading `report` read (the body reads it, and tests it) and exactly where the call hands on the error
+/// `Boxed.show` raises. The clean side's dispatch runs the override, the shortcut's call through the class does not, and
+/// a parameter only that call fills holds no value.
+#[test]
+fn through_a_call_runs_the_same_functions_for_the_route_its_parameters_and_its_errors() {
+    let boxed = "notes.sections.Boxed.show";
+    for (side, g) in [("clean", &through().clean), ("shortcut", &through().shortcut)] {
+        let bodies = flow::bodies(g);
+        let call = bodies["notes.report.report"].steps().into_iter().find(|s| s.to == "notes.sections.Section.show").expect("report shows");
+        let runs = call.alts(&bodies).iter().any(|k| flow::split(k).0 == boxed);
+        let holds = g.node(boxed).unwrap().uses.iter().any(|u| u.name == "heading");
+        let site = g.node("notes.report.report").unwrap().sites.iter().find(|s| s.to == "notes.sections.Section.show").unwrap();
+        let hands_on = site.fails.iter().any(|e| e == "ext:builtins.ValueError");
+        assert_eq!((holds, hands_on), (runs, runs), "{side}: the parameter and the error follow what the call runs");
+        assert_eq!(runs, side == "clean", "{side}");
+    }
+}
+
 // ---------- prophecy ----------
 
 /// One side of the prophecy pair (`tests/pairs/prophecy`): a report `Sink` that only writes, and
