@@ -99,6 +99,8 @@
 .status-button.on{background:var(--s24)}
 .status-button+.status-right{margin-left:12px}
 .status-button.scheme{margin-left:4px}
+.status-version{border:0;background:transparent;font:inherit;padding:3px 7px}
+.status-version:hover{background:var(--s24);color:var(--s2)}
 body.dragging iframe{pointer-events:none}
 body.dragging{user-select:none}
 body.dragging-y{cursor:row-resize}
