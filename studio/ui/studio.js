@@ -299,12 +299,12 @@ byId('workspace-button').addEventListener('click', showWorkspaces);
 byId('terminal-toggle').addEventListener('click', () => showTerminal());
 for (const tab of document.querySelectorAll('.side-tab')) tab.addEventListener('click', () => selectView(tab.dataset.view));
 // which build this is, at the right of the status bar: its version, and for a nightly its commit;
-// the settings name the commit of every build
+// the settings name the commit of every build. A click on it shows what changed in it (What's New).
 let buildSaid = 'Atlas Studio';
 invoke('studio_build').then((build) => {
   buildSaid = `Atlas Studio ${build.version}` + (build.nightly ? ' · nightly' : '') + (build.commit ? ` · ${build.commit}` : '');
   byId('studio-version').textContent = `Atlas Studio ${build.version}` + (build.nightly ? ` · nightly ${build.commit}` : '');
-  byId('studio-version').title = `atlas ${build.version}${build.nightly ? '-nightly' : ''}${build.commit ? ` (${build.commit})` : ''}`;
+  byId('studio-version').title = `What's new in atlas ${build.version}${build.nightly ? '-nightly' : ''}${build.commit ? ` (${build.commit})` : ''}`;
 }).catch(() => {});
 
 // a newer build of Studio's channel, looked for once an hour against an answer a day old at most
@@ -316,6 +316,7 @@ const updates = window.AtlasUpdates.mount(byId('updates'), byId('update-button')
 listen('studio-update', ({payload}) => updates.found(payload));
 // what changed in the build that runs: its release's notes in the window, else on GitHub
 async function whatsNew() {
+  if (settingsPage.isShown()) settingsPage.hide();
   byId('status-text').textContent = 'Looking up what changed…';
   try { updates.show(await invoke('whats_new')); byId('status-text').textContent = 'Ready'; }
   catch (error) { byId('status-text').textContent = String(error); }
@@ -357,13 +358,14 @@ listen('studio-menu', ({payload}) => {
   else if (action === 'view.terminal') showTerminal();
   else if (action === 'view.scheme') toggleScheme();
   else if (action === 'update.check') checkNow();
-  else if (action === 'update.notes') { if (settingsPage.isShown()) settingsPage.hide(); whatsNew(); }
+  else if (action === 'update.notes') whatsNew();
   else if (action === 'settings') { byId('atlas-bar').hidden = true; settingsPage.show(); }
 });
 listen('appearance', ({payload}) => showAppearance(payload));
 listen('terminal-dock', ({payload}) => showDock(payload));
 Themes.darkSystem.addEventListener('change', () => { if (appearance.theme === 'system') showAppearance(appearance); });
 byId('scheme-toggle').addEventListener('click', toggleScheme);
+byId('studio-version').addEventListener('click', () => whatsNew());
 invoke('get_settings').then((settings) => { showAppearance(settings.appearance); showDock(settings.terminal); })
   .catch(() => { showAppearance(appearance); showDock(dock); });
 listen('studio-backend-stopped', () => { displayWorkspace(null); showState('error', 'Atlas stopped. Open the workspace again to restart it.'); });
