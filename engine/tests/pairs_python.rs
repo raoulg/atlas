@@ -985,6 +985,47 @@ fn prophecy_a_vision_that_changes_what_exists_is_refused() {
     assert!(refused.to_string().contains("archive.sink.Sink.write"), "the refusal names what the vision changes: {refused}");
 }
 
+/// A vision's file is the file its path names from the directory the vision is asked for, and no
+/// other: `archive/store/sink.py` holds a `Shelf` and is no part of a vision of `sink.py`, though
+/// both are named `sink.py`. The vision puts a `Vault` above the `Sink` of `archive/sink.py`, and
+/// is decided whether it is asked for the package on its own (its paths are shorter than the
+/// project's) or for a directory the project is a part below (its paths are longer).
+#[test]
+fn prophecy_a_vision_takes_the_file_its_path_names() {
+    use std::collections::BTreeMap;
+    let decide = |name: &str, below: bool| {
+        let copy = common::clean_copy("python", name);
+        std::fs::create_dir_all(copy.join("src/archive/store")).expect("makes the directory");
+        std::fs::write(copy.join("src/archive/store/__init__.py"), "").expect("writes");
+        std::fs::write(
+            copy.join("src/archive/store/sink.py"),
+            "\"\"\"Reports kept on a shelf.\"\"\"\n\n\nclass Shelf:\n    \"\"\"Keeps what it is given.\"\"\"\n\n    def keep(self, report: str, /) -> None:\n        print(report)\n",
+        )
+        .expect("writes");
+        let (asked, file) = match below {
+            false => (copy.join("src/archive"), PathBuf::from("sink.py")),
+            true => {
+                let top = copy.parent().expect("has a parent").join("repository");
+                std::fs::create_dir_all(&top).expect("makes the directory");
+                std::fs::rename(&copy, top.join("py")).expect("moves the project");
+                (top, PathBuf::from("py/src/archive/sink.py"))
+            }
+        };
+        let now = std::fs::read_to_string(asked.join(&file)).expect("reads").replace("\r\n", "\n");
+        let vault = "class Vault:\n    def keep(self, report: str, /) -> None: ...\n\n\n";
+        let vision = BTreeMap::from([(file.clone(), Some(now.replacen("class Sink:", &format!("{vault}class Sink:"), 1)))]);
+        let decided = atlas_engine::decide::prophetize(&asked, &vision, &BTreeMap::new(), &Options::default());
+        let _ = std::fs::remove_dir_all(copy.parent().expect("has a parent"));
+        let decided = decided.unwrap_or_else(|e| panic!("decided, asked for {}: {e}", asked.display()));
+        (decided.files.keys().cloned().collect::<Vec<_>>(), decided.marked, file)
+    };
+    for (name, below) in [("package-alone", false), ("part-below", true)] {
+        let (written, marked, file) = decide(name, below);
+        assert_eq!(written, [file], "{name}");
+        assert_eq!(marked, ["archive.sink.Vault"], "{name}");
+    }
+}
+
 /// A prophecy whose shape waits on an open question is sealed on its issue. The seals come back
 /// as a list with what the host says of each issue (here: one closed, one open), and the one whose
 /// issue is closed can be broken: `sealed=..` leaves its marker and nothing else changes. The
@@ -1014,6 +1055,30 @@ fn prophecy_a_seal_is_listed_and_broken_when_its_issue_is_closed() {
         "a prophecy that is not sealed has no seal to break"
     );
     let _ = std::fs::remove_dir_all(copy.parent().expect("has a parent"));
+}
+
+/// Breaking a seal changes the bytes of `sealed=..` and of the separator that joins it, and no
+/// other: the file comes back as it was with exactly those bytes taken out, the seal first among
+/// the decorator's arguments, last, or alone. The file is read when the seal is broken and the
+/// graph may be older: a file emptied or shortened since is an error.
+#[test]
+fn prophecy_breaking_a_seal_changes_its_bytes_and_no_other() {
+    let sealed = "\"\"\"Where reports wait.\"\"\"\n\nfrom archive import prophecy\n\n\n@prophecy(supersedes=\"archive.sink.Sink\", sealed=\"#7\")\nclass Vault:\n    def keep(self, report: str, /) -> None: ...\n\n\n@prophecy(sealed=\"#8\", supersedes=\"archive.sink.Sink\")\nclass Crate:\n    def pack(self, report: str, /) -> None: ...\n\n\n@prophecy(sealed=\"#9\")\nclass Shelf:\n    def rest(self, report: str, /) -> None: ...\n";
+    let copy = common::clean_copy("python", "unseal");
+    let file = copy.join("src/archive/vault.py");
+    std::fs::write(&file, sealed).expect("writes");
+    let g = analyze(&copy, &Options::default()).expect("reads");
+    let ids = ["archive.vault.Vault", "archive.vault.Crate", "archive.vault.Shelf"].map(String::from);
+    let broken = atlas_engine::decide::unseal(&g, &ids).expect("the seals are broken");
+    let unsealed = sealed.replacen(", sealed=\"#7\"", "", 1).replacen("sealed=\"#8\", ", "", 1).replacen("sealed=\"#9\"", "", 1);
+    let text = broken.get(std::path::Path::new("src/archive/vault.py")).cloned();
+    let changed = ["", "\"\"\"Where reports wait.\"\"\"\n\n"].map(|cut| {
+        std::fs::write(&file, cut).expect("writes");
+        atlas_engine::decide::unseal(&g, &ids).is_err()
+    });
+    let _ = std::fs::remove_dir_all(copy.parent().expect("has a parent"));
+    assert_eq!(text, Some(unsealed));
+    assert_eq!(changed, [true, true], "an emptied file, a shortened one");
 }
 
 fn fits(side: &str) -> Graph {
