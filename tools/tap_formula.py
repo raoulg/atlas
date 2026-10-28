@@ -27,7 +27,7 @@ HEAD = '''class AtlasCodeNightly < Formula
   desc "Draws what a program is, beneath its language: the nightly build"
   homepage "https://raoulg.github.io/atlas/"
   version "{version}"
-  license "CC-BY-NC-SA-4.0"
+  license "AGPL-3.0-only"
 
   # A nightly of `next`, built when `next` has moved and its tests are green: one pre-release per build.
   # It installs `atlas-nightly`, beside the release's `atlas`.

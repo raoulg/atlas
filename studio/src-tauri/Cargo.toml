@@ -3,7 +3,7 @@ name = "atlas-studio"
 version = "0.1.0"
 edition = "2021"
 rust-version = "1.90"
-license = "CC-BY-NC-SA-4.0"
+license = "AGPL-3.0-only"
 repository = "https://github.com/raoulg/atlas"
 build = "build.rs"
 
