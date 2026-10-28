@@ -1121,6 +1121,32 @@ pub fn split(key: &str) -> (&str, &str) {
     key.split_once('@').unwrap_or((key, ""))
 }
 
+/// What a call may run wherever the body it is written in runs, as the route runs it (`Ix::may_run` on a value whose
+/// class is not known, `docs/reference/mathematics.md`, "Method resolution order"): building a class runs the initializer
+/// along its order; a call by name runs the method it reaches or, for each class below, the one that class runs; a call
+/// through a class runs the method its call names and no override of it; a `super()` call runs the next method along the
+/// order of each class its value may be. A pass that settles a body by what its calls run asks it here of the graph being
+/// built (`builder::settle_parameters`, `builder::settle_fails`), so what a parameter holds and what a call hands on are
+/// those of the calls the route draws.
+pub struct Runs<'g>(Ix<'g>);
+
+impl<'g> Runs<'g> {
+    pub fn new(nodes: &'g IndexMap<String, Node>, edges: &'g [Edge]) -> Self {
+        Runs(Ix::of(nodes.values(), edges, vec![]))
+    }
+
+    /// The functions call `s` may run, each once: one of them runs.
+    pub fn of(&self, s: &Site) -> Vec<String> {
+        let mut out: Vec<String> = vec![];
+        for (f, _) in self.0.may_run(s, "") {
+            if self.0.nodes.contains_key(f.as_str()) && !out.contains(&f) {
+                out.push(f);
+            }
+        }
+        out
+    }
+}
+
 /// The edges of a graph by their ends, in the order the graph holds them.
 struct Ix<'g> {
     nodes: HashMap<&'g str, &'g Node>,
@@ -1137,15 +1163,18 @@ struct Ix<'g> {
 
 impl<'g> Ix<'g> {
     fn new(g: &'g Graph) -> Self {
+        Ix::of(&g.nodes, &g.edges, g.parts.iter().map(|p| (p.id.as_str(), p.leaves)).collect())
+    }
+
+    fn of(nodes: impl IntoIterator<Item = &'g Node>, edges: &'g [Edge], leaves: Vec<(&'g str, Leaves)>) -> Self {
         let mut out: HashMap<&str, Vec<&Edge>> = HashMap::new();
         let mut into: HashMap<&str, Vec<&Edge>> = HashMap::new();
-        for e in &g.edges {
+        for e in edges {
             out.entry(e.src.as_str()).or_default().push(e);
             into.entry(e.dst.as_str()).or_default().push(e);
         }
-        let leaves = g.parts.iter().map(|p| (p.id.as_str(), p.leaves)).collect();
         Ix {
-            nodes: g.nodes.iter().map(|n| (n.id.as_str(), n)).collect(),
+            nodes: nodes.into_iter().map(|n| (n.id.as_str(), n)).collect(),
             out,
             into,
             mro: RefCell::default(),

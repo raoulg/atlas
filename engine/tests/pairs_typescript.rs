@@ -1466,6 +1466,30 @@ fn cooperative_super_and_a_call_through_a_prototype_run_one_method() {
     }
 }
 
+// ---------- through: what a call runs is one answer ----------
+
+/// What a call runs is one answer (#263), as in Python: the route's steps, what a parameter holds and what a call hands
+/// on follow the calls the route draws. The through pair (`tests/pairs/through/typescript`) shows a heading read from a
+/// file on a section: the clean `section.show(heading)` may run `Boxed.show` on a boxed section, the shortcut's
+/// `Section.prototype.show.call(section, heading)` runs `Section.show` and no override of it. On each side the call may
+/// run `Boxed.show` exactly where `Boxed.show`'s `heading` holds the heading `report` read and exactly where the call
+/// hands on the error `Boxed.show` throws.
+#[test]
+fn through_a_call_runs_the_same_functions_for_the_route_its_parameters_and_its_errors() {
+    let p = common::pair("through/typescript");
+    for (side, g) in [("clean", &p.clean), ("shortcut", &p.shortcut)] {
+        let [report, show, boxed] = [".report.report", ".sections.Section.show", ".sections.Boxed.show"].map(|f| format!("{}{f}", g.root));
+        let bodies = flow::bodies(g);
+        let call = bodies[&report].steps().into_iter().find(|s| s.to == show).expect("report shows");
+        let runs = call.alts(&bodies).iter().any(|k| flow::split(k).0 == boxed);
+        let holds = node(g, "sections.Boxed.show").uses.iter().any(|u| u.name == "heading");
+        let site = node(g, "report.report").sites.iter().find(|s| s.to == show).unwrap();
+        let hands_on = site.fails.iter().any(|e| e == "ext:javascript.Error");
+        assert_eq!((holds, hands_on), (runs, runs), "{side}: the parameter and the error follow what the call runs");
+        assert_eq!(runs, side == "clean", "{side}");
+    }
+}
+
 /// An entry run from the command line is handed the words the human types (#152). Node holds them
 /// raw in `process.argv`, as Rust's `env::args()` gives them: the shortcut keeps them under names,
 /// `const [kind = "", ...flags] = process.argv.slice(2)`, a step that takes the entry's words under
