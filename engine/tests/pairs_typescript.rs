@@ -620,6 +620,78 @@ fn lens_what_is_put_comes_back_inside_and_a_key_is_no_put() {
     assert_eq!(lost, ["harvest.store.Day", "harvest.store.Outage"], "the Outage and the Day, not the Reading");
 }
 
+// ---------- a package's exports, as Node resolves them ----------
+
+/// A package of its own, `files` written below a fresh directory, read with `options`, and removed.
+fn package(name: &str, files: &[(&str, String)], options: &Options) -> Graph {
+    let dir = std::env::temp_dir().join(format!("atlas-ts-{name}-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    for (path, text) in files {
+        let file = dir.join(path);
+        std::fs::create_dir_all(file.parent().expect("has a parent")).expect("makes the directory");
+        std::fs::write(file, text).expect("writes the file");
+    }
+    let g = analyze(&dir, options);
+    let _ = std::fs::remove_dir_all(&dir);
+    g.unwrap_or_else(|e| panic!("{name} parses: {e}"))
+}
+
+/// What a package exports is found by Node's rule, for a library and for the program's own package
+/// alike: the conditions of `exports` in the order the package writes them, the first an import of
+/// code meets taken, and `types` never, which names declarations. A library whose `require` build
+/// is written first is read there, and written the other way round at its `import` build; the
+/// program's own package with the same `exports` names the doors of the module it points to the
+/// same way.
+#[test]
+fn doors_a_package_exports_what_its_first_condition_gives() {
+    let read = |name: &str, conditions: &str| {
+        let manifest = |pkg: &str, ext: &str| {
+            let exports = conditions.replace("{ext}", ext);
+            format!("{{ \"name\": \"{pkg}\", \"exports\": {{ \".\": {exports} }} }}")
+        };
+        let files = [
+            ("package.json", manifest("own", "ts")),
+            ("tsconfig.json", "{}".to_string()),
+            ("src/cjs.ts", "import { read } from \"twokit\";\n\nexport function viaCjs(): string {\n  return read();\n}\n".to_string()),
+            ("src/esm.ts", "import { read } from \"twokit\";\n\nexport function viaEsm(): string {\n  return read();\n}\n".to_string()),
+            ("src/types.ts", "export type Text = string;\n".to_string()),
+            ("node_modules/twokit/package.json", manifest("twokit", "js")),
+            ("node_modules/twokit/src/cjs.js", "export function read() {\n  return \"cjs\";\n}\n".to_string()),
+            ("node_modules/twokit/src/esm.js", "export function read() {\n  return \"esm\";\n}\n".to_string()),
+            ("node_modules/twokit/src/types.js", "export function read() {\n  return \"types\";\n}\n".to_string()),
+        ];
+        package(name, &files, &Options { libraries: 1, ..Options::default() })
+    };
+    // which of the library's builds the program's call goes into, and which of its own modules the
+    // package's doors are
+    let resolved = |g: &Graph| {
+        let called: BTreeSet<String> = g
+            .nodes
+            .iter()
+            .filter(|n| !n.library)
+            .flat_map(|n| n.sites.iter().map(|s| s.to.clone()))
+            .filter(|t| t.starts_with("twokit"))
+            .collect();
+        let doors: BTreeSet<String> = g
+            .nodes
+            .iter()
+            .filter(|n| n.entry.as_ref().is_some_and(|e| e.kind == atlas_engine::EntryKind::Export))
+            .map(|n| n.name.clone())
+            .collect();
+        (called, doors)
+    };
+    let require_first = resolved(&read(
+        "exports-require",
+        r#"{ "types": "./src/types.{ext}", "require": "./src/cjs.{ext}", "import": "./src/esm.{ext}" }"#,
+    ));
+    assert_eq!(require_first.0, BTreeSet::from(["twokit.src.cjs.read".to_string()]));
+    assert_eq!(require_first.1, BTreeSet::from(["viaCjs".to_string()]));
+    let import_first =
+        resolved(&read("exports-import", r#"{ "import": "./src/esm.{ext}", "types": "./src/types.{ext}", "require": "./src/cjs.{ext}" }"#));
+    assert_eq!(import_first.0, BTreeSet::from(["twokit.src.esm.read".to_string()]));
+    assert_eq!(import_first.1, BTreeSet::from(["viaEsm".to_string()]));
+}
+
 // ---------- prophecy ----------
 
 /// One side of the prophecy pair (`tests/pairs/prophecy`): a report `Sink` that only writes, and

@@ -302,7 +302,18 @@ pub fn parse(repo: &Repo, packages: &[PathBuf], project_root: Option<&Path>, opt
                 false => format!("{}.{}", dirs.join("."), stem.replace('.', "_")),
                 true => format!("_root.{}", stem.replace('.', "_")),
             };
-            let m = load_module(&mut parser, &mid, &p, false, &repo.bytes(&p).with_context(|| format!("reading {}", p.display()))?)?;
+            // a script or notebook that does not load is left out, and the rest is read
+            let loaded = repo
+                .bytes(&p)
+                .with_context(|| format!("reading {}", p.display()))
+                .and_then(|text| load_module(&mut parser, &mid, &p, false, &text));
+            let m = match loaded {
+                Ok(m) => m,
+                Err(e) => {
+                    eprintln!("skipped {}: {e:#}", p.display());
+                    continue;
+                }
+            };
             store.files.insert(crate::tree::path_str(&p), String::from_utf8_lossy(&m.src).to_string());
             store.add_node(Node {
                 id: mid.clone(),

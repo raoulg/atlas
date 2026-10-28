@@ -25,15 +25,15 @@ use crate::tree::{
 pub(super) const OWN: OwnTypes = knowledge::TYPESCRIPT_OWN_TYPES;
 
 /// The package a client was made by: `new Anthropic()`, `new Pool()`, `axios.create()`,
-/// `createClient()`. What a package's other calls give back is a result, not a client.
+/// `createClient()` (knowledge::TYPESCRIPT_CLIENT_MAKERS). What a package's other calls give back
+/// is a result, not a client.
 fn made_by_package(value: TsNode, m: &Module, src: &[u8]) -> Option<String> {
     let v = beneath(value, WRAPPERS);
     let maker = match v.kind() {
         "new_expression" => v.child_by_field_name("constructor")?,
-        "call_expression" => v.child_by_field_name("function").filter(|f| {
-            let last = member_parts(*f, src).pop().unwrap_or_default();
-            last.starts_with("create") || matches!(last.as_str(), "connect" | "open")
-        })?,
+        "call_expression" => v
+            .child_by_field_name("function")
+            .filter(|f| knowledge::TYPESCRIPT_CLIENT_MAKERS.makes(&member_parts(*f, src).pop().unwrap_or_default()))?,
         _ => return None,
     };
     match m.bindings.get(member_parts(maker, src).first()?)? {

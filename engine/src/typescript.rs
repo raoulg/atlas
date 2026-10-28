@@ -169,7 +169,7 @@ pub fn parse(repo: &Repo, opts: &crate::Options) -> Result<(GraphBuilder, String
         let is_index = p.file_stem().and_then(|s| s.to_str()) == Some("index");
         let rel = crate::tree::path_str(p.strip_prefix(repo.root()).unwrap_or(p));
         // a test file is test code, and a route of its own: its body runs the tests
-        let test = test_file(p);
+        let test = knowledge::TYPESCRIPT_TEST_FILES.holds(p);
         let entry = test.then(|| Entry::new(EntryKind::Test, rel.clone()));
         let node = Node {
             id: id.clone(),
@@ -202,9 +202,4 @@ pub fn parse(repo: &Repo, opts: &crate::Options) -> Result<(GraphBuilder, String
     link(&modules, &mut store, repo.root());
     store.mark_library();
     Ok((store, root))
-}
-
-fn test_file(p: &Path) -> bool {
-    let name = p.file_name().and_then(|n| n.to_str()).unwrap_or("");
-    name.contains(".test.") || name.contains(".spec.") || p.components().any(|c| c.as_os_str() == "__tests__")
 }

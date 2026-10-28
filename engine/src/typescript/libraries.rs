@@ -19,7 +19,7 @@ use tree_sitter::Parser;
 use walkdir::WalkDir;
 
 use super::module::{function_of, is_code, member_parts, module_id, package_of, segment, ts_parser, Bound, Module, EXTENSIONS};
-use super::passes::{collect_imports, collect_symbols, collect_wrapped};
+use super::passes::{collect_imports, collect_symbols, collect_wrapped, Exports};
 use crate::builder::GraphBuilder;
 use crate::effects;
 use crate::environment::Environment;
@@ -27,10 +27,6 @@ use crate::knowledge::{self, Registry};
 use crate::model::{Node, NodeKind};
 use crate::repo::{normal, Repo};
 use crate::tree::{span, text, walk};
-
-/// The conditions of a package's `exports` that an import of its code meets, the first a
-/// package names chosen: never `types`.
-const CONDITIONS: &[&str] = &["import", "module", "default", "node", "require", "browser"];
 
 /// How many re-exports a name is followed through.
 const DEPTH: u32 = 12;
@@ -41,6 +37,7 @@ struct Package {
     name: String,
     dir: PathBuf,
     manifest: Value,
+    exports: Option<Exports>,
     /// Its code, each file by its module (`filekit.lib.read` for `lib/read.js`), and each module
     /// by its file.
     files: HashMap<PathBuf, String>,
@@ -79,7 +76,9 @@ impl Package {
     /// The package at `package_dir` in `env`, unless Atlas does not read it: one the tables
     /// describe, or one with compiled code.
     fn read(env: &Environment, package_dir: &Path) -> Option<Package> {
-        let manifest: Value = serde_json::from_str(&env.manifest(package_dir, "package.json")?).ok()?;
+        let text = env.manifest(package_dir, "package.json")?;
+        let manifest: Value = serde_json::from_str(&text).ok()?;
+        let exports = Exports::of(&text);
         let name = manifest["name"].as_str()?.to_string();
         if effects::described(&name, Registry::Npm) {
             return None;
@@ -96,21 +95,17 @@ impl Package {
             by_id.insert(id.clone(), p.clone());
             files.insert(p, id);
         }
-        Some(Package { name, dir: package_dir.to_path_buf(), manifest, files, by_id })
+        Some(Package { name, dir: package_dir.to_path_buf(), manifest, exports, files, by_id })
     }
 
     /// The file a specifier's path below the package names (`""` for the package itself): what
     /// the package exports there, else the file at that path.
     fn entry(&self, sub: &str) -> Option<PathBuf> {
-        let exports = &self.manifest["exports"];
-        let target = match exports {
-            Value::Null if sub.is_empty() => {
-                ["module", "main"].iter().find_map(|k| self.manifest[*k].as_str()).unwrap_or("index").to_string()
-            }
-            Value::Null => sub.to_string(),
-            _ => exported(exports, &if sub.is_empty() { ".".to_string() } else { format!("./{sub}") })?,
-        };
-        self.file_at(&target)
+        match &self.exports {
+            None if sub.is_empty() => self.file_at(["module", "main"].iter().find_map(|k| self.manifest[*k].as_str()).unwrap_or("index")),
+            None => self.file_at(sub),
+            Some(e) => e.at(&if sub.is_empty() { ".".to_string() } else { format!("./{sub}") }).iter().find_map(|t| self.file_at(t)),
+        }
     }
 
     /// The code file a path in the package names, with or without its extension, or the index
@@ -127,40 +122,6 @@ impl Package {
         }
         candidates.into_iter().find(|c| self.files.contains_key(c))
     }
-}
-
-/// What a package's `exports` gives at `key` (`.`, `./sub`): a path, by the conditions an import
-/// meets; a pattern (`./*`) by what its `*` stands for.
-fn exported(exports: &Value, key: &str) -> Option<String> {
-    match exports {
-        Value::Object(o) if o.keys().any(|k| k.starts_with('.')) => {
-            if let Some(v) = o.get(key) {
-                return condition(v);
-            }
-            o.iter().find_map(|(k, v)| {
-                let (pre, post) = k.split_once('*')?;
-                let star = key.strip_prefix(pre)?.strip_suffix(post)?;
-                condition(v).map(|t| t.replace('*', star))
-            })
-        }
-        _ if key == "." => condition(exports),
-        _ => None,
-    }
-}
-
-/// The path a value of `exports` gives an import of code.
-fn condition(v: &Value) -> Option<String> {
-    match v {
-        Value::String(s) if !types_only(s) => Some(s.clone()),
-        Value::Array(a) => a.iter().find_map(condition),
-        Value::Object(o) => CONDITIONS.iter().find_map(|c| o.get(*c).and_then(condition)),
-        _ => None,
-    }
-}
-
-/// Whether a file holds only types: `.d.ts`, `.d.mts`, `.d.cts`.
-fn types_only(p: &str) -> bool {
-    [".d.ts", ".d.mts", ".d.cts"].iter().any(|x| p.ends_with(x))
 }
 
 /// Where a name is defined: the file, the definition's id, and how many of the names followed
