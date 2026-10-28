@@ -55,7 +55,8 @@ def render(segments):
 def main(out, findings=None):
     segments = [('atlas', INK), ('drawn on push', GREEN)]
     if findings:
-        n = len(json.loads(pathlib.Path(findings).read_text())['findings'])
+        # `atlas check --json` gives each part of the repository its own findings
+        n = sum(len(part['findings']) for part in json.loads(pathlib.Path(findings).read_text())['parts'])
         segments[1] = (f'{n} question' + ('' if n == 1 else 's'), AMBER if n else TEAL)
     pathlib.Path(out).write_text(render(segments))
 
