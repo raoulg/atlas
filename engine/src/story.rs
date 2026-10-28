@@ -1,7 +1,9 @@
 //! A route as text: an entry and its steps in call order, each with its own signature and its
 //! own effects. Alternatives share a number and are lettered by branch: the arms of a choice in
 //! the body, each with what decides it (`when not raw.exists()`), or the overrides a call may run.
-//! A choice with one arm is lettered too: its steps run when it holds.
+//! Past `z` the letters go on as a spreadsheet names its columns (`aa`, `ab`, …), and the overrides
+//! of a step lettered already are set off from its letters by `-` (`3a-a`), so that no label names
+//! two branches. A choice with one arm is lettered too: its steps run when it holds.
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 
@@ -265,8 +267,10 @@ impl<'g> Story<'g> {
                 }
             }
         }
+        // after a branch's letters an override's would read as one longer letter: `3a` and `a` as `3aa`
+        let apart = if prefix.ends_with(|c: char| c.is_ascii_lowercase()) { "-" } else { "" };
         for (i, o) in alts.iter().enumerate() {
-            self.step(o, None, &format!("{prefix}{}", letter(i)), "", level, depth, shown, out, path);
+            self.step(o, None, &format!("{prefix}{apart}{}", letter(i)), "", level, depth, shown, out, path);
         }
     }
 
@@ -441,8 +445,16 @@ impl<'g> Story<'g> {
     }
 }
 
-fn letter(i: usize) -> char {
-    (b'a' + (i % 26) as u8) as char
+/// The letters of the `i`th branch, from 0, as a spreadsheet names its columns: `a` to `z`, then
+/// `aa` to `zz`, then `aaa`.
+fn letter(i: usize) -> String {
+    let (mut n, mut out) = (i + 1, vec![]);
+    while n > 0 {
+        n -= 1;
+        out.push(b'a' + (n % 26) as u8);
+        n /= 26;
+    }
+    out.iter().rev().map(|&b| b as char).collect()
 }
 
 /// Where a touch lands, as the code names it.
@@ -454,4 +466,35 @@ fn place(t: &Touch) -> String {
         return t.artifact.clone();
     }
     crate::flow::shown(&t.what)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::letter;
+
+    /// The next string of lowercase letters in shortlex order (the shorter first, then the
+    /// alphabet's): `az` → `ba`, `zz` → `aaa`.
+    fn successor(s: &str) -> String {
+        let mut b = s.as_bytes().to_vec();
+        for i in (0..b.len()).rev() {
+            if b[i] < b'z' {
+                b[i] += 1;
+                return String::from_utf8(b).unwrap();
+            }
+            b[i] = b'a';
+        }
+        format!("a{}", String::from_utf8(b).unwrap())
+    }
+
+    /// Branches are named as a spreadsheet names its columns: from `a`, each the next string of
+    /// letters in shortlex order, so that every branch has letters of its own however many there are.
+    #[test]
+    fn branch_letters_are_the_strings_of_letters_in_order() {
+        assert_eq!(letter(0), "a");
+        for i in 0..30_000 {
+            let (this, next) = (letter(i), letter(i + 1));
+            assert!(this.bytes().all(|b| b.is_ascii_lowercase()), "{i}: {this}");
+            assert_eq!(next, successor(&this), "{i}: {this} is followed by {next}");
+        }
+    }
 }
