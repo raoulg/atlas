@@ -340,16 +340,22 @@ pub fn assign(g: &mut Graph) {
     }
 }
 
-/// Graphs side by side: their nodes, edges, files and routes.
+/// Graphs side by side: their nodes, edges, files and routes, and the calls they did not follow,
+/// counted by name over all of them. No graphs are the empty graph, which has no language and no
+/// project root.
 pub fn merge(name: &str, graphs: Vec<Graph>) -> Graph {
     let languages: HashSet<&str> = graphs.iter().map(|g| g.language.as_str()).collect();
     let mut out = Graph {
         root: name.to_string(),
-        language: if languages.len() == 1 { graphs[0].language.clone() } else { String::new() },
-        project_root: graphs[0].project_root.clone(),
+        language: match languages.len() {
+            1 => languages.into_iter().next().unwrap_or_default().to_string(),
+            _ => String::new(),
+        },
+        project_root: graphs.first().map(|g| g.project_root.clone()).unwrap_or_default(),
         ..Default::default()
     };
     let mut made = HashSet::new();
+    let mut unresolved: HashMap<String, u32> = HashMap::new();
     for g in graphs {
         out.parts.extend(g.parts);
         out.nodes.extend(g.nodes);
@@ -357,10 +363,7 @@ pub fn merge(name: &str, graphs: Vec<Graph>) -> Graph {
         for (file, text) in g.files {
             // a library's file two parts read keeps the lines either shows
             match out.files.get_mut(&file) {
-                Some(had) if *had != text => {
-                    *had =
-                        had.split('\n').zip(text.split('\n')).map(|(a, b)| if a.is_empty() { b } else { a }).collect::<Vec<_>>().join("\n")
-                }
+                Some(had) if *had != text => *had = overlay(had, &text),
                 Some(_) => {}
                 None => {
                     out.files.insert(file, text);
@@ -371,10 +374,38 @@ pub fn merge(name: &str, graphs: Vec<Graph>) -> Graph {
         out.stats.modules += g.stats.modules;
         out.stats.unresolved_calls_total += g.stats.unresolved_calls_total;
         out.stats.unresolved_calls += g.stats.unresolved_calls;
-        out.stats.unresolved_calls_top.extend(g.stats.unresolved_calls_top);
+        for (call, n) in g.stats.unresolved_calls_top {
+            *unresolved.entry(call).or_default() += n;
+        }
     }
+    out.stats.unresolved_calls_top = ranked(unresolved);
     out.recount();
     out
+}
+
+/// Two texts of one file, each with blank lines where it shows nothing: line by line the first's
+/// where it shows one, else the second's, as long as the longer.
+fn overlay(had: &str, text: &str) -> String {
+    let (mut a, mut b) = (had.split('\n'), text.split('\n'));
+    let mut lines = vec![];
+    loop {
+        let line = match (a.next(), b.next()) {
+            (None, None) => break,
+            (Some(x), Some(y)) if x.is_empty() => y,
+            (Some(x), _) => x,
+            (None, Some(y)) => y,
+        };
+        lines.push(line);
+    }
+    lines.join("\n")
+}
+
+/// Counts of names, the most first and equal counts by name: the order a graph keeps the calls it
+/// did not follow in.
+fn ranked(counts: HashMap<String, u32>) -> Vec<(String, u32)> {
+    let mut top: Vec<(String, u32)> = counts.into_iter().collect();
+    top.sort_by(|a, b| b.1.cmp(&a.1).then(a.0.cmp(&b.0)));
+    top
 }
 
 /// Requests between parts: a request one part makes whole and none of its own routes serves is a
