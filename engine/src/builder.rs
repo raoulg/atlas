@@ -394,7 +394,7 @@ impl GraphBuilder {
             files: self.files,
             stats: Stats {
                 unresolved_calls_total: self.unresolved.values().sum(),
-                unresolved_calls_top: top.into_iter().take(25).collect(),
+                unresolved_calls_top: top,
                 unresolved_calls: self.unresolved_by,
                 ..Default::default()
             },

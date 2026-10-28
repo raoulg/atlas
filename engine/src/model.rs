@@ -1149,6 +1149,7 @@ pub struct Stats {
     pub nodes: BTreeMap<String, usize>,
     pub edges: BTreeMap<String, usize>,
     pub unresolved_calls_total: u32,
+    /// Every name a call not followed starts from, with how often, most first.
     pub unresolved_calls_top: Vec<(String, u32)>,
     /// The same calls by what the name each starts from is bound to.
     #[serde(default)]

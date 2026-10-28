@@ -781,7 +781,7 @@ class is not known. A call through a class, and a `super()` call on a value whos
 the one their call names.
 **Where.** `model::linearization`, `model::initializer_along`; `principles.rs` (`Index::mro`),
 `builder.rs` (`family`, `method_of`, `initializer_of`), `flow.rs` (`method_on`, `method_after`,
-`built_from`, `Step::named`, `Ix::overrides`).
+`built_from`, `Step::named`, `Ix::overrides`, `Runs`: what a call runs, asked by the route and by the passes that settle parameters and errors).
 
 ### Signatures say the arrow
 **What.** A function's type is its domain and its codomain.
