@@ -810,6 +810,32 @@ fn prophecy_a_seal_is_listed_and_broken_when_its_issue_is_closed() {
     let _ = std::fs::remove_dir_all(copy.parent().expect("has a parent"));
 }
 
+/// Breaking a seal changes the bytes of `sealed=..` and of the separator that joins it, and no
+/// other: the file comes back as it was with exactly those bytes taken out, the seal first among
+/// the attribute's arguments, last, or alone. The file is read when the seal is broken and the
+/// graph may be older: a file emptied or shortened since is an error.
+#[test]
+fn prophecy_breaking_a_seal_changes_its_bytes_and_no_other() {
+    let sealed = "//! Where reports wait.\n\n#[doc = \"prophecy: supersedes=archive.Sink sealed=#7\"]\npub struct Vault;\n\n#[doc = \"prophecy: sealed=#8 supersedes=archive.Sink\"]\npub struct Crate;\n\n#[doc = \"prophecy: sealed=#9\"]\npub struct Shelf;\n";
+    let copy = common::clean_copy("rust", "unseal");
+    let lib = std::fs::read_to_string(copy.join("src/lib.rs")).expect("reads");
+    std::fs::write(copy.join("src/lib.rs"), format!("{lib}\npub mod vault;\n")).expect("writes");
+    let file = copy.join("src/vault.rs");
+    std::fs::write(&file, sealed).expect("writes");
+    let g = analyze(&copy, &Options::default()).expect("reads");
+    let ids = ["archive.vault.Vault", "archive.vault.Crate", "archive.vault.Shelf"].map(String::from);
+    let broken = atlas_engine::decide::unseal(&g, &ids).expect("the seals are broken");
+    let unsealed = sealed.replacen(" sealed=#7", "", 1).replacen("sealed=#8 ", "", 1).replacen(" sealed=#9", "", 1);
+    let text = broken.get(std::path::Path::new("src/vault.rs")).cloned();
+    let changed = ["", "//! Where reports wait.\n\n"].map(|cut| {
+        std::fs::write(&file, cut).expect("writes");
+        atlas_engine::decide::unseal(&g, &ids).is_err()
+    });
+    let _ = std::fs::remove_dir_all(copy.parent().expect("has a parent"));
+    assert_eq!(text, Some(unsealed));
+    assert_eq!(changed, [true, true], "an emptied file, a shortened one");
+}
+
 fn fits(side: &str) -> Graph {
     analyze(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/pairs/sums/fits/rust").join(side), &Options::default()).expect("reads")
 }
