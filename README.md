@@ -16,7 +16,7 @@
 
 <p align="center">
   <a href="https://claude.com/claude-code"><img src="https://img.shields.io/badge/built%20with-Claude-D97757?logo=claude&logoColor=white" alt="Built with Claude"></a>
-  <a href="LICENSE"><img src="https://img.shields.io/badge/license-CC%20BY--NC--SA%204.0-lightgrey" alt="CC BY-NC-SA 4.0"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-AGPL--3.0-blue" alt="AGPL-3.0"></a>
   <a href="https://raoulg.github.io/atlas/"><img src="https://raoulg.github.io/atlas/badge.svg" alt="atlas: drawn on push"></a>
   <a href="https://raoulg.github.io/atlas/atlas.html"><img src="https://raoulg.github.io/atlas/questions.svg" alt="atlas: questions it asks of its own code"></a>
   <img src="https://img.shields.io/badge/status-alpha-C43A14" alt="Alpha">
@@ -147,4 +147,4 @@ The nightly channel, how Atlas and Studio tell you about updates, and registerin
 coding agent: [install](docs/reference/install.md).
 
 Alpha: what Atlas reads and draws changes from one minor version to the next. Built by Raoul Grouls
-with [Claude Code](https://claude.com/claude-code). [CC BY-NC-SA 4.0](LICENSE).
+with [Claude Code](https://claude.com/claude-code). [AGPL-3.0](LICENSE).
