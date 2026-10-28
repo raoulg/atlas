@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 920 250" role="img" aria-label="What the license allows, under CC BY-NC-SA 4.0 in 0.69.1 and under AGPL-3.0 in 0.69.2: use for any purpose, also commercially, is now allowed; changed copies that are shared stay under the same license in both; offering a changed Atlas over a network now means giving its users the source; Atlas is now OSI open source">
+  <g style="font-family:var(--sans);font-size:15px;fill:var(--ink-2)">
+    <text x="20" y="34">what the license allows</text>
+    <text x="560" y="34" style="text-anchor:middle">0.69.1 · CC BY-NC-SA 4.0</text>
+    <text x="800" y="34" style="text-anchor:middle;fill:var(--ink)">0.69.2 · AGPL-3.0</text>
+  </g>
+  <g style="stroke:var(--line);stroke-width:1">
+    <line x1="20" y1="52" x2="900" y2="52"/><line x1="20" y1="100" x2="900" y2="100"/>
+    <line x1="20" y1="148" x2="900" y2="148"/><line x1="20" y1="196" x2="900" y2="196"/>
+  </g>
+  <g style="font-family:var(--sans);font-size:15px;fill:var(--ink)">
+    <text x="20" y="82">use it for any purpose, also commercially</text>
+    <text x="20" y="130">share a changed copy</text>
+    <text x="20" y="178">offer a changed Atlas over a network</text>
+    <text x="20" y="226">open source by the OSI's definition</text>
+  </g>
+  <g style="font-family:var(--mono);font-size:13px;text-anchor:middle;fill:var(--ink-3)">
+    <text x="560" y="82">no</text>
+    <text x="560" y="130">under the same license</text>
+    <text x="560" y="178">no condition</text>
+    <text x="560" y="226">no</text>
+  </g>
+  <g style="font-family:var(--mono);font-size:13px;text-anchor:middle;fill:var(--accent);font-weight:600">
+    <text x="800" y="82">yes</text>
+    <text x="800" y="130" style="fill:var(--ink-3);font-weight:400">under the same license</text>
+    <text x="800" y="178">with its source, to its users</text>
+    <text x="800" y="226">yes</text>
+  </g>
+</svg>
