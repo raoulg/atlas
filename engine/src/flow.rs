@@ -8,6 +8,7 @@
 
 use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
+use std::rc::Rc;
 
 use indexmap::IndexMap;
 use serde::Serialize;
@@ -597,9 +598,13 @@ const ROUNDS: usize = 8;
 /// what was written at the place the route touches.
 fn orders(ix: &Ix, id: &str, on: &str, above: &[&str], mut done: Option<&mut Memo>) -> BTreeMap<String, Order> {
     let chain: Vec<&str> = above.iter().copied().chain(std::iter::once(id)).collect();
-    // which callers on the chain make a path whole, as a set: a recursive cycle comes back to the same key
-    let made: BTreeSet<&str> = chain.iter().copied().filter(|f| ix.makers.contains(f)).collect();
-    let k = if made.is_empty() { key(id, on) } else { format!("{}|{}", key(id, on), made.into_iter().collect::<Vec<_>>().join(",")) };
+    // which callers on the chain make a path whole that `id` or what it runs touches, as a set, and the chain's entry
+    // where its users make one whole: what the chain changes below `id`, so a recursive cycle comes back to the same
+    // key and a body is worked out once for every chain that touches alike in it
+    let consulted = ix.consulted(id, on);
+    let made: Vec<&str> = chain.iter().copied().filter(|f| consulted.contains(f)).collect::<BTreeSet<_>>().into_iter().collect();
+    let entry = consulted.contains(chain[0]).then_some(chain[0]).unwrap_or("");
+    let k = if made.is_empty() { key(id, on) } else { format!("{}|{}|{entry}", key(id, on), made.join(",")) };
     if let Some(m) = done.as_deref_mut() {
         if let Some(o) = m.done.get(&k) {
             return o.clone();
@@ -903,6 +908,11 @@ fn arrow_of(ix: &Ix, n: &Node, done: &mut Memo) -> Arrow {
 /// The arrow of every function, method and class, and of a module, where its own code runs; of a method, also what it
 /// does at places on each class a route runs it on (`Arrow::on`).
 pub fn arrows(g: &Graph) -> BTreeMap<String, Arrow> {
+    arrows_in(g, &mut Memo::default())
+}
+
+/// The arrows, worked out in `done`.
+fn arrows_in(g: &Graph, done: &mut Memo) -> BTreeMap<String, Arrow> {
     let ix = Ix::new(g);
     let kinds = |n: &&Node| matches!(n.kind, NodeKind::Module | NodeKind::Class | NodeKind::Function | NodeKind::Method);
     // the bodies a route runs on a known class
@@ -913,24 +923,23 @@ pub fn arrows(g: &Graph) -> BTreeMap<String, Arrow> {
             (!c.is_empty()).then(|| (f.to_string(), c.to_string()))
         })
         .collect();
-    let mut done = Memo::default();
     for round in 1..=ROUNDS {
         for n in g.nodes.iter().filter(kinds) {
-            orders(&ix, &n.id, "", &[], Some(&mut done));
+            orders(&ix, &n.id, "", &[], Some(&mut *done));
         }
         for (f, c) in &on {
-            orders(&ix, f, c, &[], Some(&mut done));
+            orders(&ix, f, c, &[], Some(&mut *done));
         }
         if done.done == done.before || round == ROUNDS {
             break;
         }
         done.before = std::mem::take(&mut done.done);
     }
-    let mut out: BTreeMap<String, Arrow> = g.nodes.iter().filter(kinds).map(|n| (n.id.clone(), arrow_of(&ix, n, &mut done))).collect();
+    let mut out: BTreeMap<String, Arrow> = g.nodes.iter().filter(kinds).map(|n| (n.id.clone(), arrow_of(&ix, n, &mut *done))).collect();
     for (f, c) in &on {
         let at = Orders {
-            reads_back: in_every_context(&ix, f, c, false, &mut done, reads_back),
-            updates: in_every_context(&ix, f, c, false, &mut done, updates),
+            reads_back: in_every_context(&ix, f, c, false, &mut *done, reads_back),
+            updates: in_every_context(&ix, f, c, false, &mut *done, updates),
         };
         if let Some(a) = out.get_mut(f).filter(|a| a.reads_back != at.reads_back || a.updates != at.updates) {
             a.on.insert(c.clone(), at);
@@ -1121,9 +1130,9 @@ struct Ix<'g> {
     mro: RefCell<HashMap<&'g str, Vec<&'g str>>>,
     /// What each part's language leaves its author to write, by the part's id, the first part's for a node of none.
     leaves: Vec<(&'g str, Leaves)>,
-    /// The callers some touch is made whole by (`Touch::by`, `Touch::users_of`): the only functions on a chain of calls
-    /// that change what a function touches below them.
-    makers: HashSet<&'g str>,
+    /// The callers a touch of each body or of what it may run is made whole by (`Touch::by`, `Touch::users_of`), by the
+    /// body's key: the only functions on a chain of calls that change what it touches below them.
+    consulted: RefCell<HashMap<String, Rc<BTreeSet<&'g str>>>>,
 }
 
 impl<'g> Ix<'g> {
@@ -1135,14 +1144,49 @@ impl<'g> Ix<'g> {
             into.entry(e.dst.as_str()).or_default().push(e);
         }
         let leaves = g.parts.iter().map(|p| (p.id.as_str(), p.leaves)).collect();
-        let makers = g
-            .nodes
-            .iter()
-            .flat_map(|n| {
-                n.touches.iter().flat_map(|t| t.by.iter().flat_map(|f| f.split('&')).chain(t.users_of.iter().map(String::as_str)))
-            })
-            .collect();
-        Ix { nodes: g.nodes.iter().map(|n| (n.id.as_str(), n)).collect(), out, into, mro: RefCell::default(), leaves, makers }
+        Ix {
+            nodes: g.nodes.iter().map(|n| (n.id.as_str(), n)).collect(),
+            out,
+            into,
+            mro: RefCell::default(),
+            leaves,
+            consulted: RefCell::default(),
+        }
+    }
+
+    /// The callers that make a touch whole in body `id` run on class `on` or in any body its calls may run (`may_run`),
+    /// through every call: worked out once a body, a body already worked out answering for all it runs.
+    fn consulted(&self, id: &str, on: &str) -> Rc<BTreeSet<&'g str>> {
+        let root = key(id, on);
+        if let Some(c) = self.consulted.borrow().get(&root) {
+            return c.clone();
+        }
+        let mut out: BTreeSet<&'g str> = BTreeSet::new();
+        let mut seen: HashSet<String> = HashSet::from([root.clone()]);
+        let mut stack: Vec<(String, String)> = vec![(id.to_string(), on.to_string())];
+        while let Some((f, c)) = stack.pop() {
+            let k = key(&f, &c);
+            if k != root {
+                if let Some(done) = self.consulted.borrow().get(&k) {
+                    out.extend(done.iter().copied());
+                    continue;
+                }
+            }
+            let Some(&n) = self.nodes.get(f.as_str()) else { continue };
+            for t in &n.touches {
+                out.extend(t.by.iter().flat_map(|b| b.split('&')).chain(t.users_of.iter().map(String::as_str)));
+            }
+            for s in n.sites.iter().filter(|s| !s.to.is_empty()) {
+                for (t, tc) in self.may_run(s, &c) {
+                    if seen.insert(key(&t, &tc)) {
+                        stack.push((t, tc));
+                    }
+                }
+            }
+        }
+        let out = Rc::new(out);
+        self.consulted.borrow_mut().insert(root, out.clone());
+        out
     }
 
     /// Whether `n`'s signature does not say what it gives back: its language leaves that to the author, and the author
@@ -1524,6 +1568,32 @@ mod tests {
         let (a, b) = (arrow(vec![save(), show(), run()], "run"), arrow(vec![show(), save(), run()], "run"));
         assert_eq!(a, b, "the order of definitions");
         assert_eq!(a.1, log(), "show reads the log as it was, then save writes on it");
+    }
+
+    /// A body is worked out once for every set of callers above it that change what it touches: a caller that makes
+    /// a path whole for another function is no reason to work out again what runs below it. Along a chain of such
+    /// callers down to one writer, the writer is worked out once, and the work grows with the chain, not with the
+    /// sets of callers on it.
+    #[test]
+    fn a_body_is_worked_out_once_for_what_the_chain_changes_in_it() {
+        let worked_out = |k: usize| {
+            let mut nodes = vec![worker("leaf", &[(Dir::Write, 2)], &[], vec![])];
+            for i in 0..k {
+                let below = if i + 1 < k { format!("f{}", i + 1) } else { "leaf".to_string() };
+                let made = Touch { artifact: format!("out{i}/"), by: vec![format!("f{i}")], ..Touch::new(World::Disk, Some(Dir::Write)) };
+                nodes.push(crate::model::Node { touches: vec![made], ..worker(&format!("s{i}"), &[], &[], vec![]) });
+                nodes.push(worker(&format!("f{i}"), &[], &[(&format!("s{i}"), 3), (&below, 4)], vec![]));
+            }
+            let g = Graph { nodes, ..Default::default() };
+            let mut done = Memo::default();
+            let arrows = arrows_in(&g, &mut done);
+            let of = |id: &str| done.done.keys().filter(|k| k.split('|').next() == Some(id)).count();
+            (of("leaf"), done.done.len(), arrows)
+        };
+        let (leaf, short, _) = worked_out(6);
+        let (_, long, _) = worked_out(12);
+        assert_eq!(leaf, 1, "no caller above the writer changes what it touches");
+        assert!(long <= 2 * short + 4, "doubling the chain doubles the work: {short} bodies worked out for 6 callers, {long} for 12");
     }
 
     /// Two equal calls are one touch that runs on the line of each: a file seeded in an arm, read, and then
