@@ -10,6 +10,7 @@
 <p align="center">
   <a href="https://raoulg.github.io/atlas/"><b>Take the tour</b></a> ·
   <a href="#install">Install</a> ·
+  <a href="https://raoulg.github.io/atlas/releases/">What's new</a> ·
   <a href="docs/llms.txt">For agents</a>
 </p>
 
@@ -75,6 +76,18 @@ workflow behind it is [one you can copy](docs/reference/ci.md). Click the pictur
 
 ## Install
 
+Atlas comes in two forms, around the same engine:
+
+- **The command line**, `atlas`, for macOS, Linux and Windows. `atlas view .` opens the picture of a
+  repository in your browser, and `atlas serve` keeps that page open while you and your agent work.
+- **Atlas Studio**, a desktop app for macOS (Apple silicon and Intel) and Windows: the picture, its
+  history and a terminal in one window, one workspace per repository. It carries its own `atlas`, so
+  it needs no installed command line.
+
+What changed in each release, with pictures: [the release notes](https://raoulg.github.io/atlas/releases/).
+
+### The command line
+
 **macOS and Linux:**
 
 ```bash
@@ -103,8 +116,35 @@ cargo install --locked --git https://github.com/raoulg/atlas atlas
 page on GitHub's runners and publishes it, to open in the browser. See
 [the picture in your README, always current](docs/reference/ci.md).
 
-How Atlas tells you about updates, and registering it with your coding agent:
-[install](docs/reference/install.md).
+### Atlas Studio
+
+**macOS**, with Homebrew, into `/Applications`:
+
+```bash
+brew install --cask raoulg/tap/atlas-studio
+```
+
+or with the script, into `~/Applications`:
+
+```bash
+sh -c "$(curl -fsSL https://raw.githubusercontent.com/raoulg/atlas/main/install-studio.sh)"
+```
+
+**Windows**, in PowerShell, for you alone and without administrator rights:
+
+```powershell
+irm https://raw.githubusercontent.com/raoulg/atlas/main/install-studio.ps1 | iex
+```
+
+Every [release](https://github.com/raoulg/atlas/releases/latest) also has the disk images
+(`atlas-studio-aarch64-apple-darwin.dmg` for Apple silicon, `atlas-studio-x86_64-apple-darwin.dmg` for
+Intel) and the Windows setup program. Studio is not signed with a paid identity, so macOS and Windows
+ask once before its first start: [how to allow it](docs/reference/install.md#atlas-studio).
+
+### After installing
+
+The nightly channel, how Atlas and Studio tell you about updates, and registering Atlas with your
+coding agent: [install](docs/reference/install.md).
 
 Alpha: what Atlas reads and draws changes from one minor version to the next. Built by Raoul Grouls
 with [Claude Code](https://claude.com/claude-code). [AGPL-3.0](LICENSE).

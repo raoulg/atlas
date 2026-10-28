@@ -23,7 +23,8 @@ paragraphs (code in fences), an `Issues:` line, and the point's pictures:
 
 A `Draw:` line says which picture is still to be made for a point; the page leaves it out and this
 tool names it, so that the release is not tagged with a point that shows nothing. The page is
-`docs/releases/<version>/index.html`, in the site's own style; `docs/releases/index.html` lists the
+`docs/releases/<version>/index.html`, in the site's own style, and ends in links to the release before
+and the release after (writing one page writes its neighbours too); `docs/releases/index.html` lists the
 releases, newest first. Pages publishes `docs/` from `main`, so a page goes live with the promotion
 that carries it, at `https://raoulg.github.io/atlas/releases/<version>/`.
 """
@@ -123,6 +124,10 @@ section li{margin:4px 0}
 .bar .v{height:22px;background:var(--key);min-width:2px;position:relative}
 .bar .v span{position:absolute;left:calc(100% + 8px);top:1px;font-family:var(--mono);font-size:13px;color:var(--ink);white-space:nowrap}
 .bars .cap{font-size:13.5px;color:var(--ink-2);margin-top:10px}
+.pager{display:flex;justify-content:space-between;gap:16px;border-top:1px solid var(--line);margin-top:48px;padding-top:20px;font-family:var(--mono);font-size:14px}
+.pager a{text-decoration:none;color:var(--ink-2)}
+.pager a:hover{color:var(--accent)}
+.pager .newer{margin-left:auto}
 """
 
 
@@ -206,8 +211,18 @@ def read(path: pathlib.Path) -> dict:
     return release
 
 
-def page(release: dict) -> str:
-    """The page of one release."""
+def pager(older: dict | None, newer: dict | None) -> str:
+    """The links to the release before and the release after."""
+    links = []
+    if older:
+        links.append(f'<a class="older" href="../{html.escape(older["version"])}/">← Atlas {html.escape(older["version"])}</a>')
+    if newer:
+        links.append(f'<a class="newer" href="../{html.escape(newer["version"])}/">Atlas {html.escape(newer["version"])} →</a>')
+    return f'<nav class="pager">{"".join(links)}</nav>' if links else ""
+
+
+def page(release: dict, older: dict | None = None, newer: dict | None = None) -> str:
+    """The page of one release, with links to its neighbours."""
     v = html.escape(release["version"])
     sections = []
     for point in release["points"]:
@@ -258,6 +273,7 @@ def page(release: dict) -> str:
 <div class="lede">{"".join(blocks(release["lede"]))}</div>
 <div class="legend"><span><i class="swatch" style="border-color:var(--del)"></i>only in the release before</span><span><i class="swatch" style="border-color:var(--add)"></i>only in {v}</span><span><i class="swatch" style="border-color:var(--edit)"></i>its text changed, its arrow not</span></div>
 {"".join(sections)}
+{pager(older, newer)}
 <footer>Made by tools/release_page.py from docs/releases/{v}.md and the notes in docs/changes.</footer>
 </main>
 </body>
@@ -460,12 +476,17 @@ def main(args: list[str]) -> int:
         return 1
     releases = [read(p) for p in sources]
     missing = 0
-    for release in releases:
-        if args and release["version"] not in args:
+    # newest first: a release's neighbours link to it, so a page asked for is written with theirs
+    asked = {i for i, r in enumerate(releases) if not args or r["version"] in args}
+    written = {j for i in asked for j in (i - 1, i, i + 1) if 0 <= j < len(releases)}
+    for i, release in enumerate(releases):
+        if i not in written:
             continue
+        newer = releases[i - 1] if i > 0 else None
+        older = releases[i + 1] if i + 1 < len(releases) else None
         out = RELEASES / release["version"] / "index.html"
         out.parent.mkdir(exist_ok=True)
-        out.write_text(page(release))
+        out.write_text(page(release, older, newer))
         print(f"wrote {out.relative_to(DOCS.parent)}")
         for point in release["points"]:
             for picture in [p.strip() for p in point.get("pictures", "").split(",") if p.strip()]:
