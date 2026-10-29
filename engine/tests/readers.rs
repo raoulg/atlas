@@ -60,10 +60,18 @@ fn library_knowledge_is_data() {
     names.extend(k::RUST_FILE_OPENERS.iter().map(|(t, _, _)| *t).filter(|t| !matches!(*t, "Reader" | "Writer")));
     // `Iterator` and `Option` are Python's words as well: typing's `Iterator`, typer's `Option`
     names.extend(k::RUST_CONTAINERS.iter().copied().filter(|c| !matches!(*c, "Iterator" | "Option")));
-    // a path's functions and methods hold where ty finds their library, never by their names; the
-    // language's own words (`str`, `join`, `builtins`) stand in the reader for other reasons
-    let paths = k::PYTHON_PATH_FUNCTIONS.iter().map(|(l, f, _)| (*l, *f)).chain(k::PYTHON_PATH_METHODS.iter().map(|(l, m, _)| (*l, *m)));
-    names.extend(paths.flat_map(|(l, f)| [l, f]).filter(|n| !matches!(*n, "builtins" | "str" | "join")));
+    // a path's functions, classes, methods and attributes hold where ty finds their library, never by
+    // their names; the language's own words (`str`, `join`, `builtins`) stand in the reader for other
+    // reasons, `parent` is also the name a path's directory goes by where the path is not known, and
+    // pathlib's classes are also the types ty's signatures name a path by (`pytypes::file_of`) and a
+    // type the reader keeps as no project's (`module::BUILTIN_TYPES`)
+    let paths = k::PYTHON_PATH_FUNCTIONS
+        .iter()
+        .map(|(l, f, _)| (*l, *f))
+        .chain(k::PYTHON_PATH_METHODS.iter().map(|(l, m, _)| (*l, *m)))
+        .chain(k::PYTHON_PATH_ATTRIBUTES.iter().map(|(l, a, _)| (*l, *a)));
+    let classes = ["Path", "PurePath", "PosixPath", "WindowsPath", "PurePosixPath", "PureWindowsPath"];
+    names.extend(paths.flat_map(|(l, f)| [l, f]).filter(|n| !matches!(*n, "builtins" | "str" | "join" | "parent") && !classes.contains(n)));
     names.extend(k::PYTHON_ENVIRONMENT.iter().flat_map(|(l, c, _)| [*l, *c]));
     // a runner's test files and a package's client makers by their conventions (`open` is also a
     // word of the page and of the effects); the conditions of `exports` other than words the reader

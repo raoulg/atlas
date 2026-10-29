@@ -12,7 +12,7 @@ use super::module::{call_path, dotted, Module, WRAPPERS};
 use crate::pytypes::{FileArg, Param, Target, Types};
 use crate::tree::{beneath, named_children, path_str, text, unquote, walk};
 
-use crate::knowledge::{self, PathFn, PathMethod};
+use crate::knowledge::{self, PathAttribute, PathFn, PathMethod};
 use crate::paths::{bound as named_by, cross, environment, hole, lit, or_else, parent, substitute, union};
 pub(super) use crate::paths::{Built, Seg};
 
@@ -104,6 +104,16 @@ impl<'a> Eval<'a> {
             return None;
         }
         knowledge::PYTHON_PATH_METHODS.iter().find(|(lib, n, _)| *n == name && self.of_library(m, f, lib)).map(|(_, _, k)| *k)
+    }
+
+    /// What the attribute `e`, named `name`, is of the path it is on, where ty finds the attribute is
+    /// defined in the path's library (knowledge::PYTHON_PATH_ATTRIBUTES).
+    fn path_attribute(&self, m: &Module, e: TsNode, name: &str) -> Option<PathAttribute> {
+        let Some(Target::Lib(module)) = self.def(m, e) else { return None };
+        knowledge::PYTHON_PATH_ATTRIBUTES
+            .iter()
+            .find(|(lib, n, _)| *n == name && (module == *lib || module.starts_with(&format!("{lib}."))))
+            .map(|(_, _, k)| *k)
     }
 
     /// Whether calling `f`, named `name`, reaches a library's function that gives the directory a
@@ -220,9 +230,11 @@ impl<'a> Eval<'a> {
                 let (Some(obj), Some(attr)) = (e.child_by_field_name("object"), e.child_by_field_name("attribute")) else {
                     return vec![named()];
                 };
-                match text(attr, src) {
-                    "parent" => self.of(at, obj, depth + 1).iter().map(parent).collect(),
-                    "stem" | "name" | "suffix" | "suffixes" | "parts" => vec![named()],
+                let name = text(attr, src);
+                if self.path_attribute(at.m, e, name) == Some(PathAttribute::Parent) {
+                    return self.of(at, obj, depth + 1).iter().map(parent).collect();
+                }
+                match name {
                     // the path a listing's element is at: `entry.path` of `os.scandir(d)`'s `entry`
                     a if knowledge::ELEMENT_PATHS.iter().any(|(lib, class, name)| *name == a && self.of_class(at.m, obj, lib, class)) => {
                         self.of(at, obj, depth + 1)
@@ -239,9 +251,12 @@ impl<'a> Eval<'a> {
                 if let Some(var) = e.child_by_field_name("subscript").filter(|s| environ && s.kind() == "string") {
                     return vec![environment(&unquote(text(var, src)))];
                 }
-                // `x.parents[n]`: the directory n + 1 levels up
+                // `x.parents[n]`: the directory n + 1 levels up, where the attribute is the path's
                 let v = e.child_by_field_name("value").filter(|v| v.kind() == "attribute");
-                let parents = v.filter(|v| v.child_by_field_name("attribute").map(|a| text(a, src)) == Some("parents"));
+                let parents = v.filter(|v| {
+                    v.child_by_field_name("attribute").and_then(|a| self.path_attribute(at.m, *v, text(a, src)))
+                        == Some(PathAttribute::Ancestors)
+                });
                 let n = e.child_by_field_name("subscript").and_then(|s| text(s, src).parse::<usize>().ok());
                 match (parents.and_then(|v| v.child_by_field_name("object")), n) {
                     (Some(obj), Some(n)) => {
@@ -645,9 +660,6 @@ impl<'a> Eval<'a> {
                 }
             })
         };
-        if knowledge::PATH_MAKERS.contains(&last) {
-            return if positional.is_empty() { vec![lit(".")] } else { joined(&positional) };
-        }
         // the directory a package ships its files in, by the package's name: the module's own for
         // `__name__` and its package's for `__package__`
         if self.gives_package_files(at.m, f, last) {
@@ -670,6 +682,8 @@ impl<'a> Eval<'a> {
         // a library's path function, where ty finds the call goes into that library
         if let Some(kind) = self.path_function(at.m, f, last) {
             match kind {
+                // a join of no parts is the directory the path is relative to: `Path()` is `.`
+                PathFn::Join if positional.is_empty() => return vec![lit(".")],
                 PathFn::Join => return joined(&positional),
                 PathFn::Here => return vec![lit(".")],
                 PathFn::Home => return vec![lit("~")],

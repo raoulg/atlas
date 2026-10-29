@@ -1806,9 +1806,16 @@ pub const RUST_PATH_FUNCTIONS: &[(&str, &str, PathFn)] = &[
 
 /// Python's path functions, by the library module ty finds the call goes into (or one above it)
 /// and their name: `Path.cwd()`, `os.getenv("DATA", "data")`, `os.path.join(a, b)` (`os.path` is
-/// `posixpath` or `ntpath`, by the platform). A function of the project's own of the same name is
-/// no path function.
+/// `posixpath` or `ntpath`, by the platform), and pathlib's classes, which join the parts they are
+/// made of (`Path(root, "data")`; `Path()`, made of none, is `.`). A function or a class of the
+/// project's own of the same name is no path function.
 pub const PYTHON_PATH_FUNCTIONS: &[(&str, &str, PathFn)] = &[
+    ("pathlib", "Path", PathFn::Join),
+    ("pathlib", "PurePath", PathFn::Join),
+    ("pathlib", "PosixPath", PathFn::Join),
+    ("pathlib", "WindowsPath", PathFn::Join),
+    ("pathlib", "PurePosixPath", PathFn::Join),
+    ("pathlib", "PureWindowsPath", PathFn::Join),
     ("pathlib", "cwd", PathFn::Here),
     ("pathlib", "home", PathFn::Home),
     ("os", "getenv", PathFn::Environment),
@@ -1833,6 +1840,24 @@ pub const PYTHON_PATH_METHODS: &[(&str, &str, PathMethod)] = &[
     ("pathlib", "as_posix", PathMethod::Same),
     ("pathlib", "__fspath__", PathMethod::Same),
 ];
+
+/// Python's attributes of a path that are a path made of it, by the library module ty finds the
+/// attribute is defined in (or one above it) and their name: `p.parent`, `p.parents[1]`. An
+/// attribute of the same name on any other value (a project's own `entry.parent`) is the value's.
+/// A part of a path that is no path (`p.name`, `p.stem`, `p.suffix`) is the value the code names,
+/// as any attribute is, and needs no fact here.
+pub const PYTHON_PATH_ATTRIBUTES: &[(&str, &str, PathAttribute)] =
+    &[("pathlib", "parent", PathAttribute::Parent), ("pathlib", "parents", PathAttribute::Ancestors)];
+
+/// What an attribute of a path is, of the path it is on.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum PathAttribute {
+    /// The directory the path is in.
+    Parent,
+    /// The directories above it, by their distance less one: `[0]` is the directory it is in,
+    /// `[1]` the one above that.
+    Ancestors,
+}
 
 /// Python's mapping of the environment's variables, by its library, the class ty types it as, and
 /// the method that reads a variable with a default: `os.environ["DATA"]`,
