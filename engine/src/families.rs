@@ -3,9 +3,9 @@
 //! stands in its base's place, a part in its one owner's. A base that only shares code (a config
 //! mixin, pydantic's `BaseModel`, torch's `Module`) is how a class is built, not what flows.
 //!
-//! A shaped array (`Float[Tensor, batch dim]`) stands in its rank family, the most general shape of
-//! its dtype, array type and rank (`Float[Tensor, _ _]`), where the graph holds two types of that
-//! rank: the family is a quotient of the shapes, its members stay types of their own.
+//! A shaped array (`Float[Tensor, batch dim]`) stands in its rank family, named by its dtype, array
+//! type and rank (`Float Tensor · 2D`), where the graph holds two types of that rank: the family is a
+//! quotient of the shapes, its members stay types of their own.
 //!
 //! A type is data, or a door to a part of the world (a sink, a repository, a client): what a
 //! family's member reaches makes the whole family a door.
@@ -79,7 +79,7 @@ impl<'g> Ix<'g> {
         for (_, f) in &shaped {
             *fiber.entry(f.as_str()).or_default() += 1;
         }
-        let ranks = shaped.iter().filter(|(t, f)| fiber[f.as_str()] > 1 && t != f).map(|(t, f)| (*t, f.clone())).collect();
+        let ranks = shaped.iter().filter(|(t, f)| fiber[f.as_str()] > 1).map(|(t, f)| (*t, f.clone())).collect();
         Ix { kinds: g.nodes.iter().map(|n| (n.id.as_str(), n.kind)).collect(), out, into, used_as_type, ranks }
     }
 
