@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 275" role="img" aria-label="Step letters past z go on as aa, ab in 0.70.0 where 0.69.3 began at a again; atlas check exits 0, 1 or 2, where 0.69.3 gave 1 for a failure too">
+<text x="20" y="30" style="font-family:var(--sans);font-size:15px;fill:var(--ink);text-anchor:start;font-weight:600">a match of 30 arms, step 2</text>
+<text x="20" y="62" style="font-family:var(--sans);font-size:13px;fill:var(--del);text-anchor:start;font-weight:600">0.69.3</text>
+<rect x="20" y="79" width="70" height="24" rx="12" style="fill:var(--panel);fill-opacity:1;stroke:var(--ink-3);stroke-width:1.5"/><text x="55" y="96" style="font-family:var(--mono);font-size:13px;fill:var(--ink-3);text-anchor:middle;font-weight:600">2y</text>
+<rect x="20" y="113" width="70" height="24" rx="12" style="fill:var(--panel);fill-opacity:1;stroke:var(--ink-3);stroke-width:1.5"/><text x="55" y="130" style="font-family:var(--mono);font-size:13px;fill:var(--ink-3);text-anchor:middle;font-weight:600">2z</text>
+<rect x="20" y="147" width="70" height="24" rx="12" style="fill:var(--panel);fill-opacity:1;stroke:var(--del);stroke-width:1.5"/><text x="55" y="164" style="font-family:var(--mono);font-size:13px;fill:var(--del);text-anchor:middle;font-weight:600">2a</text>
+<rect x="20" y="181" width="70" height="24" rx="12" style="fill:var(--panel);fill-opacity:1;stroke:var(--del);stroke-width:1.5"/><text x="55" y="198" style="font-family:var(--mono);font-size:13px;fill:var(--del);text-anchor:middle;font-weight:600">2b</text>
+<text x="260" y="62" style="font-family:var(--sans);font-size:13px;fill:var(--key);text-anchor:start;font-weight:600">0.70.0</text>
+<rect x="260" y="79" width="70" height="24" rx="12" style="fill:var(--panel);fill-opacity:1;stroke:var(--ink-3);stroke-width:1.5"/><text x="295" y="96" style="font-family:var(--mono);font-size:13px;fill:var(--ink-3);text-anchor:middle;font-weight:600">2y</text>
+<rect x="260" y="113" width="70" height="24" rx="12" style="fill:var(--panel);fill-opacity:1;stroke:var(--ink-3);stroke-width:1.5"/><text x="295" y="130" style="font-family:var(--mono);font-size:13px;fill:var(--ink-3);text-anchor:middle;font-weight:600">2z</text>
+<rect x="260" y="147" width="70" height="24" rx="12" style="fill:var(--panel);fill-opacity:1;stroke:var(--key);stroke-width:1.5"/><text x="295" y="164" style="font-family:var(--mono);font-size:13px;fill:var(--key);text-anchor:middle;font-weight:600">2aa</text>
+<rect x="260" y="181" width="70" height="24" rx="12" style="fill:var(--panel);fill-opacity:1;stroke:var(--key);stroke-width:1.5"/><text x="295" y="198" style="font-family:var(--mono);font-size:13px;fill:var(--key);text-anchor:middle;font-weight:600">2ab</text>
+<text x="100" y="166" style="font-family:var(--sans);font-size:12.5px;fill:var(--del);text-anchor:start;font-weight:400">= arm 1 again</text>
+<text x="340" y="166" style="font-family:var(--sans);font-size:12.5px;fill:var(--key);text-anchor:start;font-weight:400">arm 27</text>
+<text x="260" y="252" style="font-family:var(--sans);font-size:12.5px;fill:var(--key);text-anchor:start;font-weight:400">an override of a lettered step: 2a-a</text>
+<line x1="500" y1="20" x2="500" y2="270" style="stroke:var(--line);stroke-width:1;fill:none"/>
+<text x="530" y="30" style="font-family:var(--sans);font-size:15px;fill:var(--ink);text-anchor:start;font-weight:600">atlas check, and what CI reads</text>
+<rect x="530" y="54" width="170" height="32" rx="8" style="fill:var(--panel);fill-opacity:1;stroke:var(--line);stroke-width:1.2"/>
+<text x="615" y="75" style="font-family:var(--sans);font-size:13px;fill:var(--ink-2);text-anchor:middle;font-weight:400">nothing to ask</text>
+<line x1="700" y1="70" x2="860" y2="70" style="stroke:var(--key);stroke-width:1.6;fill:none" marker-end="url(#d-head)"/>
+<circle cx="884" cy="70" r="17" style="fill:var(--panel);stroke:var(--key);stroke-width:2"/>
+<text x="884" y="75" style="font-family:var(--mono);font-size:15px;fill:var(--key);text-anchor:middle;font-weight:700">0</text>
+<rect x="530" y="114" width="170" height="32" rx="8" style="fill:var(--panel);fill-opacity:1;stroke:var(--line);stroke-width:1.2"/>
+<text x="615" y="135" style="font-family:var(--sans);font-size:13px;fill:var(--ink-2);text-anchor:middle;font-weight:400">questions</text>
+<line x1="700" y1="130" x2="860" y2="130" style="stroke:var(--key);stroke-width:1.6;fill:none" marker-end="url(#d-head)"/>
+<circle cx="884" cy="130" r="17" style="fill:var(--panel);stroke:var(--key);stroke-width:2"/>
+<text x="884" y="135" style="font-family:var(--mono);font-size:15px;fill:var(--key);text-anchor:middle;font-weight:700">1</text>
+<rect x="530" y="174" width="170" height="32" rx="8" style="fill:var(--panel);fill-opacity:1;stroke:var(--line);stroke-width:1.2"/>
+<text x="615" y="195" style="font-family:var(--sans);font-size:13px;fill:var(--ink-2);text-anchor:middle;font-weight:400">could not read</text>
+<line x1="700" y1="190" x2="860" y2="190" style="stroke:var(--key);stroke-width:1.6;fill:none" marker-end="url(#d-head)"/>
+<circle cx="884" cy="190" r="17" style="fill:var(--panel);stroke:var(--key);stroke-width:2"/>
+<text x="884" y="195" style="font-family:var(--mono);font-size:15px;fill:var(--key);text-anchor:middle;font-weight:700">2</text>
+<path d="M700 190 C 760 190, 790 150, 860 136" style="stroke:var(--del);stroke-width:1.6;fill:none;stroke-dasharray:5 4" marker-end="url(#d-head)"/>
+<text x="735" y="222" style="font-family:var(--sans);font-size:12.5px;fill:var(--del);text-anchor:start;font-weight:400">0.69.3: 1 as well</text>
+<text x="530" y="252" style="font-family:var(--sans);font-size:12.5px;fill:var(--key);text-anchor:start;font-weight:400">and a cloned repository is removed on every exit</text>
+</svg>
