@@ -835,7 +835,7 @@ function checkoutAsk(c) {
     return l;
   });
   const intro = [el("p", null, c.subject)];
-  if (S.dirty) intro.push(el("p", "warn", `The working tree has ${treeState(S.log)}: git carries them over where they do not conflict with ${c.short}, and refuses otherwise.`));
+  if (S.dirty) intro.push(el("p", "warn", `The working tree has uncommitted changes (${treeState(S.log)}): git carries them over where they do not conflict with ${c.short}, and refuses otherwise.`));
   question(`Check out ${c.short}`, intro, [el("p", null, "Switch the working tree to"), ...radios], () => {
     const k = radios.findIndex(l => l.firstChild.checked);
     return k >= 0 ? options[k].args : null;
