@@ -34,6 +34,17 @@ pub enum Status {
     Changed,
 }
 
+impl Status {
+    /// The mark a diff writes before a line it adds, removes or changes.
+    pub fn sign(self) -> char {
+        match self {
+            Status::Added => '+',
+            Status::Removed => '-',
+            Status::Changed => '~',
+        }
+    }
+}
+
 /// The union of two readings, as the diff marks it. What is the same in both is absent.
 #[derive(Serialize, Clone, Debug, Default, PartialEq)]
 pub struct Diff {
