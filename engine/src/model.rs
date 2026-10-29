@@ -9,6 +9,8 @@ use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
+pub use crate::language::Lang;
+
 #[derive(Serialize, Deserialize, TS, Clone, Copy, PartialEq, Eq, Hash, Debug)]
 #[serde(rename_all = "snake_case")]
 #[ts(export)]
@@ -1218,36 +1220,6 @@ impl std::ops::AddAssign for Unresolved {
     }
 }
 
-/// A language Atlas reads, written by its name: `python`, `rust`, `typescript`.
-#[derive(Serialize, Deserialize, TS, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
-#[serde(rename_all = "lowercase")]
-#[ts(export)]
-pub enum Lang {
-    Python,
-    Rust,
-    TypeScript,
-}
-
-impl Lang {
-    /// Every language, in the order of their names.
-    pub const ALL: [Lang; 3] = [Lang::Python, Lang::Rust, Lang::TypeScript];
-
-    /// Its name, as the JSON writes it.
-    pub fn name(self) -> &'static str {
-        match self {
-            Lang::Python => "python",
-            Lang::Rust => "rust",
-            Lang::TypeScript => "typescript",
-        }
-    }
-}
-
-impl std::fmt::Display for Lang {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(self.name())
-    }
-}
-
 /// The languages a graph is read in: the image of its parts' languages, since a repository's graph
 /// is the coproduct of its parts' and each part is read in one. Empty for no parts; a merge's is
 /// the union of the merged graphs'. The JSON writes the one name when there is one and nothing
@@ -1336,7 +1308,7 @@ pub struct Leaves {
 }
 
 #[derive(Serialize, Deserialize, TS, Clone, Debug, Default)]
-#[serde(remote = "Self")]
+#[serde(remote = "Graph")]
 #[ts(export)]
 pub struct Graph {
     pub root: String,

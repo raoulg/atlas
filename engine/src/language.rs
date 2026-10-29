@@ -7,9 +7,11 @@
 use std::path::{Path, PathBuf};
 
 use anyhow::Result;
+use serde::{Deserialize, Serialize};
+use ts_rs::TS;
 
 use crate::cache::Check;
-use crate::model::{Graph, Lang, Leaves};
+use crate::model::{Graph, Leaves};
 use crate::options::Options;
 use crate::prophecy::Form;
 use crate::repo::Repo;
@@ -298,4 +300,34 @@ pub fn detect(repo: &Repo, opts: &Options) -> Option<Box<dyn Language>> {
 /// The language a repository is read in, or why there is none: what was looked for, and where.
 pub fn of(repo: &Repo, opts: &Options) -> anyhow::Result<Box<dyn Language>> {
     detect(repo, opts).ok_or_else(|| anyhow::anyhow!("no language recognised in {} ({})", repo.root().display(), looked_for()))
+}
+
+/// A language Atlas reads, written by its name: `python`, `rust`, `typescript`.
+#[derive(Serialize, Deserialize, TS, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
+#[serde(rename_all = "lowercase")]
+#[ts(export)]
+pub enum Lang {
+    Python,
+    Rust,
+    TypeScript,
+}
+
+impl Lang {
+    /// Every language, in the order of their names.
+    pub const ALL: [Lang; 3] = [Lang::Python, Lang::Rust, Lang::TypeScript];
+
+    /// Its name, as the JSON writes it.
+    pub fn name(self) -> &'static str {
+        match self {
+            Lang::Python => "python",
+            Lang::Rust => "rust",
+            Lang::TypeScript => "typescript",
+        }
+    }
+}
+
+impl std::fmt::Display for Lang {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.name())
+    }
 }
