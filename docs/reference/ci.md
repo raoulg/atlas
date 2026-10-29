@@ -143,7 +143,7 @@ command `atlas-code-nightly`. The runner reads the update check as CI and stays 
 ### The pill
 
 A repository that draws its picture can say so, with a pill in the README:
-[![atlas: drawn on push](../badge-atlas.svg)](https://raoulg.github.io/atlas/)
+[![atlas: drawn on push](../badge-atlas.svg)](https://atlas.pttrn.io/)
 It comes in two kinds:
 
 - **Static**: save [`badge-atlas.svg`](../badge-atlas.svg) in your repository and name it from the

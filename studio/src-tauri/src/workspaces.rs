@@ -67,8 +67,8 @@ fn about() -> AboutMetadata<'static> {
     AboutMetadata {
         credits: Some(ABOUT.into()),
         comments: Some(ABOUT.into()),
-        website: Some("https://raoulg.github.io/atlas/".into()),
-        website_label: Some("raoulg.github.io/atlas".into()),
+        website: Some("https://atlas.pttrn.io/".into()),
+        website_label: Some("atlas.pttrn.io".into()),
         ..Default::default()
     }
 }
