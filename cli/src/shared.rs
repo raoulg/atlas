@@ -11,6 +11,12 @@
 //! - `annotations.json`: what an agent says of a box or a line (what a condition means, what a step
 //!   is for), shown on the page until the agent takes it away.
 //!
+//! Threads of `atlas serve` and the process of `atlas mcp` write these files at once. A file is
+//! written whole beside its place and renamed into it, so a reader never finds half of it; a change
+//! that reads a file and writes it again (a note added, a look taken) holds the file's lock, beside
+//! it, so that no change is lost to another; and a file that does not read as Atlas wrote it is an
+//! error, never taken for an empty one and written over.
+//!
 //! A note is resolved by an agent, never by reading alone: open until an agent reads it, seen until
 //! it resolves it, by a fix or by what it explains where it works, resolved after. The reader
 //! reopens a resolved note with a new line. A note is for the work at hand: what must last, an
@@ -19,9 +25,11 @@
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use anyhow::{Context, Result};
 use atlas_engine::sight::Sight;
+use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -112,11 +120,50 @@ fn read(path: &Path) -> Option<Value> {
     serde_json::from_slice(&std::fs::read(path).ok()?).ok()
 }
 
-/// `value` written beside its place and renamed into it, so a reader never finds half of it.
+/// What the file at `path` holds: nothing when there is no file, and an error when it does not read
+/// as a `T`, so that what it holds is not written over.
+fn kept<T: DeserializeOwned + Default>(path: &Path) -> Result<T> {
+    match std::fs::read(path) {
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(T::default()),
+        Err(e) => Err(e).with_context(|| format!("reading {}", path.display())),
+        Ok(bytes) => serde_json::from_slice(&bytes)
+            .with_context(|| format!("{} does not read as Atlas writes it; it is left as it is, to mend or remove", path.display())),
+    }
+}
+
+/// How many files this process has written: with its id, the name of the next one's partial file.
+static WRITTEN: AtomicU64 = AtomicU64::new(0);
+
+/// `value` written beside its place, in a file of this write's own, and renamed into it, so a reader
+/// never finds half of it and two writers never write into one file.
 fn write(path: &Path, value: &impl Serialize) -> Result<()> {
-    let partial = path.with_extension(format!("{}.part", std::process::id()));
-    std::fs::write(&partial, serde_json::to_vec_pretty(value)?)?;
-    std::fs::rename(&partial, path).with_context(|| format!("writing {}", path.display()))
+    let n = WRITTEN.fetch_add(1, Ordering::Relaxed);
+    let partial = path.with_extension(format!("{}.{n}.part", std::process::id()));
+    let written = std::fs::write(&partial, serde_json::to_vec_pretty(value)?).and_then(|_| std::fs::rename(&partial, path));
+    if written.is_err() {
+        let _ = std::fs::remove_file(&partial);
+    }
+    written.with_context(|| format!("writing {}", path.display()))
+}
+
+/// `change` made while this thread holds the lock of the file at `path`, which no other thread or
+/// process holds at the same time: what it reads of the file is what it writes over.
+fn locked<T>(path: &Path, change: impl FnOnce() -> Result<T>) -> Result<T> {
+    let at = path.with_extension("lock");
+    let lock = std::fs::OpenOptions::new()
+        .create(true)
+        .truncate(false)
+        .write(true)
+        .open(&at)
+        .with_context(|| format!("opening {}", at.display()))?;
+    lock.lock().with_context(|| format!("locking {}", at.display()))?;
+    // the lock is let go when `lock` is closed, after the change, however it ends
+    change()
+}
+
+/// A commit as a line shows it: its first seven characters.
+pub fn short(commit: &str) -> String {
+    commit.chars().take(7).collect()
 }
 
 /// What the page last said it shows.
@@ -138,44 +185,67 @@ pub struct Look {
 
 /// Ask the page to look where `look` says.
 pub fn look(repo: &Path, look: &Look) -> Result<()> {
-    write(&file(repo, "look.json"), look)
-}
-
-/// Where an agent asked the page to look, taken once.
-pub fn take_look(repo: &Path) -> Option<Look> {
     let path = file(repo, "look.json");
-    let look = read(&path).and_then(|v| serde_json::from_value(v).ok());
-    std::fs::remove_file(&path).ok()?;
-    look
+    locked(&path, || write(&path, look))
 }
 
-pub fn notes(repo: &Path) -> Vec<Note> {
-    read(&file(repo, "notes.json")).and_then(|v| serde_json::from_value(v).ok()).unwrap_or_default()
+/// Where an agent asked the page to look, taken once: by one asker, and a look written while it is
+/// taken waits for the next.
+pub fn take_look(repo: &Path) -> Result<Option<Look>> {
+    let path = file(repo, "look.json");
+    locked(&path, || {
+        let bytes = match std::fs::read(&path) {
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+            read => read.with_context(|| format!("reading {}", path.display()))?,
+        };
+        std::fs::remove_file(&path).with_context(|| format!("removing {}", path.display()))?;
+        serde_json::from_slice(&bytes).map(Some).with_context(|| format!("{} does not read as a look", path.display()))
+    })
 }
 
-fn set_notes(repo: &Path, notes: &[Note]) -> Result<()> {
-    write(&file(repo, "notes.json"), &notes)
+fn notes_file(repo: &Path) -> PathBuf {
+    file(repo, "notes.json")
+}
+
+/// Every note, as last written; an error when the file does not read as notes.
+pub fn notes(repo: &Path) -> Result<Vec<Note>> {
+    kept(&notes_file(repo))
+}
+
+/// The notes as `f` changes them, read and written again while no one else changes them; written
+/// only when `f` says it changed them.
+fn change_notes<T>(repo: &Path, f: impl FnOnce(&mut Vec<Note>) -> (bool, T)) -> Result<T> {
+    let path = notes_file(repo);
+    locked(&path, || {
+        let mut all = kept(&path)?;
+        let (changed, out) = f(&mut all);
+        if changed {
+            write(&path, &all)?;
+        }
+        Ok(out)
+    })
 }
 
 /// Keep a new note, open, numbered after the last.
 pub fn add(repo: &Path, mut note: Note) -> Result<Note> {
-    let mut all = notes(repo);
-    note.id = all.iter().map(|n| n.id).max().unwrap_or(0) + 1;
-    note.state = State::Open;
-    (note.commit, note.issue) = (None, None);
-    all.push(note.clone());
-    set_notes(repo, &all)?;
-    Ok(note)
+    change_notes(repo, |all| {
+        note.id = all.iter().map(|n| n.id).max().unwrap_or(0) + 1;
+        note.state = State::Open;
+        (note.commit, note.issue) = (None, None);
+        all.push(note.clone());
+        (true, note)
+    })
 }
 
 /// Change the note numbered `id`; none when there is no such note.
 pub fn change(repo: &Path, id: u32, f: impl FnOnce(&mut Note)) -> Result<Option<Note>> {
-    let mut all = notes(repo);
-    let Some(n) = all.iter_mut().find(|n| n.id == id) else { return Ok(None) };
-    f(n);
-    let changed = n.clone();
-    set_notes(repo, &all)?;
-    Ok(Some(changed))
+    change_notes(repo, |all| match all.iter_mut().find(|n| n.id == id) {
+        Some(n) => {
+            f(n);
+            (true, Some(n.clone()))
+        }
+        None => (false, None),
+    })
 }
 
 /// The reader opens a resolved note again, with a new line: open, for an agent to read anew.
@@ -197,11 +267,11 @@ pub fn resolve(repo: &Path, id: u32, commit: Option<String>, issue: Option<Strin
 
 /// A new `atlas serve` starts without the notes resolved before it.
 pub fn forget_resolved(repo: &Path) -> Result<()> {
-    let all = notes(repo);
-    if all.iter().any(|n| n.state == State::Resolved) {
-        set_notes(repo, &all.into_iter().filter(|n| n.state != State::Resolved).collect::<Vec<_>>())?;
-    }
-    Ok(())
+    change_notes(repo, |all| {
+        let before = all.len();
+        all.retain(|n| n.state != State::Resolved);
+        (all.len() != before, ())
+    })
 }
 
 /// what an agent has in view: the working tree with some files written otherwise, under a title. A
@@ -279,19 +349,23 @@ pub struct Annotation {
     pub text: String,
 }
 
-pub fn annotations(repo: &Path) -> Vec<Annotation> {
-    read(&file(repo, "annotations.json")).and_then(|v| serde_json::from_value(v).ok()).unwrap_or_default()
+/// What agents have said of boxes and lines; an error when the file does not read as that.
+pub fn annotations(repo: &Path) -> Result<Vec<Annotation>> {
+    kept(&file(repo, "annotations.json"))
 }
 
 /// Say `text` of what `on` names, in place of what was said of it; nothing takes it away. Gives
 /// what is said now.
 pub fn annotate(repo: &Path, on: &str, text: Option<&str>) -> Result<Vec<Annotation>> {
-    let mut all: Vec<Annotation> = annotations(repo).into_iter().filter(|a| a.on != on).collect();
-    if let Some(text) = text.map(str::trim).filter(|t| !t.is_empty()) {
-        all.push(Annotation { on: on.to_string(), text: text.to_string() });
-    }
-    write(&file(repo, "annotations.json"), &all)?;
-    Ok(all)
+    let path = file(repo, "annotations.json");
+    locked(&path, || {
+        let mut all: Vec<Annotation> = kept::<Vec<Annotation>>(&path)?.into_iter().filter(|a| a.on != on).collect();
+        if let Some(text) = text.map(str::trim).filter(|t| !t.is_empty()) {
+            all.push(Annotation { on: on.to_string(), text: text.to_string() });
+        }
+        write(&path, &all)?;
+        Ok(all)
+    })
 }
 
 /// Where `atlas serve` serves the page: `http://127.0.0.1:8778/`.
@@ -320,15 +394,124 @@ fn component(s: &str) -> String {
         .collect()
 }
 
-/// The notes an agent has not resolved, marked seen now that it reads them.
-pub fn read_open(repo: &Path) -> Result<Vec<Note>> {
-    let mut all = notes(repo);
-    let open: Vec<Note> = all.iter().filter(|n| matches!(n.state, State::Open | State::Seen)).cloned().collect();
-    if open.iter().any(|n| n.state == State::Open) {
+/// Every note as an agent reads them: the open ones marked seen now that it does.
+pub fn read_notes(repo: &Path) -> Result<Vec<Note>> {
+    change_notes(repo, |all| {
+        let mut changed = false;
         for n in all.iter_mut().filter(|n| n.state == State::Open) {
-            n.state = State::Seen;
+            (n.state, changed) = (State::Seen, true);
         }
-        set_notes(repo, &all)?;
+        (changed, all.clone())
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A repository of its own for one test, with the workbench at its top.
+    fn repository(test: &str) -> PathBuf {
+        let repo = std::env::temp_dir().join(format!("atlas-shared-{}-{test}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&repo);
+        std::fs::create_dir_all(repo.join(".git")).unwrap();
+        repo
     }
-    Ok(open)
+
+    fn note(text: &str) -> Note {
+        Note {
+            id: 0,
+            on: "spots.count".into(),
+            label: "count".into(),
+            view: Value::Null,
+            rev: String::new(),
+            text: text.into(),
+            state: State::Open,
+            commit: None,
+            issue: None,
+        }
+    }
+
+    /// Writers at once lose no note and mix none: every note added by threads that add while others
+    /// resolve and read is kept, under an id of its own, with its own text, and every resolved note
+    /// stays resolved.
+    #[test]
+    fn writers_at_once_lose_no_note() {
+        let repo = repository("writers");
+        let first: Vec<u32> = (0..10).map(|i| add(&repo, note(&format!("first {i}"))).unwrap().id).collect();
+        std::thread::scope(|s| {
+            for t in 0..6 {
+                let repo = &repo;
+                s.spawn(move || (0..15).for_each(|i| drop(add(repo, note(&format!("thread {t} note {i}"))).unwrap())));
+            }
+            let (repo, first) = (&repo, &first);
+            s.spawn(move || first.iter().for_each(|id| drop(resolve(repo, *id, Some("3a2b1c9".into()), None).unwrap())));
+            s.spawn(move || (0..20).for_each(|_| drop(read_notes(repo).unwrap())));
+        });
+        let all = notes(&repo).unwrap();
+        assert_eq!(all.len(), 10 + 6 * 15);
+        let ids: std::collections::BTreeSet<u32> = all.iter().map(|n| n.id).collect();
+        assert_eq!(ids.len(), all.len(), "every note has an id of its own");
+        for t in 0..6 {
+            for i in 0..15 {
+                assert!(all.iter().any(|n| n.text == format!("thread {t} note {i}")), "thread {t} note {i} is kept");
+            }
+        }
+        assert!(all.iter().filter(|n| first.contains(&n.id)).all(|n| n.state == State::Resolved), "no resolution is lost");
+        let parts: Vec<PathBuf> = std::fs::read_dir(repo.join(".atlas"))
+            .unwrap()
+            .flatten()
+            .map(|e| e.path())
+            .filter(|p| p.extension() == Some("part".as_ref()))
+            .collect();
+        assert!(parts.is_empty(), "no partial file is left: {parts:?}");
+        let _ = std::fs::remove_dir_all(&repo);
+    }
+
+    /// A notes file that does not read as notes is an error, and is left as it is: a note added is
+    /// refused rather than written over the ones it holds.
+    #[test]
+    fn a_notes_file_that_does_not_read_is_left_as_it_is() {
+        let repo = repository("unread");
+        add(&repo, note("kept")).unwrap();
+        let path = repo.join(".atlas/notes.json");
+        let mangled = std::fs::read_to_string(&path).unwrap().replacen('}', "", 1);
+        std::fs::write(&path, &mangled).unwrap();
+        assert!(notes(&repo).is_err());
+        assert!(add(&repo, note("new")).is_err());
+        assert!(resolve(&repo, 1, None, None).is_err());
+        assert!(read_notes(&repo).is_err());
+        assert!(forget_resolved(&repo).is_err());
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), mangled, "what the file holds is not written over");
+        let _ = std::fs::remove_dir_all(&repo);
+    }
+
+    /// A look is taken at most once, and none is lost: while an agent points the page at one place
+    /// after another and the page takes them, no look is taken twice, and the last one pointed at is
+    /// taken, now or at the next ask.
+    #[test]
+    fn a_look_is_taken_once_and_never_lost() {
+        let repo = repository("look");
+        let looked = |i: usize| Look { view: None, at: Some(format!("box {i}")) };
+        let mut taken = std::thread::scope(|s| {
+            let repo = &repo;
+            let page = s.spawn(move || (0..400).filter_map(|_| take_look(repo).unwrap()).collect::<Vec<Look>>());
+            (0..200).for_each(|i| look(repo, &looked(i)).unwrap());
+            page.join().unwrap()
+        });
+        taken.extend(take_look(&repo).unwrap());
+        assert!(take_look(&repo).unwrap().is_none(), "a look is taken once");
+        let at: Vec<&str> = taken.iter().filter_map(|l| l.at.as_deref()).collect();
+        let distinct: std::collections::BTreeSet<&&str> = at.iter().collect();
+        assert_eq!(distinct.len(), at.len(), "no look is taken twice: {at:?}");
+        assert_eq!(at.last(), Some(&"box 199"), "the last look is taken");
+        let _ = std::fs::remove_dir_all(&repo);
+    }
+
+    /// A commit is shortened by its characters, whatever they are.
+    #[test]
+    fn a_commit_is_shortened_by_characters() {
+        assert_eq!(short("3a2b1c9d0e"), "3a2b1c9");
+        assert_eq!(short("ééééééééé"), "ééééééé");
+        assert_eq!(short("3a2"), "3a2");
+    }
 }
