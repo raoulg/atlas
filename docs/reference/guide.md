@@ -305,14 +305,30 @@ The same marks go on the lines. The header names A and B, counts what was added,
 changed, and switches between **A**, **A ∪ B** and **B**: a switch hides boxes and never moves
 one. The route list marks a route `+`, `−` or `~`.
 
-## History: two commits as one picture
+## History: one commit, or two as one picture
 
 `atlas-code history [repo]` serves the repository's history on this machine and opens it in the
-browser: the commits of every branch and tag, and beside them the picture of the one you pick, or
-of two you pick as one picture, marked as above. The working tree is the newest row. It answers
-at `127.0.0.1` only (`--port N` picks the port, `--no-open` leaves the browser closed), reads each
-commit once and keeps it from one run to the next, and reads the working tree again on every
-request, so an edit shows when you pick it again.
+browser: the commits of every branch and tag, and beside them the commit you pick, or two you pick
+as one picture, marked as above. It answers at `127.0.0.1` only (`--port N` picks the port,
+`--no-open` leaves the browser closed), reads each commit once and keeps it from one run to the
+next, and reads the working tree again on every request, so an edit shows when you pick it again.
+
+- **HEAD and the working tree.** HEAD's commit is the hollow dot. While the working tree holds
+  changes that commit does not, they are a row of their own above it, **Uncommitted changes**; a
+  clean working tree is HEAD's commit, and its row stands for both. The header says what it shows:
+  **showing** one revision (B), or **comparing** two (A → B).
+- **Pick.** A click (or Enter) shows that commit on its own: its picture, read from the commit,
+  never from the working tree. A ⇧ click (⇧ Enter) compares it, as A, with the one shown; Esc
+  drops A again.
+- **Files.** **files** shows B's files instead of its picture, read from its commit: markdown
+  rendered with its pictures, a picture as itself, other text as it is. A link to another file of
+  the commit opens it there. **picture** goes back.
+- **The menu of a commit.** Right-click a row (or ⇧ F10): show it, compare it with the working tree,
+  copy its hash or subject, add a tag, check it out, and pull or push the branch HEAD is on. Each
+  of the last four asks first, says what it does and names the git command it runs; git's answer
+  stays in the question. Pulling only moves the branch forward (`git pull --ff-only`); a branch
+  that follows nothing yet is pushed to `origin` and made to follow it. Atlas offers no other git
+  command.
 
 ## Serve: one view, shared with your agent
 
@@ -357,8 +373,8 @@ changed, the picture drawn, an export, a note, and what the agent did with it.
   served at a port of its own, the same each time). Esc, the field's ✕ or a click beside it
   drops a note before it is kept.
 - **History.** **history** opens the commits beside the page, as `atlas-code history` does, from the
-  same process. Pick a commit to see it beside the working tree, or two to see as one; **✕ close
-  history** goes back to the page.
+  same process. Pick a commit to see it on its own, or two to see as one; **✕ close history** goes
+  back to the page.
 - **Export.** **export** keeps the picture as one HTML file, opened in the view you have: the
   file `atlas-code view` writes.
 
