@@ -59,7 +59,7 @@ pub fn choices(g: &Graph, entry: &str) -> Option<String> {
         let Some(b) = s.bodies.get(&k).filter(|_| calls.insert((k.clone(), call.named))) else { continue };
         // a body's choices once, however many calls run it; what each call may run instead
         let items = if seen.insert(k) { b.items.as_slice() } else { &[] };
-        let sites = s.nodes.get(call.to.as_str()).map(|n| n.sites.as_slice()).unwrap_or(&[]);
+        let sites = s.nodes.get(call.to.as_str()).map(|n| n.body().sites.as_slice()).unwrap_or(&[]);
         let named = |st: &Step| {
             if s.nodes.contains_key(st.to.as_str()) {
                 s.step_name(st)
@@ -225,7 +225,7 @@ impl<'g> Story<'g> {
     ) {
         let Some(b) = self.bodies.get(body) else { return };
         let holder = body.split('@').next().unwrap_or(body);
-        let sites = self.nodes.get(holder).map(|n| n.sites.as_slice()).unwrap_or(&[]);
+        let sites = self.nodes.get(holder).map(|n| n.body().sites.as_slice()).unwrap_or(&[]);
         let mut seq = 0;
         let mut next = || {
             seq += 1;
@@ -357,7 +357,7 @@ impl<'g> Story<'g> {
             }
             seen.iter()
                 .filter_map(|f| self.nodes.get(f))
-                .flat_map(|n| n.touches.iter().flat_map(|t| t.by.iter().flat_map(|f| f.split('&').map(str::to_string))))
+                .flat_map(|n| n.body().touches.iter().flat_map(|t| t.by.iter().flat_map(|f| f.split('&').map(str::to_string))))
                 .collect()
         });
         let mut on: Vec<&str> = path.iter().map(String::as_str).filter(|f| made.contains(*f)).collect();
@@ -380,8 +380,8 @@ impl<'g> Story<'g> {
             return format!("{}()", n.name);
         }
         let class = |c: &str| self.nodes.get(c).map_or_else(|| c.rsplit('.').next().unwrap_or(c).to_string(), |c| c.name.clone());
-        match n.cls.as_deref() {
-            Some(c) if n.ctor && !n.on_class => class(c),
+        match n.cls() {
+            Some(c) if n.ctor() && !n.on_class() => class(c),
             Some(_) if !on.is_empty() => format!("{}.{}", class(on), n.name),
             Some(c) => format!("{}.{}", class(c), n.name),
             None => n.name.clone(),
@@ -390,12 +390,12 @@ impl<'g> Story<'g> {
 
     /// `(repo, package) → Graph  ↻ Graph`: the parameters by name, what comes back, what changes.
     fn signature(&self, n: &Node) -> String {
-        if !matches!(n.kind, NodeKind::Function | NodeKind::Method) {
+        if !matches!(n.kind.tag(), NodeKind::Function | NodeKind::Method) {
             return String::new();
         }
-        let names: Vec<&str> = n.params.iter().filter(|p| !p.receiver).map(|p| p.name.as_str()).collect();
-        let class = n.cls.as_deref().and_then(|c| self.nodes.get(c)).map(|c| c.name.clone());
-        let ret = match &n.returns {
+        let names: Vec<&str> = n.params().iter().filter(|p| !p.receiver).map(|p| p.name.as_str()).collect();
+        let class = n.cls().and_then(|c| self.nodes.get(c)).map(|c| c.name.clone());
+        let ret = match n.returns() {
             Some(r) if r.own => class.unwrap_or_default(),
             Some(r) => r.value.clone(),
             None => String::new(),
@@ -422,7 +422,7 @@ impl<'g> Story<'g> {
     fn effects(&self, n: &Node, path: Option<&[String]>) -> String {
         let mut groups: Vec<(String, Vec<String>)> = vec![];
         let on_way = |f: &str| path.map_or_else(|| self.reached.contains(f), |p| p.iter().any(|x| x == f));
-        for t in n.touches_in(&self.entry, &on_way) {
+        for t in n.body().touches_in(&self.entry, &on_way) {
             let (v, what) = (t.verb(), place(t));
             match groups.iter_mut().find(|(g, _)| *g == v) {
                 Some((_, items)) => {

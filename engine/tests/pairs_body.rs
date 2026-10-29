@@ -1,5 +1,5 @@
 //! What a body does with values outside its steps, read once for every language (`body.rs`, `Steps`): what its own
-//! code uses (`Node::uses`, #101, #126), what it throws away of what a step gives (`Site::dropped`, #134), and the
+//! code uses (`Body::uses`, #101, #126), what it throws away of what a step gives (`Site::dropped`, #134), and the
 //! errors it ends with and hands on (`Site::raises`, `Site::fails`, #138). Each language supplies its syntax; the walk is
 //! the same. Two pairs, one program per language each:
 //!
@@ -11,7 +11,7 @@
 
 //!
 //! Beside them, what a call says of each value it hands, the parameter it fills (`Held::fills`, `Site::args`, #157),
-//! what an arm binds by the body's own code (`Node::binds`, #158), and a function a call runs on each element
+//! what an arm binds by the body's own code (`Body::binds`, #158), and a function a call runs on each element
 //! (`Steps::handed`), read on the programs of the other pairs where the code writes them.
 
 // the helpers the prophecy pairs use stand beside the one this file does
@@ -44,12 +44,12 @@ fn node<'g>(g: &'g Graph, id: &str) -> &'g Node {
 /// The site of `body` that reaches `to`, or runs the operation `to`.
 fn site<'g>(g: &'g Graph, body: &str, to: &str) -> &'g Site {
     let n = node(g, body);
-    n.sites.iter().find(|s| s.to == to || s.op == to).unwrap_or_else(|| panic!("{body} has no site {to}: {:#?}", n.sites))
+    n.body().sites.iter().find(|s| s.to == to || s.op == to).unwrap_or_else(|| panic!("{body} has no site {to}: {:#?}", n.body().sites))
 }
 
 /// The names the body's own code reads, each once.
 fn used(g: &Graph, body: &str) -> Vec<String> {
-    let mut names: Vec<String> = node(g, body).uses.iter().map(|u| u.name.clone()).collect();
+    let mut names: Vec<String> = node(g, body).body().uses.iter().map(|u| u.name.clone()).collect();
     names.dedup();
     names
 }
@@ -66,13 +66,13 @@ fn uses_the_body_reads_what_it_hands_no_step() {
     for (language, route, own) in USES {
         let p = common::pair(&format!("uses/{language}"));
         assert_eq!(used(&p.clean, route), ["kept"], "{language}: the clean route hands the store to the steps that read it");
-        let store = node(&p.shortcut, route).uses.iter().find(|u| u.name == "store");
+        let store = node(&p.shortcut, route).body().uses.iter().find(|u| u.name == "store");
         let store =
-            store.unwrap_or_else(|| panic!("{language}: the shortcut reads the store itself: {:#?}", node(&p.shortcut, route).uses));
+            store.unwrap_or_else(|| panic!("{language}: the shortcut reads the store itself: {:#?}", node(&p.shortcut, route).body().uses));
         assert_eq!(store.ty, format!("{own}Store"), "{language}: of the program's type, as a step it is handed has it");
         // the step that makes the line in the clean route reads the store itself, its parameter
         let describe = format!("{own}describe");
-        assert!(node(&p.clean, &describe).uses.iter().any(|u| u.name == "store"), "{language}: `describe` formats the store");
+        assert!(node(&p.clean, &describe).body().uses.iter().any(|u| u.name == "store"), "{language}: `describe` formats the store");
     }
 }
 
@@ -173,25 +173,26 @@ fn a_call_hands_each_value_to_the_parameter_its_argument_fills() {
 
 /// A name an arm of a choice binds by the body's own code is made by that arm (#158), as one a step in the arm gives:
 /// `let mut out = match format { "csv" => String::from(..), _ => format!(..) }` makes `out` in both arms, the first by
-/// its step (`Site::gives`) and the second by `format!`, no step (`Node::binds`). The clean report renders through a
+/// its step (`Site::gives`) and the second by `format!`, no step (`Body::binds`). The clean report renders through a
 /// trait whose method makes its line with `format!` outside any choice, so it binds nothing in an arm.
 #[test]
 fn an_arm_that_binds_a_name_by_its_own_code_makes_it() {
     let p = common::pair("rust");
     let write = node(&p.shortcut, "spend.report.write");
-    let from = write.sites.iter().find(|s| s.op == "from" && s.gives.iter().any(|g| g.name == "out")).expect("`String::from` gives out");
+    let from =
+        write.body().sites.iter().find(|s| s.op == "from" && s.gives.iter().any(|g| g.name == "out")).expect("`String::from` gives out");
     assert_eq!(from.arms, [(0, 0)]);
-    let out: Vec<&Vec<(u32, u32)>> = write.binds.iter().filter(|b| b.name == "out").map(|b| &b.arms).collect();
-    assert!(out.contains(&&vec![(0, 1)]), "the `_` arm binds out by `format!`: {:#?}", write.binds);
+    let out: Vec<&Vec<(u32, u32)>> = write.body().binds.iter().filter(|b| b.name == "out").map(|b| &b.arms).collect();
+    assert!(out.contains(&&vec![(0, 1)]), "the `_` arm binds out by `format!`: {:#?}", write.body().binds);
     assert!(!out.contains(&&vec![(0, 0)]), "the csv arm's step gives it");
-    assert!(node(&p.clean, "spend.report.Markdown.render").binds.iter().all(|b| b.name != "out"), "bound outside every choice");
+    assert!(node(&p.clean, "spend.report.Markdown.render").body().binds.iter().all(|b| b.name != "out"), "bound outside every choice");
     // the same in Python and TypeScript: what follows a guard is its last arm
     let g = program("python/shortcut");
-    let names: Vec<&str> = node(&g, "harvest.store.ReadingStore.summary").binds.iter().map(|b| b.name.as_str()).collect();
+    let names: Vec<&str> = node(&g, "harvest.store.ReadingStore.summary").body().binds.iter().map(|b| b.name.as_str()).collect();
     assert_eq!(names, ["temperatures", "low", "high", "mean"], "`if row is None:` binds them by its own code");
     let g = program("pipeline/typescript");
     let trend = node(&g, "sunspots.plot.trend");
-    assert!(trend.binds.iter().any(|b| b.name == "bottom" && b.arms == [(0, 1)]), "{:#?}", trend.binds);
+    assert!(trend.body().binds.iter().any(|b| b.name == "bottom" && b.arms == [(0, 1)]), "{:#?}", trend.body().binds);
 }
 
 /// What a step gives that the body's own code reads by no name is a use (#101), named by the step that makes it:
@@ -211,14 +212,14 @@ fn what_a_step_gives_and_the_body_reads_itself_is_a_use() {
         let given = s.gives.iter().find(|h| h.ty == ty).unwrap_or_else(|| panic!("{dir}: {to} gives a {ty}: {s:#?}"));
         assert!(given.name.starts_with(&format!("#{body}@")), "{dir}: named by its step: {given:?}");
         assert!(
-            node(&g, body).uses.iter().any(|u| u.name == given.name && u.ty == ty),
+            node(&g, body).body().uses.iter().any(|u| u.name == given.name && u.ty == ty),
             "{dir}: the body reads it: {:#?}",
-            node(&g, body).uses
+            node(&g, body).body().uses
         );
     }
     // handed to the step around it, it is that step's
     let g = program("choices/rust/clean");
-    let batch = node(&g, "runs.finished").sites.iter().find(|s| s.to == "runs.Runner.new").unwrap();
+    let batch = node(&g, "runs.finished").body().sites.iter().find(|s| s.to == "runs.Runner.new").unwrap();
     assert!(batch.gives.iter().all(|h| !h.name.starts_with("#runs.finished@")), "{batch:#?}");
 }
 
@@ -228,7 +229,7 @@ fn what_a_step_gives_and_the_body_reads_itself_is_a_use() {
 #[test]
 fn a_function_run_on_each_element_is_handed_the_element() {
     let g = program("shadows/rust/shortcut");
-    let size = node(&g, "inbox.total").sites.iter().find(|s| s.to == "inbox.size").expect("`map(size)` runs size");
+    let size = node(&g, "inbox.total").body().sites.iter().find(|s| s.to == "inbox.size").expect("`map(size)` runs size");
     assert_eq!((size.args.clone(), fills(size)), (vec![at(0)], vec![("piles".to_string(), vec![at(0)])]));
     let g = program("gives/python/clean");
     assert_eq!(site(&g, "readings.store.ranked", "readings.store.score").args, [at(0)], "`key=score` is handed each reading");

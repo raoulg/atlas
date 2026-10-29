@@ -26,7 +26,7 @@ mod paths;
 
 use crate::builder::GraphBuilder;
 use crate::knowledge;
-use crate::model::{Entry, EntryKind, Node, NodeKind};
+use crate::model::{Entry, EntryKind, Kind, Node};
 use crate::repo::{normal, Repo};
 use crate::tree::span;
 
@@ -151,10 +151,9 @@ pub fn parse(repo: &Repo, opts: &crate::Options) -> Result<(GraphBuilder, String
     for d in &dirs {
         store.add_node(Node {
             id: d.clone(),
-            kind: NodeKind::Module,
+            kind: Kind::Module(crate::model::Module { is_pkg: true, ..Default::default() }),
             name: d.rsplit('.').next().unwrap_or(d).to_string(),
             module: d.clone(),
-            is_pkg: true,
             ..Default::default()
         });
     }
@@ -173,12 +172,11 @@ pub fn parse(repo: &Repo, opts: &crate::Options) -> Result<(GraphBuilder, String
         let entry = test.then(|| Entry::new(EntryKind::Test, rel.clone()));
         let node = Node {
             id: id.clone(),
-            kind: NodeKind::Module,
+            kind: Kind::Module(crate::model::Module { is_pkg: is_index, ..Default::default() }),
             name: p.file_name().and_then(|n| n.to_str()).unwrap_or("").to_string(),
             file: crate::tree::path_str(p),
             span: span(tree.root_node()),
             module: id.clone(),
-            is_pkg: is_index,
             test,
             entry,
             ..Default::default()

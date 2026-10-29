@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use std::sync::OnceLock;
 
 use atlas_engine::view::{by_module, hide_private, reach_from, Compose, View};
-use atlas_engine::{analyze, EdgeKind, EntryKind, Graph, NodeKind, Options};
+use atlas_engine::{analyze, EdgeKind, EntryKind, Graph, Kind, NodeKind, Options};
 
 /// The Atlas workspace, read once for the tests that read it.
 fn atlas() -> &'static Graph {
@@ -21,7 +21,7 @@ fn fixture() -> Graph {
 /// How many calls of a node cross to each kind of place, by the names the graph's JSON gives them.
 fn boundaries(n: &atlas_engine::Node) -> std::collections::BTreeMap<&'static str, u32> {
     let mut out = std::collections::BTreeMap::new();
-    for t in &n.touches {
+    for t in &n.body().touches {
         *out.entry(t.kind_name()).or_insert(0) += t.n;
     }
     out
@@ -38,10 +38,10 @@ fn modules_classes_and_functions_are_found() {
     let kinds = |k: NodeKind| g.nodes.iter().filter(|n| n.kind == k).count();
     // `services` holds the places a library reaches by its table alone
     assert_eq!(kinds(NodeKind::Module), 28, "the package's twenty-five, a script and two notebooks");
-    assert!(g.node("fixture.sinks").unwrap().is_pkg);
+    assert!(matches!(&g.node("fixture.sinks").unwrap().kind, Kind::Module(m) if m.is_pkg));
     assert_eq!(g.node("fixture.schema.Graph").unwrap().doc, "Nodes and edges.");
-    assert_eq!(g.node("fixture.sinks.duck.DuckSink").unwrap().bases, vec!["Sink", "Mixin"]);
-    assert_eq!(g.node("fixture.build.build_graph").unwrap().returns.as_ref().unwrap().value, "Graph");
+    assert_eq!(g.node("fixture.sinks.duck.DuckSink").unwrap().class().unwrap().bases, vec!["Sink", "Mixin"]);
+    assert_eq!(g.node("fixture.build.build_graph").unwrap().returns().unwrap().value, "Graph");
 }
 
 /// A signature is data each reader writes the same way: a parameter by name and type, the value
@@ -53,8 +53,8 @@ fn a_signature_is_data_in_every_language() {
     let manifest = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let read = |dir: &str| analyze(&manifest.join(dir), &Options::default()).unwrap();
     let (py, rs, ts) = (fixture(), read("tests/fixture-rs"), read("tests/fixture-ts"));
-    let gives = |g: &Graph, id: &str| g.node(id).unwrap_or_else(|| panic!("{id}")).returns.clone().map(|r| (r.value, r.own));
-    let params = |g: &Graph, id: &str| g.node(id).unwrap().params.iter().map(|p| (p.to_string(), p.receiver)).collect::<Vec<_>>();
+    let gives = |g: &Graph, id: &str| g.node(id).unwrap_or_else(|| panic!("{id}")).returns().cloned().map(|r| (r.value, r.own));
+    let params = |g: &Graph, id: &str| g.node(id).unwrap().params().iter().map(|p| (p.to_string(), p.receiver)).collect::<Vec<_>>();
 
     assert_eq!(params(&py, "fixture.files.Report.from_file"), [("cls".into(), true), ("path: Path".into(), false)]);
     assert_eq!(gives(&py, "fixture.sinks.base.Sink.write"), Some((String::new(), false)));
@@ -157,6 +157,7 @@ fn a_driver_says_which_way_the_data_goes() {
     let dirs = |id: &str| {
         g.node(id)
             .unwrap()
+            .body()
             .touches
             .iter()
             .filter(|t| t.kind_name() == "db_graph")
@@ -172,7 +173,7 @@ fn a_driver_says_which_way_the_data_goes() {
     assert_eq!(dirs("fixture.store.Connection.write"), set(&[("session", "write"), ("execute_write", "write")]));
     assert_eq!(dirs("fixture.store._write"), set(&[("run", "write")]), "the work `execute_write` is handed");
     assert_eq!(dirs("fixture.store.Connection.count"), set(&[("execute_query", "read")]), "`routing_=RoutingControl.READ`");
-    let peek = g.node("fixture.store.Connection.peek").unwrap().touches.iter().find(|t| t.op == "run").unwrap();
+    let peek = g.node("fixture.store.Connection.peek").unwrap().body().touches.iter().find(|t| t.op == "run").unwrap();
     assert_eq!((peek.dir_name(), peek.artifact.as_str()), ("", ""), "`session.run(\"MATCH (n:Graph) ..\")` says nothing in Python");
 }
 
@@ -182,14 +183,14 @@ fn a_driver_says_which_way_the_data_goes() {
 fn an_object_holds_what_its_constructor_was_handed() {
     let g = fixture();
     let keep: Vec<(&str, Vec<String>)> =
-        g.node("fixture.store.Cache.keep").unwrap().touches.iter().map(|t| (t.artifact.as_str(), t.by.clone())).collect();
+        g.node("fixture.store.Cache.keep").unwrap().body().touches.iter().map(|t| (t.artifact.as_str(), t.by.clone())).collect();
     assert_eq!(keep, [("warm/a.txt", vec!["fixture.store.warm".to_string()])]);
     // a dataclass is built from its fields: `Bin(root=Path("tidy"))`
-    let drop: Vec<&str> = g.node("fixture.store.Bin.drop").unwrap().touches.iter().map(|t| t.artifact.as_str()).collect();
+    let drop: Vec<&str> = g.node("fixture.store.Bin.drop").unwrap().body().touches.iter().map(|t| t.artifact.as_str()).collect();
     assert_eq!(drop, ["tidy/x.txt"]);
     // a Rust struct literal sets its fields: `Self { root }` in `Store::new(root)`
     let rs = analyze(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixture-rs"), &Options::default()).unwrap();
-    let keep: Vec<&str> = rs.node("handed.world.Store.keep").unwrap().touches.iter().map(|t| t.artifact.as_str()).collect();
+    let keep: Vec<&str> = rs.node("handed.world.Store.keep").unwrap().body().touches.iter().map(|t| t.artifact.as_str()).collect();
     assert_eq!(keep, ["stock/kept.txt"], "`Store::new(PathBuf::from(\"stock\"))`");
     // the place is `stock`'s: a route that does not build the value sees the call as it was read
     let stock = atlas_engine::story::route(&rs, "handed.world.stock", 3).unwrap();
@@ -204,7 +205,8 @@ fn an_object_holds_what_its_constructor_was_handed() {
 #[test]
 fn a_script_runs_with_its_declared_defaults() {
     let g = fixture();
-    let main: Vec<(&str, bool)> = g.node("scripts.report.main").unwrap().touches.iter().map(|t| (t.artifact.as_str(), t.fixed)).collect();
+    let main: Vec<(&str, bool)> =
+        g.node("scripts.report.main").unwrap().body().touches.iter().map(|t| (t.artifact.as_str(), t.fixed)).collect();
     assert_eq!(main, [("out/report.txt", false)]);
 }
 
@@ -233,7 +235,13 @@ fn a_change_is_what_the_call_does() {
 #[test]
 fn the_terminal_is_a_place_both_ways() {
     let t = |g: &atlas_engine::model::Graph, id: &str| {
-        g.node(id).unwrap().touches.iter().map(|t| (t.kind_name().to_string(), t.op.clone(), t.dir_name().to_string())).collect::<Vec<_>>()
+        g.node(id)
+            .unwrap()
+            .body()
+            .touches
+            .iter()
+            .map(|t| (t.kind_name().to_string(), t.op.clone(), t.dir_name().to_string()))
+            .collect::<Vec<_>>()
     };
     let read = |op: &str| ("screen".to_string(), op.to_string(), "read".to_string());
     let py = fixture();
@@ -257,6 +265,7 @@ fn sql_names_the_tables_it_reads_and_writes() {
     let sides = g
         .node("fixture.store.Ledger.keep")
         .unwrap()
+        .body()
         .touches
         .iter()
         .filter(|t| t.kind_name() == "db_sqlite")
@@ -274,6 +283,7 @@ fn a_statement_is_read_where_it_is_whole() {
     let sides = |id: &str| {
         g.node(id)
             .unwrap()
+            .body()
             .touches
             .iter()
             .filter(|t| t.kind_name() == "db_sqlite" && t.op != "connect")
@@ -295,6 +305,7 @@ fn a_library_table_says_where_its_calls_go() {
     let t = |id: &str| {
         g.node(&format!("fixture.services.{id}"))
             .unwrap()
+            .body()
             .touches
             .iter()
             .map(|t| (t.kind_name(), t.op.as_str(), t.artifact.as_str(), t.dir_name()))
@@ -314,6 +325,7 @@ fn a_library_table_says_where_its_calls_go() {
     let what = |id: &str| {
         g.node(&format!("fixture.services.{id}"))
             .unwrap()
+            .body()
             .touches
             .iter()
             .map(|t| (t.kind_name(), t.op.as_str(), t.what.as_str()))
@@ -431,7 +443,13 @@ fn a_notebook_is_a_script() {
 fn the_hub_is_a_host_and_a_shape_is_a_type() {
     let g = fixture();
     let t = |id: &str| {
-        g.node(id).unwrap().touches.iter().map(|t| (t.kind_name(), t.artifact.as_str(), t.dir_name(), t.what.as_str())).collect::<Vec<_>>()
+        g.node(id)
+            .unwrap()
+            .body()
+            .touches
+            .iter()
+            .map(|t| (t.kind_name(), t.artifact.as_str(), t.dir_name(), t.what.as_str()))
+            .collect::<Vec<_>>()
     };
     assert_eq!(t("fixture.build.fetch"), [("net", "huggingface.co", "read", "repo_id")]);
     assert_eq!(t("fixture.build.publish"), [("net", "huggingface.co", "write", "repo_id")], "`api.upload_folder` through the client `api`");
@@ -451,7 +469,7 @@ fn alternatives_carry_their_arms() {
     assert_eq!(arms("fixture.build.prepare", "fixture.build.build_graph"), [(0, 0)], "`a if c else b`: a is arm 0");
     assert_eq!(arms("fixture.build.prepare", "fixture.build.empty"), [(0, 1)]);
     assert!(arms("fixture.build.prepare", "fixture.build.enrich").is_empty(), "outside every choice");
-    let cmp = &g.node("fixture.build.prepare").unwrap().compares;
+    let cmp = &g.node("fixture.build.prepare").unwrap().body().compares;
     assert_eq!(cmp.iter().map(|c| (c.subject.as_str(), c.choice)).collect::<Vec<_>>(), [("mode", Some(0)), ("mode", Some(1))]);
 
     let rs = analyze(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixture-rs"), &Options::default()).unwrap();
@@ -468,7 +486,7 @@ fn alternatives_carry_their_arms() {
 #[test]
 fn an_arm_says_what_decides_it() {
     let g = fixture();
-    let whens = |g: &Graph, id: &str| g.node(id).unwrap().whens.clone();
+    let whens = |g: &Graph, id: &str| g.node(id).unwrap().body().whens.clone();
     let w = |c: u32, a: u32, t: &str| (c, a, t.to_string());
     assert_eq!(
         whens(&g, "fixture.build.prepare"),
@@ -486,14 +504,15 @@ fn an_arm_says_what_decides_it() {
 #[test]
 fn files_and_tables_are_places() {
     let g = fixture();
-    let t =
-        |id: &str| g.node(id).unwrap().touches.iter().map(|t| (t.kind_name(), t.artifact.as_str(), t.dir_name())).collect::<HashSet<_>>();
+    let t = |id: &str| {
+        g.node(id).unwrap().body().touches.iter().map(|t| (t.kind_name(), t.artifact.as_str(), t.dir_name())).collect::<HashSet<_>>()
+    };
     let write = t("fixture.sinks.duck.DuckSink.write");
     assert!(write.contains(&("db_duckdb", "nodes", "write")), "INSERT INTO nodes");
     assert!(write.contains(&("disk_write", "out.json", "")), "Path(\"out.json\").write_text");
     let save = t("fixture.build.save");
     assert!(save.contains(&("disk_write", "*.csv", "")), "to_csv(f\"{{name}}.csv\"): a name made of a value is known only by its format");
-    let fixed = |id: &str| g.node(id).unwrap().touches.iter().filter(|t| t.fixed).map(|t| t.op.as_str()).collect::<Vec<_>>();
+    let fixed = |id: &str| g.node(id).unwrap().body().touches.iter().filter(|t| t.fixed).map(|t| t.op.as_str()).collect::<Vec<_>>();
     assert_eq!(fixed("fixture.sinks.duck.DuckSink.write"), ["write_text"], "Path(\"out.json\") is decided by the code alone");
     assert!(fixed("fixture.build.save").is_empty(), "f\"{{name}}.csv\", path and name come from the caller");
     assert!(save.contains(&("disk_write", "*.parquet", "")), "to_parquet(path): only the format is known");
@@ -540,7 +559,7 @@ fn rust_workspace_parses() {
     // reads it
     let main = g.node("atlas.main").unwrap();
     assert_eq!(main.entry.as_ref().unwrap().options, ["--libraries", "--no-cache"]);
-    let parse = main.sites.iter().find(|s| s.command_line.is_some()).expect("main parses its command line");
+    let parse = main.body().sites.iter().find(|s| s.command_line.is_some()).expect("main parses its command line");
     assert_eq!(
         (parse.to.as_str(), parse.command_line.clone().unwrap()),
         ("atlas.Cli", vec!["--libraries".to_string(), "--no-cache".to_string()])
@@ -614,7 +633,7 @@ fn rust_workspace_parses() {
     assert!(m.contains(&("atlas-engine.model.Graph.recount".into(), "atlas-engine.model.Graph".into())), "&mut self");
     // a method runs on the value the call before it gives: `Repo::read(&root, ..)?.asked_for(package)`; the
     // `find_map` whose result the `match` takes apart into `root` and `package` is a step of its own
-    let read: Vec<&str> = g.node("atlas-engine.language.read").unwrap().sites.iter().map(|s| s.to.as_str()).collect();
+    let read: Vec<&str> = g.node("atlas-engine.language.read").unwrap().body().sites.iter().map(|s| s.to.as_str()).collect();
     assert_eq!(
         read,
         [
@@ -626,7 +645,7 @@ fn rust_workspace_parses() {
         ]
     );
     let places = |id: &str| {
-        g.node(id).unwrap().touches.iter().map(|t| (t.kind_name().to_string(), t.op.clone(), t.artifact.clone())).collect::<Vec<_>>()
+        g.node(id).unwrap().body().touches.iter().map(|t| (t.kind_name().to_string(), t.op.clone(), t.artifact.clone())).collect::<Vec<_>>()
     };
     // a name bound by `if let`: `if let Some(d) = dest.parent()` is the directory, under the
     // revision's `env::temp_dir()`, of the file written there, so making it is part of writing it
@@ -645,11 +664,11 @@ fn rust_workspace_parses() {
         written.contains(&("disk_write".into(), "write".into(), "*/.atlas/graph.json".into())),
         "the folder found on disk has no name, the file below it has: {written:?}"
     );
-    let graph = g.node("atlas.main").unwrap().touches.iter().find(|t| t.artifact == "$TMPDIR/atlas/graph.json").unwrap();
+    let graph = g.node("atlas.main").unwrap().body().touches.iter().find(|t| t.artifact == "$TMPDIR/atlas/graph.json").unwrap();
     assert!(!graph.fixed && graph.by.is_empty(), "{graph:?}");
     // a `let` holds the type of the parameter it is handed to: `joined`'s graph, the one graph
     // read or the merge of several, is the `Graph` that `join(g: &mut Graph)` takes
-    let joining = g.node("atlas-engine.parts.joined").unwrap().sites.iter().find(|s| s.to == "atlas-engine.parts.join").unwrap();
+    let joining = g.node("atlas-engine.parts.joined").unwrap().body().sites.iter().find(|s| s.to == "atlas-engine.parts.join").unwrap();
     assert_eq!(joining.hands.iter().map(|h| (h.name.as_str(), h.ty.as_str())).collect::<Vec<_>>(), [("g", "atlas-engine.model.Graph")]);
     // a generic's arguments are values where it holds them: `analyze_parts` gives the Graphs of a
     // `Result<Vec<Graph>>`, `merged` takes the Graphs of a `Vec<Graph>`, a Graph has the Nodes of
@@ -673,7 +692,7 @@ fn rust_workspace_parses() {
     // crates the tables describe (walkdir, ignore) are not read
     let new = g.node("regex.regex.string.Regex.new").expect("a crate's function Atlas calls is read");
     assert!(new.library && g.parts.iter().all(|p| !p.id.starts_with("regex")));
-    assert!(g.node("atlas-engine.entries.read_makefile").unwrap().sites.iter().any(|s| s.to == new.id));
+    assert!(g.node("atlas-engine.entries.read_makefile").unwrap().body().sites.iter().any(|s| s.to == new.id));
     assert!(g.nodes.iter().filter(|n| n.module == "ty_python_semantic.types").count() < 10);
     assert!(g.nodes.iter().all(|n| !["tree_sitter", "walkdir", "ignore"].contains(&n.id.split('.').next().unwrap_or(""))));
 }
@@ -755,7 +774,7 @@ fn views_are_fibers_and_quotients() {
 #[test]
 fn an_unknown_type_is_not_guessed() {
     let g = fixture();
-    let kinds = |id: &str| g.node(id).unwrap().touches.iter().map(|t| t.kind_name()).collect::<HashSet<_>>();
+    let kinds = |id: &str| g.node(id).unwrap().body().touches.iter().map(|t| t.kind_name()).collect::<HashSet<_>>();
     assert!(kinds("fixture.store.Ledger.keep").contains("db_sqlite"), "`self.con = sqlite3.connect(..)`");
     assert!(kinds("fixture.store.Journal.connection").contains("db_sqlite"), "`sqlite3.connect(..)` itself");
     assert!(!kinds("fixture.store.Journal.entries").contains("db_sqlite"), "`con = self.connection()`, which says nothing");
@@ -769,9 +788,9 @@ fn an_unknown_type_is_not_guessed() {
 #[test]
 fn a_client_is_a_door() {
     let g = fixture();
-    assert_eq!(g.node("ext:requests.Session").map(|n| n.door.map_or("", |d| d.as_str())), Some("net"));
-    assert_eq!(g.node("ext:neo4j.Driver").map(|n| n.door.map_or("", |d| d.as_str())), Some("db_graph"));
-    assert_eq!(g.node("ext:pandas.DataFrame").map(|n| n.door.map_or("", |d| d.as_str())), Some(""));
+    assert_eq!(g.node("ext:requests.Session").map(|n| n.door().map_or("", |d| d.as_str())), Some("net"));
+    assert_eq!(g.node("ext:neo4j.Driver").map(|n| n.door().map_or("", |d| d.as_str())), Some("db_graph"));
+    assert_eq!(g.node("ext:pandas.DataFrame").map(|n| n.door().map_or("", |d| d.as_str())), Some(""));
 }
 
 /// Two routes meet on the disk where one writes the place the other reads. A path is evaluated
@@ -782,7 +801,7 @@ fn a_client_is_a_door() {
 #[test]
 fn routes_meet_on_the_disk() {
     let g = fixture();
-    let places = |id: &str| g.node(id).unwrap().touches.iter().map(|t| (t.kind_name(), t.artifact.as_str())).collect::<HashSet<_>>();
+    let places = |id: &str| g.node(id).unwrap().body().touches.iter().map(|t| (t.kind_name(), t.artifact.as_str())).collect::<HashSet<_>>();
     assert!(places("fixture.files.unpack").contains(&("disk_write", "data/raw/")), "{:?}", places("fixture.files.unpack"));
     assert!(places("fixture.files.kinds").contains(&("disk_read", "data/raw/")), "{:?}", places("fixture.files.kinds"));
     assert!(places("fixture.files.report").contains(&("disk_write", "data/*/report.json")), "{:?}", places("fixture.files.report"));
@@ -834,14 +853,14 @@ fn rust_is_read_by_rusts_semantics() {
         "{variants:?}"
     );
     assert!(!edges(&g, EdgeKind::Has).iter().any(|(s, _)| s == "handed.world.Line"), "an enum is one of its variants, not all of them");
-    let weight = &g.node("handed.world.weight").unwrap().compares;
+    let weight = &g.node("handed.world.weight").unwrap().body().compares;
     assert_eq!(
         (weight[0].subject.as_str(), weight[0].cases.clone()),
         ("kind", vec!["page".to_string(), "log".to_string()]),
         "`matches!(kind, \"page\" | \"log\")`"
     );
     let t = |id: &str| {
-        g.node(id).unwrap().touches.iter().map(|t| (t.kind_name().to_string(), t.op.clone(), t.artifact.clone())).collect::<Vec<_>>()
+        g.node(id).unwrap().body().touches.iter().map(|t| (t.kind_name().to_string(), t.op.clone(), t.artifact.clone())).collect::<Vec<_>>()
     };
     assert!(t("handed.world.client").is_empty(), "building a client moves nothing: {:?}", t("handed.world.client"));
     // `client.get(url).send()` on a `Client::new()`: at the address `main` hands it, and at the
@@ -868,6 +887,7 @@ fn rust_reads_paths_as_built() {
         let mut out: Vec<(String, String, Vec<String>, Vec<String>)> = g
             .node(&format!("handed.world.{id}"))
             .unwrap()
+            .body()
             .touches
             .iter()
             .filter(|t| t.op != "open")
@@ -919,6 +939,7 @@ fn a_file_is_what_the_api_types_as_one() {
     let t = |id: &str| {
         g.node(id)
             .unwrap()
+            .body()
             .touches
             .iter()
             .map(|t| (t.kind_name().to_string(), t.op.clone(), t.artifact.clone(), t.fixed))
@@ -931,7 +952,7 @@ fn a_file_is_what_the_api_types_as_one() {
         "`json.dump(.., f)` writes the file `f` was opened at: {keep:?}"
     );
     let named: Vec<&str> =
-        g.node("fixture.files.keep").unwrap().touches.iter().filter(|t| t.op == "open").map(|t| t.what.as_str()).collect();
+        g.node("fixture.files.keep").unwrap().body().touches.iter().filter(|t| t.op == "open").map(|t| t.what.as_str()).collect();
     assert_eq!(named, ["keep.cache_file"], "the file is the path it is opened at, not its encoding: `keep`'s `cache_file`");
     let install = t("fixture.files.install");
     assert!(install.iter().any(|(k, _, a, _)| k == "disk_write" && a == "data/config.toml"), "{install:?}");
@@ -948,7 +969,7 @@ fn a_file_is_what_the_api_types_as_one() {
 fn building_a_client_moves_nothing() {
     let g = fixture();
     let n = |id: &str, kind: &str| {
-        g.node(id).unwrap().touches.iter().filter(|t| t.kind_name() == kind).map(|t| t.op.clone()).collect::<Vec<_>>()
+        g.node(id).unwrap().body().touches.iter().filter(|t| t.kind_name() == kind).map(|t| t.op.clone()).collect::<Vec<_>>()
     };
     assert_eq!(n("fixture.clients.content_type", "net"), ["get"], "`requests.get(url)`, and not `headers.get`");
     assert_eq!(n("fixture.clients.ask", "llm"), ["create"], "`messages.create(..)`, and not `Anthropic()`");
@@ -960,7 +981,7 @@ fn building_a_client_moves_nothing() {
 #[test]
 fn a_door_reaches_a_service() {
     let g = fixture();
-    let door = |id: &str| g.node(id).unwrap().door.map_or("", |d| d.as_str());
+    let door = |id: &str| g.node(id).unwrap().door().map_or("", |d| d.as_str());
     assert_eq!(door("fixture.sinks.duck.DuckSink"), "db_duckdb");
     assert_eq!(door("fixture.store.Connection"), "db_graph");
     assert_eq!(door("fixture.files.Report"), "", "`from_file` and `show` make no door");
@@ -975,7 +996,8 @@ fn a_door_reaches_a_service() {
 fn a_rust_body_lists_its_calls() {
     let g = atlas();
     let analyze_fn = g.nodes.iter().find(|n| n.id == "atlas-engine.parts.graph_of").unwrap();
-    let step = |to: &str| analyze_fn.sites.iter().find(|s| s.to == to).unwrap_or_else(|| panic!("{to} in {:#?}", analyze_fn.sites));
+    let step =
+        |to: &str| analyze_fn.body().sites.iter().find(|s| s.to == to).unwrap_or_else(|| panic!("{to} in {:#?}", analyze_fn.body().sites));
     let held = |ty: &str, name: &str| atlas_engine::Held::new(ty, name);
     assert_eq!(
         step("atlas-engine.language.Language.parse").gives,
@@ -988,7 +1010,7 @@ fn a_rust_body_lists_its_calls() {
         [held("atlas-engine.repo.Repo", "repo"), held("atlas-engine.options.Options", "opts")],
         "the repository is a value: what was read"
     );
-    let order: Vec<&str> = analyze_fn.sites.iter().map(|s| s.to.as_str()).collect();
+    let order: Vec<&str> = analyze_fn.body().sites.iter().map(|s| s.to.as_str()).collect();
     assert!(
         order.iter().position(|t| *t == "atlas-engine.entries.read_makefile")
             < order.iter().position(|t| *t == "atlas-engine.parts.assign"),
@@ -1018,7 +1040,7 @@ fn parse_is_a_function() {
 #[test]
 fn a_call_inside_a_call_is_composition() {
     let g = fixture();
-    let steps = &g.node("fixture.cli.build").unwrap().sites;
+    let steps = &g.node("fixture.cli.build").unwrap().body().sites;
     let to: Vec<&str> = steps.iter().map(|s| s.to.as_str()).collect();
     assert_eq!(to, ["fixture.sinks.duck.DuckSink", "fixture.build.Pipeline", "fixture.build.Pipeline.run"]);
     let sink = &steps[0].gives[0];
@@ -1031,6 +1053,7 @@ fn a_call_inside_a_call_is_composition() {
     let analyze_steps: Vec<&str> = atlas
         .node("atlas-engine.parts.graph_of")
         .unwrap()
+        .body()
         .sites
         .iter()
         .map(|s| if s.to.is_empty() { s.op.as_str() } else { s.to.as_str() })

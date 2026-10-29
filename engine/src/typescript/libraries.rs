@@ -23,7 +23,7 @@ use super::passes::{collect_imports, collect_symbols, collect_wrapped};
 use crate::builder::GraphBuilder;
 use crate::effects;
 use crate::knowledge::{self, Registry};
-use crate::model::{Node, NodeKind};
+use crate::model::{Kind, Node};
 use crate::repo::{normal, Repo};
 use crate::tree::{span, text, walk};
 
@@ -375,12 +375,14 @@ impl Libraries {
         store.files.insert(crate::tree::path_str(file), String::from_utf8_lossy(&m.src).to_string());
         store.add_node(Node {
             id: id.clone(),
-            kind: NodeKind::Module,
+            kind: Kind::Module(crate::model::Module {
+                is_pkg: file.file_stem().and_then(|s| s.to_str()) == Some("index"),
+                ..Default::default()
+            }),
             name: file.file_name().and_then(|n| n.to_str()).unwrap_or("").to_string(),
             file: crate::tree::path_str(file),
             span: span(root),
             module: id.clone(),
-            is_pkg: file.file_stem().and_then(|s| s.to_str()) == Some("index"),
             library: true,
             ..Default::default()
         });

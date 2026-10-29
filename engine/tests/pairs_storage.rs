@@ -14,8 +14,10 @@ fn storage_places_keep_the_evidence_for_their_quotient() {
         let joining = graph.node("storage.join").unwrap();
         let reading = graph.node("storage.read_pair").unwrap();
         let drawn = flow::of(&graph);
-        let reads: Vec<_> = reading.touches.iter().zip(&drawn.drawn[&reading.id]).filter(|(t, _)| t.kind_name() == "disk_read").collect();
-        let writes: Vec<_> = joining.touches.iter().zip(&drawn.drawn[&joining.id]).filter(|(t, _)| t.kind_name() == "disk_write").collect();
+        let reads: Vec<_> =
+            reading.body().touches.iter().zip(&drawn.drawn[&reading.id]).filter(|(t, _)| t.kind_name() == "disk_read").collect();
+        let writes: Vec<_> =
+            joining.body().touches.iter().zip(&drawn.drawn[&joining.id]).filter(|(t, _)| t.kind_name() == "disk_write").collect();
         assert_eq!(reads.len(), 2, "{side}: {reads:?}");
         assert_eq!(writes.len(), 1, "{side}: {writes:?}");
         assert_eq!(reads.iter().map(|(_, p)| &p.place.id).collect::<BTreeSet<_>>().len(), 2);
@@ -79,12 +81,12 @@ fn a_directory_made_for_a_database_file_belongs_to_the_database() {
             let repo = if language == "rust" { base.join("rust").join(side) } else { base.join(side) };
             let graph = analyze(&repo, &Options::default()).unwrap();
             let opening = graph.node(connect).unwrap();
-            let named: Vec<_> = opening.touches.iter().map(|t| t.file.as_str()).filter(|f| !f.is_empty()).collect();
+            let named: Vec<_> = opening.body().touches.iter().map(|t| t.file.as_str()).filter(|f| !f.is_empty()).collect();
             assert_eq!(named, [file], "{language} {side}: the connection names its file");
             let made: Vec<_> = graph
                 .nodes
                 .iter()
-                .flat_map(|n| &n.touches)
+                .flat_map(|n| &n.body().touches)
                 .filter(|t| t.kind_name().starts_with("disk") && t.artifact == "warehouse/")
                 .collect();
             assert_eq!(made.is_empty(), folded, "{language} {side}: {made:?}");

@@ -25,7 +25,7 @@ mod paths;
 
 pub use crate::builder::{foreign_type, ClassInfo, Declared, GraphBuilder, SigInfo};
 use crate::knowledge;
-use crate::model::{Entry, EntryKind, Node, NodeKind};
+use crate::model::{Entry, EntryKind, Kind, Node};
 use crate::pytypes::{Ty, Types};
 use crate::repo::Repo;
 use crate::tree::named_children;
@@ -274,13 +274,12 @@ pub fn parse(repo: &Repo, packages: &[PathBuf], project_root: Option<&Path>, opt
         store.files.insert(crate::tree::path_str(&p), String::from_utf8_lossy(&m.src).to_string());
         store.add_node(Node {
             id: mid.clone(),
-            kind: NodeKind::Module,
+            kind: Kind::Module(crate::model::Module { is_pkg, ..Default::default() }),
             name: parts.last().cloned().unwrap_or_default(),
             file: crate::tree::path_str(&p),
             span: Some((1, m.tree.root_node().end_position().row as u32 + 1)),
             module: mid.clone(),
             doc: first_docline(Some(m.tree.root_node()), &m.src),
-            is_pkg,
             // a module of a package that runs as a command, by `python -m`
             entry: runs_as_main(m.tree.root_node(), &m.src).then(|| Entry::new(EntryKind::Cli, format!("python -m {mid}"))),
             test: knowledge::python_test_file(p.file_name().and_then(|n| n.to_str()).unwrap_or("")),
@@ -306,7 +305,7 @@ pub fn parse(repo: &Repo, packages: &[PathBuf], project_root: Option<&Path>, opt
             store.files.insert(crate::tree::path_str(&p), String::from_utf8_lossy(&m.src).to_string());
             store.add_node(Node {
                 id: mid.clone(),
-                kind: NodeKind::Module,
+                kind: Kind::Module(crate::model::Module::default()),
                 name: stem,
                 file: crate::tree::path_str(&p),
                 span: Some((1, m.tree.root_node().end_position().row as u32 + 1)),
@@ -381,13 +380,12 @@ fn read_libraries(
             store.files.insert(crate::tree::path_str(&shown), String::from_utf8_lossy(&m.src).to_string());
             store.add_node(Node {
                 id: mid.clone(),
-                kind: NodeKind::Module,
+                kind: Kind::Module(crate::model::Module { is_pkg, ..Default::default() }),
                 name: mid.rsplit('.').next().unwrap_or(&mid).to_string(),
                 file: crate::tree::path_str(&shown),
                 span: Some((1, m.tree.root_node().end_position().row as u32 + 1)),
                 module: mid.clone(),
                 doc: first_docline(Some(m.tree.root_node()), &m.src),
-                is_pkg,
                 library: true,
                 ..Default::default()
             });

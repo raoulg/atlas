@@ -113,12 +113,12 @@ pub fn settle(nodes: &mut IndexMap<String, Node>, edges: &[Edge]) {
     let named: Vec<(String, Vec<String>)> = nodes
         .values()
         .filter_map(|p| {
-            let written = p.prophecy.as_ref()?.supersedes.as_deref()?;
+            let written = p.prophecy()?.supersedes.as_deref()?;
             Some((p.id.clone(), named(written, p, nodes)))
         })
         .collect();
     for (id, mut found) in named {
-        if let Some(p) = nodes.get_mut(&id).and_then(|n| n.prophecy.as_mut()) {
+        if let Some(p) = nodes.get_mut(&id).and_then(|n| n.prophecy_mut()?.as_mut()) {
             match found.len() {
                 1 => p.replaces = found.pop(),
                 _ => p.candidates = found,
@@ -126,17 +126,17 @@ pub fn settle(nodes: &mut IndexMap<String, Node>, edges: &[Edge]) {
         }
     }
     let prophetic = |nodes: &IndexMap<String, Node>, id: &str| {
-        nodes
-            .get(id)
-            .is_some_and(|n| n.prophecy.is_some() || n.cls.as_deref().and_then(|c| nodes.get(c)).is_some_and(|c| c.prophecy.is_some()))
+        nodes.get(id).is_some_and(|n| n.prophecy().is_some() || n.cls().and_then(|c| nodes.get(c)).is_some_and(|c| c.prophecy().is_some()))
     };
     let called_by_prophecy: std::collections::HashSet<&str> =
         edges.iter().filter(|e| e.kind == EdgeKind::Calls && prophetic(nodes, &e.src)).map(|e| e.dst.as_str()).collect();
     let routes: Vec<(String, String)> = nodes
         .values()
-        .filter(|n| matches!(n.kind, NodeKind::Function | NodeKind::Method) && n.entry.is_none() && !n.library && prophetic(nodes, &n.id))
+        .filter(|n| {
+            matches!(n.kind.tag(), NodeKind::Function | NodeKind::Method) && n.entry.is_none() && !n.library && prophetic(nodes, &n.id)
+        })
         .filter(|n| !called_by_prophecy.contains(n.id.as_str()))
-        .map(|n| (n.id.clone(), n.cls.as_deref().and_then(|c| nodes.get(c)).map_or(n.name.clone(), |c| format!("{}.{}", c.name, n.name))))
+        .map(|n| (n.id.clone(), n.cls().and_then(|c| nodes.get(c)).map_or(n.name.clone(), |c| format!("{}.{}", c.name, n.name))))
         .collect();
     for (id, label) in routes {
         if let Some(n) = nodes.get_mut(&id) {
@@ -172,7 +172,7 @@ fn named(written: &str, p: &Node, nodes: &IndexMap<String, Node>) -> Vec<String>
         return vec![name];
     }
     let tail = format!(".{name}");
-    nodes.values().filter(|n| n.id != p.id && n.prophecy.is_none() && !n.library && n.id.ends_with(&tail)).map(|n| n.id.clone()).collect()
+    nodes.values().filter(|n| n.id != p.id && n.prophecy().is_none() && !n.library && n.id.ends_with(&tail)).map(|n| n.id.clone()).collect()
 }
 
 /// Split on commas and spaces that are not inside quotes.

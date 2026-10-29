@@ -9,7 +9,7 @@ use anyhow::Result;
 
 use crate::cache::Check;
 use crate::knowledge;
-use crate::model::{Edge, EdgeKind, EntryKind, Graph, NodeKind, Part};
+use crate::model::{Edge, EdgeKind, EntryKind, Graph, Kind, NodeKind, Part};
 use crate::options::Options;
 use crate::paths::{method_and_path, serving};
 use crate::repo::Repo;
@@ -203,7 +203,7 @@ pub fn assign(g: &mut Graph) {
     let mut ids: Vec<String> = g
         .nodes
         .iter()
-        .filter(|n| n.kind == NodeKind::Module && n.is_pkg && !n.library && !n.id.contains('.'))
+        .filter(|n| matches!(&n.kind, Kind::Module(m) if m.is_pkg) && !n.library && !n.id.contains('.'))
         .map(|n| n.id.clone())
         .collect();
     if ids.is_empty() {
@@ -280,8 +280,8 @@ pub fn join(g: &mut Graph) {
         }
     }
     let mut edges: BTreeMap<(String, String), String> = BTreeMap::new();
-    for n in g.nodes.iter().filter(|n| !n.asks.is_empty()) {
-        for ask in &n.asks {
+    for n in g.nodes.iter().filter(|n| !n.body().asks.is_empty()) {
+        for ask in &n.body().asks {
             let (method, path) = method_and_path(ask);
             for (part, served) in &routes {
                 if *part == n.part {

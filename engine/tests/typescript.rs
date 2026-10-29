@@ -5,7 +5,7 @@ use std::collections::HashSet;
 use std::path::PathBuf;
 
 use atlas_engine::principles::check;
-use atlas_engine::{analyze, EdgeKind, EntryKind, Graph, NodeKind, Options};
+use atlas_engine::{analyze, EdgeKind, EntryKind, Graph, Kind, NodeKind, Options};
 
 fn fixture() -> Graph {
     let repo = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixture-ts");
@@ -26,13 +26,13 @@ fn has(set: &HashSet<(String, String)>, src: &str, dst: &str) -> bool {
 fn files_are_modules_and_types_are_types() {
     let g = fixture();
     assert_eq!((g.language.as_str(), g.root.as_str()), ("typescript", "fixture-ts"));
-    let kind = |id: &str| g.node(&format!("fixture-ts.{id}")).map(|n| n.kind);
+    let kind = |id: &str| g.node(&format!("fixture-ts.{id}")).map(|n| n.kind.tag());
     assert_eq!(kind("lib.model"), Some(NodeKind::Module));
     assert_eq!(kind("lib"), Some(NodeKind::Module), "lib/index.ts stands for lib");
-    assert!(g.node("fixture-ts.lib").unwrap().is_pkg);
+    assert!(matches!(&g.node("fixture-ts.lib").unwrap().kind, Kind::Module(m) if m.is_pkg));
     assert_eq!(kind("lib.model.Regel"), Some(NodeKind::Class), "an interface is a type");
     let ctor = g.node("fixture-ts.lib.model.Laag.constructor").unwrap();
-    assert!(ctor.ctor && !ctor.on_class, "the constructor initializes what `new Laag()` makes");
+    assert!(ctor.ctor() && !ctor.on_class(), "the constructor initializes what `new Laag()` makes");
     let laag = g.node("fixture-ts.lib.model.Laag").unwrap();
     assert_eq!(laag.initializer(|id| g.node(id)).as_deref(), Some("fixture-ts.lib.model.Laag.constructor"));
     let fields = edges(&g, EdgeKind::Has);
@@ -83,7 +83,7 @@ fn routes_render_components_and_hand_on_functions() {
 fn a_promise_is_kept_by_who_implements_it() {
     let g = fixture();
     assert_eq!(
-        g.node("fixture-ts.lib.bron.BronLike.lees").map(|n| n.kind),
+        g.node("fixture-ts.lib.bron.BronLike.lees").map(|n| n.kind.tag()),
         Some(NodeKind::Method),
         "a method signature of a named object type"
     );
@@ -103,11 +103,11 @@ fn a_promise_is_kept_by_who_implements_it() {
 fn fetch_is_the_web_and_console_the_screen() {
     let g = fixture();
     let laad = g.node("fixture-ts.lib.api.laad").unwrap();
-    let touched: Vec<(&str, &str)> = laad.touches.iter().map(|t| (t.kind_name(), t.artifact.as_str())).collect();
+    let touched: Vec<(&str, &str)> = laad.body().touches.iter().map(|t| (t.kind_name(), t.artifact.as_str())).collect();
     assert!(touched.contains(&("net", "api.example.org")), "{touched:?}");
     assert!(touched.contains(&("screen", "")));
     let kaart = g.node("fixture-ts.components.Kaart.Kaart").unwrap();
-    assert!(kaart.touches.iter().any(|t| t.kind_name() == "screen" && t.op == "render"), "a component renders to the screen");
+    assert!(kaart.body().touches.iter().any(|t| t.kind_name() == "screen" && t.op == "render"), "a component renders to the screen");
 }
 
 /// The principles read TypeScript as they read Python: `kies` tests `modus` twice.
@@ -147,6 +147,7 @@ fn a_client_moves_data_where_it_is_used() {
     let t = |id: &str| {
         g.node(&format!("fixture-ts.{id}"))
             .unwrap()
+            .body()
             .touches
             .iter()
             .map(|t| (t.kind_name().to_string(), t.op.clone(), t.artifact.clone(), t.dir_name().to_string()))
@@ -186,6 +187,7 @@ fn paths_and_requests_are_evaluated() {
     let t = |id: &str| {
         g.node(&format!("fixture-ts.{id}"))
             .unwrap()
+            .body()
             .touches
             .iter()
             .map(|t| (t.kind_name().to_string(), t.artifact.clone()))
@@ -194,7 +196,7 @@ fn paths_and_requests_are_evaluated() {
     // the file `klanten` hands `lees`, in the routes that reach `klanten`: under `DATA`, what
     // `DATA_DIR` says or its default, one input drawn as its default
     let lees: Vec<(&str, &[String])> =
-        g.node("fixture-ts.server.opslag.lees").unwrap().touches.iter().map(|t| (t.artifact.as_str(), t.by.as_slice())).collect();
+        g.node("fixture-ts.server.opslag.lees").unwrap().body().touches.iter().map(|t| (t.artifact.as_str(), t.by.as_slice())).collect();
     let klanten = &["fixture-ts.server.opslag.klanten".to_string()][..];
     assert_eq!(lees, [("data/klanten.csv", klanten)], "`lees(\"klanten.csv\")` under `DATA`");
     // an object holds what its constructor was handed: a parameter property, and `this.map = map`;
@@ -233,11 +235,14 @@ fn a_change_to_an_input_is_a_change() {
 fn a_typescript_body_lists_its_calls() {
     let g = fixture();
     let scherm = g.nodes.iter().find(|n| n.id.ends_with("routes.kaart.KaartScherm")).expect("KaartScherm");
-    let laag = scherm.sites.iter().find(|s| s.to.ends_with("model.Laag")).expect("new Laag");
-    assert!(laag.gives.iter().any(|h| h.name == "laag" && h.ty.ends_with("model.Laag")), "{:#?}", scherm.sites);
-    let toon = scherm.sites.iter().find(|s| s.to.ends_with("Laag.toon")).expect("laag.toon()");
+    let laag = scherm.body().sites.iter().find(|s| s.to.ends_with("model.Laag")).expect("new Laag");
+    assert!(laag.gives.iter().any(|h| h.name == "laag" && h.ty.ends_with("model.Laag")), "{:#?}", scherm.body().sites);
+    let toon = scherm.body().sites.iter().find(|s| s.to.ends_with("Laag.toon")).expect("laag.toon()");
     assert!(toon.hands.iter().any(|h| h.name == "laag"), "{:#?}", toon);
-    assert!(scherm.sites.iter().position(|s| s.to.ends_with("model.Laag")) < scherm.sites.iter().position(|s| s.to.ends_with("Laag.toon")));
+    assert!(
+        scherm.body().sites.iter().position(|s| s.to.ends_with("model.Laag"))
+            < scherm.body().sites.iter().position(|s| s.to.ends_with("Laag.toon"))
+    );
 }
 
 /// A small package written to a directory of its own, read, and removed.
@@ -324,9 +329,9 @@ export function unused() {}
     let main = |g: &Graph| g.node(&format!("{}.main.main", g.root)).unwrap().clone();
     let read = one.node("filekit.lib.read.readConfig").expect("the function the program calls is read");
     assert!(read.library, "a library's function is marked as one");
-    let file = read.touches.iter().find(|t| t.kind_name() == "disk_read").expect("the package's own code reads the disk");
+    let file = read.body().touches.iter().find(|t| t.kind_name() == "disk_read").expect("the package's own code reads the disk");
     assert_eq!((file.op.as_str(), file.artifact.as_str()), ("readFileSync", "settings.json"), "at the path the program hands it: {file:?}");
-    let to: Vec<String> = main(&one).sites.iter().map(|s| if s.to.is_empty() { s.op.clone() } else { s.to.clone() }).collect();
+    let to: Vec<String> = main(&one).body().sites.iter().map(|s| if s.to.is_empty() { s.op.clone() } else { s.to.clone() }).collect();
     assert_eq!(
         to,
         ["filekit.lib.read.readConfig", "filekit.lib.list.listed"],
@@ -338,7 +343,7 @@ export function unused() {}
         one.node("filekit.lib.clean.clean").is_none() && two.node("filekit.lib.clean.clean").is_some(),
         "each round reaches one call further"
     );
-    assert!(main(&one).touches.iter().any(|t| t.kind_name() == "net"), "a package the tables describe stays a table's call");
+    assert!(main(&one).body().touches.iter().any(|t| t.kind_name() == "net"), "a package the tables describe stays a table's call");
     for g in [&one, &two] {
         assert!(
             g.nodes.iter().all(|n| !n.id.starts_with("fastsum") && !n.id.starts_with("axios")),
@@ -347,7 +352,7 @@ export function unused() {}
         assert!(check(g).iter().all(|f| !f.node.starts_with("filekit")), "a library's code is not judged");
     }
     assert!(none.nodes.iter().all(|n| !n.library), "no round reads no package");
-    assert!(main(&none).sites.iter().all(|s| s.to.is_empty()), "a package not read is a call Atlas does not follow");
+    assert!(main(&none).body().sites.iter().all(|s| s.to.is_empty()), "a package not read is a call Atlas does not follow");
 }
 
 /// What lies beyond the rounds is glued into the package's function at the border: the program
@@ -385,18 +390,19 @@ function write(path, text) {
     assert!(one.node("deepkit.prepare").is_none() && one.node("deepkit.write").is_none(), "what lies beyond the rounds is not drawn");
     let save = one.node("deepkit.save").expect("the function the program calls");
     let wrote = save
+        .body()
         .touches
         .iter()
         .find(|t| t.kind_name() == "disk_write")
-        .unwrap_or_else(|| panic!("the border writes what its code beyond writes: {:?}", save.touches));
+        .unwrap_or_else(|| panic!("the border writes what its code beyond writes: {:?}", save.body().touches));
     assert_eq!(wrote.artifact, "out.txt", "at the path the program hands it: {wrote:?}");
-    let call = save.sites.iter().find(|s| s.to == "deepkit.prepare").expect("save's call into what lies beyond");
+    let call = save.body().sites.iter().find(|s| s.to == "deepkit.prepare").expect("save's call into what lies beyond");
     assert_eq!(wrote.line, call.line, "drawn at the border's call that leads there");
     let route = atlas_engine::story::route(&one, &format!("{}.main.main", one.root), 2).unwrap();
     assert!(route.contains("out.txt"), "the program's route reaches the place:\n{route}");
-    assert!(three.node("deepkit.write").unwrap().touches.iter().any(|t| t.kind_name() == "disk_write"));
+    assert!(three.node("deepkit.write").unwrap().body().touches.iter().any(|t| t.kind_name() == "disk_write"));
     assert!(
-        three.node("deepkit.save").unwrap().touches.iter().all(|t| t.kind_name() != "disk_write"),
+        three.node("deepkit.save").unwrap().body().touches.iter().all(|t| t.kind_name() != "disk_write"),
         "a function's own arrow is not what it reaches"
     );
 }
@@ -486,6 +492,7 @@ export function pick(name: string): void {
     let globals = |f: &str| -> Vec<(String, String)> {
         let n = g.node(&format!("{root}{f}")).unwrap_or_else(|| panic!("{f}"));
         let mut out: Vec<(String, String)> = n
+            .body()
             .touches
             .iter()
             .filter(|t| t.kind_name() == "global")
@@ -565,7 +572,7 @@ await main(process.argv.slice(2));
     );
     let main = g.node(&format!("{}.cli.main", g.root)).expect("main");
     let places = |kind: &str| -> Vec<&str> {
-        let mut out: Vec<&str> = main.touches.iter().filter(|t| t.kind_name() == kind).map(|t| t.artifact.as_str()).collect();
+        let mut out: Vec<&str> = main.body().touches.iter().filter(|t| t.kind_name() == kind).map(|t| t.artifact.as_str()).collect();
         out.sort();
         out
     };
@@ -574,10 +581,11 @@ await main(process.argv.slice(2));
     // an option is the entry's input, as a parameter of a command is: the code does not alone
     // decide the place its default names
     let defaults: Vec<&atlas_engine::Touch> =
-        main.touches.iter().filter(|t| matches!(t.artifact.as_str(), "data/out.txt" | "logs/run.log")).collect();
+        main.body().touches.iter().filter(|t| matches!(t.artifact.as_str(), "data/out.txt" | "logs/run.log")).collect();
     assert!(defaults.len() == 2 && defaults.iter().all(|t| !t.fixed && t.by.is_empty()), "{defaults:#?}");
     let settings = format!("{}.cli.Settings", g.root);
     let made: Vec<(&str, Vec<(&str, &str)>)> = main
+        .body()
         .sites
         .iter()
         .filter(|s| !s.to.is_empty())
@@ -641,6 +649,7 @@ extra();
     let parse = |f: &str| {
         g.node(&format!("{}.cli.{f}", g.root))
             .unwrap()
+            .body()
             .sites
             .iter()
             .find(|s| s.command_line.is_some())
@@ -653,7 +662,8 @@ extra();
         (main.op.as_str(), main.command_line.clone().unwrap(), names(&main.gives)),
         ("parseArgs", vec!["--out".to_string(), "--verbose".to_string()], vec!["values".to_string(), "positionals".to_string()])
     );
-    let running = g.node(&format!("{}.cli.main", g.root)).unwrap().sites.iter().find(|s| s.to.ends_with(".run.run")).unwrap().clone();
+    let running =
+        g.node(&format!("{}.cli.main", g.root)).unwrap().body().sites.iter().find(|s| s.to.ends_with(".run.run")).unwrap().clone();
     assert_eq!(names(&running.hands), ["values", "positionals"]);
     let extra = parse("extra");
     assert_eq!(
@@ -742,14 +752,15 @@ export function main(n: number): number {
     );
     let main = g.node(&format!("{}.main.main", g.root)).expect("main");
     let bx = format!("{}.model.Box", g.root);
-    let built: Vec<u32> = main.sites.iter().filter(|s| s.to == bx).map(|s| s.line).collect();
+    let built: Vec<u32> = main.body().sites.iter().filter(|s| s.to == bx).map(|s| s.line).collect();
     assert_eq!(
         built,
         [21, 22, 23, 24, 24],
         "`new Shelf({{..}})`, `satisfies`, `as`, `weigh({{..}})`, `shelf.put({{..}})`: {:#?}",
-        main.sites
+        main.body().sites
     );
     let kept: Vec<&str> = main
+        .body()
         .sites
         .iter()
         .filter(|s| s.to == bx)
@@ -757,9 +768,9 @@ export function main(n: number): number {
         .filter(|n| !n.starts_with('#'))
         .collect();
     assert_eq!(kept, ["kept", "cast"], "a literal kept by a name gives it");
-    let weigh = main.sites.iter().find(|s| s.to.ends_with(".weigh")).expect("weigh");
+    let weigh = main.body().sites.iter().find(|s| s.to.ends_with(".weigh")).expect("weigh");
     assert!(weigh.hands.iter().any(|h| h.ty == bx && h.name.starts_with('#')), "weigh is handed the Box the literal builds: {weigh:#?}");
-    let part = main.sites.iter().find(|s| s.to.ends_with(".part")).expect("part");
+    let part = main.body().sites.iter().find(|s| s.to.ends_with(".part")).expect("part");
     assert!(part.hands.is_empty(), "`Partial<Box>` is no Box: {part:#?}");
 }
 
@@ -825,7 +836,8 @@ export function main(): number {
     assert_eq!(via, [("ext:javascript.Array".to_string(), "xs".to_string())], "refill changes what it hands addAll");
     let main = g.node(&format!("{r}.main.main")).expect("main");
     let gives = |to: &str| -> Vec<Vec<(String, String)>> {
-        main.sites
+        main.body()
+            .sites
             .iter()
             .filter(|s| s.to.ends_with(to))
             .map(|s| s.gives.iter().map(|h| (h.ty.rsplit('.').next().unwrap_or("").to_string(), h.name.clone())).collect())
@@ -836,7 +848,7 @@ export function main(): number {
     assert_eq!(gives(".refill"), [vec![("Array".to_string(), "lines".to_string())]], "through `addAll`");
     assert_eq!(gives(".fill"), [vec![bx], vec![]], "`fill(box.items)` changes the box; a spread is a new array");
     let add = g.node(&format!("{r}.main.Box.add")).expect("add");
-    let push = add.sites.iter().find(|s| s.op == "push").unwrap_or_else(|| panic!("{:#?}", add.sites));
+    let push = add.body().sites.iter().find(|s| s.op == "push").unwrap_or_else(|| panic!("{:#?}", add.body().sites));
     let held = |hs: &[atlas_engine::Held]| -> Vec<(String, String)> { hs.iter().map(|h| (h.ty.clone(), h.name.clone())).collect() };
     let this = format!("{r}.main.Box");
     assert!(push.changes && !push.not_followed, "{push:#?}");

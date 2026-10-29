@@ -618,7 +618,7 @@ pub(super) fn link_calls<'t>(
     let read = {
         let mut b = Body::new(modules, store, crate_ids, eval, returned, m, &n, d, body);
         // the error type `?` converts to: the program's type the signature's `Result` names, else none of the code's
-        let error = n.returns.as_ref().filter(|r| r.fails).map(|r| {
+        let error = n.returns().filter(|r| r.fails).map(|r| {
             let named = crate::body::error_written(&r.written).map(|e| e.split('<').next().unwrap_or(e).trim_start_matches(['&', ' ']));
             let parts = named.map(|e| e.trim_start_matches("dyn ").split("::").map(str::to_string).collect::<Vec<_>>());
             parts.and_then(|p| b.resolve(&p)).and_then(|t| b.class_of(&t)).unwrap_or_default()
@@ -656,20 +656,20 @@ pub(super) fn link_calls<'t>(
         steps.fills(&held);
         b.read
     };
-    let receiver = n.params.iter().find(|p| p.receiver).map(|p| p.name.as_str());
+    let receiver = n.params().iter().find(|p| p.receiver).map(|p| p.name.as_str());
     let is_type = |(a, b): (usize, usize)| names_type(&String::from_utf8_lossy(&m.src[a..b]));
     let compares =
         crate::tree::compares(body, &m.src, steps.choices(), &COMPARES, &CHOICES, &crate::tree::Scope { receiver, is_type: &is_type });
     steps.finish(store, id);
-    if let Some(node) = store.nodes.get_mut(id) {
-        node.compares = compares;
-        node.raises = read.exits || crate::tree::holds(body, &m.src, panics, &["function_item", "impl_item", "trait_item", "mod_item"]);
+    if let Some(b) = store.nodes.get_mut(id).and_then(Node::body_mut) {
+        b.compares = compares;
+        b.raises = read.exits || crate::tree::holds(body, &m.src, panics, &["function_item", "impl_item", "trait_item", "mod_item"]);
     }
     for (t, input) in read.mutates {
         store.add_edge(id, &t, EdgeKind::Mutates, Some(input));
     }
-    if let Some(node) = store.nodes.get_mut(id) {
-        node.calls_handed = read.unresolved.iter().any(|(u, _)| n.params.iter().any(|p| &p.name == u));
+    if let Some(b) = store.nodes.get_mut(id).and_then(Node::body_mut) {
+        b.calls_handed = read.unresolved.iter().any(|(u, _)| n.params().iter().any(|p| &p.name == u));
     }
     for (name, bucket) in read.unresolved {
         store.not_followed(name, bucket);
@@ -760,7 +760,7 @@ impl<'a, 't> Body<'a, 't> {
         d: TsNode<'t>,
         body: TsNode<'t>,
     ) -> Self {
-        let cls = n.cls.clone();
+        let cls = n.cls().map(str::to_string);
         let attr_types = cls.as_ref().and_then(|c| store.classes.get(c)).map(|c| c.attr_types.clone()).unwrap_or_default();
         let params = paths::param_names(d, &m.src);
         let mut b = Body {
@@ -786,7 +786,7 @@ impl<'a, 't> Body<'a, 't> {
             returned,
             bound: Default::default(),
             keeps_command_line: HashSet::new(),
-            unit: n.returns.as_ref().map_or(true, |r| r.value.is_empty() && !r.own),
+            unit: n.returns().map_or(true, |r| r.value.is_empty() && !r.own),
             loop_values: HashSet::new(),
             read: Read::default(),
         };
@@ -1293,7 +1293,7 @@ impl<'a, 't> Body<'a, 't> {
                 }
                 let ty = p.child_by_field_name("type");
                 let named = |parts: &Vec<String>| match parts.as_slice() {
-                    [s] if s == "Self" => n.cls.clone(),
+                    [s] if s == "Self" => n.cls().map(str::to_string),
                     _ => resolve(home, parts, self.modules, &self.store.nodes, self.crate_ids),
                 };
                 // a class of the program's as its parameter is typed, the records it holds
@@ -1321,7 +1321,7 @@ impl<'a, 't> Body<'a, 't> {
     fn callee(&self, c: TsNode) -> Option<(String, bool)> {
         let src = self.src;
         let f = function(c)?;
-        let own = |t: String| self.store.nodes.get(&t).filter(|n| matches!(n.kind, NodeKind::Function | NodeKind::Method)).map(|_| t);
+        let own = |t: String| self.store.nodes.get(&t).filter(|n| matches!(n.kind.tag(), NodeKind::Function | NodeKind::Method)).map(|_| t);
         if f.kind() == "field_expression" {
             let class = self.value_class(f.child_by_field_name("value")?)?;
             return own(self.store.method_of(&class, text(f.child_by_field_name("field")?, src))?).map(|t| (t, true));
@@ -1496,7 +1496,7 @@ impl<'a, 't> Body<'a, 't> {
     /// builds by its literal. Each is a step of its own, and takes the names in it itself.
     fn steps_within(&self, p: TsNode) -> Vec<std::ops::Range<usize>> {
         let src = self.src;
-        let own = |t: &str| self.store.nodes.get(t).map_or(false, |n| matches!(n.kind, NodeKind::Function | NodeKind::Method));
+        let own = |t: &str| self.store.nodes.get(t).map_or(false, |n| matches!(n.kind.tag(), NodeKind::Function | NodeKind::Method));
         let mut out = vec![];
         for n in walk(p, &["call_expression", "struct_expression", "token_tree"]) {
             match n.kind() {
@@ -1712,7 +1712,7 @@ impl<'a, 't> Body<'a, 't> {
                 _ => self.resolve_value(a, &ps),
             };
             let Some(t) =
-                handed.filter(|t| self.store.nodes.get(t).map_or(false, |n| matches!(n.kind, NodeKind::Function | NodeKind::Method)))
+                handed.filter(|t| self.store.nodes.get(t).map_or(false, |n| matches!(n.kind.tag(), NodeKind::Function | NodeKind::Method)))
             else {
                 continue;
             };
@@ -1723,7 +1723,7 @@ impl<'a, 't> Body<'a, 't> {
             let elements: Vec<Option<TsNode>> = each_of(c, self.src).into_iter().map(Some).collect();
             let hands = self.hands(&elements, &steps.kept);
             // the element fills the function's parameter at its place, the first of a method being the value it runs on
-            let takes_self = self.store.nodes[&t].params.first().map_or(false, |p| p.receiver);
+            let takes_self = self.store.nodes[&t].params().first().map_or(false, |p| p.receiver);
             let slot = match (takes_self, element) {
                 (true, 0) => Slot::Receiver,
                 (true, at) => Slot::At(at - 1),
@@ -1820,7 +1820,7 @@ impl<'a, 't> Body<'a, 't> {
     fn own_step(&mut self, steps: &mut Steps, c: TsNode<'t>, t: &str, recv: Option<TsNode<'t>>, class: Option<&str>, via: Option<String>) {
         let kind = if self.store.nodes[t].kind == NodeKind::Class { EdgeKind::Instantiates } else { EdgeKind::Calls };
         let on_receiver = recv.map_or(false, |r| r.kind() == "self");
-        let on = class.filter(|k| self.store.nodes[t].cls.as_deref().map_or(false, |b| b != *k)).unwrap_or_default().to_string();
+        let on = class.filter(|k| self.store.nodes[t].cls().map_or(false, |b| b != *k)).unwrap_or_default().to_string();
         // a type built by parsing the command line the program is run with (`Cli::parse()`)
         let command_line =
             (kind == EdgeKind::Instantiates && c.kind() == "call_expression").then(|| self.eval.command_line(self.m, c)).flatten();
@@ -1849,7 +1849,7 @@ impl<'a, 't> Body<'a, 't> {
     /// Whether the program's function `t` takes the value it runs on, `self`: a method called by its
     /// path is handed it first.
     fn takes_self(&self, t: &str) -> bool {
-        let n = self.store.nodes.get(t).filter(|n| matches!(n.kind, NodeKind::Function | NodeKind::Method));
+        let n = self.store.nodes.get(t).filter(|n| matches!(n.kind.tag(), NodeKind::Function | NodeKind::Method));
         n.and_then(|n| def_node(self.modules.get(&n.module)?, n)).is_some_and(paths::takes_self)
     }
 
@@ -1857,7 +1857,9 @@ impl<'a, 't> Body<'a, 't> {
     /// name and place: a method called on a value is handed the rest, one called by its path its
     /// receiver first.
     fn passed(&self, c: TsNode<'t>, t: &str, on_value: bool) -> Vec<(String, usize, TsNode<'t>)> {
-        let Some(n) = self.store.nodes.get(t).filter(|n| matches!(n.kind, NodeKind::Function | NodeKind::Method)) else { return vec![] };
+        let Some(n) = self.store.nodes.get(t).filter(|n| matches!(n.kind.tag(), NodeKind::Function | NodeKind::Method)) else {
+            return vec![];
+        };
         let Some((home, def)) = self.modules.get(&n.module).and_then(|home| Some((home, def_node(home, n)?))) else { return vec![] };
         let skip = usize::from(!on_value && paths::takes_self(def));
         paths::param_names(def, &home.src)
@@ -1870,7 +1872,7 @@ impl<'a, 't> Body<'a, 't> {
 
     /// The call of the program's function `t` with what it hands each of its parameters, by name.
     fn argument(&self, t: &str, passed: Vec<(String, usize, TsNode<'t>)>) -> Option<Arg<'t>> {
-        let n = self.store.nodes.get(t).filter(|n| matches!(n.kind, NodeKind::Function | NodeKind::Method))?;
+        let n = self.store.nodes.get(t).filter(|n| matches!(n.kind.tag(), NodeKind::Function | NodeKind::Method))?;
         def_node(self.modules.get(&n.module)?, n)?;
         let passed = passed.into_iter().filter(|(p, _, _)| !p.is_empty()).map(|(p, _, a)| (p, a)).collect();
         Some(Arg {
@@ -2143,7 +2145,7 @@ impl<'a, 't> Body<'a, 't> {
     /// one the body knows the value to be of. Gives the method, the value and its class; none for a
     /// function that takes no `self`.
     fn on_first(&self, c: TsNode<'t>, t: &str) -> Option<(String, TsNode<'t>, Option<String>)> {
-        let n = self.store.nodes.get(t).filter(|n| n.kind == NodeKind::Method && n.params.first().map_or(false, |p| p.receiver))?;
+        let n = self.store.nodes.get(t).filter(|n| n.kind == NodeKind::Method && n.params().first().map_or(false, |p| p.receiver))?;
         let first = positional(c).into_iter().next().flatten()?;
         let named = c
             .child_by_field_name("function")

@@ -239,7 +239,7 @@ impl<'a> Eval<'a> {
                 let parts = path_parts(Some(f), src);
                 let own = resolve_value(at.m, &parts, self.modules, &self.nodes, self.crate_ids)
                     .and_then(|id| self.nodes.get(&id))
-                    .map_or(false, |n| matches!(n.kind, NodeKind::Function | NodeKind::Method));
+                    .map_or(false, |n| matches!(n.kind.tag(), NodeKind::Function | NodeKind::Method));
                 if own {
                     return None;
                 }
@@ -459,7 +459,7 @@ impl<'a> Eval<'a> {
             return None;
         }
         let id = resolve_value(at.m, parts, self.modules, &self.nodes, self.crate_ids).filter(|id| !id.starts_with("ext:"))?;
-        let n = self.nodes.get(&id).filter(|n| matches!(n.kind, NodeKind::Function | NodeKind::Method))?;
+        let n = self.nodes.get(&id).filter(|n| matches!(n.kind.tag(), NodeKind::Function | NodeKind::Method))?;
         let home = self.modules.get(&n.module)?;
         let def = def_node(home, n)?;
         let names = param_names(def, &home.src);

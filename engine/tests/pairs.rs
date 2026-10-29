@@ -27,7 +27,8 @@ fn two_parts_are_named_apart() {
         assert_eq!(parts(&shortcut), ["billing/app", "orders/app"], "{language}");
         // the shortcut's ids with the directory as the name the code does not give
         let named = |g: &Graph, name: &dyn Fn(&str) -> String| {
-            let mut out: Vec<String> = g.nodes.iter().filter(|n| !n.library).map(|n| format!("{} {:?}", name(&n.id), n.touches)).collect();
+            let mut out: Vec<String> =
+                g.nodes.iter().filter(|n| !n.library).map(|n| format!("{} {:?}", name(&n.id), n.body().touches)).collect();
             out.extend(g.edges.iter().map(|e| format!("{} {:?} {}", name(&e.src), e.kind, name(&e.dst))));
             out.sort();
             out
@@ -59,7 +60,7 @@ fn a_request_meets_the_route_it_names() {
             "a path looked up at run time names no route, and a path in a table is no request"
         );
         for f in ["item", "order"].map(|f| at(shortcut, f)) {
-            let net = g.node(&f).unwrap().touches.iter().find(|t| t.kind == World::Net).cloned();
+            let net = g.node(&f).unwrap().body().touches.iter().find(|t| t.kind == World::Net).cloned();
             assert!(
                 net.as_ref().map_or(false, |t| t.artifact.is_empty() && !t.fixed),
                 "{f} asks an address the code does not say: {net:?}"
@@ -78,8 +79,9 @@ fn a_request_meets_the_route_it_names() {
 fn a_request_goes_the_way_its_method_says() {
     use atlas_engine::flow::Side;
     let g = pair("requests");
-    let side =
-        |f: &str| -> Vec<Side> { g.node(f).unwrap().touches.iter().filter(|t| t.kind == World::Net).map(|t| t.side()).collect::<Vec<_>>() };
+    let side = |f: &str| -> Vec<Side> {
+        g.node(f).unwrap().body().touches.iter().filter(|t| t.kind == World::Net).map(|t| t.side()).collect::<Vec<_>>()
+    };
     for (clean, shortcut) in [("clean", "shortcut"), ("pyclean", "pyshortcut"), ("rsclean", "rsshortcut")] {
         let at = |side: &str, f: &str| if side.starts_with("rs") { format!("{side}.{f}") } else { format!("{side}.client.{f}") };
         assert_eq!(side(&at(clean, "item")), [Side::In], "{clean}: a GET reads");

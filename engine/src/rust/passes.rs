@@ -17,7 +17,7 @@ use super::module::{
 use super::paths::{Eval, Evaluated};
 use crate::builder::{foreign_type, ClassInfo, GraphBuilder};
 use crate::knowledge;
-use crate::model::{EdgeKind, Entry, EntryKind, Node, NodeKind};
+use crate::model::{Class, EdgeKind, Entry, EntryKind, External, Function, Kind, Method, Node, NodeKind};
 use crate::tree::{named_children, span, text, walk};
 
 /// A trait impl found in a module, resolved once bindings exist.
@@ -173,17 +173,14 @@ pub(super) fn collect_symbols(m: &mut Module, store: &mut GraphBuilder) {
                 let entry = entry_of(m, item, src, &name, &attrs);
                 store.add_node(Node {
                     id: nid.clone(),
-                    kind: NodeKind::Function,
                     private: !visible(item),
                     name,
                     file: file.clone(),
                     span: span(item),
                     module: m.id.clone(),
                     doc: doc_of(item, src),
-                    decorators: attrs,
-                    params,
-                    returns,
                     entry,
+                    kind: Kind::Function(Function { decorators: attrs, params, returns, ..Default::default() }),
                     ..Default::default()
                 });
                 store.add_edge(&m.id, &nid, EdgeKind::Contains, None);
@@ -207,20 +204,20 @@ pub(super) fn collect_symbols(m: &mut Module, store: &mut GraphBuilder) {
                             store.sigs.insert(mnid.clone(), sig);
                             store.add_node(Node {
                                 id: mnid.clone(),
-                                kind: NodeKind::Method,
                                 name: mname.clone(),
                                 file: file.clone(),
                                 span: span(f),
                                 module: m.id.clone(),
                                 doc: doc_of(f, src),
-                                cls: Some(nid.clone()),
-                                decorators: attrs_of(f, src),
-                                on_class: !takes_self(&params),
-                                ctor: constructs(&params, &returns, &name),
-                                // a trait's method without a body of its own is what its implementations fill in
-                                declared: f.kind() == "function_signature_item",
-                                params,
-                                returns,
+                                kind: Kind::Method(Method {
+                                    cls: nid.clone(),
+                                    on_class: !takes_self(&params),
+                                    ctor: constructs(&params, &returns, &name),
+                                    // a trait's method without a body of its own is what its implementations fill in
+                                    declared: f.kind() == "function_signature_item",
+                                    function: Function { decorators: attrs_of(f, src), params, returns, ..Default::default() },
+                                    ..Default::default()
+                                }),
                                 ..Default::default()
                             });
                             methods.push(mname);
@@ -244,16 +241,14 @@ pub(super) fn collect_symbols(m: &mut Module, store: &mut GraphBuilder) {
                 let entry = exported(m, item, src).then(|| Entry::new(EntryKind::Export, name.clone()));
                 store.add_node(Node {
                     id: nid.clone(),
-                    kind: NodeKind::Class,
                     private: !visible(item),
                     name,
                     file: file.clone(),
                     span: span(item),
                     module: m.id.clone(),
                     doc: doc_of(item, src),
-                    decorators: attrs_of(item, src),
-                    methods,
                     entry,
+                    kind: Kind::Class(Class { decorators: attrs_of(item, src), methods, ..Default::default() }),
                     ..Default::default()
                 });
                 store.add_edge(&m.id, &nid, EdgeKind::Contains, None);
@@ -415,23 +410,23 @@ pub(super) fn collect_impls(
             let attrs = attrs_of(f, src);
             store.add_node(Node {
                 id: mnid.clone(),
-                kind: NodeKind::Method,
                 name: mname.clone(),
                 file: file.clone(),
                 span: span(f),
                 module: m.id.clone(),
                 doc: doc_of(f, src),
-                cls: Some(cls.clone()),
                 entry: attrs.iter().any(|a| a == "test").then(|| Entry::new(EntryKind::Test, mname.clone())),
-                decorators: attrs,
-                on_class: !takes_self(&params),
-                ctor: constructs(&params, &returns, cls.rsplit('.').next().unwrap_or(&cls)),
                 private: im.trait_parts.is_empty() && !visible(f),
-                params,
-                returns,
+                kind: Kind::Method(Method {
+                    cls: cls.clone(),
+                    on_class: !takes_self(&params),
+                    ctor: constructs(&params, &returns, cls.rsplit('.').next().unwrap_or(&cls)),
+                    function: Function { decorators: attrs, params, returns, ..Default::default() },
+                    ..Default::default()
+                }),
                 ..Default::default()
             });
-            if let Some(c) = store.nodes.get_mut(&cls) {
+            if let Some(c) = store.nodes.get_mut(&cls).and_then(Node::class_mut) {
                 c.methods.push(mname);
             }
             store.add_edge(&cls, &mnid, EdgeKind::Contains, None);
@@ -443,7 +438,7 @@ pub(super) fn collect_impls(
 pub(super) fn link(modules: &IndexMap<String, Module>, store: &mut GraphBuilder, crate_ids: &HashMap<String, String>) {
     let ids: Vec<String> = store.nodes.keys().cloned().collect();
     for id in &ids {
-        let (kind, module) = (store.nodes[id].kind, store.nodes[id].module.clone());
+        let (kind, module) = (store.nodes[id].kind.tag(), store.nodes[id].module.clone());
         if kind != NodeKind::Class {
             continue;
         }
@@ -480,7 +475,7 @@ pub(super) fn link(modules: &IndexMap<String, Module>, store: &mut GraphBuilder,
                 let enum_node = &store.nodes[id];
                 let own = Node {
                     id: format!("{id}::{vname}"),
-                    kind: NodeKind::Class,
+                    kind: Kind::Class(Class::default()),
                     name: format!("{}::{vname}", enum_node.name),
                     file: enum_node.file.clone(),
                     span: at,
@@ -505,13 +500,13 @@ pub(super) fn link(modules: &IndexMap<String, Module>, store: &mut GraphBuilder,
     }
     let fixed = fixed_by_implementations(modules, store, crate_ids);
     for id in &ids {
-        let (kind, module) = (store.nodes[id].kind, store.nodes[id].module.clone());
+        let (kind, module) = (store.nodes[id].kind.tag(), store.nodes[id].module.clone());
         if !matches!(kind, NodeKind::Function | NodeKind::Method) {
             continue;
         }
         let m = &modules[&module];
         let sig = store.sigs.get(id).cloned().unwrap_or_default();
-        let own = store.nodes[id].cls.clone();
+        let own = store.nodes[id].cls().map(str::to_string);
         let def = def_node(m, &store.nodes[id]);
         for (types, kind) in [(&sig.ptypes, EdgeKind::Takes), (&sig.rtypes, EdgeKind::Returns)] {
             for t in types {
@@ -542,7 +537,7 @@ pub(super) fn link(modules: &IndexMap<String, Module>, store: &mut GraphBuilder,
     // the program's bodies, then those of the library's code read
     let (own, library): (Vec<&String>, Vec<&String>) = ids
         .iter()
-        .filter(|id| matches!(store.nodes[*id].kind, NodeKind::Function | NodeKind::Method))
+        .filter(|id| matches!(store.nodes[*id].kind.tag(), NodeKind::Function | NodeKind::Method))
         .partition(|id| !store.nodes[*id].library);
     for id in own.into_iter().chain(library) {
         let l = link_calls(modules, store, crate_ids, &eval, &returned, id);
@@ -638,8 +633,8 @@ fn take_sums(modules: &IndexMap<String, Module>, store: &mut GraphBuilder, crate
     let m = &modules[&n.module];
     let src = &m.src;
     let Some(params) = def_node(m, &n).and_then(|d| d.child_by_field_name("parameters")) else { return };
-    let resolved = |parts: &[String], nodes: &IndexMap<String, Node>| match (parts, &n.cls) {
-        ([s], Some(c)) if s == "Self" => Some(c.clone()),
+    let resolved = |parts: &[String], nodes: &IndexMap<String, Node>| match (parts, n.cls()) {
+        ([s], Some(c)) if s == "Self" => Some(c.to_string()),
         _ => resolve(m, parts, modules, nodes, crate_ids),
     };
     for p in named_children(params).into_iter().filter(|p| p.kind() == "parameter") {
@@ -691,7 +686,7 @@ fn take_sums(modules: &IndexMap<String, Module>, store: &mut GraphBuilder, crate
             let home = of.as_deref().map(|r| r.trim_start_matches("ext:")).and_then(|r| r.rsplit_once('.')).map_or("", |(h, _)| h);
             store.add_node(Node {
                 id: sum.clone(),
-                kind: NodeKind::External,
+                kind: Kind::External(External::default()),
                 name: text(t, src).split_whitespace().collect::<Vec<_>>().join(" "),
                 module: home.to_string(),
                 ..Default::default()

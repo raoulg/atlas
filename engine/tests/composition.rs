@@ -21,7 +21,7 @@ fn git(repo: &Path, args: &[&str]) {
 }
 
 fn calls(g: &Graph) -> Vec<&str> {
-    g.node("composition.run").unwrap().sites.iter().map(|s| s.to.as_str()).collect()
+    g.node("composition.run").unwrap().body().sites.iter().map(|s| s.to.as_str()).collect()
 }
 
 #[test]
@@ -45,7 +45,7 @@ fn reversing_nested_calls_preserves_order_and_marks_occurrences_not_functions() 
     assert_eq!(calls(&a[0]), ["composition.add_one", "composition.double"]);
     assert_eq!(calls(&b[0]), ["composition.double", "composition.add_one"]);
     for g in [&a[0], &b[0]] {
-        let sites = &g.node("composition.run").unwrap().sites;
+        let sites = &g.node("composition.run").unwrap().body().sites;
         assert!(!sites[0].gives.is_empty());
         assert_eq!(sites[0].gives[0].name, sites[1].hands[0].name, "the outer call consumes the inner result");
     }
@@ -120,6 +120,7 @@ fn each_union_side_keeps_its_own_nested_value_chain() {
         assert!(same
             .node("composition.run")
             .unwrap()
+            .body()
             .sites
             .iter()
             .flat_map(|s| s.hands.iter().chain(&s.gives))
@@ -135,7 +136,7 @@ fn each_union_side_keeps_its_own_nested_value_chain() {
             assert_eq!(calls(&union), ["composition.Number", "composition.add_one", "composition.double"], "{case}: double is one step");
             assert_eq!(marks.iter().map(|(i, s)| (*i, *s)).collect::<Vec<_>>(), [(1, status)], "{case}: only add_one is marked");
             assert_eq!(d.hands["composition.run"].keys().collect::<Vec<_>>(), [&2], "{case}: A hands double another value than B");
-            assert_eq!(run.sites[2].hands.len(), 1);
+            assert_eq!(run.body().sites[2].hands.len(), 1);
             let c = changes::between("HEAD~1", Some("HEAD"), &a, &b);
             let route = c.routes.iter().find(|r| r.id == "composition.run").expect("the route changed");
             let (added, removed) = (route.steps_added.as_slice(), route.steps_removed.as_slice());
@@ -145,7 +146,7 @@ fn each_union_side_keeps_its_own_nested_value_chain() {
         }
         for (original, reading) in [(&a[0], diff::Reading::A), (&b[0], diff::Reading::B)] {
             let side = diff::reading(&union, &d, reading);
-            let sites: Vec<_> = side.node("composition.run").unwrap().sites.iter().collect();
+            let sites: Vec<_> = side.node("composition.run").unwrap().body().sites.iter().collect();
             assert_eq!(sites.iter().map(|s| s.to.as_str()).collect::<Vec<_>>(), calls(original));
             let mut produced = std::collections::HashSet::new();
             for s in &sites {

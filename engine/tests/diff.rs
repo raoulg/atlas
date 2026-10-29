@@ -77,7 +77,8 @@ fn both(repo: &Path) -> (Graph, Diff, changes::Changes) {
         }
     }
     // a coarser place stands for the places it holds until they are split, and is listed by them
-    let drawn: BTreeSet<String> = g.nodes.iter().flat_map(|n| n.touches.iter().chain(&n.instead)).map(|t| t.drawn().place.id).collect();
+    let drawn: BTreeSet<String> =
+        g.nodes.iter().flat_map(|n| n.body().touches.iter().chain(&n.body().instead)).map(|t| t.drawn().place.id).collect();
     for id in d.places.keys().filter(|id| drawn.contains(*id)) {
         assert!(places.contains(id.as_str()), "the page marks {id}, `atlas changes` does not list it:\n{report}");
     }
@@ -133,7 +134,8 @@ def main() -> None:
 /// The steps of `id` in the union with their marks: (what each reaches, its status).
 fn steps(g: &Graph, d: &Diff, id: &str) -> Vec<(String, Option<Status>)> {
     let n = g.node(id).unwrap();
-    n.sites
+    n.body()
+        .sites
         .iter()
         .enumerate()
         .map(|(i, s)| {
@@ -364,7 +366,7 @@ fn a_swapped_producer_marks_the_swap_alone() {
         );
         for (reading, producer) in [(Reading::A, "spots.cli.load"), (Reading::B, "spots.cli.fetch")] {
             let side = diff::reading(&g, &d, reading);
-            let sites = &side.node("spots.cli.main").unwrap().sites;
+            let sites = &side.node("spots.cli.main").unwrap().body().sites;
             assert_eq!(sites.iter().map(|s| s.to.as_str()).collect::<Vec<_>>(), [producer, "spots.cli.smooth", "spots.cli.plot"]);
             assert_eq!(sites[0].gives[0].name, sites[1].hands[0].name, "{name} {reading:?}: smooth takes what {producer} gives");
         }
@@ -408,7 +410,7 @@ fn a_step_put_in_a_chain_marks_it_alone() {
         assert!(d.remade.is_empty(), "{name}: {:?}", d.remade);
         for reading in [Reading::A, Reading::B] {
             let side = diff::reading(&g, &d, reading);
-            let sites = &side.node("spots.cli.main").unwrap().sites;
+            let sites = &side.node("spots.cli.main").unwrap().body().sites;
             let calls: Vec<&str> = sites.iter().map(|s| s.to.as_str()).collect();
             let cleans = (reading == Reading::B) == (status == Status::Added);
             let before = if cleans { "spots.cli.clean" } else { "spots.cli.load" };

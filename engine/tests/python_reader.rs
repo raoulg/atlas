@@ -115,10 +115,10 @@ if __name__ == "__main__":
     assert_eq!(entry("usage.legacy.copy"), (EntryKind::Cli, "--out <src> --force".to_string()));
     assert_eq!(entry("scripts.report"), (EntryKind::Script, "--out-file <title>".to_string()));
     let main = g.node("scripts.report.main").unwrap();
-    let parse = main.sites.iter().find(|s| s.command_line.is_some()).expect("main parses its command line");
+    let parse = main.body().sites.iter().find(|s| s.command_line.is_some()).expect("main parses its command line");
     assert_eq!(parse.op, "parse_args");
     assert_eq!(parse.gives.iter().map(|h| (h.name.as_str(), h.ty.as_str())).collect::<Vec<_>>(), [("args", "ext:argparse.Namespace")]);
-    assert!(g.node("usage.cli.run").unwrap().sites.iter().all(|s| s.command_line.is_none()), "typer parses before the command runs");
+    assert!(g.node("usage.cli.run").unwrap().body().sites.iter().all(|s| s.command_line.is_none()), "typer parses before the command runs");
 }
 
 /// A value a module keeps is filled where a key is missing and then used: `key not in _cache` looks
@@ -138,6 +138,7 @@ fn a_cache_filled_on_first_use_is_made_sure_of() {
     let globals = |id: &str| {
         g.node(id)
             .unwrap()
+            .body()
             .touches
             .iter()
             .filter(|t| t.kind_name() == "global")
@@ -227,6 +228,7 @@ async def awaited() -> str:
         let read: Vec<&str> = g
             .node(&format!("wrappers.{f}"))
             .unwrap()
+            .body()
             .touches
             .iter()
             .filter(|t| t.kind_name() == "disk_read")

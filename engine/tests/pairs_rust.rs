@@ -54,7 +54,7 @@ fn targets<'g>(g: &'g Graph, kind: EdgeKind, src: &str) -> Vec<&'g str> {
 
 /// The step of `from` that calls or builds `to`.
 fn step<'g>(g: &'g Graph, from: &str, to: &str) -> &'g Site {
-    node(g, from).sites.iter().find(|s| s.to == to).unwrap_or_else(|| panic!("{from} has no step to {to}"))
+    node(g, from).body().sites.iter().find(|s| s.to == to).unwrap_or_else(|| panic!("{from} has no step to {to}"))
 }
 
 /// The types of the values a step gives back.
@@ -64,7 +64,7 @@ fn gives(s: &Site) -> Vec<&str> {
 
 /// A function's touches of one kind (`disk_read`, `net`, `db_sqlite`, `process`).
 fn touches<'g>(g: &'g Graph, f: &str, kind: &str) -> Vec<&'g Touch> {
-    node(g, f).touches.iter().filter(|t| t.kind_name() == kind).collect()
+    node(g, f).body().touches.iter().filter(|t| t.kind_name() == kind).collect()
 }
 
 /// Whether an id is one of the program's own types.
@@ -97,7 +97,7 @@ fn choices_a_command_is_chosen_once() {
         .collect();
     assert!(arms.iter().all(|a| a.0 == arms[0].0), "{arms:?}");
     assert_eq!(arms.iter().map(|a| a.1).collect::<Vec<_>>(), [0, 1, 2]);
-    let compares = &node(c, "spend.main").compares;
+    let compares = &node(c, "spend.main").body().compares;
     assert!(compares.len() == 1 && compares[0].cases.is_empty() && compares[0].members == ["Command::Rates"], "{compares:?}");
 
     let s = shortcut();
@@ -215,7 +215,7 @@ fn gives_what_a_function_gives_has_a_type() {
     let split = step(s, "spend.expense.Expense.parse", "spend.expense.split_amount");
     assert!(split.gives.iter().all(|h| h.ty.is_empty()), "{:?}", split.gives);
     // the call is still a step, and its signature still says what it gives
-    assert_eq!(node(s, "spend.expense.split_amount").returns.as_ref().map(|r| r.written.as_str()), Some("(String, String)"));
+    assert_eq!(node(s, "spend.expense.split_amount").returns().map(|r| r.written.as_str()), Some("(String, String)"));
 }
 
 /// A function gives back what its signature says. In Rust, `Result<PathBuf, Error>` gives a
@@ -304,7 +304,7 @@ fn nothing_a_call_leaves_something_behind() {
     let c = clean();
     assert_eq!(found(c, "nothing"), Vec::<String>::new());
     assert!(step(c, "spend.main", "spend.report.lines").hands.iter().any(|h| h.ty == "spend.rates.Rates"));
-    assert!(c.nodes.iter().all(|n| n.touches.iter().all(|t| t.kind_name() != "global")), "the clean side keeps nothing in a global");
+    assert!(c.nodes.iter().all(|n| n.body().touches.iter().all(|t| t.kind_name() != "global")), "the clean side keeps nothing in a global");
 
     let s = shortcut();
     step(s, "spend.run", "spend.rates.remember");
@@ -314,7 +314,7 @@ fn nothing_a_call_leaves_something_behind() {
     assert_eq!(global("spend.rates.to_base"), ["read"]);
     assert!(found(s, "nothing").is_empty(), "a call that keeps its value in a global leaves it behind: {:?}", found(s, "nothing"));
     assert_eq!(
-        node(s, "spend.rates.to_base").params.iter().map(|p| p.name.as_str()).collect::<Vec<_>>(),
+        node(s, "spend.rates.to_base").params().iter().map(|p| p.name.as_str()).collect::<Vec<_>>(),
         ["currency"],
         "the rates come from the global"
     );
@@ -395,13 +395,13 @@ fn sums_a_choice_is_made_where_it_arises() {
     let takes_result: Vec<String> = c
         .nodes
         .iter()
-        .flat_map(|n| n.params.iter().filter(|p| p.ty.starts_with("Result")).map(move |p| format!("{}({})", n.id, p.name)))
+        .flat_map(|n| n.params().iter().filter(|p| p.ty.starts_with("Result")).map(move |p| format!("{}({})", n.id, p.name)))
         .collect();
     assert_eq!(takes_result, Vec::<String>::new());
 
     let s = shortcut();
     let save = node(s, "spend.store.Store.save_rates");
-    assert!(save.params.iter().any(|p| p.name == "fetched" && p.ty.starts_with("Result<")), "{:?}", save.params);
+    assert!(save.params().iter().any(|p| p.name == "fetched" && p.ty.starts_with("Result<")), "{:?}", save.params());
     let fetched = gives(step(s, "spend.run", "spend.rates.fetch"));
     let handed = &step(s, "spend.run", "spend.store.Store.save_rates").hands;
     assert!(handed.iter().any(|h| fetched.contains(&h.ty.as_str())), "the store is handed what the request gives: {handed:?}");
@@ -440,25 +440,32 @@ fn lens_what_is_pushed_onto_what_is_put_is_put() {
     assert!(fs.is_empty(), "{:#?}", fs.iter().map(|f| format!("{} {} {}", f.principle, f.node, f.what)).collect::<Vec<_>>());
     let put = node(&s, "gathering.Store.put");
     assert!(
-        put.sites.iter().any(|x| x.op == "push" && x.hands.iter().any(|h| h.name == "rows") && x.gives.iter().any(|g| g.name == "rows")),
+        put.body()
+            .sites
+            .iter()
+            .any(|x| x.op == "push" && x.hands.iter().any(|h| h.name == "rows") && x.gives.iter().any(|g| g.name == "rows")),
         "{:?}",
-        put.sites
+        put.body().sites
     );
     assert!(
-        node(&s, "gathering.write_rows").touches.iter().any(|t| t.what == "Store.path"),
+        node(&s, "gathering.write_rows").body().touches.iter().any(|t| t.what == "Store.path"),
         "{:?}",
-        node(&s, "gathering.write_rows").touches
+        node(&s, "gathering.write_rows").body().touches
     );
-    assert!(node(&s, "gathering.Store.get").touches.iter().any(|t| t.what == "Store.path"));
+    assert!(node(&s, "gathering.Store.get").body().touches.iter().any(|t| t.what == "Store.path"));
     let element = |h: &atlas_engine::Held| h.name == "reading" && h.ty == "gathering.Reading";
     assert!(
-        node(&s, "gathering.Store.put_all").sites.iter().any(|x| x.hands.iter().any(element)),
+        node(&s, "gathering.Store.put_all").body().sites.iter().any(|x| x.hands.iter().any(element)),
         "{:?}",
-        node(&s, "gathering.Store.put_all").sites
+        node(&s, "gathering.Store.put_all").body().sites
     );
     assert_eq!(found(&s, "lens"), ["gathering.Store"]);
     let observe = node(&s, "gathering.observe");
-    assert!(observe.sites.iter().flat_map(|x| &x.gives).all(|g| g.name != "frozen" && g.name != "path"), "{:?}", observe.sites);
+    assert!(
+        observe.body().sites.iter().flat_map(|x| &x.gives).all(|g| g.name != "frozen" && g.name != "path"),
+        "{:?}",
+        observe.body().sites
+    );
 }
 
 /// One side of the sum pair (`tests/pairs/sums`): a knowledge base that adds a source and gives
@@ -517,7 +524,7 @@ fn choices_what_follows_an_early_return_is_the_other_arm() {
         let summary = node(&g, "harvest.ReadingStore.summary");
         assert_eq!(step(&g, "harvest.ReadingStore.summary", "harvest.ReadingStore.history").arms, [(0, 1)], "{side}");
         if side == "shortcut" {
-            assert!(summary.whens.contains(&(0, 1, "otherwise".to_string())), "{:?}", summary.whens);
+            assert!(summary.body().whens.contains(&(0, 1, "otherwise".to_string())), "{:?}", summary.body().whens);
         }
     }
 }
@@ -531,12 +538,13 @@ fn choices_what_follows_an_early_return_is_the_other_arm() {
 #[test]
 fn composition_a_named_result_or_a_change_is_a_library_step() {
     let s = harvest("shortcut");
-    let ops = |f: &str| node(&s, f).sites.iter().filter(|x| !x.op.is_empty()).map(|x| (x.op.clone(), x.changes)).collect::<Vec<_>>();
+    let ops = |f: &str| node(&s, f).body().sites.iter().filter(|x| !x.op.is_empty()).map(|x| (x.op.clone(), x.changes)).collect::<Vec<_>>();
     assert_eq!(ops("harvest.ReadingStore.save"), [("read_to_string".to_string(), false), ("push_str".to_string(), true)]);
-    let read = node(&s, "harvest.ReadingStore.save").sites.iter().find(|x| x.op == "read_to_string").unwrap();
+    let read = node(&s, "harvest.ReadingStore.save").body().sites.iter().find(|x| x.op == "read_to_string").unwrap();
     assert!(read.hands.iter().any(|h| h.ty == "harvest.ReadingStore" && h.name.is_empty()), "{:?}", read.hands);
     let g = analyze(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/pairs/readback/rust/shortcut"), &Options::default()).unwrap();
     let keep: Vec<(String, Vec<String>)> = node(&g, "ledger.Ledger.keep")
+        .body()
         .sites
         .iter()
         .filter(|x| !x.op.is_empty())
@@ -555,7 +563,7 @@ fn composition_a_named_result_or_a_change_is_a_library_step() {
 #[test]
 fn composition_a_call_is_handed_what_the_names_in_its_arguments_hold() {
     let hands = |g: &Graph, f: &str, to: &str| -> Vec<String> {
-        node(g, f).sites.iter().filter(|s| s.to == to).flat_map(|s| s.hands.iter().map(|h| format!("{}·{}", h.ty, h.name))).collect()
+        node(g, f).body().sites.iter().filter(|s| s.to == to).flat_map(|s| s.hands.iter().map(|h| format!("{}·{}", h.ty, h.name))).collect()
     };
     assert!(hands(clean(), "spend.main", "spend.Format.renderer").contains(&"spend.Cli·cli".to_string()));
     let f = fits("clean");
@@ -570,10 +578,11 @@ fn composition_a_call_is_handed_what_the_names_in_its_arguments_hold() {
     assert!(!message.iter().any(|h| h.starts_with("runs.Level")), "the level goes to `prefix`, not to Message: {message:?}");
     // a name written twice, once in a step written inside and once outside it, is handed by the one
     // outside: `self.history(&day.station)?.iter().filter(|r| r.date == day.date)..collect()`
-    let summary = node(&harvest("shortcut"), "harvest.ReadingStore.summary").sites.iter().find(|s| s.op == "collect").unwrap().clone();
+    let summary =
+        node(&harvest("shortcut"), "harvest.ReadingStore.summary").body().sites.iter().find(|s| s.op == "collect").unwrap().clone();
     assert!(handed(&summary).contains(&"harvest.Day·day".to_string()), "{:?}", summary.hands);
     // a parameter typed as the value a library's sum holds is that value: `fetched: Result<Value, reqwest::Error>`
-    let rates = node(shortcut(), "spend.store.Store.save_rates").sites.iter().find(|s| s.op == "unwrap_or_default").unwrap();
+    let rates = node(shortcut(), "spend.store.Store.save_rates").body().sites.iter().find(|s| s.op == "unwrap_or_default").unwrap();
     assert_eq!(handed(rates), ["ext:serde_json.Value·fetched"], "`body` of `Ok(body)` is a part of `fetched`");
 }
 
@@ -594,13 +603,17 @@ fn handed(s: &Site) -> Vec<String> {
 #[test]
 fn composition_a_parameter_holds_what_its_call_fills_it_with() {
     for g in [clean(), shortcut()] {
-        let read = node(g, "spend.expense.read_csv").sites.iter().find(|s| !s.op.is_empty()).unwrap();
+        let read = node(g, "spend.expense.read_csv").body().sites.iter().find(|s| !s.op.is_empty()).unwrap();
         assert!(handed(read).contains(&"·path".to_string()), "{:?}", read.hands);
     }
-    let load = node(clean(), "spend.config.Config.load").sites.iter().find(|s| s.op == "read_to_string").unwrap();
+    let load = node(clean(), "spend.config.Config.load").body().sites.iter().find(|s| s.op == "read_to_string").unwrap();
     assert!(load.hands.is_empty(), "a literal fills `path`: {:?}", load.hands);
     let (c, s) = (choices_side("clean"), choices_side("shortcut"));
-    assert!(node(&c, "runs.finished").sites.iter().any(|x| x.to == "runs.Mode.plan" && handed(x).contains(&"runs.Mode·mode".to_string())));
+    assert!(node(&c, "runs.finished")
+        .body()
+        .sites
+        .iter()
+        .any(|x| x.to == "runs.Mode.plan" && handed(x).contains(&"runs.Mode·mode".to_string())));
     for to in ["runs.Runner.new", "runs.timeout"] {
         assert_eq!(handed(step(&s, "runs.finished", to)), ["·mode"], "{to}");
     }
@@ -625,7 +638,11 @@ fn composition_a_function_handed_each_element_is_a_step_where_it_is_named() {
     assert_eq!(made, ["kennis.Node"]);
     let graaf = step(&c, "kennis.Kennisbank.graaf", "kennis.Graaf");
     assert!(graaf.hands.iter().any(|h| h.ty == "kennis.Node"), "the Nodes go into `Graaf {{ nodes }}`: {:?}", graaf.hands);
-    assert!(node(&s, "kennis.Kennisbank.graaf").sites.iter().all(|x| x.to.is_empty()), "{:?}", node(&s, "kennis.Kennisbank.graaf").sites);
+    assert!(
+        node(&s, "kennis.Kennisbank.graaf").body().sites.iter().all(|x| x.to.is_empty()),
+        "{:?}",
+        node(&s, "kennis.Kennisbank.graaf").body().sites
+    );
 }
 
 /// A closure bound to a name makes its value wherever it is called or handed to a call that calls
@@ -636,11 +653,11 @@ fn composition_a_function_handed_each_element_is_a_step_where_it_is_named() {
 fn composition_a_closure_bound_to_a_name_makes_its_value_where_it_is_handed() {
     let parse = node(clean(), "spend.expense.Money.parse");
     for op in ["ok_or_else", "map_err"] {
-        let s = parse.sites.iter().find(|s| s.op == op).unwrap_or_else(|| panic!("no step {op}"));
+        let s = parse.body().sites.iter().find(|s| s.op == op).unwrap_or_else(|| panic!("no step {op}"));
         assert!(handed(s).contains(&"spend.error.Error·".to_string()), "{op}: {:?}", s.hands);
     }
     let split = node(shortcut(), "spend.expense.split_amount");
-    assert!(split.sites.iter().all(|s| s.hands.iter().all(|h| !h.ty.ends_with("Error"))), "{:?}", split.sites);
+    assert!(split.body().sites.iter().all(|s| s.hands.iter().all(|h| !h.ty.ends_with("Error"))), "{:?}", split.body().sites);
 }
 
 /// A loop is a step that takes what it goes over: written over a step of the program's own
@@ -651,11 +668,11 @@ fn composition_a_closure_bound_to_a_name_makes_its_value_where_it_is_handed() {
 fn composition_a_loop_over_a_step_takes_what_the_step_gives() {
     let write = node(shortcut(), "spend.report.write");
     let rows = step(shortcut(), "spend.report.write", "spend.store.Store.rows");
-    let each = write.sites.iter().find(|s| s.op.starts_with("for ")).unwrap();
+    let each = write.body().sites.iter().find(|s| s.op.starts_with("for ")).unwrap();
     assert_eq!(rows.gives.len(), 1, "{:?}", rows.gives);
     assert_eq!(each.hands, rows.gives, "the loop takes the rows `Store.rows` gives");
     assert!(each.hands.iter().all(|h| h.ty != "spend.store.Store"));
-    let render = node(clean(), "spend.report.Csv.render").sites.iter().find(|s| s.op.starts_with("for ")).unwrap();
+    let render = node(clean(), "spend.report.Csv.render").body().sites.iter().find(|s| s.op.starts_with("for ")).unwrap();
     assert_eq!(handed(render), ["spend.report.Line·lines"]);
 }
 
@@ -668,7 +685,11 @@ fn choices_a_let_else_is_a_guard() {
     let arms = |to: &str| step(clean(), parse, to).arms.clone();
     assert_eq!(arms("spend.expense.Money.parse"), [(0, 1)]);
     assert_eq!(arms("spend.expense.Expense"), [(0, 1)]);
-    assert!(node(clean(), parse).sites.iter().any(|s| s.arms == [(0, 0)] && s.to.ends_with("Error")), "{:?}", node(clean(), parse).sites);
+    assert!(
+        node(clean(), parse).body().sites.iter().any(|s| s.arms == [(0, 0)] && s.to.ends_with("Error")),
+        "{:?}",
+        node(clean(), parse).body().sites
+    );
 }
 
 // ---------- prophecy ----------
@@ -692,11 +713,11 @@ fn prophecy_a_sketch_in_the_tree_says_it_is_not_built() {
             .unwrap_or_else(|| panic!("a Store in {:?}", g.nodes.iter().map(|n| &n.id).collect::<Vec<_>>()))
             .clone()
     };
-    let sketch = store(&c).prophecy.expect("the marked sketch is a prophecy");
+    let sketch = store(&c).prophecy().cloned().expect("the marked sketch is a prophecy");
     assert_eq!(sketch.supersedes.as_deref(), Some("archive::Sink"));
     assert!(!sketch.veiled && sketch.sealed.is_none());
-    assert!(store(&s).prophecy.is_none(), "an unmarked sketch is read as built");
-    assert!(c.nodes.iter().filter(|n| n.prophecy.is_some()).count() == 2, "only the marked items are prophecies");
+    assert!(store(&s).prophecy().is_none(), "an unmarked sketch is read as built");
+    assert!(c.nodes.iter().filter(|n| n.prophecy().is_some()).count() == 2, "only the marked items are prophecies");
     assert!(s.nodes.iter().any(|n| n.name == "Store"), "the shortcut's sketch is still in the graph");
 }
 
@@ -714,7 +735,7 @@ fn prophecy_built_code_does_not_lean_on_a_stub() {
     let run = leaning(&s);
     assert_eq!(run.len(), 1, "{run:?}");
     assert!(run[0].ends_with(".run") || run[0] == "run", "{run:?}");
-    assert!(s.nodes.iter().any(|n| n.name == "Store" && n.prophecy.is_some()), "the shortcut's sketch is marked, and still leaned on");
+    assert!(s.nodes.iter().any(|n| n.name == "Store" && n.prophecy().is_some()), "the shortcut's sketch is marked, and still leaned on");
 }
 
 /// The revelation is what the sketch leaves to do: each prophecy, what it supersedes (found in the
@@ -732,7 +753,7 @@ fn prophecy_the_revelation_says_what_is_left() {
     let store = stands.iter().find(|p| p.id.ends_with("Store")).expect("the Store is a prophecy");
     assert!(store.supersedes.as_deref().is_some_and(|r| r.ends_with("Sink")), "{store:?}");
     let routes: Vec<_> = c.nodes.iter().filter(|n| n.entry.as_ref().is_some_and(|e| e.kind == atlas_engine::EntryKind::Prophecy)).collect();
-    assert!(!routes.is_empty() && routes.iter().all(|n| n.prophecy.is_some() || n.cls.is_some()), "a prophecy's operations are routes");
+    assert!(!routes.is_empty() && routes.iter().all(|n| n.prophecy().is_some() || n.cls().is_some()), "a prophecy's operations are routes");
     let leaning = revelation(&s);
     assert_eq!(leaning.len(), 1);
     assert!(leaning[0].leaned_on_by.iter().any(|l| l.ends_with("run")), "{leaning:?}");
@@ -828,9 +849,9 @@ fn choices_a_choice_is_made_once_across_bodies() {
     let (c, s) = (choices_side("clean"), choices_side("shortcut"));
     assert_eq!(found(&c, "choices"), Vec::<String>::new());
     let message: Vec<&[(u32, u32)]> =
-        node(&c, "runs.report").sites.iter().filter(|s| s.to == "runs.Message").map(|s| s.arms.as_slice()).collect();
+        node(&c, "runs.report").body().sites.iter().filter(|s| s.to == "runs.Message").map(|s| s.arms.as_slice()).collect();
     assert_eq!(message, [&[(0, 0)][..], &[(0, 1)][..]], "one struct expression in each arm of one choice");
-    let level = &node(&c, "runs.Level.prefix").compares;
+    let level = &node(&c, "runs.Level.prefix").body().compares;
     assert!(level.len() == 1 && level[0].receiver && level[0].members == ["Level::Quiet", "Level::Loud"], "{level:?}");
 
     let asked: Vec<_> = check(&s).into_iter().filter(|f| f.principle == "choices").collect();
@@ -895,7 +916,7 @@ fn lens_the_place_is_the_table_and_a_key_is_no_put() {
 #[test]
 fn lens_a_get_gives_a_value_back() {
     let (c, s) = (&club().clean, &club().shortcut);
-    let kinds: Vec<&str> = node(c, "club.files.Log.add").touches.iter().map(|t| t.kind_name()).collect();
+    let kinds: Vec<&str> = node(c, "club.files.Log.add").body().touches.iter().map(|t| t.kind_name()).collect();
     assert!(kinds.contains(&"disk_read") && kinds.contains(&"disk_write"), "{kinds:?}");
     assert_eq!(lens_of(c, "files.Log"), "");
     assert_eq!(lens_of(s, "files.Log"), "Log puts Visit into Disk(Log.path) and gets no Visit back");
@@ -907,7 +928,7 @@ fn lens_a_get_gives_a_value_back() {
 #[test]
 fn lens_a_get_gives_its_own_class_back() {
     let (c, s) = (&club().clean, &club().shortcut);
-    assert!(node(c, "club.files.Roster.load").ctor);
+    assert!(node(c, "club.files.Roster.load").ctor());
     assert!(edge(c, EdgeKind::Has, "club.files.Roster", "club.Member"));
     assert_eq!(lens_of(c, "files.Roster"), "");
     assert_eq!(lens_of(s, "files.Roster"), "Roster puts Member into Disk(Roster.path) and gets no Member back");
@@ -982,15 +1003,15 @@ fn changes_a_cell_in_the_signature_says_the_value_changes() {
     let fs = check(&c);
     assert!(fs.is_empty(), "{:#?}", fs.iter().map(|f| format!("{} {} {}", f.principle, f.node, f.what)).collect::<Vec<_>>());
     for f in ["journal.note", "journal.note_shared"] {
-        assert!(node(&c, f).params.iter().any(|p| p.name == "log" && p.changes), "{f}: {:?}", node(&c, f).params);
+        assert!(node(&c, f).params().iter().any(|p| p.name == "log" && p.changes), "{f}: {:?}", node(&c, f).params());
         assert_eq!(targets(&c, EdgeKind::Mutates, f), ["journal.Log"], "{f}");
-        let push = node(&c, f).sites.iter().find(|x| x.op == "push").unwrap_or_else(|| panic!("{f}: no push"));
+        let push = node(&c, f).body().sites.iter().find(|x| x.op == "push").unwrap_or_else(|| panic!("{f}: no push"));
         assert!(push.changes && gives(push) == ["journal.Log"], "{f}: {:?}", push.gives);
     }
     assert_eq!(found(&s, "nothing"), ["journal.note"]);
-    assert!(node(&s, "journal.note").params.iter().all(|p| !p.changes));
+    assert!(node(&s, "journal.note").params().iter().all(|p| !p.changes));
     assert!(targets(&s, EdgeKind::Mutates, "journal.note").is_empty());
-    let push = node(&s, "journal.note").sites.iter().find(|x| x.op == "push").unwrap();
+    let push = node(&s, "journal.note").body().sites.iter().find(|x| x.op == "push").unwrap();
     assert_eq!(handed(push), ["·lines"], "the copy, not the log");
 }
 
@@ -1083,7 +1104,7 @@ fn prophecy_a_test_leans_on_a_prophecy_freely() {
 fn prophecy_a_name_is_read_as_the_language_reads_a_path() {
     let (c, s) = (prophecy_rust("names", "clean"), prophecy_rust("names", "shortcut"));
     assert!(found(&c, "prophecy").is_empty(), "{:?}", check(&c).iter().map(|f| &f.what).collect::<Vec<_>>());
-    let replaces = |g: &Graph, id: &str| node(g, id).prophecy.as_ref().and_then(|p| p.replaces.clone());
+    let replaces = |g: &Graph, id: &str| node(g, id).prophecy().and_then(|p| p.replaces.clone());
     for (prophecy, replaced) in [
         ("archive.post_v2", "archive.ledger.post"),
         ("archive.post_v3", "archive.ledger.post"),
@@ -1127,7 +1148,7 @@ fn nothing_says_what_atlas_cannot_see() {
         check(g).into_iter().filter(|f| f.principle == "nothing").map(|f| (f.node, f.what)).collect()
     };
     assert!(asked(&c).is_empty(), "{:#?}", asked(&c));
-    assert!(node(&c, "jobs.stop").raises, "ending the run is what `stop` leaves behind");
+    assert!(node(&c, "jobs.stop").body().raises, "ending the run is what `stop` leaves behind");
     let want = [
         ("jobs.Job.finish", "Job.finish gives nothing back, and Atlas cannot see what `(self.on_done)(..)` does"),
         ("jobs.settle", "settle gives nothing back, and Atlas sees no change and no place it reaches"),
@@ -1135,7 +1156,7 @@ fn nothing_says_what_atlas_cannot_see() {
     .map(|(f, what)| (f.to_string(), what.to_string()));
     assert_eq!(asked(&s), want);
     for g in [&c, &s] {
-        assert!(node(g, "jobs.Task.run").declared, "a trait's method without a body is what its implementations fill in");
+        assert!(node(g, "jobs.Task.run").method().unwrap().declared, "a trait's method without a body is what its implementations fill in");
         assert!(edge(g, EdgeKind::Calls, "jobs.run_task", "jobs.Task.run"));
     }
 }
@@ -1174,7 +1195,7 @@ fn places_the_function_that_writes_the_path_decides_it() {
 #[test]
 fn places_a_file_compiled_in_is_no_place_and_one_found_where_the_crate_was_built_is_fixed() {
     let (c, s) = (stock("clean"), stock("shortcut"));
-    assert!(node(&c, "stock.page").touches.is_empty(), "{:?}", node(&c, "stock.page").touches);
+    assert!(node(&c, "stock.page").body().touches.is_empty(), "{:?}", node(&c, "stock.page").body().touches);
     let read = touches(&s, "stock.page", "disk_read");
     assert!(read.iter().any(|t| t.artifact == "template.html" && t.fixed), "{read:?}");
     assert!(found(&s, "places").contains(&"stock.page".to_string()), "{:?}", found(&s, "places"));
@@ -1198,7 +1219,7 @@ fn composition_a_local_shadows_the_function_it_is_named_like() {
     for side in ["clean", "shortcut"] {
         let g = inbox(side);
         assert_eq!(targets(&g, EdgeKind::Calls, "inbox.sort"), Vec::<&str>::new(), "{side}");
-        let sites = &node(&g, "inbox.sort").sites;
+        let sites = &node(&g, "inbox.sort").body().sites;
         assert!(sites.iter().all(|s| !s.to.starts_with("inbox.")), "{side}: {sites:?}");
         assert_eq!(targets(&g, EdgeKind::Calls, "inbox.total"), ["inbox.size"], "{side}");
         assert_eq!(targets(&g, EdgeKind::Calls, "inbox.addressed"), ["inbox.tidy"], "{side}");
@@ -1223,6 +1244,7 @@ fn composition_a_method_called_by_its_path_runs_on_its_first_argument() {
     let (c, s) = (sources("clean"), sources("shortcut"));
     let steps = |g: &Graph, f: &str| -> Vec<(String, String, bool, Vec<String>)> {
         node(g, f)
+            .body()
             .sites
             .iter()
             .filter(|s| !s.to.is_empty())
@@ -1265,12 +1287,12 @@ fn a_place_carries_a_what_a_collection_of_pairs_names_none() {
 #[test]
 fn places_the_command_line_is_the_entrys() {
     let parses = |g: &Graph| -> Vec<(String, String, Vec<String>)> {
-        node(g, "spend.main").sites.iter().filter_map(|s| Some((s.to.clone(), s.op.clone(), s.command_line.clone()?))).collect()
+        node(g, "spend.main").body().sites.iter().filter_map(|s| Some((s.to.clone(), s.op.clone(), s.command_line.clone()?))).collect()
     };
     let clean = parses(clean());
     assert!(clean.len() == 1 && clean[0].0 == "spend.Cli", "{clean:?}");
     assert_eq!(parses(shortcut()), [(String::new(), "collect".to_string(), vec![])]);
-    let args = node(shortcut(), "spend.main").sites.iter().find(|s| s.command_line.is_some()).map(|s| s.gives.clone());
+    let args = node(shortcut(), "spend.main").body().sites.iter().find(|s| s.command_line.is_some()).map(|s| s.gives.clone());
     assert!(args.is_some_and(|g| g.iter().any(|h| h.name == "args")));
 }
 
@@ -1305,14 +1327,14 @@ fn composition_a_name_bound_twice_holds_each_binding_where_it_is_visible() {
 fn sums_an_error_leaves_by_what_the_body_gives_back_and_by_a_glued_question_mark() {
     let p = common::pair("sums/rust");
     for (side, g) in [("clean", &p.clean), ("shortcut", &p.shortcut)] {
-        let write = g.node("kennis.Kennisbank.voeg_toe").unwrap().sites.iter().find(|s| s.to == "kennis.Kennisbank.write").unwrap();
+        let write = g.node("kennis.Kennisbank.voeg_toe").unwrap().body().sites.iter().find(|s| s.to == "kennis.Kennisbank.write").unwrap();
         assert_eq!(write.fails.as_deref(), Some(""), "{side}: what voeg_toe gives back");
     }
     let graaf = p.clean.node("kennis.Kennisbank.graaf").unwrap();
-    let built = graaf.sites.iter().find(|s| s.to == "kennis.Graaf").expect("the clean graaf builds a Graaf");
-    assert_eq!((built.fails.as_deref(), graaf.fails.as_deref()), (Some(""), None), "the read's `?` is the step's");
+    let built = graaf.body().sites.iter().find(|s| s.to == "kennis.Graaf").expect("the clean graaf builds a Graaf");
+    assert_eq!((built.fails.as_deref(), graaf.body().fails.as_deref()), (Some(""), None), "the read's `?` is the step's");
     let graaf = p.shortcut.node("kennis.Kennisbank.graaf").unwrap();
-    assert_eq!((graaf.sites.len(), graaf.fails.as_deref()), (0, Some("")), "the shortcut's `?` is its own code's");
+    assert_eq!((graaf.body().sites.len(), graaf.body().fails.as_deref()), (0, Some("")), "the shortcut's `?` is its own code's");
 }
 
 /// A `match` that ends a body without a `;` is what the body gives back (#138): `summary`'s `match self.kept_summary(day)?
@@ -1321,7 +1343,8 @@ fn sums_an_error_leaves_by_what_the_body_gives_back_and_by_a_glued_question_mark
 #[test]
 fn an_arm_of_a_match_that_ends_the_body_gives_back_its_call_s_error() {
     let g = analyze(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/pairs/lens/rust/clean"), &Options::default()).unwrap();
-    let keep = g.node("harvest.ReadingStore.summary").unwrap().sites.iter().find(|s| s.to == "harvest.ReadingStore.keep_summary").unwrap();
+    let keep =
+        g.node("harvest.ReadingStore.summary").unwrap().body().sites.iter().find(|s| s.to == "harvest.ReadingStore.keep_summary").unwrap();
     assert_eq!(keep.fails.as_deref(), Some(""), "what the match's arm gives back");
 }
 
@@ -1331,7 +1354,7 @@ fn an_arm_of_a_match_that_ends_the_body_gives_back_its_call_s_error() {
 #[test]
 fn rust_a_call_is_handed_no_name_a_closure_in_it_binds() {
     let g = analyze(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/pairs/rust/clean"), &Options::default()).unwrap();
-    let query = g.node("spend.store.Store.expenses").unwrap().sites.iter().find(|s| s.op == "query_map").unwrap();
+    let query = g.node("spend.store.Store.expenses").unwrap().body().sites.iter().find(|s| s.op == "query_map").unwrap();
     let names: Vec<&str> = query.hands.iter().map(|h| h.name.as_str()).collect();
     assert!(!names.contains(&"amount"), "{names:?}");
     assert!(query.hands.iter().any(|h| h.ty == "spend.expense.Expense"), "what the closure gives back: {:#?}", query.hands);
@@ -1350,7 +1373,7 @@ fn a_table_is_one_value_and_the_lists_it_is_cut_into_two() {
 /// through that one.
 #[test]
 fn a_set_names_the_field_it_sets() {
-    let sets = &node(clean(), "spend.store.Store.rates").sets;
+    let sets = &node(clean(), "spend.store.Store.rates").body().sets;
     let named: Vec<(&str, &str)> = sets.iter().map(|s| (s.on.name.as_str(), s.field.as_str())).collect();
     assert_eq!(named, [("rates", "date")], "{sets:#?}");
 }
@@ -1365,7 +1388,7 @@ fn an_element_of_a_closure_s_parameter_is_a_part_of_what_the_function_is_handed(
     let each = common::pair("each/rust");
     let drawn = |g: &Graph| -> Vec<String> {
         let f = node(g, "drawing.drawn");
-        f.sites.iter().filter(|s| s.to == "drawing.Touch.drawn").flat_map(|s| s.hands.iter().map(|h| h.name.clone())).collect()
+        f.body().sites.iter().filter(|s| s.to == "drawing.Touch.drawn").flat_map(|s| s.hands.iter().map(|h| h.name.clone())).collect()
     };
     assert_eq!(drawn(&each.clean), ["g"], "each touch is a part of the graph the function is handed");
     assert_eq!(drawn(&each.shortcut), ["all"], "the shortcut draws from the list it gathered");
@@ -1382,9 +1405,9 @@ fn a_method_called_on_a_closure_s_parameter_is_a_step_on_its_element() {
     let method = common::pair("each/rust-method");
     let drawn = |g: &Graph| -> Vec<String> {
         let f = node(g, "drawing.drawn");
-        f.sites.iter().filter(|s| s.to == "drawing.Touch.drawn").flat_map(|s| s.hands.iter().map(|h| h.name.clone())).collect()
+        f.body().sites.iter().filter(|s| s.to == "drawing.Touch.drawn").flat_map(|s| s.hands.iter().map(|h| h.name.clone())).collect()
     };
-    let pushes = |g: &Graph| node(g, "drawing.drawn").sites.iter().filter(|s| s.op == "push" && s.changes).count();
+    let pushes = |g: &Graph| node(g, "drawing.drawn").body().sites.iter().filter(|s| s.op == "push" && s.changes).count();
     assert_eq!(drawn(&method.clean), ["g"], "each touch is a part of the graph the function is handed");
     assert_eq!(pushes(&method.clean), 0, "the clean side changes no list");
     assert_eq!(drawn(&method.shortcut), ["t"], "the loop's touch, a value the body makes");
@@ -1399,7 +1422,7 @@ fn a_method_called_on_a_closure_s_parameter_is_a_step_on_its_element() {
 #[test]
 fn a_collection_of_pairs_gives_back_none_of_what_they_pair() {
     let pairs = common::pair("each/rust-pairs");
-    let holds = |g: &Graph| node(g, "drawing.drawn").returns.as_ref().map(|r| r.holds.clone()).unwrap_or_default();
+    let holds = |g: &Graph| node(g, "drawing.drawn").returns().map(|r| r.holds.clone()).unwrap_or_default();
     let made = |g: &Graph| atlas_engine::flow::of(g).bodies["drawing.drawn"].made_from.clone();
     assert_eq!(holds(&pairs.clean), ["Vec", "Drawn"]);
     assert_eq!(made(&pairs.clean), ["drawing.Drawn"], "made of the Drawn its step builds");

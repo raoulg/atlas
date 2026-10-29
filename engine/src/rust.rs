@@ -18,7 +18,7 @@ use anyhow::{Context, Result};
 use indexmap::IndexMap;
 
 use crate::builder::GraphBuilder;
-use crate::model::{Node, NodeKind};
+use crate::model::{Kind, Node};
 use crate::repo::Repo;
 use crate::tree::span;
 
@@ -147,13 +147,12 @@ pub fn parse(repo: &Repo, opts: &crate::Options) -> Result<(GraphBuilder, String
             store.files.insert(crate::tree::path_str(&p), String::from_utf8_lossy(&src).to_string());
             store.add_node(Node {
                 id: mid.clone(),
-                kind: NodeKind::Module,
+                kind: Kind::Module(crate::model::Module { is_pkg: is_root, ..Default::default() }),
                 name,
                 file: crate::tree::path_str(&p),
                 span: span(tree.root_node()),
                 module: mid.clone(),
                 doc: module_doc(tree.root_node(), &src),
-                is_pkg: is_root,
                 // an integration test: Cargo builds what `tests/` holds only to test the crate
                 test: p.strip_prefix(&c.dir).is_ok_and(|rel| rel.starts_with("tests")),
                 ..Default::default()

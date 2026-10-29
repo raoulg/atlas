@@ -25,7 +25,7 @@ fn a_vision_is_marked_in_every_file_its_language_reads() {
         assert!(text.contains(" * Where orders wait.\n * @prophecy\n */\nexport function queue"), "{ext}: {text}");
         std::fs::write(root.join(&file), text).expect("writes the decision");
         let g = analyze(&root, &Options::default()).expect("reads");
-        let marked: Vec<&str> = g.nodes.iter().filter(|n| n.prophecy.is_some()).map(|n| n.name.as_str()).collect();
+        let marked: Vec<&str> = g.nodes.iter().filter(|n| n.prophecy().is_some()).map(|n| n.name.as_str()).collect();
         assert_eq!(marked, ["queue"], "{ext}");
         assert_eq!(decided.marked.len(), 1, "{ext}: {:?}", decided.marked);
         let _ = std::fs::remove_dir_all(&root);

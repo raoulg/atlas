@@ -21,11 +21,9 @@ use crate::model::{Db, Dir, Edge, EdgeKind, Graph, Held, Leaves, Node, NodeKind,
 pub fn wire(nodes: &mut IndexMap<String, Node>, edges: &[Edge]) {
     let gives_class = classes_given(nodes, edges);
     let mut next = 0;
-    for id in nodes.keys().cloned().collect::<Vec<_>>() {
-        let mut sites = std::mem::take(&mut nodes[&id].sites);
-        nest(&mut sites, &gives_class, &mut next);
-        drop_identities(&mut sites);
-        nodes[&id].sites = sites;
+    for b in nodes.values_mut().filter_map(Node::body_mut) {
+        nest(&mut b.sites, &gives_class, &mut next);
+        drop_identities(&mut b.sites);
     }
 }
 
@@ -34,7 +32,7 @@ pub fn wire(nodes: &mut IndexMap<String, Node>, edges: &[Edge]) {
 fn classes_given(nodes: &IndexMap<String, Node>, edges: &[Edge]) -> HashMap<String, String> {
     let mut out: HashMap<String, String> = HashMap::new();
     for e in edges.iter().filter(|e| e.kind == EdgeKind::Returns) {
-        if nodes.get(&e.dst).map_or(false, |n| matches!(n.kind, NodeKind::Class | NodeKind::External)) {
+        if nodes.get(&e.dst).map_or(false, |n| matches!(n.kind.tag(), NodeKind::Class | NodeKind::External)) {
             out.entry(e.src.clone()).or_insert_with(|| e.dst.clone());
         }
     }
@@ -146,8 +144,8 @@ pub fn of(g: &Graph) -> Flow {
     let drawn = g
         .nodes
         .iter()
-        .filter(|n| !n.touches.is_empty() || !n.instead.is_empty())
-        .map(|n| (n.id.clone(), n.touches.iter().chain(&n.instead).map(Touch::drawn).collect()))
+        .filter(|n| !n.body().touches.is_empty() || !n.body().instead.is_empty())
+        .map(|n| (n.id.clone(), n.body().touches.iter().chain(&n.body().instead).map(Touch::drawn).collect()))
         .collect();
     Flow { bodies: bodies(g), arrows: arrows(g), types: crate::families::families(g), units: units(g), drawn }
 }
@@ -171,7 +169,7 @@ pub fn units(g: &Graph) -> Units {
         g.nodes.iter().filter(|n| n.kind == NodeKind::Module && !n.library).map(|n| (n.id.as_str(), part_of(n))).collect();
     let holds: HashSet<&str> = g.edges.iter().filter(|e| e.kind == EdgeKind::Contains).map(|e| e.src.as_str()).collect();
     let nodes: HashMap<&str, &Node> = g.nodes.iter().map(|n| (n.id.as_str(), n)).collect();
-    let has_code = |m: &str| holds.contains(m) || nodes.get(m).map_or(false, |n| !n.touches.is_empty());
+    let has_code = |m: &str| holds.contains(m) || nodes.get(m).map_or(false, |n| !n.body().touches.is_empty());
     let mods_of = |part: &str| modules.iter().filter(|(_, p)| p == part).map(|(m, _)| *m).collect::<Vec<&str>>();
     fn below(prefix: &str, mods: &[&str], has_code: &dyn Fn(&str) -> bool, known: &dyn Fn(&str) -> bool) -> Vec<String> {
         let depth = prefix.split('.').count();
@@ -587,13 +585,13 @@ fn orders(ix: &Ix, id: &str, on: &str, mut done: Option<&mut Memo>) -> BTreeMap<
     }
     let Some(&n) = ix.nodes.get(id) else { return BTreeMap::new() };
     // the innermost arm a line is in
-    let arm = |line: u32| n.arm_lines.iter().copied().filter(|&(a, b)| a <= line && line <= b).min_by_key(|&(a, b)| b - a);
+    let arm = |line: u32| n.body().arm_lines.iter().copied().filter(|&(a, b)| a <= line && line <= b).min_by_key(|&(a, b)| b - a);
     let within = |inner: Option<(u32, u32)>, outer: (u32, u32)| inner.map_or(false, |(a, b)| outer.0 <= a && b <= outer.1);
     // two lines in different arms of one choice never run in one run of the body
-    let around = |line: u32| n.arm_lines.iter().zip(&n.arm_choices).filter(move |((a, b), _)| *a <= line && line <= *b);
+    let around = |line: u32| n.body().arm_lines.iter().zip(&n.body().arm_choices).filter(move |((a, b), _)| *a <= line && line <= *b);
     let apart = |x: u32, y: u32| around(x).any(|(r, k)| around(y).any(|(s, j)| k == j && r != s));
     // two lines in one loop: what the first does runs again after the second
-    let looped = |x: u32, y: u32| n.loop_lines.iter().any(|&(a, b)| a <= x.min(y) && x.max(y) <= b);
+    let looped = |x: u32, y: u32| n.body().loop_lines.iter().any(|&(a, b)| a <= x.min(y) && x.max(y) <= b);
     enum Event<'n> {
         Touch(&'n Touch),
         /// A call: what it may run, one of them, each on the class it runs on, and whether it stands in an arm.
@@ -603,14 +601,17 @@ fn orders(ix: &Ix, id: &str, on: &str, mut done: Option<&mut Memo>) -> BTreeMap<
     // a touch that stands for several calls runs on the line of each
     // a call whose place a caller makes whole is read as written where no such caller runs (`instead`): at each place
     let mut events: Vec<(u32, Event)> = n
+        .body()
         .touches
         .iter()
-        .chain(&n.instead)
+        .chain(&n.body().instead)
         .filter(|t| t.dir.is_some() && !t.shape())
         .flat_map(|t| std::iter::once(t.line).chain(t.also_at.iter().copied()).map(move |l| (l, Event::Touch(t))))
         .collect();
     if done.is_some() {
-        events.extend(n.sites.iter().filter(|s| !s.to.is_empty()).map(|s| (s.line, Event::Call(ix.may_run(s, on), !s.arms.is_empty()))));
+        events.extend(
+            n.body().sites.iter().filter(|s| !s.to.is_empty()).map(|s| (s.line, Event::Call(ix.may_run(s, on), !s.arms.is_empty()))),
+        );
     }
     // on one line what is read comes first, then the calls, then what is written: `x ??= v` reads
     // `x` before it may write it, `y = f(x)` calls `f` before `y` is written
@@ -738,7 +739,7 @@ impl<'g> Ix<'g> {
         if self.nodes.get(s.to.as_str()).is_some_and(|c| c.kind == NodeKind::Class) {
             return self.runs(&s.to).map(|i| vec![(i, s.to.clone())]).unwrap_or_default();
         }
-        let Some(m) = self.nodes.get(s.to.as_str()).filter(|m| m.cls.is_some()) else { return vec![(s.to.clone(), String::new())] };
+        let Some(m) = self.nodes.get(s.to.as_str()).filter(|m| m.cls().is_some()) else { return vec![(s.to.clone(), String::new())] };
         let runs_on = if !s.on.is_empty() {
             s.on.as_str()
         } else if s.on_receiver {
@@ -790,16 +791,16 @@ fn arrow_of(ix: &Ix, n: &Node, done: &mut Memo) -> Arrow {
             ..Default::default()
         };
     }
-    let ctor = n.ctor;
+    let ctor = n.ctor();
     let gives = ix.targets(&n.id, EdgeKind::Returns);
     // a function whose signature does not say what it gives back gives back a value where its callers use one
-    let returns_value = n.returns.as_ref().map_or(false, |r| !r.value.is_empty()) || (ix.unsaid(n) && ix.used(&n.id));
+    let returns_value = n.returns().map_or(false, |r| !r.value.is_empty()) || (ix.unsaid(n) && ix.used(&n.id));
     Arrow {
-        receiver: n.cls.clone().filter(|_| !ctor && !n.on_class).unwrap_or_default(),
+        receiver: n.cls().map(str::to_string).filter(|_| !ctor && !n.on_class()).unwrap_or_default(),
         takes: ix.targets(&n.id, EdgeKind::Takes),
         gives_back: !gives.is_empty() || returns_value,
         gives,
-        builds: if ctor { n.cls.clone().unwrap_or_default() } else { String::new() },
+        builds: if ctor { n.cls().map(str::to_string).unwrap_or_default() } else { String::new() },
         changes: ix.targets(&n.id, EdgeKind::Mutates),
         changed: {
             let mut names: Vec<String> = vec![];
@@ -823,7 +824,7 @@ fn arrow_of(ix: &Ix, n: &Node, done: &mut Memo) -> Arrow {
 /// does at places on each class a route runs it on (`Arrow::on`).
 pub fn arrows(g: &Graph) -> BTreeMap<String, Arrow> {
     let ix = Ix::new(g);
-    let kinds = |n: &&Node| matches!(n.kind, NodeKind::Module | NodeKind::Class | NodeKind::Function | NodeKind::Method);
+    let kinds = |n: &&Node| matches!(n.kind.tag(), NodeKind::Module | NodeKind::Class | NodeKind::Function | NodeKind::Method);
     // the bodies a route runs on a known class
     let on: Vec<(String, String)> = bodies(g)
         .into_keys()
@@ -872,7 +873,7 @@ pub fn initializers(g: &Graph) -> HashMap<String, String> {
 /// whose callers use what it gives (`Arrow::returns_value`), rules out no type.
 fn made_from(ix: &Ix, n: &Node, body: &Body) -> Vec<String> {
     let mut gives = ix.targets(&n.id, EdgeKind::Returns);
-    for s in &n.sites {
+    for s in &n.body().sites {
         let errors = s.gives.iter().filter(|_| s.raises).map(|g| g.ty.clone()).chain(s.fails.clone());
         for e in errors.filter(|e| !e.is_empty()) {
             if !gives.contains(&e) {
@@ -880,7 +881,7 @@ fn made_from(ix: &Ix, n: &Node, body: &Body) -> Vec<String> {
             }
         }
     }
-    let holds: HashSet<&str> = n.returns.iter().flat_map(|r| &r.holds).map(String::as_str).collect();
+    let holds: HashSet<&str> = n.returns().iter().flat_map(|r| &r.holds).map(String::as_str).collect();
     let names = |t: &str| ix.nodes.get(t).map_or(false, |c| holds.contains(c.name.as_str()));
     // a signature that says nothing of what it gives back rules out no type: every type is one of the unchecked one's
     let unsaid = ix.unsaid(n) && ix.used(&n.id);
@@ -1056,10 +1057,10 @@ impl<'g> Ix<'g> {
     /// left it out or wrote the unchecked type. A constructor gives its class.
     fn unsaid(&self, n: &Node) -> bool {
         let leaves = self.leaves.iter().find(|(p, _)| *p == n.part).or(self.leaves.first()).map_or(Leaves::default(), |(_, l)| *l);
-        matches!(n.kind, NodeKind::Function | NodeKind::Method)
+        matches!(n.kind.tag(), NodeKind::Function | NodeKind::Method)
             && leaves.returns
-            && !n.ctor
-            && !n.returns.as_ref().map_or(false, crate::model::Returns::says)
+            && !n.ctor()
+            && !n.returns().map_or(false, crate::model::Returns::says)
     }
 
     /// Whether a caller uses what a call of `id` gives back.
@@ -1080,12 +1081,12 @@ impl<'g> Ix<'g> {
     /// diamond `D(B, C)` over `A` a call of `C.f` may run `B.f` on a `D`, though `B` is not below
     /// `C`, and there its `super().f()` runs `C.f`.
     fn overrides(&self, n: &Node) -> Vec<String> {
-        let Some(cls) = n.cls.as_deref() else { return vec![] };
+        let Some(cls) = n.cls() else { return vec![] };
         let below = self.below(cls);
         let mut out: Vec<String> = vec![];
         for c in &below {
             let Some(m) = self.method_on(c, &n.name).filter(|m| *m != n.id) else { continue };
-            let of = self.nodes.get(m.as_str()).and_then(|m| m.cls.as_deref()).unwrap_or_default();
+            let of = self.nodes.get(m.as_str()).and_then(|m| m.cls()).unwrap_or_default();
             let k = if of == cls || below.iter().any(|b| b == of) { m } else { key(&m, c) };
             if !out.contains(&k) {
                 out.push(k);
@@ -1137,7 +1138,7 @@ impl<'g> Ix<'g> {
 }
 
 /// The steps in call order, the steps of each choice together, by branch, with what decides each
-/// branch (`whens`, as `Node::whens` holds them).
+/// branch (`whens`, as `Body::whens` holds them).
 fn grouped(steps: Vec<(Step, Vec<(u32, u32)>)>, whens: &[(u32, u32, String)]) -> Vec<Item> {
     let choice_of = |arms: &Vec<(u32, u32)>| arms.first().map(|a| a.0);
     let mut items = vec![];
@@ -1181,8 +1182,9 @@ fn grouped(steps: Vec<(Step, Vec<(u32, u32)>)>, whens: &[(u32, u32, String)]) ->
 /// its public methods.
 fn body_of(ix: &Ix, n: &Node, on: &str) -> Body {
     let alts = if on.is_empty() { ix.overrides(n) } else { vec![] };
-    if !n.sites.is_empty() {
+    if !n.body().sites.is_empty() {
         let steps = n
+            .body()
             .sites
             .iter()
             .enumerate()
@@ -1202,7 +1204,7 @@ fn body_of(ix: &Ix, n: &Node, on: &str) -> Body {
                     None if !s.gives.is_empty() => format!("op:{}", s.to.rsplit('.').next().unwrap_or(&s.to)),
                     None => return None,
                 };
-                let method = ix.nodes.get(s.to.as_str()).filter(|m| m.cls.is_some());
+                let method = ix.nodes.get(s.to.as_str()).filter(|m| m.cls().is_some());
                 let mut instead = vec![];
                 match method {
                     // a `super()` call runs the next method after its class along the order of
@@ -1226,7 +1228,7 @@ fn body_of(ix: &Ix, n: &Node, on: &str) -> Body {
                 Some((Step { to, on: runs_on.to_string(), site: Some(i), named, instead }, s.arms.clone()))
             })
             .collect();
-        return Body { alts, items: grouped(steps, &n.whens), made_from: vec![] };
+        return Body { alts, items: grouped(steps, &n.body().whens), made_from: vec![] };
     }
     let callees: Vec<String> = if n.kind == NodeKind::Class && n.entry.is_some() {
         let ctor = ix.runs(&n.id);
@@ -1261,7 +1263,7 @@ fn body_of(ix: &Ix, n: &Node, on: &str) -> Body {
         arms.entry(e.dst.as_str()).or_insert_with(|| e.arms.clone());
     }
     let steps = callees.iter().map(|c| (Step::of(c), arms.get(c.as_str()).cloned().unwrap_or_default())).collect();
-    Body { alts, items: grouped(steps, &n.whens), made_from: vec![] }
+    Body { alts, items: grouped(steps, &n.body().whens), made_from: vec![] }
 }
 
 /// The body of every function, and of every function on each class a step or what it may run
@@ -1310,6 +1312,7 @@ pub fn bodies(g: &Graph) -> BTreeMap<String, Body> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::model::{Function, Kind};
 
     fn site(to: &str, op: &str, span: (u32, u32), hands: Vec<Held>, gives: Vec<Held>) -> Site {
         Site { to: to.into(), op: op.into(), span, hands, gives, ..Default::default() }
@@ -1362,7 +1365,7 @@ mod tests {
         b.add_node(crate::model::Node { id: "f".into(), ..Default::default() });
         b.touch("f", since);
         b.touch("f", until);
-        assert_eq!(b.nodes["f"].touches.len(), 2);
+        assert_eq!(b.nodes["f"].body().touches.len(), 2);
     }
 
     /// A place one arm of a choice writes and another reads is found and changed: the write never runs before
@@ -1373,14 +1376,14 @@ mod tests {
         let updated = |arms: Vec<((u32, u32), u32)>, read: u32| {
             let touch = |dir, line| Touch { artifact: "a.csv".into(), line, ..Touch::new(World::Disk, Some(dir)) };
             let (arm_lines, arm_choices) = arms.into_iter().unzip();
-            let f = crate::model::Node {
-                id: "f".into(),
-                kind: NodeKind::Function,
+            let body = crate::model::Body {
                 touches: vec![touch(Dir::Write, 3), touch(Dir::Read, read)],
                 arm_lines,
                 arm_choices,
                 ..Default::default()
             };
+            let f =
+                crate::model::Node { id: "f".into(), kind: Kind::Function(Function { body, ..Default::default() }), ..Default::default() };
             let g = Graph { nodes: vec![f], ..Default::default() };
             arrows(&g).get("f").map_or(vec![], |a| a.updates.clone())
         };
@@ -1391,9 +1394,7 @@ mod tests {
 
     /// A function of `touches` (way, line) at `data/log.txt` and `calls` (callee, line), with the lines of its loops.
     fn worker(id: &str, touches: &[(Dir, u32)], calls: &[(&str, u32)], loops: Vec<(u32, u32)>) -> crate::model::Node {
-        crate::model::Node {
-            id: id.into(),
-            kind: NodeKind::Function,
+        let body = crate::model::Body {
             touches: touches
                 .iter()
                 .map(|&(d, line)| Touch { artifact: "data/log.txt".into(), line, ..Touch::new(World::Disk, Some(d)) })
@@ -1401,7 +1402,8 @@ mod tests {
             sites: calls.iter().map(|&(to, line)| Site { to: to.into(), line, ..Default::default() }).collect(),
             loop_lines: loops,
             ..Default::default()
-        }
+        };
+        crate::model::Node { id: id.into(), kind: Kind::Function(Function { body, ..Default::default() }), ..Default::default() }
     }
 
     /// What a route does at a place composes from what its calls do there: a callee that reads back what its caller
@@ -1417,13 +1419,15 @@ mod tests {
         let log = || vec!["w:File:data/log.txt".to_string()];
         let bumped = vec![worker("run", &[(Write, 2)], &[("bump", 3)], vec![]), worker("bump", &[(Read, 6), (Write, 7)], &[], vec![])];
         assert_eq!(arrow(bumped, "run"), (log(), vec![]), "bump reads back what run wrote");
-        let looped = || crate::model::Node {
-            arm_lines: vec![(3, 3)],
-            arm_choices: vec![1],
-            ..worker("run", &[(Write, 3), (Read, 4)], &[], vec![(2, 4)])
+        let looped = || {
+            let mut n = worker("run", &[(Write, 3), (Read, 4)], &[], vec![(2, 4)]);
+            let b = n.body_mut().expect("a function has a body");
+            (b.arm_lines, b.arm_choices) = (vec![(3, 3)], vec![1]);
+            n
         };
         assert_eq!(arrow(vec![looped()], "run").1, log(), "a later round writes over what this one read");
-        let once = crate::model::Node { loop_lines: vec![], ..looped() };
+        let mut once = looped();
+        once.body_mut().expect("a function has a body").loop_lines = vec![];
         assert!(arrow(vec![once], "run").1.is_empty(), "without the loop the write in the arm only makes sure of it");
         let save = || worker("save", &[(Write, 2)], &[("show", 3)], vec![]);
         let show = || worker("show", &[(Read, 6)], &[("save", 7)], vec![]);
@@ -1440,19 +1444,18 @@ mod tests {
         let touch =
             |dir, op: &str, line| Touch { artifact: "data/note.txt".into(), op: op.into(), line, ..Touch::new(World::Disk, Some(dir)) };
         let mut b = crate::builder::GraphBuilder::default();
+        let body = crate::model::Body { arm_lines: vec![(3, 3)], arm_choices: vec![1], ..Default::default() };
         b.add_node(crate::model::Node {
             id: "run".into(),
-            kind: NodeKind::Function,
-            arm_lines: vec![(3, 3)],
-            arm_choices: vec![1],
+            kind: Kind::Function(Function { body, ..Default::default() }),
             ..Default::default()
         });
         for t in [touch(Dir::Write, "write_text", 3), touch(Dir::Read, "read_text", 4), touch(Dir::Write, "write_text", 5)] {
             b.touch("run", t);
         }
         let n = b.nodes["run"].clone();
-        assert_eq!(n.touches.len(), 2, "the two writes are one touch");
-        assert_eq!(n.touches[0].also_at, [5]);
+        assert_eq!(n.body().touches.len(), 2, "the two writes are one touch");
+        assert_eq!(n.body().touches[0].also_at, [5]);
         let g = Graph { nodes: vec![n], ..Default::default() };
         assert_eq!(arrows(&g)["run"].updates, ["w:File:data/note.txt"], "written on after it was read");
     }

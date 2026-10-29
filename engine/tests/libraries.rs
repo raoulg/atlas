@@ -28,7 +28,7 @@ fn a_library_is_read_as_far_as_the_project_reaches() {
     let node = |id: &str| g.nodes.iter().find(|n| n.id == id);
     let load = node("plotkit.data.load").expect("the function the app calls is read");
     assert!(load.library, "a library's function is marked as one");
-    assert!(load.touches.iter().any(|t| t.kind_name() == "disk_read"), "{:?}", load.touches);
+    assert!(load.body().touches.iter().any(|t| t.kind_name() == "disk_read"), "{:?}", load.body().touches);
     assert!(edge(&g, "app.main.main", "plotkit.data.load", EdgeKind::Calls));
     assert!(node("plotkit.data.unused").is_none(), "a function nothing reaches is not drawn");
     assert!(node("plotkit.figures.BarPlot").is_none(), "a class the project never builds is not drawn");
@@ -63,7 +63,7 @@ fn a_library_is_not_judged() {
 fn a_body_lists_its_calls() {
     let g = fixture();
     let main = g.nodes.iter().find(|n| n.id == "app.main.main").unwrap();
-    let to: Vec<&str> = main.sites.iter().map(|s| if s.to.is_empty() { s.op.as_str() } else { s.to.as_str() }).collect();
+    let to: Vec<&str> = main.body().sites.iter().map(|s| if s.to.is_empty() { s.op.as_str() } else { s.to.as_str() }).collect();
     assert_eq!(
         to,
         [
@@ -76,20 +76,20 @@ fn a_body_lists_its_calls() {
             "fast"
         ],
         "{:#?}",
-        main.sites
+        main.body().sites
     );
     let held = |ty: &str, name: &str| atlas_engine::Held::new(ty, name);
-    let settings = &main.sites[3];
+    let settings = &main.body().sites[3];
     assert_eq!(settings.gives, [held("plotkit.figures.Settings", "settings")]);
-    let plot = &main.sites[5];
+    let plot = &main.body().sites[5];
     assert_eq!(plot.on, "plotkit.figures.LinePlot", "a method called on a subclass's value runs on that subclass");
-    assert!(main.sites[4].hands.contains(&held("plotkit.figures.Settings", "settings")));
+    assert!(main.body().sites[4].hands.contains(&held("plotkit.figures.Settings", "settings")));
     // a value whose type ty does not know is followed by the name that holds it
-    let fast = &main.sites[6];
+    let fast = &main.body().sites[6];
     assert_eq!((fast.hands.clone(), fast.gives.clone()), (vec![held("plotkit.figures.Settings", "settings")], vec![held("", "shown")]));
     // in the library's own body, a call on `self` says so
     let base = g.nodes.iter().find(|n| n.id == "plotkit.figures.BasePlot.plot").unwrap();
-    assert!(base.sites.iter().any(|s| s.to == "plotkit.figures.BasePlot.build" && s.on_receiver), "{:#?}", base.sites);
+    assert!(base.body().sites.iter().any(|s| s.to == "plotkit.figures.BasePlot.build" && s.on_receiver), "{:#?}", base.body().sites);
 }
 
 /// A project written to a directory of its own with the library it calls beside it, where ty
@@ -134,12 +134,13 @@ fn what_lies_beyond_the_rounds_is_the_border_functions() {
     );
     let save = one.node("deepkit.store.save").expect("the function the project calls");
     let wrote = save
+        .body()
         .touches
         .iter()
         .find(|t| t.kind_name() == "disk_write")
-        .unwrap_or_else(|| panic!("the border writes what its code beyond writes: {:?}", save.touches));
+        .unwrap_or_else(|| panic!("the border writes what its code beyond writes: {:?}", save.body().touches));
     assert_eq!(wrote.artifact, "out.txt", "at the path the project hands it: {wrote:?}");
-    let call = save.sites.iter().find(|s| s.to == "deepkit.store.prepare").expect("save's call into what lies beyond");
+    let call = save.body().sites.iter().find(|s| s.to == "deepkit.store.prepare").expect("save's call into what lies beyond");
     assert_eq!(wrote.line, call.line, "drawn at the border's call that leads there");
     let route = atlas_engine::story::route(&one, "deep.main.main", 2).unwrap();
     assert!(route.contains("out.txt"), "the project's route reaches the place:\n{route}");
@@ -148,9 +149,9 @@ fn what_lies_beyond_the_rounds_is_the_border_functions() {
     assert!(found.iter().any(|f| f.node == "deep.main.main" && f.principle == "places"), "{found:#?}");
     assert!(found.iter().all(|f| f.node != "deep.main.main" || f.principle == "places"), "main leaves a file behind");
     // the rounds reach the function that writes: the touch is its own
-    assert!(three.node("deepkit.store.write").unwrap().touches.iter().any(|t| t.kind_name() == "disk_write"));
+    assert!(three.node("deepkit.store.write").unwrap().body().touches.iter().any(|t| t.kind_name() == "disk_write"));
     assert!(
-        three.node("deepkit.store.save").unwrap().touches.iter().all(|t| t.kind_name() != "disk_write"),
+        three.node("deepkit.store.save").unwrap().body().touches.iter().all(|t| t.kind_name() != "disk_write"),
         "a function's own arrow is not what it reaches"
     );
     // the text the graph keeps of the library's file

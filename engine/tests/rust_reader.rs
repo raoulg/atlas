@@ -24,6 +24,7 @@ fn places(g: &Graph, id: &str) -> Vec<(String, String, String, Vec<String>)> {
     let mut out: Vec<_> = g
         .node(id)
         .unwrap_or_else(|| panic!("no node {id}"))
+        .body()
         .touches
         .iter()
         .map(|t| (t.kind_name().to_string(), t.op.clone(), t.artifact.clone(), t.by.clone()))
@@ -68,7 +69,7 @@ fn a_name_is_a_module_or_a_value_by_where_it_stands() {
         g.node("reexport.fetch.fetch").and_then(|n| n.entry.as_ref()).map(|e| (e.kind, e.label.as_str())),
         Some((EntryKind::Export, "fetch"))
     );
-    let steps = |id: &str| g.node(id).unwrap().sites.iter().map(|s| s.to.clone()).collect::<Vec<_>>();
+    let steps = |id: &str| g.node(id).unwrap().body().sites.iter().map(|s| s.to.clone()).collect::<Vec<_>>();
     assert_eq!(steps("reexport.main.main"), ["reexport.fetch.fetch"]);
     assert_eq!(steps("reexport.twice"), ["reexport.fetch.fetch", "reexport.fetch.fetch"]);
 }
@@ -85,7 +86,7 @@ fn a_method_runs_on_the_value_a_call_gives() {
             "pub trait Shape {\n    fn area(&self) -> f64;\n    fn show(&self) -> String { format!(\"{}\", self.area()) }\n}\n\npub struct Square;\n\nimpl Square {\n    pub fn new() -> Square { Square }\n    pub fn find(name: &str) -> Option<Square> { None }\n}\n\nimpl Shape for Square {\n    fn area(&self) -> f64 { 1.0 }\n}\n\npub fn both() -> f64 {\n    Square::new().show();\n    let s = Square::new();\n    s.show();\n    let a = Square::find(\"x\").map_or(0.0, |s| s.area());\n    a\n}\n",
         )],
     );
-    let both = &g.node("receiver.both").unwrap().sites;
+    let both = &g.node("receiver.both").unwrap().body().sites;
     let shows: Vec<&str> = both.iter().filter(|s| s.to == "receiver.Shape.show").map(|s| s.on.as_str()).collect();
     assert_eq!(shows, ["receiver.Square", "receiver.Square"], "{both:#?}");
     assert!(both.iter().any(|s| s.op == "map_or" && s.gives.iter().any(|g| g.name == "a")), "{both:#?}");
@@ -148,7 +149,7 @@ fn a_let_holds_the_type_of_the_parameter_it_is_handed_to() {
             ("src/paint.rs", "use canvas::prelude::*;\n\nuse crate::Sheet;\n\npub fn draw<B: Backend>(area: &Area<B>, sheet: &Sheet) {}\n\npub fn pairs(rows: &[(Area<Rgb>, u8)]) {}\n"),
         ],
     );
-    let save = &g.node("handed.save").unwrap().sites;
+    let save = &g.node("handed.save").unwrap().body().sites;
     let values = |hs: &[atlas_engine::Held]| hs.iter().map(|h| (h.name.clone(), h.ty.clone())).collect::<Vec<_>>();
     let pair = |name: &str, ty: &str| (name.to_string(), ty.to_string());
     let hands = |to: &str| values(&save.iter().find(|s| s.to == to).unwrap_or_else(|| panic!("no step to {to}: {save:#?}")).hands);
@@ -298,12 +299,12 @@ fn main() {
     let options = ["--out-dir", "--dry-run", "-v", "<name>", "--log-level"].map(String::from).to_vec();
     let main = g.node("usage.main").unwrap();
     assert_eq!(main.entry.as_ref().map(|e| (e.kind, e.options.clone())), Some((EntryKind::Cli, options.clone())));
-    let parse = main.sites.iter().find(|s| s.to == "usage.Cli").expect("main builds its Cli");
+    let parse = main.body().sites.iter().find(|s| s.to == "usage.Cli").expect("main builds its Cli");
     assert_eq!(parse.command_line.as_ref(), Some(&options));
-    let reads = |f: &str| g.node(f).unwrap().sites.iter().any(|s| s.command_line.is_some());
+    let reads = |f: &str| g.node(f).unwrap().body().sites.iter().any(|s| s.command_line.is_some());
     assert!(reads("usage.tried") && !reads("usage.given"), "`try_parse` reads the command line, `parse_from` what it is handed");
     assert!(
-        main.sites.iter().find(|s| s.to == "usage.run").unwrap().hands.iter().any(|h| h.name == "cli"),
+        main.body().sites.iter().find(|s| s.to == "usage.run").unwrap().hands.iter().any(|h| h.name == "cli"),
         "what the parse gives is handed on"
     );
 }
@@ -430,7 +431,8 @@ fn a_crate_is_read_as_far_as_the_program_calls_into_it() {
         "{:?}",
         places(&one, "filekit.read.read_config")
     );
-    let steps = |g: &Graph| g.node("app.main").unwrap().sites.iter().map(|s| s.to.clone()).filter(|t| !t.is_empty()).collect::<Vec<_>>();
+    let steps =
+        |g: &Graph| g.node("app.main").unwrap().body().sites.iter().map(|s| s.to.clone()).filter(|t| !t.is_empty()).collect::<Vec<_>>();
     assert_eq!(steps(&one), ["filekit.read.read_config"]);
     assert!(one.node("filekit.unused").is_none(), "what the program does not reach is no part of the picture");
     assert!(one.node("filekit.clean.clean").is_none() && two.node("filekit.clean.clean").is_some(), "each round reaches one call further");
@@ -475,7 +477,7 @@ fn a_crate_is_read_where_cargo_keeps_it() {
     assert!(read.file.contains("filekit-1.2.3"), "{}", read.file);
     assert!(g.node("filekit.read_config").is_none(), "not another version");
     assert!(g.nodes.iter().all(|n| !n.id.starts_with("absent")), "a crate not on disk is not read");
-    assert!(g.node("app.main").unwrap().sites.iter().any(|s| s.to == "filekit.read.read_config"));
+    assert!(g.node("app.main").unwrap().body().sites.iter().any(|s| s.to == "filekit.read.read_config"));
 }
 
 /// What lies beyond the rounds is glued into the crate's function at the border: the program
@@ -504,10 +506,10 @@ fn what_lies_beyond_the_rounds_is_the_border_functions() {
     assert!(
         places(&one, "deepkit.save").contains(&place("disk_write", "write", "out.txt", &["app.main"])),
         "the border writes what its code beyond writes, at the path the program hands it: {:?}",
-        save.touches
+        save.body().touches
     );
-    let call = save.sites.iter().find(|s| s.to == "deepkit.prepare").expect("save's call into what lies beyond");
-    assert!(save.touches.iter().all(|t| t.line == call.line), "drawn at the border's call that leads there");
+    let call = save.body().sites.iter().find(|s| s.to == "deepkit.prepare").expect("save's call into what lies beyond");
+    assert!(save.body().touches.iter().all(|t| t.line == call.line), "drawn at the border's call that leads there");
     let route = atlas_engine::story::route(&one, "app.main", 2).unwrap();
     assert!(route.contains("out.txt"), "the program's route reaches the place:\n{route}");
     assert!(places(&three, "deepkit.write").iter().any(|(kind, ..)| kind == "disk_write"));
@@ -525,7 +527,7 @@ fn a_value_through_its_wrappers_is_the_value_inside() {
             "pub struct Square;\n\nimpl Square {\n    pub fn new() -> Square { Square }\n    pub fn area(&self) -> f64 { 1.0 }\n}\n\npub fn both() -> f64 {\n    let s = &mut Square::new();\n    let t = &Square::new();\n    let u = (Square::new());\n    s.area() + t.area() + u.area()\n}\n",
         )],
     );
-    let both = &g.node("wrappers.both").unwrap().sites;
+    let both = &g.node("wrappers.both").unwrap().body().sites;
     let areas = both.iter().filter(|s| s.to == "wrappers.Square.area").count();
     assert_eq!(areas, 3, "{both:#?}");
 }
@@ -543,10 +545,10 @@ fn a_let_else_keeps_what_it_binds_and_a_macro_s_method_on_self_is_handed_the_ins
         )],
     );
     let label = g.node("kept.Index.label").expect("label is read");
-    let node = label.sites.iter().find(|s| s.to == "kept.Index.node").expect("label calls node");
+    let node = label.body().sites.iter().find(|s| s.to == "kept.Index.node").expect("label calls node");
     assert_eq!(node.gives.iter().map(|h| (h.ty.as_str(), h.name.as_str())).collect::<Vec<_>>(), [("kept.Touch", "n")]);
     let verb = g.node("kept.Touch.verb").expect("verb is read");
-    let name = verb.sites.iter().find(|s| s.to == "kept.Kind.name").expect("verb calls name");
+    let name = verb.body().sites.iter().find(|s| s.to == "kept.Kind.name").expect("verb calls name");
     assert_eq!(name.hands.iter().map(|h| (h.ty.as_str(), h.name.as_str())).collect::<Vec<_>>(), [("kept.Touch", "")]);
     assert_eq!(name.hands[0].fills, [atlas_engine::Slot::Receiver]);
 }

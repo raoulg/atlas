@@ -44,7 +44,7 @@ pub(super) fn read(modules: &IndexMap<String, Module>, store: &mut GraphBuilder,
                 kept.insert(format!("{}.{}", m.id, s.name), s.mutable);
             }
         }
-        for n in nodes.values().filter(|n| matches!(n.kind, NodeKind::Function | NodeKind::Method)) {
+        for n in nodes.values().filter(|n| matches!(n.kind.tag(), NodeKind::Function | NodeKind::Method)) {
             let m = &modules[&n.module];
             let Some(def) = def_node(m, n) else { continue };
             let Some(body) = def.child_by_field_name("body") else { continue };

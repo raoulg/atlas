@@ -19,7 +19,7 @@ use super::module::{
 use super::paths::{self, At, Built, Eval};
 use crate::builder::{foreign_type, ClassInfo, GraphBuilder};
 use crate::knowledge;
-use crate::model::{Dir, EdgeKind, Entry, EntryKind, Node, NodeKind, Touch, World};
+use crate::model::{Class, Dir, EdgeKind, Entry, EntryKind, Function, Kind, Method, Node, NodeKind, Touch, World};
 use crate::pytypes::{Target, Types};
 use crate::tree::{field_children, literals, named_children, span, text, unquote, walk};
 
@@ -128,10 +128,11 @@ pub(super) fn route_prefixes(modules: &IndexMap<String, Module>, store: &mut Gra
         .filter_map(|n| {
             let m = modules.get(&n.module)?;
             let registers = |rest: &str| rest.split_once('(').map_or(false, |(verb, _)| knowledge::registers_route_by_decorator(verb));
-            let recv = n.decorators.iter().find_map(|d| d.split_once('.').filter(|(_, rest)| registers(rest)).map(|(r, _)| r.to_string()));
+            let recv =
+                n.decorators().iter().find_map(|d| d.split_once('.').filter(|(_, rest)| registers(rest)).map(|(r, _)| r.to_string()));
             let router = match recv {
                 Some(r) => m.bindings.get(&r).cloned().unwrap_or_else(|| format!("{}.{r}", m.id)),
-                None => n.cls.clone().unwrap_or_else(|| n.id.clone()),
+                None => n.cls().map(str::to_string).unwrap_or_else(|| n.id.clone()),
             };
             Some((n.id.clone(), router))
         })
@@ -175,19 +176,19 @@ pub(super) fn collect_symbols(m: &mut Module, store: &mut GraphBuilder) {
                     store.declare(
                         Node {
                             id: mnid.clone(),
-                            kind: NodeKind::Method,
                             name: mname.clone(),
                             file: file.clone(),
                             span: Some((md.start_position().row as u32 + 1, md.end_position().row as u32 + 1)),
                             module: m.id.clone(),
                             doc: first_docline(md.child_by_field_name("body"), src),
-                            cls: Some(nid.clone()),
-                            on_class,
-                            ctor: mname == "__init__" || on_class && gives_class,
                             private: private(&mname),
-                            decorators: mdecs.clone(),
-                            params,
-                            returns,
+                            kind: Kind::Method(Method {
+                                function: Function { decorators: mdecs.clone(), params, returns, ..Default::default() },
+                                cls: nid.clone(),
+                                on_class,
+                                ctor: mname == "__init__" || on_class && gives_class,
+                                ..Default::default()
+                            }),
                             ..Default::default()
                         },
                         sig,
@@ -217,16 +218,18 @@ pub(super) fn collect_symbols(m: &mut Module, store: &mut GraphBuilder) {
             let private = private(&name);
             store.add_node(Node {
                 id: nid.clone(),
-                kind: NodeKind::Class,
                 name,
                 file: file.clone(),
                 span,
                 module: m.id.clone(),
                 doc: first_docline(body, src),
-                decorators: decs,
                 private,
-                bases: bases.iter().map(|b| b.join(".")).collect(),
-                methods,
+                kind: Kind::Class(Class {
+                    decorators: decs,
+                    bases: bases.iter().map(|b| b.join(".")).collect(),
+                    methods,
+                    ..Default::default()
+                }),
                 ..Default::default()
             });
             store.add_edge(&m.id, &nid, EdgeKind::Contains, None);
@@ -236,16 +239,13 @@ pub(super) fn collect_symbols(m: &mut Module, store: &mut GraphBuilder) {
             store.declare(
                 Node {
                     id: nid.clone(),
-                    kind: NodeKind::Function,
                     name: name.clone(),
                     file: file.clone(),
                     span,
                     module: m.id.clone(),
                     doc: first_docline(body, src),
-                    decorators: decs.clone(),
                     private: private(&name),
-                    params,
-                    returns,
+                    kind: Kind::Function(Function { decorators: decs.clone(), params, returns, ..Default::default() }),
                     ..Default::default()
                 },
                 sig,
@@ -406,7 +406,7 @@ pub(super) fn link(modules: &IndexMap<String, Module>, store: &mut GraphBuilder,
     let ids: Vec<String> = store.nodes.keys().cloned().collect();
     // bases and annotated fields
     for id in &ids {
-        let (kind, module) = (store.nodes[id].kind, store.nodes[id].module.clone());
+        let (kind, module) = (store.nodes[id].kind.tag(), store.nodes[id].module.clone());
         if kind != NodeKind::Class {
             continue;
         }
@@ -436,16 +436,16 @@ pub(super) fn link(modules: &IndexMap<String, Module>, store: &mut GraphBuilder,
     let protocols: HashSet<String> = knowledge::PYTHON_PROTOCOLS.iter().map(|(p, n)| format!("ext:{p}.{n}")).collect();
     for id in &ids {
         let n = &store.nodes[id];
-        let Some(cls) = n.cls.as_deref().filter(|_| n.kind == NodeKind::Method) else { continue };
+        let Some(cls) = n.cls() else { continue };
         let of_protocol = store.classes.get(cls).map_or(false, |c| c.resolved.iter().any(|b| protocols.contains(b)));
-        let abstract_ = n.decorators.iter().any(|d| knowledge::PYTHON_ABSTRACT.contains(&d.rsplit('.').next().unwrap_or(d)));
-        if of_protocol || abstract_ {
-            store.nodes.get_mut(id).expect("a node of the graph").declared = true;
+        let abstract_ = n.decorators().iter().any(|d| knowledge::PYTHON_ABSTRACT.contains(&d.rsplit('.').next().unwrap_or(d)));
+        if let Some(m) = store.nodes.get_mut(id).and_then(Node::method_mut).filter(|_| of_protocol || abstract_) {
+            m.declared = true;
         }
     }
     // signatures -> takes / returns, every one before any body is read
     for id in &ids {
-        let (kind, module) = (store.nodes[id].kind, store.nodes[id].module.clone());
+        let (kind, module) = (store.nodes[id].kind.tag(), store.nodes[id].module.clone());
         if !matches!(kind, NodeKind::Function | NodeKind::Method) {
             continue;
         }
@@ -494,9 +494,8 @@ pub(super) fn link(modules: &IndexMap<String, Module>, store: &mut GraphBuilder,
             Target::Here { file, at } => sites.get(&(file.clone(), *at)).cloned(),
             Target::Lib(_) => None,
         });
-        if let Some(n) = store.nodes.get_mut(id) {
-            n.keeps = keeps;
-            n.breaks = breaks;
+        if let Some(m) = store.nodes.get_mut(id).and_then(Node::method_mut) {
+            (m.keeps, m.breaks) = (keeps, breaks);
         }
     }
     // what a framework registers, and what the attributes hold, as ty types them
@@ -519,7 +518,7 @@ pub(super) fn link(modules: &IndexMap<String, Module>, store: &mut GraphBuilder,
             let Some(d) = def_node(m, n) else { continue };
             let Some(body) = d.child_by_field_name("body") else { continue };
             let seen = Seen::new(m, types, &sites, modules, store, own);
-            let cls = n.cls.as_deref().filter(|_| method);
+            let cls = n.cls().filter(|_| method);
             let (receiver, params) = changed_params(&seen, &changing, d, body, method, cls);
             found.push((id.clone(), receiver && method && n.name != "__init__" && cls.is_some(), params));
         }
@@ -548,7 +547,7 @@ pub(super) fn link(modules: &IndexMap<String, Module>, store: &mut GraphBuilder,
     let mut waiting: Vec<(String, Touch, Vec<Built>)> = vec![];
     let mut args: Vec<Arg> = vec![];
     for id in &ids {
-        if matches!(store.nodes[id].kind, NodeKind::Function | NodeKind::Method | NodeKind::Module) {
+        if matches!(store.nodes[id].kind.tag(), NodeKind::Function | NodeKind::Method | NodeKind::Module) {
             let linked = link_calls(modules, store, types, &sites, &ext, &eval, own, &changing, id);
             handed.extend(linked.handed);
             waiting.extend(linked.waiting.into_iter().map(|(t, b)| (id.clone(), t, b)));
@@ -581,8 +580,8 @@ pub(super) fn link(modules: &IndexMap<String, Module>, store: &mut GraphBuilder,
     globals(modules, store, types);
     // the work handed to a managed transaction (`session.execute_read(work)`) goes its way
     for (work, kind, dir) in handed {
-        if let Some(n) = store.nodes.get_mut(&work) {
-            for t in n.touches.iter_mut().filter(|t| t.kind == kind && t.dir.is_none()) {
+        if let Some(b) = store.nodes.get_mut(&work).and_then(Node::body_mut) {
+            for t in b.touches.iter_mut().filter(|t| t.kind == kind && t.dir.is_none()) {
                 t.dir = Some(dir);
             }
         }
@@ -628,7 +627,7 @@ fn globals(modules: &IndexMap<String, Module>, store: &mut GraphBuilder, types: 
         let fns: Vec<(String, TsNode)> = store
             .nodes
             .values()
-            .filter(|n| n.module == m.id && matches!(n.kind, NodeKind::Function | NodeKind::Method))
+            .filter(|n| n.module == m.id && matches!(n.kind.tag(), NodeKind::Function | NodeKind::Method))
             .filter_map(|n| Some((n.id.clone(), def_node(m, n)?)))
             .collect();
         for (id, def) in &fns {
@@ -755,7 +754,7 @@ fn attributes(
 ) {
     let mut found: Vec<(String, String, String)> = vec![];
     for n in store.nodes.values().filter(|n| n.kind == NodeKind::Method) {
-        let (Some(cls), Some(m)) = (n.cls.clone(), modules.get(&n.module)) else { continue };
+        let (Some(cls), Some(m)) = (n.cls().map(str::to_string), modules.get(&n.module)) else { continue };
         let Some(body) = def_node(m, n).and_then(|d| d.child_by_field_name("body")) else { continue };
         let seen = Seen::new(m, types, sites, modules, store, own);
         for a in walk(body, &["assignment"]) {
@@ -803,7 +802,7 @@ fn mark_registered(
         for n in store
             .nodes
             .values()
-            .filter(|n| n.module == m.id && matches!(n.kind, NodeKind::Function | NodeKind::Method) && n.entry.is_none())
+            .filter(|n| n.module == m.id && matches!(n.kind.tag(), NodeKind::Function | NodeKind::Method) && n.entry.is_none())
         {
             let Some(decorated) = def_node(m, n).and_then(|d| d.parent()).filter(|p| p.kind() == "decorated_definition") else { continue };
             let registered = named_children(decorated)
@@ -1069,7 +1068,7 @@ fn add_sums(modules: &IndexMap<String, Module>, store: &mut GraphBuilder, aliase
         }
         store.add_node(Node {
             id: id.clone(),
-            kind: NodeKind::Class,
+            kind: Kind::Class(Class::default()),
             name: id.rsplit('.').next().unwrap_or(id).to_string(),
             file: crate::tree::path_str(&m.path),
             span: a.span,

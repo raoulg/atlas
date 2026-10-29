@@ -22,7 +22,11 @@ fn report_all(g: &Graph) -> &Node {
 
 /// The loop's step in a body: the operation written as the loop's head.
 fn each(n: &Node) -> &Site {
-    n.sites.iter().find(|s| s.op.starts_with("for station")).unwrap_or_else(|| panic!("a step for the loop in {}: {:?}", n.id, n.sites))
+    n.body()
+        .sites
+        .iter()
+        .find(|s| s.op.starts_with("for station"))
+        .unwrap_or_else(|| panic!("a step for the loop in {}: {:?}", n.id, n.body().sites))
 }
 
 /// On both sides the loop gives a station, and the call in its body is handed that station: the
@@ -39,13 +43,13 @@ fn a_loop_is_a_step_that_gives_each_element() {
                 "{language} {side}: the loop gives each station: {:?}",
                 loop_.gives
             );
-            let report = f.sites.iter().find(|s| s.to.ends_with("report")).expect("the call that reports one station");
+            let report = f.body().sites.iter().find(|s| s.to.ends_with("report")).expect("the call that reports one station");
             assert!(
                 report.hands.iter().any(|h| h.name == "station"),
                 "{language} {side}: report is handed the loop's station: {:?}",
                 report.hands
             );
-            let at = |s: &Site| f.sites.iter().position(|x| std::ptr::eq(x, s)).unwrap();
+            let at = |s: &Site| f.body().sites.iter().position(|x| std::ptr::eq(x, s)).unwrap();
             assert!(at(loop_) < at(report), "{language} {side}: the loop's step runs before the calls in its body");
         }
     }
@@ -59,7 +63,7 @@ fn a_loop_over_what_the_step_is_handed_takes_it() {
         let takes_a_parameter = |side: &str| {
             let g = graph(language, side);
             let f = report_all(&g);
-            each(f).hands.iter().any(|h| f.params.iter().any(|p| p.name == h.name))
+            each(f).hands.iter().any(|h| f.params().iter().any(|p| p.name == h.name))
         };
         assert!(takes_a_parameter("clean"), "{language}: the loop goes over the network the function is handed");
         assert!(!takes_a_parameter("shortcut"), "{language}: the loop goes over the module's list, which the function is not handed");

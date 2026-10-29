@@ -117,7 +117,7 @@ fn a_prophecy_is_no_finding_and_answers_the_one_it_supersedes() {
 fn an_override_of_a_generic_base_keeps_what_its_subclass_fills_in() {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixture");
     let g = analyze(&root, &Options::default()).expect("parses");
-    let keeps = |id: &str| g.node(id).unwrap_or_else(|| panic!("{id} is in the graph")).keeps;
+    let keeps = |id: &str| g.node(id).unwrap_or_else(|| panic!("{id} is in the graph")).method().unwrap().keeps;
     for kept in ["NodeLedger.from_row", "NodeLedger.put", "NodeHistory.from_row", "NodeHistory.put", "CountLedger.put", "Numbers.take"] {
         assert_eq!(keeps(&format!("fixture.generic.{kept}")), Some(true), "{kept}");
     }
@@ -187,18 +187,17 @@ fn rust_is_read_by_meaning() {
 /// that does not say what its `n` is.
 #[test]
 fn a_command_its_package_exports_is_a_door() {
-    use atlas_engine::{Entry, EntryKind, Graph, Node, NodeKind, Param};
+    use atlas_engine::{Entry, EntryKind, Function, Graph, Kind, Node, Param};
     let graph = |exported: bool| Graph {
         root: "tool".into(),
         nodes: vec![Node {
             id: "tool.main".into(),
-            kind: NodeKind::Function,
             name: "main".into(),
             module: "tool".into(),
             file: "tool.py".into(),
             entry: Some(Entry::new(EntryKind::Cli, "tool")),
             exported,
-            params: vec![Param { name: "n".into(), ..Default::default() }],
+            kind: Kind::Function(Function { params: vec![Param { name: "n".into(), ..Default::default() }], ..Default::default() }),
             ..Default::default()
         }],
         ..Default::default()

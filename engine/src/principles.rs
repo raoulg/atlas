@@ -255,9 +255,7 @@ pub fn check(g: &Graph) -> Vec<Finding> {
         }
         // what a prophecy supersedes is still asked about; the prophecy is the answer
         for f in &mut found {
-            if let Some(p) =
-                ix.node(&f.node).and_then(|n| answers.get(n.id.as_str()).or_else(|| n.cls.as_deref().and_then(|c| answers.get(c))))
-            {
+            if let Some(p) = ix.node(&f.node).and_then(|n| answers.get(n.id.as_str()).or_else(|| n.cls().and_then(|c| answers.get(c)))) {
                 f.evidence.push(format!("answered by the prophecy `{}`, which supersedes it", ix.label(p)));
             }
         }
@@ -302,7 +300,7 @@ impl<'g> Index<'g> {
     /// `BasePlot.plot` for a method, the plain name for anything else.
     fn label(&self, id: &str) -> String {
         let Some(n) = self.node(id) else { return id.rsplit('.').next().unwrap_or(id).to_string() };
-        match n.cls.as_deref().and_then(|c| self.node(c)) {
+        match n.cls().and_then(|c| self.node(c)) {
             Some(c) => format!("{}.{}", c.name, n.name),
             None => n.name.clone(),
         }
@@ -310,7 +308,7 @@ impl<'g> Index<'g> {
 
     /// Whether a node is sketch code that is not built: a prophecy, or a member of one.
     fn prophetic(&self, n: &Node) -> bool {
-        n.prophecy.is_some() || n.cls.as_deref().and_then(|c| self.node(c)).is_some_and(|c| c.prophecy.is_some())
+        n.prophecy().is_some() || n.cls().and_then(|c| self.node(c)).is_some_and(|c| c.prophecy().is_some())
     }
 
     /// Whether a node is test code, by where it stands: a test, code the reader marks as test code,
@@ -321,7 +319,7 @@ impl<'g> Index<'g> {
 
     /// What the prophecy `p` supersedes, when the code holds it.
     fn superseded(&self, p: &Node) -> Option<&'g Node> {
-        self.node(p.prophecy.as_ref()?.replaces.as_deref()?)
+        self.node(p.prophecy()?.replaces.as_deref()?)
     }
 
     /// The prophecy that supersedes each node it names.
@@ -353,7 +351,7 @@ impl<'g> Index<'g> {
     /// its language leaves the return type to the author, and the author left it out or wrote the
     /// unchecked type. A constructor gives its class.
     fn gives_unknown(&self, f: &Node, returns: Option<&Returns>) -> bool {
-        self.leaves(&f.id).returns && !f.ctor && !returns.map_or(false, Returns::says)
+        self.leaves(&f.id).returns && !f.ctor() && !returns.map_or(false, Returns::says)
     }
 
     fn at(&self, n: &Node) -> String {
@@ -372,7 +370,7 @@ impl<'g> Index<'g> {
         let mut seen = HashSet::new();
         let mut out = vec![];
         for m in self.members(cls) {
-            if (!m.private || m.ctor) && seen.insert(m.name.as_str()) {
+            if (!m.private || m.ctor()) && seen.insert(m.name.as_str()) {
                 out.push(m);
             }
         }
@@ -386,7 +384,7 @@ impl<'g> Index<'g> {
         self.mro(cls)
             .into_iter()
             .filter_map(|c| self.node(c))
-            .flat_map(|n| n.methods.iter().filter_map(move |m| self.node(&format!("{}.{m}", n.id))))
+            .flat_map(|n| n.class().into_iter().flat_map(|c| &c.methods).filter_map(move |m| self.node(&format!("{}.{m}", n.id))))
             .collect()
     }
 
@@ -407,11 +405,11 @@ impl<'g> Index<'g> {
 }
 
 fn is_function(n: &Node) -> bool {
-    matches!(n.kind, NodeKind::Function | NodeKind::Method)
+    matches!(n.kind.tag(), NodeKind::Function | NodeKind::Method)
 }
 
 fn signature(n: &Node) -> String {
-    written_signature(&n.name, &n.params, n.returns.as_ref())
+    written_signature(&n.name, n.params(), n.returns())
 }
 
 /// `name(a: A, b) -> C`, as a signature writes it.
@@ -422,7 +420,7 @@ fn written_signature(name: &str, params: &[Param], returns: Option<&Returns>) ->
 
 /// What a function says it gives, as written.
 fn written(n: &Node) -> &str {
-    n.returns.as_ref().map_or("", |r| r.written.as_str())
+    n.returns().map_or("", |r| r.written.as_str())
 }
 
 /// What a node's code depends on another for: what it calls, builds and extends, a request to a
@@ -461,7 +459,7 @@ fn door_fns<'g>(ix: &Index<'g>) -> Vec<&'g Node> {
     let mut asked = HashSet::new();
     let mut out = vec![];
     for e in ix.g.nodes.iter().filter(|n| exported(n)) {
-        let fns: Vec<&Node> = match e.kind {
+        let fns: Vec<&Node> = match e.kind.tag() {
             NodeKind::Function => vec![e],
             NodeKind::Class => ix.interface(&e.id),
             _ => vec![],
@@ -508,14 +506,15 @@ fn doors(ix: &Index) -> Vec<Finding> {
         }
     }
     for f in door_fns(ix) {
+        let Some(fun) = f.function() else { continue };
         // what its callers are checked against: its overloads, else its own signature
-        let own = [Signature { line: f.span.map_or(1, |s| s.0), params: f.params.clone(), returns: f.returns.clone() }];
-        let checked = if f.overloads.is_empty() { &own[..] } else { &f.overloads[..] };
+        let own = [Signature { line: f.span.map_or(1, |s| s.0), params: fun.params.clone(), returns: fun.returns.clone() }];
+        let checked = if fun.overloads.is_empty() { &own[..] } else { &fun.overloads[..] };
         let (mut untyped, mut gives_unknown, mut asked): (Vec<String>, bool, Vec<&Signature>) = (vec![], false, vec![]);
         for s in checked {
             // a function handed to a call where it is declared takes its parameters' types from the call
             let takes: Vec<String> =
-                s.params.iter().filter(|p| f.typed_by.is_empty() && !p.receiver && !p.says()).map(|p| format!("`{}`", p.name)).collect();
+                s.params.iter().filter(|p| fun.typed_by.is_empty() && !p.receiver && !p.says()).map(|p| format!("`{}`", p.name)).collect();
             // a constructor gives its class
             let gives = ix.gives_unknown(f, s.returns.as_ref());
             if !takes.is_empty() || gives {
@@ -611,7 +610,7 @@ fn sums(ix: &Index) -> Vec<Finding> {
 /// nothing to ask.
 fn overrides(ix: &Index) -> Vec<Finding> {
     let mut broken: Vec<(&Node, Vec<&Node>)> = vec![];
-    let initializer = |n: &Node| n.ctor && !n.on_class;
+    let initializer = |n: &Node| n.ctor() && !n.on_class();
     for m in ix.g.nodes.iter().filter(|n| n.kind == NodeKind::Method && !initializer(n) && ix.leaves(&n.id).overrides) {
         let Some(base) = breaks(ix, m) else { continue };
         match broken.iter_mut().find(|(b, _)| b.id == base.id) {
@@ -623,8 +622,8 @@ fn overrides(ix: &Index) -> Vec<Finding> {
         .into_iter()
         .map(|(base, ms)| {
             let evidence = ms.iter().map(|m| format!("{}{} ({})", ix.label(&m.id), promise(m), ix.at(m))).collect();
-            let classes: Vec<String> = ms.iter().filter_map(|m| m.cls.as_deref()).map(|c| ix.label(c)).collect();
-            let base_cls = base.cls.as_deref().map(|c| ix.label(c)).unwrap_or_default();
+            let classes: Vec<String> = ms.iter().filter_map(|m| m.cls()).map(|c| ix.label(c)).collect();
+            let base_cls = base.cls().map(|c| ix.label(c)).unwrap_or_default();
             ix.finding(
                 "overrides",
                 base,
@@ -651,8 +650,8 @@ fn overrides(ix: &Index) -> Vec<Finding> {
 /// What a method promises: what it takes, without the value it runs on, and what it gives, as
 /// written (`(rij: tuple[str, int]) -> Versie[R]`).
 fn promise(n: &Node) -> String {
-    let takes: Vec<String> = n.params.iter().filter(|p| !p.receiver).map(|p| p.to_string()).collect();
-    let ret = n.returns.as_ref().map_or(String::new(), |r| format!(" -> {}", r.written));
+    let takes: Vec<String> = n.params().iter().filter(|p| !p.receiver).map(|p| p.to_string()).collect();
+    let ret = n.returns().map_or(String::new(), |r| format!(" -> {}", r.written));
     format!("({}){ret}", takes.join(", "))
 }
 
@@ -666,14 +665,14 @@ fn promise(n: &Node) -> String {
 /// is not asked again of what overrides it (`C(B)` where `B.f` breaks `A.f`). Either way an array's
 /// shape is a promise no checker reads.
 fn breaks<'g>(ix: &Index<'g>, m: &Node) -> Option<&'g Node> {
-    let cls = m.cls.as_deref()?;
-    let bases: Vec<&'g Node> = ix.ancestors(cls).into_iter().filter_map(|a| ix.node(&format!("{a}.{}", m.name))).collect();
+    let method = m.method()?;
+    let bases: Vec<&'g Node> = ix.ancestors(&method.cls).into_iter().filter_map(|a| ix.node(&format!("{a}.{}", m.name))).collect();
     let nearest = *bases.first()?;
-    match m.keeps {
-        Some(false) => Some(m.breaks.as_deref().and_then(|b| bases.iter().copied().find(|x| x.id == b)).unwrap_or(nearest)),
+    match method.keeps {
+        Some(false) => Some(method.breaks.as_deref().and_then(|b| bases.iter().copied().find(|x| x.id == b)).unwrap_or(nearest)),
         Some(true) => bases.into_iter().find(|b| !shapes_fit(ix, b, m)),
         None => {
-            let below = |b: &Node| nearest.cls.as_deref().is_some_and(|n| b.cls.as_deref().is_some_and(|c| ix.ancestors(n).contains(&c)));
+            let below = |b: &Node| nearest.cls().is_some_and(|n| b.cls().is_some_and(|c| ix.ancestors(n).contains(&c)));
             let inherited = |b: &Node| b.id != nearest.id && below(b) && !keeps(ix, b, nearest);
             bases.into_iter().find(|b| !keeps(ix, b, m) && !inherited(b))
         }
@@ -695,7 +694,7 @@ fn keeps(ix: &Index, base: &Node, m: &Node) -> bool {
 /// is matched by its place. `assumed` holds the pairs of types being compared further out, which
 /// fit unless shown not to.
 fn signature_keeps(ix: &Index, base: &Node, m: &Node, structural: bool, assumed: &mut Vec<(String, String)>) -> bool {
-    let gives = match (&base.returns, &m.returns) {
+    let gives = match (base.returns(), m.returns()) {
         (Some(p), Some(g)) if !p.own && !g.own => {
             let promised = ix.targets(&base.id, EdgeKind::Returns);
             promised.is_empty()
@@ -703,7 +702,7 @@ fn signature_keeps(ix: &Index, base: &Node, m: &Node, structural: bool, assumed:
         }
         _ => true,
     };
-    let inputs = |f: &Node| f.params.iter().filter(|p| !p.receiver && !p.rest).cloned().collect::<Vec<_>>();
+    let inputs = |f: &Node| f.params().iter().filter(|p| !p.receiver && !p.rest).cloned().collect::<Vec<_>>();
     let takes = |f: &Node, p: &Param| -> Vec<&str> {
         ix.targets(&f.id, EdgeKind::Takes).into_iter().filter(|t| ix.node(t).is_some_and(|n| p.holds_type(&n.name))).collect()
     };
@@ -735,9 +734,13 @@ fn fits(ix: &Index, x: &str, y: &str, structural: bool, assumed: &mut Vec<(Strin
 fn has_members(ix: &Index, x: &str, y: &str, structural: bool, assumed: &mut Vec<(String, String)>) -> bool {
     let program = |t: &str| ix.node(t).filter(|n| n.kind == NodeKind::Class);
     let (Some(_), Some(_)) = (program(x), program(y)) else { return false };
-    let methods = |t: &str| -> Vec<&Node> { ix.members(t).into_iter().filter(|m| !m.ctor && !m.on_class).collect() };
+    let methods = |t: &str| -> Vec<&Node> { ix.members(t).into_iter().filter(|m| !m.ctor() && !m.on_class()).collect() };
     let fields = |t: &str| -> Vec<&str> {
-        ix.mro(t).into_iter().filter_map(|c| ix.node(c)).flat_map(|n| n.fields.iter().map(String::as_str)).collect()
+        ix.mro(t)
+            .into_iter()
+            .filter_map(|c| ix.node(c))
+            .flat_map(|n| n.class().into_iter().flat_map(|c| &c.fields).map(String::as_str))
+            .collect()
     };
     let held = |t: &str, f: &str| -> Vec<&str> {
         ix.mro(t)
@@ -842,7 +845,7 @@ fn places(ix: &Index) -> Vec<Finding> {
     // it hands a place to
     let mut decides: HashMap<&str, Vec<(&Node, &Touch)>> = HashMap::new();
     for n in &ix.g.nodes {
-        for t in &n.touches {
+        for t in &n.body().touches {
             let by = t.fixed.then_some(n.id.as_str()).into_iter().chain(t.fixed_by.iter().map(String::as_str));
             for d in by {
                 decides.entry(d).or_default().push((n, t));
@@ -890,7 +893,7 @@ fn changes(ix: &Index) -> Vec<Finding> {
         let Some(input) = e.via.as_deref() else { continue };
         let Some(f) = ix.node(&e.src).filter(|f| is_function(f)) else { continue };
         // an input handed in, not the value the function is called on, that the signature does not say changes
-        let Some(p) = f.params.iter().find(|p| p.name == input && !p.receiver && !p.changes) else { continue };
+        let Some(p) = f.params().iter().find(|p| p.name == input && !p.receiver && !p.changes) else { continue };
         // the type as the signature writes it, a forward reference without its quotes: `list[Row]`, `Graph`
         let ty = match p.ty.trim_matches(['"', '\'']) {
             "" => ix.label(&e.dst),
@@ -919,7 +922,7 @@ fn changes(ix: &Index) -> Vec<Finding> {
 fn gives(ix: &Index) -> Vec<Finding> {
     let doors: HashSet<&str> = door_fns(ix).into_iter().map(|f| f.id.as_str()).collect();
     let mut out = vec![];
-    for f in ix.g.nodes.iter().filter(|f| is_function(f) && ix.gives_unknown(f, f.returns.as_ref()) && !doors.contains(f.id.as_str())) {
+    for f in ix.g.nodes.iter().filter(|f| is_function(f) && ix.gives_unknown(f, f.returns()) && !doors.contains(f.id.as_str())) {
         let mut users: Vec<String> = ix
             .into
             .get(f.id.as_str())
@@ -985,12 +988,12 @@ fn tested<'g>(f: &'g Node, c: &'g Compare) -> Option<Tested<'g>> {
     let below = &c.subject[root.len()..];
     let own = Tested::Own(&f.id, &c.subject);
     if c.receiver {
-        return Some(match f.cls.as_deref() {
+        return Some(match f.cls() {
             Some(cls) if !below.is_empty() && of_itself(below) => Tested::Field(cls, below),
             _ => own,
         });
     }
-    let p = f.params.iter().find(|p| p.name == root)?;
+    let p = f.params().iter().find(|p| p.name == root)?;
     Some(if p.receiver || !of_itself(below) { own } else { Tested::Param(&f.module, &p.name, &p.ty, below) })
 }
 
@@ -1020,7 +1023,7 @@ fn of_itself(below: &str) -> bool {
 fn repeated(ix: &Index) -> Vec<Finding> {
     let mut by_value: BTreeMap<Tested, Vec<(&Node, &Compare)>> = BTreeMap::new();
     for f in ix.g.nodes.iter().filter(|n| is_function(n)) {
-        for c in &f.compares {
+        for c in &f.body().compares {
             if let Some(t) = tested(f, c) {
                 by_value.entry(t).or_default().push((f, c));
             }
@@ -1088,7 +1091,7 @@ fn repeated(ix: &Index) -> Vec<Finding> {
 fn unnamed<'g>(ix: &Index<'g>, f: &'g Node) -> Vec<Finding> {
     // the program's own steps: a call into a library is the library's operation, however far
     // Atlas reads its code
-    let body: Vec<&'g Site> = f.sites.iter().filter(|s| ix.node(&s.to).map_or(false, |n| !n.library)).collect();
+    let body: Vec<&'g Site> = f.body().sites.iter().filter(|s| ix.node(&s.to).map_or(false, |n| !n.library)).collect();
     // the type a step hands on: the class it constructs, or the class it returns
     let made = |s: &'g Site| -> Vec<&'g str> {
         match ix.node(&s.to) {
@@ -1163,7 +1166,7 @@ fn nothing(ix: &Index) -> Vec<Finding> {
     // a method -> the methods that override it
     let mut overridden: HashMap<String, Vec<&str>> = HashMap::new();
     for m in ix.g.nodes.iter().filter(|n| is_function(n)) {
-        for a in m.cls.as_deref().map(|c| ix.ancestors(c)).unwrap_or_default() {
+        for a in m.cls().map(|c| ix.ancestors(c)).unwrap_or_default() {
             let base = format!("{a}.{}", m.name);
             if ix.node(&base).is_some() {
                 overridden.entry(base).or_default().push(m.id.as_str());
@@ -1171,16 +1174,16 @@ fn nothing(ix: &Index) -> Vec<Finding> {
         }
     }
     let leaves_something = |n: &Node| {
-        !n.touches.is_empty()
-            || n.raises
-            || n.calls_handed
-            || n.returns.as_ref().map_or(false, |r| r.fails)
-            || n.params.iter().any(|p| p.changes)
+        !n.body().touches.is_empty()
+            || n.body().raises
+            || n.body().calls_handed
+            || n.returns().map_or(false, |r| r.fails)
+            || n.params().iter().any(|p| p.changes)
             || !ix.targets(&n.id, EdgeKind::Mutates).is_empty()
     };
     let mut out = vec![];
-    for f in ix.g.nodes.iter().filter(|f| is_function(f) && !f.library && !f.ctor && !f.declared) {
-        let gives_nothing = match &f.returns {
+    for f in ix.g.nodes.iter().filter(|f| is_function(f) && !f.library && !f.ctor() && !f.method().is_some_and(|m| m.declared)) {
+        let gives_nothing = match f.returns() {
             Some(r) => r.value.is_empty() && !r.own,
             None => !ix.leaves(&f.id).returns,
         };
@@ -1277,11 +1280,12 @@ struct Blind {
 fn unseen(ix: &Index, n: &Node, implemented: bool) -> Vec<Blind> {
     let at = |line: u32| format!("{}:{line}", ix.file(n));
     let mut out: Vec<Blind> = n
+        .body()
         .unseen
         .iter()
         .map(|(line, what)| Blind { what: what.clone(), at: at(*line), why: "the graph holds nothing of what it does" })
         .collect();
-    if n.declared && !implemented {
+    if n.method().is_some_and(|m| m.declared) && !implemented {
         out.push(Blind { what: ix.label(&n.id), at: ix.at(n), why: "only declared, and nothing in the graph implements it" });
     }
     out
@@ -1297,7 +1301,7 @@ fn unseen(ix: &Index, n: &Node, implemented: bool) -> Vec<Blind> {
 fn prophecy(ix: &Index) -> Vec<Finding> {
     let mut out = vec![];
     for p in ix.g.nodes.iter().filter(|n| ix.superseded(n).is_none()) {
-        let Some(said) = p.prophecy.as_ref().filter(|s| s.supersedes.is_some()) else { continue };
+        let Some(said) = p.prophecy().filter(|s| s.supersedes.is_some()) else { continue };
         let named = said.supersedes.as_deref().unwrap_or("");
         let finding = match said.candidates.as_slice() {
             [] => ix.finding(
@@ -1329,7 +1333,7 @@ fn prophecy(ix: &Index) -> Vec<Finding> {
         let (Some(from), Some(to)) = (ix.node(&e.src), ix.node(&e.dst)) else { continue };
         if ix.prophetic(to) && !ix.prophetic(from) && !from.library && !ix.test(from) {
             // a member of a prophecy is leaned on as the prophecy it belongs to
-            let root = to.cls.as_deref().and_then(|c| ix.node(c)).filter(|c| c.prophecy.is_some()).unwrap_or(to);
+            let root = to.cls().and_then(|c| ix.node(c)).filter(|c| c.prophecy().is_some()).unwrap_or(to);
             by.entry(from.id.as_str()).or_default().push((root, e.kind));
         }
     }
@@ -1559,19 +1563,19 @@ fn strongly_connected<V>(deps: &BTreeMap<String, BTreeMap<String, V>>) -> Vec<Ve
 /// (`Places::reached`).
 fn lens<'g>(ix: &Index<'g>) -> Vec<Finding> {
     let data = |t: &str, own: &str| {
-        t != own && ix.node(t).map_or(false, |n| matches!(n.kind, NodeKind::Class | NodeKind::External) && n.door.is_none())
+        t != own && ix.node(t).map_or(false, |n| matches!(n.kind.tag(), NodeKind::Class | NodeKind::External) && n.door().is_none())
     };
     // a place the code names, not only the variable that holds it: what two classes do there is
     // done to the same place
     let named = |place: &str| !place.starts_with("w:Disk:");
     let places = Places { ix, reached: RefCell::default(), into: RefCell::default() };
     // whether an operation gives a value: a constructor gives its class
-    let gives = |m: &Node| m.ctor || m.returns.as_ref().map_or(false, |r| !r.value.is_empty() || r.own);
+    let gives = |m: &Node| m.ctor() || m.returns().map_or(false, |r| !r.value.is_empty() || r.own);
     // the types of data operation `m` of class `c` gives: what it returns, the class's own type
     // among them, which a constructor and a method that gives `Self` give too
     let given = |c: &'g Node, m: &Node| -> Vec<&'g str> {
         let mut types: Vec<&'g str> = ix.targets(&m.id, EdgeKind::Returns).into_iter().filter(|t| *t == c.id || data(t, &c.id)).collect();
-        if (m.ctor || m.returns.as_ref().map_or(false, |r| r.own)) && !types.contains(&c.id.as_str()) {
+        if (m.ctor() || m.returns().map_or(false, |r| r.own)) && !types.contains(&c.id.as_str()) {
             types.push(&c.id);
         }
         types
@@ -1581,10 +1585,10 @@ fn lens<'g>(ix: &Index<'g>) -> Vec<Finding> {
     let operations = |c: &Node| -> Vec<(&'g Node, BTreeMap<String, String>, BTreeMap<String, String>)> {
         ix.interface(&c.id)
             .into_iter()
-            .filter(|m| is_function(m) && (m.ctor || !m.private))
+            .filter(|m| is_function(m) && (m.ctor() || !m.private))
             .map(|m| {
                 let (puts, gets) = places.reaches(&m.id);
-                let puts = if m.ctor { BTreeMap::new() } else { puts };
+                let puts = if m.ctor() { BTreeMap::new() } else { puts };
                 let gets = if gives(m) { gets } else { BTreeMap::new() };
                 (m, puts, gets)
             })
@@ -1595,10 +1599,10 @@ fn lens<'g>(ix: &Index<'g>) -> Vec<Finding> {
     // a parameter the graph does not follow does
     let put_types = |c: &Node, m: &'g Node, place: &str, ops: &HashSet<&str>| -> Vec<&'g str> {
         let reached = places.reached(m, place, ops);
-        let hands = || m.sites.iter().flat_map(|s| &s.hands);
+        let hands = || m.body().sites.iter().flat_map(|s| &s.hands);
         let unseen = reached.iter().any(|p| !hands().any(|h| h.name == *p));
         let shown: BTreeSet<&str> =
-            m.params.iter().flat_map(|p| hands().filter(move |h| h.name == p.name)).map(|h| h.ty.as_str()).collect();
+            m.params().iter().flat_map(|p| hands().filter(move |h| h.name == p.name)).map(|h| h.ty.as_str()).collect();
         let put: BTreeSet<&str> = hands().filter(|h| reached.contains(h.name.as_str())).map(|h| h.ty.as_str()).collect();
         ix.targets(&m.id, EdgeKind::Takes)
             .into_iter()
@@ -1623,7 +1627,7 @@ fn lens<'g>(ix: &Index<'g>) -> Vec<Finding> {
     let mut out = vec![];
     for c in classes {
         let ops = operations(c);
-        let ids: HashSet<&str> = ops.iter().filter(|(m, _, _)| !m.ctor).map(|(m, _, _)| m.id.as_str()).collect();
+        let ids: HashSet<&str> = ops.iter().filter(|(m, _, _)| !m.ctor()).map(|(m, _, _)| m.id.as_str()).collect();
         let name = ix.label(&c.id);
         // the places this class both puts to and gets from
         let places: BTreeMap<&String, &String> =
@@ -1764,7 +1768,7 @@ impl<'g> Places<'_, 'g> {
         let mut todo = vec![from];
         while let Some(id) = todo.pop() {
             let Some(n) = self.ix.node(id).filter(|n| !n.library) else { continue };
-            for t in &n.touches {
+            for t in &n.body().touches {
                 if let Some((place, label)) = held(t) {
                     match t.dir {
                         Some(Dir::Write) => puts.insert(place, label),
@@ -1809,17 +1813,17 @@ impl<'g> Places<'_, 'g> {
     /// nor holding such a value reaches the place when any step puts there.
     fn reached(&self, f: &'g Node, place: &str, theirs: &HashSet<&str>) -> BTreeSet<&'g str> {
         let ix = self.ix;
-        let params: Vec<&'g str> = f.params.iter().filter(|p| !p.receiver).map(|p| p.name.as_str()).collect();
+        let params: Vec<&'g str> = f.params().iter().filter(|p| !p.receiver).map(|p| p.name.as_str()).collect();
         // a call of its own into the place may be handed any of them
-        if f.touches.iter().any(|t| t.dir == Some(Dir::Write) && writes_handed(t) && held(t).map_or(false, |(p, _)| p == place)) {
+        if f.body().touches.iter().any(|t| t.dir == Some(Dir::Write) && writes_handed(t) && held(t).map_or(false, |(p, _)| p == place)) {
             return params.into_iter().collect();
         }
-        let hands = || f.sites.iter().flat_map(|s| &s.hands);
-        let given: HashSet<&str> = f.sites.iter().flat_map(|s| &s.gives).map(|g| g.name.as_str()).collect();
+        let hands = || f.body().sites.iter().flat_map(|s| &s.hands);
+        let given: HashSet<&str> = f.body().sites.iter().flat_map(|s| &s.gives).map(|g| g.name.as_str()).collect();
         // what each parameter holds: the types it is declared to take, and those it is handed as
         let takes = ix.targets(&f.id, EdgeKind::Takes);
         let holding: Vec<(&'g str, HashSet<&'g str>)> = f
-            .params
+            .params()
             .iter()
             .filter(|p| !p.receiver)
             .map(|p| {
@@ -1837,7 +1841,7 @@ impl<'g> Places<'_, 'g> {
         // the parameters each value of the body is made from, by the name the body holds it by
         let mut made: HashMap<&'g str, BTreeSet<&'g str>> = params.iter().map(|p| (*p, BTreeSet::from([*p]))).collect();
         let mut out = BTreeSet::new();
-        for s in &f.sites {
+        for s in &f.body().sites {
             let to = s.to.as_str();
             // a call Atlas cannot follow may put what it is handed wherever `f` puts
             let puts = if s.not_followed { self.reaches(&f.id).0.contains_key(place) } else { !to.is_empty() && self.into(to, place) };

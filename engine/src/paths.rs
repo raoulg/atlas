@@ -412,8 +412,8 @@ fn by_value<'b>(store: &crate::builder::GraphBuilder, holder: &str, mut built: i
     }
     // a value of one of the holder's parameters; anything else unknown (what the environment
     // says) keeps the name the code gives it
-    let n = store.nodes.get(holder).filter(|n| n.params.iter().any(|p| !p.receiver && p.name == first))?;
-    let owner = match (n.ctor, n.cls.as_deref()) {
+    let n = store.nodes.get(holder).filter(|n| n.params().iter().any(|p| !p.receiver && p.name == first))?;
+    let owner = match (n.ctor(), n.cls()) {
         (true, Some(cls)) => cls.rsplit('.').next().unwrap_or(cls),
         _ => n.name.as_str(),
     };

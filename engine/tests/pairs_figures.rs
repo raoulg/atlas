@@ -27,6 +27,7 @@ fn figures() -> &'static Pair {
 fn figure_touches(g: &Graph, id: &str) -> Vec<String> {
     g.node(id)
         .unwrap_or_else(|| panic!("{id} is in the graph"))
+        .body()
         .touches
         .iter()
         .filter(|t| t.kind_name() == "figure")
@@ -45,9 +46,9 @@ fn the_clean_chart_keeps_its_figure_and_the_shortcut_makes_one_per_line() {
     assert_eq!(arrows["charts.chart.Chart.create_figure"].changes, ["charts.chart.Chart"], "it keeps the figure in the chart");
     assert!(figure_touches(clean, "charts.chart.Chart.line").is_empty());
     let line = clean.node("charts.chart.Chart.line").expect("line is in the graph");
-    let call = line.sites.iter().find(|s| s.to == "charts.chart.Chart.create_figure").expect("line calls create_figure");
+    let call = line.body().sites.iter().find(|s| s.to == "charts.chart.Chart.create_figure").expect("line calls create_figure");
     let when: Vec<&str> =
-        call.arms.iter().filter_map(|(c, a)| line.whens.iter().find(|w| w.0 == *c && w.1 == *a)).map(|w| w.2.as_str()).collect();
+        call.arms.iter().filter_map(|(c, a)| line.body().whens.iter().find(|w| w.0 == *c && w.1 == *a)).map(|w| w.2.as_str()).collect();
     assert_eq!(when, ["self.ax is None"], "made only where the chart holds none");
 
     let arrows = flow::arrows(shortcut);
@@ -158,7 +159,7 @@ fn building_a_class_opens_into_its_initializer_in_the_route_s_text() {
 /// The lent pair (`tests/pairs/figures/lent`): a figure handed between charts through a field (#11). The clean first chart
 /// lends its figure by handing what it holds to the second's `take`, which sets its own fields; the shortcut's `lend`
 /// reaches into the second chart and sets its fields there (`other.fig, other.ax = self.fig, self.ax`). Either way the
-/// second chart holds the first's figure (`Node::sets`, a lens's put), so the notebook's screen shows one figure, also
+/// second chart holds the first's figure (`Body::sets`, a lens's put), so the notebook's screen shows one figure, also
 /// beyond the cut; what tells them apart is who sets the second chart's fields.
 #[test]
 fn a_figure_lent_through_a_field_is_the_one_figure() {
@@ -178,10 +179,10 @@ fn a_figure_lent_through_a_field_is_the_one_figure() {
     );
 }
 
-/// What a body sets of `id`'s values, as `Node::sets` names it: the name that holds the value, the field set and the field
+/// What a body sets of `id`'s values, as `Body::sets` names it: the name that holds the value, the field set and the field
 /// of a value it is set to.
 fn sets<'g>(g: &'g Graph, id: &str) -> Vec<(&'g str, &'g str, &'g str)> {
-    g.node(id).unwrap().sets.iter().map(|s| (s.on.name.as_str(), s.field.as_str(), s.of.as_str())).collect()
+    g.node(id).unwrap().body().sets.iter().map(|s| (s.on.name.as_str(), s.field.as_str(), s.of.as_str())).collect()
 }
 
 /// The titled pair (`tests/pairs/figures/titled`): two charts, the second titled after the first (#168). The clean first
@@ -208,7 +209,7 @@ fn a_field_that_holds_no_figure_lends_none() {
 /// (`Held::through`, #172).
 fn handed_through(g: &Graph, id: &str, to: &str) -> Vec<(String, Vec<(String, String)>)> {
     let slot = |s: &atlas_engine::Slot| serde_json::to_value(s).expect("a slot is data").to_string().replace('"', "");
-    let sites = g.node(id).unwrap_or_else(|| panic!("{id} is in the graph")).sites.iter().filter(|s| s.to == to);
+    let sites = g.node(id).unwrap_or_else(|| panic!("{id} is in the graph")).body().sites.iter().filter(|s| s.to == to);
     sites.flat_map(|s| &s.hands).map(|h| (h.name.clone(), h.through.iter().map(|(s, f)| (slot(s), f.clone())).collect())).collect()
 }
 
@@ -260,7 +261,12 @@ fn a_figure_kept_in_a_part_rests_in_that_part() {
 /// The lines of `id`'s body that make a figure: each call of `plt.subplots()`, also where one touch stands for two.
 fn figure_calls(g: &Graph, id: &str) -> Vec<u32> {
     let n = g.node(id).unwrap_or_else(|| panic!("{id} is in the graph"));
-    n.touches.iter().filter(|t| t.kind_name() == "figure").flat_map(|t| std::iter::once(t.line).chain(t.also_at.iter().copied())).collect()
+    n.body()
+        .touches
+        .iter()
+        .filter(|t| t.kind_name() == "figure")
+        .flat_map(|t| std::iter::once(t.line).chain(t.also_at.iter().copied()))
+        .collect()
 }
 
 /// The apart pair (`tests/pairs/figures/apart`): two series, each on a figure of its own (#175). The clean `compare` calls
@@ -298,14 +304,15 @@ fn a_value_an_initializer_keeps_in_a_field_is_taken() {
     let built = common::pair("figures/built");
     let init = "charts.chart.Board.__init__";
     let from = |g: &Graph| -> Vec<(String, String)> {
-        g.node(init).unwrap().sets.iter().flat_map(|s| s.from.iter().map(|h| (s.field.clone(), h.name.clone()))).collect()
+        g.node(init).unwrap().body().sets.iter().flat_map(|s| s.from.iter().map(|h| (s.field.clone(), h.name.clone()))).collect()
     };
     let field = |f: &str, by: &str| (f.to_string(), by.to_string());
     assert_eq!(from(&built.clean), [field("left", "left"), field("right", "right")], "set from the charts it is handed");
-    let made: Vec<String> = built.shortcut.node(init).unwrap().sites.iter().flat_map(|s| s.gives.iter().map(|g| g.name.clone())).collect();
+    let made: Vec<String> =
+        built.shortcut.node(init).unwrap().body().sites.iter().flat_map(|s| s.gives.iter().map(|g| g.name.clone())).collect();
     assert_eq!(made.len(), 2, "each chart it builds is named by its step: {made:?}");
     assert_eq!(from(&built.shortcut), [field("left", &made[0]), field("right", &made[1])], "set from the charts it builds");
-    let used: Vec<&str> = built.shortcut.node(init).unwrap().uses.iter().map(|u| u.name.as_str()).collect();
+    let used: Vec<&str> = built.shortcut.node(init).unwrap().body().uses.iter().map(|u| u.name.as_str()).collect();
     assert!(made.iter().all(|m| used.contains(&m.as_str())), "its own code reads each chart it keeps: {used:?}");
 }
 
@@ -345,7 +352,7 @@ fn a_projection_bound_to_a_name_is_still_the_projection() {
 /// figure to the right one by its own `lend` (`self.left.lend(self.right)`, which fills `other` with the board through
 /// `right`); the shortcut's board hands its left chart's fields to the right one's `take` itself (`self.right.take(self.left
 /// .fig, self.left.ax)`). Either way `take` sets the fields of the board's right part to those of its left part, and the class
-/// of each part keeps its figure there (`Node::holds`: a board's `left` and `right` hold Charts), so the right part holds the
+/// of each part keeps its figure there (`Class::holds`: a board's `left` and `right` hold Charts), so the right part holds the
 /// left part's figure: one figure, also beyond the cut. What tells the sides apart is who reads the left chart's fields: its
 /// own `lend`, or the board's call.
 #[test]
@@ -358,7 +365,7 @@ fn a_figure_lent_between_two_parts_of_one_value_is_the_one_figure() {
     }
     let shared = common::pair("figures/shared");
     let chart = "charts.chart.Chart".to_string();
-    let holds = &shared.clean.node("charts.chart.Board").expect("the board is in the graph").holds;
+    let holds = &shared.clean.node("charts.chart.Board").expect("the board is in the graph").class().unwrap().holds;
     assert_eq!(holds.iter().collect::<Vec<_>>(), [(&"left".to_string(), &chart), (&"right".to_string(), &chart)], "the class of each part");
     let through = |fields: &[(&str, &str)]| -> Vec<(String, Vec<(String, String)>)> {
         vec![("self".to_string(), fields.iter().map(|(s, f)| (s.to_string(), f.to_string())).collect())]
@@ -378,7 +385,7 @@ fn a_figure_lent_between_two_parts_of_one_value_is_the_one_figure() {
 /// The bindings of `id`'s body that set fields of the value it runs on, each as the fields it sets.
 fn bindings(g: &Graph, id: &str) -> Vec<Vec<String>> {
     let mut out: Vec<(Option<(u32, u32)>, Vec<String>)> = vec![];
-    for s in &g.node(id).unwrap_or_else(|| panic!("{id} is in the graph")).sets {
+    for s in &g.node(id).unwrap_or_else(|| panic!("{id} is in the graph")).body().sets {
         match out.iter_mut().find(|(l, _)| *l == s.lines) {
             Some((_, fs)) => fs.push(s.field.clone()),
             None => out.push((s.lines, vec![s.field.clone()])),
@@ -402,7 +409,7 @@ fn two_figures_one_value_keeps_in_different_fields_are_two() {
     }
     let two = common::pair("figures/two");
     assert_eq!(bindings(&two.clean, "charts.chart.Chart.create_figure"), [["fig", "ax"]], "a chart keeps one figure");
-    let holds = &two.clean.node("charts.chart.Fit").expect("the fit is in the graph").holds;
+    let holds = &two.clean.node("charts.chart.Fit").expect("the fit is in the graph").class().unwrap().holds;
     assert_eq!(holds.values().collect::<Vec<_>>(), ["charts.chart.Chart", "charts.chart.Chart"], "the clean fit holds two charts");
     assert_eq!(bindings(&two.shortcut, "charts.chart.Fit.create_figures"), [["fig", "ax"], ["res_fig", "res_ax"]], "one value, two");
 }
@@ -426,6 +433,7 @@ fn a_chart_set_whole_into_a_part_draws_there_on_the_figure_it_holds() {
         let whole: Vec<(&str, &str)> = g
             .node(init)
             .unwrap()
+            .body()
             .sets
             .iter()
             .filter(|s| s.of.is_empty())
@@ -433,7 +441,8 @@ fn a_chart_set_whole_into_a_part_draws_there_on_the_figure_it_holds() {
             .collect();
         assert_eq!(whole, [("left", "left"), ("right", "right")], "{side}: each part is set to the whole chart it is handed");
     }
-    let lines = |g: &Graph| g.node("charts.chart.side_by_side").unwrap().sites.iter().filter(|s| s.to == "charts.chart.Chart.line").count();
+    let lines =
+        |g: &Graph| g.node("charts.chart.side_by_side").unwrap().body().sites.iter().filter(|s| s.to == "charts.chart.Chart.line").count();
     assert_eq!(lines(&handed.clean), 0, "the board draws every line");
     assert_eq!(lines(&handed.shortcut), 1, "the caller draws on the left chart before it hands it over");
     // the part is the chart either way round: a figure lent to the chart after the put is the part's (`tests/plans/
@@ -456,7 +465,7 @@ fn a_chart_set_whole_into_a_part_draws_there_on_the_figure_it_holds() {
 /// shortcut makes both under the one condition `self.ax is None`. A condition that reads a field of the slot a figure is made
 /// in makes that slot's figure sure of, and one that reads another field makes it anew: the clean second fit draws its
 /// residuals on the figure lent (three figures), the shortcut's puts a figure of its own over it (four), at every budget.
-/// What tells the sides apart is which field each condition tests (`Node::tests`).
+/// What tells the sides apart is which field each condition tests (`Body::tests`).
 #[test]
 fn a_condition_makes_sure_only_of_the_figure_whose_field_it_tests() {
     let fit = |names: &[&str]| -> BTreeSet<String> {
@@ -470,7 +479,7 @@ fn a_condition_makes_sure_only_of_the_figure_whose_field_it_tests() {
     }
     let guarded = common::pair("figures/guarded");
     let tests = |g: &Graph| -> Vec<(u32, String)> {
-        g.node("charts.chart.Fit.draw").expect("draw is in the graph").tests.iter().map(|t| (t.choice, t.field.clone())).collect()
+        g.node("charts.chart.Fit.draw").expect("draw is in the graph").body().tests.iter().map(|t| (t.choice, t.field.clone())).collect()
     };
     assert_eq!(tests(&guarded.clean), [(0, "ax".to_string()), (1, "res_ax".to_string())], "a condition for each figure");
     assert_eq!(tests(&guarded.shortcut), [(0, "ax".to_string())], "one condition, on the fit's own figure");
@@ -507,7 +516,7 @@ fn a_figure_lent_through_a_parameter_filled_with_a_part_is_the_lender_s() {
     );
     let gives = |g: &Graph, to: &str| -> Vec<String> {
         let borrow = g.node("charts.chart.Board.borrow").expect("borrow is in the graph");
-        borrow.sites.iter().filter(|s| s.to == to).flat_map(|s| s.gives.iter().map(|h| h.name.clone())).collect()
+        borrow.body().sites.iter().filter(|s| s.to == to).flat_map(|s| s.gives.iter().map(|h| h.name.clone())).collect()
     };
     assert_eq!(gives(&borrowed.clean, "charts.chart.Chart.lend"), ["self"], "a change made through the part gives the board anew");
     assert_eq!(gives(&borrowed.shortcut, "charts.chart.Chart.take"), ["self"], "a change made through the part gives the board anew");

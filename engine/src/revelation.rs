@@ -94,13 +94,14 @@ pub fn revelation(g: &Graph) -> Vec<Stand> {
     let mut out: Vec<Stand> = g
         .nodes
         .iter()
-        .filter(|n| n.prophecy.is_some() && !n.library)
-        .filter(|n| n.cls.as_deref().and_then(|c| nodes.get(c)).map_or(true, |c| c.prophecy.is_none()))
+        .filter(|n| n.prophecy().is_some() && !n.library)
+        .filter(|n| n.cls().and_then(|c| nodes.get(c)).map_or(true, |c| c.prophecy().is_none()))
         .map(|n| {
-            let p = n.prophecy.clone().unwrap_or_default();
+            let p = n.prophecy().cloned().unwrap_or_default();
             let members: Vec<&str> = n
-                .methods
-                .iter()
+                .class()
+                .into_iter()
+                .flat_map(|c| &c.methods)
                 .map(|m| format!("{}.{m}", n.id))
                 .filter_map(|id| nodes.get_key_value(id.as_str()).map(|(k, _)| *k))
                 .collect();
@@ -110,7 +111,7 @@ pub fn revelation(g: &Graph) -> Vec<Stand> {
                 .filter(|e| !matches!(e.kind, EdgeKind::Contains | EdgeKind::Imports))
                 .filter(|e| e.dst == n.id || members.contains(&e.dst.as_str()))
                 .filter(|e| {
-                    nodes.get(e.src.as_str()).is_some_and(|s| s.prophecy.is_none() && s.cls.as_deref() != Some(n.id.as_str()) && !s.library)
+                    nodes.get(e.src.as_str()).is_some_and(|s| s.prophecy().is_none() && s.cls() != Some(n.id.as_str()) && !s.library)
                 })
                 .map(|e| e.src.clone())
                 .collect();

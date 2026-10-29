@@ -350,7 +350,7 @@ pub(super) fn link_calls<'t>(
 ) {
     let n = store.nodes[id].clone();
     let root = m.tree.root_node();
-    let body = match n.kind {
+    let body = match n.kind.tag() {
         NodeKind::Module => root,
         _ => match m.bodies.get(id).and_then(|(s, e)| root.descendant_for_byte_range(*s, *e)) {
             Some(b) => b,
@@ -402,13 +402,17 @@ pub(super) fn link_calls<'t>(
             resolve(m, &parts, modules, &store.nodes).and_then(|t| store.nodes.get(&t)).is_some_and(|t| t.kind == NodeKind::Class)
         };
         // the value a method runs on is `this`, unless it is called on its class
-        let receiver =
-            n.params.iter().find(|p| p.receiver).map(|p| p.name.as_str()).or((n.kind == NodeKind::Method && !n.on_class).then_some("this"));
+        let receiver = n
+            .params()
+            .iter()
+            .find(|p| p.receiver)
+            .map(|p| p.name.as_str())
+            .or((n.kind == NodeKind::Method && !n.on_class()).then_some("this"));
         crate::tree::compares(body, &m.src, steps.choices(), &COMPARES, &CHOICES, &crate::tree::Scope { receiver, is_type: &is_type })
     });
     steps.finish(store, id);
-    if let Some(node) = store.nodes.get_mut(id) {
-        node.calls_handed = read.unresolved.iter().any(|(u, _)| n.params.iter().any(|p| &p.name == u));
+    if let Some(b) = store.nodes.get_mut(id).and_then(Node::body_mut) {
+        b.calls_handed = read.unresolved.iter().any(|(u, _)| n.params().iter().any(|p| &p.name == u));
     }
     for (name, bucket) in read.unresolved {
         store.not_followed(name, bucket);
@@ -425,9 +429,9 @@ pub(super) fn link_calls<'t>(
         }
         store.add_edge(id, &t, EdgeKind::Mutates, Some(input));
     }
-    if let (Some(compares), Some(node)) = (compares, store.nodes.get_mut(id)) {
-        node.compares = compares;
-        node.raises = read.exits
+    if let (Some(compares), Some(b)) = (compares, store.nodes.get_mut(id).and_then(Node::body_mut)) {
+        b.compares = compares;
+        b.raises = read.exits
             || crate::tree::holds(
                 body,
                 &m.src,
@@ -507,7 +511,7 @@ impl<'a, 't> Body<'a, 't> {
     ) -> Self {
         let is_module = n.kind == NodeKind::Module;
         let scope = if is_module { None } else { paths::function_node(body) };
-        let cls = n.cls.clone();
+        let cls = n.cls().map(str::to_string);
         let attrs = cls.as_ref().and_then(|c| store.classes.get(c)).map(|c| c.attr_types.clone()).unwrap_or_default();
         let mut b = Body {
             m,
@@ -521,7 +525,7 @@ impl<'a, 't> Body<'a, 't> {
             scope,
             params: scope.map(|f| paths::param_names(f, &m.src)).unwrap_or_default(),
             cls,
-            initializer: n.ctor && !n.on_class,
+            initializer: n.ctor() && !n.on_class(),
             attrs,
             returned,
             eval,
@@ -740,7 +744,7 @@ impl<'a, 't> Body<'a, 't> {
             .into_iter()
             .filter_map(|p| p.child_by_field_name("pattern").filter(|x| x.kind() == "identifier"))
             .collect();
-        for p in n.params.iter().filter(|p| !p.ty.is_empty()) {
+        for p in n.params().iter().filter(|p| !p.ty.is_empty()) {
             let Some(name) = own.iter().find(|x| text(**x, src) == p.name).copied() else { continue };
             self.locals.written_at(name, src, &p.ty);
             if container_type(&p.ty, self.m) {
@@ -1239,7 +1243,7 @@ impl<'a, 't> Body<'a, 't> {
             return None;
         }
         let node = self.store.nodes.get(&callee)?;
-        let p = node.params.iter().filter(|p| !p.receiver).nth(before.len()).filter(|p| !p.rest)?;
+        let p = node.params().iter().filter(|p| !p.receiver).nth(before.len()).filter(|p| !p.rest)?;
         let parts: Vec<String> = p.ty.split('.').map(str::to_string).collect();
         if parts.iter().any(|x| x.is_empty() || !x.chars().all(|ch| ch.is_alphanumeric() || ch == '_' || ch == '$')) {
             return None;
@@ -1269,7 +1273,7 @@ impl<'a, 't> Body<'a, 't> {
             "pair" | "variable_declarator" => p.child_by_field_name("value").map(|v| v.id()) == Some(c.id()),
             _ => false,
         });
-        let fun = |r: &String| matches!(self.store.nodes[r].kind, NodeKind::Function | NodeKind::Method);
+        let fun = |r: &String| matches!(self.store.nodes[r].kind.tag(), NodeKind::Function | NodeKind::Method);
         if let Some(r) = self.resolve(&[text(c, self.src).to_string()]).filter(|r| handed && self.own(r) && fun(r)) {
             let each = self.per_element(c, &steps.kept);
             steps.handed(c, c, &r, EdgeKind::Calls, each);
@@ -1355,7 +1359,7 @@ impl<'a, 't> Body<'a, 't> {
         let on = value
             .filter(|_| !on_receiver)
             .and_then(|v| self.receiver(v))
-            .filter(|k| self.store.nodes[&t].cls.as_deref().map_or(false, |b| b != k.as_str()))
+            .filter(|k| self.store.nodes[&t].cls().map_or(false, |b| b != k.as_str()))
             .unwrap_or_default();
         if value_used(c) {
             self.read.used.push(t.clone());
@@ -1405,9 +1409,8 @@ impl<'a, 't> Body<'a, 't> {
                 // a method found on a base runs on the subclass the value is; the body's own receiver
                 // is of the class the route runs the body on, the one it is written in or one below
                 let on_receiver = object.map_or(false, |o| o.kind() == "this") || !after.is_empty();
-                let on = class
-                    .filter(|k| !on_receiver && self.store.nodes[&t].cls.as_deref().map_or(false, |b| b != k.as_str()))
-                    .unwrap_or_default();
+                let on =
+                    class.filter(|k| !on_receiver && self.store.nodes[&t].cls().map_or(false, |b| b != k.as_str())).unwrap_or_default();
                 let kind = if self.store.nodes[&t].kind == NodeKind::Class { EdgeKind::Instantiates } else { EdgeKind::Calls };
                 if kind == EdgeKind::Calls && value_used(c) {
                     self.read.used.push(t.clone());
@@ -1670,7 +1673,7 @@ impl<'a, 't> Body<'a, 't> {
             }
             "call_expression" => match self.callee(e).filter(|t| self.own(t)) {
                 // what a function of the program's gives, as its signature writes it
-                Some(t) => self.store.nodes[&t].returns.as_ref().is_some_and(|r| self.world_type(&r.written)),
+                Some(t) => self.store.nodes[&t].returns().is_some_and(|r| self.world_type(&r.written)),
                 None => {
                     let Some(f) = function_of(e) else { return false };
                     let parts = member_parts(f, src);
@@ -1912,7 +1915,7 @@ impl<'a, 't> Body<'a, 't> {
         let change = |name: &str| changes.iter().find(|(r, _)| r == name).map(|(_, ty)| ty.clone());
         let mut out: Vec<(TsNode<'t>, String)> = on.zip(change("this")).into_iter().collect();
         let params: Vec<&crate::model::Param> =
-            self.store.nodes.get(t).map(|n| n.params.iter().filter(|p| !p.receiver).collect()).unwrap_or_default();
+            self.store.nodes.get(t).map(|n| n.params().iter().filter(|p| !p.receiver).collect()).unwrap_or_default();
         let args = c.child_by_field_name("arguments").map(named_children).unwrap_or_default();
         let mut params = params.into_iter().peekable();
         for a in args.into_iter().filter(|a| a.kind() != "comment").take_while(|a| a.kind() != "spread_element") {

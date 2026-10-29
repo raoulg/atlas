@@ -361,7 +361,7 @@ pub(super) fn changed_by<'t>(seen: &Seen, changing: &Changing, c: TsNode<'t>, cl
     for t in on_self.iter().chain(callee.iter()) {
         // a method called through its class runs on the value it is handed first
         let named = obj.and_then(|o| seen.value(o)).map_or(false, |v| v.is_class);
-        let first = named && seen.store.nodes.get(t).map_or(false, |n| n.kind == NodeKind::Method && !n.on_class);
+        let first = named && seen.store.nodes.get(t).map_or(false, |n| n.kind == NodeKind::Method && !n.on_class());
         if seen.store.mutating.contains(t) {
             out.extend(if first { first_argument(c) } else { obj });
         }
@@ -450,7 +450,7 @@ pub(super) enum Callee {
 /// byte offset. This is where ty's answers meet the graph.
 pub(super) fn sites(modules: &IndexMap<String, Module>, store: &GraphBuilder) -> HashMap<(String, usize), String> {
     let mut out = HashMap::new();
-    for n in store.nodes.values().filter(|n| matches!(n.kind, NodeKind::Function | NodeKind::Method | NodeKind::Class)) {
+    for n in store.nodes.values().filter(|n| matches!(n.kind.tag(), NodeKind::Function | NodeKind::Method | NodeKind::Class)) {
         let Some(m) = modules.get(&n.module) else { continue };
         if let Some(name) = def_node(m, n).and_then(|d| d.child_by_field_name("name")) {
             out.insert((crate::tree::path_str(&m.path), name.start_byte()), n.id.clone());
@@ -522,7 +522,7 @@ impl<'a> Seen<'a> {
                         self.store
                             .nodes
                             .get(*id)
-                            .map_or(false, |n| matches!(n.kind, NodeKind::Function | NodeKind::Method | NodeKind::Class))
+                            .map_or(false, |n| matches!(n.kind.tag(), NodeKind::Function | NodeKind::Method | NodeKind::Class))
                     })
                     .cloned(),
             };
@@ -1011,7 +1011,7 @@ pub(super) fn link_calls<'t>(
     let mut steps = Steps::new(body, &m.src, &CHOICES, &USES);
     let read = {
         let mut seen = Seen::new(m, types, sites, modules, store, own);
-        seen.receiver = n.cls.clone().filter(|_| n.kind == NodeKind::Method && !n.on_class && n.params.iter().any(|p| p.receiver));
+        seen.receiver = n.cls().map(str::to_string).filter(|_| !n.on_class() && n.params().iter().any(|p| p.receiver));
         let mut b = Body::new(seen, modules, ext, eval, changing, &n, d, body);
         for r in b.steps() {
             let c = match r {
@@ -1046,12 +1046,12 @@ pub(super) fn link_calls<'t>(
                 resolve(m, &parts, modules, &store.nodes, own).and_then(|t| store.nodes.get(&t)).is_some_and(|t| t.kind == NodeKind::Class)
             }
         };
-        let receiver = n.params.iter().find(|p| p.receiver && !n.on_class).map(|p| p.name.as_str());
+        let receiver = n.params().iter().find(|p| p.receiver && !n.on_class()).map(|p| p.name.as_str());
         crate::tree::compares(body, &m.src, steps.choices(), &COMPARES, &CHOICES, &crate::tree::Scope { receiver, is_type: &is_type })
     });
     steps.finish(store, id);
-    if let Some(node) = store.nodes.get_mut(id) {
-        node.calls_handed = read.unresolved.iter().any(|(u, _)| n.params.iter().any(|p| &p.name == u));
+    if let Some(b) = store.nodes.get_mut(id).and_then(Node::body_mut) {
+        b.calls_handed = read.unresolved.iter().any(|(u, _)| n.params().iter().any(|p| &p.name == u));
     }
     for (name, bucket) in read.unresolved {
         store.not_followed(name, bucket);
@@ -1062,9 +1062,9 @@ pub(super) fn link_calls<'t>(
     for t in read.used {
         store.used.insert((id.to_string(), t));
     }
-    if let (Some(compares), Some(node)) = (compares, store.nodes.get_mut(id)) {
-        node.compares = compares;
-        node.raises = read.exits
+    if let (Some(compares), Some(b)) = (compares, store.nodes.get_mut(id).and_then(Node::body_mut)) {
+        b.compares = compares;
+        b.raises = read.exits
             || crate::tree::holds(
                 body,
                 &m.src,
@@ -1164,8 +1164,8 @@ impl<'a, 't> Body<'a, 't> {
             ext,
             eval,
             id: n.id.clone(),
-            cls: n.cls.clone(),
-            initializer: n.ctor && !n.on_class,
+            cls: n.cls().map(str::to_string),
+            initializer: n.ctor() && !n.on_class(),
             in_module,
             body,
             scope: (!in_module).then_some(d),
@@ -1506,7 +1506,7 @@ impl<'a, 't> Body<'a, 't> {
         let after = receiver.and_then(|o| self.written_in(o));
         let method = seen.store.nodes.get(t).filter(|n| n.kind == NodeKind::Method);
         let named = after.is_none() && method.is_some() && receiver.and_then(|o| seen.value(o)).map_or(false, |v| v.is_class);
-        let instance = method.map_or(false, |n| !n.on_class);
+        let instance = method.map_or(false, |n| !n.on_class());
         // the value the method runs on: what `super(..)` names, the first argument of a method
         // called through a class, else what it is called on
         let value = match &after {
@@ -1515,7 +1515,7 @@ impl<'a, 't> Body<'a, 't> {
             None => receiver,
         };
         let on = value.and_then(|o| {
-            let b = seen.store.nodes.get(t)?.cls.clone()?;
+            let b = seen.store.nodes.get(t)?.cls().map(str::to_string)?;
             seen.value(o)
                 .map(|v| seen.drawn(v, self.ext))
                 .unwrap_or_default()
@@ -2029,7 +2029,7 @@ pub(super) fn passed<'t>(
     receiver_first: bool,
     src: &[u8],
 ) -> Option<(String, Vec<(String, TsNode<'t>)>)> {
-    let callee = match store.nodes.get(target)?.kind {
+    let callee = match store.nodes.get(target)?.kind.tag() {
         NodeKind::Class => {
             let own = format!("{target}.__init__");
             let fields = store.classes.get(target).map_or(false, |c| !c.fields.is_empty());

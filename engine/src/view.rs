@@ -11,7 +11,7 @@ use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
 
 use indexmap::IndexMap;
 
-use crate::model::{Edge, EdgeKind, Graph, Node, NodeKind, Touch};
+use crate::model::{Edge, EdgeKind, Graph, Kind, Module, Node, NodeKind, Touch};
 
 pub trait View {
     fn apply(&self, g: &Graph) -> Graph;
@@ -153,7 +153,7 @@ impl<'g> Library<'g> {
             }
         }
         for n in &g.nodes {
-            if let Some(c) = n.cls.as_deref() {
+            if let Some(c) = n.cls() {
                 members.entry(c).or_default().push(n);
             }
         }
@@ -199,10 +199,10 @@ impl<'g> Library<'g> {
                     todo.extend(n.initializer(|m| nodes.get(m).copied()).map(|i| (i, d)));
                 }
                 // a function gives, takes and runs on its types
-                if matches!(n.kind, NodeKind::Function | NodeKind::Method) {
+                if matches!(n.kind.tag(), NodeKind::Function | NodeKind::Method) {
                     named
                         .extend(self.types.get(id.as_str()).into_iter().flatten().filter(|t| library.contains(**t)).map(|t| t.to_string()));
-                    named.extend(n.cls.clone());
+                    named.extend(n.cls().map(str::to_string));
                 }
                 todo.extend(
                     self.calls
@@ -274,8 +274,12 @@ pub fn reached(g: &Graph, rounds: usize) -> impl View {
     let lib = Library::of(g);
     let reach = lib.reach(rounds);
     let mut kept: HashSet<String> = reach.far.keys().cloned().chain(reach.named.iter().cloned()).collect();
-    let holders: Vec<String> =
-        kept.iter().filter_map(|id| lib.nodes.get(id.as_str())).flat_map(|n| [n.cls.clone(), Some(n.module.clone())]).flatten().collect();
+    let holders: Vec<String> = kept
+        .iter()
+        .filter_map(|id| lib.nodes.get(id.as_str()))
+        .flat_map(|n| [n.cls().map(str::to_string), Some(n.module.clone())])
+        .flatten()
+        .collect();
     kept.extend(holders);
     // a name outside the code that only the rest of a library names is none the program reaches
     let mut outside: HashMap<&str, bool> = HashMap::new();
@@ -312,9 +316,12 @@ fn glue(lib: &Library, dropped: &HashSet<String>) -> HashMap<String, Glued> {
     let overrides = lib.overrides(&lib.reach(usize::MAX));
     let gone = |id: &str| dropped.contains(id) && lib.library.contains(id);
     let mut out = HashMap::new();
-    for f in lib.nodes.values().filter(|n| n.library && matches!(n.kind, NodeKind::Function | NodeKind::Method) && !dropped.contains(&n.id))
+    for f in lib
+        .nodes
+        .values()
+        .filter(|n| n.library && matches!(n.kind.tag(), NodeKind::Function | NodeKind::Method) && !dropped.contains(&n.id))
     {
-        let line = |to: &str| f.sites.iter().find(|s| s.to == to).map_or(0, |s| s.line);
+        let line = |to: &str| f.body().sites.iter().find(|s| s.to == to).map_or(0, |s| s.line);
         // a class built runs its initializer: dropped, it lies beyond the border
         let init = |x: &str, kind: EdgeKind| -> Option<&str> {
             let i = lib.nodes.get(x).filter(|_| kind == EdgeKind::Instantiates)?.initializer(|m| lib.nodes.get(m).copied())?;
@@ -363,7 +370,7 @@ fn glue(lib: &Library, dropped: &HashSet<String>) -> HashMap<String, Glued> {
         let mut glued = Glued { runs, ..Default::default() };
         for (x, at) in beyond {
             let n = lib.nodes[x];
-            for t in &n.touches {
+            for t in &n.body().touches {
                 let mut by = vec![];
                 let mut whole = t.by.is_empty() && t.users_of.is_empty();
                 for alt in &t.by {
@@ -384,7 +391,7 @@ fn glue(lib: &Library, dropped: &HashSet<String>) -> HashMap<String, Glued> {
                 }
                 add(&mut glued.touches, Touch { line: at, by, users_of, ..t.clone() });
             }
-            for t in &n.instead {
+            for t in &n.body().instead {
                 add(&mut glued.instead, Touch { line: at, ..t.clone() });
             }
         }
@@ -407,11 +414,13 @@ impl View for Reached {
         let mut edges: HashSet<(String, String, EdgeKind)> = out.edges.iter().map(|e| (e.src.clone(), e.dst.clone(), e.kind)).collect();
         for n in out.nodes.iter_mut() {
             let Some(glued) = self.glued.get(&n.id) else { continue };
-            for t in &glued.touches {
-                add(&mut n.touches, t.clone());
-            }
-            for t in &glued.instead {
-                add(&mut n.instead, t.clone());
+            if let Some(b) = n.body_mut() {
+                for t in &glued.touches {
+                    add(&mut b.touches, t.clone());
+                }
+                for t in &glued.instead {
+                    add(&mut b.instead, t.clone());
+                }
             }
             for (to, kind) in &glued.runs {
                 if edges.insert((n.id.clone(), to.clone(), *kind)) {
@@ -498,7 +507,7 @@ pub fn by_module() -> impl View {
         }
         Some(Node {
             id: n.module.clone(),
-            kind: NodeKind::Module,
+            kind: Kind::Module(Module::default()),
             name: n.module.rsplit('.').next().unwrap_or(&n.module).to_string(),
             module: n.module.clone(),
             file: n.file.clone(),

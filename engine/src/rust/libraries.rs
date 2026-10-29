@@ -27,7 +27,7 @@ use crate::builder::GraphBuilder;
 use crate::cache::Check;
 use crate::effects;
 use crate::knowledge::{self, Registry};
-use crate::model::{Node, NodeKind};
+use crate::model::{Kind, Node, NodeKind};
 use crate::repo::{normal, Repo};
 use crate::tree::{named_children, span, text, unquote, walk};
 
@@ -309,13 +309,12 @@ impl Libraries {
         store.files.insert(crate::tree::path_str(file), String::from_utf8_lossy(&m.src).to_string());
         store.add_node(Node {
             id: id.to_string(),
-            kind: NodeKind::Module,
+            kind: Kind::Module(crate::model::Module { is_pkg: m.is_root, ..Default::default() }),
             name: id.rsplit('.').next().unwrap_or(id).to_string(),
             file: crate::tree::path_str(file),
             span: span(root),
             module: id.to_string(),
             doc: module_doc(root, &m.src),
-            is_pkg: m.is_root,
             library: true,
             ..Default::default()
         });
@@ -361,7 +360,7 @@ fn library_calls(
     let eval = Eval::new(modules, &store.nodes, crate_ids);
     let returned = returned_classes(store);
     let mut out = vec![];
-    for n in store.nodes.values().filter(|n| matches!(n.kind, NodeKind::Function | NodeKind::Method) && probe.contains(&n.module)) {
+    for n in store.nodes.values().filter(|n| matches!(n.kind.tag(), NodeKind::Function | NodeKind::Method) && probe.contains(&n.module)) {
         let Some(m) = modules.get(&n.module) else { continue };
         let Some(d) = def_node(m, n) else { continue };
         let Some(body) = d.child_by_field_name("body") else { continue };

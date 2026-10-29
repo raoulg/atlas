@@ -80,190 +80,240 @@ impl Entry {
     }
 }
 
+/// A node of the graph: what every node has, and its kind with what that kind holds (`Kind`).
 #[derive(Serialize, Deserialize, TS, Clone, Debug, Default)]
-#[ts(export)]
+#[serde(into = "NodeJson", from = "NodeJson")]
+#[ts(export, as = "NodeJson")]
 pub struct Node {
     pub id: String,
-    pub kind: NodeKind,
     pub name: String,
     pub file: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub span: Option<(u32, u32)>,
     pub module: String,
-    #[serde(default, skip_serializing_if = "String::is_empty")]
     pub doc: String,
-    /// Owning class, for methods.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub cls: Option<String>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub bases: Vec<String>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub methods: Vec<String>,
-    /// For a class: the fields it declares, by name, beside its methods.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub fields: Vec<String>,
-    /// For a class: the class of the program each of its fields holds, by the field's name, as its declarations and its
-    /// methods' assignments say (`self.left = left` with `left: Chart`): what a value of it is reached through, field by
-    /// field (`board.left` is a `Chart`). The `has` edges say which classes it holds; this says through which field.
-    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
-    #[ts(type = "Record<string, string>")]
-    pub holds: BTreeMap<String, String>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub decorators: Vec<String>,
-    /// Sketch code kept in the tree, not built yet: what its marker says. Read by the language's reader.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub prophecy: Option<Prophecy>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub params: Vec<Param>,
-    /// What the signature says it gives back; none when it does not say.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub returns: Option<Returns>,
-    /// The signatures its callers are checked against, where the code declares them apart from
-    /// the body that runs: its overloads, in the order they are written. `params` and `returns`
-    /// are then the implementation's, which no caller is checked against.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub overloads: Vec<Signature>,
-    /// For a method that overrides another: whether it can stand where each method it overrides
-    /// stood, what it takes and what it gives, as the language's type checker decides; none where no
-    /// checker decided.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub keeps: Option<bool>,
-    /// For an override that does not keep its promise: the method whose promise it breaks, as the
-    /// type checker names it, where the graph holds that method.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub breaks: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub entry: Option<Entry>,
     /// Its package exports it, where its entry is a route of another kind: a program a manifest
     /// declares, whose function the package also exports, is a command and a door.
-    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub exported: bool,
-    /// The calls that leave the package, with what they touch: a path literal, a table, a
-    /// command, or the argument's name when nothing better is known.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub touches: Vec<Touch>,
-    /// Calls as they were read, before their callers made their paths whole: a route that
-    /// reaches none of those callers shows the call this way.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub instead: Vec<Touch>,
-    /// The requests it makes whole that no route of its own part serves: the method when the code
-    /// says it, and the path (`GET /api/items/{id}`). Another part's route may serve them.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub asks: Vec<String>,
-    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
-    pub is_pkg: bool,
-    /// For a method: it is called on its class, not on a value of it, so the class is no input.
-    /// A Python class or static method, a Rust function in an `impl` without `self`, a
-    /// TypeScript `static` method.
-    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
-    pub on_class: bool,
-    /// Calling it makes a value of its class: an initializer, which fills in the value a call to
-    /// the class makes (so it is not `on_class`), or a function on the class that gives one.
-    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
-    pub ctor: bool,
     /// Only the code beside it may use it: its module, or for a member its class.
-    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub private: bool,
-    /// Its body may end it without giving back: it raises, throws or panics, outside the
-    /// functions it defines, or it calls what ends the program (`sys.exit`, `process.exit`).
-    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
-    pub raises: bool,
-    /// The error its body's own code hands on outside its steps, as its signature converts it, `""`
-    /// for one of no type of the code's: a `?` written in no step (`Ok(fs::read_to_string(p)?.lines()..)`).
-    /// What a step hands on, the step's site says (`Site::fails`).
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub fails: Option<String>,
-    /// It calls a function it is handed: what that function does is its caller's to say.
-    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
-    pub calls_handed: bool,
-    /// For a method: it has no body of its own. An interface, a protocol, a trait or an abstract
-    /// class declares it, and a call to it runs what implements it.
-    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
-    pub declared: bool,
-    /// What its body does that the graph holds nothing else of, by line and as the code writes it:
-    /// a call whose value goes nowhere, made for an effect Atlas does not know, a library's of
-    /// which no table says it crosses into the world, changes a value or ends the program
-    /// (`logger.info(..)`, `tensor.mul_(..)`), or one Atlas cannot follow (`self.on_done(..)`);
-    /// and a value a class keeps, which the body changes (`Counter.total += 1`). What these leave
-    /// behind, Atlas does not see.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    #[ts(type = "Array<[number, string]>")]
-    pub unseen: Vec<(u32, String)>,
-    /// For a function handed to a call where it is declared (`memo((props) => ..)`,
-    /// `createServerFn(..).handler(..)`): the call, which gives its parameters their types.
-    #[serde(default, skip_serializing_if = "String::is_empty")]
-    pub typed_by: String,
-    /// Where the body compares a value with literals.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub compares: Vec<Compare>,
-    /// The part of the world a value of this type is a door to, when it is one. A library's type:
-    /// what its library's calls reach (`db_sqlite` for `sqlite3.Connection`). A class of the
-    /// package: what one of its operations reaches, through what it calls (a sink, a repository,
-    /// a client).
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(type = "string")]
-    pub door: Option<World>,
     /// The part of the repository the node belongs to.
-    #[serde(default, skip_serializing_if = "String::is_empty")]
     pub part: String,
     /// Code of a library the project uses, read as far as the project's calls reach into it.
-    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub library: bool,
     /// Test code, by where it stands: a module the language keeps for tests (a test file, a Rust
     /// `#[cfg(test)]` module, a crate's `tests/`), or an item of one that the graph keeps in the
     /// module around it (a Rust `mod tests { .. }`).
-    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub test: bool,
-    /// The calls of its body, in the order they run: the steps of a route through it.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub kind: Kind,
+}
+
+/// What a node is, with what its kind holds beside what every node has: each kind holds only what
+/// means something for it.
+#[derive(Clone, Debug)]
+pub enum Kind {
+    Module(Module),
+    Class(Class),
+    Function(Function),
+    Method(Method),
+    External(External),
+}
+
+impl Kind {
+    /// Which kind it is, without what it holds.
+    pub fn tag(&self) -> NodeKind {
+        match self {
+            Kind::Module(_) => NodeKind::Module,
+            Kind::Class(_) => NodeKind::Class,
+            Kind::Function(_) => NodeKind::Function,
+            Kind::Method(_) => NodeKind::Method,
+            Kind::External(_) => NodeKind::External,
+        }
+    }
+}
+
+/// A kind is the kind its tag names, whatever it holds.
+impl PartialEq<NodeKind> for Kind {
+    fn eq(&self, other: &NodeKind) -> bool {
+        self.tag() == *other
+    }
+}
+
+impl Default for Kind {
+    fn default() -> Self {
+        Kind::Module(Module::default())
+    }
+}
+
+/// A file of code, or the root of a package.
+#[derive(Clone, Debug, Default)]
+pub struct Module {
+    /// It roots a package: Python's `__init__.py`, a crate's root, TypeScript's `index`.
+    pub is_pkg: bool,
+    /// What its own code runs: a script's, a notebook's, a module's where it runs as a program.
+    pub body: Body,
+}
+
+/// A class, a struct, an enum, an interface: a type of the program's.
+#[derive(Clone, Debug, Default)]
+pub struct Class {
+    pub bases: Vec<String>,
+    pub methods: Vec<String>,
+    /// The fields it declares, by name, beside its methods.
+    pub fields: Vec<String>,
+    /// The class of the program each of its fields holds, by the field's name, as its declarations and its methods'
+    /// assignments say (`self.left = left` with `left: Chart`): what a value of it is reached through, field by field
+    /// (`board.left` is a `Chart`). The `has` edges say which classes it holds; this says through which field.
+    pub holds: BTreeMap<String, String>,
+    pub decorators: Vec<String>,
+    /// Sketch code kept in the tree, not built yet: what its marker says. Read by the language's reader.
+    pub prophecy: Option<Prophecy>,
+    /// The part of the world a value of it is a door to, when it is one: what one of its operations reaches, through
+    /// what it calls (a sink, a repository, a client).
+    pub door: Option<World>,
+}
+
+/// A function: what its signature says it takes and gives, and the body that runs.
+#[derive(Clone, Debug, Default)]
+pub struct Function {
+    pub decorators: Vec<String>,
+    /// Sketch code kept in the tree, not built yet: what its marker says. Read by the language's reader.
+    pub prophecy: Option<Prophecy>,
+    pub params: Vec<Param>,
+    /// What the signature says it gives back; none when it does not say.
+    pub returns: Option<Returns>,
+    /// The signatures its callers are checked against, where the code declares them apart from
+    /// the body that runs: its overloads, in the order they are written. `params` and `returns`
+    /// are then the implementation's, which no caller is checked against.
+    pub overloads: Vec<Signature>,
+    /// For a function handed to a call where it is declared (`memo((props) => ..)`,
+    /// `createServerFn(..).handler(..)`): the call, which gives its parameters their types.
+    pub typed_by: String,
+    pub body: Body,
+}
+
+/// A method: a function of a class.
+#[derive(Clone, Debug, Default)]
+pub struct Method {
+    pub function: Function,
+    /// Its class.
+    pub cls: String,
+    /// It is called on its class, not on a value of it, so the class is no input. A Python class
+    /// or static method, a Rust function in an `impl` without `self`, a TypeScript `static` method.
+    pub on_class: bool,
+    /// Calling it makes a value of its class: an initializer, which fills in the value a call to
+    /// the class makes (so it is not `on_class`), or a function on the class that gives one.
+    pub ctor: bool,
+    /// For a method that overrides another: whether it can stand where each method it overrides
+    /// stood, what it takes and what it gives, as the language's type checker decides; none where no
+    /// checker decided.
+    pub keeps: Option<bool>,
+    /// For an override that does not keep its promise: the method whose promise it breaks, as the
+    /// type checker names it, where the graph holds that method.
+    pub breaks: Option<String>,
+    /// It has no body of its own. An interface, a protocol, a trait or an abstract class declares
+    /// it, and a call to it runs what implements it.
+    pub declared: bool,
+}
+
+/// A name outside the code: a library's type or function the code names.
+#[derive(Clone, Debug, Default)]
+pub struct External {
+    /// The part of the world a value of this type is a door to, when it is one: what its
+    /// library's calls reach (`db_sqlite` for `sqlite3.Connection`).
+    pub door: Option<World>,
+}
+
+/// What a body runs: the calls that are its steps, what they cross into the world, and what its own
+/// code reads, binds, sets, compares and decides. A module's, a function's and a method's code is a
+/// body; a class and a name outside the code run none.
+#[derive(Clone, Debug, Default)]
+pub struct Body {
+    /// The calls that leave the package, with what they touch: a path literal, a table, a
+    /// command, or the argument's name when nothing better is known.
+    pub touches: Vec<Touch>,
+    /// Calls as they were read, before their callers made their paths whole: a route that
+    /// reaches none of those callers shows the call this way.
+    pub instead: Vec<Touch>,
+    /// The requests it makes whole that no route of its own part serves: the method when the code
+    /// says it, and the path (`GET /api/items/{id}`). Another part's route may serve them.
+    pub asks: Vec<String>,
+    /// It may end without giving back: it raises, throws or panics, outside the functions it
+    /// defines, or it calls what ends the program (`sys.exit`, `process.exit`).
+    pub raises: bool,
+    /// The error its own code hands on outside its steps, as its signature converts it, `""` for
+    /// one of no type of the code's: a `?` written in no step (`Ok(fs::read_to_string(p)?.lines()..)`).
+    /// What a step hands on, the step's site says (`Site::fails`).
+    pub fails: Option<String>,
+    /// It calls a function it is handed: what that function does is its caller's to say.
+    pub calls_handed: bool,
+    /// What it does that the graph holds nothing else of, by line and as the code writes it: a call
+    /// whose value goes nowhere, made for an effect Atlas does not know, a library's of which no
+    /// table says it crosses into the world, changes a value or ends the program
+    /// (`logger.info(..)`, `tensor.mul_(..)`), or one Atlas cannot follow (`self.on_done(..)`); and
+    /// a value a class keeps, which the body changes (`Counter.total += 1`). What these leave
+    /// behind, Atlas does not see.
+    pub unseen: Vec<(u32, String)>,
+    /// Where it compares a value with literals.
+    pub compares: Vec<Compare>,
+    /// Its calls, in the order they run: the steps of a route through it.
     pub sites: Vec<Site>,
-    /// What the body's own code uses outside the calls that are its steps: each name it reads in a
+    /// What its own code uses outside the calls that are its steps: each name it reads in a
     /// condition, an operator, a format, a return or an argument of a call that is no step
     /// (`print(store.path)`, `if done:`, `Ok(path)`), once in each arm it is read in. A projection of a
     /// name uses that name; a name bound to a part of another (`width = settings.width`) uses it where
     /// the body reads that name. The instance a method runs on is used by no name, as a call is handed
     /// it.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub uses: Vec<Use>,
-    /// The names the arms of its body's choices bind by the body's own code, no step of it: what an
-    /// arm sets a name to (`let unit; if .. { unit = KELVIN }`), and what an arm of a choice a name is
-    /// bound to gives where no step makes it (`let out = match f { "csv" => String::from(..), _ =>
-    /// format!(..) }`, `x = a if c else b`). Each name once in each arm, with its type when known and
-    /// the arms the value is made in. Such an arm makes the name's value as an arm whose step gives it
-    /// does.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    /// The names the arms of its choices bind by its own code, no step of it: what an arm sets a name
+    /// to (`let unit; if .. { unit = KELVIN }`), and what an arm of a choice a name is bound to gives
+    /// where no step makes it (`let out = match f { "csv" => String::from(..), _ => format!(..) }`,
+    /// `x = a if c else b`). Each name once in each arm, with its type when known and the arms the
+    /// value is made in. Such an arm makes the name's value as an arm whose step gives it does.
     pub binds: Vec<Use>,
-    /// What its body's own code sets a part of a value to, by assignment through the name that holds
-    /// the value (`other.fig = self.fig`, `rows[i] = row`): the value changed and what the assigned
+    /// What its own code sets a part of a value to, by assignment through the name that holds the
+    /// value (`other.fig = self.fig`, `rows[i] = row`): the value changed and what the assigned
     /// expression reads, a lens's put made in place.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub sets: Vec<Set>,
-    /// The lines each arm of its body's choices spans, first and last: what is written there runs
-    /// only in that arm.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    #[ts(type = "Array<[number, number]>")]
+    /// The lines each arm of its choices spans, first and last: what is written there runs only in
+    /// that arm.
     pub arm_lines: Vec<(u32, u32)>,
     /// The choice each of `arm_lines` is an arm of, numbered as `Site::arms` numbers them: two arms
     /// of one choice never run in one run of the body.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub arm_choices: Vec<u32>,
-    /// The lines each loop of its body spans, first and last: what runs there may run again after
-    /// what follows it in the loop.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    #[ts(type = "Array<[number, number]>")]
+    /// The lines each of its loops spans, first and last: what runs there may run again after what
+    /// follows it in the loop.
     pub loop_lines: Vec<(u32, u32)>,
-    /// What decides each arm of its body's choices, as the code writes it: `(choice, arm, when)`,
-    /// with the choices and arms numbered as `Site::arms` numbers them.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    #[ts(type = "Array<[number, number, string]>")]
+    /// What decides each arm of its choices, as the code writes it: `(choice, arm, when)`, with the
+    /// choices and arms numbered as `Site::arms` numbers them.
     pub whens: Vec<(u32, u32, String)>,
-    /// The fields the conditions that decide its body's choices read of the values they read, as the code
+    /// The fields the conditions that decide its choices read of the values they read, as the code
     /// names them: `ax` of the instance for `if self.ax is None:` (#184).
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub tests: Vec<Test>,
 }
 
-/// A field a condition reads (`Node::tests`): the choice it decides, numbered as `Site::arms` numbers them,
+/// The body of what runs no code of its own: a class, a name outside the code.
+static NO_BODY: Body = Body {
+    touches: Vec::new(),
+    instead: Vec::new(),
+    asks: Vec::new(),
+    raises: false,
+    fails: None,
+    calls_handed: false,
+    unseen: Vec::new(),
+    compares: Vec::new(),
+    sites: Vec::new(),
+    uses: Vec::new(),
+    binds: Vec::new(),
+    sets: Vec::new(),
+    arm_lines: Vec::new(),
+    arm_choices: Vec::new(),
+    loop_lines: Vec::new(),
+    whens: Vec::new(),
+    tests: Vec::new(),
+};
+
+/// A field a condition reads (`Body::tests`): the choice it decides, numbered as `Site::arms` numbers them,
 /// the value it reads the field of, as a call is handed it (the instance a method runs on by no name), and the
 /// field, through the fields it is reached by (`left.ax` of `self.left.ax is None`), an element left out. A
 /// condition that reads a value whole, or calls a method on it, reads no field of it.
@@ -275,10 +325,408 @@ pub struct Test {
     pub field: String,
 }
 
+/// What a node holds by its kind, each read once here for every kind: a kind that does not hold a
+/// fact has none of it.
 impl Node {
+    /// What its code runs: a module's, a function's, a method's. A class and a name outside the code
+    /// run none, and their body is empty.
+    pub fn body(&self) -> &Body {
+        match &self.kind {
+            Kind::Module(m) => &m.body,
+            Kind::Function(f) => &f.body,
+            Kind::Method(m) => &m.function.body,
+            Kind::Class(_) | Kind::External(_) => &NO_BODY,
+        }
+    }
+
+    /// Its body, where its kind has one to write.
+    pub fn body_mut(&mut self) -> Option<&mut Body> {
+        match &mut self.kind {
+            Kind::Module(m) => Some(&mut m.body),
+            Kind::Function(f) => Some(&mut f.body),
+            Kind::Method(m) => Some(&mut m.function.body),
+            Kind::Class(_) | Kind::External(_) => None,
+        }
+    }
+
+    /// What it is as a function: a function's own, a method's.
+    pub fn function(&self) -> Option<&Function> {
+        match &self.kind {
+            Kind::Function(f) => Some(f),
+            Kind::Method(m) => Some(&m.function),
+            _ => None,
+        }
+    }
+
+    pub fn function_mut(&mut self) -> Option<&mut Function> {
+        match &mut self.kind {
+            Kind::Function(f) => Some(f),
+            Kind::Method(m) => Some(&mut m.function),
+            _ => None,
+        }
+    }
+
+    pub fn method(&self) -> Option<&Method> {
+        match &self.kind {
+            Kind::Method(m) => Some(m),
+            _ => None,
+        }
+    }
+
+    pub fn method_mut(&mut self) -> Option<&mut Method> {
+        match &mut self.kind {
+            Kind::Method(m) => Some(m),
+            _ => None,
+        }
+    }
+
+    pub fn class(&self) -> Option<&Class> {
+        match &self.kind {
+            Kind::Class(c) => Some(c),
+            _ => None,
+        }
+    }
+
+    pub fn class_mut(&mut self) -> Option<&mut Class> {
+        match &mut self.kind {
+            Kind::Class(c) => Some(c),
+            _ => None,
+        }
+    }
+
+    /// For a method: its class.
+    pub fn cls(&self) -> Option<&str> {
+        self.method().map(|m| m.cls.as_str())
+    }
+
+    /// What its signature declares it takes: none for what is no function.
+    pub fn params(&self) -> &[Param] {
+        self.function().map_or(&[], |f| &f.params)
+    }
+
+    /// What its signature says it gives back: none for what is no function, or does not say.
+    pub fn returns(&self) -> Option<&Returns> {
+        self.function().and_then(|f| f.returns.as_ref())
+    }
+
+    /// For a method: calling it makes a value of its class (`Method::ctor`).
+    pub fn ctor(&self) -> bool {
+        self.method().is_some_and(|m| m.ctor)
+    }
+
+    /// For a method: it is called on its class (`Method::on_class`).
+    pub fn on_class(&self) -> bool {
+        self.method().is_some_and(|m| m.on_class)
+    }
+
+    /// The decorators or attributes written on it: a class's, a function's, a method's.
+    pub fn decorators(&self) -> &[String] {
+        match &self.kind {
+            Kind::Class(c) => &c.decorators,
+            _ => self.function().map_or(&[], |f| &f.decorators),
+        }
+    }
+
+    /// What its prophecy marker says: a class's, a function's, a method's.
+    pub fn prophecy(&self) -> Option<&Prophecy> {
+        match &self.kind {
+            Kind::Class(c) => c.prophecy.as_ref(),
+            _ => self.function().and_then(|f| f.prophecy.as_ref()),
+        }
+    }
+
+    /// Its prophecy, where its kind may have one.
+    pub fn prophecy_mut(&mut self) -> Option<&mut Option<Prophecy>> {
+        match &mut self.kind {
+            Kind::Class(c) => Some(&mut c.prophecy),
+            Kind::Function(f) => Some(&mut f.prophecy),
+            Kind::Method(m) => Some(&mut m.function.prophecy),
+            Kind::Module(_) | Kind::External(_) => None,
+        }
+    }
+
+    /// The part of the world a value of it is a door to: a class's, a name's outside the code.
+    pub fn door(&self) -> Option<World> {
+        match &self.kind {
+            Kind::Class(c) => c.door,
+            Kind::External(e) => e.door,
+            _ => None,
+        }
+    }
+
     /// For a class: what a call to it runs, among its methods: its initializer.
     pub fn initializer<'a>(&self, node: impl Fn(&str) -> Option<&'a Node>) -> Option<String> {
-        self.methods.iter().map(|m| format!("{}.{m}", self.id)).find(|id| node(id).map_or(false, |m| m.ctor && !m.on_class))
+        let methods = self.class().map_or(&[][..], |c| &c.methods);
+        methods.iter().map(|m| format!("{}.{m}", self.id)).find(|id| node(id).map_or(false, |m| m.ctor() && !m.on_class()))
+    }
+}
+
+/// A node as the graph's JSON writes it: what every kind holds side by side, `kind` naming which it
+/// is, and a fact its kind does not hold left out.
+#[derive(Serialize, Deserialize, TS, Clone, Debug, Default)]
+pub struct NodeJson {
+    pub id: String,
+    pub kind: NodeKind,
+    pub name: String,
+    pub file: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub span: Option<(u32, u32)>,
+    pub module: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub doc: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cls: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub bases: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub methods: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub fields: Vec<String>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    #[ts(type = "Record<string, string>")]
+    pub holds: BTreeMap<String, String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub decorators: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub prophecy: Option<Prophecy>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub params: Vec<Param>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub returns: Option<Returns>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub overloads: Vec<Signature>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub keeps: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub breaks: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub entry: Option<Entry>,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub exported: bool,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub touches: Vec<Touch>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub instead: Vec<Touch>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub asks: Vec<String>,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub is_pkg: bool,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub on_class: bool,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub ctor: bool,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub private: bool,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub raises: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fails: Option<String>,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub calls_handed: bool,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub declared: bool,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[ts(type = "Array<[number, string]>")]
+    pub unseen: Vec<(u32, String)>,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub typed_by: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub compares: Vec<Compare>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(type = "string")]
+    pub door: Option<World>,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub part: String,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub library: bool,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub test: bool,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub sites: Vec<Site>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub uses: Vec<Use>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub binds: Vec<Use>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub sets: Vec<Set>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[ts(type = "Array<[number, number]>")]
+    pub arm_lines: Vec<(u32, u32)>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub arm_choices: Vec<u32>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[ts(type = "Array<[number, number]>")]
+    pub loop_lines: Vec<(u32, u32)>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[ts(type = "Array<[number, number, string]>")]
+    pub whens: Vec<(u32, u32, String)>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub tests: Vec<Test>,
+}
+
+impl From<Node> for NodeJson {
+    fn from(n: Node) -> NodeJson {
+        let Node { id, name, file, span, module, doc, entry, exported, private, part, library, test, kind } = n;
+        let mut j = NodeJson {
+            id,
+            kind: kind.tag(),
+            name,
+            file,
+            span,
+            module,
+            doc,
+            entry,
+            exported,
+            private,
+            part,
+            library,
+            test,
+            ..NodeJson::default()
+        };
+        let function = |j: &mut NodeJson, f: Function| {
+            let Function { decorators, prophecy, params, returns, overloads, typed_by, body } = f;
+            (j.decorators, j.prophecy, j.params, j.returns, j.overloads, j.typed_by) =
+                (decorators, prophecy, params, returns, overloads, typed_by);
+            body
+        };
+        let body = match kind {
+            Kind::Module(m) => {
+                j.is_pkg = m.is_pkg;
+                Some(m.body)
+            }
+            Kind::Class(c) => {
+                let Class { bases, methods, fields, holds, decorators, prophecy, door } = c;
+                (j.bases, j.methods, j.fields, j.holds, j.decorators, j.prophecy, j.door) =
+                    (bases, methods, fields, holds, decorators, prophecy, door);
+                None
+            }
+            Kind::Function(f) => Some(function(&mut j, f)),
+            Kind::Method(m) => {
+                let Method { function: f, cls, on_class, ctor, keeps, breaks, declared } = m;
+                (j.cls, j.on_class, j.ctor, j.keeps, j.breaks, j.declared) = (Some(cls), on_class, ctor, keeps, breaks, declared);
+                Some(function(&mut j, f))
+            }
+            Kind::External(e) => {
+                j.door = e.door;
+                None
+            }
+        };
+        if let Some(b) = body {
+            let Body {
+                touches,
+                instead,
+                asks,
+                raises,
+                fails,
+                calls_handed,
+                unseen,
+                compares,
+                sites,
+                uses,
+                binds,
+                sets,
+                arm_lines,
+                arm_choices,
+                loop_lines,
+                whens,
+                tests,
+            } = b;
+            (j.touches, j.instead, j.asks, j.raises, j.fails, j.calls_handed, j.unseen, j.compares) =
+                (touches, instead, asks, raises, fails, calls_handed, unseen, compares);
+            (j.sites, j.uses, j.binds, j.sets, j.arm_lines, j.arm_choices, j.loop_lines, j.whens, j.tests) =
+                (sites, uses, binds, sets, arm_lines, arm_choices, loop_lines, whens, tests);
+        }
+        j
+    }
+}
+
+impl From<NodeJson> for Node {
+    fn from(j: NodeJson) -> Node {
+        let NodeJson {
+            id,
+            kind,
+            name,
+            file,
+            span,
+            module,
+            doc,
+            cls,
+            bases,
+            methods,
+            fields,
+            holds,
+            decorators,
+            prophecy,
+            params,
+            returns,
+            overloads,
+            keeps,
+            breaks,
+            entry,
+            exported,
+            touches,
+            instead,
+            asks,
+            is_pkg,
+            on_class,
+            ctor,
+            private,
+            raises,
+            fails,
+            calls_handed,
+            declared,
+            unseen,
+            typed_by,
+            compares,
+            door,
+            part,
+            library,
+            test,
+            sites,
+            uses,
+            binds,
+            sets,
+            arm_lines,
+            arm_choices,
+            loop_lines,
+            whens,
+            tests,
+        } = j;
+        let body = Body {
+            touches,
+            instead,
+            asks,
+            raises,
+            fails,
+            calls_handed,
+            unseen,
+            compares,
+            sites,
+            uses,
+            binds,
+            sets,
+            arm_lines,
+            arm_choices,
+            loop_lines,
+            whens,
+            tests,
+        };
+        let kind = match kind {
+            NodeKind::Module => Kind::Module(Module { is_pkg, body }),
+            NodeKind::Class => Kind::Class(Class { bases, methods, fields, holds, decorators, prophecy, door }),
+            NodeKind::Function => Kind::Function(Function { decorators, prophecy, params, returns, overloads, typed_by, body }),
+            NodeKind::Method => Kind::Method(Method {
+                function: Function { decorators, prophecy, params, returns, overloads, typed_by, body },
+                cls: cls.unwrap_or_default(),
+                on_class,
+                ctor,
+                keeps,
+                breaks,
+                declared,
+            }),
+            NodeKind::External => Kind::External(External { door }),
+        };
+        Node { id, name, file, span, module, doc, entry, exported, private, part, library, test, kind }
     }
 }
 
@@ -586,7 +1034,7 @@ pub enum Slot {
     Keywords,
 }
 
-/// A value a body's own code reads (`Node::uses`) or an arm binds (`Node::binds`), by the name that
+/// A value a body's own code reads (`Body::uses`) or an arm binds (`Body::binds`), by the name that
 /// holds it (none for the instance a method runs on), with its type when known and the arms of the
 /// choices the use or the binding sits in, numbered as `Site::arms` numbers them.
 #[derive(Serialize, Deserialize, TS, Clone, Debug, Default, PartialEq, Eq)]
@@ -603,7 +1051,7 @@ pub struct Use {
     pub param: bool,
 }
 
-/// A part of a value the body's own code sets (`Node::sets`), one for each part a binding sets: the value,
+/// A part of a value the body's own code sets (`Body::sets`), one for each part a binding sets: the value,
 /// as a call is handed it (`other` of `other.fig = self.fig`, the instance a method runs on by no name for
 /// `self.n = ..`), the field of it that is set, what the assigned expression reads (the instance of
 /// `self.fig`) and the field of it that the expression is, the lines the binding spans, and the arms of
@@ -1231,7 +1679,7 @@ pub struct Graph {
     pub stats: Stats,
 }
 
-impl Node {
+impl Body {
     /// What the route that starts at `entry` and reaches `reached` touches here: the touches it
     /// runs, and a call none of whose touches it runs as it was read.
     pub fn touches_in(&self, entry: &str, reached: &dyn Fn(&str) -> bool) -> Vec<&Touch> {
@@ -1305,30 +1753,35 @@ impl Graph {
             m(&mut n.id);
             m(&mut n.module);
             m(&mut n.part);
-            n.cls.iter_mut().chain(n.breaks.iter_mut()).chain(n.holds.values_mut()).for_each(&m);
-            if let Some(p) = n.prophecy.as_mut() {
+            match &mut n.kind {
+                Kind::Method(method) => std::iter::once(&mut method.cls).chain(method.breaks.iter_mut()).for_each(&m),
+                Kind::Class(c) => c.holds.values_mut().for_each(&m),
+                _ => {}
+            }
+            if let Some(p) = n.prophecy_mut().and_then(Option::as_mut) {
                 p.supersedes.iter_mut().chain(p.replaces.iter_mut()).chain(p.candidates.iter_mut()).for_each(&m);
             }
-            for s in &mut n.sites {
+            let Some(b) = n.body_mut() else { continue };
+            for s in &mut b.sites {
                 m(&mut s.to);
                 m(&mut s.on);
                 m(&mut s.after);
                 s.fails.iter_mut().for_each(&m);
                 s.hands.iter_mut().chain(s.gives.iter_mut()).for_each(held);
             }
-            for u in n.uses.iter_mut().chain(n.binds.iter_mut()) {
+            for u in b.uses.iter_mut().chain(b.binds.iter_mut()) {
                 m(&mut u.ty);
                 named(&mut u.name);
             }
-            n.fails.iter_mut().for_each(&m);
-            for s in &mut n.sets {
+            b.fails.iter_mut().for_each(&m);
+            for s in &mut b.sets {
                 held(&mut s.on);
                 s.from.iter_mut().for_each(held);
             }
-            for t in &mut n.tests {
+            for t in &mut b.tests {
                 held(&mut t.on);
             }
-            for t in n.touches.iter_mut().chain(n.instead.iter_mut()) {
+            for t in b.touches.iter_mut().chain(b.instead.iter_mut()) {
                 for f in &mut t.by {
                     *f = f.split('&').map(to).collect::<Vec<_>>().join("&");
                 }
@@ -1350,7 +1803,7 @@ impl Graph {
     pub fn recount(&mut self) {
         let mut nodes = BTreeMap::new();
         for n in &self.nodes {
-            *nodes.entry(kind_name(&n.kind)).or_insert(0) += 1;
+            *nodes.entry(kind_name(&n.kind.tag())).or_insert(0) += 1;
         }
         let mut edges = BTreeMap::new();
         for e in &self.edges {

@@ -8,7 +8,7 @@ use tree_sitter::Node as TsNode;
 
 use crate::builder::GraphBuilder;
 use crate::effects::{self, Facts};
-use crate::model::{Crossing, Dir, EdgeKind, Held, NodeKind, Set, Site, Slot, Test, Touch, Use, World};
+use crate::model::{Crossing, Dir, EdgeKind, Held, Node, NodeKind, Set, Site, Slot, Test, Touch, Use, World};
 use crate::tree::{
     arms_of, beneath, guards, named_children, number_choices, outermost, payload_of, starts_at_literal, text, walk, walk_all, what_of,
     wrapped, ChoiceSyntax, Part, Wrappers,
@@ -238,11 +238,11 @@ pub struct Steps<'t, 's> {
     own: Vec<Use>,
     /// The steps whose result the body's own code reads, by no name (`Steps::read`).
     read: Vec<usize>,
-    /// The error the body's own code hands on outside its steps (`Node::fails`).
+    /// The error the body's own code hands on outside its steps (`Body::fails`).
     fails: Option<String>,
-    /// What the body's own code sets a part of a value to (`Node::sets`).
+    /// What the body's own code sets a part of a value to (`Body::sets`).
     sets: Vec<Set>,
-    /// The fields the conditions of the body's choices read (`Node::tests`).
+    /// The fields the conditions of the body's choices read (`Body::tests`).
     tests: Vec<Test>,
     /// The error type what hands on an error converts it to (`?`), where the function the body is of
     /// says it fails.
@@ -374,7 +374,7 @@ impl<'t, 's> Steps<'t, 's> {
     /// The error a `?` written in a call that is no step hands on is handed on by the step it is glued
     /// into, the smallest written around it (`Graaf { nodes: fs::read_to_string(p)?.lines()..}`): the
     /// error the function's signature converts it to. Written in no step, the body's own code hands it
-    /// on (`Node::fails`).
+    /// on (`Body::fails`).
     fn glued_fails(&mut self) {
         let (u, Some(error)) = (self.uses, self.converts.clone()) else { return };
         let Some(kinds) = u.propagates else { return };
@@ -444,7 +444,7 @@ impl<'t, 's> Steps<'t, 's> {
         out
     }
 
-    /// What the body's own code uses outside its steps (`Node::uses`): each value a name holds where
+    /// What the body's own code uses outside its steps (`Body::uses`): each value a name holds where
     /// the body reads it itself, in a condition, an operator, a format, what it returns or what it hands
     /// a call that is no step (`print(store.path)`, `if done:`, `Ok(path)`, `f.write(..)`). What a step
     /// is handed is the step's. `held` is the reader's: the values a name, or a string that writes
@@ -500,12 +500,12 @@ impl<'t, 's> Steps<'t, 's> {
         self.own = once;
     }
 
-    /// What the body's own code sets a part of a value to (`Node::sets`): each binding whose target is a
+    /// What the body's own code sets a part of a value to (`Body::sets`): each binding whose target is a
     /// field or an element of a value a name holds (`other.fig = self.fig`, `rows[i] = row`, `self.n +=
     /// 1`), once for each part it sets: the value it changes, as a call is handed it, and the field of it
     /// that is set, with the values the assigned expression reads, outside the steps written in it, and
     /// those steps' results that a name holds, and the field of a value the expression is. A binding of a
-    /// name is no change of a value (`Node::binds`).
+    /// name is no change of a value (`Body::binds`).
     fn sets(&self, held: &dyn Fn(TsNode<'t>) -> Vec<Held>) -> Vec<Set> {
         let u = self.uses;
         let kinds: Vec<&str> = u.names.iter().chain(u.reads).copied().collect();
@@ -576,7 +576,7 @@ impl<'t, 's> Steps<'t, 's> {
         out
     }
 
-    /// What the conditions that decide the body's choices read of the values names hold (`Node::tests`): for each
+    /// What the conditions that decide the body's choices read of the values names hold (`Body::tests`): for each
     /// choice, each value a name in a condition holds and the field the condition reads of it, through the fields it is
     /// reached by and the projection the name is bound to first (`read_of`): `ax` of `self.ax is None`, `left.ax` of
     /// `self.left.ax is None`. What a method is called on is read up to the method (`self.ax.is_none()` reads `ax`); a
@@ -1240,21 +1240,21 @@ impl<'t, 's> Steps<'t, 's> {
             }
             own.push(Use { name, ty: given, arms: s.arms.clone(), param: false });
         }
-        if let Some(n) = store.nodes.get_mut(id) {
-            n.sites = sites;
-            (n.arm_lines, n.arm_choices) = arm_lines.into_iter().unzip();
-            n.loop_lines = loop_lines;
-            n.whens = whens;
-            n.unseen = self.unseen;
-            n.uses = own;
-            n.binds = binds;
-            n.fails = self.fails;
-            n.sets = self.sets;
-            n.tests = self.tests;
+        if let Some(b) = store.nodes.get_mut(id).and_then(Node::body_mut) {
+            b.sites = sites;
+            (b.arm_lines, b.arm_choices) = arm_lines.into_iter().unzip();
+            b.loop_lines = loop_lines;
+            b.whens = whens;
+            b.unseen = self.unseen;
+            b.uses = own;
+            b.binds = binds;
+            b.fails = self.fails;
+            b.sets = self.sets;
+            b.tests = self.tests;
         }
     }
 
-    /// What the arms of the body's choices bind a name to by the body's own code (`Node::binds`): of
+    /// What the arms of the body's choices bind a name to by the body's own code (`Body::binds`): of
     /// each binding of the body, what it binds that no step makes, where that is made in an arm, either
     /// the binding standing in the arm (`unit = KELVIN`) or the value it binds being a choice whose arm
     /// gives it (`let out = match f { .. }`, `x = a if c else b`). What a loop binds, its step gives;

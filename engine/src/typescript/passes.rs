@@ -16,7 +16,7 @@ use super::module::{
 use super::paths::{self, Eval};
 use crate::builder::{foreign_type, ClassInfo, Declared, GraphBuilder};
 use crate::knowledge;
-use crate::model::{Dir, EdgeKind, Entry, EntryKind, Node, NodeKind, Touch, World};
+use crate::model::{Class, Dir, EdgeKind, Entry, EntryKind, Function, Kind, Method, Node, NodeKind, Touch, World};
 use crate::repo::{normal, Repo};
 use crate::tree::{beneath, named_children, span, text, unquote, walk};
 
@@ -97,12 +97,10 @@ fn add_declared(
     let class_name = cls.map(|c| c.rsplit('.').next().unwrap_or(c));
     let gives_class = returns.as_ref().map_or(false, |r| r.own || Some(r.value.as_str()) == class_name);
     let kept = declared == Declared::Body || !store.nodes.contains_key(&id);
+    let function = Function { prophecy: prophecy_of(def, src), params, returns, ..Default::default() };
     store.declare(
         Node {
             id: id.clone(),
-            kind: if cls.is_some() { NodeKind::Method } else { NodeKind::Function },
-            on_class,
-            ctor: cls.is_some() && (name == "constructor" || on_class && gives_class),
             // a member is private when it says so; a module's own name is, unless the module exports it
             private: cls.is_some()
                 && (name.starts_with('#')
@@ -112,12 +110,18 @@ fn add_declared(
             span: span(def),
             module: m.id.clone(),
             doc: doc_of(def, src),
-            prophecy: prophecy_of(def, src),
-            cls: cls.map(str::to_string),
-            // a method an interface or an abstract class declares is its signature alone
-            declared: matches!(f.kind(), "method_signature" | "abstract_method_signature"),
-            params,
-            returns,
+            kind: match cls {
+                Some(c) => Kind::Method(Method {
+                    cls: c.to_string(),
+                    on_class,
+                    ctor: name == "constructor" || on_class && gives_class,
+                    // a method an interface or an abstract class declares is its signature alone
+                    declared: matches!(f.kind(), "method_signature" | "abstract_method_signature"),
+                    function,
+                    ..Default::default()
+                }),
+                None => Kind::Function(function),
+            },
             ..Default::default()
         },
         sig,
@@ -308,10 +312,11 @@ pub(super) fn collect_symbols(m: &mut Module, store: &mut GraphBuilder) {
                     let id = add_function(m, store, &vname, d, f, value, None);
                     // an arrow handed to a call takes its parameters' types from the call
                     if f.id() != value.id() {
-                        if let (Some(n), Some(call)) =
-                            (store.nodes.get_mut(&id), f.parent().and_then(|a| a.parent()).filter(|c| c.kind() == "call_expression"))
-                        {
-                            n.typed_by = call.child_by_field_name("function").map(|x| text(x, &src).to_string()).unwrap_or_default();
+                        if let (Some(fun), Some(call)) = (
+                            store.nodes.get_mut(&id).and_then(Node::function_mut),
+                            f.parent().and_then(|a| a.parent()).filter(|c| c.kind() == "call_expression"),
+                        ) {
+                            fun.typed_by = call.child_by_field_name("function").map(|x| text(x, &src).to_string()).unwrap_or_default();
                         }
                     }
                     store.add_edge(&m.id.clone(), &id, EdgeKind::Contains, None);
@@ -329,8 +334,10 @@ pub(super) fn collect_symbols(m: &mut Module, store: &mut GraphBuilder) {
             n.entry = Some(Entry::new(EntryKind::Route, if path == "__root" { "/ (root)".into() } else { path }));
         }
     }
-    for n in
-        store.nodes.values_mut().filter(|n| n.module == m.id && n.cls.is_none() && matches!(n.kind, NodeKind::Function | NodeKind::Class))
+    for n in store
+        .nodes
+        .values_mut()
+        .filter(|n| n.module == m.id && n.cls().is_none() && matches!(n.kind.tag(), NodeKind::Function | NodeKind::Class))
     {
         let local = n.name.split('.').next().unwrap_or(&n.name);
         n.private = !m.exported.iter().any(|e| e == local);
@@ -408,15 +415,17 @@ fn add_type(
     store.classes.insert(id.clone(), ClassInfo { bases: bases.clone(), fields, ..Default::default() });
     store.add_node(Node {
         id: id.clone(),
-        kind: NodeKind::Class,
         name: name.to_string(),
         file: crate::tree::path_str(&m.path),
         span: span(d),
         module: m.id.clone(),
         doc: doc_of(d, &m.src),
-        prophecy: prophecy_of(d, &m.src),
-        bases: bases.iter().map(|b| b.join(".")).collect(),
-        methods,
+        kind: Kind::Class(Class {
+            prophecy: prophecy_of(d, &m.src),
+            bases: bases.iter().map(|b| b.join(".")).collect(),
+            methods,
+            ..Default::default()
+        }),
         ..Default::default()
     });
     store.add_edge(&m.id.clone(), &id, EdgeKind::Contains, None);
@@ -865,7 +874,7 @@ pub(super) fn link(modules: &IndexMap<String, Module>, store: &mut GraphBuilder,
             let id = format!("{}.{name}", m.id);
             store.add_node(Node {
                 id: id.clone(),
-                kind: NodeKind::Class,
+                kind: Kind::Class(Class::default()),
                 name: name.clone(),
                 file: crate::tree::path_str(&m.path),
                 module: m.id.clone(),
@@ -942,7 +951,7 @@ pub(super) fn link(modules: &IndexMap<String, Module>, store: &mut GraphBuilder,
     for id in &ids {
         let n = store.nodes[id].clone();
         let Some(m) = modules.get(&n.module) else { continue };
-        if matches!(n.kind, NodeKind::Function | NodeKind::Method) {
+        if matches!(n.kind.tag(), NodeKind::Function | NodeKind::Method) {
             let sig = store.sigs.get(id).cloned().unwrap_or_default();
             for (types, unions, kind) in [(&sig.ptypes, &sig.punions, EdgeKind::Takes), (&sig.rtypes, &sig.runions, EdgeKind::Returns)] {
                 let mut targets: Vec<String> = types.iter().flat_map(|t| type_of(m, t, &store.nodes)).collect();
@@ -996,10 +1005,12 @@ pub(super) fn link(modules: &IndexMap<String, Module>, store: &mut GraphBuilder,
         let mut found = vec![];
         for id in &ids {
             let n = &store.nodes[id];
-            if n.library && !n.cls.as_ref().map_or(false, |c| named.contains(c)) {
+            if n.library && !n.cls().map_or(false, |c| named.contains(c)) {
                 continue;
             }
-            let Some(m) = modules.get(&n.module).filter(|_| matches!(n.kind, NodeKind::Function | NodeKind::Method)) else { continue };
+            let Some(m) = modules.get(&n.module).filter(|_| matches!(n.kind.tag(), NodeKind::Function | NodeKind::Method)) else {
+                continue;
+            };
             let Some(body) = m.bodies.get(id).and_then(|(s, e)| m.tree.root_node().descendant_for_byte_range(*s, *e)) else { continue };
             let now = Body::new(m, modules, store, n, body, &returned, &eval, &changing).changes_handed();
             if now.len() > changing.get(id).map_or(0, Vec::len) {
@@ -1024,7 +1035,7 @@ pub(super) fn link(modules: &IndexMap<String, Module>, store: &mut GraphBuilder,
         .iter()
         .filter(|id| {
             let n = &store.nodes[*id];
-            matches!(n.kind, NodeKind::Function | NodeKind::Method)
+            matches!(n.kind.tag(), NodeKind::Function | NodeKind::Method)
                 || (n.kind == NodeKind::Module && !n.library && modules.contains_key(*id))
         })
         .partition(|id| !store.nodes[*id].library);
@@ -1045,7 +1056,13 @@ pub(super) fn link(modules: &IndexMap<String, Module>, store: &mut GraphBuilder,
 /// classes of the library they inherit from.
 fn named_classes(modules: &IndexMap<String, Module>, store: &GraphBuilder) -> HashSet<String> {
     let class = |id: &str| {
-        store.nodes.get(id).filter(|n| n.library).and_then(|n| if n.kind == NodeKind::Class { Some(n.id.clone()) } else { n.cls.clone() })
+        store.nodes.get(id).filter(|n| n.library).and_then(|n| {
+            if n.kind == NodeKind::Class {
+                Some(n.id.clone())
+            } else {
+                n.cls().map(str::to_string)
+            }
+        })
     };
     let mut todo: Vec<String> = modules
         .values()
@@ -1100,7 +1117,7 @@ fn globals(
                 kept_in(modules, &tops, m.bindings.get(n)?, 0)
             }
         };
-        for n in store.nodes.values().filter(|n| n.module == m.id && matches!(n.kind, NodeKind::Function | NodeKind::Method)) {
+        for n in store.nodes.values().filter(|n| n.module == m.id && matches!(n.kind.tag(), NodeKind::Function | NodeKind::Method)) {
             let Some(&(s, e)) = m.bodies.get(&n.id) else { continue };
             let Some(body) = root.descendant_for_byte_range(s, e) else { continue };
             // a function defined in this one is a function of its own

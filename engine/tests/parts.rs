@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 use atlas_engine::parts::{analyze_parts, analyze_repo, roots};
 use atlas_engine::principles::check;
 use atlas_engine::repo::Repo;
-use atlas_engine::{analyze, EdgeKind, EntryKind, Graph, NodeKind, Options};
+use atlas_engine::{analyze, EdgeKind, EntryKind, Graph, Kind, Options};
 
 fn fixture() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixture-parts")
@@ -136,7 +136,7 @@ fn a_second_package_is_the_projects_own() {
 fn a_single_module_is_a_package() {
     let g = analyze_repo(&[manifests()], &Options::default()).unwrap();
     let solo = g.node("solo").unwrap();
-    assert!(solo.kind == NodeKind::Module && solo.is_pkg && solo.entry.is_none(), "a package, not a script");
+    assert!(matches!(&solo.kind, Kind::Module(m) if m.is_pkg) && solo.entry.is_none(), "a package, not a script");
     assert_eq!(solo.part, "solo");
     let entry = |id: &str| g.node(id).and_then(|n| n.entry.as_ref()).map(|e| (e.kind, e.label.clone()));
     assert_eq!(entry("solo.tune"), Some((EntryKind::Export, "tune".to_string())));
@@ -313,7 +313,7 @@ fn two_parts_of_one_name_stay_two() {
     let node = |id: &str| g.node(id).unwrap_or_else(|| panic!("{id}"));
     assert_eq!(node("billing/app.main.main").part, "billing/app");
     assert!(Path::new(&node("billing/app.main.main").file).ends_with("billing/src/app/main.py"));
-    let touched = |id: &str| node(id).touches.iter().map(|t| t.what.clone()).collect::<Vec<_>>();
+    let touched = |id: &str| node(id).body().touches.iter().map(|t| t.what.clone()).collect::<Vec<_>>();
     assert_eq!(touched("billing/app.main.main"), ["data/ledger.csv", "out/invoice.txt"]);
     assert_eq!(touched("orders/app.main.main"), ["out/orders.txt"]);
     assert_eq!(node("app.ship").part, "app", "the project at the root keeps its names");

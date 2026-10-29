@@ -54,7 +54,7 @@ pub fn prophetize(
                 .flat_map(|g| {
                     g.nodes
                         .iter()
-                        .filter(|n| matches!(n.kind, NodeKind::Function | NodeKind::Method | NodeKind::Class) && !n.library)
+                        .filter(|n| matches!(n.kind.tag(), NodeKind::Function | NodeKind::Method | NodeKind::Class) && !n.library)
                         .map(move |n| (n.clone(), rel_of(g, n)))
                 })
                 .filter(|(_, r)| in_file(rel, r))
@@ -74,8 +74,7 @@ pub fn prophetize(
         }
         let added: Vec<&Node> = now.iter().map(|(n, _)| n).filter(|n| !was.iter().any(|(w, _)| w.id == n.id)).collect();
         // an item inside an added class is marked with its class
-        let top: Vec<&Node> =
-            added.iter().copied().filter(|n| !n.cls.as_deref().is_some_and(|c| added.iter().any(|a| a.id == c))).collect();
+        let top: Vec<&Node> = added.iter().copied().filter(|n| !n.cls().is_some_and(|c| added.iter().any(|a| a.id == c))).collect();
         let lang = crate::language::of_file(rel);
         // what only Python asks: a body ty accepts in a sketch, and the `prophecy` the decorator calls
         let python = lang.as_ref().is_some_and(|l| l.name() == "python");
@@ -93,8 +92,8 @@ pub fn prophetize(
             }
         }
         if python {
-            for n in added.iter().copied().filter(|n| matches!(n.kind, NodeKind::Function | NodeKind::Method)) {
-                let gives = n.returns.as_ref().is_some_and(|r| !r.written.is_empty() && r.written != "None");
+            for n in added.iter().copied().filter(|n| matches!(n.kind.tag(), NodeKind::Function | NodeKind::Method)) {
+                let gives = n.returns().is_some_and(|r| !r.written.is_empty() && r.written != "None");
                 if let (true, Some((_, end))) = (gives, n.span) {
                     edits.push((end as usize, 1, Edit::Body));
                 }
@@ -261,7 +260,7 @@ pub fn unseal(g: &Graph, ids: &[String]) -> anyhow::Result<std::collections::BTr
     let seal = regex::Regex::new(r#"\s*,?\s*\bsealed\s*=\s*(?:"[^"]*"|'[^']*'|[^\s,)"'\]]+)"#)?;
     let mut files: std::collections::BTreeMap<std::path::PathBuf, Vec<String>> = Default::default();
     for id in ids {
-        let Some(n) = g.node(id).filter(|n| n.prophecy.as_ref().is_some_and(|p| p.sealed.is_some())) else {
+        let Some(n) = g.node(id).filter(|n| n.prophecy().is_some_and(|p| p.sealed.is_some())) else {
             anyhow::bail!("`{id}` is no sealed prophecy");
         };
         let rel = std::path::Path::new(&n.file)

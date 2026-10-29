@@ -22,7 +22,7 @@ fn keep_id(g: &Graph) -> String {
 
 /// What `Ledger.keep` does at the table `notes`.
 fn notes_touches(g: &Graph) -> Vec<&Touch> {
-    g.node(&keep_id(g)).unwrap().touches.iter().filter(|t| t.artifact == "notes").collect()
+    g.node(&keep_id(g)).unwrap().body().touches.iter().filter(|t| t.artifact == "notes").collect()
 }
 
 /// Both sides write the table and read it back, and the flow draws the table on both sides of the

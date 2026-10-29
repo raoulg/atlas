@@ -115,7 +115,7 @@ code declares those apart from the body that runs (Python's `@overload`, TypeScr
 signatures), the overloads are the door's signatures, and the implementation behind them is not
 asked: no caller sees it. A property is its getter: what a reader of the attribute gets. A name
 declared again in the same scope is one node, the declaration that runs; its overloads are kept
-with it (`Node::overloads`).
+with it (`Function::overloads`).
 
 In each of those signatures, a parameter says what it takes when its type is written and is not
 the unchecked one: `Any` in Python, `any` in TypeScript, which every value passes as and which

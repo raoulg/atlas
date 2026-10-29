@@ -87,7 +87,7 @@ The graph cannot tell that arrow from one whose effect Atlas does not model: whe
 call no table describes (a library's call, a callback in a field, a method nothing implements),
 the finding names that call as what Atlas cannot see, and asks whether it is dead only where it
 sees everything the function runs.
-**Where.** Principle `nothing`; `Node::unseen`, `Node::declared` (`body.rs`, `Steps::dropped`).
+**Where.** Principle `nothing`; `Body::unseen`, `Method::declared` (`body.rs`, `Steps::dropped`).
 
 ### Coproducts
 **What.** A coproduct A + B: a value is one of the alternatives, and a function out of it is a
@@ -112,7 +112,7 @@ is chosen (`if not xs: return Failed(..)`), is that choice with what follows it 
 Fit(..)` after it runs otherwise, as an `else` would write it. A repository's graph is the coproduct of its parts' graphs, glued only
 along the libraries and places of the world they share (a pushout over those): two parts whose code
 holds one name stay two, each name injected under where its part lies (`orders/app`, `billing/app`).
-**Where.** Principles `sums` and `choices`; `Node::whens` (`body.rs`), `arms_of` and `guarded_by` (`tree.rs`), `Item::Choice` (`flow.rs`),
+**Where.** Principles `sums` and `choices`; `Body::whens` (`body.rs`), `arms_of` and `guarded_by` (`tree.rs`), `Item::Choice` (`flow.rs`),
 the MCP tool `choices`; `parts::apart`, `Graph::rename`.
 
 ### Lenses
@@ -419,13 +419,13 @@ open:
   call's own, and two calls make two, also two in one body (`fig, ax = plt.subplots(); other, bx = plt.subplots()`). A value a body sets such a field of to what another value holds
   there (`other.fig = self.fig`, or `self.fig = fig` in a method its call hands the other's figure to) is
   that one's put, a lens's: from then on it holds the figure the other holds, and so does every value made
-  anew of it. The code names the field it sets (`Node::sets`), so a field that holds no figure lends none
+  anew of it. The code names the field it sets (`Body::sets`), so a field that holds no figure lends none
   (`other.title = self.title`), and the field each argument of a call reads of the value it hands (`Held::through`), so a
   parameter filled through one is that projection: `self.fig = fig` in a `take` its call hands `self.title` sets the field
   to the title, and lends none. A method called on a part of a value (`self.left.line(..)`) runs on the value through the
   field it reads: a figure it keeps in the value it runs on rests in that part, so two parts hold two figures
   (`board.left`, `board.right`), and a change made through the part makes the value anew. A part holds a figure as a value
-  does, by the class its owner's field holds (`Node::holds`: a board's `right` holds a Chart, which keeps its figure in `fig`
+  does, by the class its owner's field holds (`Class::holds`: a board's `right` holds a Chart, which keeps its figure in `fig`
   and `ax`): `self.right.take(self.left.fig, self.left.ax)` sets the right part's fields to the left part's, so from then on
   the right part holds the figure the left one holds, and so does a parameter filled through a part (`other` of
   `self.left.lend(self.right)` is the board's `right`, and `other.take(self.fig, self.ax)` lends the same). A step that changes
@@ -438,7 +438,7 @@ open:
   (`if self.ax is None: self.create_figure()`, the condition in the step's body or in a body that calls it on the same
   value). One made otherwise is made anew, the slot's own, which the slot holds from then on, put over one lent to it: under
   `if self.ax is None`, `self.res_fig, self.res_ax = plt.subplots()` makes the residuals' figure whatever `res_ax` holds. The
-  condition names the field it tests (`Node::tests`); without a lend the two readings name the one figure the slot holds.
+  condition names the field it tests (`Body::tests`); without a lend the two readings name the one figure the slot holds.
   A part set to a whole value (`self.left = left`) is that
   value, a lens's put (`get_left(put_left(c, b)) = c`): what the value holds the part holds, and a figure lent to either is
   lent to both, so a chart that holds a figure, set into a board's part, draws there on the figure it made. A figure is one
@@ -615,7 +615,7 @@ the pairs and of its programs.
 **Where.** `plan`, `sitesOf`, `figureOf`, `FIGURE_FIELDS`, `FIGURE_SLOTS` and `figurePart`, `setsAt` and `resolveWhole`, `throughOf` and `partIn`,
 `changedThrough` and `changesOwner`,
 `coarsen`, `cutArrow` and `typesOf`, `handTo` and `checkOpenings` in `viewer/plan.js`, `cutOpenings` in `engine/tests/plans.mjs`;
-the field an argument reads, `Steps::fills` and `Steps::read_of` (`body.rs`); the class each field of a class holds, `Node::holds`;
+the field an argument reads, `Steps::fills` and `Steps::read_of` (`body.rs`); the class each field of a class holds, `Class::holds`;
 which parameters of no type of the code's hold a value, `builder::settle_parameters`; the fields a condition tests,
 `Steps::tests` (`body.rs`), and whether a figure is made sure of, `guarded` in `viewer/plan.js`; `tools/pictures.py`;
 `engine/tests/plans.rs`.

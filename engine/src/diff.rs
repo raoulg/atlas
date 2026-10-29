@@ -134,8 +134,10 @@ pub fn union(name: &str, before: Vec<Graph>, after: Vec<Graph>) -> (Graph, Diff)
             _ => {}
         }
         let mut n = nb.clone();
-        let body = merged_sites(&na.sites, &nb.sites);
-        n.sites = body.sites;
+        let body = merged_sites(&na.body().sites, &nb.body().sites);
+        if let Some(b) = n.body_mut() {
+            b.sites = body.sites;
+        }
         if !body.marks.is_empty() {
             diff.sites.insert(n.id.clone(), body.marks);
         }
@@ -145,11 +147,12 @@ pub fn union(name: &str, before: Vec<Graph>, after: Vec<Graph>) -> (Graph, Diff)
         if !body.remade.is_empty() {
             diff.remade.insert(n.id.clone(), body.remade);
         }
-        let (own, mut marks) = merged_touches(&na.touches, &nb.touches, 0);
-        let (read, more) = merged_touches(&na.instead, &nb.instead, own.len());
+        let (own, mut marks) = merged_touches(&na.body().touches, &nb.body().touches, 0);
+        let (read, more) = merged_touches(&na.body().instead, &nb.body().instead, own.len());
         marks.extend(more);
-        n.touches = own;
-        n.instead = read;
+        if let Some(b) = n.body_mut() {
+            (b.touches, b.instead) = (own, read);
+        }
         if !marks.is_empty() {
             diff.touches.insert(n.id.clone(), marks);
         }
@@ -255,7 +258,7 @@ pub fn reading(g: &Graph, d: &Diff, r: Reading) -> Graph {
         // what A has otherwise than the union holds it: what it hands the steps both hold, its entry
         if r == Reading::A {
             for (i, hands) in d.hands.get(&n.id).into_iter().flatten() {
-                if let Some(s) = n.sites.get_mut(*i) {
+                if let Some(s) = n.body_mut().and_then(|b| b.sites.get_mut(*i)) {
                     s.hands = hands.clone();
                 }
             }
@@ -265,12 +268,14 @@ pub fn reading(g: &Graph, d: &Diff, r: Reading) -> Graph {
                 n.entry = None;
             }
         }
-        let steps = d.sites.get(&n.id);
-        n.sites = std::mem::take(&mut n.sites).into_iter().enumerate().filter(|(i, _)| kept(steps, *i)).map(|(_, s)| s).collect();
-        let (touches, own) = (d.touches.get(&n.id), n.touches.len());
-        n.touches = std::mem::take(&mut n.touches).into_iter().enumerate().filter(|(i, _)| kept(touches, *i)).map(|(_, t)| t).collect();
-        n.instead =
-            std::mem::take(&mut n.instead).into_iter().enumerate().filter(|(i, _)| kept(touches, own + i)).map(|(_, t)| t).collect();
+        let (steps, touches) = (d.sites.get(&n.id), d.touches.get(&n.id));
+        if let Some(b) = n.body_mut() {
+            b.sites = std::mem::take(&mut b.sites).into_iter().enumerate().filter(|(i, _)| kept(steps, *i)).map(|(_, s)| s).collect();
+            let own = b.touches.len();
+            b.touches = std::mem::take(&mut b.touches).into_iter().enumerate().filter(|(i, _)| kept(touches, *i)).map(|(_, t)| t).collect();
+            b.instead =
+                std::mem::take(&mut b.instead).into_iter().enumerate().filter(|(i, _)| kept(touches, own + i)).map(|(_, t)| t).collect();
+        }
         out.nodes.push(n);
     }
     out.edges = g.edges.iter().enumerate().filter(|(i, _)| r.holds(d.edges.get(i))).map(|(_, e)| e.clone()).collect();
@@ -280,8 +285,8 @@ pub fn reading(g: &Graph, d: &Diff, r: Reading) -> Graph {
 
 /// The values A's bodies name by their step (`#3`), apart from B's: each reading numbers its own.
 fn apart(a: &mut Graph) {
-    for n in &mut a.nodes {
-        for s in &mut n.sites {
+    for b in a.nodes.iter_mut().filter_map(Node::body_mut) {
+        for s in &mut b.sites {
             for h in s.hands.iter_mut().chain(s.gives.iter_mut()) {
                 if let Some(k) = h.name.strip_prefix('#') {
                     h.name = format!("#a{k}");
@@ -345,9 +350,9 @@ impl Renames {
         let owners: HashMap<String, (String, String)> = a
             .nodes
             .iter()
-            .filter(|n| matches!(n.kind, NodeKind::Function | NodeKind::Method))
+            .filter(|n| matches!(n.kind.tag(), NodeKind::Function | NodeKind::Method))
             .map(|n| {
-                let owner = match (n.ctor, n.cls.as_deref()) {
+                let owner = match (n.ctor(), n.cls()) {
                     (true, Some(c)) => c,
                     _ => n.id.as_str(),
                 };
@@ -357,10 +362,12 @@ impl Renames {
             .collect();
         let m = |s: &mut String| *s = self.map(s);
         for n in &mut a.nodes {
-            for t in n.touches.iter_mut().chain(n.instead.iter_mut()) {
+            let id = n.id.clone();
+            let Some(b) = n.body_mut() else { continue };
+            for t in b.touches.iter_mut().chain(b.instead.iter_mut()) {
                 let holder = match (t.by.as_slice(), t.users_of.as_slice()) {
                     ([h], _) | ([], [h]) => h.as_str(),
-                    _ => n.id.as_str(),
+                    _ => id.as_str(),
                 };
                 if let Some((old, new)) = owners.get(holder) {
                     if let Some(rest) = t.what.strip_prefix(&format!("{old}.")) {
@@ -372,16 +379,17 @@ impl Renames {
         for n in &mut a.nodes {
             m(&mut n.id);
             m(&mut n.module);
-            if let Some(c) = n.cls.as_mut() {
-                m(c);
+            if let Some(method) = n.method_mut() {
+                m(&mut method.cls);
             }
-            for s in &mut n.sites {
+            let Some(b) = n.body_mut() else { continue };
+            for s in &mut b.sites {
                 m(&mut s.to);
                 m(&mut s.on);
                 m(&mut s.after);
                 s.hands.iter_mut().chain(s.gives.iter_mut()).for_each(|h| m(&mut h.ty));
             }
-            for t in n.touches.iter_mut().chain(n.instead.iter_mut()) {
+            for t in b.touches.iter_mut().chain(b.instead.iter_mut()) {
                 for f in t.by.iter_mut() {
                     *f = f.split('&').map(|x| self.map(x)).collect::<Vec<_>>().join("&");
                 }
@@ -446,8 +454,8 @@ fn relations(ix: &Index, n: &Node, map: &dyn Fn(&str) -> String, types: &[(Strin
             map(o)
         }
     };
-    let mut out = vec![format!("{:?}", n.kind)];
-    if matches!(n.kind, NodeKind::Function | NodeKind::Method) {
+    let mut out = vec![format!("{:?}", n.kind.tag())];
+    if matches!(n.kind.tag(), NodeKind::Function | NodeKind::Method) {
         out.push(typed_arrow(n, types));
     }
     out.extend(ix.out(&n.id).map(|e| format!("→ {:?} {} {}", e.kind, other(&e.dst), e.via.as_deref().unwrap_or(""))));
@@ -466,12 +474,12 @@ fn relations(ix: &Index, n: &Node, map: &dyn Fn(&str) -> String, types: &[(Strin
 /// names of its parameters are labels, no part of it.
 fn typed_arrow(n: &Node, types: &[(String, String)]) -> String {
     let params: Vec<String> = n
-        .params
+        .params()
         .iter()
         .filter(|p| !p.receiver)
         .map(|p| renamed(&format!("{}{}", if p.changes { "mut " } else { "" }, p.ty), types))
         .collect();
-    let gives = n.returns.as_ref().map(|r| renamed(&r.written, types)).unwrap_or_default();
+    let gives = n.returns().map(|r| renamed(&r.written, types)).unwrap_or_default();
     format!("({}) → {gives}", params.join(", "))
 }
 
@@ -489,9 +497,9 @@ fn renamed(text: &str, types: &[(String, String)]) -> String {
 fn places(g: &Graph) -> BTreeMap<String, Vec<String>> {
     let mut out: BTreeMap<String, Vec<String>> = BTreeMap::new();
     for n in &g.nodes {
-        for t in n.touches.iter().chain(&n.instead) {
+        for t in n.body().touches.iter().chain(&n.body().instead) {
             let w = t.drawn();
-            let arrow = format!("{} {}", short_fn(&n.id, n.cls.as_deref()), w.verb);
+            let arrow = format!("{} {}", short_fn(&n.id, n.cls()), w.verb);
             for id in std::iter::once(w.place.id.clone()).chain(w.place.coarse.map(|c| c.id)) {
                 out.entry(id).or_default().push(arrow.clone());
             }
@@ -521,7 +529,7 @@ fn touch_key(t: &Touch) -> String {
 /// Whether a node both readings hold is the same: a function by its own arrow, a type by the arrows
 /// directly into and out of it. A module holds what it holds, and is the same while it is there.
 fn same_node(ia: &Index, na: &Node, ib: &Index, nb: &Node, types: &[(String, String)]) -> bool {
-    match nb.kind {
+    match nb.kind.tag() {
         NodeKind::Function | NodeKind::Method => arrow(ia, na, types).1 == arrow(ib, nb, &[]).1,
         NodeKind::Class | NodeKind::External => typed(ia, &na.id) == typed(ib, &nb.id),
         NodeKind::Module => true,
@@ -530,8 +538,8 @@ fn same_node(ia: &Index, na: &Node, ib: &Index, nb: &Node, types: &[(String, Str
 
 /// A function's own arrow: in words, and as what tells it apart (the words without its name).
 fn arrow(ix: &Index, n: &Node, types: &[(String, String)]) -> (String, Vec<String>) {
-    let params: Vec<String> = n.params.iter().map(|p| renamed(&format!("{}{p}", if p.changes { "mut " } else { "" }), types)).collect();
-    let gives = n.returns.as_ref().map(|r| renamed(&r.written, types)).unwrap_or_default();
+    let params: Vec<String> = n.params().iter().map(|p| renamed(&format!("{}{p}", if p.changes { "mut " } else { "" }), types)).collect();
+    let gives = n.returns().map(|r| renamed(&r.written, types)).unwrap_or_default();
     let mut parts = vec![format!("({}){}", params.join(", "), if gives.is_empty() { String::new() } else { format!(" → {gives}") })];
     let changes: Vec<String> =
         ix.out(&n.id).filter(|e| e.kind == EdgeKind::Mutates).map(|e| e.via.clone().unwrap_or_else(|| short(&e.dst))).collect();
@@ -582,7 +590,7 @@ fn typed(ix: &Index, id: &str) -> Vec<String> {
 /// id in A of a node B renamed).
 fn was(ix: &Index, n: &Node, as_in_a: &dyn Fn(&str) -> String) -> String {
     let short = |id: &str| short(&as_in_a(id));
-    match n.kind {
+    match n.kind.tag() {
         NodeKind::Function | NodeKind::Method => arrow(ix, n, &[]).0,
         _ => {
             let mut groups: Vec<(&str, Vec<String>)> = vec![];
@@ -903,13 +911,13 @@ fn merged_touches(a: &[Touch], b: &[Touch], from: usize) -> (Vec<Touch>, BTreeMa
 /// it is whole (`load.path`, and `Store.path` for what a constructor takes): what `h` is handed,
 /// not what it hands.
 fn holds_open(h: &Node, t: &Touch) -> bool {
-    let owner = match (h.ctor, h.cls.as_deref()) {
+    let owner = match (h.ctor(), h.cls()) {
         (true, Some(c)) => short(c),
         _ => h.name.clone(),
     };
     t.kind == crate::model::World::Disk
         && t.artifact.is_empty()
-        && t.what.strip_prefix(&format!("{owner}.")).map_or(false, |p| h.params.iter().any(|q| !q.receiver && q.name == p))
+        && t.what.strip_prefix(&format!("{owner}.")).map_or(false, |p| h.params().iter().any(|q| !q.receiver && q.name == p))
 }
 
 /// The id a node of the union had in A: its old one when B renamed it.
@@ -935,7 +943,7 @@ impl<'g> Index<'g> {
         }
         let nodes: HashMap<&str, &Node> = g.nodes.iter().map(|n| (n.id.as_str(), n)).collect();
         let mut made: HashMap<&str, Vec<&Touch>> = HashMap::new();
-        for t in g.nodes.iter().flat_map(|n| &n.touches) {
+        for t in g.nodes.iter().flat_map(|n| &n.body().touches) {
             for f in t.by.iter().flat_map(|f| f.split('&')) {
                 // a file named by a value the caller is handed itself (`Store.path`) waits for the
                 // caller's own callers: the caller does not make it whole
@@ -951,7 +959,7 @@ impl<'g> Index<'g> {
     /// read where its callers make them whole, and those its calls make whole by what it hands
     /// them. A place a caller makes whole is the caller's arrow, not the callee's.
     fn own_touches(&self, n: &'g Node) -> Vec<&'g Touch> {
-        let own = n.touches.iter().filter(|t| t.by.is_empty() && t.users_of.is_empty()).chain(&n.instead);
+        let own = n.body().touches.iter().filter(|t| t.by.is_empty() && t.users_of.is_empty()).chain(&n.body().instead);
         own.chain(self.made.get(n.id.as_str()).into_iter().flatten().copied()).collect()
     }
 

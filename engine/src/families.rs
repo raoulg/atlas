@@ -63,7 +63,7 @@ impl<'g> Ix<'g> {
             .filter(|e| matches!(e.kind, EdgeKind::Takes | EdgeKind::Returns | EdgeKind::Has | EdgeKind::Mutates | EdgeKind::Variant))
             .map(|e| e.dst.as_str())
             .collect();
-        Ix { kinds: g.nodes.iter().map(|n| (n.id.as_str(), n.kind)).collect(), out, into, used_as_type }
+        Ix { kinds: g.nodes.iter().map(|n| (n.id.as_str(), n.kind.tag())).collect(), out, into, used_as_type }
     }
 
     fn is_class(&self, id: &str) -> bool {
@@ -121,7 +121,7 @@ pub fn families(g: &Graph) -> Families {
     let mut out = Families::default();
     let mut memo = HashMap::new();
     let types: Vec<&str> =
-        g.nodes.iter().filter(|n| matches!(n.kind, NodeKind::Class | NodeKind::External)).map(|n| n.id.as_str()).collect();
+        g.nodes.iter().filter(|n| matches!(n.kind.tag(), NodeKind::Class | NodeKind::External)).map(|n| n.id.as_str()).collect();
     for &t in &types {
         let f = ix.family_of(t, 0, &mut memo);
         if f != t {
@@ -153,7 +153,7 @@ pub fn families(g: &Graph) -> Families {
         }
     }
     // a family is a door when one of its kin is: the type, its family, the family's members
-    let door: HashSet<&str> = g.nodes.iter().filter(|n| n.door.is_some()).map(|n| n.id.as_str()).collect();
+    let door: HashSet<&str> = g.nodes.iter().filter(|n| n.door().is_some()).map(|n| n.id.as_str()).collect();
     for &t in &types {
         let fam = memo.get(t).cloned().unwrap_or_else(|| t.to_string());
         let kin =

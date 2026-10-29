@@ -88,12 +88,12 @@ pub fn written(language: &str, file: &str, addition: &str) -> (PathBuf, atlas_en
 pub fn held_by_parameters(g: &Graph, id: &str, types: &[&str]) -> Vec<(String, Vec<String>, Vec<String>)> {
     let f = g.node(id).unwrap_or_else(|| panic!("no node {id}"));
     let short = |t: &str| t.rsplit('.').next().unwrap_or(t).to_string();
-    f.params
+    f.params()
         .iter()
         .filter(|p| !p.receiver)
         .map(|p| {
             let holds = types.iter().filter(|t| p.holds_type(t)).map(|t| t.to_string()).collect();
-            let read = f.uses.iter().filter(|u| u.name == p.name && !u.ty.is_empty()).map(|u| short(&u.ty)).collect();
+            let read = f.body().uses.iter().filter(|u| u.name == p.name && !u.ty.is_empty()).map(|u| short(&u.ty)).collect();
             (p.name.clone(), holds, read)
         })
         .collect()
@@ -131,9 +131,10 @@ pub fn a_module_s_table_is_a_value_the_body_reads(language: &str, id: &str) {
     let choices = pair(&format!("choices/{language}"));
     let modular = |g: &Graph| -> Vec<(String, String)> {
         let f = g.node(id).unwrap_or_else(|| panic!("no node {id}"));
-        let declared = |name: &str| f.params.iter().any(|p| p.name == name);
+        let declared = |name: &str| f.params().iter().any(|p| p.name == name);
         let short = |t: &str| t.rsplit('.').next().unwrap_or(t).to_string();
-        f.uses
+        f.body()
+            .uses
             .iter()
             .filter(|u| !u.ty.is_empty() && !u.name.is_empty() && !declared(&u.name))
             .map(|u| (u.name.clone(), short(&u.ty)))
@@ -153,7 +154,7 @@ pub fn a_call_names_the_field_a_projection_reads(language: &str, module: &str) {
     let run = choices.clean.node(&format!("{module}.run")).unwrap_or_else(|| panic!("no node {module}.run"));
     let through = |to: &str| -> Vec<(atlas_engine::Slot, String)> {
         let to = format!("{module}.{to}");
-        let settings = run.sites.iter().filter(|s| s.to == to).flat_map(|s| &s.hands).filter(|h| h.name == "settings");
+        let settings = run.body().sites.iter().filter(|s| s.to == to).flat_map(|s| &s.hands).filter(|h| h.name == "settings");
         settings.flat_map(|h| h.through.clone()).collect()
     };
     let at = |n: u32, field: &str| vec![(atlas_engine::Slot::At(n), field.to_string())];
@@ -163,14 +164,14 @@ pub fn a_call_names_the_field_a_projection_reads(language: &str, module: &str) {
 
 /// The choices pair of `language`, its functions in the module `module`: the shortcut's `Runner.batch` chooses by a field of the
 /// instance it runs on (`self.mode == "parallel"`), `retries` by the parameter it is handed whole (`mode == "parallel"`). A
-/// condition names the field it tests (`Node::tests`, #184), the same in every language: `mode` of the instance for `batch`,
+/// condition names the field it tests (`Body::tests`, #184), the same in every language: `mode` of the instance for `batch`,
 /// no field for `retries`.
 #[allow(dead_code)]
 pub fn a_condition_names_the_field_it_tests(language: &str, module: &str) {
     let choices = pair(&format!("choices/{language}"));
     let tests = |id: &str| -> Vec<(String, String)> {
         let n = choices.shortcut.node(&format!("{module}.{id}")).unwrap_or_else(|| panic!("no node {module}.{id}"));
-        n.tests.iter().map(|t| (t.on.ty.clone(), t.field.clone())).collect()
+        n.body().tests.iter().map(|t| (t.on.ty.clone(), t.field.clone())).collect()
     };
     assert_eq!(tests("Runner.batch"), [(format!("{module}.Runner"), "mode".to_string())], "a field of the instance");
     assert_eq!(tests("retries"), [], "a value read whole names no field");
@@ -187,7 +188,7 @@ pub fn a_projection_bound_to_a_name_is_still_the_projection(language: &str, modu
     let through = |g: &Graph| -> Vec<(atlas_engine::Slot, String)> {
         let lend = g.node(&format!("{module}.Chart.lend")).unwrap_or_else(|| panic!("no node {module}.Chart.lend"));
         let take = format!("{module}.Chart.take");
-        lend.sites.iter().filter(|s| s.to == take).flat_map(|s| &s.hands).flat_map(|h| h.through.clone()).collect()
+        lend.body().sites.iter().filter(|s| s.to == take).flat_map(|s| &s.hands).flat_map(|h| h.through.clone()).collect()
     };
     let fields = vec![(atlas_engine::Slot::At(0), "title".to_string()), (atlas_engine::Slot::At(1), "size.width".to_string())];
     assert_eq!(through(&projections.clean), fields, "handed as fields of its own");

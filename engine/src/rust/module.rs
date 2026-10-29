@@ -391,7 +391,8 @@ pub(super) fn resolve(
 ) -> Option<String> {
     let head = parts.first()?;
     let is_module = |id: &str| nodes.get(id).map_or(false, |n| n.kind == NodeKind::Module);
-    let value = |id: &&String| parts.len() > 1 && nodes.get(*id).map_or(false, |n| matches!(n.kind, NodeKind::Function | NodeKind::Method));
+    let value =
+        |id: &&String| parts.len() > 1 && nodes.get(*id).map_or(false, |n| matches!(n.kind.tag(), NodeKind::Function | NodeKind::Method));
     let (mut target, rest): (String, &[String]) = if matches!(head.as_str(), "crate" | "self" | "super") || crate_ids.contains_key(head) {
         (path_to_id(m, parts, crate_ids, &is_module), &[])
     } else if let Some(s) = m.symbols.get(head).filter(|s| !value(s)) {

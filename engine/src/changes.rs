@@ -16,7 +16,7 @@ use anyhow::{bail, Context, Result};
 use crate::cache::{Cache, Check};
 use crate::diff::{self, Reading, Status};
 use crate::flow::Drawn;
-use crate::model::{EdgeKind, Graph, NodeKind, Touch, World};
+use crate::model::{EdgeKind, Graph, Node, NodeKind, Touch, World};
 use crate::principles::{self, Finding};
 use crate::story;
 
@@ -287,7 +287,7 @@ struct Written {
 impl Written {
     fn of(parts: &[Graph]) -> Written {
         let mut w = Written::default();
-        for s in parts.iter().flat_map(|g| &g.nodes).flat_map(|n| &n.sites) {
+        for s in parts.iter().flat_map(|g| &g.nodes).flat_map(|n| &n.body().sites) {
             w.steps.push(s.span);
             w.values.extend(s.hands.iter().chain(&s.gives).map(|h| h.at));
         }
@@ -297,7 +297,7 @@ impl Written {
     /// Write it back into the parts, in the same order; whether it fits them.
     fn apply(&self, parts: &mut [Graph]) -> bool {
         let (mut steps, mut values) = (self.steps.iter(), self.values.iter());
-        for s in parts.iter_mut().flat_map(|g| g.nodes.iter_mut()).flat_map(|n| n.sites.iter_mut()) {
+        for s in parts.iter_mut().flat_map(|g| g.nodes.iter_mut()).filter_map(Node::body_mut).flat_map(|b| b.sites.iter_mut()) {
             let Some(span) = steps.next() else { return false };
             s.span = *span;
             for h in s.hands.iter_mut().chain(s.gives.iter_mut()) {
@@ -441,7 +441,12 @@ pub fn between(a: &str, b: Option<&str>, before: &[Graph], after: &[Graph]) -> C
 /// The places a graph's touches rest at, by id, with the names the picture gives them; a coarser
 /// place one stands in until it is split is not among them.
 fn place_labels(g: &Graph) -> BTreeMap<String, String> {
-    g.nodes.iter().flat_map(|n| n.touches.iter().chain(&n.instead)).map(|t| t.drawn().place).map(|p| (p.id, p.label)).collect()
+    g.nodes
+        .iter()
+        .flat_map(|n| n.body().touches.iter().chain(&n.body().instead))
+        .map(|t| t.drawn().place)
+        .map(|p| (p.id, p.label))
+        .collect()
 }
 
 /// The changes as text: each route that changed with its steps and places, then the findings.
@@ -582,7 +587,7 @@ fn routes(g: &Graph, root: &dyn Fn(&str) -> String, several: bool) -> HashMap<St
             if *id != start && n.kind != NodeKind::External {
                 r.steps.insert(id.to_string());
             }
-            for t in n.touches_in(start, &|f| seen.contains(f)).into_iter().filter(|t| t.kind != World::Screen || *id == start) {
+            for t in n.body().touches_in(start, &|f| seen.contains(f)).into_iter().filter(|t| t.kind != World::Screen || *id == start) {
                 r.at.insert(t.drawn().place.id);
                 r.places.entry(place(t)).or_insert_with(|| t.clone());
             }

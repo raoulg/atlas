@@ -6,7 +6,8 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use indexmap::IndexMap;
 
 use crate::model::{
-    Bucket, Dir, Edge, EdgeKind, Entry, EntryKind, Graph, Held, Node, NodeKind, Signature, Site, Slot, Stats, Touch, Unresolved, World,
+    Bucket, Class, Dir, Edge, EdgeKind, Entry, EntryKind, External, Graph, Held, Kind, Node, NodeKind, Signature, Site, Slot, Stats, Touch,
+    Unresolved, World,
 };
 
 /// Per-class facts that only matter during resolution.
@@ -114,8 +115,11 @@ pub struct GraphBuilder {
 
 impl GraphBuilder {
     pub fn add_node(&mut self, mut n: Node) {
-        if n.prophecy.is_none() {
-            n.prophecy = crate::model::Prophecy::among(&n.decorators);
+        if n.prophecy().is_none() {
+            let marked = crate::model::Prophecy::among(n.decorators());
+            if let Some(p) = n.prophecy_mut() {
+                *p = marked;
+            }
         }
         self.nodes.insert(n.id.clone(), n);
     }
@@ -127,10 +131,14 @@ impl GraphBuilder {
     /// that declaration comes, the first of the others stands for it. A body declared again
     /// replaces the one before, as the name is bound to the last.
     pub fn declare(&mut self, mut n: Node, sig: SigInfo, declared: Declared) {
-        let signature = |n: &Node| Signature { line: n.span.map_or(1, |s| s.0), params: n.params.clone(), returns: n.returns.clone() };
+        let signature =
+            |n: &Node| Signature { line: n.span.map_or(1, |s| s.0), params: n.params().to_vec(), returns: n.returns().cloned() };
         let Some(old) = self.nodes.get_mut(&n.id) else {
             if declared == Declared::Overload {
-                n.overloads = vec![signature(&n)];
+                let own = signature(&n);
+                if let Some(f) = n.function_mut() {
+                    f.overloads = vec![own];
+                }
             }
             self.sigs.insert(n.id.clone(), sig);
             self.add_node(n);
@@ -139,12 +147,18 @@ impl GraphBuilder {
         match declared {
             Declared::Writer => {}
             Declared::Overload => {
-                old.overloads.push(signature(&n));
+                if let Some(f) = old.function_mut() {
+                    f.overloads.push(signature(&n));
+                }
                 self.sigs.entry(n.id).or_default().extend(sig);
             }
             Declared::Body => {
-                n.overloads = std::mem::take(&mut old.overloads);
-                match self.sigs.get_mut(&n.id).filter(|_| !n.overloads.is_empty()) {
+                let theirs = old.function_mut().map(|f| std::mem::take(&mut f.overloads)).unwrap_or_default();
+                if let Some(f) = n.function_mut() {
+                    f.overloads = theirs;
+                }
+                let overloaded = n.function().is_some_and(|f| !f.overloads.is_empty());
+                match self.sigs.get_mut(&n.id).filter(|_| overloaded) {
                     Some(theirs) => theirs.extend(sig),
                     None => {
                         self.sigs.insert(n.id.clone(), sig);
@@ -185,11 +199,11 @@ impl GraphBuilder {
         let id = format!("({})", key.join(" | "));
         self.add_node(Node {
             id: id.clone(),
-            kind: NodeKind::Class,
             name: written.split_whitespace().collect::<Vec<_>>().join(" "),
             file: at.file.clone(),
             span: at.span,
             module: at.module.clone(),
+            kind: Kind::Class(Class::default()),
             ..Default::default()
         });
         self.add_edge(&at.module, &id, EdgeKind::Contains, None);
@@ -219,7 +233,9 @@ impl GraphBuilder {
     /// A name a package exports, as a route into it: a function or a class, by its label, unless
     /// it is already a route of another kind.
     pub fn export(&mut self, id: &str, label: String) {
-        if let Some(n) = self.nodes.get_mut(id).filter(|n| matches!(n.kind, NodeKind::Function | NodeKind::Class) && n.entry.is_none()) {
+        if let Some(n) =
+            self.nodes.get_mut(id).filter(|n| matches!(n.kind.tag(), NodeKind::Function | NodeKind::Class) && n.entry.is_none())
+        {
             n.entry = Some(crate::model::Entry::new(crate::model::EntryKind::Export, label));
         }
     }
@@ -234,9 +250,9 @@ impl GraphBuilder {
     /// Record a boundary call on a node; the same call again counts up.
     /// A call as it was read, for the routes that reach none of the callers that make it whole.
     pub fn instead(&mut self, id: &str, t: Touch) {
-        let Some(n) = self.nodes.get_mut(id) else { return };
-        if !n.instead.iter().any(|x| x.kind == t.kind && x.what == t.what && x.op == t.op && x.line == t.line) {
-            n.instead.push(Touch { n: 1, by: vec![], users_of: vec![], ..t });
+        let Some(b) = self.nodes.get_mut(id).and_then(Node::body_mut) else { return };
+        if !b.instead.iter().any(|x| x.kind == t.kind && x.what == t.what && x.op == t.op && x.line == t.line) {
+            b.instead.push(Touch { n: 1, by: vec![], users_of: vec![], ..t });
         }
     }
 
@@ -253,11 +269,12 @@ impl GraphBuilder {
             let declared = |c: &str| -> Vec<&str> { bases.get(c).into_iter().flatten().map(String::as_str).collect() };
             let mut known = HashMap::new();
             for n in self.nodes.values().filter(|n| n.kind == NodeKind::Method) {
-                let Some(cls) = n.cls.as_deref() else { continue };
+                let Some(cls) = n.cls() else { continue };
                 for b in crate::model::linearization(cls, &declared, &mut known).into_iter().skip(1) {
                     let base = format!("{b}.{}", n.name);
                     if let Some(m) = self.nodes.get(&base).filter(|m| m.kind == NodeKind::Method) {
-                        let named = n.params.iter().zip(&m.params).map(|(own, theirs)| (own.name.clone(), theirs.name.clone())).collect();
+                        let named =
+                            n.params().iter().zip(m.params()).map(|(own, theirs)| (own.name.clone(), theirs.name.clone())).collect();
                         overrides.entry(n.id.clone()).or_default().push((base, named));
                     }
                 }
@@ -268,17 +285,17 @@ impl GraphBuilder {
 
     /// A request `id` makes whole that no route of its part serves.
     pub fn ask(&mut self, id: &str, request: String) {
-        let Some(n) = self.nodes.get_mut(id) else { return };
-        if !n.asks.contains(&request) {
-            n.asks.push(request);
+        let Some(b) = self.nodes.get_mut(id).and_then(Node::body_mut) else { return };
+        if !b.asks.contains(&request) {
+            b.asks.push(request);
         }
     }
 
     pub fn touch(&mut self, id: &str, t: Touch) {
-        let Some(n) = self.nodes.get_mut(id) else { return };
+        let Some(b) = self.nodes.get_mut(id).and_then(Node::body_mut) else { return };
         // only what is read can be a check
         let t = Touch { checks: t.checks && t.dir == Some(Dir::Read), ..t };
-        match n
+        match b
             .touches
             .iter_mut()
             .find(|x| x.kind == t.kind && x.what == t.what && x.op == t.op && x.artifact == t.artifact && x.dir == t.dir)
@@ -322,7 +339,7 @@ impl GraphBuilder {
                     }
                 }
             }
-            None => n.touches.push(Touch { n: 1, ..t }),
+            None => b.touches.push(Touch { n: 1, ..t }),
         }
     }
 
@@ -333,13 +350,13 @@ impl GraphBuilder {
         let family = self.family();
         let mut nodes = self.nodes;
         for (id, info) in &self.classes {
-            if let Some(n) = nodes.get_mut(id).filter(|n| n.kind == NodeKind::Class) {
+            if let Some(c) = nodes.get_mut(id).and_then(Node::class_mut) {
                 for (f, _) in &info.fields {
-                    if !n.fields.contains(f) {
-                        n.fields.push(f.clone());
+                    if !c.fields.contains(f) {
+                        c.fields.push(f.clone());
                     }
                 }
-                n.holds = info.attr_types.clone();
+                c.holds = info.attr_types.clone();
             }
         }
         serve_data(&mut nodes);
@@ -426,10 +443,9 @@ impl GraphBuilder {
         let package = module.split(['.', ':']).next().unwrap_or("");
         self.add_node(Node {
             id: eid.into(),
-            kind: NodeKind::External,
             name,
             module: module.into(),
-            door: crate::effects::library_place(package),
+            kind: Kind::External(External { door: crate::effects::library_place(package) }),
             ..Default::default()
         });
     }
@@ -442,7 +458,7 @@ impl GraphBuilder {
 /// from outside. A value a body hands or reads by such a parameter's name (`Held::param`, `Use::param`) is the parameter:
 /// where it holds none, the body is handed and reads nothing of it.
 fn settle_parameters(nodes: &mut IndexMap<String, Node>, family: &Family) {
-    let args = |n: &Node| -> Vec<String> { n.params.iter().filter(|p| !p.receiver).map(|p| p.name.clone()).collect() };
+    let args = |n: &Node| -> Vec<String> { n.params().iter().filter(|p| !p.receiver).map(|p| p.name.clone()).collect() };
     // what a call runs: the initializer of a class it builds, a method and each override of it
     let mut below: HashMap<&str, Vec<&str>> = HashMap::new();
     for (m, bases) in &family.overrides {
@@ -452,7 +468,7 @@ fn settle_parameters(nodes: &mut IndexMap<String, Node>, family: &Family) {
     }
     let runs = |s: &Site| -> Vec<String> {
         let Some(n) = nodes.get(&s.to) else { return vec![] };
-        match n.kind {
+        match n.kind.tag() {
             NodeKind::Class => n.initializer(|m| nodes.get(m)).into_iter().collect(),
             NodeKind::Function | NodeKind::Method => {
                 std::iter::once(n.id.as_str()).chain(below.get(n.id.as_str()).into_iter().flatten().copied()).map(str::to_string).collect()
@@ -462,7 +478,7 @@ fn settle_parameters(nodes: &mut IndexMap<String, Node>, family: &Family) {
     };
     // the places a slot of a call fills among the callee's parameters after its receiver
     let places = |callee: &Node, slot: &Slot, written: &[Slot]| -> Vec<usize> {
-        let ps: Vec<&crate::model::Param> = callee.params.iter().filter(|p| !p.receiver).collect();
+        let ps: Vec<&crate::model::Param> = callee.params().iter().filter(|p| !p.receiver).collect();
         let at = |n: usize| ps.iter().position(|p| p.rest).filter(|r| *r <= n).or((n < ps.len()).then_some(n));
         let named = |k: &str| ps.iter().position(|p| p.name == k && !p.rest).or_else(|| ps.iter().rposition(|p| p.rest));
         let by: Vec<usize> = written
@@ -488,7 +504,7 @@ fn settle_parameters(nodes: &mut IndexMap<String, Node>, family: &Family) {
         let before = filled.len();
         for n in nodes.values() {
             let mine = args(n);
-            for s in &n.sites {
+            for s in &n.body().sites {
                 for callee in runs(s).iter().filter_map(|c| nodes.get(c)) {
                     for h in &s.hands {
                         let theirs = h.param.then(|| mine.iter().position(|p| *p == h.name)).flatten();
@@ -513,17 +529,17 @@ fn settle_parameters(nodes: &mut IndexMap<String, Node>, family: &Family) {
     let empty: HashMap<String, HashSet<String>> = nodes
         .values()
         .map(|n| {
-            let names = n.sites.iter().flat_map(|s| &s.hands).filter(|h| h.param).map(|h| h.name.clone());
-            let used = n.uses.iter().filter(|u| u.param).map(|u| u.name.clone());
+            let names = n.body().sites.iter().flat_map(|s| &s.hands).filter(|h| h.param).map(|h| h.name.clone());
+            let used = n.body().uses.iter().filter(|u| u.param).map(|u| u.name.clone());
             (n.id.clone(), names.chain(used).filter(|nm| !holds(&n.id, nm)).collect::<HashSet<String>>())
         })
         .filter(|(_, e)| !e.is_empty())
         .collect();
     for (id, names) in empty {
-        let Some(n) = nodes.get_mut(&id) else { continue };
+        let Some(b) = nodes.get_mut(&id).and_then(Node::body_mut) else { continue };
         // what a step makes of those parameters alone (a loop's element) holds no value either, and a library's operation
         // that makes nothing of nothing is no step
-        n.sites.retain_mut(|s| {
+        b.sites.retain_mut(|s| {
             s.hands.retain(|h| !(h.param && names.contains(&h.name)));
             let made = s.gives.iter().any(|g| g.param);
             if s.hands.is_empty() {
@@ -531,8 +547,8 @@ fn settle_parameters(nodes: &mut IndexMap<String, Node>, family: &Family) {
             }
             !(made && s.gives.is_empty() && s.hands.is_empty() && s.to.is_empty())
         });
-        n.uses.retain(|u| !(u.param && names.contains(&u.name)));
-        for s in n.sets.iter_mut() {
+        b.uses.retain(|u| !(u.param && names.contains(&u.name)));
+        for s in b.sets.iter_mut() {
             s.from.retain(|h| !(h.param && names.contains(&h.name)));
         }
     }
@@ -546,8 +562,8 @@ fn settle_parameters(nodes: &mut IndexMap<String, Node>, family: &Family) {
 fn fill_nested(nodes: &mut IndexMap<String, Node>) {
     let inside = |inner: (u32, u32), outer: (u32, u32)| inner != outer && inner != (0, 0) && outer.0 <= inner.0 && inner.1 <= outer.1;
     let methods: HashSet<String> = nodes.values().filter(|n| n.kind == NodeKind::Method).map(|n| n.id.clone()).collect();
-    for n in nodes.values_mut() {
-        let sites = &mut n.sites;
+    for b in nodes.values_mut().filter_map(Node::body_mut) {
+        let sites = &mut b.sites;
         // what a step in a function written in a call's arguments gives under a name the function binds is the function's:
         // the call is handed what the function gives back (`query_map(.., |row| { let amount = Money { .. }; Ok(..) })`)
         for o in 0..sites.len() {
@@ -588,16 +604,16 @@ fn mark_doors(nodes: &mut IndexMap<String, Node>, edges: &[Edge]) {
     for e in edges.iter().filter(|e| matches!(e.kind, EdgeKind::Calls | EdgeKind::Instantiates)) {
         out.entry(e.src.as_str()).or_default().push(e.dst.as_str());
     }
-    let operation = |n: &Node| n.kind == NodeKind::Method && !n.on_class;
+    let operation = |n: &Node| n.kind == NodeKind::Method && !n.on_class();
     let reaches = |start: &str| -> Option<World> {
         let mut seen = HashSet::from([start.to_string()]);
         let mut stack = vec![start.to_string()];
         while let Some(id) = stack.pop() {
             let Some(n) = nodes.get(&id) else { continue };
-            if let Some(t) = n.touches.iter().find(|t| t.kind.is_service()) {
+            if let Some(t) = n.body().touches.iter().find(|t| t.kind.is_service()) {
                 return Some(t.kind);
             }
-            let next = match n.kind {
+            let next = match n.kind.tag() {
                 NodeKind::Class => n.initializer(|m| nodes.get(m)).into_iter().collect::<Vec<String>>(),
                 _ => out.get(id.as_str()).into_iter().flatten().map(|d| d.to_string()).collect(),
             };
@@ -616,15 +632,15 @@ fn mark_doors(nodes: &mut IndexMap<String, Node>, edges: &[Edge]) {
             let prefix = format!("{}.", c.id);
             nodes
                 .values()
-                .filter(|m| m.cls.as_deref() == Some(c.id.as_str()) || m.id.starts_with(&prefix) && m.kind == NodeKind::Method)
+                .filter(|m| m.cls() == Some(c.id.as_str()) || m.id.starts_with(&prefix) && m.kind == NodeKind::Method)
                 .filter(|m| operation(m))
                 .find_map(|m| reaches(&m.id))
                 .map(|k| (c.id.clone(), k))
         })
         .collect();
     for (id, kind) in doors {
-        if let Some(n) = nodes.get_mut(&id) {
-            n.door = Some(kind);
+        if let Some(c) = nodes.get_mut(&id).and_then(Node::class_mut) {
+            c.door = Some(kind);
         }
     }
 }
@@ -662,7 +678,7 @@ fn parsed(nodes: &IndexMap<String, Node>, id: &str, seen: &mut HashSet<String>, 
         }
         return;
     }
-    for s in &n.sites {
+    for s in &n.body().sites {
         match &s.command_line {
             Some(options) => {
                 for o in options {
@@ -714,7 +730,7 @@ fn settle_fails(nodes: &mut IndexMap<String, Node>, edges: &[Edge], family: &Fam
     }
     let runs = |s: &Site| -> Vec<String> {
         let Some(n) = nodes.get(&s.to) else { return vec![] };
-        match n.kind {
+        match n.kind.tag() {
             NodeKind::Class => n.initializer(|m| nodes.get(m)).into_iter().collect(),
             // a call through a class runs the method that class's order finds, and no override of it
             _ => std::iter::once(n.id.as_str())
@@ -737,7 +753,7 @@ fn settle_fails(nodes: &mut IndexMap<String, Node>, edges: &[Edge], family: &Fam
         for n in nodes.values() {
             let mut out: Vec<String> = ends.get(&n.id).cloned().unwrap_or_default();
             let before = out.len();
-            for s in &n.sites {
+            for s in &n.body().sites {
                 let raised = s.gives.iter().filter(|g| s.raises && !caught(&s.caught, &g.ty)).map(|g| g.ty.clone());
                 for e in raised.chain(handed(s, &ends)) {
                     if !out.contains(&e) {
@@ -756,10 +772,12 @@ fn settle_fails(nodes: &mut IndexMap<String, Node>, edges: &[Edge], family: &Fam
     }
     let fails: Vec<(String, usize, String)> = nodes
         .values()
-        .flat_map(|n| n.sites.iter().enumerate().filter_map(|(i, s)| handed(s, &ends).map(|e| (n.id.clone(), i, e))).collect::<Vec<_>>())
+        .flat_map(|n| {
+            n.body().sites.iter().enumerate().filter_map(|(i, s)| handed(s, &ends).map(|e| (n.id.clone(), i, e))).collect::<Vec<_>>()
+        })
         .collect();
     for (id, i, e) in fails {
-        if let Some(s) = nodes.get_mut(&id).and_then(|n| n.sites.get_mut(i)) {
+        if let Some(s) = nodes.get_mut(&id).and_then(Node::body_mut).and_then(|b| b.sites.get_mut(i)) {
             s.fails = Some(e);
         }
     }
@@ -784,22 +802,22 @@ pub fn foreign_type(id: &str, own: &crate::knowledge::OwnTypes) -> bool {
 /// place: its touches go.
 fn serve_data(nodes: &mut IndexMap<String, Node>) {
     use crate::effects::{SCHEMA, SCRATCH, SHAPED};
-    for t in nodes.values_mut().flat_map(|n| n.touches.iter_mut().chain(n.instead.iter_mut())) {
+    for t in nodes.values_mut().filter_map(Node::body_mut).flat_map(|b| b.touches.iter_mut().chain(b.instead.iter_mut())) {
         if let Some(table) = t.artifact.strip_prefix(SHAPED) {
             (t.artifact, t.op) = (table.to_string(), SCHEMA.to_string());
         }
     }
     let table = |t: &Touch| (t.kind.name().to_string(), t.artifact.strip_prefix(SCRATCH).unwrap_or(&t.artifact).to_string());
     let scratch: HashSet<(String, String)> =
-        nodes.values().flat_map(|n| &n.touches).filter(|t| t.artifact.starts_with(SCRATCH)).map(table).collect();
-    for n in nodes.values_mut() {
-        n.touches.retain(|t| !(matches!(t.kind, World::Db(_)) && scratch.contains(&table(t))));
-        let all = n.touches.clone();
+        nodes.values().flat_map(|n| &n.body().touches).filter(|t| t.artifact.starts_with(SCRATCH)).map(table).collect();
+    for b in nodes.values_mut().filter_map(Node::body_mut) {
+        b.touches.retain(|t| !(matches!(t.kind, World::Db(_)) && scratch.contains(&table(t))));
+        let all = b.touches.clone();
         let call = |t: &Touch| (t.line, t.op.clone(), t.kind);
         let folded: Vec<_> = all.iter().filter(|t| prepares(t, &all)).map(call).collect();
-        n.touches.retain(|t| !prepares(t, &all));
+        b.touches.retain(|t| !prepares(t, &all));
         // the same call as it was read prepares the same place
-        n.instead.retain(|t| !folded.contains(&call(t)));
+        b.instead.retain(|t| !folded.contains(&call(t)));
     }
 }
 

@@ -114,7 +114,7 @@ fn project(dir: &Path) -> PathBuf {
 
 /// The places a part's library function touches, by kind and operation.
 fn touched(parts: &[Graph], id: &str) -> Vec<(String, String)> {
-    parts.iter().filter_map(|g| g.node(id)).flat_map(|n| &n.touches).map(|t| (t.kind_name().to_string(), t.op.clone())).collect()
+    parts.iter().filter_map(|g| g.node(id)).flat_map(|n| &n.body().touches).map(|t| (t.kind_name().to_string(), t.op.clone())).collect()
 }
 
 /// A revision is read once: the second reading of the same commit is the one kept, and draws the
