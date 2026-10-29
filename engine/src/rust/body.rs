@@ -374,6 +374,8 @@ fn library_chain<'t>(
     loop {
         match v.kind() {
             k if WRAPPERS.contains(&k) => v = wrapped(v)?,
+            // a dereference is the value it refers to: `conn` of `(&*conn).read(..)`
+            "unary_expression" if v.child(0).map_or(false, |o| o.kind() == "*") => v = named_children(v).into_iter().next()?,
             "identifier" | "field_expression" if !made_by.holds(text(v, src), v.start_byte()) => {
                 let ty = declared(v)?;
                 before.reverse();

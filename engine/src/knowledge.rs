@@ -893,8 +893,6 @@ pub const PACKAGES: &[(Registry, &str, World)] = &[
     (Crates, "tokio_tungstenite", NET),
     (Crates, "curl", NET),
     (Crates, "axum", NET),
-    (Crates, "TcpStream", NET),
-    (Crates, "TcpListener", NET),
     (Npm, "axios", NET),
     (Npm, "ky", NET),
     (Npm, "ofetch", NET),
@@ -988,6 +986,34 @@ pub fn request_by_data(op: &str) -> Option<&'static RequestByData> {
 
 /// A socket's connecting, sending and receiving: the network calls that are handed no URL.
 pub const SOCKET_OPS: &[&str] = &["connect", "send", "sendall", "sendto", "recv", "recvfrom", "recv_into"];
+
+/// Rust's module whose types are sockets: std's `net` (`TcpStream`, `TcpListener`, `UdpSocket`),
+/// and the async runtimes' of that name.
+pub const RUST_NET_MODULE: &str = "net";
+
+/// A Rust socket's connecting, sending and receiving, as `SOCKET_OPS` are Python's: a stream sends
+/// and receives through `io::Write` and `io::Read`, a datagram socket by its own names. Binding an
+/// address, accepting a connection, shutting a half and setting a timeout move no data, in either
+/// language.
+pub const RUST_SOCKET_OPS: &[&str] = &[
+    "connect",
+    "connect_timeout",
+    "read",
+    "read_exact",
+    "read_to_end",
+    "read_to_string",
+    "read_vectored",
+    "peek",
+    "write",
+    "write_all",
+    "write_vectored",
+    "write_fmt",
+    "send",
+    "send_to",
+    "recv",
+    "recv_from",
+    "peek_from",
+];
 
 /// Whether a web library's operation moves data: a request by its method or its kind, or a
 /// socket's traffic.

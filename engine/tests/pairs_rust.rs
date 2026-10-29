@@ -1651,3 +1651,29 @@ fn a_recursive_call_takes_what_its_call_hands_it() {
 fn a_list_made_by_a_literal_is_made_by_the_body() {
     common::a_list_made_by_a_literal_is_made_by_the_body("rust", "by_literal", "by_call", "by_constant");
 }
+
+/// One side of the sockets pair (`tests/pairs/sockets/rust`): a server that greets each client by
+/// the name it sends and lets the client read the greeting before the connection closes.
+fn greeter(side: &str) -> Graph {
+    analyze(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/pairs/sockets/rust").join(side), &Options::default()).expect("reads")
+}
+
+/// A call leaves something behind, and a socket is a place: what a function reads from or writes to
+/// std's `TcpStream` reaches the network, as what Python's `socket` receives and sends does. The
+/// clean server lingers as TCP asks: it shuts its writing half and reads what the client still sends,
+/// so `linger` reaches the network and nothing is asked. The shortcut sleeps a moment and drops the
+/// connection: its `linger` reaches no place, and Atlas asks what the wait leaves behind. Binding an
+/// address, shutting a half and setting a timeout move no data, on both sides.
+#[test]
+fn nothing_a_socket_is_a_place() {
+    let (c, s) = (greeter("clean"), greeter("shortcut"));
+    assert_eq!(found(&c, "nothing"), Vec::<String>::new());
+    assert_eq!(found(&s, "nothing"), ["greeter.linger"]);
+    let ops = |g: &Graph, f: &str| touches(g, f, "net").iter().map(|t| t.op.clone()).collect::<Vec<_>>();
+    assert_eq!(ops(&c, "greeter.linger"), ["read"], "what the client still sends is read from the network");
+    assert!(ops(&s, "greeter.linger").is_empty(), "a wait reaches no place");
+    for g in [&c, &s] {
+        assert_eq!(ops(g, "greeter.answer"), ["read", "write_all"], "the name is received and the greeting sent");
+        assert!(node(g, "greeter.main").touches.is_empty(), "binding an address and accepting a connection move no data");
+    }
+}
