@@ -76,13 +76,30 @@ workflow behind it is [one you can copy](docs/reference/ci.md). Click the pictur
   </a>
 </p>
 
+## Atlas Studio
+
+The picture, its history and a terminal in one window, one workspace per repository. Here Studio has
+Atlas itself open: the flowchart of every entry point in the middle, the README in the preview beside
+it, and a shell underneath for you and your agent.
+
+<p align="center">
+  <img src="docs/img/studio.webp" width="100%" alt="Atlas Studio with the Atlas repository open: the workspace's files and lessons in the sidebar on the left, the flowchart of route all in the middle with its legend, the README rendered in the preview on the right, and a shell along the bottom">
+</p>
+
+On the left are the workspace's files as Atlas reads them, a dot on each file the graph defines
+something in. A traced file opens where the picture has it; any other opens in the preview, which
+shows source, Markdown, HTML, PDF and images. **History**, above the files, picks two commits and
+draws them as one picture. **Lessons**, below them, are Markdown or HTML pages with a Python script to
+run and Atlas views to open. Studio carries its own `atlas-code`, so it needs no installed command
+line: [install it](#install) on macOS or Windows.
+
 ## Install
 
 Atlas comes in two forms, around the same engine:
 
 - **The command line**, `atlas-code`, for macOS, Linux and Windows. `atlas-code view .` opens the picture of a
   repository in your browser, and `atlas-code serve` keeps that page open while you and your agent work.
-- **Atlas Studio**, a desktop app for macOS (Apple silicon and Intel) and Windows: the picture, its
+- [**Atlas Studio**](#atlas-studio), a desktop app for macOS (Apple silicon and Intel) and Windows: the picture, its
   history and a terminal in one window, one workspace per repository. It carries its own `atlas-code`, so
   it needs no installed command line.
 
