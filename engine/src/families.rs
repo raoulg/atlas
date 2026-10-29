@@ -79,7 +79,7 @@ impl<'g> Ix<'g> {
         for (_, f) in &shaped {
             *fiber.entry(f.as_str()).or_default() += 1;
         }
-        let ranks = shaped.iter().filter(|(t, f)| fiber[f.as_str()] > 1).map(|(t, f)| (*t, f.clone())).collect();
+        let ranks = shaped.iter().filter(|(_, f)| fiber[f.as_str()] > 1).map(|(t, f)| (*t, f.clone())).collect();
         Ix { kinds: g.nodes.iter().map(|n| (n.id.as_str(), n.kind)).collect(), out, into, used_as_type, ranks }
     }
 
