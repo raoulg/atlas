@@ -100,7 +100,7 @@ jobs:
       - name: the readings, cold and warm
         working-directory: atlas
         run: |
-          uv run tools/perf.py read --atlas "$RUNNER_TEMP/atlas-code" --rounds 3 --out "$RUN" \
+          uv run tools/perf.py read --atlas "$RUNNER_TEMP/atlas-code" --out "$RUN" \
             --subject atlas=. \
             --subject goad_toolkit=../programs/goad_toolkit \
             --subject vectormesh=../programs/vectormesh \
