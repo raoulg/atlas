@@ -300,3 +300,62 @@ pub fn normal(p: &Path) -> PathBuf {
     }
     out
 }
+
+/// A path as one key whatever way it is written: with `/` between its parts, without Windows's
+/// verbatim prefix (`\\?\`), and on Windows in one case, as the file system compares it.
+pub fn keyed(p: &Path) -> String {
+    let s = plain(p);
+    if cfg!(windows) {
+        s.to_lowercase()
+    } else {
+        s
+    }
+}
+
+/// A path written with `/` between its parts and without Windows's verbatim prefix.
+fn plain(p: &Path) -> String {
+    let s = p.to_string_lossy().replace('\\', "/");
+    match s.strip_prefix("//?/UNC/") {
+        Some(share) => format!("//{share}"),
+        None => s.strip_prefix("//?/").unwrap_or(&s).to_string(),
+    }
+}
+
+/// The path of `file` from `dir`, however each is written: where `file` lies in `dir` as their
+/// keys say, the rest of `file` as it is written.
+pub fn below(file: &Path, dir: &Path) -> Option<PathBuf> {
+    if let Ok(rest) = file.strip_prefix(dir) {
+        return Some(rest.to_path_buf());
+    }
+    let (file, dir) = (plain(file), plain(dir));
+    let dir = dir.trim_end_matches('/');
+    let rest = file.get(dir.len()..)?.strip_prefix('/')?;
+    (keyed(Path::new(&file[..dir.len()])) == keyed(Path::new(dir))).then(|| PathBuf::from(rest))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A file's path from a directory is the same whichever way the two are written: with or without
+    /// the verbatim prefix, with `\` or `/` between their parts.
+    #[test]
+    fn a_path_below_a_directory_does_not_depend_on_how_either_is_written() {
+        let plainly = below(Path::new("C:/t/copy/src/a.py"), Path::new("C:/t/copy"));
+        assert_eq!(plainly, Some(PathBuf::from("src/a.py")));
+        for (file, dir) in [
+            (r"\\?\C:\t\copy\src\a.py", r"C:\t\copy"),
+            (r"C:\t\copy\src\a.py", r"\\?\C:\t\copy"),
+            (r"\\?\C:\t\copy\src\a.py", r"\\?\C:\t\copy\"),
+            (r"\\?\UNC\host\share\copy\src\a.py", r"\\host\share\copy"),
+        ] {
+            assert_eq!(below(Path::new(file), Path::new(dir)).map(|p| keyed(&p)), Some(keyed(Path::new("src/a.py"))), "{file} in {dir}");
+        }
+        assert_eq!(
+            below(Path::new("C:/t/copyist/a.py"), Path::new("C:/t/copy")),
+            None,
+            "a name that only begins as the directory's is not in it"
+        );
+        assert_eq!(below(Path::new("C:/t/other/a.py"), Path::new("C:/t/copy")), None);
+    }
+}

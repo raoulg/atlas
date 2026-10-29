@@ -191,7 +191,7 @@ impl Placed {
 
     /// The path of the file that holds `n`, an item of the vision.
     fn in_vision(&self, n: &Node) -> Option<std::path::PathBuf> {
-        std::path::Path::new(&n.file).strip_prefix(&self.copy).ok().map(std::path::Path::to_path_buf)
+        crate::repo::below(std::path::Path::new(&n.file), &self.copy)
     }
 
     /// The text of the tree's file that holds the item `n` is, where the tree holds it.

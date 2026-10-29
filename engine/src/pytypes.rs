@@ -732,13 +732,7 @@ fn key(p: &Path) -> String {
 
 /// A path as a key, as it is written: the key of a path the file system resolves to itself.
 fn keyed_as(p: &Path) -> String {
-    let s = p.to_string_lossy().replace('\\', "/");
-    let s = s.strip_prefix("//?/").unwrap_or(&s).to_string();
-    if cfg!(windows) {
-        s.to_lowercase()
-    } else {
-        s
-    }
+    crate::repo::keyed(p)
 }
 
 fn absolute(p: &Path) -> Option<SystemPathBuf> {
