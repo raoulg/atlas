@@ -286,19 +286,30 @@ pub fn union(mut xs: Vec<Built>, ys: Vec<Built>) -> Vec<Built> {
     xs
 }
 
-/// The directory a path is in: up to its last `/`.
+/// The directory a path is in: the path without its last part. The parts of a path are what lies
+/// between the `/`s its literal text writes, so a value written between two of them is one part:
+/// the directory of `~/data/{name}` is `~/data`, and of `{root}/{name}.json` it is `{root}`. A path
+/// with no `/` before its last part has nothing written to go back to: a name alone is in `.`, and
+/// a path not said yet (what a caller hands, an option, what the environment holds) is in `{p}/..`,
+/// which is the directory of what is said for it once it is (`written_in`).
 pub fn parent(b: &Built) -> Built {
+    let last = b.len().saturating_sub(1);
     for i in (0..b.len()).rev() {
         let (Seg::Lit(s) | Seg::Package(s)) = &b[i] else { continue };
-        let t = s.trim_end_matches('/');
+        // a directory written with its closing `/` (`a/b/`) ends in its last part; a `/` before a
+        // value written after it closes the part before that value
+        let t = if i == last { s.trim_end_matches('/') } else { s.as_str() };
         // the directory above `{p}/..` is one more step up, once the path is said
-        if t == ".." || t.ends_with("/..") {
+        if i == last && (t == ".." || t.ends_with("/..")) {
             return [b.clone(), lit("/..")].concat();
         }
         if let Some(k) = t.rfind('/') {
             let mut out = b[..i].to_vec();
-            let up = t[..k.max(1)].to_string();
-            out.push(if matches!(b[i], Seg::Package(_)) { Seg::Package(up) } else { Seg::Lit(up) });
+            // the root's own `/` stays, where nothing is written before it
+            let up = t[..if i == 0 { k.max(1) } else { k }].to_string();
+            if !up.is_empty() {
+                out.push(if matches!(b[i], Seg::Package(_)) { Seg::Package(up) } else { Seg::Lit(up) });
+            }
             return out;
         }
     }
@@ -308,10 +319,57 @@ pub fn parent(b: &Built) -> Built {
         ([Seg::Lit(_)], _) => lit("."),
         // a module at the top of the repository is in its root
         ([Seg::Package(_)], _) => vec![Seg::Package(".".into())],
-        // a path a caller hands or an option names: its directory, once the path is said (`{to}/..`)
+        // a path a caller hands, an option or the environment names: its directory, once the path
+        // is said (`{to}/..`)
         (_, [.., Seg::Param(_) | Seg::Held(..) | Seg::Option(..)]) => [b[..name].to_vec(), lit("/..")].concat(),
+        (_, [.., Seg::Hole(h)]) if !anonymous(h) => [b[..name].to_vec(), lit("/..")].concat(),
+        // the directory of a value the code gives no name is no more named
         _ => hole("parent"),
     }
+}
+
+/// Whether literal text starts with a step up from what is written before it (`/..`, `/../x`).
+fn up_first(s: &str) -> bool {
+    s == "/.." || s.starts_with("/../")
+}
+
+/// `b` with what `value` says each of its segments holds written in, where it says one, over every
+/// combination. A step up written right after such a segment (`{source}/..`, the directory `parent`
+/// gives of a path not said yet) is the directory of what is written in: going up from a path a
+/// caller hands is going up from what the caller hands, so `{source}/..` handed `~/data/{name}`
+/// is `~/data`.
+fn written_in(b: &Built, mut value: impl FnMut(&Seg) -> Option<Vec<Built>>) -> Vec<Built> {
+    let mut out: Vec<Built> = vec![vec![]];
+    let mut said = false;
+    for s in b {
+        match (s, value(s)) {
+            (_, Some(piece)) => {
+                out = cross(&out, &piece, "");
+                said = true;
+            }
+            (Seg::Lit(t), None) if said && up_first(t) => {
+                let mut up = vec![];
+                for o in &out {
+                    let (mut o, mut rest) = (o.clone(), t.as_str());
+                    while up_first(rest) {
+                        o = parent(&o);
+                        rest = &rest[3..];
+                    }
+                    let o = if rest.is_empty() { o } else { join(&o, &lit(rest), "") };
+                    if !up.contains(&o) {
+                        up.push(o);
+                    }
+                }
+                out = up;
+                said = false;
+            }
+            (s, None) => {
+                out = cross(&out, &[vec![s.clone()]], "");
+                said = false;
+            }
+        }
+    }
+    out
 }
 
 /// Marks, in a path's text, that the suffix of the name before it is taken away: what
@@ -557,15 +615,10 @@ pub trait Handing {
 
 /// Each parameter of `b` replaced by what `value` says it holds, over every combination.
 pub fn substitute(b: &Built, mut value: impl FnMut(&str) -> Vec<Built>) -> Vec<Built> {
-    let mut out: Vec<Built> = vec![vec![]];
-    for s in b {
-        let piece = match s {
-            Seg::Param(p) => value(p),
-            s => vec![vec![s.clone()]],
-        };
-        out = cross(&out, &piece, "");
-    }
-    out
+    written_in(b, |s| match s {
+        Seg::Param(p) => Some(value(p)),
+        _ => None,
+    })
 }
 
 /// Where a value built from parameters becomes whole: in a function, from what its call hands
@@ -707,15 +760,10 @@ impl<H: Handing> Callers<'_, H> {
 
 /// `b` with what the object holds for parameter `p` of `g` written in.
 fn fill(b: &Built, g: &str, p: &str, v: &Built) -> Vec<Built> {
-    let mut out: Vec<Built> = vec![vec![]];
-    for s in b {
-        let piece = match s {
-            Seg::Held(h, q) if h == g && q == p => vec![v.clone()],
-            s => vec![vec![s.clone()]],
-        };
-        out = cross(&out, &piece, "");
-    }
-    out
+    written_in(b, |s| match s {
+        Seg::Held(h, q) if h == g && q == p => Some(vec![v.clone()]),
+        _ => None,
+    })
 }
 
 /// A file, network or database call whose path, URL or statement waits for what its callers
@@ -1190,6 +1238,65 @@ mod tests {
         let written = join(&parent(&parent(&lit("a/b/c.xml"))), &lit("m.json"), "/");
         assert_eq!(handed.iter().map(|b| place(b, "read")).collect::<Vec<_>>(), [place(&written, "read")]);
         assert_eq!(place(&written, "read").as_deref(), Some("a/m.json"));
+    }
+
+    /// One part of a path: a name written out, a value a caller hands, what the environment holds,
+    /// or a handed value with a suffix written after it (`{to}.json`).
+    fn a_part() -> impl proptest::strategy::Strategy<Value = Built> {
+        use proptest::prelude::*;
+        prop_oneof![
+            "[a-z]{1,4}(\\.[a-z]{1,3})?".prop_map(|s| lit(&s)),
+            "[a-z]{1,4}".prop_map(|s| vec![Seg::Param(s)]),
+            "[A-Z]{1,4}".prop_map(|s| environment(&s)),
+            "[a-z]{1,4}".prop_map(|s| vec![Seg::Param(s), Seg::Lit(".json".into())]),
+        ]
+    }
+
+    /// A path of one or more parts, from the user's home or relative.
+    fn a_path() -> impl proptest::strategy::Strategy<Value = Built> {
+        use proptest::prelude::*;
+        (any::<bool>(), proptest::collection::vec(a_part(), 1..5)).prop_map(|(home, parts)| {
+            let first = if home { lit("~") } else { parts[0].clone() };
+            parts.iter().skip(usize::from(!home)).fold(first, |b, p| join(&b, p, "/"))
+        })
+    }
+
+    proptest::proptest! {
+        /// Law: the directory of a path drops exactly its last part, whatever each part is: the
+        /// directory of `t/q` is `t`, so a path of n parts has a directory of n - 1, and joining the
+        /// last part back gives the path.
+        #[test]
+        fn a_parent_drops_exactly_the_last_part(t in a_path(), q in a_part()) {
+            proptest::prop_assert_eq!(parent(&join(&t, &q, "/")), t);
+        }
+
+        /// Law: going up from a path a caller hands is going up from what it hands. The directory
+        /// of `{P}/a/b`, with `v` written in for `{P}`, is the directory of `v/a/b`, and the
+        /// directory of `{P}` alone, `{P}/..`, is the directory of `v` once `v` is written in.
+        #[test]
+        fn a_parent_commutes_with_what_is_handed(rest in proptest::collection::vec(a_part(), 0..3), v in a_path()) {
+            let p = vec![Seg::Param("P".into())];
+            let t = rest.iter().fold(p, |b, q| join(&b, q, "/"));
+            let hand = |x: &str| if x == "P" { vec![v.clone()] } else { vec![vec![Seg::Param(x.into())]] };
+            let handed = substitute(&t, hand);
+            proptest::prop_assert_eq!(handed.len(), 1);
+            proptest::prop_assert_eq!(substitute(&parent(&t), hand), vec![parent(&handed[0])]);
+        }
+    }
+
+    /// The directory of a path of several parts is the path without its last, also where the last
+    /// part is a value the code does not say (`~/data/{name}` is in `~/data`); a path that is one
+    /// value not said yet is in the directory above it, named once the value is said (`{source}/..`,
+    /// `{$SHELF_DATA}/..`).
+    #[test]
+    fn a_parent_of_a_path_of_several_parts() {
+        let name = join(&lit("~/data"), &vec![Seg::Param("name".into())], "/");
+        assert_eq!(render(&parent(&name)), "~/data");
+        assert_eq!(render(&parent(&vec![Seg::Param("source".into())])), "{source}/..");
+        assert_eq!(render(&parent(&environment("SHELF_DATA"))), "{$SHELF_DATA}/..");
+        let log = join(&parent(&vec![Seg::Param("source".into())]), &lit("shelf.log"), "/");
+        let handed = substitute(&log, |_| vec![name.clone()]);
+        assert_eq!(handed.iter().map(render).collect::<Vec<_>>(), ["~/data/shelf.log"]);
     }
 
     /// A pattern that holds everything below a directory is the fiber over a predicate that always

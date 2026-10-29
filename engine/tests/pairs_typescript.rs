@@ -2023,3 +2023,9 @@ fn a_request_meets_the_routes_that_serve_its_method() {
     assert_eq!(met(&s, "notes"), [every.clone()], "the shortcut's GET meets the handler of every method");
     assert_eq!(met(&s, "keep"), [every], "the shortcut's POST meets the handler of every method");
 }
+
+/// The parents pair: `dirname(source)` of `~/data/{name}` is `~/data`, as `Path.parent` and `Path::parent` are (#284).
+#[test]
+fn places_a_parent_drops_the_last_part_of_a_path() {
+    common::a_parent_drops_the_last_part_of_a_path("typescript", "shelf.summarise", "shelf.log");
+}

@@ -1677,3 +1677,9 @@ fn nothing_a_socket_is_a_place() {
         assert!(node(g, "greeter.main").touches.is_empty(), "binding an address and accepting a connection move no data");
     }
 }
+
+/// The parents pair: `source.parent()` of `~/data/{name}` is `~/data`, as `Path.parent` and `path.dirname` are (#284).
+#[test]
+fn places_a_parent_drops_the_last_part_of_a_path() {
+    common::a_parent_drops_the_last_part_of_a_path("rust", "shelf.summarise", "shelf.log");
+}
