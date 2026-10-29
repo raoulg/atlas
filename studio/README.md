@@ -54,7 +54,7 @@ A theme names the roles Atlas's colours go by (`--bg`, `--ink`, `--focus`, the h
 - **Coding agents**: whether Claude Code and Codex have Atlas's MCP server, registered once for every project as `docs/reference/install.md` says. **Add Atlas** runs that command, with the CLI of Studio's own channel on the `PATH` (`atlas`, or `atlas-code-nightly` for Atlas Studio Nightly), else Studio's own; the agent connects to it in a new session (or `/mcp` in Claude Code).
 - **Version**, and a check for updates.
 
-`settings.json` in Studio's configuration folder keeps the appearance and where the terminal docks (`terminal`: `bottom`, `left` or `right`).
+`settings.json` in Studio's configuration folder keeps the appearance, where the terminal docks (`terminal`: `bottom`, `left` or `right`) and where the preview docks (`preview`: `left` or `right`).
 
 ## The top bar
 
@@ -66,7 +66,7 @@ While Atlas draws, a bar shows how far reading the project's code is; the pictur
 
 The sidebar shows the workspace's files as Atlas reads them: what `atlas-code serve` answers at `/api/files`, the listing `Repo` reads, without hidden directories, what git ignores, dependencies and build output. A filled dot marks a file the graph defines something in (a module, class or function); an open dot marks a physical file only. The tree follows the working tree while the workspace is open.
 
-A traced file opens where the picture has it: a module that is an entry point (a notebook, a script) on its route, as `atlas-code view notebook.ipynb` does, any other on its module's box. Any other file opens in the preview at the right, as a traced one does with alt-click, ⇧Enter or the ⧉ on its row. The box selected in the Atlas view marks its file in the tree with ◇. Arrow keys move through the tree, Right and Left open and close a folder, Enter opens a file.
+A traced file opens where the picture has it: a module that is an entry point (a notebook, a script) on its route, as `atlas-code view notebook.ipynb` does, any other on its module's box. Any other file opens in the preview beside the view, as a traced one does with alt-click, ⇧Enter or the ⧉ on its row. The box selected in the Atlas view marks its file in the tree with ◇. Arrow keys move through the tree, Right and Left open and close a folder, Enter opens a file.
 
 The preview shows:
 
@@ -77,6 +77,8 @@ The preview shows:
 - images as they are.
 
 The footer lists what the graph defines in the file, each a link to its box, or says that the file has no traced graph fact.
+
+The preview stands where the terminal can: its edge that faces the view drags, as the terminal's does, and the buttons in its head dock it on the left or the right (kept for every window), fold it to a narrow bar at its side that names the open file (a click on the bar unfolds it, its tabs as they were), or let it fill the stage (the same button gives the view back, which keeps its size underneath). A file opened from the tree unfolds a folded preview.
 
 ## Terminal
 
