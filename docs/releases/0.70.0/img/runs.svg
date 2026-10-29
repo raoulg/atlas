@@ -20,7 +20,7 @@
 <text x="480" y="151" style="font-family:var(--mono);font-size:13px;fill:var(--ink);text-anchor:middle;font-weight:400">Section</text>
 <rect x="400" y="180" width="160" height="32" rx="8" style="fill:var(--key);fill-opacity:0.16;stroke:var(--key);stroke-width:2"/>
 <text x="480" y="201" style="font-family:var(--mono);font-size:13px;fill:var(--ink);text-anchor:middle;font-weight:600">Boxed.show</text>
-<text x="480" y="246" style="font-family:var(--mono);font-size:13px;fill:var(--key);text-anchor:middle;font-weight:600">may run Block.show or Boxed.show</text>
+<text x="480" y="246" style="font-family:var(--mono);font-size:13px;fill:var(--key);text-anchor:middle;font-weight:600">may run Section.show or Boxed.show</text>
 <text x="790" y="32" style="font-family:var(--mono);font-size:15px;fill:var(--ink);text-anchor:middle;font-weight:600">Section.show(s, h)</text>
 <text x="790" y="52" style="font-family:var(--sans);font-size:13px;fill:var(--ink-2);text-anchor:middle;font-weight:400">through the class</text>
 <line x1="790" y1="112" x2="790" y2="132" style="stroke:var(--line);stroke-width:2;fill:none"/>
