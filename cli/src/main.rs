@@ -310,7 +310,8 @@ enum Cmd {
 
 /// The page of `repos`, or of one of them `since` a revision (`until` another), written to `out`,
 /// else beside `home`, the folder of the first of them when it is not a clone. It opens in `sight`,
-/// and on the route of a file named on the command line. How long each phase took goes to `phases`.
+/// and on the route of a file named on the command line. How long each phase took goes to `timings`, as
+/// JSON, where one is named.
 fn view(
     repos: &[PathBuf],
     opts: &Options,
@@ -318,8 +319,9 @@ fn view(
     shown_in_browser: bool,
     (since, until): (Option<&str>, Option<&str>),
     sight: Option<Sight>,
-    phases: &mut Phases,
+    timings: Option<&Path>,
 ) -> Result<()> {
+    let mut phases = Phases::new();
     let read = page::reading(repos, opts, since, until)?;
     phases.done("read");
     let findings = read.findings();
@@ -332,6 +334,9 @@ fn view(
     let out = out.unwrap_or_else(|| home::made(home, &format!("{}.html", graph.root)));
     html.write(&out)?;
     phases.done("page");
+    if let Some(timings) = timings {
+        std::fs::write(timings, serde_json::to_string(&phases.took)?)?;
+    }
     eprintln!("{} · wrote {}", page::summary(&graph), out.display());
     if shown_in_browser {
         page::open(out.as_os_str());
@@ -339,17 +344,16 @@ fn view(
     Ok(())
 }
 
-/// How long each phase of a command took, in seconds, in the order they ran: written as JSON to `file`,
-/// where one is named, for a benchmark to read (`tools/perf.py`).
+/// How long each phase of a command took, in seconds, in the order they ran: what `--timings` writes,
+/// for a benchmark to read (`tools/perf.py`).
 struct Phases {
-    file: Option<PathBuf>,
     last: std::time::Instant,
     took: serde_json::Map<String, serde_json::Value>,
 }
 
 impl Phases {
-    fn new(file: Option<PathBuf>) -> Phases {
-        Phases { file, last: std::time::Instant::now(), took: serde_json::Map::new() }
+    fn new() -> Phases {
+        Phases { last: std::time::Instant::now(), took: serde_json::Map::new() }
     }
 
     /// The phase `name` ended now; it began where the one before it ended.
@@ -357,13 +361,6 @@ impl Phases {
         let now = std::time::Instant::now();
         self.took.insert(name.to_string(), (now - self.last).as_secs_f64().into());
         self.last = now;
-    }
-
-    fn write(self) -> Result<()> {
-        match self.file {
-            Some(file) => Ok(std::fs::write(file, serde_json::to_string(&self.took)?)?),
-            None => Ok(()),
-        }
     }
 }
 
@@ -512,9 +509,7 @@ fn run(cli: Cli) -> Result<ExitCode> {
             let (repos, clones): (Vec<PathBuf>, Vec<Option<remote::Clone>>) =
                 repos.into_iter().map(|r| local(r, &mut opts)).collect::<Result<Vec<_>>>()?.into_iter().unzip();
             let home = clones[0].is_none().then(|| repos[0].as_path());
-            let mut phases = Phases::new(timings);
-            view(&repos, &opts, (out, home), !no_open, (since.as_deref(), until.as_deref()), sight, &mut phases)?;
-            phases.write()?
+            view(&repos, &opts, (out, home), !no_open, (since.as_deref(), until.as_deref()), sight, timings.as_deref())?
         }
         Cmd::Mcp => mcp::serve(&opts)?,
         Cmd::History { repo, port, no_open } => {
