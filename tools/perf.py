@@ -4,7 +4,7 @@
 """How fast Atlas builds, reads and tests, kept as a series per measure, and a signal when one gets slower.
 
     uv run tools/perf.py time NAME --out RUN -- COMMAND...
-    uv run tools/perf.py read --atlas ATLAS --subject NAME=PATH ... [--rounds 3] --out RUN
+    uv run tools/perf.py read --atlas ATLAS --subject NAME=PATH ... [--rounds N] --out RUN
     uv run tools/perf.py tests --workspace DIR --out RUN [-- CARGO_TEST_ARGS...]
     uv run tools/perf.py record --data DIR --run RUN --commit SHA [--url URL] [--summary FILE] [--suspects FILE]
     uv run tools/perf.py reproduce --repo DIR --a SHA --b SHA (--suspects FILE | --measure M ...) [--subject NAME=PATH ...] --out FILE
@@ -16,7 +16,7 @@
 
 - `time` runs a command once: its wall time and the peak resident memory of its largest process.
 - `read` draws each subject with `atlas-code view --timings`, cold (an empty cache and no index) and warm (the
-  same again), `--rounds` times: the median wall time, peak memory and the phases Atlas reports (read,
+  same again), once a night (`--rounds` more for a median): the wall time, peak memory and the phases Atlas reports (read,
   check, flow, page).
 - `tests` builds the test binaries once (`cargo test --no-run`), then runs each on its own as `cargo test`
   would, and times it: libtest's own timings are not stable Rust.
@@ -817,7 +817,7 @@ def command_release_bars(args: argparse.Namespace) -> None:
                 bars.append(f"{label}, {ref.removeprefix('v')} = {got['value']:.1f} s")
     nb, na = nights[args.before], nights[args.after]
     print(
-        f"Bars: {'; '.join(bars)} | The nightly measure of `next` on the night before each release (`{nb['commit'][:7]}`, `{na['commit'][:7]}`), median of three rounds (`docs/reference/performance.md`)."
+        f"Bars: {'; '.join(bars)} | The nightly measure of `next` on the night before each release (`{nb['commit'][:7]}`, `{na['commit'][:7]}`), one reading a night (`docs/reference/performance.md`)."
     )
 
 
@@ -833,7 +833,7 @@ def main() -> None:
     p = commands.add_parser("read", help="time atlas-code view, cold and warm, on subjects")
     p.add_argument("--atlas", type=Path, required=True)
     p.add_argument("--subject", action="append", required=True, help="NAME=PATH")
-    p.add_argument("--rounds", type=int, default=3)
+    p.add_argument("--rounds", type=int, default=1)
     p.add_argument("--libraries", type=int, default=1)
     p.add_argument("--out", type=Path, required=True)
     p.set_defaults(func=command_read)

@@ -2,10 +2,11 @@
 //! (`Float[Tensor, "batch seq dim"]`). The shape is a word over axes; a shape admits another when
 //! every array of the one is an array of the other, a preorder the `overrides` principle reads. Its
 //! rank (how many axes, or at least how many) is a map from shapes to ranks: its fibers are the
-//! rank families, and the family of a shape is the most general shape of its rank, written in the
-//! notation itself (`Float[Tensor, _ _]`, `Float[Tensor, ... _]`). Exact shapes stay types of their
-//! own: a named axis is a variable bound per call, so `batch dim` and `batch ndim` are two types of
-//! one family (`docs/reference/mathematics.md`, "Shapes and their rank").
+//! rank families, named by dtype, array type and rank (`Float Tensor · 2D`, `Float Tensor · ≥1D`),
+//! never by a shape, since no annotation says it. The most general shape of a rank (`_ _`, `... _`)
+//! bounds its family: every shape of the rank fits it. Exact shapes stay types of their own: a named
+//! axis is a variable bound per call, so `batch dim` and `batch ndim` are two types of one family
+//! (`docs/reference/mathematics.md`, "Shapes and their rank").
 
 use std::fmt;
 
@@ -71,6 +72,15 @@ pub enum Rank {
     AtLeast(usize),
 }
 
+impl fmt::Display for Rank {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Rank::Exact(k) => write!(f, "{k}D"),
+            Rank::AtLeast(k) => write!(f, "≥{k}D"),
+        }
+    }
+}
+
 /// A shaped array: dtype, array type and the axes of its shape (`Float`, `Tensor`, `batch dim`).
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct Array {
@@ -103,7 +113,7 @@ impl Array {
 
     /// The most general shape of this one's dtype, array type and rank: every axis anonymous, after
     /// one open run where the rank is open (`_ _`, `... _`). Every shape of the rank fits it.
-    pub fn family(&self) -> Array {
+    pub fn most_general(&self) -> Array {
         let (open, k) = match self.rank() {
             Rank::Exact(k) => (false, k),
             Rank::AtLeast(k) => (true, k),
@@ -151,10 +161,11 @@ impl fmt::Display for Array {
 }
 
 /// The id of the rank family of the shaped array `id`, in the same library: `ext:jaxtyping.Float[Tensor, batch dim]`
-/// is of `ext:jaxtyping.Float[Tensor, _ _]`.
+/// is of `ext:jaxtyping.Float Tensor · 2D`, a name no annotation writes.
 pub fn family_id(id: &str) -> Option<String> {
     let name = crate::knowledge::shaped(id)?;
-    Some(format!("{}{}", &id[..id.len() - name.len()], Array::read(name)?.family()))
+    let a = Array::read(name)?;
+    Some(format!("{}{} {} · {}", &id[..id.len() - name.len()], a.dtype, a.array, a.rank()))
 }
 
 #[cfg(test)]
@@ -196,13 +207,17 @@ mod tests {
         assert_eq!(a("Float[Tensor, ]").rank(), Rank::Exact(0));
     }
 
-    /// Dtype and array type belong to a shape's identity: a family never mixes them.
+    /// Dtype and array type belong to a shape's identity: a family never mixes them. A family is
+    /// named by them and its rank, never as a shape an annotation could write.
     #[test]
-    fn a_family_keeps_dtype_and_array() {
-        let (f, i) = (a("Float[Tensor, batch]").family(), a("Int[Tensor, batch]").family());
-        assert_ne!(f, i);
-        assert_eq!(f.to_string(), "Float[Tensor, _]");
-        assert_ne!(a("Float[ndarray, batch]").family(), f);
+    fn a_family_keeps_dtype_and_array_and_is_no_shape() {
+        let id = |s: &str| family_id(&format!("ext:jaxtyping.{s}")).unwrap();
+        assert_ne!(id("Float[Tensor, batch]"), id("Int[Tensor, batch]"));
+        assert_ne!(id("Float[Tensor, batch]"), id("Float[ndarray, batch]"));
+        assert_eq!(id("Float[Tensor, batch dim]"), id("Float[Tensor, _ {self.size}]"));
+        for s in ["Float[Tensor, batch dim]", "Float[Tensor, ... dim]", "Float[Tensor, ]"] {
+            assert!(Array::of_id(&id(s)).is_none(), "{} reads as a shape", id(s));
+        }
     }
 
     fn axis() -> impl Strategy<Value = String> {
@@ -267,13 +282,14 @@ mod tests {
             prop_assert_eq!(g.fits(&p), contained, "{} in {}", g, p);
         }
 
-        /// The family is an upper bound of its fiber, and a projection: every shape fits its
-        /// family, and the family of a family is itself.
+        /// The most general shape of a rank bounds its fiber, and is a projection: every shape fits
+        /// the most general shape of its rank, which is its own, and of the same family.
         #[test]
-        fn a_shape_fits_its_family_and_the_family_is_its_own(s in shape()) {
-            prop_assert!(s.fits(&s.family()), "{} in {}", s, s.family());
-            prop_assert_eq!(s.family().family(), s.family());
-            prop_assert_eq!(s.family().rank(), s.rank());
+        fn a_shape_fits_the_most_general_shape_of_its_rank(s in shape()) {
+            let m = s.most_general();
+            prop_assert!(s.fits(&m), "{} in {}", s, m);
+            prop_assert_eq!(m.most_general(), m.clone());
+            prop_assert_eq!(m.rank(), s.rank());
         }
     }
 }

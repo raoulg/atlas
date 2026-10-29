@@ -1,0 +1,150 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Atlas 0.69.4</title>
+<meta name="description" content="What changed in Atlas 0.69.4">
+<link rel="icon" href="../../logo.svg">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#F4F1EC;--panel:#FFFFFF;--ink:#111111;--ink-2:#5A544D;--ink-3:#857D73;--line:#E2DCD3;--accent:#C43A14;
+  --sans:"Outfit","Helvetica Neue",Helvetica,system-ui,sans-serif;--mono:"JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,monospace}
+@media(prefers-color-scheme:dark){:root{--bg:#141210;--panel:#1B1815;--ink:#F4F1EC;--ink-2:#B8B0A5;--ink-3:#8A8178;--line:#2B2621}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);font-size:17px;line-height:1.55}
+a{color:inherit}
+main{max-width:1040px;margin:0 auto;padding:48px 16px 96px}
+header{display:flex;align-items:center;gap:16px;margin-bottom:48px}
+header img{width:44px;height:44px}
+header .name{font-size:22px;font-weight:600;letter-spacing:-.01em}
+header nav{margin-left:auto;display:flex;gap:20px;font-family:var(--mono);font-size:13px}
+header nav a{text-decoration:none;color:var(--ink-2)}
+header nav a:hover{color:var(--ink)}
+.eyebrow{font-family:var(--mono);font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--accent);margin:0}
+h1{font-size:44px;font-weight:500;letter-spacing:-.02em;line-height:1.1;margin:10px 0 18px}
+.lede{font-size:19px;color:var(--ink-2);max-width:66ch;margin:0 0 56px}
+section{border-top:1px solid var(--line);padding:40px 0 8px}
+section h2{font-size:28px;font-weight:500;letter-spacing:-.01em;margin:0 0 14px;line-height:1.2}
+section p,section li{max-width:70ch;color:var(--ink-2)}
+section p{margin:0 0 14px}
+code{font-family:var(--mono);font-size:.86em;background:var(--panel);border:1px solid var(--line);padding:0 4px}
+.issues{font-family:var(--mono);font-size:12.5px;color:var(--ink-3);margin-top:6px}
+.issues a{color:var(--ink-3);text-decoration:none}
+.issues a:hover{color:var(--accent)}
+.pictures{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,420px),1fr));gap:16px;margin:22px 0 10px}
+.pictures a{display:block;background:var(--panel);border:1px solid var(--line);padding:6px}
+.pictures img{display:block;width:100%;height:auto}
+.list a{display:flex;gap:18px;align-items:baseline;padding:14px 0;border-top:1px solid var(--line);text-decoration:none}
+.list .v{font-family:var(--mono);font-size:15px;min-width:90px}
+.list .t{color:var(--ink-2)}
+footer{margin-top:64px;font-family:var(--mono);font-size:12px;color:var(--ink-3)}
+:root{--add:#2E8B57;--del:#C0361C;--edit:#B26A00;--key:#1D5A73}
+@media(prefers-color-scheme:dark){:root{--add:#6CC08C;--del:#F2643C;--edit:#E0A24A;--key:#86B9C9}}
+.legend{display:flex;flex-wrap:wrap;gap:8px 18px;font-size:14px;color:var(--ink-2);margin:-30px 0 48px}
+.legend span{display:inline-flex;align-items:center;gap:7px}
+.swatch{width:18px;height:12px;border:3px solid;border-radius:2px}
+.card{background:var(--panel);border:1px solid var(--line);padding:16px 18px;margin:20px 0}
+.card h3{font-size:16px;font-weight:500;margin:0 0 12px}
+.card h3 a{text-decoration:none;color:var(--ink-3);font-family:var(--mono);font-size:13px;margin-right:6px}
+.pair{display:grid;gap:12px}
+.pair figure{margin:0}
+.pair .shot{overflow-x:auto;border:1px solid var(--line);background:var(--bg);padding:6px}
+.pair .shot pre{border:0;background:none;margin:0;padding:4px;font-size:12px;max-width:none;max-height:340px}
+@media(min-width:900px){.pair:has(pre){grid-template-columns:1fr 1fr}}
+.pair img{display:block;max-width:100%;height:auto}
+figcaption{font-size:13.5px;color:var(--ink-2);margin-top:6px}
+.tag{font-family:var(--mono);font-size:11.5px;padding:1px 6px;border:1.5px solid;margin-right:6px}
+.tag.before{color:var(--del)}.tag.after{color:var(--add)}
+.where{font-family:var(--mono);font-size:12px;color:var(--ink-3);margin:0 0 8px}
+details{margin-top:12px}
+summary{cursor:pointer;font-size:13.5px;color:var(--ink-2)}
+pre{font-family:var(--mono);font-size:13px;background:var(--panel);border:1px solid var(--line);padding:12px 14px;overflow:auto;max-width:70ch}
+pre code{background:none;border:0;padding:0}
+.hero{margin:6px 0 24px;border:1px solid var(--line);background:var(--panel);padding:8px}
+.hero img{display:block;width:100%;height:auto}
+.example{margin:18px 0 6px}
+.example pre{margin:0 0 14px}
+@media(min-width:900px){.pair{grid-template-columns:1fr 1fr;align-items:start}}
+.pair.stack{grid-template-columns:1fr}
+section ul{padding-left:20px;margin:0 0 16px}
+section li{margin:4px 0}
+.diagram{margin:22px 0;background:var(--panel);border:1px solid var(--line);padding:14px}
+.diagram svg{display:block;width:100%;height:auto;max-height:340px}
+.diagram figcaption{font-size:14px;color:var(--ink-3);margin-top:10px}
+.d-frame{fill:none;stroke:var(--ink-3);stroke-width:1.5}
+.d-box{fill:var(--bg);stroke:var(--line);stroke-width:1.5}
+.d-key{stroke:var(--key);stroke-width:2}
+.d-engine{fill:var(--panel);stroke:var(--ink-3)}
+.d-ground{fill:var(--line);stroke:none}
+.d-title{font:600 15px var(--sans);fill:var(--ink)}
+.d-name{font:500 14px var(--mono);fill:var(--ink)}
+.d-note{font:13px var(--sans);fill:var(--ink-2)}
+.d-label{font:13px var(--sans);fill:var(--ink-2)}
+.d-arrow{fill:none;stroke:var(--ink-3);stroke-width:1.6;marker-end:url(#d-head)}
+.d-before{stroke:var(--del)}.d-after{stroke:var(--add)}
+.d-law{font:28px var(--sans);fill:var(--key)}
+.d-broken{fill:var(--del)}
+.d-axis{stroke:var(--ink-3);stroke-width:1.4;fill:none}.d-grid{stroke:var(--line);stroke-dasharray:4 4}
+.d-curve{fill:none;stroke:var(--key);stroke-width:3}.d-dot{fill:var(--key)}
+.bars{margin:22px 0;background:var(--panel);border:1px solid var(--line);padding:16px 18px;max-width:760px}
+.bar{display:grid;grid-template-columns:minmax(120px,30%) 1fr;gap:12px;align-items:center;margin:8px 0}
+.bar .l{font-size:14px;color:var(--ink-2)}
+.bar .v{height:22px;background:var(--key);min-width:2px;position:relative}
+.bar .v span{position:absolute;left:calc(100% + 8px);top:1px;font-family:var(--mono);font-size:13px;color:var(--ink);white-space:nowrap}
+.bars .cap{font-size:13.5px;color:var(--ink-2);margin-top:10px}
+.pager{display:flex;justify-content:space-between;gap:16px;border-top:1px solid var(--line);margin-top:48px;padding-top:20px;font-family:var(--mono);font-size:14px}
+.pager a{text-decoration:none;color:var(--ink-2)}
+.pager a:hover{color:var(--accent)}
+.pager .newer{margin-left:auto}
+</style>
+</head>
+<body>
+<main>
+<header><img src="../../logo.svg" alt=""><span class="name">Atlas</span>
+<nav><a href="../">Releases</a><a href="../../">Atlas</a><a href="https://github.com/raoulg/atlas/releases/tag/v0.69.4">Download</a></nav></header>
+<p class="eyebrow">Release 0.69.4</p>
+<h1>What changed in Atlas 0.69.4</h1>
+<div class="lede"><p>Atlas 0.69.4 makes What&#x27;s New in Atlas Studio show the release&#x27;s notes again. What Atlas reads, draws and checks is the same as in 0.69.3.</p></div>
+<div class="legend"><span><i class="swatch" style="border-color:var(--del)"></i>only in the release before</span><span><i class="swatch" style="border-color:var(--add)"></i>only in 0.69.4</span><span><i class="swatch" style="border-color:var(--edit)"></i>its text changed, its arrow not</span></div>
+<section><h2>What&#x27;s New shows the notes</h2><p>Studio showed a release&#x27;s notes from <code>raoulg.github.io/atlas</code>, which redirects to the site&#x27;s own address, <code>atlas.pttrn.io</code>, and for a while redirected there over plain http. Studio&#x27;s window loads no page over http, so What&#x27;s New stayed empty. Studio now asks the site at its own address, over https, and takes an address as a page only when it answers with the page itself; any other answer, a redirect too, opens the release on GitHub in the browser. The GitHub release and the README link the notes at the same address.</p><figure class="diagram"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 920 230" role="img" aria-label="How Studio's What's New reaches a release's notes: in 0.69.3 it asks raoulg.github.io, which answers with a redirect to http://atlas.pttrn.io, a page the window does not load, so the window stays empty; in 0.69.4 it asks https://atlas.pttrn.io, which answers 200 with the page, and a redirect anywhere sends Studio to the release on GitHub instead"><defs><marker id="d-head" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 L10 5 L0 10 z" style="fill:var(--ink-3)"/></marker></defs>
+  <defs>
+    <marker id="head" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" style="fill:var(--ink-3)"/></marker>
+  </defs>
+  <g style="font-family:var(--sans);font-size:15px;fill:var(--ink-2)">
+    <text x="20" y="34">0.69.3</text>
+    <text x="20" y="144" style="fill:var(--ink)">0.69.4</text>
+  </g>
+  <g style="stroke:var(--line);stroke-width:1"><line x1="20" y1="104" x2="900" y2="104"/></g>
+  <g style="stroke:var(--ink-3);stroke-width:1.5;fill:none" marker-end="url(#head)">
+    <line x1="138" y1="64" x2="168" y2="64"/>
+    <line x1="470" y1="64" x2="500" y2="64"/>
+    <line x1="772" y1="64" x2="802" y2="64"/>
+    <line x1="138" y1="174" x2="168" y2="174"/>
+    <line x1="470" y1="174" x2="500" y2="174"/>
+  </g>
+  <g style="font-family:var(--mono);font-size:13px;fill:var(--ink)">
+    <rect x="20" y="46" width="116" height="36" rx="5" style="fill:var(--panel);stroke:var(--line)"/>
+    <text x="78" y="69" style="text-anchor:middle">What's New</text>
+    <text x="176" y="69">raoulg.github.io/atlas/…</text>
+    <text x="508" y="60" style="fill:var(--del)">301 → http://</text>
+    <text x="508" y="78" style="fill:var(--del)">atlas.pttrn.io/…</text>
+    <rect x="810" y="46" width="90" height="36" rx="5" style="fill:none;stroke:var(--del);stroke-dasharray:4 3"/>
+    <text x="855" y="69" style="text-anchor:middle;fill:var(--del)">empty</text>
+
+    <rect x="20" y="156" width="116" height="36" rx="5" style="fill:var(--panel);stroke:var(--line)"/>
+    <text x="78" y="179" style="text-anchor:middle">What's New</text>
+    <text x="176" y="179">https://atlas.pttrn.io/…</text>
+    <text x="508" y="179" style="fill:var(--add)">200</text>
+    <rect x="560" y="156" width="110" height="36" rx="5" style="fill:var(--panel);stroke:var(--add)"/>
+    <text x="615" y="179" style="text-anchor:middle;fill:var(--add)">the notes</text>
+    <text x="176" y="218" style="fill:var(--ink-3)">any other answer, a redirect too: the release on GitHub, in the browser</text>
+  </g>
+</svg>
+<figcaption>Where What&#x27;s New finds a release&#x27;s notes, in 0.69.3 and in 0.69.4.</figcaption></figure><p class="issues"><a href="https://github.com/raoulg/atlas/issues/297">#297</a></p></section>
+<nav class="pager"><a class="older" href="../0.69.3/">← Atlas 0.69.3</a><a class="newer" href="../0.70.0/">Atlas 0.70.0 →</a></nav>
+<footer>Made by tools/release_page.py from docs/releases/0.69.4.md and the notes in docs/changes.</footer>
+</main>
+</body>
+</html>

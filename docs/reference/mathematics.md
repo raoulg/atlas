@@ -774,9 +774,11 @@ after a run where the rank is open (`_ _`, `... _`), is an upper bound of it: ev
 **In Atlas.** Each shape the code writes is a type of its own, named by its shape: two names are two variables, so
 `batch dim` and `batch ndim` are two types, and so are `Float[..]` and `Int[..]`. A shape stands in its rank family
 as a subclass stands in its base (Coequalizer: a quotient), where the program's types hold two shapes of that rank:
-closed, `Float[Tensor, _ _]` stands for the rank-2 float tensors the picture holds; opened, it is a frame around the
-shapes themselves. The family is drawn in jaxtyping's own notation, and where the code writes that shape it is the
-family's own type, as a base the program uses is. The family is a quotient of the picture, never a fact of the graph:
+closed, `Float Tensor · 2D` stands for the rank-2 float tensors the picture holds (`· ≥1D` where the rank is open);
+opened, it is a frame around the shapes themselves. The family is named by its dtype, array type and rank, never in
+the annotation's own notation: `Float[Tensor, _ _]` would read as a type the code wrote, and a box that says what the
+code does not is a guess. A shape the code writes as `_ _` is a member of its family like any other. The family is a
+quotient of the picture, never a fact of the graph:
 the shapes, the steps and their lines are the same with it closed or open. The preorder is what an override keeps
 (Behavioural subtyping); a family is never ordered above another in the picture, since the ranks are no base the
 code names. Names are not unified across axes, so `batch batch` is read as `batch _`.

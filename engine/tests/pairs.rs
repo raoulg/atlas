@@ -195,11 +195,12 @@ fn a_request_goes_the_way_its_method_says() {
 
 /// A shaped array is a type of its own and stands in its rank family (`docs/reference/mathematics.md`, "Shapes and their
 /// rank"). The clean components say the shape of what they take and give (`Float[Tensor, "batch dim"]`); the shortcut
-/// says `Tensor`. Each shape of the clean side stays its own type, and stands in a family that is a shape of its dtype,
-/// array type and rank which it fits, shared by exactly the shapes of that rank, where the graph holds two of them: the
-/// quotient is the rank, never the names (`batch dim` and `batch ndim` are two types of one family), and never the dtype
-/// (`Int[Tensor, batch seq]` is rank 2 and alone). The shortcut's steps all take and give the one `Tensor`, so the
-/// picture cannot tell a reducer from a projection: what the code does not say, Atlas does not draw.
+/// says `Tensor`. Each shape of the clean side stays its own type, and stands in a family shared by exactly the shapes of
+/// its dtype, array type and rank, where the graph holds two of them: the quotient is the rank, never the names (`batch
+/// dim` and `batch ndim` are two types of one family), and never the dtype (`Int[Tensor, batch seq]` is rank 2 and
+/// alone). A family is named by what it is (`Float Tensor · 2D`), never as a shape the code could have written. The
+/// shortcut's steps all take and give the one `Tensor`, so the picture cannot tell a reducer from a projection: what the
+/// code does not say, Atlas does not draw.
 #[test]
 fn a_shape_stands_in_its_rank_family_and_stays_a_type_of_its_own() {
     use atlas_engine::shapes::Array;
@@ -209,22 +210,21 @@ fn a_shape_stands_in_its_rank_family_and_stays_a_type_of_its_own() {
     let shaped: Vec<(String, Array)> = clean.nodes.iter().filter_map(|n| Some((n.id.clone(), Array::of_id(&n.id)?))).collect();
     let names: BTreeSet<String> = shaped.iter().map(|(_, a)| a.to_string()).collect();
     assert!(names.contains("Float[Tensor, batch dim]") && names.contains("Float[Tensor, batch ndim]"), "{names:?}");
+    let same = |a: &Array, b: &Array| a.dtype == b.dtype && a.array == b.array && a.rank() == b.rank();
     for (t, a) in &shaped {
-        let kin: Vec<&Array> = shaped
-            .iter()
-            .filter(|(u, b)| u != t && b.dtype == a.dtype && b.array == a.array && b.rank() == a.rank())
-            .map(|(_, b)| b)
-            .collect();
+        let kin: Vec<&String> = shaped.iter().filter(|(u, b)| u != t && same(a, b)).map(|(u, _)| u).collect();
         match types.kind.get(t) {
             Some(k) => {
-                let k = Array::of_id(k).unwrap_or_else(|| panic!("{t} stands in {k}, no shape"));
-                assert!(a.fits(&k) && k.rank() == a.rank(), "{a} stands in {k}");
+                assert!(Array::of_id(k).is_none(), "{a} stands in {k}, which reads as a shape the code does not write");
                 assert!(!kin.is_empty(), "{a} is alone in its rank and stands in {k}");
-                for (u, _) in shaped.iter().filter(|(u, b)| u != t && kin.contains(&b)) {
-                    assert_eq!(types.kind.get(u).or(Some(u)).and_then(|k| Array::of_id(k)), Some(k.clone()), "{a} and {u} share a rank");
+                for u in &kin {
+                    assert_eq!(types.kind.get(*u), Some(k), "{a} and {u} share a rank");
+                }
+                for (u, b) in shaped.iter().filter(|(u, _)| types.kind.get(u) == Some(k)) {
+                    assert!(same(a, b), "{u} stands in {k} beside {a}");
                 }
             }
-            None => assert!(kin.is_empty() || types.members.contains_key(t), "{a} shares its rank with {kin:?} and stands in no family"),
+            None => assert!(kin.is_empty(), "{a} shares its rank with {kin:?} and stands in no family"),
         }
     }
     assert!(types.kind.values().collect::<BTreeSet<_>>().len() >= 2, "the clean side has families of two ranks: {:?}", types.kind);
