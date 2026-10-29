@@ -1984,3 +1984,9 @@ fn places_a_path_a_class_builds_is_the_path_written_out() {
     assert_eq!(c, s);
     assert!(c.iter().any(|(f, a, by)| f == "keep.saveReport" && a == ".made/report.txt" && by == &["bench.cli.main"]), "{c:?}");
 }
+
+/// The parents pair: `dirname(source)` of `~/data/{name}` is `~/data`, as `Path.parent` and `Path::parent` are (#284).
+#[test]
+fn places_a_parent_drops_the_last_part_of_a_path() {
+    common::a_parent_drops_the_last_part_of_a_path("typescript", "shelf.summarise", "shelf.log");
+}

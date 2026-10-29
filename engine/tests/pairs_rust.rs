@@ -1651,3 +1651,9 @@ fn a_recursive_call_takes_what_its_call_hands_it() {
 fn a_list_made_by_a_literal_is_made_by_the_body() {
     common::a_list_made_by_a_literal_is_made_by_the_body("rust", "by_literal", "by_call", "by_constant");
 }
+
+/// The parents pair: `source.parent()` of `~/data/{name}` is `~/data`, as `Path.parent` and `path.dirname` are (#284).
+#[test]
+fn places_a_parent_drops_the_last_part_of_a_path() {
+    common::a_parent_drops_the_last_part_of_a_path("rust", "shelf.summarise", "shelf.log");
+}

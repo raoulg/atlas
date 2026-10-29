@@ -368,3 +368,27 @@ pub fn a_list_made_by_a_literal_is_made_by_the_body(language: &str, literal: &st
         assert_eq!(by_literal, &contracted, "{at}: {literal} draws as {call} does");
     }
 }
+
+/// The parents pair of `language`: `summarise` (`read`) reads the data file `~/data/{name}` and hands its path to `log` (`log`),
+/// which writes the log in the directory the file lies in. The clean side takes that directory with the path library
+/// (`Path.parent`, `Path::parent`, `path.dirname`), which all go to one function on the graph, and the directory of a path is
+/// the path without its last part, also where that part is a value the code does not say: the log rests in the directory the
+/// data file is read from (#284). The shortcut cuts the path's text at its last `/`, which no code says is a directory: the log
+/// is written, in a directory the code does not name, and never in the data files' directory. So in every language.
+#[allow(dead_code)]
+pub fn a_parent_drops_the_last_part_of_a_path(language: &str, read: &str, log: &str) {
+    let p = pair(&format!("parents/{language}"));
+    let places = |g: &Graph, id: &str, kind: &str| -> Vec<String> {
+        let n = g.node(id).unwrap_or_else(|| panic!("{language}: no node {id}"));
+        n.touches.iter().filter(|t| t.kind_name() == kind).map(|t| t.artifact.clone()).collect()
+    };
+    for (side, g) in [("clean", &p.clean), ("shortcut", &p.shortcut)] {
+        let read = places(g, read, "disk_read");
+        let [dir] = &read[..] else { panic!("{language} {side}: one directory the data file is read from: {read:?}") };
+        assert!(dir.ends_with('/') && dir.len() > 1, "{language} {side}: the data file's name is not said, its directory is: {dir}");
+        let written = places(g, log, "disk_write");
+        assert_eq!(written.len(), 1, "{language} {side}: the log is written once: {written:?}");
+        let beside = written[0].strip_prefix(dir.as_str()).is_some_and(|name| !name.contains('/'));
+        assert_eq!(beside, side == "clean", "{language} {side}: the log {written:?} in the data files' directory {dir}");
+    }
+}

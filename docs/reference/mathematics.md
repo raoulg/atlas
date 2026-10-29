@@ -170,7 +170,10 @@ parameter holds it by that type's name, as the type it takes is named (#216).
 input with a default, where the package's code lies) closed under `/`-join, `parent`, `with_suffix` and a pattern below a
 directory. A collection of paths is the set of terms its elements can be; iterating it yields
 one of them. Substituting a parameter by the term a caller hands it is the term's evaluation, and
-a part no code determines is a named hole. A pattern below a directory (`D.glob("*/IO-*")`) is
+a part no code determines is a named hole. The parts of a term are what lies between the `/`s it
+writes, so a value between two of them is one part; `parent` drops exactly the last part
+(`~/data/{name}` is in `~/data`), and of a term that is one value not said yet it is that value's
+directory, `{p}/..`, taken once `p` is substituted: `parent` commutes with substitution (#284). A pattern below a directory (`D.glob("*/IO-*")`) is
 the fiber of `D` over the predicate "matches the pattern": the part of the directory the pattern
 holds. A listing of all of `D` (`D.iterdir()`, `D.glob("*")`) is the fiber over the predicate that
 always holds, `D` itself, and each element it yields is `D/*`. An element of a collection is also
