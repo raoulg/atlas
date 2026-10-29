@@ -415,7 +415,7 @@ fn call(name: &str, args: &Value, opts: &Options) -> Option<Result<String, Strin
             };
             let vision = crate::shared::Vision { title: text("title").unwrap_or("a vision").to_string(), files };
             let before = atlas_engine::parts::analyze_parts(&[repo.clone()], opts);
-            let after = atlas_engine::changes::envisioned(&repo, &vision.files, opts);
+            let after = atlas_engine::changes::envisioned(&repo, &vision.files, opts).map(|v| v.parts);
             match (before, after) {
                 (Ok(before), Ok(after)) => crate::shared::envision(&repo, &vision).map_err(|e| format!("Could not keep the vision: {e}")).map(|_| {
                     let c = atlas_engine::changes::between("working tree", Some("vision"), &before, &after);

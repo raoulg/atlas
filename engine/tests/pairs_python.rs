@@ -1087,7 +1087,7 @@ fn prophecy_draws_the_shape_of_its_vision() {
             .map(|e| e.dst.clone())
             .collect()
     };
-    let envisioned = calls(&atlas_engine::changes::envisioned(&copy, &vision, &Options::default()).expect("reads the vision"));
+    let envisioned = calls(&atlas_engine::changes::envisioned(&copy, &vision, &Options::default()).expect("reads the vision").parts);
     let decided = atlas_engine::decide::prophetize(&copy, &vision, &supersedes, &Options::default()).expect("decided");
     for (rel, t) in &decided.files {
         std::fs::write(copy.join(rel), t).expect("writes the file");
@@ -1189,6 +1189,23 @@ fn prophecy_a_vision_takes_the_file_its_path_names() {
         assert_eq!(written, [file], "{name}");
         assert_eq!(marked, ["archive.sink.Vault"], "{name}");
     }
+}
+
+/// A vision is placed by the directory it is read from, so a vision that shares nothing with the
+/// tree is placed as one that does: a project with only its manifest, and a vision that writes its
+/// first module. The file is written at the path the vision names it by, and what it adds is marked.
+#[test]
+fn prophecy_a_vision_of_new_files_only_is_placed_where_it_names_them() {
+    use std::collections::BTreeMap;
+    let copy = common::clean_copy("python", "new-files");
+    std::fs::remove_dir_all(copy.join("src")).expect("removes the code");
+    let file = PathBuf::from("src/archive/vault.py");
+    let vision = BTreeMap::from([(file.clone(), Some("class Vault:\n    def keep(self, report: str, /) -> None: ...\n".to_string()))]);
+    let decided = atlas_engine::decide::prophetize(&copy, &vision, &BTreeMap::new(), &Options::default());
+    let _ = std::fs::remove_dir_all(copy.parent().expect("has a parent"));
+    let decided = decided.expect("a vision that only adds new files is decided");
+    assert_eq!(decided.files.keys().collect::<Vec<_>>(), [&file]);
+    assert_eq!(decided.marked, ["archive.vault.Vault"]);
 }
 
 /// A prophecy whose shape waits on an open question is sealed on its issue. The seals come back
