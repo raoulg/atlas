@@ -290,6 +290,11 @@ pre.code .l::before{counter-increment:ln;content:counter(ln);display:inline-bloc
 .edge-hit{fill:none;stroke:transparent;stroke-width:14;cursor:pointer}
 .scene.focus .tnode:not(.on){opacity:.3}
 .tnode.selected rect.bg{stroke:var(--focus);stroke-width:2}
+/* the fiber of a picked type, lit in its route; the rest of the route stays, dimmed. A closed box only some of whose values are of the type is lit dashed */
+.scene.fibered .tnode:not(.lit):not(.litpart){opacity:.3}
+.tnode.lit rect.bg{stroke:var(--focus);stroke-width:2.6;fill:color-mix(in oklab, var(--focus) 14%, var(--panel))}
+.tnode.litpart rect.bg,.tstep.litpart rect.bg{stroke:var(--focus);stroke-width:2.2;stroke-dasharray:5 3}
+.frame.fam.lit > rect.bg{stroke:var(--focus);stroke-width:2.6}
 .tnode{cursor:pointer}
 .tnode rect.bg{fill:var(--panel);stroke:var(--line)}
 .tnode.ghost rect.bg{stroke-dasharray:4 3;fill:transparent}
@@ -344,7 +349,7 @@ pre.code .l::before{counter-increment:ln;content:counter(ln);display:inline-bloc
     <div class="sub">what the page does not show by itself</div>
     <dl>
       <dt><kbd>shift</kbd>-click a package</dt><dd>add it to the focus, or drop it (Flowchart)</dd>
-      <dt>double-click a box</dt><dd>pin its lines; a second box adds its own</dd>
+      <dt>double-click a box</dt><dd>pin its lines; a second box adds its own. In the Type lattice: light its values in the Flowchart</dd>
       <dt>double-click empty space · <kbd>Esc</kbd></dt><dd>let go of the pinned lines</dd>
       <dt><kbd>space</kbd> over a box</dt><dd>its details and code over the picture; <kbd>space</kbd>, <kbd>Esc</kbd> or a click on the picture puts them away</dd>
       <dt>drag the panel's edge</dt><dd>make the code panel wider or narrower</dd>
@@ -440,6 +445,8 @@ const zoom = d3.zoom().scaleExtent([0.08, 4]).on("zoom", ev => { scene.attr("tra
 // the boxes whose lines stay lit, pinned by a double click; `repaintPins` lights them in the picture
 const pinned = new Set();
 let repaintPins = () => {};
+// a type picked in the lattice, lit where its values flow: `lightIn`
+let lit = null;
 // one click acts after a beat, so that a second click makes it a double click
 function clicks(node, once, twice) {
   let t = null;
@@ -607,9 +614,9 @@ function drawTypeNode(g, n, x, y, W, H, nkids) {
     el("text", {class: "dmark", x: W + 3, y: 3}, grp).textContent = MARK[n.ds];
     el("title", {}, grp).textContent = n.ds === "changed" ? `changed · was ${DIFF.was[n.id] || ""}` : `${n.ds} in B`;
   }
-  grp.addEventListener("click", () => select(n.id));
-  grp.addEventListener("mouseenter", () => focusType(n.id, true));
-  grp.addEventListener("mouseleave", () => focusType(n.id, false));
+  clicks(grp, () => select(n.id), () => lightIn(n.id));
+  grp.addEventListener("mouseenter", () => { focusType(n.id, true); hoverTarget = () => select(n.id); });
+  grp.addEventListener("mouseleave", () => { focusType(n.id, false); hoverTarget = null; });
 }
 function focusType(id, on) {
   const s = scene.node(); s.classList.toggle("focus", on); s.querySelectorAll(".on").forEach(x => x.classList.remove("on"));
@@ -907,7 +914,7 @@ async function renderPlaat(mine) {
     if (A.fine && B.fine) {
       const ways = new Map(), fp = new Map([...A.fine.places, ...B.fine.places]);
       for (const f of [A.fine, B.fine]) for (const [k, w] of f.ways) ways.set(k, new Set([...(ways.get(k) || []), ...w]));
-      fine = {places: fp, ways};
+      fine = {places: fp, pills: new Map([...A.fine.pills, ...B.fine.pills]), ways};
     }
     return {places, pills, frames, restArrows: [...rest.values()], roles, home, fine, oracle};
   };
@@ -1031,30 +1038,9 @@ async function renderPlaat(mine) {
   // open families are frames around their members, one at each moment of the data; a member stands
   // inside the frame of its moment, the family itself is the frame. A type opens where it stood closed:
   // in the kind it is a kind of, or as itself; a part stands on its own, as it did closed
-  const famFrames = new Map();
-  // a value keeps its name in its box and its frame: two values of one family at one moment are two frames, and so are the
-  // parameters of two doors, each door called by itself. The frame has the id its closed box had (`valueBox`)
-  const nameAt = p => valueBox("", p).slice(2);
-  for (const p of places.values()) {
-    if (!p.type) continue;
-    const f = frameOf(p.type), at = nameAt(p), id = valueBox(f, p);
-    if (!f) continue;
-    if (!famFrames.has(id)) famFrames.set(id, {id, fam: f, at, name: p.name, when: p.at, label: places.get(id)?.label, types: new Set()});
-    famFrames.get(id).types.add(p.type);
-  }
+  const famFrames = familyFrames(places);
   for (const F of famFrames.values()) {
-    const f = F.fam, at = F.at;
     places.delete(F.id); keep.delete(F.id);
-    const inFam = new Set([f, ...(members.get(f) || [])]);
-    const viaOf = m => (inn.get(m) || []).find(e => e.kind === "has" && inFam.has(e.src) && e.via)?.via;
-    const isSub = m => { let cur = m; for (let i = 0; i < 10; i++) { const b = (out.get(cur) || []).find(e => e.kind === "inherits" && inFam.has(e.dst)); if (!b) return false; if (b.dst === f) return true; cur = b.dst; } return false; };
-    // a frame holds the kinds its values can be: a value of one kind is that kind and what derives from it, in the fiber
-    const below = (m, t) => { let cur = m; for (let i = 0; i < 10 && cur; i++) { if (cur === t) return true; cur = (out.get(cur) || []).find(e => e.kind === "inherits")?.dst; } return false; };
-    const can = m => !isSub(m) || (here(m) && [...F.types].some(t => t === f || below(m, t)));
-    F.kids = (members.get(f) || []).filter(m => m !== V.route && can(m)).map(m => ({id: isSub(m) ? "t:" + m + at : `t:${f}${at}/${m}`, label: isSub(m) ? typeLabel(m) : `${viaOf(m) || "·"}: ${typeLabel(m)}`, kind: "type", hue: hueOf(byId.get(m)), type: m, name: F.name, at: F.when}));
-    F.kids.push(...sharedOf(f).map(e => ({id: `r:${f}:${e.via}${at}`, label: `${e.via}: ${typeLabel(e.dst)}`, kind: "ref", type: e.dst})));
-    F.title = (F.label || typeLabel(f)) + (F.kids.some(k => k.kind === "type" && !k.label.includes(": ")) ? " ⊇" : "");
-    F.hue = hueOf(byId.get(f));
     for (const k of F.kids) { places.set(k.id, {...k, inFrame: F.id}); keep.add(k.id); }
   }
 
@@ -1068,7 +1054,12 @@ async function renderPlaat(mine) {
   // code, a step of a body, a place. A type the picture draws as a box of its own, or inside a closed
   // family, is not inside a package, and a finding the picture marks with a dot is not inside one
   // either. Edges are not counted: they show at the border, or once the box is opened.
-  const closedFamily = p => (p.kind === "type" || p.kind === "ext") && !p.inFrame && !!p.type && p.type !== V.route && opens(p.type) && !V.open.families.has(p.type);
+  // at the pick, the closed families the picked values cut in two open, until none does: a lit box is all of the type
+  if (lit?.fresh) {
+    const cut = cutBy(lit.types, [...places.values()].filter(p => keep.has(p.id)));
+    if (cut.length) { for (const f of cut) V.open.families.add(f); crumbs(); writeView(); return renderPlaat(mine); }
+    lit.fresh = false;
+  }
   const alone = new Set(), inFamily = new Set();
   for (const p of places.values()) if (p.type && keep.has(p.id)) { alone.add(p.type); if (closedFamily(p)) for (const m of members.get(p.type) || []) inFamily.add(m); }
   const notAlone = id => !alone.has(id) && !inFamily.has(id);
@@ -1620,6 +1611,23 @@ async function renderPlaat(mine) {
     }, () => pin(p.id));
     place(grp, p.id);
   }
+  g.classList.toggle("fibered", !!lit);
+  if (lit) {
+    lit.drawn = 0;
+    for (const p of places.values()) { const box = nodeEls.get(p.id), c = box && lightOf(lit.types, p); if (c) { box.classList.add(c); lit.drawn++; } }
+    for (const F of famFrames.values()) if (lightOf(lit.types, {type: F.fam, frame: true}) === "lit") g.querySelector(`.frame.fam[data-id="${CSS.escape(F.id)}"]`)?.classList.add("lit");
+    // a step claims no type: one with a step inside it that takes or makes a value of the type holds the fiber inside, and
+    // is lit dashed, as a closed box shows what it holds inside without opening
+    if (fine?.pills) {
+      const inFiber = new Set([...fine.places.values()].filter(p => p.type && lit.types.has(p.type)).map(p => p.id));
+      const holders = [...fine.pills.values()].filter(P => [...P.D.keys(), ...P.C.keys()].some(k => inFiber.has(k))).map(P => P.id.slice(2));
+      for (const P of pills.values()) {
+        const box = !P.own && nodeEls.get(P.id);
+        if (box && P.steps.some(s => holders.some(k => k.startsWith(s + "/") || k.startsWith(s + "~")))) { box.classList.add("litpart"); lit.drawn++; }
+      }
+    }
+    crumbs();
+  }
   // a pin is a set of boxes and zoom carries it by `q`: a pinned box that opened is its frame, which keeps its id; a
   // pinned box whose frame closed is the box it closed into, the nearest frame around it before that this picture
   // draws. A pin with nothing left to stand for is let go
@@ -1678,6 +1686,7 @@ function crumbs() {
   if (V.route) chip(entryTitle(V.route), () => { V.route = null; entrySel.value = V.kind ? "kind:" + V.kind : ""; V.open.steps.clear(); });
   if (!V.kind && !V.route && !V.part) C.appendChild(html("span", "none", entries.length ? "all" : "none"));
   if (view === "plaat" && pinned.size) { lbl("pinned"); chip(`${pinned.size} ${pinned.size === 1 ? "box" : "boxes"}`, () => pinned.clear()); }
+  if (lit) { lbl("lit"); chip(`values of ${typeLabel(lit.pick)}${lit.drawn === 0 ? " · none here" : ""}`, () => { lit = null; }); }
   if (V.open.parts.size && !V.route) { lbl("parts"); for (const p of V.open.parts) chip(p, () => V.open.parts.delete(p)); }
   const opened = u => u === "~in" ? "the rest, handing in" : u === "~out" ? "the rest, taking" : unitLabel(u);
   if (V.open.units.size && !V.route && !V.kind) { lbl("packages"); for (const u of V.open.units) chip(opened(u), () => V.open.units.delete(u)); }
@@ -1804,6 +1813,11 @@ function select(id, extra) {
     if (n.cls) insp.appendChild(section("method of", null, linkList([n.cls])));
   } else if (n.kind === "class") {
     insp.appendChild(html("div", "sig", `class ${n.name}(${(n.bases || []).join(", ")})`));
+    const lights = html("button", "fn", "light its values in the Flowchart");
+    lights.title = "every box of this class or a class below it, in a route that holds one";
+    lights.onclick = () => lightIn(id);
+    const d = html("div", "links"); d.appendChild(lights);
+    insp.appendChild(section("in the Flowchart", null, d));
   }
   if (n.doc) insp.appendChild(html("p", "doc", n.doc));
   const pro = prophecyOf(n);
@@ -1965,6 +1979,25 @@ function openTo(n) {
 }
 // a type's box in the picture: the type itself, or a value of it that a name holds
 const typeBox = id => [...scene.node().querySelectorAll("[data-id]")].map(e => e.dataset.id).find(d => d === "t:" + id || d.startsWith(`t:${id}~`));
+// a type picked in the lattice is a set of values (`valuesOf`). The Flowchart lights its fiber, the boxes of those types,
+// in a route that holds one: the current picture where it does, else the first route that does. It is a mark on the
+// picture, as a pin is, not a part of what the picture is a function of
+const TYPED = new Set(["takes", "returns", "has", "mutates", "variant"]);
+async function lightIn(id) {
+  lit = {pick: id, types: valuesOf(id), fresh: true};
+  const S = lit.types, typed = f => S.has(f) || (out.get(f) || []).some(e => TYPED.has(e.kind) && S.has(e.dst));
+  const routes = overviewEntries().map(e => e.id).filter(r => r !== V.route && [...reach(r, null).nodes].some(typed));
+  const shown = async r => {
+    if (r) { V.route = r; entrySel.value = r; V.open.steps.clear(); plaatFit = true; }
+    lit.fresh = true; await render(); return lit?.drawn;
+  };
+  if (view !== "plaat") {
+    view = "plaat"; plaatFit = true; prevPos = new Map(); prevParent = new Map();
+    document.querySelectorAll(".tabs button").forEach(x => x.setAttribute("aria-selected", x.dataset.view === "plaat"));
+  }
+  if (await shown()) return;
+  for (const r of routes.slice(0, 8)) if (await shown(r)) return;
+}
 // jumping to a symbol opens the way to it and centres on it. A package is found in the overview.
 // In a route a class is its box, which stands in its family until the family is opened, else the
 // call that builds it. A symbol the view does not hold is shown in the first route that reaches
@@ -2029,7 +2062,7 @@ let renderSeq = 0;
 async function render() {
   const mine = ++renderSeq;
   // the flowchart keeps what is drawn until its next picture is laid out; the others draw at once
-  if (view === "plaat") scene.node().classList.add("busy"); else { scene.node().innerHTML = ""; scene.node().classList.remove("focus"); PICTURE = {boxes: new Map(), lines: []}; }
+  if (view === "plaat") scene.node().classList.add("busy"); else { scene.node().innerHTML = ""; scene.node().classList.remove("focus", "fibered"); PICTURE = {boxes: new Map(), lines: []}; }
   faultEl.hidden = true;
   hideAsks();
   shownUnits = new Set();

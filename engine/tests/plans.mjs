@@ -23,7 +23,7 @@ const D = JSON.parse(fs.readFileSync(dataJson, "utf8"));
 // `ATLAS_FINE_BUDGET=n` cuts the plan as a large program's is cut (`plan.js`, `FINE_BUDGET`)
 const window = process.env.ATLAS_FINE_BUDGET ? {ATLAS_FINE_BUDGET: Number(process.env.ATLAS_FINE_BUDGET)} : {};
 const M = new Function("D", "window", fs.readFileSync(planJs, "utf8") + `
-return {V, plan, imageOf, checkOpenings, treeInfo, stepLabel, typeLabel, sideOfRoles, familyOf, kindOf, byId, ordersOn, stepOf, opens, frameOf, valueBox, foldDirs, filePath};`)(D, window);
+return {V, plan, imageOf, checkOpenings, treeInfo, stepLabel, typeLabel, sideOfRoles, familyOf, kindOf, byId, ordersOn, stepOf, opens, frameOf, valueBox, foldDirs, filePath, valuesOf, closedFamily, typesIn, lightOf, cutBy, familyFrames, here};`)(D, window);
 const {V} = M;
 
 const SIDES = {in: "left", out: "right", mid: "between", both: "both"};
@@ -125,7 +125,7 @@ function read(route) {
     const w = C.fine.ways.get(k), s = M.sideOfRoles([C.roles.get(k)].filter(Boolean), () => (w?.size === 1 ? [...w][0] : "mid"));
     facts.push(`side ${placeName(k)} ${SIDES[s]}`);
   }
-  const faults = [...pictures(F, open, occ, homes, valueName), ...familyOpenings(), ...folderOpenings([...C.fine.ways.keys()].map(M.filePath).filter(Boolean))];
+  const faults = [...pictures(F, open, occ, homes, valueName), ...familyOpenings(), ...pickings(), ...folderOpenings([...C.fine.ways.keys()].map(M.filePath).filter(Boolean))];
   if (window.ATLAS_FINE_BUDGET) faults.push(...cutOpenings(F, occ));
   return {facts: [...new Set(facts)].sort(), faults};
 }
@@ -145,6 +145,46 @@ function familyOpenings() {
     V.open.families = new Set([t]);
     const frames = new Set([...M.plan().places.values()].filter(p => p.type && M.frameOf(p.type)).map(p => M.valueBox(M.frameOf(p.type), p)));
     for (const b of boxes) if (!frames.has(b)) out.push(`the family ${M.typeLabel(t)}: its box ${b} opens into no frame`);
+  }
+  V.open.families = new Set();
+  M.plan();
+  return out;
+}
+
+// A picked type is lit where its values flow (#296), and the pick decides what exists before the families group it
+// (mathematics.md, "Saturation"): opening the families a pick cuts in two, until none does, leaves no closed box cut in two.
+// Opening a family carries its light (refinement keeps what it does not refine): a closed box lit whole opens into a lit
+// frame whose kinds are all lit, a dark one into nothing lit; the parts it holds are judged by their own type. Asked of every
+// class of the route's fiber, as the pick of its values
+function pickings() {
+  const out = [];
+  // the boxes of a picture that hold a type, an open family drawn as the page draws it: its frame, the value, and in it a box
+  // for each kind the value can be and each part it holds
+  const held = () => {
+    const places = new Map(M.plan().places);
+    for (const F of M.familyFrames(places).values()) {
+      places.set(F.id, {id: F.id, type: F.fam, frame: true, fam: F.fam});
+      for (const k of F.kids) places.set(k.id, {...k, inFrame: F.id, fam: F.fam});
+    }
+    return [...places.values()].filter(p => p.type);
+  };
+  V.open.steps = new Set();
+  V.open.families = new Set();
+  const closed = held(), families = [...new Set(closed.filter(M.closedFamily).map(p => p.type))];
+  const classes = D.nodes.filter(n => n.kind === "class" && !n.library && M.here(n.id)).map(n => n.id);
+  for (const t of classes) {
+    const S = M.valuesOf(t), name = `the values of ${M.typeLabel(t)}`;
+    V.open.families = new Set();
+    for (let cut = M.cutBy(S, M.plan().places.values()); cut.length; cut = M.cutBy(S, M.plan().places.values())) for (const f of cut) V.open.families.add(f);
+    for (const p of M.plan().places.values()) if (M.cutBy(S, [p]).length) out.push(`${name}: the box ${p.id} is cut in two once the families they cut are open`);
+    for (const f of families) {
+      V.open.families = new Set();
+      const was = new Set(held().filter(p => p.type === f && M.closedFamily(p)).map(p => M.lightOf(S, p)));
+      if (was.size !== 1 || was.has("litpart")) continue;
+      V.open.families = new Set([f]);
+      const light = was.has("lit") ? "lit" : null;
+      for (const p of held()) if (p.fam === f && !p.part && M.lightOf(S, p) !== light) out.push(`${name}: the family ${M.typeLabel(f)}, ${light ? "lit whole" : "dark"} closed, opens into ${p.id}, which is ${M.lightOf(S, p) || "dark"}`);
+    }
   }
   V.open.families = new Set();
   M.plan();

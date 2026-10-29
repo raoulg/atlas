@@ -694,6 +694,53 @@ const frameOf = t => t === V.route ? undefined : [kindOf(t), t].find(f => V.open
 // it, the door whose parameter it is (the parameters of two doors are two values), the moment its maker made it. A family
 // opened is a frame with the id its closed box had, for each value it stood for (#182)
 const valueBox = (t, {name, door, at} = {}) => "t:" + t + (name ? "~" + name : "") + (door ? "^" + door : "") + (at ? "@" + at : "");
+// open families are frames around their members, one at each moment of the data; a member stands inside the frame of its
+// moment, the family itself is the frame. A value keeps its name in its box and its frame: two values of one family at one
+// moment are two frames, and so are the parameters of two doors, each door called by itself. The frame has the id its
+// closed box had (`valueBox`), and holds the kinds its values can be, each a box of its own (`kids`)
+function familyFrames(places) {
+  const frames = new Map(), nameAt = p => valueBox("", p).slice(2);
+  for (const p of places.values()) {
+    if (!p.type) continue;
+    const f = frameOf(p.type), at = nameAt(p), id = valueBox(f, p);
+    if (!f) continue;
+    if (!frames.has(id)) frames.set(id, {id, fam: f, at, name: p.name, when: p.at, label: places.get(id)?.label, types: new Set()});
+    frames.get(id).types.add(p.type);
+  }
+  for (const F of frames.values()) {
+    const f = F.fam, at = F.at;
+    const inFam = new Set([f, ...(members.get(f) || [])]);
+    const viaOf = m => (inn.get(m) || []).find(e => e.kind === "has" && inFam.has(e.src) && e.via)?.via;
+    const isSub = m => { let cur = m; for (let i = 0; i < 10; i++) { const b = (out.get(cur) || []).find(e => e.kind === "inherits" && inFam.has(e.dst)); if (!b) return false; if (b.dst === f) return true; cur = b.dst; } return false; };
+    // a frame holds the kinds its values can be: a value of one kind is that kind and what derives from it, in the fiber
+    const below = (m, t) => { let cur = m; for (let i = 0; i < 10 && cur; i++) { if (cur === t) return true; cur = (out.get(cur) || []).find(e => e.kind === "inherits")?.dst; } return false; };
+    const can = m => !isSub(m) || (here(m) && [...F.types].some(t => t === f || below(m, t)));
+    F.kids = (members.get(f) || []).filter(m => m !== V.route && can(m)).map(m => ({id: isSub(m) ? "t:" + m + at : `t:${f}${at}/${m}`, label: isSub(m) ? typeLabel(m) : `${viaOf(m) || "·"}: ${typeLabel(m)}`, kind: "type", hue: hueOf(byId.get(m)), type: m, name: F.name, at: F.when, ...(isSub(m) ? {} : {part: true})}));
+    F.kids.push(...sharedOf(f).map(e => ({id: `r:${f}:${e.via}${at}`, label: `${e.via}: ${typeLabel(e.dst)}`, kind: "ref", type: e.dst, part: true})));
+    F.title = (F.label || typeLabel(f)) + (F.kids.some(k => k.kind === "type" && !k.label.includes(": ")) ? " ⊇" : "");
+    F.hue = hueOf(byId.get(f));
+  }
+  return frames;
+}
+// a type picked is a set of values: the class and every class below it (a value of a subclass is a value of the class)
+const valuesOf = id => {
+  const S = new Set([id]), stack = [id];
+  while (stack.length) for (const e of inn.get(stack.pop()) || []) if (e.kind === "inherits" && !S.has(e.src)) { S.add(e.src); stack.push(e.src); }
+  return S;
+};
+// what a box is and what it holds: a closed family's box, and an open family's frame (`frame`), is a value of the family's
+// type or of one of its kinds in the fiber, and a closed family holds its parts inside; any other box is a value of its type
+const closedFamily = p => (p.kind === "type" || p.kind === "ext") && !p.inFrame && !!p.type && p.type !== V.route && opens(p.type) && !V.open.families.has(p.type);
+const typesIn = p => p.frame || closedFamily(p) ? [p.type, ...kindsOf(p.type)].filter(here) : [p.type];
+const partsIn = p => closedFamily(p) ? partsOf(p.type).filter(here) : [];
+// how a picked set of values lights a box: whole where every type it is is in the set, in part where some are or where it
+// holds one inside. A closed box the set cuts in two by what it is is a family to open (the filter first); what a box holds
+// inside it shows without opening, as a closed step does
+const lightOf = (S, p) => {
+  const ts = p.type ? typesIn(p) : [];
+  return ts.length && ts.every(t => S.has(t)) ? "lit" : [...ts, ...partsIn(p)].some(t => S.has(t)) ? "litpart" : null;
+};
+const cutBy = (S, places) => [...places].filter(p => closedFamily(p) && typesIn(p).some(t => S.has(t)) && !typesIn(p).every(t => S.has(t))).map(p => p.type);
 const typePlace = t => {
   const n = byId.get(t), closedFam = t !== V.route && opens(t) && !V.open.families.has(t);
   return {id: "t:" + t, label: typeLabel(t) + (closedFam ? ` (${opensInto(t)})` : ""), kind: n && n.kind === "external" ? "ext" : "type", hue: hueOf(n), type: t};
@@ -2062,7 +2109,7 @@ const coarsen = F => {
   // the storage quotient and the fold of the disk are taken on the places of the finest plan, whatever is open
   const ways = new Map();
   for (const P of F.pills.values()) for (const [way, m] of [["in", P.D], ["out", P.C]]) for (const k of m.keys()) { if (!ways.has(k)) ways.set(k, new Set()); ways.get(k).add(way); }
-  return {places: view.places, pills: view.pills, frames: view.frames, restArrows: [], folded: view.folded, roles, home: view.homeOf, fine: {places: F.places, ways}, oracle: window.ATLAS_ORACLE ? checkOpenings(F, view, folded) : null};
+  return {places: view.places, pills: view.pills, frames: view.frames, restArrows: [], folded: view.folded, roles, home: view.homeOf, fine: {places: F.places, pills: F.pills, ways}, oracle: window.ATLAS_ORACLE ? checkOpenings(F, view, folded) : null};
 };
 const plan = () => {
   if (!V.route) return planBase(false);
