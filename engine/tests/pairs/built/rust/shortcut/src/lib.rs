@@ -1,20 +1,36 @@
-//! A heading read from a file, shown on a plain block built where it is shown.
+//! A heading read from a file, shown on a plain block built where it is shown, under the block's name.
 
 use std::path::Path;
 
-pub trait Block {
+/// What a block is called.
+pub trait Named {
+    fn name(&self) -> &str;
+}
+
+pub trait Block: Named {
     /// The heading, as most blocks show it.
     fn show(&self, heading: &str) {
         println!("{heading}");
     }
 }
 
-pub struct Plain {
-    pub width: usize,
-}
+/// A block that shows the heading as it is.
+pub struct Plain;
 
 pub struct Boxed {
     pub width: usize,
+}
+
+impl Named for Plain {
+    fn name(&self) -> &str {
+        "plain"
+    }
+}
+
+impl Named for Boxed {
+    fn name(&self) -> &str {
+        "boxed"
+    }
 }
 
 impl Block for Plain {}
@@ -25,9 +41,9 @@ impl Block for Boxed {
     }
 }
 
-/// The heading in `source`, shown on a plain block.
+/// The heading in `source`, shown on a plain block, under its name.
 pub fn report(source: &Path) {
     let heading = std::fs::read_to_string(source).unwrap_or_default();
-    let plain = Plain { width: 40 };
-    plain.show(&heading);
+    println!("{}:", Plain.name());
+    Plain.show(&heading);
 }

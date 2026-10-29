@@ -778,11 +778,17 @@ of `C.f` may run `B.f` on a `D`, though `B` is not below `C`, and there its `sup
 alternative is that method on that class, a body as any step on a known class runs it, named by the
 class it runs on (`D.f`); one of a class below the method's own runs on any value of its class, whose
 class is not known. A call through a class, and a `super()` call on a value whose class is known, run
-the one their call names. A value built at the call (`Block().show()`, `new Block().show()`) is of that class
-alone; a declared one (a parameter, an annotation, a return type, a field) may be that class or any below it.
+the one their call names. A value built at the call (`Block().show()`, `new Block().show()`, a unit struct's
+name `Plain.show()`) is of that class alone; a declared one (a parameter, an annotation, a return type, a field)
+may be that class or any below it. A Rust trait is below its supertraits (`trait Block: Named`), so a value of it
+runs their methods along its order. A call through a trait (`Language::parse(&words, text)`) names no class: the
+type it runs on is the value's it is handed first, as in `words.parse(text)`, which is the same call written another
+way.
 **Where.** `model::linearization`, `model::initializer_along`; `principles.rs` (`Index::mro`),
 `builder.rs` (`family`, `method_of`, `initializer_of`), `flow.rs` (`method_on`, `method_after`,
-`built_from`, `Step::named`, `Ix::step_of`, `Ix::runs_below`, `Runs`: what a call runs, asked by the route and by the passes that settle parameters and errors).
+`built_from`, `Step::named`, `Ix::step_of`, `Ix::runs_below`, `Runs`: what a call runs, asked by the route and by the passes that settle parameters and errors);
+Rust's supertraits in `rust/passes.rs` (`collect_impls`), its unit structs and calls through a trait in `rust/body.rs`
+(`Body::unit_struct`, `Body::on_first`).
 
 ### Signatures say the arrow
 **What.** A function's type is its domain and its codomain.
