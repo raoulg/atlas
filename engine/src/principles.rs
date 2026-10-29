@@ -16,30 +16,119 @@ use crate::model::{
 };
 use crate::shapes::Array;
 
-/// A principle by its id and what it asks of code.
-pub struct Principle {
-    pub id: &'static str,
-    pub asks: &'static str,
+/// A design principle Atlas checks. The principles are a closed set; each has its id, what it asks of
+/// code and the rule that finds where code disagrees. Its id is its form outside the engine: in the
+/// JSON, in the text of `atlas check`, in a decision an author writes and in what the MCP is handed.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum Principle {
+    Doors,
+    Sums,
+    Overrides,
+    Places,
+    Changes,
+    Gives,
+    Choices,
+    Nothing,
+    Layers,
+    Lens,
+    Prophecy,
 }
 
-pub const PRINCIPLES: &[Principle] = &[
-    Principle { id: "doors", asks: "A package names its doors, and each door says what goes in and what comes out." },
-    Principle { id: "sums", asks: "A sum type is unwrapped where it arises." },
-    Principle { id: "overrides", asks: "An override keeps the promise of its base." },
-    Principle { id: "places", asks: "Library code does not decide where data lives." },
-    Principle { id: "changes", asks: "A change to an input shows in the signature." },
-    Principle { id: "gives", asks: "A function whose value is used says what it gives back." },
-    Principle { id: "choices", asks: "A choice is made once, in a place with a name." },
-    Principle { id: "nothing", asks: "A call leaves something behind." },
-    Principle { id: "layers", asks: "The packages of a part depend on one another in one direction." },
-    Principle { id: "lens", asks: "What a lens puts, it gets back." },
-    Principle { id: "prophecy", asks: "Code that is built does not lean on code that is not." },
-];
+impl Principle {
+    /// Every principle, in the order `check` asks them and a report lists them.
+    pub const ALL: [Principle; 11] = [
+        Principle::Doors,
+        Principle::Sums,
+        Principle::Overrides,
+        Principle::Places,
+        Principle::Changes,
+        Principle::Gives,
+        Principle::Choices,
+        Principle::Nothing,
+        Principle::Layers,
+        Principle::Lens,
+        Principle::Prophecy,
+    ];
+
+    pub fn id(self) -> &'static str {
+        match self {
+            Principle::Doors => "doors",
+            Principle::Sums => "sums",
+            Principle::Overrides => "overrides",
+            Principle::Places => "places",
+            Principle::Changes => "changes",
+            Principle::Gives => "gives",
+            Principle::Choices => "choices",
+            Principle::Nothing => "nothing",
+            Principle::Layers => "layers",
+            Principle::Lens => "lens",
+            Principle::Prophecy => "prophecy",
+        }
+    }
+
+    /// What the principle asks of code.
+    pub fn asks(self) -> &'static str {
+        match self {
+            Principle::Doors => "A package names its doors, and each door says what goes in and what comes out.",
+            Principle::Sums => "A sum type is unwrapped where it arises.",
+            Principle::Overrides => "An override keeps the promise of its base.",
+            Principle::Places => "Library code does not decide where data lives.",
+            Principle::Changes => "A change to an input shows in the signature.",
+            Principle::Gives => "A function whose value is used says what it gives back.",
+            Principle::Choices => "A choice is made once, in a place with a name.",
+            Principle::Nothing => "A call leaves something behind.",
+            Principle::Layers => "The packages of a part depend on one another in one direction.",
+            Principle::Lens => "What a lens puts, it gets back.",
+            Principle::Prophecy => "Code that is built does not lean on code that is not.",
+        }
+    }
+
+    /// The rule that finds where code disagrees with the principle.
+    fn rule(self) -> fn(&Index) -> Vec<Finding> {
+        match self {
+            Principle::Doors => doors,
+            Principle::Sums => sums,
+            Principle::Overrides => overrides,
+            Principle::Places => places,
+            Principle::Changes => changes,
+            Principle::Gives => gives,
+            Principle::Choices => choices,
+            Principle::Nothing => nothing,
+            Principle::Layers => layers,
+            Principle::Lens => lens,
+            Principle::Prophecy => prophecy,
+        }
+    }
+
+    /// The principle an id names, when it names one.
+    pub fn parse(id: &str) -> Option<Principle> {
+        Principle::ALL.into_iter().find(|p| p.id() == id)
+    }
+}
+
+impl std::fmt::Display for Principle {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.id())
+    }
+}
+
+impl Serialize for Principle {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        s.serialize_str(self.id())
+    }
+}
+
+/// A principle and its id are equal: `f.principle == "doors"`.
+impl PartialEq<&str> for Principle {
+    fn eq(&self, id: &&str) -> bool {
+        self.id() == *id
+    }
+}
 
 /// One place where the code and a principle disagree.
 #[derive(Serialize, Clone, Debug, PartialEq)]
 pub struct Finding {
-    pub principle: &'static str,
+    pub principle: Principle,
     /// The node the finding is about.
     pub node: String,
     /// Relative to the project root.
@@ -100,8 +189,8 @@ const DOCS: &str = include_str!("../../docs/reference/principles.md");
 
 /// A principle's section of the docs: what it asks, why, its PEP or Rust idiom, how Atlas
 /// sees it, an example.
-pub fn explain(id: &str) -> Option<&'static str> {
-    let marker = format!("Id: `{id}`.");
+pub fn explain(p: Principle) -> Option<&'static str> {
+    let marker = format!("Id: `{p}`.");
     DOCS.split("\n## ").skip(1).find(|s| s.contains(&marker)).map(|s| s.trim_end())
 }
 
@@ -207,15 +296,15 @@ fn shared_lead(qs: &[Vec<&str>]) -> usize {
 pub fn report(root: &str, findings: &[Finding], look: &Look) -> String {
     let open: Vec<&Finding> = findings.iter().filter(|f| f.aside.is_none()).collect();
     let mut out = format!("{} · {}\n", look.paint(Ink::Part, root), look.paint(Ink::Count, &questions(open.len())));
-    for p in PRINCIPLES {
-        let mine: Vec<&Finding> = open.iter().copied().filter(|f| f.principle == p.id).collect();
+    for p in Principle::ALL {
+        let mine: Vec<&Finding> = open.iter().copied().filter(|f| f.principle == p).collect();
         if mine.is_empty() {
             continue;
         }
         let asked: Vec<Vec<&str>> = mine.iter().map(|f| sentences(&f.question)).collect();
         let lead = shared_lead(&asked);
-        let hang = p.id.len() + 3;
-        out += &format!("\n{} · {}\n", look.paint(Ink::Principle, p.id), look.wrapped(Ink::Asks, p.asks, hang, hang));
+        let hang = p.id().len() + 3;
+        out += &format!("\n{} · {}\n", look.paint(Ink::Principle, p.id()), look.wrapped(Ink::Asks, p.asks(), hang, hang));
         if lead > 0 {
             out += &format!("{}{}\n", " ".repeat(hang), look.wrapped(Ink::Why, &asked[0][..lead].join(" "), hang, hang));
         }
@@ -257,17 +346,17 @@ pub fn set_aside(root: &str, findings: &[Finding], look: &Look) -> String {
 /// Every part's open questions counted by principle, to read after the reports: a row for each
 /// principle with something to ask, a column for each part, and on one line the principles in
 /// `asked` with nothing to ask; how many the author has set aside, beside the count.
-pub fn summary(parts: &[(&str, &[Finding])], asked: &[&Principle], look: &Look) -> String {
-    let count = |part: &[Finding], p: &Principle| part.iter().filter(|f| f.principle == p.id && f.aside.is_none()).count();
-    let asks = |f: &&Finding| asked.iter().any(|p| p.id == f.principle);
+pub fn summary(parts: &[(&str, &[Finding])], asked: &[Principle], look: &Look) -> String {
+    let count = |part: &[Finding], p: Principle| part.iter().filter(|f| f.principle == p && f.aside.is_none()).count();
+    let asks = |f: &&Finding| asked.contains(&f.principle);
     let total: usize = parts.iter().map(|(_, fs)| fs.iter().filter(asks).filter(|f| f.aside.is_none()).count()).sum();
     let aside: usize = parts.iter().map(|(_, fs)| fs.iter().filter(asks).filter(|f| f.aside.is_some()).count()).sum();
-    let rows: Vec<(&Principle, Vec<usize>)> = asked
+    let rows: Vec<(Principle, Vec<usize>)> = asked
         .iter()
-        .map(|p| (*p, parts.iter().map(|(_, fs)| count(fs, p)).collect::<Vec<_>>()))
+        .map(|&p| (p, parts.iter().map(|(_, fs)| count(fs, p)).collect::<Vec<_>>()))
         .filter(|(_, n)| n.iter().any(|&n| n > 0))
         .collect();
-    let quiet: Vec<String> = asked.iter().filter(|p| !rows.iter().any(|(r, _)| r.id == p.id)).map(|p| p.id.to_string()).collect();
+    let quiet: Vec<&str> = asked.iter().filter(|p| !rows.iter().any(|(r, _)| r == *p)).map(|p| p.id()).collect();
     let rule = "─".repeat(look.width.unwrap_or(60).min(60));
     let mut out = format!("\n{}\n", look.paint(Ink::Quiet, &rule));
     out += &look.paint(Ink::Count, &questions(total));
@@ -279,7 +368,7 @@ pub fn summary(parts: &[(&str, &[Finding])], asked: &[&Principle], look: &Look) 
     }
     out += "\n";
     if !rows.is_empty() {
-        let label = rows.iter().map(|(p, _)| p.id.len()).max().unwrap_or(0);
+        let label = rows.iter().map(|(p, _)| p.id().len()).max().unwrap_or(0);
         let widths: Vec<usize> = parts.iter().map(|(name, _)| name.chars().count().max(3)).collect();
         out += &format!("  {:label$}", "");
         for ((name, _), w) in parts.iter().zip(&widths) {
@@ -288,7 +377,7 @@ pub fn summary(parts: &[(&str, &[Finding])], asked: &[&Principle], look: &Look) 
         out += "\n";
         let most = rows.iter().map(|(_, n)| n.iter().sum::<usize>()).max().unwrap_or(1);
         for (p, ns) in &rows {
-            out += &format!("  {}", look.paint(Ink::Principle, &format!("{:label$}", p.id)));
+            out += &format!("  {}", look.paint(Ink::Principle, &format!("{:label$}", p.id())));
             for (n, w) in ns.iter().zip(&widths) {
                 out += &match n {
                     0 => format!("  {}", look.paint(Ink::Quiet, &format!("{:>w$}", "·"))),
@@ -309,28 +398,26 @@ pub fn summary(parts: &[(&str, &[Finding])], asked: &[&Principle], look: &Look) 
     out
 }
 
-/// Every finding, by principle in the order of `PRINCIPLES`, then by place in the code.
+/// Every finding, by principle in the order of `Principle::ALL`, then by place in the code.
 pub fn check(g: &Graph) -> Vec<Finding> {
     let ix = Index::new(g);
     let answers = ix.answers();
     let mut out = vec![];
-    type Rule = fn(&Index) -> Vec<Finding>;
-    let rules: [Rule; 11] = [doors, sums, overrides, places, changes, gives, choices, nothing, layers, lens, prophecy];
-    for (i, rule) in rules.into_iter().enumerate() {
+    for p in Principle::ALL {
         // a library read as code is not the project's to change
-        let mut found: Vec<Finding> = rule(&ix).into_iter().filter(|f| ix.node(&f.node).map_or(true, |n| !n.library)).collect();
+        let mut found: Vec<Finding> = p.rule()(&ix).into_iter().filter(|f| ix.node(&f.node).map_or(true, |n| !n.library)).collect();
         // a prophecy is a todo, not a finding: its empty bodies are what it is, and the rule that
         // asks about prophecies is the only one that speaks of them
-        if i + 1 != rules.len() {
+        if p != Principle::Prophecy {
             found.retain(|f| ix.node(&f.node).map_or(true, |n| !ix.prophetic(n)));
         }
         // what a prophecy supersedes is still asked about; the prophecy is the answer
         for f in &mut found {
-            if let Some(p) =
+            if let Some(by) =
                 ix.node(&f.node).and_then(|n| answers.get(n.id.as_str()).or_else(|| n.cls.as_deref().and_then(|c| answers.get(c))))
             {
-                f.evidence.push(format!("answered by the prophecy `{}`, which supersedes it", ix.label(p)));
-                let answered = About { role: "answered_by", id: p.to_string() };
+                f.evidence.push(format!("answered by the prophecy `{}`, which supersedes it", ix.label(by)));
+                let answered = About { role: "answered_by", id: by.to_string() };
                 if !f.about.contains(&answered) {
                     f.about.push(answered);
                 }
@@ -404,7 +491,7 @@ impl<'g> Index<'g> {
         self.g.nodes.iter().filter_map(|p| Some((self.superseded(p)?.id.as_str(), p.id.as_str()))).collect()
     }
 
-    fn finding(&self, principle: &'static str, n: &Node, what: String, evidence: Vec<String>, question: String) -> Finding {
+    fn finding(&self, principle: Principle, n: &Node, what: String, evidence: Vec<String>, question: String) -> Finding {
         Finding {
             principle,
             node: n.id.clone(),
@@ -571,7 +658,7 @@ fn doors(ix: &Index) -> Vec<Finding> {
     if declared && ix.node(&g.root).map_or(false, |r| r.name == "src") {
         if let Some(root) = ix.node(&g.root) {
             out.push(ix.finding(
-                "doors",
+                Principle::Doors,
                 root,
                 "the package is called src, the folder packages live in".into(),
                 vec![format!("{}: the layout folder is the import name, `from src.… import …`", ix.file(root))],
@@ -582,7 +669,7 @@ fn doors(ix: &Index) -> Vec<Finding> {
     } else if exports.is_empty() && declared {
         if let Some(root) = ix.node(&g.root) {
             out.push(ix.finding(
-                "doors",
+                Principle::Doors,
                 root,
                 format!("{} exports nothing at its root", g.root),
                 vec![format!("{}: no `__all__`, and no public name of the package bound there", ix.file(root))],
@@ -622,7 +709,7 @@ fn doors(ix: &Index) -> Vec<Finding> {
             _ => format!("{} does not say what it gives", ix.label(&f.id)),
         };
         let finding = ix.finding(
-            "doors",
+            Principle::Doors,
             f,
             what,
             asked.iter().map(|s| written_signature(&f.name, &s.params, s.returns.as_ref())).collect(),
@@ -683,7 +770,7 @@ fn sums(ix: &Index) -> Vec<Finding> {
         let variant_ids = ix.targets(&s.id, EdgeKind::Variant);
         out.push(
             ix.finding(
-                "sums",
+                Principle::Sums,
                 if library { consumers[0] } else { s },
                 format!("{sum} is handed on unopened: {} take it", list(&taken_by)),
                 evidence,
@@ -723,7 +810,7 @@ fn overrides(ix: &Index) -> Vec<Finding> {
             let classes: Vec<String> = ms.iter().filter_map(|m| m.cls.as_deref()).map(|c| ix.label(c)).collect();
             let base_cls = base.cls.as_deref().map(|c| ix.label(c)).unwrap_or_default();
             ix.finding(
-                "overrides",
+                Principle::Overrides,
                 base,
                 format!(
                     "{} promises {}; {} it",
@@ -927,7 +1014,7 @@ fn places(ix: &Index) -> Vec<Finding> {
             .collect();
         let what: Vec<String> = touches.iter().map(|(_, t)| place(t)).collect();
         out.push(ix.finding(
-            "places",
+            Principle::Places,
             n,
             format!("{} decides itself where data lives: {}", ix.label(&n.id), list(&what)),
             fixed,
@@ -961,7 +1048,7 @@ fn changes(ix: &Index) -> Vec<Finding> {
             written => written.to_string(),
         };
         out.push(ix.finding(
-            "changes",
+            Principle::Changes,
             f,
             format!("{} changes the {ty} it is handed as `{input}`", ix.label(&f.id)),
             vec![signature(f)],
@@ -1013,7 +1100,7 @@ fn gives(ix: &Index) -> Vec<Finding> {
         }
         out.push(
             ix.finding(
-                "gives",
+                Principle::Gives,
                 f,
                 format!("{name} gives back a value its callers use, and does not say what it is"),
                 vec![signature(f), format!("used by {}", list(&users))],
@@ -1144,7 +1231,7 @@ fn repeated(ix: &Index) -> Vec<Finding> {
             _ => fns[0],
         };
         out.push(ix.finding(
-            "choices",
+            Principle::Choices,
             stands,
             format!("{who} `{subject}` in {n_places} places; {} come back", list(&spread)),
             evidence,
@@ -1216,7 +1303,7 @@ fn unnamed<'g>(ix: &Index<'g>, f: &'g Node) -> Vec<Finding> {
             let then: Vec<String> = next.iter().map(|n| ix.label(n)).collect();
             out.push(
                 ix.finding(
-                    "choices",
+                    Principle::Choices,
                     f,
                     format!("{} chooses where its {ty} comes from ({}) and goes on with it", ix.label(&f.id), steps.join(" | ")),
                     vec![format!("alternatives: {}", steps.join(" | ")), format!("then: {}", list(&then))],
@@ -1318,7 +1405,7 @@ fn nothing(ix: &Index) -> Vec<Finding> {
         }
         if blind.is_empty() {
             out.push(ix.finding(
-                "nothing",
+                Principle::Nothing,
                 f,
                 format!("{name} gives nothing back, and Atlas sees no change and no place it reaches"),
                 evidence,
@@ -1338,7 +1425,7 @@ fn nothing(ix: &Index) -> Vec<Finding> {
         let does = if what.len() == 1 { "does" } else { "do" };
         evidence.extend(blind.iter().map(|b| format!("`{}` ({}): {}", b.what, b.at, b.why)));
         out.push(ix.finding(
-            "nothing",
+            Principle::Nothing,
             f,
             format!("{name} gives nothing back, and Atlas cannot see what {shown} {does}"),
             evidence,
@@ -1391,7 +1478,7 @@ fn prophecy(ix: &Index) -> Vec<Finding> {
         let named = said.supersedes.as_deref().unwrap_or("");
         let finding = match said.candidates.as_slice() {
             [] => ix.finding(
-                "prophecy",
+                Principle::Prophecy,
                 p,
                 format!("{} supersedes `{named}`, which the code does not hold", ix.label(&p.id)),
                 vec![format!("supersedes `{named}`")],
@@ -1399,7 +1486,7 @@ fn prophecy(ix: &Index) -> Vec<Finding> {
             )
             .with("supersedes", [named.to_string()]),
             candidates => ix.finding(
-                "prophecy",
+                Principle::Prophecy,
                 p,
                 format!(
                     "{} supersedes `{named}`, which names {} nodes: {}",
@@ -1436,7 +1523,7 @@ fn prophecy(ix: &Index) -> Vec<Finding> {
         evidence.dedup();
         out.push(
             ix.finding(
-                "prophecy",
+                Principle::Prophecy,
                 from,
                 format!("{} leans on {}, which is not built", ix.label(id), list(&names)),
                 evidence,
@@ -1559,7 +1646,7 @@ fn layers(ix: &Index) -> Vec<Finding> {
             };
             out.push(
                 ix.finding(
-                    "layers",
+                    Principle::Layers,
                     at,
                     format!("{} depend on one another", list(&members)),
                     evidence,
@@ -1797,7 +1884,7 @@ fn lens<'g>(ix: &Index<'g>) -> Vec<Finding> {
         }
         let (types, at) = (list(&lost_all), list(&labels));
         let mut finding = ix.finding(
-            "lens",
+            Principle::Lens,
             c,
             format!("{name} puts {types} into {at} and gets no {types} back"),
             evidence,
