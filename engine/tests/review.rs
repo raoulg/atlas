@@ -179,6 +179,21 @@ const REVIEWED: &[(&str, &str, &str)] = &[
         "atlas-engine.typescript.libraries.Libraries.follow_in",
         "`\"default\"` is the language's name for the default export, read in two lines of one function",
     ),
+    (
+        "places",
+        "atlas.run",
+        "`run` is `main`'s body, split off so that what it holds drops before the exit status is returned: the command line's default repository, the directory it is run in, is the entry's decision, as it was `main`'s",
+    ),
+    (
+        "choices",
+        "atlas-engine.flow.body_of",
+        "a method's call is resolved along the order of the class it runs on (`Ix::step_of`); a function's call, or a library operation the graph does not hold, runs itself: dispatch is a fact of methods alone",
+    ),
+    (
+        "nothing",
+        "atlas.http.linger",
+        "`linger` acts on the network through std's `TcpStream`, which `knowledge.rs` names no place for: #291",
+    ),
 ];
 
 /// Atlas is its own first subject, and `atlas check` is a signal on it as on any code: never an
