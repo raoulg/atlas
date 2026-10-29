@@ -9,7 +9,7 @@
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::hash::{Hash, Hasher};
-use std::net::{SocketAddr, TcpListener, TcpStream};
+use std::net::{SocketAddr, TcpListener};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -21,7 +21,7 @@ use atlas_engine::sight::Sight;
 use atlas_engine::Options;
 use serde_json::{json, Value};
 
-use crate::http::{reply, request, Answer, Request};
+use crate::http::{self, Answer, Request};
 use crate::log::{Log, Who};
 use crate::page::{self, Html, Opens, Reading};
 use crate::shared::{self, Note, State};
@@ -98,10 +98,12 @@ pub fn serve(repo: &Path, port: Option<u16>, opts: &Options, shown: bool) -> Res
         warm: opts.cache.as_ref().and_then(|c| c.workspace(repo)).is_some_and(|c| c.holds_any()),
     });
     let url = format!("http://{at}/");
-    // a note is for the work at hand: this page starts without the ones resolved before it
-    shared::forget_resolved(repo)?;
     shared::set_serving(repo, &url)?;
     log.start(&repo.display().to_string(), &url);
+    // a note is for the work at hand: this page starts without the ones resolved before it
+    if let Err(e) = shared::forget_resolved(repo) {
+        log.say(Who::Atlas, &format!("could not read the notes: {e:#}"));
+    }
     let (watched, told) = (repo.to_path_buf(), Arc::clone(&log));
     std::thread::spawn(move || watch_notes(&watched, &told));
     let code = Arc::clone(&server);
@@ -109,27 +111,29 @@ pub fn serve(repo: &Path, port: Option<u16>, opts: &Options, shown: bool) -> Res
     if shown {
         page::open(url.as_ref());
     }
-    for conn in listener.incoming().flatten() {
-        let server = Arc::clone(&server);
-        std::thread::spawn(move || server.answer(conn));
-    }
+    http::listen(listener, |e| log.say(Who::Atlas, e), move |req| server.respond(req));
     Ok(())
 }
 
-impl Server {
-    fn answer(&self, conn: TcpStream) -> Result<()> {
-        let req = request(&conn)?;
-        reply(conn, self.respond(&req))
-    }
+/// Whether a request asks what changes something or runs an analysis: a change, the look an agent
+/// left (taken once) or a page to keep (`/export`). The history beside the page says the same of its
+/// own (`history::respond`).
+fn acts(req: &Request) -> bool {
+    req.method != "GET" || matches!(req.path.as_str(), "/api/look" | "/export")
+}
 
-    /// The page, and what it and an agent share. A request that changes something comes from the
-    /// page itself, which says so (`X-Atlas`).
+impl Server {
+    /// The page, and what it and an agent share. A request that changes something or runs an
+    /// analysis comes from the page itself or its reader (`Request::own`).
     fn respond(&self, req: &Request) -> Answer {
         if !self.hosts.contains(&req.host) {
             return Answer::text("403 Forbidden", "atlas serve answers only at the address it serves".into());
         }
-        if req.method == "POST" && !req.own {
-            return Answer::text("403 Forbidden", "atlas serve takes changes from its own page only".into());
+        if acts(req) && !req.own {
+            return Answer::text(
+                "403 Forbidden",
+                "atlas serve takes what changes something or runs an analysis from its own page only".into(),
+            );
         }
         if let Some(answer) = crate::history::respond(&self.repo, &self.opts, req, "/history") {
             return answer;
@@ -144,13 +148,17 @@ impl Server {
                 self.export(req).map_or_else(Answer::failed, |(name, html)| Answer::download(format!("{name}.html"), html))
             }
             ("POST", "/api/shown") => json(self.body(req).and_then(|v| shared::set_shown(&self.repo, &v).map(|_| Value::Null))),
-            ("GET", "/api/look") => shared::take_look(&self.repo).map_or_else(Answer::none, |look| {
-                let said = serde_json::to_string(&look).unwrap_or_default();
-                self.log.say(Who::Agent, &format!("look here: {said}"));
-                Answer::json(said)
-            }),
-            ("GET", "/api/notes") => json(Ok(serde_json::to_value(shared::notes(&self.repo)).unwrap_or_default())),
-            ("GET", "/api/annotations") => json(Ok(serde_json::to_value(shared::annotations(&self.repo)).unwrap_or_default())),
+            ("GET", "/api/look") => match shared::take_look(&self.repo) {
+                Ok(Some(look)) => {
+                    let said = serde_json::to_string(&look).unwrap_or_default();
+                    self.log.say(Who::Agent, &format!("look here: {said}"));
+                    Answer::json(said)
+                }
+                Ok(None) => Answer::none(),
+                Err(e) => Answer::failed(e),
+            },
+            ("GET", "/api/notes") => json(shared::notes(&self.repo).and_then(|n| Ok(serde_json::to_value(n)?))),
+            ("GET", "/api/annotations") => json(shared::annotations(&self.repo).and_then(|a| Ok(serde_json::to_value(a)?))),
             ("POST", "/api/notes") => json(self.note(req)),
             ("POST", "/api/notes/reopen") => json(self.reopen(req)),
             _ => Answer::text("404 Not Found", format!("nothing at {} {}", req.method, req.path)),
@@ -266,7 +274,9 @@ impl Server {
         let progress = self.progress.lock().unwrap_or_else(|e| e.into_inner());
         let phases: &[&str] = if self.opts.libraries > 0 { &["code", "libraries"] } else { &["code"] };
         let expected = expected(&self.timings.lock().unwrap_or_else(|e| e.into_inner()), self.warm);
-        json!({"drawn": self.kept().map(|d| d.id.clone()), "drawing": self.drawing.try_lock().is_err(),
+        // a drawing that panicked leaves the lock poisoned, and is no longer drawing
+        let drawing = matches!(self.drawing.try_lock(), Err(std::sync::TryLockError::WouldBlock));
+        json!({"drawn": self.kept().map(|d| d.id.clone()), "drawing": drawing,
             "phase": progress.phase, "error": progress.error, "phases": phases,
             "elapsed": progress.since.elapsed().as_secs_f64(), "expected": expected})
     }
@@ -280,16 +290,25 @@ impl Server {
             if let Ok(now) = stamps(&self.repo, &self.opts) {
                 let kept = self.kept().map(|d| d.stamps == now && d.complete);
                 if kept != Some(true) && (kept.is_none() || last.as_ref() == Some(&now)) && failed.as_ref() != Some(&now) {
-                    if let Err(e) = self.page(now.clone()) {
-                        self.log.say(Who::Atlas, &format!("could not draw: {e:#}"));
-                        self.progress("failed", Some(format!("{e:#}")));
-                        failed = Some(now.clone());
-                    }
+                    self.tend(now.clone(), &mut failed, |now| self.page(now));
                 }
                 last = Some(now);
             }
             std::thread::sleep(Duration::from_secs(1));
         }
+    }
+
+    /// Draw the working tree at `now` with `draw`. A drawing that fails, or panics, is said in the log
+    /// and on the page (its progress), and `failed` keeps what it failed on: the watch goes on.
+    fn tend(&self, now: Stamps, failed: &mut Option<Stamps>, draw: impl FnOnce(Stamps) -> Result<()>) {
+        let fault = match http::guarded(|| draw(now.clone())) {
+            Ok(Ok(())) => return,
+            Ok(Err(e)) => format!("{e:#}"),
+            Err(said) => format!("Atlas failed while drawing: {said}"),
+        };
+        self.log.say(Who::Atlas, &format!("could not draw: {fault}"));
+        self.progress("failed", Some(fault));
+        *failed = Some(now);
     }
 
     fn body(&self, req: &Request) -> Result<Value> {
@@ -306,7 +325,7 @@ impl Server {
     /// The reader opens a resolved note again, with a new line for the agent.
     fn reopen(&self, req: &Request) -> Result<Value> {
         let body = self.body(req)?;
-        let id = body.get("id").and_then(Value::as_u64).context("which note")? as u32;
+        let id = body.get("id").and_then(Value::as_u64).and_then(|id| u32::try_from(id).ok()).context("which note: a note's number")?;
         let line = body.get("text").and_then(Value::as_str).filter(|t| !t.trim().is_empty()).context("a reopened note has a new line")?;
         Ok(serde_json::to_value(shared::reopen(&self.repo, id, line)?)?)
     }
@@ -316,10 +335,22 @@ impl Server {
 /// an agent, resolved. The agent writes through `atlas mcp`, another process, so the notes are
 /// looked at every second.
 fn watch_notes(repo: &Path, log: &Log) {
-    let mut known: HashMap<u32, State> = shared::notes(repo).into_iter().map(|n| (n.id, n.state)).collect();
+    let mut known: HashMap<u32, State> = shared::notes(repo).unwrap_or_default().into_iter().map(|n| (n.id, n.state)).collect();
+    let mut unread = false;
     loop {
         std::thread::sleep(Duration::from_secs(1));
-        for n in shared::notes(repo) {
+        let notes = match shared::notes(repo) {
+            Ok(notes) => notes,
+            Err(e) => {
+                // said once, until the notes read again
+                if !std::mem::replace(&mut unread, true) {
+                    log.say(Who::Atlas, &format!("could not read the notes: {e:#}"));
+                }
+                continue;
+            }
+        };
+        unread = false;
+        for n in notes {
             let before = known.insert(n.id, n.state);
             if before == Some(n.state) {
                 continue;
@@ -330,10 +361,8 @@ fn watch_notes(repo: &Path, log: &Log) {
                 (_, State::Open) => log.say(Who::You, &format!("note {} on {}: {last}", n.id, n.label)),
                 (_, State::Seen) => log.say(Who::Agent, &format!("read note {} on {}", n.id, n.label)),
                 (_, State::Resolved) => {
-                    let by: Vec<String> = [n.commit.as_ref().map(|c| format!("in {}", &c[..c.len().min(7)])), n.issue.clone()]
-                        .into_iter()
-                        .flatten()
-                        .collect();
+                    let by: Vec<String> =
+                        [n.commit.as_deref().map(|c| format!("in {}", shared::short(c))), n.issue.clone()].into_iter().flatten().collect();
                     let by = if by.is_empty() { String::new() } else { format!(" ({})", by.join(", ")) };
                     log.say(Who::Agent, &format!("resolved note {} on {}{by}", n.id, n.label))
                 }
@@ -357,7 +386,7 @@ fn reading(repo: &Path, opts: &Options) -> Result<Reading> {
     let Some(p) = shared::vision(repo) else { return page::reading(&[repo.to_path_buf()], opts, None, None) };
     let envisioned = Named { rev: "vision".into(), short: "vision".into(), subject: p.title.clone() };
     let now = atlas_engine::parts::analyze_parts(&[repo.to_path_buf()], opts)?;
-    Ok(Reading::compared(repo, (changes::worktree(), now), (envisioned, changes::envisioned(repo, &p.files, opts)?)))
+    Ok(Reading::compared(repo, (changes::worktree(), now), (envisioned, changes::envisioned(repo, &p.files, opts)?.parts)))
 }
 
 /// The working tree as far as Atlas reads it, and what an agent has in view beside it: equal stamps
@@ -449,9 +478,8 @@ mod tests {
         assert_eq!(older, shared::Timings::default());
     }
 
-    #[test]
-    fn root_answers_with_progress_before_any_picture_exists() {
-        let server = Server {
+    fn server() -> Server {
+        Server {
             repo: PathBuf::new(),
             opts: Options::default(),
             hosts: vec!["localhost:8797".into()],
@@ -461,7 +489,36 @@ mod tests {
             drawing: Mutex::new(()),
             timings: Mutex::new(shared::Timings::default()),
             warm: false,
-        };
+        }
+    }
+
+    /// A drawing that panics is a drawing that failed: the page's progress says so, with what the
+    /// panic said, and no longer says it is drawing; the watch keeps what it failed on, and goes on to
+    /// draw the next change.
+    #[test]
+    fn a_drawing_that_panics_is_shown_and_the_watch_goes_on() {
+        let server = server();
+        let (now, mut failed) = (Stamps::from([(PathBuf::from("spots.py"), None)]), None);
+        server.tend(now.clone(), &mut failed, |_| {
+            let _drawing = server.drawing.lock().unwrap();
+            panic!("a reader made to panic")
+        });
+        let state = server.drawn();
+        assert_eq!(state["phase"], "failed");
+        assert!(state["error"].as_str().unwrap().contains("a reader made to panic"), "{state}");
+        assert_eq!(state["drawing"], false, "{state}");
+        assert_eq!(failed.as_ref(), Some(&now));
+        let mut drawn = false;
+        server.tend(Stamps::new(), &mut failed, |_| {
+            drawn = true;
+            Ok(())
+        });
+        assert!(drawn, "the next change is drawn");
+    }
+
+    #[test]
+    fn root_answers_with_progress_before_any_picture_exists() {
+        let server = server();
         let request = Request {
             method: "GET".into(),
             path: "/".into(),

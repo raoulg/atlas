@@ -77,7 +77,10 @@ fn answer(msg: &Value, opts: &Options) -> Option<Value> {
         "tools/call" => {
             let name = params.get("name").and_then(Value::as_str).unwrap_or("");
             let args = params.get("arguments").cloned().unwrap_or_else(|| json!({}));
-            match call(name, &args, opts) {
+            // a tool that panics fails its own call; the server answers the next
+            let called = crate::http::guarded(|| call(name, &args, opts))
+                .unwrap_or_else(|said| Some(Err(format!("Atlas failed inside `{name}`: {said}. The other tools still answer."))));
+            match called {
                 Some(Ok(text)) => ok(id, json!({ "content": [{ "type": "text", "text": text }], "isError": false })),
                 Some(Err(e)) => ok(id, json!({ "content": [{ "type": "text", "text": e }], "isError": true })),
                 None => error(id, -32602, &format!("no tool called `{name}`")),
@@ -162,7 +165,7 @@ fn tools() -> Value {
         },
         {
             "name": "route",
-            "description": "What one route does, step by step in call order: each step's parameters, what it hands on, what it changes (↻), and what it reads, writes or prints. Alternatives share a number, lettered by branch (4.1a | 4.1b).",
+            "description": "What one route does, step by step in call order: each step's parameters, what it hands on, what it changes (↻), and what it reads, writes or prints. Alternatives share a number, lettered by branch (4.1a | 4.1b; past z: 4.1aa), and the overrides of a lettered step after a dash (2a-a).",
             "inputSchema": { "type": "object", "properties": {
                 "path": path,
                 "entry": { "type": "string", "description": "An entry's label or id, from `routes`." },
@@ -412,7 +415,7 @@ fn call(name: &str, args: &Value, opts: &Options) -> Option<Result<String, Strin
             };
             let vision = crate::shared::Vision { title: text("title").unwrap_or("a vision").to_string(), files };
             let before = atlas_engine::parts::analyze_parts(&[repo.clone()], opts);
-            let after = atlas_engine::changes::envisioned(&repo, &vision.files, opts);
+            let after = atlas_engine::changes::envisioned(&repo, &vision.files, opts).map(|v| v.parts);
             match (before, after) {
                 (Ok(before), Ok(after)) => crate::shared::envision(&repo, &vision).map_err(|e| format!("Could not keep the vision: {e}")).map(|_| {
                     let c = atlas_engine::changes::between("working tree", Some("vision"), &before, &after);
@@ -471,20 +474,22 @@ fn call(name: &str, args: &Value, opts: &Options) -> Option<Result<String, Strin
         },
         "notes" => {
             let repo = here(text("path"));
-            crate::shared::read_open(&repo).map(|ns| notes(&repo, &ns)).map_err(|e| format!("Could not read the notes: {e}"))
+            crate::shared::read_notes(&repo).map(|ns| notes(&repo, &ns)).map_err(|e| format!("Could not read the notes: {e:#}"))
         }
-        "resolve" => match args.get("id").and_then(Value::as_u64) {
+        "resolve" => match args.get("id").and_then(Value::as_u64).and_then(|id| u32::try_from(id).ok()) {
             Some(id) => {
                 let given = |k: &str| text(k).map(str::trim).filter(|v| !v.is_empty()).map(str::to_string);
-                crate::shared::resolve(&here(text("path")), id as u32, given("commit"), given("issue"))
+                crate::shared::resolve(&here(text("path")), id, given("commit"), given("issue"))
                     .map_err(|e| format!("Could not resolve note {id}: {e}"))
                     .and_then(|n| {
                         n.map(|n| format!("Note {} on {} is resolved; the page marks it so while it is served. Tell the person you work with what you did.", n.id, n.label))
                             .ok_or_else(|| format!("No note {id}; `notes` lists them."))
                     })
             }
-            None => Err("`resolve` takes a note's `id`, and the `commit` and `issue`, if any.".into()),
+            None => Err("`resolve` takes a note's `id`, a number from `notes`, and the `commit` and `issue`, if any.".into()),
         },
+        #[cfg(test)]
+        "panic" => panic!("a tool made to panic"),
         "choices" => graph(text("path"), opts).and_then(|g| {
             let entry = text("entry").unwrap_or("");
             story::choices(&g, entry).ok_or_else(|| format!("No route `{entry}` in {}; `routes` lists them.", g.root))
@@ -562,9 +567,11 @@ fn shown(repo: &std::path::Path) -> String {
 
 /// The notes an agent has not resolved, each with the link to its place, then those resolved while
 /// the page is served, as text.
-fn notes(repo: &std::path::Path, open: &[crate::shared::Note]) -> String {
+fn notes(repo: &std::path::Path, all: &[crate::shared::Note]) -> String {
+    use crate::shared::State;
     let url = crate::shared::serving(repo);
     let place = |n: &crate::shared::Note| url.as_deref().map_or(String::new(), |u| format!("\n  Its place: {}", crate::shared::link(u, n)));
+    let open: Vec<&crate::shared::Note> = all.iter().filter(|n| n.state != State::Resolved).collect();
     let mut out = if open.is_empty() {
         "No open notes.".to_string()
     } else {
@@ -576,7 +583,7 @@ fn notes(repo: &std::path::Path, open: &[crate::shared::Note]) -> String {
                     n.id,
                     n.label,
                     n.on,
-                    &n.rev[..n.rev.len().min(7)],
+                    crate::shared::short(&n.rev),
                     n.view,
                     lines.join("\n"),
                     place(n)
@@ -585,9 +592,9 @@ fn notes(repo: &std::path::Path, open: &[crate::shared::Note]) -> String {
             .collect::<Vec<_>>()
             .join("\n\n")
     };
-    let resolved: Vec<String> = crate::shared::notes(repo)
-        .into_iter()
-        .filter(|n| n.state == crate::shared::State::Resolved)
+    let resolved: Vec<String> = all
+        .iter()
+        .filter(|n| n.state == State::Resolved)
         .map(|n| format!("  {} on {}: {}", n.id, n.label, n.text.lines().last().unwrap_or("")))
         .collect();
     if !resolved.is_empty() {
@@ -626,4 +633,44 @@ fn ok(id: Value, result: Value) -> Value {
 
 fn error(id: Value, code: i64, message: &str) -> Value {
     json!({ "jsonrpc": "2.0", "id": id, "error": { "code": code, "message": message } })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn called(id: u64, name: &str, args: Value) -> Value {
+        let msg = json!({"jsonrpc": "2.0", "id": id, "method": "tools/call", "params": {"name": name, "arguments": args}});
+        answer(&msg, &Options::default()).expect("a call is answered")
+    }
+
+    /// A tool that panics fails its own call, with what the panic said, as any failed call does
+    /// (`isError`); the server answers the next message as before.
+    #[test]
+    fn a_tool_that_panics_fails_its_call_and_the_server_goes_on() {
+        let reply = called(1, "panic", json!({}));
+        assert_eq!(reply["id"], 1);
+        assert_eq!(reply["result"]["isError"], true, "{reply}");
+        assert!(reply["result"]["content"][0]["text"].as_str().unwrap().contains("a tool made to panic"), "{reply}");
+        let next = called(2, "principles", json!({}));
+        assert_eq!((&next["id"], &next["result"]["isError"]), (&json!(2), &json!(false)), "{next}");
+        let ping = answer(&json!({"jsonrpc": "2.0", "id": 3, "method": "ping"}), &Options::default()).unwrap();
+        assert_eq!(ping["result"], json!({}));
+    }
+
+    /// A note's number is a `u32`: one beyond it names no note, and is refused rather than read as
+    /// another (2³² + 1 as note 1).
+    #[test]
+    fn a_note_number_beyond_u32_is_refused() {
+        let repo = std::env::temp_dir().join(format!("atlas-mcp-{}-beyond", std::process::id()));
+        let _ = std::fs::remove_dir_all(&repo);
+        std::fs::create_dir_all(repo.join(".git")).unwrap();
+        let note: crate::shared::Note = serde_json::from_value(json!({"on": "spots.count", "label": "count", "text": "why?"})).unwrap();
+        let id = crate::shared::add(&repo, note).unwrap().id;
+        let reply = called(1, "resolve", json!({"id": (1u64 << 32) + u64::from(id), "path": repo}));
+        assert_eq!(reply["result"]["isError"], true, "{reply}");
+        let notes = crate::shared::notes(&repo).unwrap();
+        assert_eq!(notes[0].state, crate::shared::State::Open, "note {id} is left as it was");
+        let _ = std::fs::remove_dir_all(&repo);
+    }
 }

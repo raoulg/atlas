@@ -620,6 +620,78 @@ fn lens_what_is_put_comes_back_inside_and_a_key_is_no_put() {
     assert_eq!(lost, ["harvest.store.Day", "harvest.store.Outage"], "the Outage and the Day, not the Reading");
 }
 
+// ---------- a package's exports, as Node resolves them ----------
+
+/// A package of its own, `files` written below a fresh directory, read with `options`, and removed.
+fn package(name: &str, files: &[(&str, String)], options: &Options) -> Graph {
+    let dir = std::env::temp_dir().join(format!("atlas-ts-{name}-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    for (path, text) in files {
+        let file = dir.join(path);
+        std::fs::create_dir_all(file.parent().expect("has a parent")).expect("makes the directory");
+        std::fs::write(file, text).expect("writes the file");
+    }
+    let g = analyze(&dir, options);
+    let _ = std::fs::remove_dir_all(&dir);
+    g.unwrap_or_else(|e| panic!("{name} parses: {e}"))
+}
+
+/// What a package exports is found by Node's rule, for a library and for the program's own package
+/// alike: the conditions of `exports` in the order the package writes them, the first an import of
+/// code meets taken, and `types` never, which names declarations. A library whose `require` build
+/// is written first is read there, and written the other way round at its `import` build; the
+/// program's own package with the same `exports` names the doors of the module it points to the
+/// same way.
+#[test]
+fn doors_a_package_exports_what_its_first_condition_gives() {
+    let read = |name: &str, conditions: &str| {
+        let manifest = |pkg: &str, ext: &str| {
+            let exports = conditions.replace("{ext}", ext);
+            format!("{{ \"name\": \"{pkg}\", \"exports\": {{ \".\": {exports} }} }}")
+        };
+        let files = [
+            ("package.json", manifest("own", "ts")),
+            ("tsconfig.json", "{}".to_string()),
+            ("src/cjs.ts", "import { read } from \"twokit\";\n\nexport function viaCjs(): string {\n  return read();\n}\n".to_string()),
+            ("src/esm.ts", "import { read } from \"twokit\";\n\nexport function viaEsm(): string {\n  return read();\n}\n".to_string()),
+            ("src/types.ts", "export type Text = string;\n".to_string()),
+            ("node_modules/twokit/package.json", manifest("twokit", "js")),
+            ("node_modules/twokit/src/cjs.js", "export function read() {\n  return \"cjs\";\n}\n".to_string()),
+            ("node_modules/twokit/src/esm.js", "export function read() {\n  return \"esm\";\n}\n".to_string()),
+            ("node_modules/twokit/src/types.js", "export function read() {\n  return \"types\";\n}\n".to_string()),
+        ];
+        package(name, &files, &Options { libraries: 1, ..Options::default() })
+    };
+    // which of the library's builds the program's call goes into, and which of its own modules the
+    // package's doors are
+    let resolved = |g: &Graph| {
+        let called: BTreeSet<String> = g
+            .nodes
+            .iter()
+            .filter(|n| !n.library)
+            .flat_map(|n| n.sites.iter().map(|s| s.to.clone()))
+            .filter(|t| t.starts_with("twokit"))
+            .collect();
+        let doors: BTreeSet<String> = g
+            .nodes
+            .iter()
+            .filter(|n| n.entry.as_ref().is_some_and(|e| e.kind == atlas_engine::EntryKind::Export))
+            .map(|n| n.name.clone())
+            .collect();
+        (called, doors)
+    };
+    let require_first = resolved(&read(
+        "exports-require",
+        r#"{ "types": "./src/types.{ext}", "require": "./src/cjs.{ext}", "import": "./src/esm.{ext}" }"#,
+    ));
+    assert_eq!(require_first.0, BTreeSet::from(["twokit.src.cjs.read".to_string()]));
+    assert_eq!(require_first.1, BTreeSet::from(["viaCjs".to_string()]));
+    let import_first =
+        resolved(&read("exports-import", r#"{ "import": "./src/esm.{ext}", "types": "./src/types.{ext}", "require": "./src/cjs.{ext}" }"#));
+    assert_eq!(import_first.0, BTreeSet::from(["twokit.src.esm.read".to_string()]));
+    assert_eq!(import_first.1, BTreeSet::from(["viaEsm".to_string()]));
+}
+
 // ---------- prophecy ----------
 
 /// One side of the prophecy pair (`tests/pairs/prophecy`): a report `Sink` that only writes, and
@@ -709,6 +781,23 @@ fn prophecy_a_decided_vision_is_marked_where_it_is_written() {
     assert_eq!(stands.len(), 3, "the two prophecies of the clean side, and the new one: {stands:?}");
 }
 
+/// A vision is placed by the directory it is read from, so a vision that shares nothing with the
+/// tree is placed as one that does: a package with only its manifests, and a vision that writes its
+/// first module. The file is written at the path the vision names it by, and what it adds is marked.
+#[test]
+fn prophecy_a_vision_of_new_files_only_is_placed_where_it_names_them() {
+    use std::collections::BTreeMap;
+    let copy = common::clean_copy("typescript", "new-files");
+    std::fs::remove_dir_all(copy.join("src")).expect("removes the code");
+    let file = PathBuf::from("src/index.ts");
+    let vision = BTreeMap::from([(file.clone(), Some("export declare class Vault {\n  keep(report: string): void;\n}\n".to_string()))]);
+    let decided = atlas_engine::decide::prophetize(&copy, &vision, &BTreeMap::new(), &Options::default());
+    let _ = std::fs::remove_dir_all(copy.parent().expect("has a parent"));
+    let decided = decided.expect("a vision that only adds new files is decided");
+    assert_eq!(decided.files.keys().collect::<Vec<_>>(), [&file]);
+    assert_eq!(decided.marked, ["archive.Vault"]);
+}
+
 /// A prophecy whose shape waits on an open question is sealed on its issue. The seals come back
 /// as a list with what the host says of each issue (here: one closed, one open), and the one whose
 /// issue is closed can be broken: `sealed=..` leaves its marker and nothing else changes. The
@@ -738,6 +827,31 @@ fn prophecy_a_seal_is_listed_and_broken_when_its_issue_is_closed() {
         "a prophecy that is not sealed has no seal to break"
     );
     let _ = std::fs::remove_dir_all(copy.parent().expect("has a parent"));
+}
+
+/// Breaking a seal changes the bytes of `sealed=..` and of the separator that joins it, and no
+/// other: the file comes back as it was with exactly those bytes taken out, the seal first among
+/// the tag's arguments, last, or alone, in a comment of one line or of several. The file is read
+/// when the seal is broken and the graph may be older: a file emptied or shortened since is an error.
+#[test]
+fn prophecy_breaking_a_seal_changes_its_bytes_and_no_other() {
+    let sealed = "/** Where reports wait. */\n\n/** @prophecy supersedes=archive.Sink sealed=#7 */\nexport declare class Vault {\n  keep(report: string): void;\n}\n\n/** @prophecy sealed=#8 supersedes=archive.Sink */\nexport declare class Crate {\n  pack(report: string): void;\n}\n\n/**\n * Where reports rest.\n * @prophecy sealed=#9\n */\nexport declare class Shelf {\n  rest(report: string): void;\n}\n";
+    let copy = common::clean_copy("typescript", "unseal");
+    let file = copy.join("src/vault.ts");
+    std::fs::write(&file, sealed).expect("writes");
+    let g = analyze(&copy, &Options::default()).expect("reads");
+    let ids = ["archive.vault.Vault", "archive.vault.Crate", "archive.vault.Shelf"].map(String::from);
+    let broken = atlas_engine::decide::unseal(&g, &ids)
+        .unwrap_or_else(|e| panic!("{e}: {:?}", g.nodes.iter().filter(|n| n.prophecy.is_some()).map(|n| &n.id).collect::<Vec<_>>()));
+    let unsealed = sealed.replacen(" sealed=#7", "", 1).replacen("sealed=#8 ", "", 1).replacen(" sealed=#9", "", 1);
+    let text = broken.get(std::path::Path::new("src/vault.ts")).cloned();
+    let changed = ["", "/** Where reports wait. */\n\n"].map(|cut| {
+        std::fs::write(&file, cut).expect("writes");
+        atlas_engine::decide::unseal(&g, &ids).is_err()
+    });
+    let _ = std::fs::remove_dir_all(copy.parent().expect("has a parent"));
+    assert_eq!(text, Some(unsealed));
+    assert_eq!(changed, [true, true], "an emptied file, a shortened one");
 }
 
 fn fits(side: &str) -> Graph {
@@ -1463,6 +1577,69 @@ fn cooperative_super_and_a_call_through_a_prototype_run_one_method() {
         assert_eq!(alternatives, 0, "{side}: {runs:?}");
         assert_eq!(runs.iter().filter(|f| f.starts_with("op:")).collect::<Vec<_>>(), ["op:fetch"], "{side}");
         assert_eq!(runs.contains(&format!("{}.store.Store.get", g.root)), side == "clean", "{side}: {runs:?}");
+    }
+}
+
+// ---------- through: what a call runs is one answer ----------
+
+/// What a call runs is one answer (#263), as in Python: the route's steps, what a parameter holds and what a call hands
+/// on follow the calls the route draws. The through pair (`tests/pairs/through/typescript`) shows a heading read from a
+/// file on a section: the clean `section.show(heading)` may run `Boxed.show` on a boxed section, the shortcut's
+/// `Section.prototype.show.call(section, heading)` runs `Section.show` and no override of it. On each side the call may
+/// run `Boxed.show` exactly where `Boxed.show`'s `heading` holds the heading `report` read and exactly where the call
+/// hands on the error `Boxed.show` throws.
+#[test]
+fn through_a_call_runs_the_same_functions_for_the_route_its_parameters_and_its_errors() {
+    let p = common::pair("through/typescript");
+    for (side, g) in [("clean", &p.clean), ("shortcut", &p.shortcut)] {
+        let [report, show, boxed] = [".report.report", ".sections.Section.show", ".sections.Boxed.show"].map(|f| format!("{}{f}", g.root));
+        let bodies = flow::bodies(g);
+        let call = bodies[&report].steps().into_iter().find(|s| s.to == show).expect("report shows");
+        let runs = call.alts(&bodies).iter().any(|k| flow::split(k).0 == boxed);
+        let holds = node(g, "sections.Boxed.show").uses.iter().any(|u| u.name == "heading");
+        let site = node(g, "report.report").sites.iter().find(|s| s.to == show).unwrap();
+        let hands_on = site.fails.iter().any(|e| e == "ext:javascript.Error");
+        assert_eq!((holds, hands_on), (runs, runs), "{side}: the parameter and the error follow what the call runs");
+        assert_eq!(runs, side == "clean", "{side}");
+    }
+}
+
+// ---------- built: a value built at the call is of its class, a declared one of it or any below ----------
+
+/// A call by name runs, for each class its value may be, the method that class runs along its order (#268), as in
+/// Python: a value built at the call is of the class it builds and none below it, one the code declares of a class may
+/// be of it or of any class below. The built pair (`tests/pairs/built/typescript`) shows a heading on a `Section`
+/// (`report`), a block that shows as any `Block` does, and on a `Block` (`note`); `Boxed`, below `Section`, shows it
+/// boxed. The clean side is handed both, `section: Section` and `block: Block`, so each call may run `Boxed.show`; the
+/// shortcut builds each where it shows it, `new Section().show(heading)` and `new Block().show(heading)`, so neither
+/// does. Each call may run `Boxed.show` exactly where it hands on the error `Boxed.show` throws, and `Boxed.show`'s
+/// `heading` holds a heading exactly where a call may run it (#263).
+#[test]
+fn built_a_value_built_at_the_call_runs_its_class_and_a_declared_one_any_class_below() {
+    let p = common::pair("built/typescript");
+    for (side, g) in [("clean", &p.clean), ("shortcut", &p.shortcut)] {
+        let [show, boxed] = [".sections.Block.show", ".sections.Boxed.show"].map(|f| format!("{}{f}", g.root));
+        let bodies = flow::bodies(g);
+        let mut any = false;
+        for f in ["report.report", "report.note"] {
+            let call = bodies[&format!("{}.{f}", g.root)]
+                .steps()
+                .into_iter()
+                .find(|s| s.to == show)
+                .unwrap_or_else(|| panic!("{side}: {f} shows"));
+            let may: BTreeSet<&str> =
+                std::iter::once(call.to.as_str()).chain(call.alts(&bodies).iter().map(|k| flow::split(k).0)).collect();
+            let runs = may.contains(boxed.as_str());
+            let site = node(g, f).sites.iter().find(|s| s.to == show).unwrap();
+            assert_eq!(site.fails.iter().any(|e| e == "ext:javascript.Error"), runs, "{side} {f}: the error follows what the call runs");
+            assert_eq!(runs, side == "clean", "{side} {f}: {may:?}");
+            any |= runs;
+        }
+        assert_eq!(
+            node(g, "sections.Boxed.show").uses.iter().any(|u| u.name == "heading"),
+            any,
+            "{side}: the parameter follows what the calls run"
+        );
     }
 }
 

@@ -38,7 +38,7 @@ jobs:
       - name: Write the pill
         run: |
           python3 tools/atlas_badge.py site/badge.svg
-          target/release/atlas check --json > findings.json || true
+          target/release/atlas check --json > findings.json || [ $? -eq 1 ]
           python3 tools/atlas_badge.py site/questions.svg findings.json
       - uses: actions/upload-pages-artifact@v5
         with:

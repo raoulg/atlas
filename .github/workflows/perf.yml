@@ -1,0 +1,125 @@
+name: perf
+
+# Every night, how fast `next` builds, reads and tests, measured on one runner type and kept as a series
+# per measure on the branch `perf-data` (`history.jsonl` and a README of charts). The release build is
+# timed clean, with no compile cache; `atlas view` is timed cold and warm on Atlas itself and on the
+# programs `laws.yml` reads, at the same revisions; each test binary is timed on its own. A measure past
+# its baseline on two runs in a row is slower: the run's summary says so and the tracking issue (label
+# `performance`) is opened or commented on. A run that cannot measure fails. Nothing here runs on a push
+# or a pull request. `tools/perf.py` measures and judges; `docs/reference/performance.md` says how.
+
+on:
+  schedule:
+    - cron: "30 4 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write # the series, on perf-data
+  issues: write # the tracking issue
+
+concurrency:
+  group: perf
+  cancel-in-progress: false
+
+jobs:
+  measure:
+    # one runner type, named, so that a new image is a change to this file and not a step in the series
+    runs-on: ubuntu-24.04
+    timeout-minutes: 75
+    env:
+      RUN: ${{ github.workspace }}/run.json
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: next
+          path: atlas
+      - name: the series so far
+        working-directory: atlas
+        run: |
+          if git ls-remote --exit-code --heads origin perf-data >/dev/null; then
+            git fetch --depth 1 origin perf-data
+            git worktree add "$GITHUB_WORKSPACE/data" FETCH_HEAD
+            git -C "$GITHUB_WORKSPACE/data" switch -c perf-data
+          else
+            git worktree add --orphan -b perf-data "$GITHUB_WORKSPACE/data"
+          fi
+      - name: the programs, at the revisions laws.yml reads
+        run: |
+          get() { git init -q "programs/$1" && git -C "programs/$1" fetch -q --depth 1 "https://github.com/raoulg/$1" "$2" && git -C "programs/$1" checkout -q FETCH_HEAD; }
+          get goad_toolkit 929d37cc588b27f599b7fbe2e4f5d9733619f897
+          get vectormesh 201a85048dc872bfc3115d09542529302b45a3ec
+          get pluim a5b8c804da33c93b1e36344072adccc3479b5b24
+          get ordash 1b4942228b1b22a91c065e1093a14a106fab9f2b
+      # engine/tests/plans.rs runs the viewer's model in node
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: astral-sh/setup-uv@v10.3.0
+      - name: the dependencies, fetched before the build is timed
+        working-directory: atlas
+        run: cargo fetch --locked
+      # its own target directory, which no cache restores, and no RUSTC_WRAPPER: every crate compiles
+      - name: the release build, clean
+        working-directory: atlas
+        env:
+          CARGO_TARGET_DIR: ${{ github.workspace }}/clean
+        run: |
+          uv run tools/perf.py time build/release --out "$RUN" -- cargo build --release --locked -p atlas
+          cp "$CARGO_TARGET_DIR/release/atlas" "$RUNNER_TEMP/atlas"
+          rm -rf "$CARGO_TARGET_DIR"
+      - name: the readings, cold and warm
+        working-directory: atlas
+        run: |
+          uv run tools/perf.py read --atlas "$RUNNER_TEMP/atlas" --rounds 3 --out "$RUN" \
+            --subject atlas=. \
+            --subject goad_toolkit=../programs/goad_toolkit \
+            --subject vectormesh=../programs/vectormesh \
+            --subject pluim=../programs/pluim \
+            --subject ordash=../programs/ordash
+      # the test binaries' build is not measured, so it may come from the cache
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: atlas
+      - name: the tests, one binary at a time
+        working-directory: atlas
+        run: uv run tools/perf.py tests --workspace . --out "$RUN"
+      - name: held to the series
+        id: record
+        working-directory: atlas
+        run: |
+          uv run tools/perf.py record --data "$GITHUB_WORKSPACE/data" --run "$RUN" \
+            --commit "$(git rev-parse HEAD)" \
+            --url "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" \
+            --data-url "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/tree/perf-data" \
+            --summary "$GITHUB_STEP_SUMMARY" --alert "$GITHUB_WORKSPACE/alert.md"
+      - name: the series, kept
+        working-directory: data
+        run: |
+          git config user.name "atlas perf"
+          git config user.email "noreply@github.com"
+          git add -A
+          git commit -q -m "perf: next at $(git -C ../atlas rev-parse --short HEAD)"
+          git push origin perf-data
+      - name: the tracking issue
+        if: steps.record.outputs.slower == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TITLE: "Atlas got slower: the nightly measure of next"
+        run: |
+          open=$(gh issue list --repo "$GITHUB_REPOSITORY" --label performance --state open --search "\"$TITLE\" in:title" --json number,title \
+            --jq "map(select(.title == env.TITLE)) | .[0].number // empty")
+          if [ -n "$open" ]; then
+            gh issue comment "$open" --repo "$GITHUB_REPOSITORY" --body-file "$GITHUB_WORKSPACE/alert.md"
+          else
+            gh issue create --repo "$GITHUB_REPOSITORY" --label performance --title "$TITLE" --body-file "$GITHUB_WORKSPACE/alert.md"
+          fi
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: perf
+          path: |
+            run.json
+            alert.md
+            data/README.md
+          if-no-files-found: ignore

@@ -10,10 +10,11 @@
 //! own and renamed into place, so two processes that keep one entry at once leave one whole entry.
 
 use std::collections::hash_map::DefaultHasher;
+use std::collections::BTreeSet;
 use std::hash::Hasher;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use serde::{Deserialize, Serialize};
 
@@ -83,8 +84,11 @@ impl Cache {
     /// Keep `value` of `kind` under `key`: written beside its place and renamed into it.
     pub fn put(&self, kind: &str, key: &str, value: &[u8]) {
         static WRITTEN: AtomicUsize = AtomicUsize::new(0);
-        static SWEPT: std::sync::Once = std::sync::Once::new();
-        SWEPT.call_once(|| self.sweep());
+        // each directory a process keeps entries in is swept once, the first time it keeps one
+        static SWEPT: Mutex<BTreeSet<PathBuf>> = Mutex::new(BTreeSet::new());
+        if SWEPT.lock().is_ok_and(|mut swept| swept.insert(self.dir.clone())) {
+            self.sweep();
+        }
         let file = self.file(kind, key);
         if std::fs::create_dir_all(self.dir.join(kind)).is_err() {
             return;
@@ -371,6 +375,33 @@ mod tests {
         std::fs::write(cache.file("kind", "a"), format!("{}\nother", head("b"))).unwrap();
         assert_eq!(cache.get("kind", "a"), None);
         let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// Contract: every cache directory a process keeps entries in loses the builds with edits
+    /// before its own the first time it keeps one, and only then.
+    #[test]
+    fn each_directory_is_swept_once_per_process() {
+        let base = std::env::temp_dir().join(format!("atlas-cache-sweep-{}", std::process::id()));
+        let roots = [base.join("user"), base.join("workspace")];
+        let stale = |root: &Path| root.join("0-0-0-old-edited-0000000000000000");
+        let caches: Vec<Cache> = roots.iter().map(|r| Cache::at(r, "0.0.0 (abc+)")).collect();
+        for root in &roots {
+            std::fs::create_dir_all(stale(root)).unwrap();
+        }
+        for cache in &caches {
+            cache.put("kind", "a", b"value");
+        }
+        for root in &roots {
+            assert!(!stale(root).exists(), "{} is swept", root.display());
+            std::fs::create_dir_all(stale(root)).unwrap();
+        }
+        for cache in &caches {
+            cache.put("kind", "b", b"value");
+        }
+        for root in &roots {
+            assert!(stale(root).exists(), "{} is swept only once", root.display());
+        }
+        let _ = std::fs::remove_dir_all(&base);
     }
 
     #[test]

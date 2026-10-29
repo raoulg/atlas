@@ -8,15 +8,14 @@
 //! (`changes::parts_at`); the working tree is read anew on every request, since it changes under
 //! the server.
 
-use std::net::{SocketAddr, TcpListener, TcpStream};
+use std::net::{SocketAddr, TcpListener};
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
 
 use anyhow::{Context, Result};
 use atlas_engine::changes::{self, Named};
 use atlas_engine::{Graph, Options};
 
-use crate::http::{reply, request, Answer, Request};
+use crate::http::{self, Answer, Request};
 use crate::page::{Html, Opens, Reading};
 
 /// The page of the history: the commits beside the viewer.
@@ -35,27 +34,17 @@ struct Server {
 pub fn serve(repo: &Path, addr: SocketAddr, opts: &Options, shown: bool) -> Result<()> {
     let listener = TcpListener::bind(addr).with_context(|| format!("serving at {addr}"))?;
     let at = listener.local_addr()?;
-    let server =
-        Arc::new(Server { repo: repo.to_path_buf(), opts: opts.clone(), hosts: vec![at.to_string(), format!("localhost:{}", at.port())] });
+    let server = Server { repo: repo.to_path_buf(), opts: opts.clone(), hosts: vec![at.to_string(), format!("localhost:{}", at.port())] };
     let url = format!("http://{at}/");
     eprintln!("atlas history of {} at {url}", repo.display());
     if shown {
         crate::page::open(url.as_ref());
     }
-    for conn in listener.incoming().flatten() {
-        let server = Arc::clone(&server);
-        std::thread::spawn(move || server.answer(conn));
-    }
+    http::listen(listener, |e| eprintln!("atlas history: {e}"), move |req| server.respond(req));
     Ok(())
 }
 
 impl Server {
-    /// Read one request from `conn` and write its answer.
-    fn answer(&self, conn: TcpStream) -> Result<()> {
-        let req = request(&conn)?;
-        reply(conn, self.respond(&req))
-    }
-
     /// The answer to a request. A request sent to another address (a page of another site that
     /// renamed itself to this machine) is refused.
     fn respond(&self, req: &Request) -> Answer {
@@ -70,7 +59,9 @@ impl Server {
 }
 
 /// The answer to a GET of the history of `repo`: its page at `at`, the commits (`/api/log`), a
-/// viewer page (`/view`); none for any other request.
+/// viewer page (`/view`); none for any other request. A viewer page reads a revision, an analysis,
+/// and is drawn only for the history's own page or its reader (`Request::own`): the frame the page
+/// opens it in, and the link it opens it by, carry the browser's word for it.
 pub fn respond(repo: &Path, opts: &Options, req: &Request, at: &str) -> Option<Answer> {
     if req.method != "GET" {
         return None;
@@ -80,6 +71,7 @@ pub fn respond(repo: &Path, opts: &Options, req: &Request, at: &str) -> Option<A
             Answer::page(PAGE.replacen("/*__FONTS__*/", crate::page::FONTS, 1).replacen("/*__PALETTE__*/", crate::page::PALETTE, 1))
         }
         "/api/log" => log(repo, req).map_or_else(Answer::failed, Answer::json),
+        "/view" if !req.own => Answer::text("403 Forbidden", "a revision is drawn for the history's own page only".into()),
         "/view" => view(repo, opts, req).map_or_else(Answer::failed, Answer::page),
         _ => return None,
     })

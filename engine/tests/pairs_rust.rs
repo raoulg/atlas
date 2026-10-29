@@ -779,6 +779,26 @@ fn prophecy_a_decided_vision_is_marked_where_it_is_written() {
     assert_eq!(stands.len(), 3, "the two prophecies of the clean side, and the new one: {stands:?}");
 }
 
+/// A vision is placed by the directory it is read from, so a vision that shares nothing with the
+/// tree is placed as one that does: a crate with only its manifest, and a vision that writes its
+/// first file. The file is written at the path the vision names it by, and what it adds is marked.
+#[test]
+fn prophecy_a_vision_of_new_files_only_is_placed_where_it_names_them() {
+    use std::collections::BTreeMap;
+    let copy = common::clean_copy("rust", "new-files");
+    std::fs::remove_dir_all(copy.join("src")).expect("removes the code");
+    let file = PathBuf::from("src/lib.rs");
+    let vision = BTreeMap::from([(
+        file.clone(),
+        Some("pub struct Vault;\n\nimpl Vault {\n    pub fn keep(&self, _report: &str) {\n        todo!()\n    }\n}\n".to_string()),
+    )]);
+    let decided = atlas_engine::decide::prophetize(&copy, &vision, &BTreeMap::new(), &Options::default());
+    let _ = std::fs::remove_dir_all(copy.parent().expect("has a parent"));
+    let decided = decided.expect("a vision that only adds new files is decided");
+    assert_eq!(decided.files.keys().collect::<Vec<_>>(), [&file]);
+    assert_eq!(decided.marked, ["archive.Vault"]);
+}
+
 /// A prophecy whose shape waits on an open question is sealed on its issue. The seals come back
 /// as a list with what the host says of each issue (here: one closed, one open), and the one whose
 /// issue is closed can be broken: `sealed=..` leaves its marker and nothing else changes. The
@@ -808,6 +828,32 @@ fn prophecy_a_seal_is_listed_and_broken_when_its_issue_is_closed() {
         "a prophecy that is not sealed has no seal to break"
     );
     let _ = std::fs::remove_dir_all(copy.parent().expect("has a parent"));
+}
+
+/// Breaking a seal changes the bytes of `sealed=..` and of the separator that joins it, and no
+/// other: the file comes back as it was with exactly those bytes taken out, the seal first among
+/// the attribute's arguments, last, or alone. The file is read when the seal is broken and the
+/// graph may be older: a file emptied or shortened since is an error.
+#[test]
+fn prophecy_breaking_a_seal_changes_its_bytes_and_no_other() {
+    let sealed = "//! Where reports wait.\n\n#[doc = \"prophecy: supersedes=archive.Sink sealed=#7\"]\npub struct Vault;\n\n#[doc = \"prophecy: sealed=#8 supersedes=archive.Sink\"]\npub struct Crate;\n\n#[doc = \"prophecy: sealed=#9\"]\npub struct Shelf;\n";
+    let copy = common::clean_copy("rust", "unseal");
+    let lib = std::fs::read_to_string(copy.join("src/lib.rs")).expect("reads");
+    std::fs::write(copy.join("src/lib.rs"), format!("{lib}\npub mod vault;\n")).expect("writes");
+    let file = copy.join("src/vault.rs");
+    std::fs::write(&file, sealed).expect("writes");
+    let g = analyze(&copy, &Options::default()).expect("reads");
+    let ids = ["archive.vault.Vault", "archive.vault.Crate", "archive.vault.Shelf"].map(String::from);
+    let broken = atlas_engine::decide::unseal(&g, &ids).expect("the seals are broken");
+    let unsealed = sealed.replacen(" sealed=#7", "", 1).replacen("sealed=#8 ", "", 1).replacen(" sealed=#9", "", 1);
+    let text = broken.get(std::path::Path::new("src/vault.rs")).cloned();
+    let changed = ["", "//! Where reports wait.\n\n"].map(|cut| {
+        std::fs::write(&file, cut).expect("writes");
+        atlas_engine::decide::unseal(&g, &ids).is_err()
+    });
+    let _ = std::fs::remove_dir_all(copy.parent().expect("has a parent"));
+    assert_eq!(text, Some(unsealed));
+    assert_eq!(changed, [true, true], "an emptied file, a shortened one");
 }
 
 fn fits(side: &str) -> Graph {
@@ -1379,6 +1425,29 @@ fn composition_a_method_called_by_its_path_runs_on_its_first_argument() {
     assert_eq!(to("sources.plain"), [("sources.Source.read".to_string(), "sources.Plain".to_string())]);
     assert_eq!(to("sources.trimmed"), [("sources.Trimmed.read".to_string(), String::new())]);
     assert_eq!(to("sources.any"), [("sources.Source.read".to_string(), String::new())]);
+}
+
+/// A call by name runs, for each type its value may be, the method that type runs (#268), as in Python and TypeScript:
+/// a value of a struct is of that struct, built at the call or declared, since no type is below a struct; one the code
+/// declares of a trait (`&dyn Block`) may be of any type that implements it. The built pair (`tests/pairs/built/rust`)
+/// shows a heading on a block: the clean side is handed a `&dyn Block`, so `block.show(..)` may run `Boxed.show`; the
+/// shortcut builds a `Plain` where it shows it, which runs the trait's own `show` alone. `Boxed.show`'s `heading` holds
+/// the heading exactly where the call may run it (#263).
+#[test]
+fn built_a_value_of_a_struct_runs_its_type_and_one_of_a_trait_any_type_below() {
+    for side in ["clean", "shortcut"] {
+        let g = analyze(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/pairs/built/rust").join(side), &Options::default())
+            .expect("reads");
+        let bodies = atlas_engine::flow::bodies(&g);
+        let call = bodies["notes.report"].steps().into_iter().find(|s| s.to == "notes.Block.show").expect("report shows");
+        let runs = call.alts(&bodies).iter().any(|k| atlas_engine::flow::split(k).0 == "notes.Boxed.show");
+        assert_eq!(runs, side == "clean", "{side}");
+        assert_eq!(
+            node(&g, "notes.Boxed.show").uses.iter().any(|u| u.name == "heading"),
+            runs,
+            "{side}: the parameter follows what the call runs"
+        );
+    }
 }
 
 /// A version of the sunspots pipeline (`tests/pairs/pipeline`).

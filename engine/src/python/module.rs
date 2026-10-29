@@ -7,6 +7,10 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
 use indexmap::IndexMap;
+use ruff_python_ast::visitor::{self, Visitor};
+use ruff_python_ast::{self as ast};
+use ruff_python_parser::{Mode, ParseOptions};
+use ruff_text_size::{Ranged, TextRange};
 use tree_sitter::{Node as TsNode, Parser, Tree};
 
 use crate::builder::{Declared, SigInfo};
@@ -441,22 +445,65 @@ pub(super) fn load_module(parser: &mut Parser, id: &str, path: &Path, is_pkg: bo
 
 /// A notebook as the script it runs: its code cells in order, joined as ruff and ty join them,
 /// so that a position in it is the same for both trees (a cell that starts with a cell magic
-/// is left out, as ty leaves it out). A line for IPython (`%matplotlib`, `!pip install`) becomes
-/// a comment of the same length, so the rest still parses as Python.
+/// is left out, as ty leaves it out). What ruff parses as an IPython escape command
+/// (`%matplotlib inline`, `!pip install ..`, `files = !ls`) is blanked, so the rest parses as
+/// Python: a statement becomes a comment of the same length, a value `...` of the same length. A
+/// line that only starts with `%` or `!` inside an expression (`    % len(rows)`, where Black wraps
+/// before an operator) is Python and stays.
 fn notebook_source(text: &str) -> Result<String> {
     let nb = ruff_notebook::Notebook::from_source_code(text).map_err(|e| anyhow::anyhow!("{e}"))?;
-    let lines: Vec<String> = nb
-        .source_code()
-        .split_inclusive('\n')
-        .map(|l| {
-            let indent = l.len() - l.trim_start().len();
-            match l[indent..].starts_with(['%', '!']) {
-                true => format!("{}#{}", &l[..indent], &l[indent + 1..]),
-                false => l.to_string(),
-            }
-        })
-        .collect();
-    Ok(lines.concat())
+    let source = nb.source_code();
+    let parsed = ruff_python_parser::parse_cells_unchecked(source, nb.cell_offsets().content_ranges(), &ParseOptions::from(Mode::Ipython));
+    let mut escapes = Escapes::default();
+    escapes.visit_body(parsed.suite());
+    let mut bytes = source.as_bytes().to_vec();
+    for (range, statement) in escapes.found {
+        blank(&mut bytes[range.start().to_usize()..range.end().to_usize()], statement);
+    }
+    Ok(String::from_utf8_lossy(&bytes).into_owned())
+}
+
+/// Blank an IPython escape command in place, byte for byte, each of its lines on its own: a
+/// statement as a comment that keeps its text, a value as `...` padded with spaces (`0` where it
+/// is shorter than that).
+fn blank(command: &mut [u8], statement: bool) {
+    for (i, line) in command.split_inclusive_mut(|b| *b == b'\n').enumerate() {
+        let end = line.len() - usize::from(line.last() == Some(&b'\n'));
+        if statement && end > 0 && line[0].is_ascii() {
+            line[0] = b'#';
+            continue;
+        }
+        line[..end].fill(b' ');
+        let value: &[u8] = match (statement, i, end) {
+            (false, 0, 3..) => b"...",
+            (false, 0, 1..) => b"0",
+            _ => b"",
+        };
+        line[..value.len()].copy_from_slice(value);
+    }
+}
+
+/// The IPython escape commands of a notebook's cells, each by its range and whether it is a
+/// statement of its own.
+#[derive(Default)]
+struct Escapes {
+    found: Vec<(TextRange, bool)>,
+}
+
+impl<'a> Visitor<'a> for Escapes {
+    fn visit_stmt(&mut self, stmt: &'a ast::Stmt) {
+        match stmt {
+            ast::Stmt::IpyEscapeCommand(c) => self.found.push((c.range(), true)),
+            _ => visitor::walk_stmt(self, stmt),
+        }
+    }
+
+    fn visit_expr(&mut self, expr: &'a ast::Expr) {
+        match expr {
+            ast::Expr::IpyEscapeCommand(c) => self.found.push((c.range(), false)),
+            _ => visitor::walk_expr(self, expr),
+        }
+    }
 }
 
 /// `if __name__ == "__main__":` at a module's top level: where the module runs as a program, its

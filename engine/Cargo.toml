@@ -32,6 +32,7 @@ ty_vendored = "=0.0.17"
 ruff_db = { version = "=0.0.17", features = ["os"] }
 ruff_python_ast = "=0.0.17"
 ruff_notebook = "=0.0.17"
+ruff_python_parser = "=0.0.17"
 ruff_text_size = "=0.0.17"
 salsa = { version = "0.28.5", features = ["compact_str", "macros", "salsa_unstable", "inventory"] }
 

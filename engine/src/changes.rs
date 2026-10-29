@@ -735,11 +735,21 @@ fn located(repo: &Path) -> Result<(PathBuf, PathBuf, std::ffi::OsString)> {
     Ok((top, rel, name))
 }
 
+/// A vision as it is read: its parts, and the directory they were read from, the copy's place for
+/// the directory the vision was asked for, where the vision's paths start. The copy is gone once it
+/// is read; `dir` names where its files lay, so an item of the vision is placed by the path of its
+/// file from `dir`.
+#[derive(Debug)]
+pub struct Envisioned {
+    pub parts: Vec<Graph>,
+    pub dir: PathBuf,
+}
+
 /// A vision: the working tree of `repo` with `files` written otherwise, each path from the
 /// repository's root given whole or, where it is none, removed. It is read as a revision is, from a
 /// directory of its own under the same name, so the graph's names agree with the working tree's; a
 /// vision is sketch code, which has to parse, not to build.
-pub fn envisioned(repo: &Path, files: &BTreeMap<PathBuf, Option<String>>, opts: &crate::Options) -> Result<Vec<Graph>> {
+pub fn envisioned(repo: &Path, files: &BTreeMap<PathBuf, Option<String>>, opts: &crate::Options) -> Result<Envisioned> {
     for rel in files.keys() {
         if rel.is_absolute() || rel.components().any(|c| !matches!(c, std::path::Component::Normal(_))) {
             bail!("a vision names files from the repository's root, inside it: {}", rel.display());
@@ -775,7 +785,9 @@ pub fn envisioned(repo: &Path, files: &BTreeMap<PathBuf, Option<String>>, opts: 
             tmp.link(&beside, Path::new(name));
         }
     }
-    crate::parts::analyze_parts(&[tmp.root.join(&laid).join(&inner)], opts)
+    // read where the file system resolves it, so that every item's file starts with `dir`
+    let dir = Repo::real(&tmp.root.join(&laid).join(&inner));
+    Ok(Envisioned { parts: crate::parts::analyze_parts(&[dir.clone()], opts)?, dir })
 }
 
 /// The repository as it was at `rev`, written to a `Tmp` of its own under the same name, so the

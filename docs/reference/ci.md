@@ -199,8 +199,10 @@ without a `pyproject.toml` fails.
 ### Checks on a pull request
 
 The same install gives a job that runs `atlas check` on every pull request. Its findings are
-questions for the review, not a gate: `atlas check` exits with 1 when it has something to ask, and
-`continue-on-error` keeps that from failing the pull request, so the findings stand in the job's log:
+questions for the review, not a gate. `atlas check` exits with 0 when it has nothing to ask, 1 when
+it has something, and 2 when it could not read the repository; the step lets 1 pass, so the findings
+stand in the job's log, and fails on 2, so a check that did not run is never read as one that found
+nothing:
 
 ```yaml
 on:
@@ -217,8 +219,7 @@ jobs:
         run: |
           curl -fsSL https://raw.githubusercontent.com/raoulg/atlas/main/install.sh | sh
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
-      - run: atlas check
-        continue-on-error: true
+      - run: atlas check || [ $? -eq 1 ]
       - name: Draw what the pull request changed
         if: always()
         run: atlas view --no-open --out changes/index.html --since origin/${{ github.base_ref }}

@@ -777,6 +777,244 @@ fn a_place_carries_a_what_a_key_no_code_decides_is_one_of_a_mappings_values() {
     assert!(written.is_subset(&every), "{written:?} in {every:?}");
 }
 
+// ---------- through: what a call runs is one answer ----------
+
+/// The through pair (`tests/pairs/through/python`): `report` reads a heading from a file and shows it on a section, a
+/// `Boxed` section among them. The clean side calls `section.show(heading)`, which on a boxed section runs `Boxed.show`;
+/// the shortcut calls `Section.show(section, heading)`, a call through a class, which runs `Section.show` and no override
+/// of it (`mathematics.md`, "Method resolution order"), so a boxed section is never shown boxed.
+fn through() -> &'static Pair {
+    static PAIR: OnceLock<Pair> = OnceLock::new();
+    PAIR.get_or_init(|| common::pair("through/python"))
+}
+
+/// What a call runs is one answer (#263): the route's steps, what a parameter holds and what a call hands on all ask
+/// which functions a call may run, and each follows the calls the route draws. On each side the test computes the three
+/// and compares them: the call of `report` may run `Boxed.show` in its place exactly where `Boxed.show`'s `heading`
+/// holds the heading `report` read (the body reads it, and tests it) and exactly where the call hands on the error
+/// `Boxed.show` raises. The clean side's dispatch runs the override, the shortcut's call through the class does not, and
+/// a parameter only that call fills holds no value.
+#[test]
+fn through_a_call_runs_the_same_functions_for_the_route_its_parameters_and_its_errors() {
+    let boxed = "notes.sections.Boxed.show";
+    for (side, g) in [("clean", &through().clean), ("shortcut", &through().shortcut)] {
+        let bodies = flow::bodies(g);
+        let call = bodies["notes.report.report"].steps().into_iter().find(|s| s.to == "notes.sections.Section.show").expect("report shows");
+        let runs = call.alts(&bodies).iter().any(|k| flow::split(k).0 == boxed);
+        let holds = g.node(boxed).unwrap().uses.iter().any(|u| u.name == "heading");
+        let site = g.node("notes.report.report").unwrap().sites.iter().find(|s| s.to == "notes.sections.Section.show").unwrap();
+        let hands_on = site.fails.iter().any(|e| e == "ext:builtins.ValueError");
+        assert_eq!((holds, hands_on), (runs, runs), "{side}: the parameter and the error follow what the call runs");
+        assert_eq!(runs, side == "clean", "{side}");
+    }
+}
+
+// ---------- built: a value built at the call is of its class, a declared one of it or any below ----------
+
+/// The built pair (`tests/pairs/built/python`): `report` shows a heading on a `Section`, a block that shows as any
+/// `Block` does, and `note` on a `Block`; `Boxed`, below `Section`, shows it boxed. The clean side is handed the section
+/// and the block, of the classes their parameters declare or any below; the shortcut builds each where it shows it,
+/// `Section().show(heading)` and `Block().show(heading)`, so neither is ever boxed.
+fn built() -> &'static Pair {
+    static PAIR: OnceLock<Pair> = OnceLock::new();
+    PAIR.get_or_init(|| common::pair("built/python"))
+}
+
+/// A call by name runs, for each class its value may be, the method that class runs along its order (`mathematics.md`,
+/// "Method resolution order", #268): a value built at the call is of the class it builds and none below it, a value the
+/// code declares of a class may be of it or of any class below. So a declared `Section` may run `Boxed.show` though
+/// `Section` runs `Block.show`, and a built `Block` runs `Block.show` alone though `Boxed` overrides it. Each call of
+/// `show` may run `Boxed.show` exactly where it hands on the error `Boxed.show` raises, and `Boxed.show`'s `heading`
+/// holds a heading exactly where a call may run it (#263).
+#[test]
+fn built_a_value_built_at_the_call_runs_its_class_and_a_declared_one_any_class_below() {
+    let [show, boxed] = ["notes.sections.Block.show", "notes.sections.Boxed.show"];
+    for (side, g) in [("clean", &built().clean), ("shortcut", &built().shortcut)] {
+        let bodies = flow::bodies(g);
+        let mut any = false;
+        for f in ["notes.report.report", "notes.report.note"] {
+            let call = bodies[f].steps().into_iter().find(|s| s.to == show).unwrap_or_else(|| panic!("{side}: {f} shows"));
+            let may: BTreeSet<&str> =
+                std::iter::once(call.to.as_str()).chain(call.alts(&bodies).iter().map(|k| flow::split(k).0)).collect();
+            let runs = may.contains(boxed);
+            let site = g.node(f).unwrap().sites.iter().find(|s| s.to == show).unwrap();
+            assert_eq!(site.fails.iter().any(|e| e == "ext:builtins.ValueError"), runs, "{side} {f}: the error follows what the call runs");
+            assert_eq!(runs, side == "clean", "{side} {f}: {may:?}");
+            any |= runs;
+        }
+        assert_eq!(
+            g.node(boxed).unwrap().uses.iter().any(|u| u.name == "heading"),
+            any,
+            "{side}: the parameter follows what the calls run"
+        );
+    }
+}
+
+// ---------- a library's facts hold where ty finds that library ----------
+
+/// The files `id` touches, each by its kind and the term its path is (`~/data/{name}`).
+fn terms(g: &Graph, id: &str) -> BTreeSet<(String, String)> {
+    let n = g.node(id).unwrap_or_else(|| panic!("{id} is in the graph"));
+    n.touches.iter().filter(|t| t.kind_name() != "screen").map(|t| (t.kind_name().to_string(), t.what.clone())).collect()
+}
+
+/// A subject of its own, `files` written below a fresh directory, read, and removed.
+fn subject(name: &str, files: &[(&str, &str)]) -> Graph {
+    let root = std::env::temp_dir().join(format!("atlas-python-{name}-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&root);
+    for (path, text) in files {
+        let file = root.join(path);
+        std::fs::create_dir_all(file.parent().expect("has a parent")).expect("makes the directory");
+        std::fs::write(file, text).expect("writes the file");
+    }
+    let g = analyze(&root, &Options::default());
+    let _ = std::fs::remove_dir_all(&root);
+    g.unwrap_or_else(|e| panic!("{name} reads: {e}"))
+}
+
+/// A path method holds where ty finds the call goes into the path's library
+/// (`knowledge::PYTHON_PATH_METHODS`), never by its name alone. The receivers pair
+/// (`tests/pairs/receivers/python`) finds a data file below the directory `data_dir()` gives and
+/// writes its count beside it. The clean side annotates `data_dir() -> Path`, so `joinpath` and
+/// `with_suffix` are pathlib's and the places are the terms the code builds. The shortcut leaves the
+/// annotations out: ty does not know what `data_dir()` gives, so nothing says `.joinpath(name)` is a
+/// path's, and the place stays a hole by the name the code gives it rather than a guess. The calls
+/// that open the files are in both graphs.
+#[test]
+fn places_a_path_method_holds_where_ty_finds_a_path() {
+    let p = common::pair("receivers/python");
+    let summarise = "shelf.summary.summarise";
+    let clean = terms(&p.clean, summarise);
+    for (kind, what) in [
+        ("disk_read", "~/data/{name}"),
+        ("disk_read", "{$SHELF_DATA}/{name}"),
+        ("disk_write", "~/data/{name}.count"),
+        ("disk_write", "{$SHELF_DATA}/{name}.count"),
+    ] {
+        assert!(clean.contains(&(kind.to_string(), what.to_string())), "{kind} {what} in {clean:?}");
+    }
+    let shortcut = terms(&p.shortcut, summarise);
+    assert!(shortcut.iter().any(|(k, _)| k == "disk_read") && shortcut.iter().any(|(k, _)| k == "disk_write"), "{shortcut:?}");
+    assert!(shortcut.iter().all(|(_, what)| !what.contains("data")), "no place is guessed from a method's name: {shortcut:?}");
+}
+
+/// A path's attribute holds where ty finds the attribute is the path library's
+/// (`knowledge::PYTHON_PATH_ATTRIBUTES`), never by its name alone. In the receivers pair, `log`
+/// appends to a log in the directory above the data file it is handed (`source.parent`), and
+/// `shelved` opens the file an `Entry` names by the shelf it stands on and its name there
+/// (`entry.parent`, `entry.name`): the project's own fields, named as pathlib's attributes are. The
+/// clean side annotates `source: Path`, so its `parent` is the directory above the file; the shortcut
+/// leaves it out, ty does not know what `source` is, and the directory stays a hole by the name the
+/// code gives it rather than a guess. On both sides the entry's `parent` is its field, never the
+/// directory above the entry.
+#[test]
+fn places_a_path_attribute_holds_where_ty_finds_a_path() {
+    let p = common::pair("receivers/python");
+    let clean = terms(&p.clean, "shelf.summary.log");
+    assert!(clean.contains(&("disk_write".to_string(), "{source}/../shelf.log".to_string())), "{clean:?}");
+    let shortcut = terms(&p.shortcut, "shelf.summary.log");
+    assert!(shortcut.iter().any(|(k, _)| k == "disk_write"), "{shortcut:?}");
+    assert!(
+        shortcut.iter().all(|(_, what)| !what.contains("{source}/..")),
+        "no directory is guessed from an attribute's name: {shortcut:?}"
+    );
+    for (side, g) in [("clean", &p.clean), ("shortcut", &p.shortcut)] {
+        let shelved = terms(g, "shelf.summary.shelved");
+        assert!(shelved.iter().any(|(k, _)| k == "disk_read"), "{side}: {shelved:?}");
+        assert!(shelved.iter().all(|(_, what)| !what.contains("..")), "{side}: a field named `parent` is no directory up: {shelved:?}");
+    }
+}
+
+/// A class and the attributes of the project's own are the project's, whatever their names: a
+/// dataclass named as pathlib's class, with fields named as its attributes (`Path`, `parent`,
+/// `name`, `parents`), reads what the same dataclass with other names reads, and nothing it reads is
+/// a directory above another.
+#[test]
+fn places_a_project_attribute_named_as_a_librarys_is_the_projects() {
+    let stop = |class: &str, before: &str, name: &str, ancestors: &str| {
+        format!(
+            "from dataclasses import dataclass\n\n\n@dataclass(frozen=True)\nclass {class}:\n    {before}: str\n    {name}: str\n    {ancestors}: list[str]\n\n\ndef run(stop: {class}) -> None:\n    print(open({class}(stop.{before}, \"index.html\", []).{name}).read())\n    print(open(stop.{before} + \"/\" + stop.{name}).read())\n    print(open(stop.{ancestors}[1] + \"/index.html\").read())\n"
+        )
+    };
+    let named = terms(&program("own-path", &stop("Path", "parent", "name", "parents")), "demo.core.run");
+    let other = terms(&program("own-stop", &stop("Stop", "before", "label", "earlier")), "demo.core.run");
+    // the same terms, holes named by the fields the code writes
+    let renamed: BTreeSet<(String, String)> = other
+        .into_iter()
+        .map(|(k, what)| (k, what.replace("{before}", "{parent}").replace("{earlier}", "{parents}").replace("{label}", "{name}")))
+        .collect();
+    assert_eq!(named, renamed);
+    assert!(named.iter().all(|(_, what)| !what.contains("..")), "{named:?}");
+}
+
+/// A method of the project's own is the project's, whatever its name: a class whose methods are
+/// named as pathlib's (`home`, `with_name`) reads what a class with other names for the same
+/// methods reads, and neither is the user's home.
+#[test]
+fn places_a_project_method_named_as_a_librarys_is_the_projects() {
+    let site = |home: &str, sibling: &str| {
+        format!(
+            "class Site:\n    def {home}(self) -> str:\n        return \"index.html\"\n\n    def {sibling}(self, name: str) -> str:\n        return \"pages/\" + name\n\n\ndef run(site: Site) -> None:\n    print(open(site.{home}()).read())\n    print(open(site.{sibling}(\"about.html\")).read())\n"
+        )
+    };
+    let named = terms(&program("own-named", &site("home", "with_name")), "demo.core.run");
+    let other = terms(&program("own-other", &site("index", "page")), "demo.core.run");
+    // the same term, a hole named by the call the code writes
+    let renamed: BTreeSet<(String, String)> =
+        other.into_iter().map(|(k, what)| (k, what.replace(".index(", ".home(").replace(".page(", ".with_name("))).collect();
+    assert_eq!(named, renamed);
+    assert!(named.iter().all(|(_, what)| !what.starts_with('~')), "{named:?}");
+}
+
+/// A notebook reads as the script its code cells make, its IPython escape commands aside
+/// (`%matplotlib`, `!pip`): only what ruff parses as an escape command is blanked. A line Black wraps
+/// before a binary operator (`    % len(..)`, `    != ..`) is Python, and the notebook reads the files
+/// the same code reads as a script.
+#[test]
+fn a_notebook_reads_as_the_script_its_cells_make() {
+    let code = "report = (\n    \"rows: %d\"\n    % len(open(\"data/rows.csv\").read().splitlines())\n)\nchanged = (\n    open(\"data/old.csv\").read()\n    != open(\"data/new.csv\").read()\n)\nprint(report, changed)\n";
+    let cell = |source: &str| {
+        let lines: Vec<String> = source.split_inclusive('\n').map(|l| serde_json::to_string(l).expect("a string")).collect();
+        format!(
+            "{{\"cell_type\": \"code\", \"execution_count\": null, \"metadata\": {{}}, \"outputs\": [], \"source\": [{}]}}",
+            lines.join(", ")
+        )
+    };
+    let notebook = format!(
+        "{{\"cells\": [{}, {}], \"metadata\": {{}}, \"nbformat\": 4, \"nbformat_minor\": 5}}",
+        cell("%matplotlib inline\n!pip install rows\n"),
+        cell(code)
+    );
+    let manifest = "[project]\nname = \"rows\"\nversion = \"0\"\n";
+    let g = subject(
+        "notebook-escapes",
+        &[("pyproject.toml", manifest), ("src/rows/__init__.py", ""), ("notebooks/report.ipynb", &notebook), ("scripts/report.py", code)],
+    );
+    let (as_notebook, as_script) = (terms(&g, "notebooks.report"), terms(&g, "scripts.report"));
+    assert_eq!(as_notebook, as_script);
+    for file in ["data/rows.csv", "data/old.csv", "data/new.csv"] {
+        assert!(as_notebook.contains(&("disk_read".to_string(), file.to_string())), "{file} in {as_notebook:?}");
+    }
+}
+
+/// A script or a notebook that does not load is left out with a warning, and the rest of the
+/// subject is read as it is without it: a notebook whose JSON does not parse fails nothing.
+#[test]
+fn a_notebook_that_does_not_load_is_left_out() {
+    let files = [
+        ("pyproject.toml", "[project]\nname = \"rows\"\nversion = \"0\"\n"),
+        ("src/rows/__init__.py", "def count(path: str) -> int:\n    return len(open(path).read().splitlines())\n"),
+        ("scripts/run.py", "from rows import count\n\nprint(count(\"data/rows.csv\"))\n"),
+    ];
+    let ids = |g: &Graph| g.nodes.iter().map(|n| n.id.clone()).collect::<BTreeSet<_>>();
+    let without = subject("notebook-without", &files);
+    let mut broken = files.to_vec();
+    broken.push(("notebooks/broken.ipynb", "{\"cells\": [ not json"));
+    let with = subject("notebook-broken", &broken);
+    assert_eq!(ids(&with), ids(&without));
+    assert_eq!(terms(&with, "scripts.run"), terms(&without, "scripts.run"));
+}
+
 // ---------- prophecy ----------
 
 /// One side of the prophecy pair (`tests/pairs/prophecy`): a report `Sink` that only writes, and
@@ -890,7 +1128,7 @@ fn prophecy_draws_the_shape_of_its_vision() {
             .map(|e| e.dst.clone())
             .collect()
     };
-    let envisioned = calls(&atlas_engine::changes::envisioned(&copy, &vision, &Options::default()).expect("reads the vision"));
+    let envisioned = calls(&atlas_engine::changes::envisioned(&copy, &vision, &Options::default()).expect("reads the vision").parts);
     let decided = atlas_engine::decide::prophetize(&copy, &vision, &supersedes, &Options::default()).expect("decided");
     for (rel, t) in &decided.files {
         std::fs::write(copy.join(rel), t).expect("writes the file");
@@ -953,6 +1191,64 @@ fn prophecy_a_vision_that_changes_what_exists_is_refused() {
     assert!(refused.to_string().contains("archive.sink.Sink.write"), "the refusal names what the vision changes: {refused}");
 }
 
+/// A vision's file is the file its path names from the directory the vision is asked for, and no
+/// other: `archive/store/sink.py` holds a `Shelf` and is no part of a vision of `sink.py`, though
+/// both are named `sink.py`. The vision puts a `Vault` above the `Sink` of `archive/sink.py`, and
+/// is decided whether it is asked for the package on its own (its paths are shorter than the
+/// project's) or for a directory the project is a part below (its paths are longer).
+#[test]
+fn prophecy_a_vision_takes_the_file_its_path_names() {
+    use std::collections::BTreeMap;
+    let decide = |name: &str, below: bool| {
+        let copy = common::clean_copy("python", name);
+        std::fs::create_dir_all(copy.join("src/archive/store")).expect("makes the directory");
+        std::fs::write(copy.join("src/archive/store/__init__.py"), "").expect("writes");
+        std::fs::write(
+            copy.join("src/archive/store/sink.py"),
+            "\"\"\"Reports kept on a shelf.\"\"\"\n\n\nclass Shelf:\n    \"\"\"Keeps what it is given.\"\"\"\n\n    def keep(self, report: str, /) -> None:\n        print(report)\n",
+        )
+        .expect("writes");
+        let (asked, file) = match below {
+            false => (copy.join("src/archive"), PathBuf::from("sink.py")),
+            true => {
+                let top = copy.parent().expect("has a parent").join("repository");
+                std::fs::create_dir_all(&top).expect("makes the directory");
+                std::fs::rename(&copy, top.join("py")).expect("moves the project");
+                (top, PathBuf::from("py/src/archive/sink.py"))
+            }
+        };
+        let now = std::fs::read_to_string(asked.join(&file)).expect("reads").replace("\r\n", "\n");
+        let vault = "class Vault:\n    def keep(self, report: str, /) -> None: ...\n\n\n";
+        let vision = BTreeMap::from([(file.clone(), Some(now.replacen("class Sink:", &format!("{vault}class Sink:"), 1)))]);
+        let decided = atlas_engine::decide::prophetize(&asked, &vision, &BTreeMap::new(), &Options::default());
+        let _ = std::fs::remove_dir_all(copy.parent().expect("has a parent"));
+        let decided = decided.unwrap_or_else(|e| panic!("decided, asked for {}: {e}", asked.display()));
+        (decided.files.keys().cloned().collect::<Vec<_>>(), decided.marked, file)
+    };
+    for (name, below) in [("package-alone", false), ("part-below", true)] {
+        let (written, marked, file) = decide(name, below);
+        assert_eq!(written, [file], "{name}");
+        assert_eq!(marked, ["archive.sink.Vault"], "{name}");
+    }
+}
+
+/// A vision is placed by the directory it is read from, so a vision that shares nothing with the
+/// tree is placed as one that does: a project with only its manifest, and a vision that writes its
+/// first module. The file is written at the path the vision names it by, and what it adds is marked.
+#[test]
+fn prophecy_a_vision_of_new_files_only_is_placed_where_it_names_them() {
+    use std::collections::BTreeMap;
+    let copy = common::clean_copy("python", "new-files");
+    std::fs::remove_dir_all(copy.join("src")).expect("removes the code");
+    let file = PathBuf::from("src/archive/vault.py");
+    let vision = BTreeMap::from([(file.clone(), Some("class Vault:\n    def keep(self, report: str, /) -> None: ...\n".to_string()))]);
+    let decided = atlas_engine::decide::prophetize(&copy, &vision, &BTreeMap::new(), &Options::default());
+    let _ = std::fs::remove_dir_all(copy.parent().expect("has a parent"));
+    let decided = decided.expect("a vision that only adds new files is decided");
+    assert_eq!(decided.files.keys().collect::<Vec<_>>(), [&file]);
+    assert_eq!(decided.marked, ["archive.vault.Vault"]);
+}
+
 /// A prophecy whose shape waits on an open question is sealed on its issue. The seals come back
 /// as a list with what the host says of each issue (here: one closed, one open), and the one whose
 /// issue is closed can be broken: `sealed=..` leaves its marker and nothing else changes. The
@@ -982,6 +1278,30 @@ fn prophecy_a_seal_is_listed_and_broken_when_its_issue_is_closed() {
         "a prophecy that is not sealed has no seal to break"
     );
     let _ = std::fs::remove_dir_all(copy.parent().expect("has a parent"));
+}
+
+/// Breaking a seal changes the bytes of `sealed=..` and of the separator that joins it, and no
+/// other: the file comes back as it was with exactly those bytes taken out, the seal first among
+/// the decorator's arguments, last, or alone. The file is read when the seal is broken and the
+/// graph may be older: a file emptied or shortened since is an error.
+#[test]
+fn prophecy_breaking_a_seal_changes_its_bytes_and_no_other() {
+    let sealed = "\"\"\"Where reports wait.\"\"\"\n\nfrom archive import prophecy\n\n\n@prophecy(supersedes=\"archive.sink.Sink\", sealed=\"#7\")\nclass Vault:\n    def keep(self, report: str, /) -> None: ...\n\n\n@prophecy(sealed=\"#8\", supersedes=\"archive.sink.Sink\")\nclass Crate:\n    def pack(self, report: str, /) -> None: ...\n\n\n@prophecy(sealed=\"#9\")\nclass Shelf:\n    def rest(self, report: str, /) -> None: ...\n";
+    let copy = common::clean_copy("python", "unseal");
+    let file = copy.join("src/archive/vault.py");
+    std::fs::write(&file, sealed).expect("writes");
+    let g = analyze(&copy, &Options::default()).expect("reads");
+    let ids = ["archive.vault.Vault", "archive.vault.Crate", "archive.vault.Shelf"].map(String::from);
+    let broken = atlas_engine::decide::unseal(&g, &ids).expect("the seals are broken");
+    let unsealed = sealed.replacen(", sealed=\"#7\"", "", 1).replacen("sealed=\"#8\", ", "", 1).replacen("sealed=\"#9\"", "", 1);
+    let text = broken.get(std::path::Path::new("src/archive/vault.py")).cloned();
+    let changed = ["", "\"\"\"Where reports wait.\"\"\"\n\n"].map(|cut| {
+        std::fs::write(&file, cut).expect("writes");
+        atlas_engine::decide::unseal(&g, &ids).is_err()
+    });
+    let _ = std::fs::remove_dir_all(copy.parent().expect("has a parent"));
+    assert_eq!(text, Some(unsealed));
+    assert_eq!(changed, [true, true], "an emptied file, a shortened one");
 }
 
 fn fits(side: &str) -> Graph {

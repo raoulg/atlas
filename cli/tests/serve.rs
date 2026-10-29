@@ -22,13 +22,52 @@ fn repository(test: &str) -> PathBuf {
     repo
 }
 
+/// A process a test started, ended with the test however the test ends.
+struct Served(Child);
+
+impl std::ops::Deref for Served {
+    type Target = Child;
+    fn deref(&self) -> &Child {
+        &self.0
+    }
+}
+
+impl std::ops::DerefMut for Served {
+    fn deref_mut(&mut self) -> &mut Child {
+        &mut self.0
+    }
+}
+
+impl Drop for Served {
+    fn drop(&mut self) {
+        let _ = self.0.kill();
+        let _ = self.0.wait();
+    }
+}
+
+/// How long a test waits for an answer before it fails.
+const ANSWER: std::time::Duration = std::time::Duration::from_secs(120);
+
+/// What `child` writes to its standard output until it ends, which it must within `seconds`.
+fn output(mut child: Child, seconds: u64) -> Vec<u8> {
+    let mut stdout = child.stdout.take().unwrap();
+    let reading = std::thread::spawn(move || {
+        let mut out = vec![];
+        let _ = stdout.read_to_end(&mut out);
+        out
+    });
+    let mut child = Served(child);
+    assert!(ends_within(&mut child, seconds), "atlas mcp answers within {seconds} s");
+    reading.join().unwrap()
+}
+
 /// The server, and the address it serves at, read from what it says when it starts.
-fn serve(repo: &Path) -> (Child, String) {
+fn serve(repo: &Path) -> (Served, String) {
     serve_with(repo, &[])
 }
 
 /// The server, started with `more` arguments; its standard input is a pipe the test holds.
-fn serve_with(repo: &Path, more: &[&str]) -> (Child, String) {
+fn serve_with(repo: &Path, more: &[&str]) -> (Served, String) {
     let cache = std::env::temp_dir().join(format!("atlas-serve-cache-{}", std::process::id()));
     let mut child = Command::new(env!("CARGO_BIN_EXE_atlas"))
         .args(["serve", "--no-open", "--port", "0"])
@@ -40,19 +79,31 @@ fn serve_with(repo: &Path, more: &[&str]) -> (Child, String) {
         .spawn()
         .expect("atlas serve starts");
     let lines = BufReader::new(child.stderr.take().unwrap()).lines().map_while(Result::ok);
+    let child = Served(child);
     let line = lines.take(8).find(|l| l.contains("http://")).expect("the server says where it serves");
     let at = line.split("http://").nth(1).and_then(|r| r.split('/').next()).unwrap_or_else(|| panic!("an address: {line}")).to_string();
     (child, at)
 }
 
+/// A connection to the server, which fails the test when an answer does not come in time.
+fn connect(at: &str) -> TcpStream {
+    let conn = TcpStream::connect(at).unwrap();
+    conn.set_read_timeout(Some(ANSWER)).unwrap();
+    conn
+}
+
 /// A request as the page sends it, from the page itself when `own`: the status line and the body.
 fn send(at: &str, method: &str, path: &str, body: Option<&Value>, own: bool) -> (String, String) {
-    let mut conn = TcpStream::connect(at).unwrap();
+    ask(at, method, path, body, if own { "X-Atlas: 1\r\n" } else { "" })
+}
+
+/// A request with the headers `more`, as a browser adds them: the status line and the body.
+fn ask(at: &str, method: &str, path: &str, body: Option<&Value>, more: &str) -> (String, String) {
+    let mut conn = connect(at);
     let body = body.map(Value::to_string).unwrap_or_default();
-    let mark = if own { "X-Atlas: 1\r\n" } else { "" };
     write!(
         conn,
-        "{method} {path} HTTP/1.1\r\nHost: {at}\r\n{mark}Content-Type: application/json\r\nContent-Length: {}\r\n\r\n{body}",
+        "{method} {path} HTTP/1.1\r\nHost: {at}\r\n{more}Content-Type: application/json\r\nContent-Length: {}\r\n\r\n{body}",
         body.len()
     )
     .unwrap();
@@ -62,14 +113,19 @@ fn send(at: &str, method: &str, path: &str, body: Option<&Value>, own: bool) -> 
     (head.lines().next().unwrap().to_string(), body.to_string())
 }
 
+/// What a browser says of a request a page of this address made, or one the reader made at the
+/// address bar, and of one a page of another site made.
+const SAME: &str = "Sec-Fetch-Site: same-origin\r\n";
+const READER: &str = "Sec-Fetch-Site: none\r\n";
+const ELSEWHERE: &str = "Sec-Fetch-Site: cross-site\r\n";
+
 /// One tool of `atlas mcp`, called on `repo`: its text.
 fn tool(repo: &Path, name: &str, mut args: Value) -> String {
     args["path"] = json!(repo.to_str().unwrap());
     let call = json!({"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": name, "arguments": args}});
     let mut child = Command::new(env!("CARGO_BIN_EXE_atlas")).arg("mcp").stdin(Stdio::piped()).stdout(Stdio::piped()).spawn().unwrap();
     writeln!(child.stdin.take().unwrap(), "{call}").unwrap();
-    let out = child.wait_with_output().unwrap();
-    let reply: Value = serde_json::from_slice(&out.stdout).unwrap();
+    let reply: Value = serde_json::from_slice(&output(child, ANSWER.as_secs())).unwrap();
     reply["result"]["content"][0]["text"].as_str().unwrap_or_else(|| panic!("{reply}")).to_string()
 }
 
@@ -101,15 +157,26 @@ fn the_page_and_the_agent_share_one_view() {
     assert_eq!(snapshot(&at)["projects"]["spots"]["served"], true);
     let (history, page) = send(&at, "GET", "/history", None, false);
     assert!(history.contains("200") && page.contains("Atlas history"), "the history beside the page: {history}");
-    let mut conn = TcpStream::connect(&at).unwrap();
-    write!(conn, "GET /export?v=%7B%22route%22%3A%22spots.count%22%7D HTTP/1.1\r\nHost: {at}\r\n\r\n").unwrap();
-    let mut export = String::new();
-    conn.read_to_string(&mut export).unwrap();
-    assert!(export.contains("Content-Disposition: attachment; filename=\"spots.html\""), "the page to keep as a file");
+    // a page to keep runs an analysis: for the page's own link, or its reader, never for another site
+    let export = |more: &str| {
+        let mut conn = connect(&at);
+        write!(conn, "GET /export?v=%7B%22route%22%3A%22spots.count%22%7D HTTP/1.1\r\nHost: {at}\r\n{more}\r\n").unwrap();
+        let mut export = String::new();
+        conn.read_to_string(&mut export).unwrap();
+        export
+    };
+    for refused in ["", ELSEWHERE, "Sec-Fetch-Site: same-site\r\n", "Referer: https://example.org/\r\n"] {
+        assert!(export(refused).starts_with("HTTP/1.1 403"), "a page of another site runs no analysis: {refused:?}");
+    }
+    let kept = export(SAME);
+    assert!(kept.contains("Content-Disposition: attachment; filename=\"spots.html\""), "the page to keep as a file");
     assert!(
-        export.contains("\"view\":{\"route\":\"spots.count\"}") && !export.contains("\"served\":true"),
+        kept.contains("\"view\":{\"route\":\"spots.count\"}") && !kept.contains("\"served\":true"),
         "opened in the reader's view, and needing no server"
     );
+    assert!(export(READER).starts_with("HTTP/1.1 200") && export("X-Atlas: 1\r\n").starts_with("HTTP/1.1 200"));
+    let (history, _) = ask(&at, "GET", "/view?b=worktree", None, ELSEWHERE);
+    assert!(history.contains("403"), "nor does a reading of the history: {history}");
     let shown = json!({"view": {"route": "spots.count"}, "selected": "spots.count", "boxes": [{"id": "spots.count", "label": "count"}], "lines": []});
     let (refused, _) = send(&at, "POST", "/api/shown", Some(&shown), false);
     assert!(refused.contains("403"), "a page of another site changes nothing: {refused}");
@@ -121,9 +188,11 @@ fn the_page_and_the_agent_share_one_view() {
     );
 
     tool(&repo, "look", json!({"view": {"route": "spots.count"}, "at": "spots.count"}));
-    let (_, look) = send(&at, "GET", "/api/look", None, false);
+    assert!(ask(&at, "GET", "/api/look", None, ELSEWHERE).0.contains("403"), "a page of another site takes no look");
+    assert!(send(&at, "GET", "/api/look", None, false).0.contains("403"));
+    let (_, look) = ask(&at, "GET", "/api/look", None, SAME);
     assert_eq!(serde_json::from_str::<Value>(&look).unwrap(), json!({"view": {"route": "spots.count"}, "at": "spots.count"}));
-    assert!(send(&at, "GET", "/api/look", None, false).0.contains("204"), "the page goes there once");
+    assert!(ask(&at, "GET", "/api/look", None, SAME).0.contains("204"), "the page goes there once");
 
     let note = json!({"on": "spots.count", "label": "count", "view": {"route": "spots.count"}, "text": "why one more?"});
     let (_, kept) = send(&at, "POST", "/api/notes", Some(&note), true);
@@ -139,6 +208,9 @@ fn the_page_and_the_agent_share_one_view() {
     assert_eq!(state(), "resolved");
     let after = tool(&repo, "notes", json!({}));
     assert!(after.contains("No open notes") && after.contains("Resolved while the page is served"), "{after}");
+    let (beyond, _) = send(&at, "POST", "/api/notes/reopen", Some(&json!({"id": (1u64 << 32) + id, "text": "again"})), true);
+    assert!(!beyond.contains("200"), "2³² + {id} names no note: {beyond}");
+    assert_eq!(state(), "resolved", "and opens none");
     let (_, again) = send(&at, "POST", "/api/notes/reopen", Some(&json!({"id": id, "text": "how does that make it one more?"})), true);
     assert_eq!(serde_json::from_str::<Value>(&again).unwrap()["text"], "why one more?\nhow does that make it one more?");
     assert_eq!(state(), "open", "the reader opened it again, for the agent to read anew");
@@ -352,4 +424,145 @@ fn a_seal_is_broken_by_naming_it() {
     let written = std::fs::read_to_string(&init).unwrap();
     assert!(written.contains("@prophecy(supersedes=\"spots.prophecy\")\ndef twice"), "{written}");
     assert!(tool(&repo, "seals", json!({})).contains("0 sealed"));
+}
+
+/// Several tools of one `atlas mcp` on `repo`, called in turn: each one's reply.
+fn tools(repo: &Path, calls: &[(&str, Value)]) -> Vec<Value> {
+    let mut child = Command::new(env!("CARGO_BIN_EXE_atlas")).arg("mcp").stdin(Stdio::piped()).stdout(Stdio::piped()).spawn().unwrap();
+    let mut stdin = child.stdin.take().unwrap();
+    for (i, (name, args)) in calls.iter().enumerate() {
+        let mut args = args.clone();
+        args["path"] = json!(repo.to_str().unwrap());
+        writeln!(stdin, "{}", json!({"jsonrpc": "2.0", "id": i, "method": "tools/call", "params": {"name": name, "arguments": args}}))
+            .unwrap();
+    }
+    drop(stdin);
+    output(child, ANSWER.as_secs()).split(|b| *b == b'\n').filter(|l| !l.is_empty()).map(|l| serde_json::from_slice(l).unwrap()).collect()
+}
+
+/// The page and an agent writing notes at once lose none and mix none: while the page adds notes over
+/// several connections at once (threads of `atlas serve`), an agent in another process (`atlas mcp`)
+/// reads the notes and resolves the ones written before; every note is kept, under an id of its own,
+/// and every resolution stays.
+#[test]
+fn the_page_and_an_agent_writing_at_once_lose_no_note() {
+    let repo = repository("writers");
+    let (mut server, at) = serve(&repo);
+    let add = |text: String| {
+        let note = json!({"on": "spots.count", "label": "count", "view": {}, "text": text});
+        let (status, kept) = send(&at, "POST", "/api/notes", Some(&note), true);
+        assert!(status.contains("200"), "{status}: {kept}");
+        serde_json::from_str::<Value>(&kept).unwrap()["id"].as_u64().unwrap()
+    };
+    let first: Vec<u64> = (0..10).map(|i| add(format!("first {i}"))).collect();
+    let calls: Vec<(&str, Value)> =
+        first.iter().flat_map(|id| [("notes", json!({})), ("resolve", json!({"id": id, "commit": "3a2b1c9"}))]).collect();
+    let replies = std::thread::scope(|s| {
+        for t in 0..4 {
+            let add = &add;
+            s.spawn(move || {
+                for i in 0..10 {
+                    add(format!("page {t} note {i}"));
+                }
+            });
+        }
+        let agent = s.spawn(|| tools(&repo, &calls));
+        agent.join().unwrap()
+    });
+    assert_eq!(replies.len(), calls.len());
+    assert!(replies.iter().all(|r| r["result"]["isError"] == false), "{replies:?}");
+    let all: Vec<Value> = serde_json::from_str(&send(&at, "GET", "/api/notes", None, false).1).unwrap();
+    assert_eq!(all.len(), 10 + 4 * 10);
+    let ids: std::collections::BTreeSet<u64> = all.iter().map(|n| n["id"].as_u64().unwrap()).collect();
+    assert_eq!(ids.len(), all.len(), "every note has an id of its own");
+    for t in 0..4 {
+        for i in 0..10 {
+            assert!(all.iter().any(|n| n["text"] == format!("page {t} note {i}")), "page {t} note {i} is kept");
+        }
+    }
+    let resolved = all.iter().filter(|n| first.contains(&n["id"].as_u64().unwrap()));
+    assert!(resolved.clone().all(|n| n["state"] == "resolved" && n["commit"] == "3a2b1c9"), "no resolution is lost");
+    server.kill().ok();
+    let _ = std::fs::remove_dir_all(repo.parent().unwrap());
+}
+
+/// What `text` sent on a connection of its own is answered with: the status line. The text is sent
+/// whole, whatever the server reads of it, and the connection is then closed for writing.
+fn answered(at: &str, text: impl Into<Vec<u8>>) -> String {
+    let (conn, text) = (TcpStream::connect(at).unwrap(), text.into());
+    conn.set_read_timeout(Some(std::time::Duration::from_secs(20))).unwrap();
+    conn.set_write_timeout(Some(std::time::Duration::from_secs(20))).unwrap();
+    let mut writer = conn.try_clone().unwrap();
+    let sent = std::thread::spawn(move || {
+        let _ = writer.write_all(&text);
+        let _ = writer.shutdown(std::net::Shutdown::Write);
+    });
+    let line = status_line(&conn);
+    let _ = sent.join();
+    line
+}
+
+/// The status line a connection is answered with, or what ended it.
+fn status_line(conn: &TcpStream) -> String {
+    let mut line = String::new();
+    match BufReader::new(conn).read_line(&mut line) {
+        Ok(_) => line.trim_end().to_string(),
+        Err(e) => format!("no answer: {e}"),
+    }
+}
+
+/// What a request may cost is bounded. A request that does not read as one, is too long or comes too
+/// slowly is answered with why, within a bounded time; while as many connections as the server answers
+/// at a time hold it, one more is told it is busy, and once they are answered it serves again.
+#[test]
+fn every_malformed_request_gets_a_bounded_answer() {
+    let repo = repository("bounded");
+    let (mut server, at) = serve(&repo);
+    let head = |more: &str| format!("GET /api/drawn HTTP/1.1\r\nHost: {at}\r\n{more}\r\n");
+    assert_eq!(answered(&at, head("")), "HTTP/1.1 200 OK", "a request that reads as one is answered");
+    assert_eq!(answered(&at, head("Content-Length: nine\r\n")), "HTTP/1.1 400 Bad Request");
+    let large = format!("POST /api/notes HTTP/1.1\r\nHost: {at}\r\nX-Atlas: 1\r\nContent-Length: {}\r\n\r\n", 5 << 20);
+    assert_eq!(answered(&at, large), "HTTP/1.1 413 Content Too Large", "a body over the limit is refused, not cut");
+    assert_eq!(answered(&at, head(&"X-Pad: 1\r\n".repeat(200))), "HTTP/1.1 431 Request Header Fields Too Large");
+    assert_eq!(answered(&at, head(&format!("X-Pad: {}\r\n", "a".repeat(2 << 20)))), "HTTP/1.1 431 Request Header Fields Too Large");
+    assert_eq!(answered(&at, format!("GET /{} HTTP/1.1\r\n", "a".repeat(2 << 20))), "HTTP/1.1 414 URI Too Long");
+    let cut = format!("POST /api/notes HTTP/1.1\r\nHost: {at}\r\nX-Atlas: 1\r\nContent-Length: 10\r\n\r\nabc");
+    assert_eq!(answered(&at, cut), "HTTP/1.1 400 Bad Request", "a body that ends before its length");
+    assert_eq!(answered(&at, b"GET /\xff\xfe HTTP/1.1\r\n\r\n".to_vec()), "HTTP/1.1 400 Bad Request", "a head that is not text");
+
+    // connections that send nothing, or stop halfway, hold the server until one more is told it is busy
+    let mut held: Vec<TcpStream> = vec![];
+    let busy = loop {
+        assert!(held.len() < 1000, "the connections answered at a time are bounded");
+        let conn = TcpStream::connect(&at).unwrap();
+        conn.set_read_timeout(Some(std::time::Duration::from_millis(50))).unwrap();
+        let mut start = [0; 1];
+        match (&conn).read(&mut start) {
+            Ok(n) => {
+                conn.set_read_timeout(Some(std::time::Duration::from_secs(20))).unwrap();
+                break String::from_utf8_lossy(&start[..n]).to_string() + &status_line(&conn);
+            }
+            Err(_) => held.push(conn),
+        }
+    };
+    assert!(busy.starts_with("HTTP/1.1 503"), "{busy}");
+    write!(&held[0], "POST /api/notes HTTP/1.1\r\nHost: {at}\r\nX-Atlas: 1\r\nContent-Length: 10\r\n\r\nabc").unwrap();
+    let until = std::time::Instant::now() + std::time::Duration::from_secs(30);
+    for conn in &held {
+        let left = until.saturating_duration_since(std::time::Instant::now()).max(std::time::Duration::from_millis(1));
+        conn.set_read_timeout(Some(left)).unwrap();
+        assert_eq!(status_line(conn), "HTTP/1.1 408 Request Timeout", "a request that stalls is answered in time");
+    }
+    drop(held);
+    let until = std::time::Instant::now() + std::time::Duration::from_secs(10);
+    let again = loop {
+        let said = answered(&at, head(""));
+        if said.ends_with("200 OK") || std::time::Instant::now() > until {
+            break said;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(100));
+    };
+    assert_eq!(again, "HTTP/1.1 200 OK", "once they are answered, the server serves again");
+    server.kill().ok();
+    let _ = std::fs::remove_dir_all(repo.parent().unwrap());
 }

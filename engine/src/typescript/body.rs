@@ -25,15 +25,15 @@ use crate::tree::{
 pub(super) const OWN: OwnTypes = knowledge::TYPESCRIPT_OWN_TYPES;
 
 /// The package a client was made by: `new Anthropic()`, `new Pool()`, `axios.create()`,
-/// `createClient()`. What a package's other calls give back is a result, not a client.
+/// `createClient()` (knowledge::TYPESCRIPT_CLIENT_MAKERS). What a package's other calls give back
+/// is a result, not a client.
 fn made_by_package(value: TsNode, m: &Module, src: &[u8]) -> Option<String> {
     let v = beneath(value, WRAPPERS);
     let maker = match v.kind() {
         "new_expression" => v.child_by_field_name("constructor")?,
-        "call_expression" => v.child_by_field_name("function").filter(|f| {
-            let last = member_parts(*f, src).pop().unwrap_or_default();
-            last.starts_with("create") || matches!(last.as_str(), "connect" | "open")
-        })?,
+        "call_expression" => v
+            .child_by_field_name("function")
+            .filter(|f| knowledge::TYPESCRIPT_CLIENT_MAKERS.makes(&member_parts(*f, src).pop().unwrap_or_default()))?,
         _ => return None,
     };
     match m.bindings.get(member_parts(maker, src).first()?)? {
@@ -1425,8 +1425,13 @@ impl<'a, 't> Body<'a, 't> {
                 // a method found on a base runs on the subclass the value is; the body's own receiver
                 // is of the class the route runs the body on, the one it is written in or one below
                 let on_receiver = object.map_or(false, |o| o.kind() == "this") || !after.is_empty();
+                // a value built at the call (`new Section().show()`) is of its class and none below it, also where that
+                // is the method's own; one the code declares is of the class it declares or one below it
+                let built = object
+                    .and_then(|o| if WRAPPERS.contains(&o.kind()) { wrapped(o) } else { Some(o) })
+                    .map_or(false, |o| o.kind() == "new_expression");
                 let on = class
-                    .filter(|k| !on_receiver && self.store.nodes[&t].cls.as_deref().map_or(false, |b| b != k.as_str()))
+                    .filter(|k| !on_receiver && self.store.nodes[&t].cls.as_deref().map_or(false, |b| built || b != k.as_str()))
                     .unwrap_or_default();
                 let kind = if self.store.nodes[&t].kind == NodeKind::Class { EdgeKind::Instantiates } else { EdgeKind::Calls };
                 if kind == EdgeKind::Calls && value_used(c) {
@@ -1439,7 +1444,7 @@ impl<'a, 't> Body<'a, 't> {
                         gives.push(h);
                     }
                 }
-                let step = Step { on, on_receiver, named, after, hands, gives, ..Default::default() };
+                let step = Step { built: built && !on.is_empty(), on, on_receiver, named, after, hands, gives, ..Default::default() };
                 steps.call(c, &t, kind, None, step);
                 let callee = if kind == EdgeKind::Instantiates { self.store.initializer_of(&t) } else { Some(t.clone()) };
                 if let Some(mut a) =

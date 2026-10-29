@@ -12,7 +12,7 @@ use super::module::{call_path, dotted, Module, WRAPPERS};
 use crate::pytypes::{FileArg, Param, Target, Types};
 use crate::tree::{beneath, named_children, path_str, text, unquote, walk};
 
-use crate::knowledge;
+use crate::knowledge::{self, PathAttribute, PathFn, PathMethod};
 use crate::paths::{bound as named_by, cross, environment, hole, lit, or_else, parent, substitute, union};
 pub(super) use crate::paths::{Built, Seg};
 
@@ -89,6 +89,31 @@ impl<'a> Eval<'a> {
                 .iter()
                 .any(|c| matches!(&c.target, Target::Lib(m) if m == lib || m.starts_with(&format!("{lib}."))))
         })
+    }
+
+    /// What the library's path function `f`, named `name`, makes of what it is handed, where ty
+    /// finds the call goes into that library (knowledge::PYTHON_PATH_FUNCTIONS).
+    fn path_function(&self, m: &Module, f: TsNode, name: &str) -> Option<PathFn> {
+        knowledge::PYTHON_PATH_FUNCTIONS.iter().find(|(lib, n, _)| *n == name && self.of_library(m, f, lib)).map(|(_, _, k)| *k)
+    }
+
+    /// What the method `f` of a library's path, named `name`, makes of the path it is called on,
+    /// where ty finds the call goes into that library (knowledge::PYTHON_PATH_METHODS).
+    fn path_method(&self, m: &Module, f: TsNode, name: &str) -> Option<PathMethod> {
+        if f.kind() != "attribute" {
+            return None;
+        }
+        knowledge::PYTHON_PATH_METHODS.iter().find(|(lib, n, _)| *n == name && self.of_library(m, f, lib)).map(|(_, _, k)| *k)
+    }
+
+    /// What the attribute `e`, named `name`, is of the path it is on, where ty finds the attribute is
+    /// defined in the path's library (knowledge::PYTHON_PATH_ATTRIBUTES).
+    fn path_attribute(&self, m: &Module, e: TsNode, name: &str) -> Option<PathAttribute> {
+        let Some(Target::Lib(module)) = self.def(m, e) else { return None };
+        knowledge::PYTHON_PATH_ATTRIBUTES
+            .iter()
+            .find(|(lib, n, _)| *n == name && (module == *lib || module.starts_with(&format!("{lib}."))))
+            .map(|(_, _, k)| *k)
     }
 
     /// Whether calling `f`, named `name`, reaches a library's function that gives the directory a
@@ -205,9 +230,11 @@ impl<'a> Eval<'a> {
                 let (Some(obj), Some(attr)) = (e.child_by_field_name("object"), e.child_by_field_name("attribute")) else {
                     return vec![named()];
                 };
-                match text(attr, src) {
-                    "parent" => self.of(at, obj, depth + 1).iter().map(parent).collect(),
-                    "stem" | "name" | "suffix" | "suffixes" | "parts" => vec![named()],
+                let name = text(attr, src);
+                if self.path_attribute(at.m, e, name) == Some(PathAttribute::Parent) {
+                    return self.of(at, obj, depth + 1).iter().map(parent).collect();
+                }
+                match name {
                     // the path a listing's element is at: `entry.path` of `os.scandir(d)`'s `entry`
                     a if knowledge::ELEMENT_PATHS.iter().any(|(lib, class, name)| *name == a && self.of_class(at.m, obj, lib, class)) => {
                         self.of(at, obj, depth + 1)
@@ -216,14 +243,20 @@ impl<'a> Eval<'a> {
                 }
             }
             "subscript" => {
-                // `os.environ["DATA_DIR"]`: what the environment holds for the variable
-                let environ = e.child_by_field_name("value").map_or(false, |v| dotted(Some(v), src).last().is_some_and(|x| x == "environ"));
+                // `os.environ["DATA_DIR"]`: what the environment holds for the variable, where ty types
+                // the mapping as the environment's
+                let environ = e
+                    .child_by_field_name("value")
+                    .map_or(false, |v| knowledge::PYTHON_ENVIRONMENT.iter().any(|(lib, class, _)| self.of_class(at.m, v, lib, class)));
                 if let Some(var) = e.child_by_field_name("subscript").filter(|s| environ && s.kind() == "string") {
                     return vec![environment(&unquote(text(var, src)))];
                 }
-                // `x.parents[n]`: the directory n + 1 levels up
+                // `x.parents[n]`: the directory n + 1 levels up, where the attribute is the path's
                 let v = e.child_by_field_name("value").filter(|v| v.kind() == "attribute");
-                let parents = v.filter(|v| v.child_by_field_name("attribute").map(|a| text(a, src)) == Some("parents"));
+                let parents = v.filter(|v| {
+                    v.child_by_field_name("attribute").and_then(|a| self.path_attribute(at.m, *v, text(a, src)))
+                        == Some(PathAttribute::Ancestors)
+                });
                 let n = e.child_by_field_name("subscript").and_then(|s| text(s, src).parse::<usize>().ok());
                 match (parents.and_then(|v| v.child_by_field_name("object")), n) {
                     (Some(obj), Some(n)) => {
@@ -627,9 +660,6 @@ impl<'a> Eval<'a> {
                 }
             })
         };
-        if knowledge::PATH_MAKERS.contains(&last) {
-            return if positional.is_empty() { vec![lit(".")] } else { joined(&positional) };
-        }
         // the directory a package ships its files in, by the package's name: the module's own for
         // `__name__` and its package's for `__package__`
         if self.gives_package_files(at.m, f, last) {
@@ -643,24 +673,46 @@ impl<'a> Eval<'a> {
                 None => vec![hole("call")],
             };
         }
+        // what the environment says, or the default the code takes where it says nothing
+        let environ = |at: At| {
+            let var = positional.first().map(|a| unquote(text(*a, src))).unwrap_or_default();
+            let default = positional.get(1).map(|a| self.of(at, *a, depth + 1)).unwrap_or_default();
+            or_else(vec![environment(&var)], default)
+        };
+        // a library's path function, where ty finds the call goes into that library
+        if let Some(kind) = self.path_function(at.m, f, last) {
+            match kind {
+                // a join of no parts is the directory the path is relative to: `Path()` is `.`
+                PathFn::Join if positional.is_empty() => return vec![lit(".")],
+                PathFn::Join => return joined(&positional),
+                PathFn::Here => return vec![lit(".")],
+                PathFn::Home => return vec![lit("~")],
+                PathFn::Same if positional.len() == 1 => return self.of(at, positional[0], depth + 1),
+                PathFn::Environment => return environ(at),
+                _ => {}
+            }
+        }
+        // a method of a library's path, where ty finds the call goes into that library
+        if let Some(kind) = self.path_method(at.m, f, last) {
+            return match kind {
+                PathMethod::Join => cross(&receiver(), &joined(&positional), "/"),
+                PathMethod::Parent => receiver().iter().map(parent).collect(),
+                PathMethod::Same => receiver(),
+                PathMethod::Extension => {
+                    let suffix = positional.first().map(|a| unquote(text(*a, src))).unwrap_or_default();
+                    receiver().iter().map(|b| crate::paths::with_suffix(b, &lit(&suffix))).collect()
+                }
+                PathMethod::Sibling => cross(&receiver().iter().map(parent).collect::<Vec<_>>(), &joined(&positional), "/"),
+            };
+        }
+        // a variable read from the environment's mapping, as ty types it: `os.environ.get(..)`
+        let mapping = f.child_by_field_name("object").filter(|_| f.kind() == "attribute");
+        if mapping.is_some_and(|o| {
+            knowledge::PYTHON_ENVIRONMENT.iter().any(|(lib, class, read)| *read == last && self.of_class(at.m, o, lib, class))
+        }) {
+            return environ(at);
+        }
         match last {
-            "join" if parts.iter().any(|p| p == "path") => return joined(&positional),
-            "joinpath" => return cross(&receiver(), &joined(&positional), "/"),
-            "cwd" => return vec![lit(".")],
-            "home" => return vec![lit("~")],
-            "str" | "fspath" if positional.len() == 1 => return self.of(at, positional[0], depth + 1),
-            // what the environment says, or the default the code takes where it says nothing
-            "getenv" | "get" if parts.iter().any(|p| p == "getenv" || p == "environ") => {
-                let var = positional.first().map(|a| unquote(text(*a, src))).unwrap_or_default();
-                let default = positional.get(1).map(|a| self.of(at, *a, depth + 1)).unwrap_or_default();
-                return or_else(vec![environment(&var)], default);
-            }
-            "with_suffix" => {
-                let suffix = positional.first().map(|a| unquote(text(*a, src))).unwrap_or_default();
-                return receiver().iter().map(|b| crate::paths::with_suffix(b, &lit(&suffix))).collect();
-            }
-            "with_name" => return cross(&receiver().iter().map(parent).collect::<Vec<_>>(), &joined(&positional), "/"),
-            m if knowledge::SAME_PATH.contains(&m) => return receiver(),
             // the paths below a directory that match a pattern; `iterdir()` is `glob("*")`
             m if f.kind() == "attribute" && self.of_pathlib(at.m, f) => {
                 if let Some((_, start, _)) = knowledge::PATH_PATTERNS.iter().find(|(name, _, n)| *name == m && *n == positional.len()) {

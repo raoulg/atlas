@@ -1521,13 +1521,20 @@ impl<'a, 't> Body<'a, 't> {
             None if named && instance => first_argument(c),
             None => receiver,
         };
+        // a value built at the call (`Section(..).show()`) is of its class and none below it, also where that is the
+        // method's own; one the code declares is of the class it declares or one below it
+        let built = value
+            .filter(|o| o.kind() == "call")
+            .and_then(|o| o.child_by_field_name("function"))
+            .and_then(|f| seen.value(f))
+            .map_or(false, |v| v.is_class);
         let on = value.and_then(|o| {
             let b = seen.store.nodes.get(t)?.cls.clone()?;
             seen.value(o)
                 .map(|v| seen.drawn(v, self.ext))
                 .unwrap_or_default()
                 .into_iter()
-                .find(|c| *c != b && seen.is_class(c) && seen.descends(c, &b))
+                .find(|c| seen.is_class(c) && if *c == b { built } else { seen.descends(c, &b) })
         });
         let kind = if seen.is_class(t) { EdgeKind::Instantiates } else { EdgeKind::Calls };
         let on_receiver = match &after {
@@ -1572,6 +1579,7 @@ impl<'a, 't> Body<'a, 't> {
             kind,
             None,
             Step {
+                built: built && on.is_some(),
                 on: on.unwrap_or_default(),
                 on_receiver,
                 named,
