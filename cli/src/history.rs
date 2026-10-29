@@ -119,22 +119,29 @@ fn beside(repo: &Path, opts: &Options, a: Option<&str>, b: (Named, Vec<Graph>)) 
 /// The parts of a revision, read once per commit and kept; of the working tree (`worktree`), read
 /// now.
 fn reading(repo: &Path, opts: &Options, rev: &str) -> Result<(Named, Vec<Graph>)> {
-    if rev == "worktree" {
-        return Ok((changes::worktree(), changes::parts_at(repo, None, opts)?));
-    }
-    let (commit, named) = changes::resolve(repo, rev)?;
-    Ok((named, changes::parts_at(repo, Some(&commit), opts)?))
+    Ok(match At::of(repo, rev)? {
+        At::Tree => (changes::worktree(), changes::parts_at(repo, None, opts)?),
+        At::Commit(commit, named) => {
+            let parts = changes::parts_at(repo, Some(&commit), opts)?;
+            (named, parts)
+        }
+    })
 }
 
 /// Where a revision's files are read: the working tree as it is now, or a commit's tree.
 enum At {
     Tree,
-    Commit(String),
+    /// The commit by its full hash, and as the page names it.
+    Commit(String, Named),
 }
 
 impl At {
     fn of(repo: &Path, rev: &str) -> Result<At> {
-        Ok(if rev == "worktree" { At::Tree } else { At::Commit(changes::resolve(repo, rev)?.0) })
+        if rev == "worktree" {
+            return Ok(At::Tree);
+        }
+        let (commit, named) = changes::resolve(repo, rev)?;
+        Ok(At::Commit(commit, named))
     }
 
     /// The files of the revision below `repo`, by their paths from it with `/` between the parts: of
@@ -142,13 +149,13 @@ impl At {
     fn files(&self, repo: &Path) -> Result<Vec<String>> {
         let listed = match self {
             At::Tree => git(repo, &["ls-files", "-z", "--cached", "--others", "--exclude-standard"])?,
-            At::Commit(c) => git(repo, &["ls-tree", "-r", "-z", "--name-only", c])?,
+            At::Commit(c, _) => git(repo, &["ls-tree", "-r", "-z", "--name-only", c])?,
         };
         let mut files: Vec<String> = listed
             .split(|b| *b == 0)
             .filter(|p| !p.is_empty())
             .map(|p| String::from_utf8_lossy(p).into_owned())
-            .filter(|p| matches!(self, At::Commit(_)) || repo.join(p).is_file())
+            .filter(|p| matches!(self, At::Commit(..)) || repo.join(p).is_file())
             .collect();
         files.sort();
         files.dedup();
@@ -159,7 +166,7 @@ impl At {
     fn read(&self, repo: &Path, path: &str) -> Result<Vec<u8>> {
         match self {
             At::Tree => std::fs::read(repo.join(path)).with_context(|| format!("reading {path}")),
-            At::Commit(c) => git(repo, &["cat-file", "blob", &format!("{c}:./{path}")]),
+            At::Commit(c, _) => git(repo, &["cat-file", "blob", &format!("{c}:./{path}")]),
         }
     }
 }
