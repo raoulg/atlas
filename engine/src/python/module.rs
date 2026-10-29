@@ -40,7 +40,6 @@ const BUILTIN_TYPES: &[&str] = &[
     "Sequence",
     "Mapping",
     "Callable",
-    "Path",
     "Literal",
     "TypeVar",
     "Self",

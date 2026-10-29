@@ -1698,3 +1698,10 @@ fn nothing_a_socket_is_a_place() {
 fn places_a_parent_drops_the_last_part_of_a_path() {
     common::a_parent_drops_the_last_part_of_a_path("rust", "shelf.summarise", "shelf.log");
 }
+
+/// The closures pair: a closure a `let` keeps and the body calls takes what each call hands it (#239), as a function of
+/// the module does, and as a lambda or a `def` inside a `def` does in Python.
+#[test]
+fn a_closures_parameter_is_what_its_calls_hand_it() {
+    common::a_closures_parameter_is_what_its_calls_hand_it("rust", &["knot.settings", "knot.lock"]);
+}

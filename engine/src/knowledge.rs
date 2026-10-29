@@ -1669,10 +1669,11 @@ pub const HUB_LOADER: &str = "load_dataset";
 
 // ---------- paths ----------
 
-/// The constructors a path is made by from its parts: pathlib's, Rust's `Path::new` and
-/// `PathBuf::from`, the web platform's `URL`.
-pub const PATH_MAKERS: &[&str] =
-    &["Path", "PurePath", "PosixPath", "WindowsPath", "PurePosixPath", "PureWindowsPath", "Path::new", "PathBuf::from", "URL", "new URL"];
+/// The constructors a path or a URL is made by from its parts, by the name the code calls them by,
+/// where that name is the language's own: Rust's `Path::new` and `PathBuf::from`, the web
+/// platform's `URL`. Python's are classes of a library, known where ty finds them
+/// (`PYTHON_PATH_CLASSES`).
+pub const PATH_MAKERS: &[&str] = &["Path::new", "PathBuf::from", "URL", "new URL"];
 
 /// Libraries whose values are paths: a method of one names its file by the path it is called on.
 /// importlib's are what a package ships (`files("pages").joinpath("template.html").read_text()`).
@@ -1846,18 +1847,27 @@ pub const RUST_PATH_FUNCTIONS: &[(&str, &str, PathFn)] = &[
     ("env", "var_os", PathFn::Environment),
 ];
 
+/// Python's classes whose values are paths, by the library module ty finds the class in (or one
+/// above it) and its name: pathlib's, and `os.PathLike`, the protocol every path keeps. A value
+/// made of one joins the parts it is made of (`Path(root, "data")`; `Path()`, made of none, is
+/// `.`), and a parameter of a library function typed as one is handed a path. A class of the
+/// project's own of the same name is the project's.
+pub const PYTHON_PATH_CLASSES: &[(&str, &str)] = &[
+    ("pathlib", "Path"),
+    ("pathlib", "PurePath"),
+    ("pathlib", "PosixPath"),
+    ("pathlib", "WindowsPath"),
+    ("pathlib", "PurePosixPath"),
+    ("pathlib", "PureWindowsPath"),
+    ("os", "PathLike"),
+];
+
 /// Python's path functions, by the library module ty finds the call goes into (or one above it)
 /// and their name: `Path.cwd()`, `os.getenv("DATA", "data")`, `os.path.join(a, b)` (`os.path` is
-/// `posixpath` or `ntpath`, by the platform), and pathlib's classes, which join the parts they are
-/// made of (`Path(root, "data")`; `Path()`, made of none, is `.`). A function or a class of the
-/// project's own of the same name is no path function.
+/// `posixpath` or `ntpath`, by the platform). A path class made of its parts is one as well, a
+/// join (`PYTHON_PATH_CLASSES`). A function of the project's own of the same name is no path
+/// function.
 pub const PYTHON_PATH_FUNCTIONS: &[(&str, &str, PathFn)] = &[
-    ("pathlib", "Path", PathFn::Join),
-    ("pathlib", "PurePath", PathFn::Join),
-    ("pathlib", "PosixPath", PathFn::Join),
-    ("pathlib", "WindowsPath", PathFn::Join),
-    ("pathlib", "PurePosixPath", PathFn::Join),
-    ("pathlib", "PureWindowsPath", PathFn::Join),
     ("pathlib", "cwd", PathFn::Here),
     ("pathlib", "home", PathFn::Home),
     ("os", "getenv", PathFn::Environment),

@@ -931,6 +931,35 @@ fn places_a_path_attribute_holds_where_ty_finds_a_path() {
     }
 }
 
+/// The closures pair: a lambda a name keeps and a `def` inside a `def`, each called in the body by its name, take what
+/// each call hands them (#239), as a function of the module does, and as a closure a `let` keeps does in Rust.
+#[test]
+fn a_closures_parameter_is_what_its_calls_hand_it() {
+    common::a_closures_parameter_is_what_its_calls_hand_it("python", &["knot.settings.settings", "knot.settings.lock"]);
+}
+
+/// A class is a path's where ty finds it in a path library (`knowledge::PYTHON_PATH_CLASSES`),
+/// never by its name alone. In the receivers pair, `walked` opens the data file a walk ends at, by
+/// the project's own dataclass `Path`, and `first` makes the walk from the first aisle
+/// (`Path("aisle-1", end)`). The clean side annotates `walk: Path`, and `walked` takes the
+/// project's class, as it would one of any other name. On both sides the aisle's literal is no
+/// part of where the file is: the place starts at what `first` is handed, and neither function
+/// decides one.
+#[test]
+fn places_a_project_class_named_as_a_path_class_is_the_projects() {
+    let p = common::pair("receivers/python");
+    assert!(edge(&p.clean, "shelf.walk.walked", "shelf.walk.Path", EdgeKind::Takes), "walked takes the project's Path");
+    for (side, g) in [("clean", &p.clean), ("shortcut", &p.shortcut)] {
+        let read = touches(g, "shelf.walk.walked", "disk_read");
+        assert!(!read.is_empty(), "{side}: walked reads the file");
+        assert!(read.iter().all(|t| !t.fixed && t.fixed_by.is_empty()), "{side}: no function decides the place: {read:?}");
+        assert!(
+            !check(g).iter().any(|f| f.principle == "places" && f.node.starts_with("shelf.walk.")),
+            "{side}: neither function names a place of its own"
+        );
+    }
+}
+
 /// A class and the attributes of the project's own are the project's, whatever their names: a
 /// dataclass named as pathlib's class, with fields named as its attributes (`Path`, `parent`,
 /// `name`, `parents`), reads what the same dataclass with other names reads, and nothing it reads is

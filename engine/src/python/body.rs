@@ -1784,13 +1784,14 @@ fn crossed<'t>(
             Crossed { touches: touches.into_iter().map(|(t, _)| t).collect(), waiting, ..Default::default() }
         }
         _ => {
-            let mut cr = Crosses::read(c, src, tag, lib, op, &literals(c, src, &["string"]), &["string"], &seen.handed(c));
+            let makes_path = |f: TsNode| eval.makes_path(at.m, f);
+            let mut cr = Crosses::read(c, src, tag, lib, op, &literals(c, src, &["string"]), &["string"], &seen.handed(c), &makes_path);
             // on the web, what a call asks for is the argument its library names so
             let url = asked(seen, c, fnode).filter(|_| cr.facts.kind == World::Net);
             if let Some(a) = url {
                 cr.what = literals(a, src, &["string"]).first().map(|l| l.trim().to_string()).unwrap_or_else(|| text(a, src).to_string());
                 cr.payload = payload_of(c, src, &cr.what, "arguments", &seen.handed(c));
-                cr.fixed = crate::tree::head_literal(a, src, &["string"]);
+                cr.fixed = crate::tree::head_literal(a, src, &["string"], &makes_path);
             }
             let said = match cr.facts.kind {
                 World::Db(db) => effects::access(db, op, keyword(c, src, knowledge::DRIVER_ACCESS).as_deref()),
@@ -1890,6 +1891,7 @@ fn file_calls<'t>(
     op: &str,
 ) -> Vec<(Touch, Vec<Built>)> {
     let src = &at.m.src;
+    let makes_path = |f: TsNode| eval.makes_path(at.m, f);
     let touch = |kind: Crossing, what: String, artifact: String, fixed: bool| {
         let payload = payload_of(c, src, &what, "arguments", &seen.handed(c));
         Touch {
@@ -1955,7 +1957,10 @@ fn file_calls<'t>(
             };
             // a pattern below a directory is the path the call gives, not the directory alone
             let patterned = name == "self" && knowledge::PATH_PATTERNS.iter().any(|(p, _, _)| *p == op);
-            (touch(kind, what, artifact, crate::tree::head_literal(a, src, &["string"])), eval.of(at, if patterned { c } else { a }, 0))
+            (
+                touch(kind, what, artifact, crate::tree::head_literal(a, src, &["string"], &makes_path)),
+                eval.of(at, if patterned { c } else { a }, 0),
+            )
         })
         .collect()
 }
