@@ -641,10 +641,19 @@ pub struct Callers<'c, H> {
     pub decides: &'c dyn Fn(&Built) -> bool,
 }
 
-/// A completion: where the value is whole, what it is there, the function whose own code
-/// decides it, if one does, and the function that set up the object whose field holds the value's
-/// root, if one does (`Workbench.at` for what `self.root` holds).
-type Completion = (Whole, Built, Option<String>, Option<String>);
+/// A completion of a value at one place of the callers.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Completion {
+    /// Where the value is whole.
+    pub whole: Whole,
+    /// What it is there.
+    pub term: Built,
+    /// The function whose own code decides it, if one does.
+    pub decided_in: Option<String>,
+    /// The function that set up the object whose field holds the value's root, if one does
+    /// (`Workbench.at` for what `self.root` holds).
+    pub set_up_in: Option<String>,
+}
 
 impl<H: Handing> Callers<'_, H> {
     /// What a value built from the parameters of `f` is at each call that hands them, followed out
@@ -673,24 +682,25 @@ impl<H: Handing> Callers<'_, H> {
             _ => None,
         }) {
             let held = if depth > DEPTH {
-                vec![(Whole::In(f.to_string()), hole(&p), None, None)]
+                vec![Completion { whole: Whole::In(f.to_string()), term: hole(&p), decided_in: None, set_up_in: None }]
             } else {
                 self.at(&g, &vec![Seg::Param(p.clone())], depth + 1)
             };
             let mut out = vec![];
-            for (w, v, built, _) in held {
-                for x in fill(b, &g, &p, &v) {
+            for object in held {
+                for x in fill(b, &g, &p, &object.term) {
                     // a value that what the object holds decides is decided where the object was built
-                    let by = here.clone().or_else(|| (self.decides)(&x).then_some(built.clone()).flatten());
-                    for (w2, y, decider, set_up) in self.of(f, &x, None, by.as_deref(), depth + 1) {
+                    let by = here.clone().or_else(|| (self.decides)(&x).then_some(object.decided_in.clone()).flatten());
+                    for rest in self.of(f, &x, None, by.as_deref(), depth + 1) {
                         // whole where both are: a route reaches the one that built the object and
                         // the one that handed `f` the rest
-                        let both = match (&w, w2) {
+                        let w = &object.whole;
+                        let both = match (w, rest.whole) {
                             (_, Whole::In(x)) if x == f => w.clone(),
                             (Whole::In(a), Whole::In(x)) if a != f && *a != x => Whole::In(format!("{x}&{a}")),
                             (_, w2) => w2,
                         };
-                        out.push((both, y, decider, set_up.or_else(|| Some(g.clone()))));
+                        out.push(Completion { whole: both, set_up_in: rest.set_up_in.or_else(|| Some(g.clone())), ..rest });
                         if out.len() >= COMPLETIONS {
                             return out;
                         }
@@ -700,7 +710,7 @@ impl<H: Handing> Callers<'_, H> {
             return out;
         }
         if !b.iter().any(|s| matches!(s, Seg::Param(_))) {
-            return vec![(Whole::In(f.to_string()), b.clone(), here, None)];
+            return vec![Completion { whole: Whole::In(f.to_string()), term: b.clone(), decided_in: here, set_up_in: None }];
         }
         let (calls, family) = (self.calls, self.family);
         // a parameter a call leaves out holds its default, an input its callers may override
@@ -734,10 +744,16 @@ impl<H: Handing> Callers<'_, H> {
             })
             .collect();
         if sites.is_empty() || depth > DEPTH {
-            return substitute(b, unknown).into_iter().map(|x| (Whole::In(f.to_string()), x, here.clone(), None)).collect();
+            return substitute(b, unknown)
+                .into_iter()
+                .map(|term| Completion { whole: Whole::In(f.to_string()), term, decided_in: here.clone(), set_up_in: None })
+                .collect();
         }
         let mut out: Vec<Completion> = if (self.entry)(f) {
-            substitute(b, unknown).into_iter().map(|x| (Whole::Users(f.to_string()), x, here.clone(), None)).collect()
+            substitute(b, unknown)
+                .into_iter()
+                .map(|term| Completion { whole: Whole::Users(f.to_string()), term, decided_in: here.clone(), set_up_in: None })
+                .collect()
         } else {
             vec![]
         };
@@ -831,7 +847,12 @@ pub fn complete<H: Handing>(
             let found = built
                 .iter()
                 .flat_map(|b| match names_its_places(b, t.kind) {
-                    true => vec![(Whole::In(f.clone()), b.clone(), decides(b).then(|| f.clone()), None)],
+                    true => vec![Completion {
+                        whole: Whole::In(f.clone()),
+                        term: b.clone(),
+                        decided_in: decides(b).then(|| f.clone()),
+                        set_up_in: None,
+                    }],
                     false => callers.at(&f, b, 0),
                 })
                 .collect();
@@ -879,9 +900,9 @@ pub fn place_calls(store: &mut crate::builder::GraphBuilder, completed: Vec<Comp
         let own = store.nodes.get(&f).filter(|n| n.ctor && !n.library).and_then(|n| n.cls.clone()).or_else(|| class_of.get(&f).cloned());
         // what each place of completion makes of it: the alternatives one caller hands are one
         let mut wholes: Vec<&Whole> = vec![];
-        for (w, _, _, _) in &found {
-            if !wholes.contains(&w) {
-                wholes.push(w);
+        for c in &found {
+            if !wholes.contains(&&c.whole) {
+                wholes.push(&c.whole);
             }
         }
         // a route that reaches none of the callers that make it whole sees the call as it was read,
@@ -909,13 +930,11 @@ pub fn place_calls(store: &mut crate::builder::GraphBuilder, completed: Vec<Comp
                 Whole::In(h) | Whole::Users(h) => h,
             };
             // the way a request goes, where the method its alternatives say gives one
-            let alternatives = found.iter().filter(|(w, _, _, _)| w == whole).map(|(_, b, _, _)| b);
+            let alternatives = found.iter().filter(|c| c.whole == *whole).map(|c| &c.term);
             // or one whose value a caller's object holds, set up where the completion went through
             let held = held
                 .clone()
-                .or_else(|| {
-                    found.iter().filter(|(w, _, _, _)| w == whole).find_map(|(_, _, _, set_up)| class_of.get(set_up.as_ref()?).cloned())
-                })
+                .or_else(|| found.iter().filter(|c| c.whole == *whole).find_map(|c| class_of.get(c.set_up_in.as_ref()?).cloned()))
                 .or_else(|| own.clone());
             let way = if t.kind == World::Net { way_of_request(alternatives).or(t.dir) } else { t.dir };
             // each place with the functions whose own code decides it
@@ -927,7 +946,7 @@ pub fn place_calls(store: &mut crate::builder::GraphBuilder, completed: Vec<Comp
             let mut opened = String::new();
             // a file the term names with a part no code decides, by the term the code writes
             let mut terms: Vec<(String, String)> = vec![];
-            for (b, decider) in found.iter().filter(|(w, _, _, _)| w == whole).map(|(_, b, d, _)| (b, d)) {
+            for (b, decider) in found.iter().filter(|c| c.whole == *whole).map(|c| (&c.term, &c.decided_in)) {
                 let rendered = render(b);
                 let before = placed.len();
                 let fixed: Vec<String> = decider.iter().cloned().collect();
@@ -1021,7 +1040,7 @@ pub fn place_calls(store: &mut crate::builder::GraphBuilder, completed: Vec<Comp
                     (!terms.is_empty()).then(|| terms.join("|"))
                 })
             };
-            let all: Vec<&Built> = found.iter().filter(|(w, _, _, _)| w == whole).map(|(_, b, _, _)| b).collect();
+            let all: Vec<&Built> = found.iter().filter(|c| c.whole == *whole).map(|c| &c.term).collect();
             let (value, unnamed_value) = (named(&all), named(&unnamed));
             if placed.is_empty() {
                 if !requested {
@@ -1097,11 +1116,7 @@ mod tests {
 
     /// The completions of `read(path)`'s path through `calls`, with `default` for what a call
     /// leaves out.
-    fn completed(
-        calls: &[Call],
-        default: &dyn Fn(&str, &str) -> Vec<Built>,
-        dir: crate::model::Dir,
-    ) -> Vec<(Whole, Built, Option<String>, Option<String>)> {
+    fn completed(calls: &[Call], default: &dyn Fn(&str, &str) -> Vec<Built>, dir: crate::model::Dir) -> Vec<Completion> {
         let t = crate::model::Touch::new(crate::model::World::Disk, Some(dir));
         let decides = |b: &Built| decided(b, &t);
         let family = crate::builder::Family::default();
@@ -1117,17 +1132,28 @@ mod tests {
         use crate::model::Dir;
         let none = |_: &str, _: &str| vec![];
         let handed = [Call("rows", "read", vec![("path", lit("data/rows.csv"))]), Call("main", "rows", vec![])];
-        assert_eq!(completed(&handed, &none, Dir::Read), [(Whole::In("rows".into()), lit("data/rows.csv"), Some("rows".into()), None)]);
+        assert_eq!(
+            completed(&handed, &none, Dir::Read),
+            [Completion { whole: Whole::In("rows".into()), term: lit("data/rows.csv"), decided_in: Some("rows".into()), set_up_in: None }]
+        );
         let through = [
             Call("rows", "read", vec![("path", vec![Seg::Param("dir".into()), Seg::Lit("/rows.csv".into())])]),
             Call("main", "rows", vec![("dir", lit("data"))]),
         ];
-        assert_eq!(completed(&through, &none, Dir::Read), [(Whole::In("main".into()), lit("data/rows.csv"), Some("main".into()), None)]);
+        assert_eq!(
+            completed(&through, &none, Dir::Read),
+            [Completion { whole: Whole::In("main".into()), term: lit("data/rows.csv"), decided_in: Some("main".into()), set_up_in: None }]
+        );
         let left_out = [Call("main", "read", vec![])];
         let default = |_: &str, p: &str| if p == "path" { vec![lit("out.csv")] } else { vec![] };
         assert_eq!(
             completed(&left_out, &default, Dir::Read),
-            [(Whole::In("main".into()), vec![Seg::Option("path".into(), lit("out.csv"))], None, None)],
+            [Completion {
+                whole: Whole::In("main".into()),
+                term: vec![Seg::Option("path".into(), lit("out.csv"))],
+                decided_in: None,
+                set_up_in: None,
+            }],
             "the parameter's default is an option of whoever calls it"
         );
     }
