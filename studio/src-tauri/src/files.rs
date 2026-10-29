@@ -18,7 +18,7 @@ pub fn get(url: &str, path: &str) -> Result<(Vec<u8>, Option<String>), String> {
     let at = url.strip_prefix("http://").ok_or("Atlas serves at an address Studio does not know")?.trim_end_matches('/');
     let mut conn = TcpStream::connect(at).map_err(|error| format!("Atlas does not answer: {error}"))?;
     conn.set_read_timeout(Some(Duration::from_secs(120))).map_err(|error| error.to_string())?;
-    write!(conn, "GET {path} HTTP/1.1\r\nHost: {at}\r\nConnection: close\r\n\r\n").map_err(|error| error.to_string())?;
+    write!(conn, "GET {path} HTTP/1.1\r\nHost: {at}\r\nX-Atlas: 1\r\nConnection: close\r\n\r\n").map_err(|error| error.to_string())?;
     let mut answer = Vec::new();
     conn.read_to_end(&mut answer).map_err(|error| error.to_string())?;
     let split = answer.windows(4).position(|window| window == b"\r\n\r\n").ok_or("Atlas gave no answer")?;

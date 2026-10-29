@@ -165,7 +165,7 @@ fn tools() -> Value {
         },
         {
             "name": "route",
-            "description": "What one route does, step by step in call order: each step's parameters, what it hands on, what it changes (↻), and what it reads, writes or prints. Alternatives share a number, lettered by branch (4.1a | 4.1b).",
+            "description": "What one route does, step by step in call order: each step's parameters, what it hands on, what it changes (↻), and what it reads, writes or prints. Alternatives share a number, lettered by branch (4.1a | 4.1b; past z: 4.1aa), and the overrides of a lettered step after a dash (2a-a).",
             "inputSchema": { "type": "object", "properties": {
                 "path": path,
                 "entry": { "type": "string", "description": "An entry's label or id, from `routes`." },

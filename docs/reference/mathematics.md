@@ -778,10 +778,11 @@ of `C.f` may run `B.f` on a `D`, though `B` is not below `C`, and there its `sup
 alternative is that method on that class, a body as any step on a known class runs it, named by the
 class it runs on (`D.f`); one of a class below the method's own runs on any value of its class, whose
 class is not known. A call through a class, and a `super()` call on a value whose class is known, run
-the one their call names.
+the one their call names. A value built at the call (`Block().show()`, `new Block().show()`) is of that class
+alone; a declared one (a parameter, an annotation, a return type, a field) may be that class or any below it.
 **Where.** `model::linearization`, `model::initializer_along`; `principles.rs` (`Index::mro`),
 `builder.rs` (`family`, `method_of`, `initializer_of`), `flow.rs` (`method_on`, `method_after`,
-`built_from`, `Step::named`, `Ix::overrides`, `Runs`: what a call runs, asked by the route and by the passes that settle parameters and errors).
+`built_from`, `Step::named`, `Ix::step_of`, `Ix::runs_below`, `Runs`: what a call runs, asked by the route and by the passes that settle parameters and errors).
 
 ### Signatures say the arrow
 **What.** A function's type is its domain and its codomain.
