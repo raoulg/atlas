@@ -76,7 +76,7 @@ pub fn newer(this: &Build, latest: &Latest) -> Option<Newer> {
     let (theirs, ours) = (numbers(&latest.release)?, numbers(&this.version)?);
     (theirs > ours).then(|| {
         let version = latest.release.trim_start_matches('v').to_string();
-        let notes = format!("https://raoulg.github.io/atlas/releases/{version}/");
+        let notes = format!("https://atlas.pttrn.io/releases/{version}/");
         Newer { version, nightly: false, notes, page: true, installs, current: false }
     })
 }
@@ -99,7 +99,7 @@ pub fn changes(this: &Build) -> Newer {
     let at =
         |notes: String, page: bool| Newer { version: version.clone(), nightly: this.nightly, notes, page, installs: false, current: true };
     if !this.nightly {
-        let page = format!("https://raoulg.github.io/atlas/releases/{version}/");
+        let page = format!("https://atlas.pttrn.io/releases/{version}/");
         if answers(&page) {
             return at(page, true);
         }
@@ -260,7 +260,7 @@ mod tests {
         let this = Build { version: "0.68.0".into(), nightly: false, commit: "abc".into() };
         let newer = newer(&this, &Latest { release: "v0.69.0".into(), ..Latest::default() }).unwrap();
         assert_eq!(newer.version, "0.69.0");
-        assert_eq!(newer.notes, "https://raoulg.github.io/atlas/releases/0.69.0/");
+        assert_eq!(newer.notes, "https://atlas.pttrn.io/releases/0.69.0/");
         assert!(newer.page);
         assert_eq!(super::newer(&this, &Latest { release: "v0.68.0".into(), ..Latest::default() }), None);
         assert_eq!(super::newer(&this, &Latest { release: "v0.67.9".into(), ..Latest::default() }), None);

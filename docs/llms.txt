@@ -46,5 +46,5 @@ The mathematics is there so that a human needs none of it. Every construct has o
 ## Optional
 
 - [The pairs](https://github.com/raoulg/atlas/tree/main/engine/tests/pairs): programs written carefully and carelessly, and the tests that state what Atlas shows of each. The sunspot pipeline (`pairs/pipeline`) is one program written as a sloppy script, typed Python, TypeScript and Rust.
-- [The showcase](https://raoulg.github.io/atlas/): the same pictures, for people.
+- [The showcase](https://atlas.pttrn.io/): the same pictures, for people.
 - [README](https://raw.githubusercontent.com/raoulg/atlas/main/README.md)

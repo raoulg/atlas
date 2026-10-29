@@ -31,7 +31,7 @@ TARGETS = {
 # the version Homebrew reads from the tag in the URLs (`v<version>`)
 RELEASE_HEAD = '''class AtlasCode < Formula
   desc "Atlas — your code's topology"
-  homepage "https://raoulg.github.io/atlas/"
+  homepage "https://atlas.pttrn.io/"
   license "AGPL-3.0-only"
 
   # `brew install --HEAD raoulg/tap/atlas-code` builds the nightly line, `next`, from source.
@@ -59,7 +59,7 @@ end
 
 NIGHTLY_HEAD = '''class AtlasCodeNightly < Formula
   desc "Atlas — your code's topology: the nightly build"
-  homepage "https://raoulg.github.io/atlas/"
+  homepage "https://atlas.pttrn.io/"
   version "{version}"
   license "AGPL-3.0-only"
 

@@ -17,7 +17,7 @@ jobs:
           notes=""
           # a stable release has a page of release notes with pictures (tools/release_page.py)
           if [ -z "$pre" ] && [ -f "docs/releases/${GITHUB_REF_NAME#v}.md" ]; then
-            notes="**What changed, with pictures:** https://raoulg.github.io/atlas/releases/${GITHUB_REF_NAME#v}/"
+            notes="**What changed, with pictures:** https://atlas.pttrn.io/releases/${GITHUB_REF_NAME#v}/"
           fi
           # a draft until every file is uploaded: `publish` makes it public, so `releases/latest`
           # (Studio's and `atlas-code update`'s question) never names a release whose files are not there yet
