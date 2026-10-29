@@ -357,7 +357,7 @@ fn reading(repo: &Path, opts: &Options) -> Result<Reading> {
     let Some(p) = shared::vision(repo) else { return page::reading(&[repo.to_path_buf()], opts, None, None) };
     let envisioned = Named { rev: "vision".into(), short: "vision".into(), subject: p.title.clone() };
     let now = atlas_engine::parts::analyze_parts(&[repo.to_path_buf()], opts)?;
-    Ok(Reading::compared(repo, (changes::worktree(), now), (envisioned, changes::envisioned(repo, &p.files, opts)?)))
+    Ok(Reading::compared(repo, (changes::worktree(), now), (envisioned, changes::envisioned(repo, &p.files, opts)?.parts)))
 }
 
 /// The working tree as far as Atlas reads it, and what an agent has in view beside it: equal stamps

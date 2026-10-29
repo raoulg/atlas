@@ -28,14 +28,14 @@ pub fn prophetize(
 ) -> anyhow::Result<Prophetized> {
     use anyhow::bail;
     let before = crate::parts::analyze_parts(&[repo.to_path_buf()], opts)?;
-    let after = crate::changes::envisioned(repo, vision, opts)?;
+    let crate::changes::Envisioned { parts: after, dir } = crate::changes::envisioned(repo, vision, opts)?;
     let known: std::collections::HashSet<&str> = before.iter().flat_map(|g| g.nodes.iter().map(|n| n.id.as_str())).collect();
     for (new, old) in supersedes {
         if !known.contains(old.as_str()) {
             bail!("`{new}` is said to supersede `{old}`, which the code does not hold");
         }
     }
-    let placed = Placed::of(repo, &before, &after, vision)?;
+    let placed = Placed::of(repo, &before, dir);
     let mut out = Prophetized::default();
     for (rel, text) in vision {
         let Some(text) = text else { bail!("a vision that removes `{}` is no prophecy: nothing is written for a removal", rel.display()) };
@@ -157,30 +157,21 @@ pub fn prophetize(
 
 /// Where the items of the tree and of the vision lie, each file by its path from the directory the
 /// vision is asked for, the one its paths start at. The tree's files are where the disk resolves
-/// them. The vision is read in a copy, gone once it is read, that lays every file at the place it
-/// has in the tree: where the asked directory lies in the copy is read off an item both readings
-/// hold, at the same path, preferring one in a file the vision does not write.
+/// them; the vision's are in the copy it is read in, by their path from the directory `envisioned`
+/// read it from.
 struct Placed {
     /// Each file of the tree, as its items name it, by its path from the asked directory.
     tree: std::collections::HashMap<String, std::path::PathBuf>,
     /// The file of each item of the tree, by its id.
     files: std::collections::HashMap<String, String>,
-    /// The asked directory in the copy the vision is read in.
+    /// The directory of the copy the vision is read from, in place of the asked one.
     copy: std::path::PathBuf,
 }
 
 impl Placed {
-    fn of(
-        repo: &std::path::Path,
-        before: &[Graph],
-        after: &[Graph],
-        vision: &std::collections::BTreeMap<std::path::PathBuf, Option<String>>,
-    ) -> anyhow::Result<Placed> {
+    fn of(repo: &std::path::Path, before: &[Graph], copy: std::path::PathBuf) -> Placed {
         let asked = Repo::real(repo);
-        fn own(gs: &[Graph]) -> Vec<&Node> {
-            gs.iter().flat_map(|g| &g.nodes).filter(|n| !n.library && !n.file.is_empty()).collect()
-        }
-        let (tree_items, vision_items) = (own(before), own(after));
+        let tree_items: Vec<&Node> = before.iter().flat_map(|g| &g.nodes).filter(|n| !n.library && !n.file.is_empty()).collect();
         let mut tree = std::collections::HashMap::new();
         for n in &tree_items {
             if !tree.contains_key(&n.file) {
@@ -190,22 +181,7 @@ impl Placed {
             }
         }
         let files: std::collections::HashMap<String, String> = tree_items.iter().map(|n| (n.id.clone(), n.file.clone())).collect();
-        let copy = |unwritten: bool| {
-            vision_items.iter().find_map(|m| {
-                let at = tree.get(files.get(&m.id)?)?;
-                let file = std::path::Path::new(&m.file);
-                (vision.contains_key(at) != unwritten && file.ends_with(at)).then(|| {
-                    at.components().fold(file.to_path_buf(), |mut dir, _| {
-                        dir.pop();
-                        dir
-                    })
-                })
-            })
-        };
-        let Some(copy) = copy(true).or_else(|| copy(false)) else {
-            anyhow::bail!("the vision holds no item the tree holds, so Atlas cannot tell where its files lie")
-        };
-        Ok(Placed { tree, files, copy })
+        Placed { tree, files, copy }
     }
 
     /// The path of the file that holds `n`, an item of the tree.

@@ -781,6 +781,23 @@ fn prophecy_a_decided_vision_is_marked_where_it_is_written() {
     assert_eq!(stands.len(), 3, "the two prophecies of the clean side, and the new one: {stands:?}");
 }
 
+/// A vision is placed by the directory it is read from, so a vision that shares nothing with the
+/// tree is placed as one that does: a package with only its manifests, and a vision that writes its
+/// first module. The file is written at the path the vision names it by, and what it adds is marked.
+#[test]
+fn prophecy_a_vision_of_new_files_only_is_placed_where_it_names_them() {
+    use std::collections::BTreeMap;
+    let copy = common::clean_copy("typescript", "new-files");
+    std::fs::remove_dir_all(copy.join("src")).expect("removes the code");
+    let file = PathBuf::from("src/index.ts");
+    let vision = BTreeMap::from([(file.clone(), Some("export declare class Vault {\n  keep(report: string): void;\n}\n".to_string()))]);
+    let decided = atlas_engine::decide::prophetize(&copy, &vision, &BTreeMap::new(), &Options::default());
+    let _ = std::fs::remove_dir_all(copy.parent().expect("has a parent"));
+    let decided = decided.expect("a vision that only adds new files is decided");
+    assert_eq!(decided.files.keys().collect::<Vec<_>>(), [&file]);
+    assert_eq!(decided.marked, ["archive.Vault"]);
+}
+
 /// A prophecy whose shape waits on an open question is sealed on its issue. The seals come back
 /// as a list with what the host says of each issue (here: one closed, one open), and the one whose
 /// issue is closed can be broken: `sealed=..` leaves its marker and nothing else changes. The
