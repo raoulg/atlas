@@ -26,7 +26,7 @@ tool names it, so that the release is not tagged with a point that shows nothing
 `docs/releases/<version>/index.html`, in the site's own style, and ends in links to the release before
 and the release after (writing one page writes its neighbours too); `docs/releases/index.html` lists the
 releases, newest first. Pages publishes `docs/` from `main`, so a page goes live with the promotion
-that carries it, at `https://raoulg.github.io/atlas/releases/<version>/`.
+that carries it, at `https://atlas.pttrn.io/releases/<version>/`.
 """
 
 import html
