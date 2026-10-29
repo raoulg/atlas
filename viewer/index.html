@@ -407,7 +407,7 @@ for (const e of D.edges) {
 { const count = k => OWN.filter(n => n.kind === k).length;
   document.getElementById("stats").textContent = `${modules.length} modules · ${count("class")} classes · ${count("function")} functions · ${D.edges.filter(e => e.kind !== "contains" && !byId.get(e.src)?.library).length} edges`; }
 
-// ---------- findings: what the principles ask of the code, as `atlas check` lists them ----------
+// ---------- findings: what the principles ask of the code, as `atlas-code check` lists them ----------
 // each finding by the node it is about
 const ASKS = new Map();
 for (const f of D.findings || []) { if (!ASKS.has(f.node)) ASKS.set(f.node, []); ASKS.get(f.node).push(f); }
@@ -690,10 +690,10 @@ entrySel.addEventListener("change", () => {
   else if (v.startsWith("kind:")) { V.kind = v.slice(5); V.route = null; V.part = null; } else { V.kind = null; V.route = v || null; if (!v) V.part = null; }
   V.open.steps.clear(); plaatFit = true; render();
 });
-// a file named on the command line (`atlas view demo/x.ipynb`) opens on its route
+// a file named on the command line (`atlas-code view demo/x.ipynb`) opens on its route
 if (D.open && byId.has(D.open)) { V.route = D.open; entrySel.value = D.open; }
 // a view written down: in the address, so that a picture can be linked, or handed to the page by
-// `atlas view --view` (an agent's); the address comes first
+// `atlas-code view --view` (an agent's); the address comes first
 const viewData = () => {
   const o = {};
   if (V.route) o.route = V.route;
@@ -2091,9 +2091,9 @@ function diffBar() {
 }
 diffBar();
 
-// ---------- served: one view shared with an agent (`atlas serve`) ----------
+// ---------- served: one view shared with an agent (`atlas-code serve`) ----------
 // The page tells its server what it shows, goes where an agent points it, and keeps the notes its
-// reader writes on boxes and lines; `atlas mcp` reads and answers them. The server takes a change
+// reader writes on boxes and lines; `atlas-code mcp` reads and answers them. The server takes a change
 // only from its own page, which says so with `X-Atlas`.
 const post = (path, body) => fetch(path, {method: "POST", headers: {"X-Atlas": "1", "Content-Type": "application/json"}, body: JSON.stringify(body)});
 // a drawn box as the agent reads it: the id the page knows it by, and the words it shows
@@ -2327,13 +2327,13 @@ if (D.served) {
       else if (D.preliminary) bar.seen(s);
       fresh.hidden = !ready && (!s.drawing || D.preliminary);
       fresh.textContent = ready ? (D.preliminary ? "complete picture ↻" : "the code changed ↻") : "the code changed · drawing…";
-      fresh.title = ready ? "open the latest picture in this view" : "atlas serve is drawing the changed code; the page follows when it is done";
+      fresh.title = ready ? "open the latest picture in this view" : "atlas-code serve is drawing the changed code; the page follows when it is done";
     } catch {}
   }, 1000);
   // the history beside the page, from the same server
   const hl = html("a", null, "history");
   hl.id = "histlink"; hl.href = "/history"; hl.title = "the commits: pick one, or two to see as one picture";
-  // the page as `atlas view` writes it, opened where the reader is: a file to keep or send
+  // the page as `atlas-code view` writes it, opened where the reader is: a file to keep or send
   const ex = html("a", null, "export");
   ex.className = "histlink"; ex.title = "keep this picture as one HTML file, opened in this view";
   ex.onclick = () => { ex.href = "/export?v=" + encodeURIComponent(JSON.stringify(viewData())); };
@@ -2385,7 +2385,7 @@ if (D.served) {
   }
   document.getElementById("hint").prepend(html("span", null, "alt-click: a note for the agent · "));
   const dl = document.querySelector("#keys dl");
-  dl.append(html("dt", null, "alt-click a box or a line"), html("dd", null, "write a note on it for the agent (atlas serve); its answer shows once on the ring"));
+  dl.append(html("dt", null, "alt-click a box or a line"), html("dd", null, "write a note on it for the agent (atlas-code serve); its answer shows once on the ring"));
 }
 // a link to a place (`#v=…&at=…`, the place of a note) points at it once the picture is drawn
 const linkedAt = lessonAt || decodeURIComponent((location.hash.match(/[#&]at=([^&]*)/) || [])[1] || "");

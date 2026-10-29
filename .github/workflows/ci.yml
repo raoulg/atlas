@@ -71,7 +71,7 @@ jobs:
           triple=$(rustc --print host-tuple)
           case "$triple" in *-windows-*) ext=.exe ;; *) ext= ;; esac
           mkdir -p studio/src-tauri/binaries
-          touch "studio/src-tauri/binaries/atlas-$triple$ext"
+          touch "studio/src-tauri/binaries/atlas-code-$triple$ext"
       - run: cargo check --locked --manifest-path studio/src-tauri/Cargo.toml
       - run: cargo test --locked --manifest-path studio/src-tauri/Cargo.toml
       - run: node studio/tests/files.test.js

@@ -1,4 +1,4 @@
-//! The commit Atlas is built from, so that `atlas --version` and the page say which build drew
+//! The commit Atlas is built from, so that `atlas-code --version` and the page say which build drew
 //! them. Outside a git checkout (a crate from crates.io) there is none.
 
 use std::process::Command;

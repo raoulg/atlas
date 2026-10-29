@@ -77,7 +77,7 @@ pub fn upgrade(exe: &Path, nightly: bool, windows: bool) -> String {
     }
     if path.contains("/.cargo/bin/") {
         let branch = if nightly { " --branch next" } else { "" };
-        return format!("cargo install --locked --git https://github.com/raoulg/atlas{branch} atlas");
+        return format!("cargo install --locked --git https://github.com/raoulg/atlas{branch} atlas-code");
     }
     let (branch, channel) = if nightly { ("next", true) } else { ("main", false) };
     if windows {
@@ -155,7 +155,7 @@ pub fn begin() -> Check {
     let cached = Cache::answer(ANSWER).as_deref().and_then(read).filter(|(_, built, _)| *built == key(&this));
     if let Some((_, _, latest)) = &cached {
         if let Some(line) = newer(&this, latest) {
-            // the executable as installed, not the link on the PATH that points to it (`/opt/homebrew/bin/atlas`)
+            // the executable as installed, not the link on the PATH that points to it (`/opt/homebrew/bin/atlas-code`)
             let exe = std::env::current_exe().map(|e| std::fs::canonicalize(&e).unwrap_or(e)).unwrap_or_default();
             let how = upgrade(&exe, this.nightly(), cfg!(windows));
             eprintln!("{line}. Upgrade with: {how}\n(ATLAS_NO_UPDATE_CHECK=1 silences this)");
@@ -211,28 +211,29 @@ mod tests {
     #[test]
     fn the_upgrade_follows_the_install() {
         let up = |p: &str, nightly, windows| upgrade(Path::new(p), nightly, windows);
-        assert_eq!(up("/opt/homebrew/Cellar/atlas-code/0.66.2/bin/atlas", false, false), "brew upgrade atlas-code");
-        assert_eq!(up("/opt/homebrew/Cellar/atlas-code/HEAD-ab/bin/atlas", true, false), "brew upgrade --fetch-HEAD atlas-code");
+        assert_eq!(up("/opt/homebrew/Cellar/atlas-code/0.66.2/bin/atlas-code", false, false), "brew upgrade atlas-code");
+        assert_eq!(up("/opt/homebrew/Cellar/atlas-code/HEAD-ab/bin/atlas-code", true, false), "brew upgrade --fetch-HEAD atlas-code");
         assert_eq!(
-            up("/opt/homebrew/Cellar/atlas-code-nightly/0.66.2-nightly.202610171105/bin/atlas", true, false),
+            up("/opt/homebrew/Cellar/atlas-code-nightly/0.66.2-nightly.202610171105/bin/atlas-code", true, false),
             "brew upgrade atlas-code-nightly"
         );
-        assert_eq!(up("/opt/homebrew/bin/atlas", true, false), "brew upgrade atlas-code-nightly", "a link on the PATH");
-        assert_eq!(up("/opt/homebrew/bin/atlas", false, false), "brew upgrade atlas-code");
+        assert_eq!(up("/opt/homebrew/bin/atlas-code", true, false), "brew upgrade atlas-code-nightly", "a link on the PATH");
+        assert_eq!(up("/opt/homebrew/bin/atlas-code", false, false), "brew upgrade atlas-code");
         assert_eq!(
-            up("/opt/homebrew/Cellar/atlas-code-nightly/0.68.0-nightly.202610270300/bin/atlas-nightly", true, false),
+            up("/opt/homebrew/Cellar/atlas-code-nightly/0.68.0-nightly.202610270300/bin/atlas-code-nightly", true, false),
             "brew upgrade atlas-code-nightly",
             "the nightly beside the release"
         );
-        assert_eq!(up("/opt/homebrew/bin/atlas-nightly", true, false), "brew upgrade atlas-code-nightly");
-        assert!(up("/home/x/.local/bin/atlas-nightly", true, false).contains("| ATLAS_CHANNEL=nightly sh"));
-        assert!(up("C:\\Users\\x\\AppData\\Local\\Programs\\atlas\\atlas-nightly.exe", true, true)
+        assert_eq!(up("/opt/homebrew/bin/atlas-code-nightly", true, false), "brew upgrade atlas-code-nightly");
+        assert!(up("/home/x/.local/bin/atlas-code-nightly", true, false).contains("| ATLAS_CHANNEL=nightly sh"));
+        assert!(up("C:\\Users\\x\\AppData\\Local\\Programs\\atlas-code\\atlas-code-nightly.exe", true, true)
             .starts_with("$env:ATLAS_CHANNEL = 'nightly'; "));
-        assert!(up("/home/x/.cargo/bin/atlas", true, false).contains("--branch next"));
-        assert!(up("/home/x/.local/bin/atlas", false, false).ends_with("install.sh | sh"));
-        assert!(up("/home/x/.local/bin/atlas", true, false).contains("| ATLAS_CHANNEL=nightly sh"));
-        assert!(up("C:\\Users\\x\\AppData\\Local\\Programs\\atlas\\atlas.exe", false, true).ends_with("install.ps1 | iex"));
-        assert!(up("C:\\Users\\x\\AppData\\Local\\Programs\\atlas\\atlas.exe", true, true).starts_with("$env:ATLAS_CHANNEL = 'nightly'; "));
+        assert!(up("/home/x/.cargo/bin/atlas-code", true, false).contains("--branch next"));
+        assert!(up("/home/x/.local/bin/atlas-code", false, false).ends_with("install.sh | sh"));
+        assert!(up("/home/x/.local/bin/atlas-code", true, false).contains("| ATLAS_CHANNEL=nightly sh"));
+        assert!(up("C:\\Users\\x\\AppData\\Local\\Programs\\atlas-code\\atlas-code.exe", false, true).ends_with("install.ps1 | iex"));
+        assert!(up("C:\\Users\\x\\AppData\\Local\\Programs\\atlas-code\\atlas-code.exe", true, true)
+            .starts_with("$env:ATLAS_CHANNEL = 'nightly'; "));
     }
 
     #[test]

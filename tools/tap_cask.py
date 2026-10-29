@@ -41,7 +41,7 @@ CASK = """cask "{token}" do
   url "{url}"
   name "{app}"
   desc "{desc}"
-  homepage "https://raoulg.github.io/atlas/"
+  homepage "https://atlas.pttrn.io/"
 {livecheck}
   auto_updates true
   depends_on :macos

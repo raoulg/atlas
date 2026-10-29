@@ -4,7 +4,7 @@
 // `atlasPlan`): the page inlines it into its own script, where its names are the page's, and `engine/tests/plans.rs`
 // runs it in node on small programs whose plans are written down. It draws nothing and touches no document.
 
-// two readings drawn as one, when the page is their union (`--since`, `atlas history`): what B
+// two readings drawn as one, when the page is their union (`--since`, `atlas-code history`): what B
 // added, removed and changed, stamped on the nodes, steps, touches and edges of the union
 const DIFF = D.diff || null;
 if (DIFF) {

@@ -1,6 +1,6 @@
-//! `atlas history`: a repository's history as a page in the browser, served on this machine. The
+//! `atlas-code history`: a repository's history as a page in the browser, served on this machine. The
 //! page lists the commits (`/api/log`) and, beside them, draws one revision or the union of two
-//! (`/view`) in the viewer `atlas view` writes. `atlas history` answers it at its root, `atlas serve`
+//! (`/view`) in the viewer `atlas-code view` writes. `atlas-code history` answers it at its root, `atlas-code serve`
 //! beside its own page, at `/history`.
 //!
 //! The server answers GET requests over HTTP/1.1, one thread per connection, from the browser of
@@ -21,7 +21,7 @@ use crate::page::{Html, Opens, Reading};
 /// The page of the history: the commits beside the viewer.
 const PAGE: &str = include_str!("../../viewer/history.html");
 
-/// The server of `atlas history`: the repository, how to read it, and the addresses the browser
+/// The server of `atlas-code history`: the repository, how to read it, and the addresses the browser
 /// reaches it by.
 struct Server {
     repo: PathBuf,
@@ -36,11 +36,11 @@ pub fn serve(repo: &Path, addr: SocketAddr, opts: &Options, shown: bool) -> Resu
     let at = listener.local_addr()?;
     let server = Server { repo: repo.to_path_buf(), opts: opts.clone(), hosts: vec![at.to_string(), format!("localhost:{}", at.port())] };
     let url = format!("http://{at}/");
-    eprintln!("atlas history of {} at {url}", repo.display());
+    eprintln!("atlas-code history of {} at {url}", repo.display());
     if shown {
         crate::page::open(url.as_ref());
     }
-    http::listen(listener, |e| eprintln!("atlas history: {e}"), move |req| server.respond(req));
+    http::listen(listener, |e| eprintln!("atlas-code history: {e}"), move |req| server.respond(req));
     Ok(())
 }
 
@@ -49,10 +49,10 @@ impl Server {
     /// renamed itself to this machine) is refused.
     fn respond(&self, req: &Request) -> Answer {
         if !self.hosts.contains(&req.host) {
-            return Answer::text("403 Forbidden", "atlas history answers only at the address it serves".into());
+            return Answer::text("403 Forbidden", "atlas-code history answers only at the address it serves".into());
         }
         if req.method != "GET" {
-            return Answer::text("405 Method Not Allowed", "atlas history only reads".into());
+            return Answer::text("405 Method Not Allowed", "atlas-code history only reads".into());
         }
         respond(&self.repo, &self.opts, req, "/").unwrap_or_else(|| Answer::text("404 Not Found", format!("nothing at {}", req.path)))
     }

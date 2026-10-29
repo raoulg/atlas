@@ -1,4 +1,4 @@
-//! `atlas mcp`: the engine as an MCP server over stdio, so a coding agent can check a
+//! `atlas-code mcp`: the engine as an MCP server over stdio, so a coding agent can check a
 //! repository against Atlas's principles, ask why a principle matters, and read a route.
 //!
 //! The protocol is JSON-RPC 2.0, one message per line on stdin and stdout: `initialize`,
@@ -28,7 +28,7 @@ them make the change, then run `check` again to see the finding go. Python's typ
 ty: a value whose type ty does not know (a function without a return annotation, a library \
 without an installed environment) is not followed, and `check` asks for the annotation. Atlas \
 sees Python best with the environment synced (`uv sync`) and Ruff's `ANN` rules on. When the \
-person you work with runs `atlas serve`, their page and you share one view: `shown` says what \
+person you work with runs `atlas-code serve`, their page and you share one view: `shown` says what \
 they have open (read it when they say \"this box\" or \"here\"), `look` takes their page to a \
 view or points at a box or a line (\"here, this one\"), and `notes` lists what they wrote on boxes \
 and lines, each with a link to its place. Handle a note where you work, by a fix or by explaining \
@@ -47,8 +47,16 @@ about built code that leans on one.";
 /// Answer every message on stdin until it closes, reading repositories with `opts`.
 pub fn serve(opts: &Options) -> Result<()> {
     let mut stdout = std::io::stdout().lock();
-    for line in std::io::stdin().lock().lines() {
+    for line in std::io::stdin().lock().split(b'\n') {
         let line = line?;
+        let line = match String::from_utf8(line) {
+            Ok(line) => line,
+            Err(e) => {
+                writeln!(stdout, "{}", error(Value::Null, -32700, &format!("not UTF-8: {e}")))?;
+                stdout.flush()?;
+                continue;
+            }
+        };
         if line.trim().is_empty() {
             continue;
         }
@@ -104,7 +112,7 @@ fn initialize(params: &Value) -> Value {
 fn tools() -> Value {
     let path = json!({ "type": "string", "description": "The repository: its root, a package directory, or a git URL (a `…/tree/<ref>/<folder>` URL names one folder). Default: the directory the server runs in." });
     let read_only = json!({ "readOnlyHint": true, "openWorldHint": false });
-    let local = json!({ "type": "string", "description": "The repository `atlas serve` serves: its root or a directory in it. Default: the directory the server runs in." });
+    let local = json!({ "type": "string", "description": "The repository `atlas-code serve` serves: its root or a directory in it. Default: the directory the server runs in." });
     json!([
         {
             "name": "principles",
@@ -118,7 +126,7 @@ fn tools() -> Value {
             "inputSchema": { "type": "object", "properties": {
                 "path": path,
                 "principle": { "type": "string", "description": "Only this principle's findings: an id from `principles`." },
-                "json": { "type": "boolean", "description": "The findings as data, as `atlas check --json` prints them: each with `about`, the ids it is about by the part each plays (`breaks`, `variant`, `put`, `lost`), to read without the sentences, and one set aside with its `aside`, the decision that answers it." },
+                "json": { "type": "boolean", "description": "The findings as data, as `atlas-code check --json` prints them: each with `about`, the ids it is about by the part each plays (`breaks`, `variant`, `put`, `lost`), to read without the sentences, and one set aside with its `aside`, the decision that answers it." },
                 "all": { "type": "boolean", "description": "List the findings set aside too, each with the decision that answers it." },
             } },
             "annotations": read_only,
@@ -184,7 +192,7 @@ fn tools() -> Value {
         },
         {
             "name": "view",
-            "description": "Draw a repository's Flowchart in a view of your choosing and write it as a page the human can open: the same picture `atlas view` draws, opened where you point. A view is JSON: `route` (an entry id from `routes`), and `open.functions` (the steps that run these functions are opened, as `route` lists them); also `kind` (all routes of one kind: cli, export, script, notebook, route, mcp, make), `part`, `focus` (package ids), and the opened `parts`, `units` (packages), `families` (type ids) and `places`. Gives the file the page is in.",
+            "description": "Draw a repository's Flowchart in a view of your choosing and write it as a page the human can open: the same picture `atlas-code view` draws, opened where you point. A view is JSON: `route` (an entry id from `routes`), and `open.functions` (the steps that run these functions are opened, as `route` lists them); also `kind` (all routes of one kind: cli, export, script, notebook, route, mcp, make), `part`, `focus` (package ids), and the opened `parts`, `units` (packages), `families` (type ids) and `places`. Gives the file the page is in.",
             "inputSchema": { "type": "object", "properties": {
                 "path": path,
                 "view": { "type": "object", "description": "The view, e.g. `{\"route\": \"pkg.cli.build\", \"open\": {\"functions\": [\"pkg.build.Pipeline.run\"]}}`." },
@@ -204,13 +212,13 @@ fn tools() -> Value {
         },
         {
             "name": "shown",
-            "description": "What the person you work with has open in `atlas serve`: the view (route, opened sets, focus), the boxes and lines it draws, and the box they selected. Read it when they say \"this box\" or \"here\".",
+            "description": "What the person you work with has open in `atlas-code serve`: the view (route, opened sets, focus), the boxes and lines it draws, and the box they selected. Read it when they say \"this box\" or \"here\".",
             "inputSchema": { "type": "object", "properties": { "path": local } },
             "annotations": read_only,
         },
         {
             "name": "look",
-            "description": "Point the page of `atlas serve` at something: \"look here, this box\". Give a view to go to (JSON as `view` takes it: `route`, `open.functions`, `kind`, `part`, `focus`, the opened `parts`, `units`, `families`, `places`), a box or a line to point at, or both. The open page goes there within a second, selects what it points at and makes it light up.",
+            "description": "Point the page of `atlas-code serve` at something: \"look here, this box\". Give a view to go to (JSON as `view` takes it: `route`, `open.functions`, `kind`, `part`, `focus`, the opened `parts`, `units`, `families`, `places`), a box or a line to point at, or both. The open page goes there within a second, selects what it points at and makes it light up.",
             "inputSchema": { "type": "object", "properties": {
                 "path": local,
                 "view": { "type": "object", "description": "The view, e.g. `{\"route\": \"pkg.cli.build\", \"open\": {\"functions\": [\"pkg.build.Pipeline.run\"]}}`. Without it the page keeps its view." },
@@ -220,7 +228,7 @@ fn tools() -> Value {
         },
         {
             "name": "vision",
-            "description": "Show the person you work with what you plan, drawn beside what is: give the files your change would write, as sketch code (the signatures with their types and the calls in their order; bodies may be `...`, `todo!()` or `throw` — a sketch has to parse, not to build), and `atlas serve` draws the working tree and your vision as one picture, with what you add, remove and change marked, and a switch between the two. Use it to ask \"shall I do this?\" with a picture rather than in words, then `look` to point at the part you mean. It answers with what the vision does to the routes. A new vision replaces the last; `prophetize` writes it into the tree as prophecy once it is decided, `retract` takes it away.",
+            "description": "Show the person you work with what you plan, drawn beside what is: give the files your change would write, as sketch code (the signatures with their types and the calls in their order; bodies may be `...`, `todo!()` or `throw` — a sketch has to parse, not to build), and `atlas-code serve` draws the working tree and your vision as one picture, with what you add, remove and change marked, and a switch between the two. Use it to ask \"shall I do this?\" with a picture rather than in words, then `look` to point at the part you mean. It answers with what the vision does to the routes. A new vision replaces the last; `prophetize` writes it into the tree as prophecy once it is decided, `retract` takes it away.",
             "inputSchema": { "type": "object", "properties": {
                 "path": local,
                 "title": { "type": "string", "description": "What the vision is, in a line: shown beside it on the page." },
@@ -240,7 +248,7 @@ fn tools() -> Value {
         },
         {
             "name": "annotate",
-            "description": "Say something on a box or a line of `atlas serve`'s page, in your own words: what a condition of `choices` means (\"only on the first run\"), what a step is for, why a place stands where it does. It shows as a mark on what it is on, with your words on hover, apart from what Atlas traces. Name what it is on as `shown` lists the boxes and lines (a choice's frame is a box). A new annotation on the same box replaces the last; an empty `text` takes it away.",
+            "description": "Say something on a box or a line of `atlas-code serve`'s page, in your own words: what a condition of `choices` means (\"only on the first run\"), what a step is for, why a place stands where it does. It shows as a mark on what it is on, with your words on hover, apart from what Atlas traces. Name what it is on as `shown` lists the boxes and lines (a choice's frame is a box). A new annotation on the same box replaces the last; an empty `text` takes it away.",
             "inputSchema": { "type": "object", "properties": {
                 "path": local,
                 "on": { "type": "string", "description": "A box by its id, or a line as `from>to`, as `shown` lists them." },
@@ -250,7 +258,7 @@ fn tools() -> Value {
         },
         {
             "name": "notes",
-            "description": "The notes the person you work with wrote on boxes and lines of `atlas serve`'s page that no agent has resolved: what each is on, the view and commit it was written at, its text (a line for each time it was opened), and a link to its place. Reading marks them seen, not resolved. Handle each where you work, by a fix or by explaining, then `resolve` it; a note worth keeping (a real bug) goes into an issue with its link first. Also lists the notes resolved while this page is served.",
+            "description": "The notes the person you work with wrote on boxes and lines of `atlas-code serve`'s page that no agent has resolved: what each is on, the view and commit it was written at, its text (a line for each time it was opened), and a link to its place. Reading marks them seen, not resolved. Handle each where you work, by a fix or by explaining, then `resolve` it; a note worth keeping (a real bug) goes into an issue with its link first. Also lists the notes resolved while this page is served.",
             "inputSchema": { "type": "object", "properties": { "path": local } },
             "annotations": { "readOnlyHint": false, "destructiveHint": false, "openWorldHint": false },
         },
@@ -394,7 +402,7 @@ fn call(name: &str, args: &Value, opts: &Options) -> Option<Result<String, Strin
                 return Err("`look` takes a `view` (`{\"route\": …, \"open\": {…}}`), a box or line to point `at`, or both.".into());
             }
             crate::shared::look(&here(text("path")), &crate::shared::Look { view, at })
-                .map(|_| "The page of `atlas serve` goes there when it next asks, within a second while it is open.".to_string())
+                .map(|_| "The page of `atlas-code serve` goes there when it next asks, within a second while it is open.".to_string())
                 .map_err(|e| format!("Could not keep where to look: {e}"))
         }),
         "vision" => {
@@ -420,7 +428,7 @@ fn call(name: &str, args: &Value, opts: &Options) -> Option<Result<String, Strin
                 (Ok(before), Ok(after)) => crate::shared::envision(&repo, &vision).map_err(|e| format!("Could not keep the vision: {e}")).map(|_| {
                     let c = atlas_engine::changes::between("working tree", Some("vision"), &before, &after);
                     format!(
-                        "Envisioned: {}. The page of `atlas serve` draws it beside the working tree within a second; `look` points at what you mean.\n\n{}",
+                        "Envisioned: {}. The page of `atlas-code serve` draws it beside the working tree within a second; `look` points at what you mean.\n\n{}",
                         vision.title,
                         atlas_engine::changes::report(&c)
                     )
@@ -462,7 +470,7 @@ fn call(name: &str, args: &Value, opts: &Options) -> Option<Result<String, Strin
             Some(on) => crate::shared::annotate(&here(text("path")), on, text("text"))
                 .map(|all| {
                     format!(
-                        "The page of `atlas serve` shows {} annotation{} within a few seconds.",
+                        "The page of `atlas-code serve` shows {} annotation{} within a few seconds.",
                         all.len(),
                         if all.len() == 1 { "" } else { "s" }
                     )
@@ -532,7 +540,7 @@ fn view(path: Option<&str>, sight: Option<Sight>, out: Option<&str>, opts: &Opti
     ))
 }
 
-/// The repository `atlas serve` serves, as a tool names it: a directory, else where the server runs.
+/// The repository `atlas-code serve` serves, as a tool names it: a directory, else where the server runs.
 fn here(path: Option<&str>) -> PathBuf {
     PathBuf::from(path.unwrap_or("."))
 }
@@ -540,7 +548,7 @@ fn here(path: Option<&str>) -> PathBuf {
 /// What the page says it shows, as text: the view, the selected box, the boxes and the lines.
 fn shown(repo: &std::path::Path) -> String {
     let Some(s) = crate::shared::shown(repo) else {
-        return "No page has said what it shows: run `atlas serve` in the repository and open it.".into();
+        return "No page has said what it shows: run `atlas-code serve` in the repository and open it.".into();
     };
     let list = |k: &str, f: &dyn Fn(&Value) -> String| {
         s.get(k).and_then(Value::as_array).map(|xs| xs.iter().map(|x| f(x)).collect::<Vec<_>>()).unwrap_or_default()

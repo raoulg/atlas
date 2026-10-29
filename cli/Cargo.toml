@@ -1,6 +1,6 @@
 [package]
-name = "atlas"
-description = "A mathematical panorama of your software code"
+name = "atlas-code"
+description = "Atlas — your code's topology"
 readme = "../README.md"
 keywords = ["code-visualization", "tree-sitter", "architecture", "static-analysis", "mcp"]
 categories = ["development-tools", "visualization", "command-line-utilities"]
@@ -12,7 +12,7 @@ homepage.workspace = true
 rust-version.workspace = true
 
 [[bin]]
-name = "atlas"
+name = "atlas-code"
 path = "src/main.rs"
 
 [dependencies]

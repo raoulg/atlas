@@ -9,8 +9,8 @@
 The sessions are the ones the tour shows beside its chats: pointing (where does the smoothing
 happen; a note on `smooth`, read and answered) and designing ahead (a vision of `peaks` and
 `Cycles`, decided into a prophecy, then built). Each is played again on the sunspots pipeline of
-`engine/tests/pairs/pipeline/python-clean`, copied into a scratch repository: `atlas serve` serves
-it, `atlas mcp` is called as the agent called it, and the page is driven in the installed Chrome as
+`engine/tests/pairs/pipeline/python-clean`, copied into a scratch repository: `atlas-code serve` serves
+it, `atlas-code mcp` is called as the agent called it, and the page is driven in the installed Chrome as
 the person drove it. Every picture is a screenshot of the page, at twice the density, written to
 `docs/img/session/<name>-<theme>.png`; the moment the agent points is an animation, `look-<theme>.webp`:
 the viewer's pulse held still and set frame by frame, then a rest.
@@ -125,7 +125,7 @@ def scratch(at, markers):
 
 
 class Session:
-    """`atlas serve` on a repository, its page in the browser, and `atlas mcp` as the agent calls it."""
+    """`atlas-code serve` on a repository, its page in the browser, and `atlas-code mcp` as the agent calls it."""
 
     def __init__(self, atlas, repo, browser, theme):
         self.atlas, self.repo = atlas, repo
@@ -136,7 +136,7 @@ class Session:
                 self.url = f'http://{m.group(1)}/'
                 break
         else:
-            raise RuntimeError('atlas serve did not say where it serves')
+            raise RuntimeError('atlas-code serve did not say where it serves')
         self.context = browser.new_context(viewport={'width': 1400, 'height': 760}, device_scale_factor=2, color_scheme=theme)
         self.page = self.context.new_page()
         self.errors = []

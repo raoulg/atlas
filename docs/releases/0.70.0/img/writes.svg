@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 290" role="img" aria-label="Breaking a seal cuts out sealed=#7 alone in 0.70.0, where 0.69.3 also took a space; a vision of sink.py lands on src/archive/sink.py in 0.70.0, where 0.69.3 could take src/archive/store/sink.py">
+<text x="20" y="30" style="font-family:var(--sans);font-size:15px;fill:var(--ink);text-anchor:start;font-weight:600">unseal #7: a cut, not a rewrite</text>
+<text x="20" y="66" style="font-family:var(--sans);font-size:12.5px;fill:var(--ink-3);text-anchor:start;font-weight:400">the marker</text>
+<text x="110" y="66" style="font-family:var(--mono);font-size:14px;fill:var(--ink);white-space:pre"><tspan style="fill:var(--ink)">#[doc = &quot;prophecy: supersedes=Sink</tspan><tspan style="fill:var(--edit);text-decoration:line-through;font-weight:700"> sealed=#7</tspan><tspan style="fill:var(--ink)">&quot;]</tspan></text>
+<text x="20" y="112" style="font-family:var(--sans);font-size:12.5px;fill:var(--del);text-anchor:start;font-weight:600">0.69.3</text>
+<text x="110" y="112" style="font-family:var(--mono);font-size:14px;fill:var(--ink);white-space:pre"><tspan style="fill:var(--ink)">#[doc = &quot;prophecy:</tspan><tspan style="fill:var(--del);font-weight:700">‸</tspan><tspan style="fill:var(--ink)">supersedes=Sink&quot;]</tspan></text>
+<text x="110" y="134" style="font-family:var(--sans);font-size:12.5px;fill:var(--del);text-anchor:start;font-weight:400">the seal went, and the author&#x27;s space with it</text>
+<text x="20" y="176" style="font-family:var(--sans);font-size:12.5px;fill:var(--key);text-anchor:start;font-weight:600">0.70.0</text>
+<text x="110" y="176" style="font-family:var(--mono);font-size:14px;fill:var(--ink);white-space:pre"><tspan style="fill:var(--ink)">#[doc = &quot;prophecy: supersedes=Sink&quot;]</tspan></text>
+<text x="110" y="198" style="font-family:var(--sans);font-size:12.5px;fill:var(--key);text-anchor:start;font-weight:400">the seal went, every other byte as it was,</text>
+<text x="110" y="216" style="font-family:var(--sans);font-size:12.5px;fill:var(--key);text-anchor:start;font-weight:400">in Python, Rust and TypeScript</text>
+<line x1="560" y1="20" x2="560" y2="280" style="stroke:var(--line);stroke-width:1"/>
+<text x="590" y="30" style="font-family:var(--sans);font-size:15px;fill:var(--ink);text-anchor:start;font-weight:600">a vision of sink.py, asked for src/archive</text>
+<rect x="590" y="50" width="130" height="38" rx="8" style="fill:var(--panel);stroke:var(--ink);stroke-width:1.5"/>
+<text x="655" y="74" style="font-family:var(--mono);font-size:13px;fill:var(--ink);text-anchor:middle;font-weight:400">vision: sink.py</text>
+<text x="700" y="128" style="font-family:var(--mono);font-size:14px;fill:var(--ink);text-anchor:start;font-weight:400">src/archive/</text>
+<text x="722" y="160" style="font-family:var(--mono);font-size:14px;fill:var(--ink);text-anchor:start;font-weight:400">sink.py</text>
+<text x="722" y="194" style="font-family:var(--mono);font-size:14px;fill:var(--ink);text-anchor:start;font-weight:400">store/</text>
+<text x="744" y="228" style="font-family:var(--mono);font-size:14px;fill:var(--ink);text-anchor:start;font-weight:400">sink.py</text>
+<path d="M670 88 C 670 140, 690 155, 716 155" style="stroke:var(--key);stroke-width:2;fill:none" marker-end="url(#d-head)"/>
+<path d="M620 88 C 620 210, 680 223, 738 223" style="stroke:var(--del);stroke-width:1.6;fill:none;stroke-dasharray:5 4" marker-end="url(#d-head)"/>
+<text x="800" y="156" style="font-family:var(--sans);font-size:12.5px;fill:var(--key);text-anchor:start;font-weight:600">0.70.0:</text>
+<text x="800" y="172" style="font-family:var(--sans);font-size:12.5px;fill:var(--key);text-anchor:start;font-weight:400">the path it names</text>
+<text x="822" y="224" style="font-family:var(--sans);font-size:12.5px;fill:var(--del);text-anchor:start;font-weight:600">0.69.3: a file</text>
+<text x="822" y="240" style="font-family:var(--sans);font-size:12.5px;fill:var(--del);text-anchor:start;font-weight:400">whose name ends so</text>
+<text x="590" y="272" style="font-family:var(--sans);font-size:12.5px;fill:var(--key);text-anchor:start;font-weight:400">a vision of new files only is placed where it names them too</text>
+</svg>

@@ -114,17 +114,17 @@ fn help_template() -> String {
 fn examples() -> String {
     let (head, cmd, dim) = (STYLES.get_header(), STYLES.get_literal(), Style::new().effects(Effects::DIMMED));
     let rows = [
-        ("atlas serve", "a page to work in with your agent"),
-        ("atlas view", "the same picture as one HTML file"),
-        ("atlas view ../api ../web", "two repositories as parts of one picture"),
-        ("atlas view notebooks/explore.ipynb", "one file, opened on its route"),
-        ("atlas view https://github.com/o/r/tree/main/src/pkg", "one folder of a repository on GitHub"),
-        ("atlas check", "where code and principles disagree"),
-        ("atlas revelation", "what is left to build"),
-        ("atlas changes", "what your edits did to the routes"),
-        ("atlas changes v1..main", "what changed between two revisions"),
-        ("atlas history", "pick two commits, see them as one picture"),
-        ("claude mcp add atlas -- atlas mcp", "give Claude Code the same picture"),
+        ("atlas-code serve", "a page to work in with your agent"),
+        ("atlas-code view", "the same picture as one HTML file"),
+        ("atlas-code view ../api ../web", "two repositories as parts of one picture"),
+        ("atlas-code view notebooks/explore.ipynb", "one file, opened on its route"),
+        ("atlas-code view https://github.com/o/r/tree/main/src/pkg", "one folder of a repository on GitHub"),
+        ("atlas-code check", "where code and principles disagree"),
+        ("atlas-code revelation", "what is left to build"),
+        ("atlas-code changes", "what your edits did to the routes"),
+        ("atlas-code changes v1..main", "what changed between two revisions"),
+        ("atlas-code history", "pick two commits, see them as one picture"),
+        ("claude mcp add atlas -- atlas-code mcp", "give Claude Code the same picture"),
     ];
     let mut s = format!("{head}Examples:{head:#}\n");
     for (c, what) in rows {
@@ -141,17 +141,20 @@ fn examples() -> String {
     s
 }
 
-/// What the exit status says, as ruff and grep say it: what was asked is done, `atlas check` has
+/// What the exit status says, as ruff and grep say it: what was asked is done, `atlas-code check` has
 /// something to ask, or Atlas could not do what was asked (a path it cannot read, a clone that
 /// fails, a command line it does not take).
-const EXIT: [(u8, &str); 3] =
-    [(0, "done; atlas check has nothing to ask"), (1, "atlas check has something to ask"), (2, "Atlas could not do what was asked")];
+const EXIT: [(u8, &str); 3] = [
+    (0, "done; atlas-code check has nothing to ask"),
+    (1, "atlas-code check has something to ask"),
+    (2, "Atlas could not do what was asked"),
+];
 
 #[derive(Parser)]
 #[command(
-    name = "atlas",
+    name = "atlas-code",
     version = version::VERSION.as_str(),
-    about = "A mathematical panorama of your software code.",
+    about = "Atlas — your code's topology.",
     help_template = help_template(),
     after_help = examples(),
     styles = STYLES
@@ -176,7 +179,7 @@ enum Cmd {
     ///
     /// Serves a repository's page on this machine, drawn anew when its code changes and shared with
     /// an agent: what the page shows, where the agent points it, and the notes written on its boxes
-    /// and lines (`atlas mcp`: `shown`, `look`, `notes`, `resolve`).
+    /// and lines (`atlas-code mcp`: `shown`, `look`, `notes`, `resolve`).
     Serve {
         /// Repository root; default: the current directory.
         repo: Option<PathBuf>,
@@ -279,7 +282,7 @@ enum Cmd {
     /// The picture for your coding agent, over MCP
     ///
     /// Serves Atlas to a coding agent over MCP (stdio): principles, check, explain, routes, route,
-    /// view, changes, and with `atlas serve`, shown, look, notes, answer.
+    /// view, changes, and with `atlas-code serve`, shown, look, notes, answer.
     Mcp,
     /// The history in your browser: pick two commits, see them as one picture
     ///
@@ -495,7 +498,7 @@ fn main() -> ExitCode {
     }
 }
 
-/// The command, and 1 for `atlas check` with something to ask. It returns once what it holds is
+/// The command, and 1 for `atlas-code check` with something to ask. It returns once what it holds is
 /// dropped, the temporary clone of a git URL among it, so that is removed whatever the status.
 fn run(cli: Cli) -> Result<ExitCode> {
     let mut code = ExitCode::SUCCESS;

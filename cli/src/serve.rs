@@ -1,10 +1,10 @@
-//! `atlas serve`: the page of a repository, served on this machine and shared with an agent. The page
+//! `atlas-code serve`: the page of a repository, served on this machine and shared with an agent. The page
 //! says what it shows, goes where an agent points it, and keeps the notes its reader writes on boxes
-//! and lines; all three are files of `.atlas/` (`shared`), which `atlas mcp` reads and writes too.
+//! and lines; all three are files of `.atlas/` (`shared`), which `atlas-code mcp` reads and writes too.
 //!
 //! The page is the working tree's, and follows it: when a file Atlas reads changes, the server publishes
 //! a complete snapshot and the open page draws it in the view it was in. Beside it, at `/history`, the
-//! history of `atlas history`, so that two commits are a click away. At `/api/files`, the files Atlas
+//! history of `atlas-code history`, so that two commits are a click away. At `/api/files`, the files Atlas
 //! reads, each with what the graph defines in it: the tree a file browser shows beside the page.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
@@ -127,12 +127,12 @@ impl Server {
     /// analysis comes from the page itself or its reader (`Request::own`).
     fn respond(&self, req: &Request) -> Answer {
         if !self.hosts.contains(&req.host) {
-            return Answer::text("403 Forbidden", "atlas serve answers only at the address it serves".into());
+            return Answer::text("403 Forbidden", "atlas-code serve answers only at the address it serves".into());
         }
         if acts(req) && !req.own {
             return Answer::text(
                 "403 Forbidden",
-                "atlas serve takes what changes something or runs an analysis from its own page only".into(),
+                "atlas-code serve takes what changes something or runs an analysis from its own page only".into(),
             );
         }
         if let Some(answer) = crate::history::respond(&self.repo, &self.opts, req, "/history") {
@@ -165,7 +165,7 @@ impl Server {
         }
     }
 
-    /// The page as `atlas view` writes it, opened in the sight the reader has (`v`): a file to keep
+    /// The page as `atlas-code view` writes it, opened in the sight the reader has (`v`): a file to keep
     /// or send, that needs no server.
     fn export(&self, req: &Request) -> Result<(String, String)> {
         let sight = req.query.get("v").map(|v| v.parse::<Sight>()).transpose().context("the view is not one the page writes")?;
@@ -332,7 +332,7 @@ impl Server {
 }
 
 /// What happened to the notes, said in the log as it happens: a note written or reopened, read by
-/// an agent, resolved. The agent writes through `atlas mcp`, another process, so the notes are
+/// an agent, resolved. The agent writes through `atlas-code mcp`, another process, so the notes are
 /// looked at every second.
 fn watch_notes(repo: &Path, log: &Log) {
     let mut known: HashMap<u32, State> = shared::notes(repo).unwrap_or_default().into_iter().map(|n| (n.id, n.state)).collect();

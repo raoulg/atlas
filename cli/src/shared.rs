@@ -1,17 +1,17 @@
 //! What the reader of a served page and an agent share, kept in `.atlas/` beside the pages, so that
-//! `atlas serve` and `atlas mcp` need not know each other:
+//! `atlas-code serve` and `atlas-code mcp` need not know each other:
 //!
 //! - `shown.json`: the view the page shows, and the boxes and lines it draws, as the page last said;
 //! - `look.json`: a view an agent asks the page to go to, and a box or line it points at there,
 //!   taken by the page once;
 //! - `notes.json`: what the reader wrote on a box or a line, and whether an agent resolved it;
-//! - `serving.json`: where `atlas serve` serves the page, for a link to the place of a note;
+//! - `serving.json`: where `atlas-code serve` serves the page, for a link to the place of a note;
 //! - `vision.json`: what an agent has in view, the working tree with some files written otherwise,
 //!   drawn beside the working tree until the agent retracts it;
 //! - `annotations.json`: what an agent says of a box or a line (what a condition means, what a step
 //!   is for), shown on the page until the agent takes it away.
 //!
-//! Threads of `atlas serve` and the process of `atlas mcp` write these files at once. A file is
+//! Threads of `atlas-code serve` and the process of `atlas-code mcp` write these files at once. A file is
 //! written whole beside its place and renamed into it, so a reader never finds half of it; a change
 //! that reads a file and writes it again (a note added, a look taken) holds the file's lock, beside
 //! it, so that no change is lost to another; and a file that does not read as Atlas wrote it is an
@@ -21,7 +21,7 @@
 //! it resolves it, by a fix or by what it explains where it works, resolved after. The reader
 //! reopens a resolved note with a new line. A note is for the work at hand: what must last, an
 //! agent puts in an issue that links to the note's place. A resolved note is shown while the
-//! `atlas serve` it was resolved under runs; the next one starts without it.
+//! `atlas-code serve` it was resolved under runs; the next one starts without it.
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -73,7 +73,7 @@ pub struct Note {
 }
 
 /// A file of `.atlas/` at the top of the repository `repo` is in.
-/// How long each phase of drawing the page took the last few times `atlas serve` started, in
+/// How long each phase of drawing the page took the last few times `atlas-code serve` started, in
 /// seconds, the latest last: what the progress bars expect of the next start. A start that finds the
 /// index of its build of Atlas reads little (`warm`), one that does not reads all (`cold`), so the two
 /// kinds are kept apart.
@@ -265,7 +265,7 @@ pub fn resolve(repo: &Path, id: u32, commit: Option<String>, issue: Option<Strin
     })
 }
 
-/// A new `atlas serve` starts without the notes resolved before it.
+/// A new `atlas-code serve` starts without the notes resolved before it.
 pub fn forget_resolved(repo: &Path) -> Result<()> {
     change_notes(repo, |all| {
         let before = all.len();
@@ -368,7 +368,7 @@ pub fn annotate(repo: &Path, on: &str, text: Option<&str>) -> Result<Vec<Annotat
     })
 }
 
-/// Where `atlas serve` serves the page: `http://127.0.0.1:8778/`.
+/// Where `atlas-code serve` serves the page: `http://127.0.0.1:8778/`.
 pub fn serving(repo: &Path) -> Option<String> {
     read(&file(repo, "serving.json"))?.get("url")?.as_str().map(str::to_string)
 }
@@ -377,7 +377,7 @@ pub fn set_serving(repo: &Path, url: &str) -> Result<()> {
     write(&file(repo, "serving.json"), &serde_json::json!({ "url": url }))
 }
 
-/// The address of a note's place: the page `atlas serve` serves at `url`, in the view the note was
+/// The address of a note's place: the page `atlas-code serve` serves at `url`, in the view the note was
 /// written in, pointing at what it is on.
 pub fn link(url: &str, note: &Note) -> String {
     let view = if note.view.is_object() { format!("v={}&", component(&note.view.to_string())) } else { String::new() };

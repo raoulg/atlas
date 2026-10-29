@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 """The contract between what the tap jobs write and the release they name, as Homebrew reads it: the casks of
-`tap_cask.py` and the nightly formula of `tap_formula.py`.
+`tap_cask.py` and the formulas of `tap_formula.py`.
 
 On every platform and architecture Homebrew knows, each resolves to a file of that build's release (the tag
 `v<version>`, or the pre-release `nightly-<stamp>`), for that architecture, with that file's checksum;
 Homebrew's own `brew style` and `brew audit` accept it; and the release and the nightly install side by
-side: two apps with their own data, and a nightly CLI that excludes no release. Homebrew reads a cask or
+side: two apps with their own data, and two commands that exclude no formula. Homebrew reads a cask or
 formula only from a tap, so the test makes one and removes it again. It needs `brew`, and skips without it
 (CI runs it on macOS).
 
@@ -23,7 +23,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
 from tap_cask import ARCHES, DMG, cask, sha256  # noqa: E402
-from tap_formula import TARGETS, formula  # noqa: E402
+from tap_formula import ARCHIVE, TARGETS, formula  # noqa: E402
 
 RELEASES = "https://github.com/raoulg/atlas/releases/download/"
 BREW = shutil.which("brew")
@@ -124,45 +124,58 @@ class CaskNamesItsBuild(unittest.TestCase):
 
 
 @unittest.skipUnless(BREW, "needs Homebrew")
-class NightlyFormulaNamesItsBuild(unittest.TestCase):
+class FormulaNamesItsBuild(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.dist = Path(tempfile.mkdtemp())
         for target in TARGETS.values():
-            (cls.dist / f"atlas-{target}.tar.gz").write_bytes(f"the archive for {target}".encode())
+            (cls.dist / ARCHIVE.format(target=target)).write_bytes(f"the archive for {target}".encode())
         cls.tap = f"atlas-test/formula-{os.getpid()}"
         tap_new(cls.tap)
         cls.formulae = Path(brew("--repo", cls.tap).strip()) / "Formula"
         cls.formulae.mkdir(exist_ok=True)
+        (cls.formulae / "atlas-code.rb").write_text(formula(cls.dist, "1.3.0"))
         (cls.formulae / "atlas-code-nightly.rb").write_text(formula(cls.dist, "1.3.0", "202610261819"))
-        cls.name = f"{cls.tap}/atlas-code-nightly"
+        cls.release, cls.nightly = f"{cls.tap}/atlas-code", f"{cls.tap}/atlas-code-nightly"
 
     @classmethod
     def tearDownClass(cls):
         brew("untap", "--force", cls.tap)
         shutil.rmtree(cls.dist)
 
-    def test_each_platform_gets_its_archive(self):
-        read = json.loads(brew("info", "--formula", "--json=v2", "--variations", self.name))["formulae"][0]
-        self.assertEqual(read["versions"]["stable"], "1.3.0-nightly.202610261819")
-        by_file = {f"atlas-{target}.tar.gz": sha256(self.dist / f"atlas-{target}.tar.gz") for target in TARGETS.values()}
+    def resolves_to(self, name: str, version: str, tag: str):
+        """Every variation's URL is an archive of `tag` whose file carries the checksum named beside it."""
+        read = json.loads(brew("info", "--formula", "--json=v2", "--variations", name))["formulae"][0]
+        self.assertEqual(read["versions"]["stable"], version)
+        by_file = {ARCHIVE.format(target=target): sha256(self.dist / ARCHIVE.format(target=target)) for target in TARGETS.values()}
         seen = set()
-        for name, variation in [("this machine", read), *(read.get("variations") or {}).items()]:
+        for where, variation in [("this machine", read), *(read.get("variations") or {}).items()]:
             stable = (variation.get("urls") or read["urls"])["stable"]
             url, sha = stable["url"], stable["checksum"]
-            self.assertTrue(url.startswith(f"{RELEASES}nightly-202610261819/"), f"{name}: {url}")
+            self.assertTrue(url.startswith(f"{RELEASES}{tag}/"), f"{where}: {url}")
             file = url.rsplit("/", 1)[1]
-            self.assertEqual(sha, by_file.get(file), f"{name}: {file} with another file's checksum")
+            self.assertEqual(sha, by_file.get(file), f"{where}: {file} with another file's checksum")
             seen.add(file)
         self.assertEqual(seen, set(by_file), "an archive no platform installs")
 
-    def test_it_excludes_no_release(self):
-        read = json.loads(brew("info", "--formula", "--json=v2", self.name))["formulae"][0]
-        self.assertEqual(read["conflicts_with"], [], "the nightly installs `atlas-nightly`, beside `atlas`")
+    def test_a_release_names_its_tag(self):
+        self.resolves_to(self.release, "1.3.0", "v1.3.0")
 
-    def test_homebrew_accepts_it(self):
-        brew("style", self.name)
-        brew("audit", "--formula", "--strict", self.name)
+    def test_a_nightly_names_its_prerelease(self):
+        self.resolves_to(self.nightly, "1.3.0-nightly.202610261819", "nightly-202610261819")
+
+    def test_the_two_channels_install_side_by_side(self):
+        for name in (self.release, self.nightly):
+            read = json.loads(brew("info", "--formula", "--json=v2", name))["formulae"][0]
+            self.assertEqual(read["conflicts_with"], [], f"{name} excludes another formula")
+        source = {name: (self.formulae / f"{name.rsplit('/', 1)[1]}.rb").read_text() for name in (self.release, self.nightly)}
+        self.assertIn('bin.install "atlas-code"\n', source[self.release])
+        self.assertIn('bin.install "atlas-code" => "atlas-code-nightly"', source[self.nightly], "both install one command")
+
+    def test_homebrew_accepts_them(self):
+        for name in (self.release, self.nightly):
+            brew("style", name)
+            brew("audit", "--formula", "--strict", name)
 
 
 if __name__ == "__main__":

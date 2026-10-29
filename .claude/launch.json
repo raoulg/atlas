@@ -27,7 +27,7 @@
     },
     {
       "name": "history",
-      "runtimeExecutable": "target/release/atlas",
+      "runtimeExecutable": "target/release/atlas-code",
       "runtimeArgs": [
         "history",
         ".",
@@ -39,7 +39,7 @@
     },
     {
       "name": "serve",
-      "runtimeExecutable": "target/release/atlas",
+      "runtimeExecutable": "target/release/atlas-code",
       "runtimeArgs": [
         "serve",
         ".",

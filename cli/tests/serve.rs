@@ -1,4 +1,4 @@
-//! `atlas serve` and `atlas mcp` sharing one page: the page says what it shows and an agent reads
+//! `atlas-code serve` and `atlas-code mcp` sharing one page: the page says what it shows and an agent reads
 //! it, an agent points at a box and the page goes there once, and a note the reader writes is
 //! resolved by an agent, never by its reading alone, and opened again by the reader. The page follows the code: a changed file is drawn
 //! anew, and the page knows which drawing it is. what an agent has in view is drawn beside the
@@ -57,7 +57,7 @@ fn output(mut child: Child, seconds: u64) -> Vec<u8> {
         out
     });
     let mut child = Served(child);
-    assert!(ends_within(&mut child, seconds), "atlas mcp answers within {seconds} s");
+    assert!(ends_within(&mut child, seconds), "atlas-code mcp answers within {seconds} s");
     reading.join().unwrap()
 }
 
@@ -69,7 +69,7 @@ fn serve(repo: &Path) -> (Served, String) {
 /// The server, started with `more` arguments; its standard input is a pipe the test holds.
 fn serve_with(repo: &Path, more: &[&str]) -> (Served, String) {
     let cache = std::env::temp_dir().join(format!("atlas-serve-cache-{}", std::process::id()));
-    let mut child = Command::new(env!("CARGO_BIN_EXE_atlas"))
+    let mut child = Command::new(env!("CARGO_BIN_EXE_atlas-code"))
         .args(["serve", "--no-open", "--port", "0"])
         .args(more)
         .arg(repo)
@@ -77,7 +77,7 @@ fn serve_with(repo: &Path, more: &[&str]) -> (Served, String) {
         .stdin(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
-        .expect("atlas serve starts");
+        .expect("atlas-code serve starts");
     let lines = BufReader::new(child.stderr.take().unwrap()).lines().map_while(Result::ok);
     let child = Served(child);
     let line = lines.take(8).find(|l| l.contains("http://")).expect("the server says where it serves");
@@ -119,11 +119,11 @@ const SAME: &str = "Sec-Fetch-Site: same-origin\r\n";
 const READER: &str = "Sec-Fetch-Site: none\r\n";
 const ELSEWHERE: &str = "Sec-Fetch-Site: cross-site\r\n";
 
-/// One tool of `atlas mcp`, called on `repo`: its text.
+/// One tool of `atlas-code mcp`, called on `repo`: its text.
 fn tool(repo: &Path, name: &str, mut args: Value) -> String {
     args["path"] = json!(repo.to_str().unwrap());
     let call = json!({"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": name, "arguments": args}});
-    let mut child = Command::new(env!("CARGO_BIN_EXE_atlas")).arg("mcp").stdin(Stdio::piped()).stdout(Stdio::piped()).spawn().unwrap();
+    let mut child = Command::new(env!("CARGO_BIN_EXE_atlas-code")).arg("mcp").stdin(Stdio::piped()).stdout(Stdio::piped()).spawn().unwrap();
     writeln!(child.stdin.take().unwrap(), "{call}").unwrap();
     let reply: Value = serde_json::from_slice(&output(child, ANSWER.as_secs())).unwrap();
     reply["result"]["content"][0]["text"].as_str().unwrap_or_else(|| panic!("{reply}")).to_string()
@@ -426,9 +426,9 @@ fn a_seal_is_broken_by_naming_it() {
     assert!(tool(&repo, "seals", json!({})).contains("0 sealed"));
 }
 
-/// Several tools of one `atlas mcp` on `repo`, called in turn: each one's reply.
+/// Several tools of one `atlas-code mcp` on `repo`, called in turn: each one's reply.
 fn tools(repo: &Path, calls: &[(&str, Value)]) -> Vec<Value> {
-    let mut child = Command::new(env!("CARGO_BIN_EXE_atlas")).arg("mcp").stdin(Stdio::piped()).stdout(Stdio::piped()).spawn().unwrap();
+    let mut child = Command::new(env!("CARGO_BIN_EXE_atlas-code")).arg("mcp").stdin(Stdio::piped()).stdout(Stdio::piped()).spawn().unwrap();
     let mut stdin = child.stdin.take().unwrap();
     for (i, (name, args)) in calls.iter().enumerate() {
         let mut args = args.clone();
@@ -441,7 +441,7 @@ fn tools(repo: &Path, calls: &[(&str, Value)]) -> Vec<Value> {
 }
 
 /// The page and an agent writing notes at once lose none and mix none: while the page adds notes over
-/// several connections at once (threads of `atlas serve`), an agent in another process (`atlas mcp`)
+/// several connections at once (threads of `atlas-code serve`), an agent in another process (`atlas-code mcp`)
 /// reads the notes and resolves the ones written before; every note is kept, under an id of its own,
 /// and every resolution stays.
 #[test]

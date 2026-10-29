@@ -9,7 +9,7 @@ edition = "2021"
 rust-version = "1.97"
 license = "AGPL-3.0-only"
 repository = "https://github.com/raoulg/atlas"
-homepage = "https://github.com/raoulg/atlas"
+homepage = "https://atlas.pttrn.io"
 
 [workspace.dependencies]
 anyhow = "1"

@@ -2,7 +2,7 @@
 
 Atlas draws a small piece of mathematics. This page names every notion it uses, once: what the
 notion is, what it is in Atlas, and where it lives. The design (`design.md`) is the engineering
-of these notions, the principles (`principles.md`) are the laws `atlas check` asks of code. A
+of these notions, the principles (`principles.md`) are the laws `atlas-code check` asks of code. A
 notion Atlas starts to use is added here first.
 
 Each entry says **what** the notion is, what it is **in Atlas**, and **where** it lives: a section
@@ -249,9 +249,9 @@ step put in before another (`double(add_one(x))` where A had `double(x)`) is the
 marked: the step after it is handed in each reading what that reading gives it. A place a caller
 makes whole is the caller's arrow; a file named by a function's own parameter (`load.path`) is
 named so whoever calls the function. A rename is an isomorphism of the typed arrows in and out:
-`list[float] → float` is no `str → str`. `atlas changes` reads the same union along each route,
+`list[float] → float` is no `str → str`. `atlas-code changes` reads the same union along each route,
 so the picture and the list hold the same marks.
-**Where.** `atlas history`, `atlas changes A..B`, a vision beside the working tree (`atlas
+**Where.** `atlas-code history`, `atlas-code changes A..B`, a vision beside the working tree (`atlas
 mcp`'s `vision`); `diff::union`, `diff::reading`, `changes::between`; `design.md` §4, L5. Held by `engine/tests/arrows.rs`:
 on two readings of the same nodes, the marks are those of the direct arrows, and a node renamed is one node.
 
