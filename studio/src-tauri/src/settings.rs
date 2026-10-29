@@ -1,7 +1,7 @@
 //! Studio's settings: its theme and where its terminal docks, kept in its configuration folder and set on
 //! every window, and
 //! whether the coding agents on this machine have Atlas's MCP server, registered for every project as
-//! `docs/reference/install.md` says (`claude mcp add --scope user atlas -- atlas mcp`, and Codex's
+//! `docs/reference/install.md` says (`claude mcp add --scope user atlas -- atlas-code mcp`, and Codex's
 //! equivalent). Registering runs that same command; connecting to it again is the agent's own.
 
 use std::path::{Path, PathBuf};
@@ -162,20 +162,20 @@ fn which(program: &str) -> Option<PathBuf> {
         .find(|path| path.is_file())
 }
 
-/// The command the CLI of a channel is installed as: the nightly's `atlas-nightly`, beside the release's `atlas`.
+/// The command the CLI of a channel is installed as: the nightly's `atlas-code-nightly`, beside the release's `atlas-code`.
 fn command_of(channel: &str) -> &'static str {
     if channel == "nightly" {
-        "atlas-nightly"
+        "atlas-code-nightly"
     } else {
-        "atlas"
+        "atlas-code"
     }
 }
 
-/// The `atlas` an agent starts: the CLI of Studio's own channel on the `PATH`, else Studio's own, so that
-/// the agent's `atlas mcp` is of the channel of the `atlas serve` it shares a page with.
+/// The `atlas-code` an agent starts: the CLI of Studio's own channel on the `PATH`, else Studio's own, so that
+/// the agent's `atlas-code mcp` is of the channel of the `atlas-code serve` it shares a page with.
 fn atlas() -> Option<PathBuf> {
     which(command_of(env!("ATLAS_CHANNEL"))).or_else(|| {
-        let own = std::env::current_exe().ok()?.with_file_name(if cfg!(windows) { "atlas.exe" } else { "atlas" });
+        let own = std::env::current_exe().ok()?.with_file_name(if cfg!(windows) { "atlas-code.exe" } else { "atlas-code" });
         own.is_file().then_some(own)
     })
 }
@@ -208,7 +208,7 @@ fn home() -> Option<PathBuf> {
 
 /// The agents Studio knows, for the workspace at `workspace`.
 pub fn agents(workspace: Option<&Path>) -> Vec<Agent> {
-    let atlas = atlas().map(|path| path.display().to_string()).unwrap_or_else(|| "atlas".into());
+    let atlas = atlas().map(|path| path.display().to_string()).unwrap_or_else(|| "atlas-code".into());
     let home = home();
     let claude = home.as_ref().is_some_and(|home| names_atlas(&home.join(".claude.json")))
         || workspace.is_some_and(|w| names_atlas(&w.join(".mcp.json")));
@@ -247,7 +247,7 @@ fn quoted(path: &str) -> String {
 
 /// Register Atlas with the agent `id`, by its own command line.
 pub fn register(id: &str) -> Result<(), String> {
-    let atlas = atlas().ok_or("No atlas to register: install the atlas CLI, or run Studio from its app")?;
+    let atlas = atlas().ok_or("No atlas-code to register: install the atlas-code CLI, or run Studio from its app")?;
     let (program, args): (&str, Vec<String>) = match id {
         "claude" => ("claude", vec!["mcp".into(), "add".into(), "--scope".into(), "user".into(), "atlas".into(), "--".into()]),
         "codex" => ("codex", vec!["mcp".into(), "add".into(), "atlas".into(), "--".into()]),
@@ -270,7 +270,7 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("atlas-studio-settings-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let config = dir.join(".mcp.json");
-        std::fs::write(&config, r#"{"mcpServers": {"atlas": {"command": "atlas", "args": ["mcp"]}}}"#).unwrap();
+        std::fs::write(&config, r#"{"mcpServers": {"atlas": {"command": "atlas-code", "args": ["mcp"]}}}"#).unwrap();
         assert!(names_atlas(&config));
         std::fs::write(&config, r#"{"mcpServers": {"other": {}}}"#).unwrap();
         assert!(!names_atlas(&config));
@@ -315,16 +315,16 @@ mod tests {
     /// The release's and the nightly's CLI stand side by side on one `PATH`: each Studio looks for its own.
     #[test]
     fn each_channel_looks_for_its_own_cli() {
-        assert_eq!(command_of(""), "atlas");
+        assert_eq!(command_of(""), "atlas-code");
         assert_ne!(command_of("nightly"), command_of(""));
     }
 
     #[test]
     fn a_path_with_a_space_is_one_word() {
         assert_eq!(
-            quoted("/Applications/Atlas Studio.app/Contents/MacOS/atlas"),
-            "\"/Applications/Atlas Studio.app/Contents/MacOS/atlas\""
+            quoted("/Applications/Atlas Studio.app/Contents/MacOS/atlas-code"),
+            "\"/Applications/Atlas Studio.app/Contents/MacOS/atlas-code\""
         );
-        assert_eq!(quoted("/opt/homebrew/bin/atlas"), "/opt/homebrew/bin/atlas");
+        assert_eq!(quoted("/opt/homebrew/bin/atlas-code"), "/opt/homebrew/bin/atlas-code");
     }
 }

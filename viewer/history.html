@@ -209,7 +209,7 @@ allBox.checked = S.all;
 /* ---- the picture ---- */
 // `sent` is the view the picture was asked with, `kept` the view this page's hash holds
 let shown = "", sent = own.get("v") || "", kept = sent, settled = false, veil = 0;
-// served by `atlas serve` beside the working tree's page, the history closes back to it, which the
+// served by `atlas-code serve` beside the working tree's page, the history closes back to it, which the
 // browser keeps, and draws nothing before a commit is picked: the working tree is the page just left
 const served = location.pathname === "/history", liveEl = document.getElementById("live");
 liveEl.hidden = !served;

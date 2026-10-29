@@ -1,4 +1,4 @@
-// How far one phase of a drawing of `atlas serve` is, from 0 to 1, as `/api/drawn` says: none before
+// How far one phase of a drawing of `atlas-code serve` is, from 0 to 1, as `/api/drawn` says: none before
 // the phase begins, whole once it is past, and while it runs the share its time so far fills of the
 // time it took the last time. `extra` is the time, in seconds, since the server said so. Each phase
 // has a bar of its own: the loading page shows reading the project's code, the picture the library

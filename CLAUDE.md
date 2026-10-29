@@ -41,7 +41,7 @@ The rigorous half and the visual half are the same structure. Read `docs/referen
   `architecture.yml`, no roles. When the picture differs from what the author has in
   mind, the code is what changes. If a view only works because of a special case, it is
   wrong.
-- **Atlas is its own first subject.** `atlas view .` must read as the algebra:
+- **Atlas is its own first subject.** `atlas-code view .` must read as the algebra:
   `Disk(repo) → Repo.read → Repo → Language.parse → Graph → (Flow, Findings) → Html → File(html) → open`:
   the graph goes to two arrows, `flow::of` and the principles' check, and the page is drawn from the
   pair; the view it opens in is the command line's. The picture is never bent to the line. Where they
@@ -174,7 +174,7 @@ Two long-lived branches, one release train. Everything else is a short-lived top
 
 ## Practical
 
-- Build and run: `cargo build`, `atlas view .` (install with `cargo install --path cli`;
+- Build and run: `cargo build`, `atlas-code view .` (install with `cargo install --path cli`;
   the viewer, `viewer/index.html` with its model `viewer/plan.js`, is baked into the binary, so rebuild
   after editing either).
 - Version: `version` in the root `Cargo.toml`, raised as the section above says. The build adds the
@@ -234,10 +234,10 @@ Two long-lived branches, one release train. Everything else is a short-lived top
   otherwise, the commit stops and names it with the text that shows it: reread that text, change
   what no longer holds, and commit again.
 - The tour's history (`docs/img/interaction/history.png` and `history-dark.png`) is drawn by
-  `tools/interaction_pictures.py` from a real run of `atlas serve` on six commits of the sunspots pipeline: `uv run
-  tools/interaction_pictures.py target/release/atlas`. The pages of the tour's two sessions (pointing, designing ahead) are
-  drawn by `tools/session_pictures.py`, which plays each session again with `atlas serve` and `atlas mcp`: `uv run
-  tools/session_pictures.py target/release/atlas`; their chats are text in the page. Both draw every picture in the light
+  `tools/interaction_pictures.py` from a real run of `atlas-code serve` on six commits of the sunspots pipeline: `uv run
+  tools/interaction_pictures.py target/release/atlas-code`. The pages of the tour's two sessions (pointing, designing ahead) are
+  drawn by `tools/session_pictures.py`, which plays each session again with `atlas-code serve` and `atlas-code mcp`: `uv run
+  tools/session_pictures.py target/release/atlas-code`; their chats are text in the page. Both draw every picture in the light
   and the dark theme, as `docs_pictures.py` does, and the tour shows the one of its theme. No hook runs them; run them
   with a version raise that changes what those pages draw, and reread the text beside a picture they name.
   `docs/img/interaction/drawn.json` keeps what the history draws.
@@ -248,9 +248,9 @@ Two long-lived branches, one release train. Everything else is a short-lived top
   box at a time in each route and must report no box that takes a line away, draws a line the closed box did not
   (`more`: by rule 1 a fault of the closed picture), moves a box into or out of a frame that is not the one opened, or
   does not close to the picture it was (`docs/reference/mathematics.md`, "Refinement keeps what it does not refine").
-- `atlas check` is a signal to look critically at the code and at what the check claims, never an
+- `atlas-code check` is a signal to look critically at the code and at what the check claims, never an
   oracle and never a target. Zero findings on Atlas is no goal: never change Atlas's code, or bend a
-  rule, to keep `atlas check .` quiet. Where a finding is wrong, repair the rule and let Atlas carry
+  rule, to keep `atlas-code check .` quiet. Where a finding is wrong, repair the rule and let Atlas carry
   what the rule then finds. `engine/tests/review.rs` keeps Atlas's findings as a reviewed list,
   `REVIEWED`, each with why it stands; it fails when the findings change, so that each change is
   read, not so that the list shrinks. A finding a change brings is answered there: the code changes
@@ -263,7 +263,7 @@ Two long-lived branches, one release train. Everything else is a short-lived top
 - Languages: `engine/src/language.rs` is the trait; `python.rs`, `rust.rs` and
   `typescript.rs` implement it. `parts.rs` finds a repository's parts (one per manifest),
   reads each in its language, merges them and joins them where one requests another's
-  routes; `atlas view` and the MCP routes use the merged graph, `atlas check` each part. Grammars
+  routes; `atlas-code view` and the MCP routes use the merged graph, `atlas-code check` each part. Grammars
   are reused from tree-sitter crates. A reader supplies its language's syntax and facts:
   resolution, how its names get their types, entry points, which calls cross into the world,
   and syntax tables (`ChoiceSyntax`, `CompareSyntax`, `OwnTypes`). What every language shares is
@@ -293,6 +293,6 @@ Two long-lived branches, one release train. Everything else is a short-lived top
   Pass the project's path as an argument instead.
 - The shell is zsh: a loop over subjects must not name its variable `path` (`while read name path`),
   since zsh ties `path` to `$PATH` and every command in the body is then "not found". `status` is
-  read-only in zsh; store a command's exit code in a task-specific variable. `atlas analyze`
-  and `atlas view` write into `.atlas/` at the top of the subject's git repository unless given
+  read-only in zsh; store a command's exit code in a task-specific variable. `atlas-code analyze`
+  and `atlas-code view` write into `.atlas/` at the top of the subject's git repository unless given
   `-o`/`--out`; give the scratchpad when the subject is not ours.

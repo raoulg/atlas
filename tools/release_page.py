@@ -379,7 +379,7 @@ def card(release: dict, n: int) -> str:
                     for side in ("before", "after")
                     if (RELEASES / release["version"] / "report" / str(n) / pair[side]["text"]).is_file()
                 )
-                parts.append(f'<p class="where">atlas check {html.escape(pair["program"].removeprefix("engine/tests/"))} · {count["before"]} → {count["after"]} questions</p><div class="pair">{texts}</div>')
+                parts.append(f'<p class="where">atlas-code check {html.escape(pair["program"].removeprefix("engine/tests/"))} · {count["before"]} → {count["after"]} questions</p><div class="pair">{texts}</div>')
     for c in issue["cards"]:
         if c["kind"] == "B":
             routes = [r for r in c.get("routes", []) if r.get("picture")]

@@ -36,7 +36,7 @@ struct Session {
 }
 
 /// The workspace open in each window, by the window's label: every window is one workspace, with its
-/// own `atlas serve`.
+/// own `atlas-code serve`.
 #[derive(Default)]
 struct StudioState(Mutex<HashMap<String, Session>>);
 
@@ -136,12 +136,12 @@ async fn open_workspace(
     Ok(Some(workspace))
 }
 
-/// Start `atlas serve` on the workspace. Its standard input is a pipe Studio holds and never writes:
+/// Start `atlas-code serve` on the workspace. Its standard input is a pipe Studio holds and never writes:
 /// the system closes it when Studio ends, by Quit or by a signal, and the server ends with it.
 async fn start_workspace(app: &tauri::AppHandle, path: &PathBuf, label: &str) -> Result<Session, String> {
     let command = app
         .shell()
-        .sidecar("atlas")
+        .sidecar("atlas-code")
         .map_err(|e| e.to_string())?
         .args(["serve", &path.to_string_lossy(), "--port", "0", "--no-open", "--exit-on-stdin-close"])
         .env("NO_COLOR", "1")
@@ -219,7 +219,7 @@ fn workspace_path(state: &tauri::State<'_, StudioState>, label: &str) -> Result<
     Ok(PathBuf::from(&session.workspace.path))
 }
 
-/// Where the window `label`'s `atlas serve` answers.
+/// Where the window `label`'s `atlas-code serve` answers.
 fn workspace_url(state: &tauri::State<'_, StudioState>, label: &str) -> Result<String, String> {
     let state = state.0.lock().map_err(|error| error.to_string())?;
     Ok(state.get(label).ok_or("Open a workspace first")?.workspace.url.clone())
@@ -371,7 +371,7 @@ fn terminal_close(terminals: tauri::State<'_, Terminals>, id: u32) -> Result<(),
 
 /// Which build Studio is, as its sidecar says: the same commit and channel.
 async fn this_build(app: &tauri::AppHandle) -> Result<update::Build, String> {
-    let out = app.shell().sidecar("atlas").map_err(|e| e.to_string())?.args(["--version"]).output().await.map_err(|e| e.to_string())?;
+    let out = app.shell().sidecar("atlas-code").map_err(|e| e.to_string())?.args(["--version"]).output().await.map_err(|e| e.to_string())?;
     update::build_of(&String::from_utf8_lossy(&out.stdout)).ok_or_else(|| "Studio's atlas does not say which build it is".into())
 }
 

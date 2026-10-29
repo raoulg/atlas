@@ -2,7 +2,7 @@ name: perf
 
 # Every night, how fast `next` builds, reads and tests, measured on one runner type and kept as a series
 # per measure on the branch `perf-data` (`history.jsonl` and a README of charts). The release build is
-# timed clean, with no compile cache; `atlas view` is timed cold and warm on Atlas itself and on the
+# timed clean, with no compile cache; `atlas-code view` is timed cold and warm on Atlas itself and on the
 # programs `laws.yml` reads, at the same revisions; each test binary is timed on its own. A measure past
 # its baseline on two runs in a row is slower: the run's summary says so and the tracking issue (label
 # `performance`) is opened or commented on. A run that cannot measure fails. Nothing here runs on a push
@@ -65,13 +65,13 @@ jobs:
         env:
           CARGO_TARGET_DIR: ${{ github.workspace }}/clean
         run: |
-          uv run tools/perf.py time build/release --out "$RUN" -- cargo build --release --locked -p atlas
-          cp "$CARGO_TARGET_DIR/release/atlas" "$RUNNER_TEMP/atlas"
+          uv run tools/perf.py time build/release --out "$RUN" -- cargo build --release --locked -p atlas-code
+          cp "$CARGO_TARGET_DIR/release/atlas-code" "$RUNNER_TEMP/atlas-code"
           rm -rf "$CARGO_TARGET_DIR"
       - name: the readings, cold and warm
         working-directory: atlas
         run: |
-          uv run tools/perf.py read --atlas "$RUNNER_TEMP/atlas" --rounds 3 --out "$RUN" \
+          uv run tools/perf.py read --atlas "$RUNNER_TEMP/atlas-code" --rounds 3 --out "$RUN" \
             --subject atlas=. \
             --subject goad_toolkit=../programs/goad_toolkit \
             --subject vectormesh=../programs/vectormesh \

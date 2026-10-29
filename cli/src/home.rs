@@ -1,4 +1,4 @@
-//! Where `atlas view` and `analyze` put what they make, and a served page and an agent share files:
+//! Where `atlas-code view` and `analyze` put what they make, and a served page and an agent share files:
 //! the subject's workbench, `.atlas/` (`places::Workbench`).
 
 use std::path::{Path, PathBuf};

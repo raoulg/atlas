@@ -12,7 +12,7 @@ use crate::workspace::Workspace;
 /// The largest file a preview reads.
 const MOST: u64 = 8 << 20;
 
-/// What `atlas serve` at `url` answers to a GET of `path`: the body, and the name of the file it is
+/// What `atlas-code serve` at `url` answers to a GET of `path`: the body, and the name of the file it is
 /// when the answer is one to keep.
 pub fn get(url: &str, path: &str) -> Result<(Vec<u8>, Option<String>), String> {
     let at = url.strip_prefix("http://").ok_or("Atlas serves at an address Studio does not know")?.trim_end_matches('/');
@@ -37,7 +37,7 @@ pub fn get(url: &str, path: &str) -> Result<(Vec<u8>, Option<String>), String> {
 }
 
 /// The files Atlas reads in the workspace served at `url`, each with what the graph defines in it,
-/// as `atlas serve` answers at `/api/files`.
+/// as `atlas-code serve` answers at `/api/files`.
 pub fn listing(url: &str) -> Result<String, String> {
     let (body, _) = get(url, "/api/files")?;
     String::from_utf8(body).map_err(|error| error.to_string())

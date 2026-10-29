@@ -15,7 +15,7 @@
 //! arrows in and out, the node itself and what is named under it counting as the same) are one
 //! node, renamed, when that match is the only one either way. Atlas never guesses between two.
 //!
-//! `atlas changes` reads the same union, one reading at a time (`reading`), so the list it gives
+//! `atlas-code changes` reads the same union, one reading at a time (`reading`), so the list it gives
 //! holds what the picture marks.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
@@ -238,7 +238,7 @@ impl Reading {
 
 /// One reading of a union, under the union's names: the nodes, edges, steps and touches it holds,
 /// what it hands each step, and its entries as it has them. The page draws a reading so, and
-/// `atlas changes` compares the two: one union, so both tell one story.
+/// `atlas-code changes` compares the two: one union, so both tell one story.
 pub fn reading(g: &Graph, d: &Diff, r: Reading) -> Graph {
     let mut out = Graph {
         root: g.root.clone(),
