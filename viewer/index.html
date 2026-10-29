@@ -1038,30 +1038,9 @@ async function renderPlaat(mine) {
   // open families are frames around their members, one at each moment of the data; a member stands
   // inside the frame of its moment, the family itself is the frame. A type opens where it stood closed:
   // in the kind it is a kind of, or as itself; a part stands on its own, as it did closed
-  const famFrames = new Map();
-  // a value keeps its name in its box and its frame: two values of one family at one moment are two frames, and so are the
-  // parameters of two doors, each door called by itself. The frame has the id its closed box had (`valueBox`)
-  const nameAt = p => valueBox("", p).slice(2);
-  for (const p of places.values()) {
-    if (!p.type) continue;
-    const f = frameOf(p.type), at = nameAt(p), id = valueBox(f, p);
-    if (!f) continue;
-    if (!famFrames.has(id)) famFrames.set(id, {id, fam: f, at, name: p.name, when: p.at, label: places.get(id)?.label, types: new Set()});
-    famFrames.get(id).types.add(p.type);
-  }
+  const famFrames = familyFrames(places);
   for (const F of famFrames.values()) {
-    const f = F.fam, at = F.at;
     places.delete(F.id); keep.delete(F.id);
-    const inFam = new Set([f, ...(members.get(f) || [])]);
-    const viaOf = m => (inn.get(m) || []).find(e => e.kind === "has" && inFam.has(e.src) && e.via)?.via;
-    const isSub = m => { let cur = m; for (let i = 0; i < 10; i++) { const b = (out.get(cur) || []).find(e => e.kind === "inherits" && inFam.has(e.dst)); if (!b) return false; if (b.dst === f) return true; cur = b.dst; } return false; };
-    // a frame holds the kinds its values can be: a value of one kind is that kind and what derives from it, in the fiber
-    const below = (m, t) => { let cur = m; for (let i = 0; i < 10 && cur; i++) { if (cur === t) return true; cur = (out.get(cur) || []).find(e => e.kind === "inherits")?.dst; } return false; };
-    const can = m => !isSub(m) || (here(m) && [...F.types].some(t => t === f || below(m, t)));
-    F.kids = (members.get(f) || []).filter(m => m !== V.route && can(m)).map(m => ({id: isSub(m) ? "t:" + m + at : `t:${f}${at}/${m}`, label: isSub(m) ? typeLabel(m) : `${viaOf(m) || "·"}: ${typeLabel(m)}`, kind: "type", hue: hueOf(byId.get(m)), type: m, name: F.name, at: F.when}));
-    F.kids.push(...sharedOf(f).map(e => ({id: `r:${f}:${e.via}${at}`, label: `${e.via}: ${typeLabel(e.dst)}`, kind: "ref", type: e.dst})));
-    F.title = (F.label || typeLabel(f)) + (F.kids.some(k => k.kind === "type" && !k.label.includes(": ")) ? " ⊇" : "");
-    F.hue = hueOf(byId.get(f));
     for (const k of F.kids) { places.set(k.id, {...k, inFrame: F.id}); keep.add(k.id); }
   }
 
@@ -1075,13 +1054,10 @@ async function renderPlaat(mine) {
   // code, a step of a body, a place. A type the picture draws as a box of its own, or inside a closed
   // family, is not inside a package, and a finding the picture marks with a dot is not inside one
   // either. Edges are not counted: they show at the border, or once the box is opened.
-  const closedFamily = p => (p.kind === "type" || p.kind === "ext") && !p.inFrame && !!p.type && p.type !== V.route && opens(p.type) && !V.open.families.has(p.type);
-  // the types a box stands for on the route's fiber: a closed family its own and its members', any other box its type. At
-  // the pick, a closed family the picked fiber cuts in two opens (the filter first), so that a lit box is all of the type
-  const typesIn = p => closedFamily(p) ? [p.type, ...(members.get(p.type) || [])].filter(here) : [p.type];
-  if (lit) {
-    const cut = [...places.values()].filter(p => keep.has(p.id) && closedFamily(p)).filter(p => { const fs = typesIn(p).map(t => lit.types.has(t)); return fs.includes(true) && fs.includes(false); });
-    if (lit.fresh && cut.length) { for (const p of cut) V.open.families.add(p.type); lit.fresh = false; crumbs(); writeView(); return renderPlaat(mine); }
+  // at the pick, the closed families the picked values cut in two open, until none does: a lit box is all of the type
+  if (lit?.fresh) {
+    const cut = cutBy(lit.types, [...places.values()].filter(p => keep.has(p.id)));
+    if (cut.length) { for (const f of cut) V.open.families.add(f); crumbs(); writeView(); return renderPlaat(mine); }
     lit.fresh = false;
   }
   const alone = new Set(), inFamily = new Set();
@@ -1637,10 +1613,9 @@ async function renderPlaat(mine) {
   }
   g.classList.toggle("fibered", !!lit);
   if (lit) {
-    const of = fs => fs.length && fs.every(t => lit.types.has(t)) ? "lit" : fs.some(t => lit.types.has(t)) ? "litpart" : null;
     lit.drawn = 0;
-    for (const p of places.values()) { const box = p.type && nodeEls.get(p.id), c = box && of(typesIn(p)); if (c) { box.classList.add(c); lit.drawn++; } }
-    for (const F of famFrames.values()) if (of([F.fam, ...(members.get(F.fam) || [])].filter(here)) === "lit") g.querySelector(`.frame.fam[data-id="${CSS.escape(F.id)}"]`)?.classList.add("lit");
+    for (const p of places.values()) { const box = nodeEls.get(p.id), c = box && lightOf(lit.types, p); if (c) { box.classList.add(c); lit.drawn++; } }
+    for (const F of famFrames.values()) if (lightOf(lit.types, {type: F.fam, frame: true}) === "lit") g.querySelector(`.frame.fam[data-id="${CSS.escape(F.id)}"]`)?.classList.add("lit");
     // a step claims no type: one with a step inside it that takes or makes a value of the type holds the fiber inside, and
     // is lit dashed, as a closed box shows what it holds inside without opening
     if (fine?.pills) {
@@ -2004,14 +1979,9 @@ function openTo(n) {
 }
 // a type's box in the picture: the type itself, or a value of it that a name holds
 const typeBox = id => [...scene.node().querySelectorAll("[data-id]")].map(e => e.dataset.id).find(d => d === "t:" + id || d.startsWith(`t:${id}~`));
-// a type picked in the lattice is a set of values: the class and every class below it. The Flowchart lights its fiber, the
-// boxes of those types, in a route that holds one: the current picture where it does, else the first route that does. It
-// is a mark on the picture, as a pin is, not a part of what the picture is a function of
-const valuesOf = id => {
-  const S = new Set([id]), stack = [id];
-  while (stack.length) for (const e of inn.get(stack.pop()) || []) if (e.kind === "inherits" && !S.has(e.src)) { S.add(e.src); stack.push(e.src); }
-  return S;
-};
+// a type picked in the lattice is a set of values (`valuesOf`). The Flowchart lights its fiber, the boxes of those types,
+// in a route that holds one: the current picture where it does, else the first route that does. It is a mark on the
+// picture, as a pin is, not a part of what the picture is a function of
 const TYPED = new Set(["takes", "returns", "has", "mutates", "variant"]);
 async function lightIn(id) {
   lit = {pick: id, types: valuesOf(id), fresh: true};
