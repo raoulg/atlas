@@ -1425,8 +1425,13 @@ impl<'a, 't> Body<'a, 't> {
                 // a method found on a base runs on the subclass the value is; the body's own receiver
                 // is of the class the route runs the body on, the one it is written in or one below
                 let on_receiver = object.map_or(false, |o| o.kind() == "this") || !after.is_empty();
+                // a value built at the call (`new Section().show()`) is of its class and none below it, also where that
+                // is the method's own; one the code declares is of the class it declares or one below it
+                let built = object
+                    .and_then(|o| if WRAPPERS.contains(&o.kind()) { wrapped(o) } else { Some(o) })
+                    .map_or(false, |o| o.kind() == "new_expression");
                 let on = class
-                    .filter(|k| !on_receiver && self.store.nodes[&t].cls.as_deref().map_or(false, |b| b != k.as_str()))
+                    .filter(|k| !on_receiver && self.store.nodes[&t].cls.as_deref().map_or(false, |b| built || b != k.as_str()))
                     .unwrap_or_default();
                 let kind = if self.store.nodes[&t].kind == NodeKind::Class { EdgeKind::Instantiates } else { EdgeKind::Calls };
                 if kind == EdgeKind::Calls && value_used(c) {
@@ -1439,7 +1444,7 @@ impl<'a, 't> Body<'a, 't> {
                         gives.push(h);
                     }
                 }
-                let step = Step { on, on_receiver, named, after, hands, gives, ..Default::default() };
+                let step = Step { built: built && !on.is_empty(), on, on_receiver, named, after, hands, gives, ..Default::default() };
                 steps.call(c, &t, kind, None, step);
                 let callee = if kind == EdgeKind::Instantiates { self.store.initializer_of(&t) } else { Some(t.clone()) };
                 if let Some(mut a) =

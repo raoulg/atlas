@@ -494,10 +494,15 @@ pub struct Site {
     /// `fails` is settled from them once the graph is whole.
     #[serde(skip)]
     pub caught: Vec<Vec<String>>,
-    /// The class of the value a method is called on, when that is a subclass of the method's own
-    /// class (`ComparePlot(..).plot()` reaches `BasePlot.plot` on a `ComparePlot`).
+    /// The class of the value a method is called on, when the reader knows it: the class the code declares the value
+    /// of, where that is a subclass of the method's own class (`plot: ComparePlot`, `plot.plot()` reaches `BasePlot.plot`
+    /// on a `ComparePlot` or a class below it), or the class it builds the value of at the call (`built`).
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub on: String,
+    /// The value the call runs on is built where the call stands (`ComparePlot(..).plot()`, `new Section().show()`):
+    /// its class is `on`, also where that is the method's own class, and none below it.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub built: bool,
     /// The call is made on the body's own receiver (`self.build(..)`): on a value of a
     /// subclass, it reaches that subclass's method.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]

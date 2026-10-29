@@ -1604,6 +1604,45 @@ fn through_a_call_runs_the_same_functions_for_the_route_its_parameters_and_its_e
     }
 }
 
+// ---------- built: a value built at the call is of its class, a declared one of it or any below ----------
+
+/// A call by name runs, for each class its value may be, the method that class runs along its order (#268), as in
+/// Python: a value built at the call is of the class it builds and none below it, one the code declares of a class may
+/// be of it or of any class below. The built pair (`tests/pairs/built/typescript`) shows a heading on a `Section`
+/// (`report`), a block that shows as any `Block` does, and on a `Block` (`note`); `Boxed`, below `Section`, shows it
+/// boxed. The clean side is handed both, `section: Section` and `block: Block`, so each call may run `Boxed.show`; the
+/// shortcut builds each where it shows it, `new Section().show(heading)` and `new Block().show(heading)`, so neither
+/// does. Each call may run `Boxed.show` exactly where it hands on the error `Boxed.show` throws, and `Boxed.show`'s
+/// `heading` holds a heading exactly where a call may run it (#263).
+#[test]
+fn built_a_value_built_at_the_call_runs_its_class_and_a_declared_one_any_class_below() {
+    let p = common::pair("built/typescript");
+    for (side, g) in [("clean", &p.clean), ("shortcut", &p.shortcut)] {
+        let [show, boxed] = [".sections.Block.show", ".sections.Boxed.show"].map(|f| format!("{}{f}", g.root));
+        let bodies = flow::bodies(g);
+        let mut any = false;
+        for f in ["report.report", "report.note"] {
+            let call = bodies[&format!("{}.{f}", g.root)]
+                .steps()
+                .into_iter()
+                .find(|s| s.to == show)
+                .unwrap_or_else(|| panic!("{side}: {f} shows"));
+            let may: BTreeSet<&str> =
+                std::iter::once(call.to.as_str()).chain(call.alts(&bodies).iter().map(|k| flow::split(k).0)).collect();
+            let runs = may.contains(boxed.as_str());
+            let site = node(g, f).sites.iter().find(|s| s.to == show).unwrap();
+            assert_eq!(site.fails.iter().any(|e| e == "ext:javascript.Error"), runs, "{side} {f}: the error follows what the call runs");
+            assert_eq!(runs, side == "clean", "{side} {f}: {may:?}");
+            any |= runs;
+        }
+        assert_eq!(
+            node(g, "sections.Boxed.show").uses.iter().any(|u| u.name == "heading"),
+            any,
+            "{side}: the parameter follows what the calls run"
+        );
+    }
+}
+
 /// An entry run from the command line is handed the words the human types (#152). Node holds them
 /// raw in `process.argv`, as Rust's `env::args()` gives them: the shortcut keeps them under names,
 /// `const [kind = "", ...flags] = process.argv.slice(2)`, a step that takes the entry's words under

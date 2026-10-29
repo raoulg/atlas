@@ -813,11 +813,9 @@ impl<'g> Ix<'g> {
         self.runs(class).map_or(vec![], |c| self.targets(&c, EdgeKind::Takes))
     }
 
-    /// The functions a call in a body run on class `on` may run, one of them, each with the class it runs on, as
-    /// `body_of` reads it: on a known class (the one the call names, or the body's own for a call on its receiver) the
-    /// method that class runs for it, or the next method of a `super()` call along its order; where the class is not
-    /// known, the next method of a `super()` call along each class it may be, or the method a call by name reaches and
-    /// its overrides.
+    /// The functions a call in a body run on class `on` may run, one of them, each with the class it runs on: the step
+    /// `step_of` reads it as, and what it may run in its place, which for a method called by name on a value whose class
+    /// is not known are the method's overrides.
     fn may_run(&self, s: &Site, on: &str) -> Vec<(String, String)> {
         // building a class runs its initializer along its order, on the class it builds; a class built from its fields
         // runs nothing
@@ -825,36 +823,109 @@ impl<'g> Ix<'g> {
             return self.runs(&s.to).map(|i| vec![(i, s.to.clone())]).unwrap_or_default();
         }
         let Some(m) = self.nodes.get(s.to.as_str()).filter(|m| m.cls.is_some()) else { return vec![(s.to.clone(), String::new())] };
-        let runs_on = if !s.on.is_empty() {
-            s.on.as_str()
-        } else if s.on_receiver {
-            on
-        } else {
-            ""
-        };
-        let at = |f: Option<String>, c: &str| (f.unwrap_or_else(|| s.to.clone()), c.to_string());
-        let mut out: Vec<(String, String)> = if !s.after.is_empty() && !runs_on.is_empty() {
-            vec![at(self.method_after(runs_on, &s.after, &m.name), runs_on)]
-        } else if !s.after.is_empty() {
-            std::iter::once(at(self.method_after(&s.after, &s.after, &m.name), ""))
-                .chain(self.below(&s.after).iter().filter_map(|d| self.method_after(d, &s.after, &m.name).map(|r| (r, d.clone()))))
-                .collect()
-        } else if s.named {
-            vec![(s.to.clone(), runs_on.to_string())]
-        } else if !runs_on.is_empty() {
-            vec![at(self.method_on(runs_on, &m.name), runs_on)]
-        } else {
-            std::iter::once((s.to.clone(), String::new()))
-                .chain(self.overrides(m).iter().map(|k| {
-                    let (f, c) = split(k);
-                    (f.to_string(), c.to_string())
-                }))
-                .collect()
-        };
+        let step = self.step_of(s, m, on);
+        let instead = if step.named || !step.on.is_empty() { step.instead.clone() } else { self.overrides(m) };
+        let mut out: Vec<(String, String)> = std::iter::once((step.to.clone(), step.on.clone()))
+            .chain(instead.iter().map(|k| {
+                let (f, c) = split(k);
+                (f.to_string(), c.to_string())
+            }))
+            .collect();
         let mut seen = HashSet::new();
         out.retain(|f| seen.insert(f.clone()));
         out
     }
+
+    /// The class of the value call `s` runs on, in a body run on class `on`: the body's own on a known class for a call
+    /// on its receiver, the class the call builds the value of, or the class the code declares it of, which the value
+    /// is or is below.
+    fn value_of<'s>(s: &'s Site, on: &'s str) -> Value<'s> {
+        if s.on_receiver && !on.is_empty() {
+            Value::Is(on)
+        } else if !s.on.is_empty() && s.built {
+            Value::Is(&s.on)
+        } else if !s.on.is_empty() {
+            Value::Below(&s.on)
+        } else {
+            Value::Unknown
+        }
+    }
+
+    /// What call `s` of method `m` runs in a body run on class `on`, as a step (mathematics.md, "Method resolution
+    /// order"): a call through a class the method it names, on the class of its value; a `super()` call the next method
+    /// after its class along the order of each class the value may be, the class it is written in or one below it where
+    /// its value's class is not known; a call by name on a value of a known class the method that class runs, on a value
+    /// the code declares of a class the method that class runs and, in its place, the one each class below it runs that
+    /// runs another, and on a value whose class is not known the method it reaches, its overrides in its place
+    /// (`Body::alts`). A step that runs one of several the call says (`instead`) is named by its own class.
+    fn step_of(&self, s: &Site, m: &Node, on: &str) -> Step {
+        let value = Self::value_of(s, on);
+        let runs_on = match value {
+            Value::Is(c) | Value::Below(c) => c,
+            Value::Unknown => "",
+        };
+        let mut to = s.to.clone();
+        let mut instead: Vec<String> = vec![];
+        let add = |k: String, instead: &mut Vec<String>| {
+            if !instead.contains(&k) {
+                instead.push(k);
+            }
+        };
+        if !s.after.is_empty() {
+            let (top, below) = match value {
+                Value::Is(c) => (c, vec![]),
+                Value::Below(k) => (k, self.below(k)),
+                Value::Unknown => (s.after.as_str(), self.below(&s.after)),
+            };
+            to = self.method_after(top, &s.after, &m.name).unwrap_or(to);
+            for d in below {
+                if let Some(r) = self.method_after(&d, &s.after, &m.name).filter(|r| *r != to) {
+                    add(key(&r, &d), &mut instead);
+                }
+            }
+        } else if !s.named {
+            match value {
+                Value::Is(c) => to = self.method_on(c, &m.name).unwrap_or(to),
+                Value::Below(k) => {
+                    let mut runs = self.runs_below(k, &m.name).into_iter();
+                    to = runs.next().map(|(f, _)| f).unwrap_or(to);
+                    for (f, c) in runs {
+                        add(key(&f, &c), &mut instead);
+                    }
+                }
+                Value::Unknown => {}
+            }
+        }
+        let named = s.named || !s.after.is_empty() || !instead.is_empty();
+        Step { to, on: runs_on.to_string(), site: None, named, instead }
+    }
+
+    /// What a call by name for `name` runs on a value of class `k` or of a class below it, one of them, each with the
+    /// class it runs on where that is known: the method `k` runs, on `k`, then for each class below that runs another,
+    /// that one, on any value of its class where its class is `k` or below it, else on the class that runs it. A class
+    /// below that runs the method `k` runs runs it as `k` does.
+    fn runs_below(&self, k: &str, name: &str) -> Vec<(String, String)> {
+        let Some(first) = self.method_on(k, name) else { return vec![] };
+        let below = self.below(k);
+        let mut out = vec![(first.clone(), k.to_string())];
+        for c in &below {
+            let Some(m) = self.method_on(c, name).filter(|m| *m != first) else { continue };
+            let of = self.nodes.get(m.as_str()).and_then(|m| m.cls.as_deref()).unwrap_or_default();
+            let at = if of == k || below.iter().any(|b| b == of) { String::new() } else { c.clone() };
+            if !out.iter().any(|(f, a)| *f == m && *a == at) {
+                out.push((m, at));
+            }
+        }
+        out
+    }
+}
+
+/// The class of the value a call runs on, as far as the call says it: one class, a class or any below it, or none.
+#[derive(Clone, Copy)]
+enum Value<'s> {
+    Is(&'s str),
+    Below(&'s str),
+    Unknown,
 }
 
 fn arrow_of(ix: &Ix, n: &Node, done: &mut Memo) -> Arrow {
@@ -1007,14 +1078,15 @@ pub struct Step {
     pub on: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub site: Option<usize>,
-    /// The call says which method it runs: through a class (`Cached.read(self)`), or through
-    /// `super()` on a value whose class is known. No override of it runs in its place, and it is
-    /// named by its own class, not by the class of the value.
+    /// The call says which methods it may run: the one it names through a class (`Cached.read(self)`) or through
+    /// `super()` on a value whose class is known, or `to` and those of `instead`. No other override runs in its place,
+    /// and each is named by its own class, not by the class of the value.
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub named: bool,
-    /// What a `super()` call may run in place of `to` where the class of the value is not known,
-    /// by the key of each body: the next method after the class it is written in, along the order
-    /// of each class the value may be, on that class.
+    /// What the call may run in place of `to`, by the key of each body, where the class of the value is not known
+    /// exactly: for a `super()` call the next method after the class it is written in, along the order of each class
+    /// the value may be, on that class; for a call by name on a value the code declares of a class, the method each
+    /// class below it runs, where that is another (`Ix::runs_below`).
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub instead: Vec<String>,
 }
@@ -1247,12 +1319,9 @@ impl<'g> Ix<'g> {
     /// `C`, and there its `super().f()` runs `C.f`.
     fn overrides(&self, n: &Node) -> Vec<String> {
         let Some(cls) = n.cls.as_deref() else { return vec![] };
-        let below = self.below(cls);
         let mut out: Vec<String> = vec![];
-        for c in &below {
-            let Some(m) = self.method_on(c, &n.name).filter(|m| *m != n.id) else { continue };
-            let of = self.nodes.get(m.as_str()).and_then(|m| m.cls.as_deref()).unwrap_or_default();
-            let k = if of == cls || below.iter().any(|b| b == of) { m } else { key(&m, c) };
+        for (m, c) in self.runs_below(cls, &n.name).into_iter().filter(|(m, _)| *m != n.id) {
+            let k = key(&m, &c);
             if !out.contains(&k) {
                 out.push(k);
             }
@@ -1353,14 +1422,7 @@ fn body_of(ix: &Ix, n: &Node, on: &str) -> Body {
             .iter()
             .enumerate()
             .filter_map(|(i, s)| {
-                let runs_on = if !s.on.is_empty() {
-                    s.on.as_str()
-                } else if s.on_receiver {
-                    on
-                } else {
-                    ""
-                };
-                let mut to = match ix.nodes.get(s.to.as_str()) {
+                let to = match ix.nodes.get(s.to.as_str()) {
                     _ if s.to.is_empty() => format!("op:{}", s.op),
                     Some(_) => s.to.clone(),
                     // a call into a library's code the graph does not hold is the library's
@@ -1368,28 +1430,17 @@ fn body_of(ix: &Ix, n: &Node, on: &str) -> Body {
                     None if !s.gives.is_empty() => format!("op:{}", s.to.rsplit('.').next().unwrap_or(&s.to)),
                     None => return None,
                 };
-                let method = ix.nodes.get(s.to.as_str()).filter(|m| m.cls.is_some());
-                let mut instead = vec![];
-                match method {
-                    // a `super()` call runs the next method after its class along the order of
-                    // the value's; where that class is not known, along the order of each class it
-                    // may be, the class the call is written in or one below it, on that class
-                    Some(m) if !s.after.is_empty() && !runs_on.is_empty() => to = ix.method_after(runs_on, &s.after, &m.name).unwrap_or(to),
-                    Some(m) if !s.after.is_empty() => {
-                        to = ix.method_after(&s.after, &s.after, &m.name).unwrap_or(to);
-                        for d in ix.below(&s.after) {
-                            if let Some(r) = ix.method_after(&d, &s.after, &m.name).filter(|r| *r != to).map(|r| key(&r, &d)) {
-                                if !instead.contains(&r) {
-                                    instead.push(r);
-                                }
-                            }
-                        }
+                let step = match ix.nodes.get(s.to.as_str()).filter(|m| m.cls.is_some()) {
+                    Some(m) => ix.step_of(s, m, on),
+                    None => {
+                        let runs_on = match Ix::value_of(s, on) {
+                            Value::Is(c) | Value::Below(c) => c,
+                            Value::Unknown => "",
+                        };
+                        Step { to, on: runs_on.to_string(), ..Default::default() }
                     }
-                    Some(m) if !s.named && !runs_on.is_empty() => to = ix.method_on(runs_on, &m.name).unwrap_or(to),
-                    _ => {}
-                }
-                let named = method.is_some() && (s.named || !s.after.is_empty());
-                Some((Step { to, on: runs_on.to_string(), site: Some(i), named, instead }, s.arms.clone()))
+                };
+                Some((Step { site: Some(i), ..step }, s.arms.clone()))
             })
             .collect();
         return Body { alts, items: grouped(steps, &n.whens), made_from: vec![] };
