@@ -432,7 +432,7 @@ fn check(repo: &std::path::Path, opts: &Options, json: bool, all: bool) -> Resul
             }
         }
         let counted: Vec<(&str, &[principles::Finding])> = parts.iter().map(|(r, f)| (*r, f.as_slice())).collect();
-        print!("{}", principles::summary(&counted, &principles::PRINCIPLES.iter().collect::<Vec<_>>(), &look));
+        print!("{}", principles::summary(&counted, &principles::Principle::ALL, &look));
         print!("{}", atlas_engine::aside::report(&stale, &look));
     }
     Ok(stale.is_empty() && parts.iter().all(|(_, f)| f.iter().all(|f| f.aside.is_some())))

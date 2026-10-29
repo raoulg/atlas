@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 
-use atlas_engine::principles::{check, Finding, PRINCIPLES};
+use atlas_engine::principles::{check, explain, Finding, Principle};
 use atlas_engine::{analyze, EdgeKind, Options};
 
 fn findings(repo: &str) -> Vec<Finding> {
@@ -12,7 +12,7 @@ fn findings(repo: &str) -> Vec<Finding> {
 fn by_principle(fs: &[Finding]) -> BTreeMap<&'static str, Vec<&str>> {
     let mut out: BTreeMap<&str, Vec<&str>> = BTreeMap::new();
     for f in fs {
-        out.entry(f.principle).or_default().push(f.node.as_str());
+        out.entry(f.principle.id()).or_default().push(f.node.as_str());
     }
     out
 }
@@ -187,8 +187,22 @@ fn a_package_called_src_is_asked_its_name() {
 fn every_principle_is_explained() {
     let docs = std::fs::read_to_string(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../docs/reference/principles.md"))
         .expect("docs/reference/principles.md");
-    for p in PRINCIPLES {
-        assert!(docs.contains(&format!("## {}", p.asks)), "docs/reference/principles.md has a section `## {}`", p.asks);
-        assert!(docs.contains(&format!("`{}`", p.id)), "docs/reference/principles.md names the id `{}`", p.id);
+    for p in Principle::ALL {
+        assert!(docs.contains(&format!("## {}", p.asks())), "docs/reference/principles.md has a section `## {}`", p.asks());
+        assert!(docs.contains(&format!("`{p}`")), "docs/reference/principles.md names the id `{p}`");
+        assert!(explain(p).is_some(), "`explain` finds the section of `{p}`");
     }
+}
+
+/// A principle's id is its form outside the engine, written and read in one place each: the id names
+/// one principle, `parse` reads it back as that principle, and the JSON writes it as the id.
+#[test]
+fn an_id_names_one_principle() {
+    let ids: std::collections::HashSet<&str> = Principle::ALL.iter().map(|p| p.id()).collect();
+    assert_eq!(ids.len(), Principle::ALL.len(), "the ids are distinct");
+    for p in Principle::ALL {
+        assert_eq!(Principle::parse(p.id()), Some(p));
+        assert_eq!(serde_json::to_value(p).unwrap(), p.id());
+    }
+    assert_eq!(Principle::parse("chnages"), None, "an id that names no principle is none");
 }

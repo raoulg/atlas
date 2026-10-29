@@ -78,7 +78,7 @@ fn edge(g: &Graph, kind: EdgeKind, src: &str, dst: &str) -> bool {
 
 /// Every finding of `atlas check`, as its principle and the node it asks about.
 fn findings(g: &Graph) -> Vec<(&'static str, String)> {
-    check(g).into_iter().map(|f| (f.principle, f.node)).collect()
+    check(g).into_iter().map(|f| (f.principle.id(), f.node)).collect()
 }
 
 /// The nodes a principle asks about.

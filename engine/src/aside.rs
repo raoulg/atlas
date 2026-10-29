@@ -20,7 +20,7 @@ use ignore::gitignore::{Gitignore, GitignoreBuilder};
 use serde::Serialize;
 
 use crate::model::{Graph, NodeKind};
-use crate::principles::{Aside, Finding, Ink, Look, PRINCIPLES};
+use crate::principles::{Aside, Finding, Ink, Look, Principle};
 
 /// The file of decisions by path, at the top of what is read.
 pub const FILE: &str = ".atlasignore";
@@ -46,7 +46,7 @@ struct Decision {
     says: String,
     covers: Covers,
     /// The principles it answers; all of them when it names none.
-    principles: Vec<String>,
+    principles: Vec<Principle>,
     reason: String,
     /// Why it covers nothing whatever the findings.
     fault: Option<String>,
@@ -119,7 +119,7 @@ fn covering(g: &Graph, decisions: &[Decision], f: &Finding) -> Option<usize> {
             Path::new(&file).strip_prefix(dir).is_ok_and(|rel| patterns.matched_path_or_any_parents(rel, false).is_ignore())
         }
     };
-    let answers = |d: &Decision| d.fault.is_none() && (d.principles.is_empty() || d.principles.iter().any(|p| p == f.principle));
+    let answers = |d: &Decision| d.fault.is_none() && (d.principles.is_empty() || d.principles.contains(&f.principle));
     let in_code = |d: &Decision| matches!(d.covers, Covers::Line(..));
     let first = |code: bool| decisions.iter().position(|d| in_code(d) == code && answers(d) && covers(d));
     first(true).or_else(|| first(false))
@@ -174,20 +174,20 @@ fn marks(file: &str, text: &str, comment: &str) -> Vec<Decision> {
 
 /// The decision in a line's comment (`# atlas: ignore[changes] the reason`), alone or after
 /// another comment on its line: the principles it names, its reason, and its fault.
-fn mark(line: &str, comment: &str) -> Option<(Vec<String>, String, Option<String>)> {
+fn mark(line: &str, comment: &str) -> Option<(Vec<Principle>, String, Option<String>)> {
     let said = &line[opens(line, comment)?..];
     let rest = said.split(comment).skip(1).find_map(|c| c.trim_start().strip_prefix(MARK)?.trim_start().strip_prefix("ignore"))?;
-    let (named, rest) = match rest.strip_prefix('[') {
+    let (ids, rest) = match rest.strip_prefix('[') {
         Some(r) => match r.split_once(']') {
-            Some((ids, rest)) => (ids.split(',').map(|p| p.trim().to_string()).filter(|p| !p.is_empty()).collect(), rest),
+            Some((ids, rest)) => (named(ids.split(',').map(str::trim).filter(|p| !p.is_empty())), rest),
             None => return Some((vec![], String::new(), Some("Its `[` is left open: which principles does it name?".to_string()))),
         },
-        None if rest.is_empty() || rest.starts_with(char::is_whitespace) => (vec![], rest),
+        None if rest.is_empty() || rest.starts_with(char::is_whitespace) => (Ok(vec![]), rest),
         None => return None,
     };
     let reason = rest.trim_start_matches(|c: char| c.is_whitespace() || matches!(c, '-' | '—' | '–' | ':' | '#' | '/')).trim();
-    let fault = fault(&named, reason);
-    Some((named, reason.to_string(), fault))
+    let (principles, fault) = fault(ids, reason);
+    Some((principles, reason.to_string(), fault))
 }
 
 /// Where a line's comment opens: the first `comment` outside a string. A `#` language quotes
@@ -228,8 +228,7 @@ fn entries(file: &str, text: &str) -> Vec<Decision> {
         };
         let mut words = rule.split_whitespace();
         let pattern = words.next().unwrap_or_default();
-        let principles: Vec<String> = words.map(str::to_string).collect();
-        let mut fault = fault(&principles, reason);
+        let (principles, mut fault) = fault(named(words), reason);
         if pattern.starts_with('!') {
             fault = Some("It takes back what another entry sets aside: can that entry be narrowed instead?".to_string());
         }
@@ -251,12 +250,20 @@ fn entries(file: &str, text: &str) -> Vec<Decision> {
     out
 }
 
-/// Why a decision naming `principles` with `reason` covers nothing, when it does not.
-fn fault(principles: &[String], reason: &str) -> Option<String> {
-    if let Some(p) = principles.iter().find(|p| !PRINCIPLES.iter().any(|x| x.id == p.as_str())) {
-        return Some(format!("It names `{p}`, which is no principle: which one does it answer?"));
+/// The principles a decision names by their ids, read once; the first id that names none is a fault.
+fn named<'a>(ids: impl IntoIterator<Item = &'a str>) -> Result<Vec<Principle>, String> {
+    ids.into_iter()
+        .map(|id| Principle::parse(id).ok_or_else(|| format!("It names `{id}`, which is no principle: which one does it answer?")))
+        .collect()
+}
+
+/// The principles a decision names, and why a decision naming them with `reason` covers nothing, when it
+/// does not.
+fn fault(named: Result<Vec<Principle>, String>, reason: &str) -> (Vec<Principle>, Option<String>) {
+    match named {
+        Err(fault) => (vec![], Some(fault)),
+        Ok(principles) => (principles, reason.is_empty().then(|| "It gives no reason: why does the code stand as it does?".to_string())),
     }
-    reason.is_empty().then(|| "It gives no reason: why does the code stand as it does?".to_string())
 }
 
 /// A file of `g` from the root of the file system.
@@ -298,7 +305,7 @@ mod tests {
     #[test]
     fn a_mark_is_read_in_a_comment() {
         let (named, reason, fault) = mark("def f(xs):  # atlas: ignore[changes] in place, for speed", "#").unwrap();
-        assert_eq!((named, reason.as_str(), fault), (vec!["changes".to_string()], "in place, for speed", None));
+        assert_eq!((named, reason.as_str(), fault), (vec![Principle::Changes], "in place, for speed", None));
         assert_eq!(mark("fn f() {} // clippy says so // atlas: ignore — ported", "//").unwrap().1, "ported");
         assert!(mark("let s = \"// atlas: ignore[changes] x\";", "//").is_none(), "a string holds no comment");
         assert!(mark("# atlas: ignored the rest", "#").is_none(), "`ignored` is no `ignore`");
@@ -327,12 +334,12 @@ mod tests {
     #[test]
     fn an_entry_is_a_pattern_principles_and_a_reason() {
         let text = "# decisions\n\nsrc/sim/particles.py  changes gives  # in place\nsrc/legacy/**  # ported\nsrc/x.py\n!src/y.py  # back\n";
-        let read: Vec<(u32, Vec<String>, String, bool)> =
+        let read: Vec<(u32, Vec<Principle>, String, bool)> =
             entries("/r/.atlasignore", text).into_iter().map(|d| (d.line, d.principles, d.reason, d.fault.is_none())).collect();
         assert_eq!(
             read,
             [
-                (3, vec!["changes".to_string(), "gives".to_string()], "in place".to_string(), true),
+                (3, vec![Principle::Changes, Principle::Gives], "in place".to_string(), true),
                 (4, vec![], "ported".to_string(), true),
                 (5, vec![], String::new(), false),
                 (6, vec![], "back".to_string(), false),

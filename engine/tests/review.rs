@@ -198,13 +198,13 @@ const REVIEWED: &[(&str, &str, &str)] = &[
 #[test]
 fn atlas_findings_are_the_reviewed_ones() {
     let fs = check(atlas());
-    let mut got: Vec<(&str, &str)> = fs.iter().map(|f| (f.principle, f.node.as_str())).collect();
+    let mut got: Vec<(&str, &str)> = fs.iter().map(|f| (f.principle.id(), f.node.as_str())).collect();
     let mut want: Vec<(&str, &str)> = REVIEWED.iter().map(|(p, n, _)| (*p, *n)).collect();
     got.sort();
     want.sort();
     let new: Vec<String> = fs
         .iter()
-        .filter(|f| !want.contains(&(f.principle, f.node.as_str())))
+        .filter(|f| !want.contains(&(f.principle.id(), f.node.as_str())))
         .map(|f| format!("{} {} ({}:{}) {}", f.principle, f.node, f.file, f.line, f.what))
         .collect();
     let gone: Vec<&(&str, &str)> = want.iter().filter(|w| !got.contains(w)).collect();
