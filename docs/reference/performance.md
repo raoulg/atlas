@@ -11,7 +11,7 @@ branch [`perf-data`](https://github.com/raoulg/atlas/tree/perf-data), whose READ
 | measure | how |
 | --- | --- |
 | `build/release/seconds`, `build/release/peak_rss` | `cargo build --release --locked -p atlas-code` in a target directory of its own that no cache restores, with no `RUSTC_WRAPPER`: every crate compiles. The dependencies are fetched in a step before it, so the network is not timed. Peak memory is that of the largest process of the build (a `rustc` or the linker). |
-| `read/<subject>/<cold\|warm>/seconds`, `…/peak_rss` | `atlas-code view --no-open` of a subject. Cold: an empty cache (`XDG_CACHE_HOME`) and no index (`.atlas/index` at the top of the subject's worktree); warm: the same command again. The median of three rounds. |
+| `read/<subject>/<cold\|warm>/seconds`, `…/peak_rss` | `atlas-code view --no-open` of a subject. Cold: an empty cache (`XDG_CACHE_HOME`) and no index (`.atlas/index` at the top of the subject's worktree); warm: the same command again. One reading a night: the rounds of one run lie within a percent of each other on the runner, and a reading that is off makes the measure suspect, which the reproduction then measures five times. |
 | `read/<subject>/<cold\|warm>/phase/<read\|check\|flow\|page>` | the phases `atlas-code view --timings FILE` reports of the same commands: reading the repository, `atlas-code check`'s principles, `flow::of`, and drawing and writing the page. |
 | `tests/<package>/<binary>/seconds`, `tests/total/seconds` | each test binary of `cargo test --no-run`, run on its own in its package's directory, as `cargo test` runs it. libtest's own timings (`--format json`, `--report-time`) need nightly Rust, so a binary is timed from outside. Ignored tests and doc tests are not run. |
 
@@ -94,8 +94,8 @@ GitHub shows that README at the branch; the documentation site is not touched.
 
 ## Cost
 
-One `ubuntu-24.04` runner a night, under 45 minutes when nothing is suspect: the clean build, three rounds
-of cold and warm readings of five subjects, the tests' build (from the cache of this job) and one run of
+One `ubuntu-24.04` runner a night, about 25 minutes when nothing is suspect: the clean build, one cold and
+one warm reading of each of five subjects, the tests' build (from the cache of this job) and one run of
 every test binary. A suspect night adds the reproduction (two builds and five interleaved rounds of what is
 suspect) and, for a large slowdown, the bisection; the job's timeout is 150 minutes. The weekly job builds
 two commits and measures six things interleaved, within the same timeout.
