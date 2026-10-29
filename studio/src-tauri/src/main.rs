@@ -371,7 +371,8 @@ fn terminal_close(terminals: tauri::State<'_, Terminals>, id: u32) -> Result<(),
 
 /// Which build Studio is, as its sidecar says: the same commit and channel.
 async fn this_build(app: &tauri::AppHandle) -> Result<update::Build, String> {
-    let out = app.shell().sidecar("atlas-code").map_err(|e| e.to_string())?.args(["--version"]).output().await.map_err(|e| e.to_string())?;
+    let out =
+        app.shell().sidecar("atlas-code").map_err(|e| e.to_string())?.args(["--version"]).output().await.map_err(|e| e.to_string())?;
     update::build_of(&String::from_utf8_lossy(&out.stdout)).ok_or_else(|| "Studio's atlas does not say which build it is".into())
 }
 

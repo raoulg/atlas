@@ -264,7 +264,10 @@ mod tests {
             build_of("atlas-code 0.68.0-nightly (9a7ecf0)\n"),
             Some(Build { version: "0.68.0".into(), nightly: true, commit: "9a7ecf0".into() })
         );
-        assert_eq!(build_of("atlas-code 0.68.0 (9a7ecf0+)"), Some(Build { version: "0.68.0".into(), nightly: false, commit: "9a7ecf0".into() }));
+        assert_eq!(
+            build_of("atlas-code 0.68.0 (9a7ecf0+)"),
+            Some(Build { version: "0.68.0".into(), nightly: false, commit: "9a7ecf0".into() })
+        );
         assert_eq!(build_of("something else"), None);
     }
 
