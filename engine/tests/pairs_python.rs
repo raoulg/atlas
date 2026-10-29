@@ -900,28 +900,63 @@ fn places_a_path_method_holds_where_ty_finds_a_path() {
 
 /// A path's attribute holds where ty finds the attribute is the path library's
 /// (`knowledge::PYTHON_PATH_ATTRIBUTES`), never by its name alone. In the receivers pair, `log`
-/// appends to a log in the directory above the data file it is handed (`source.parent`), and
+/// appends to a log in the directory of the data file `summarise` hands it (`source.parent`), and
 /// `shelved` opens the file an `Entry` names by the shelf it stands on and its name there
 /// (`entry.parent`, `entry.name`): the project's own fields, named as pathlib's attributes are. The
-/// clean side annotates `source: Path`, so its `parent` is the directory above the file; the shortcut
+/// clean side annotates `source: Path`, so its `parent` is the directory of the file, `~/data` for
+/// `~/data/{name}`, and of `{$SHELF_DATA}/{name}` it is `{$SHELF_DATA}` (#284); the shortcut
 /// leaves it out, ty does not know what `source` is, and the directory stays a hole by the name the
 /// code gives it rather than a guess. On both sides the entry's `parent` is its field, never the
 /// directory above the entry.
 #[test]
 fn places_a_path_attribute_holds_where_ty_finds_a_path() {
     let p = common::pair("receivers/python");
-    let clean = terms(&p.clean, "shelf.summary.log");
-    assert!(clean.contains(&("disk_write".to_string(), "{source}/../shelf.log".to_string())), "{clean:?}");
-    let shortcut = terms(&p.shortcut, "shelf.summary.log");
-    assert!(shortcut.iter().any(|(k, _)| k == "disk_write"), "{shortcut:?}");
+    let places = |g: &Graph, id: &str| -> BTreeSet<String> {
+        g.node(id).expect("in the graph").touches.iter().filter(|t| t.kind_name() == "disk_write").map(|t| t.artifact.clone()).collect()
+    };
+    let clean = places(&p.clean, "shelf.summary.log");
+    for written in ["~/data/shelf.log", "{$SHELF_DATA}/shelf.log"] {
+        assert!(clean.contains(written), "{written} in {clean:?}");
+    }
+    let shortcut = places(&p.shortcut, "shelf.summary.log");
+    assert!(!shortcut.is_empty(), "the shortcut writes the log");
     assert!(
-        shortcut.iter().all(|(_, what)| !what.contains("{source}/..")),
+        shortcut.iter().all(|place| !place.contains("data") && !place.contains("..")),
         "no directory is guessed from an attribute's name: {shortcut:?}"
     );
     for (side, g) in [("clean", &p.clean), ("shortcut", &p.shortcut)] {
         let shelved = terms(g, "shelf.summary.shelved");
         assert!(shelved.iter().any(|(k, _)| k == "disk_read"), "{side}: {shelved:?}");
         assert!(shelved.iter().all(|(_, what)| !what.contains("..")), "{side}: a field named `parent` is no directory up: {shelved:?}");
+    }
+}
+
+/// The closures pair: a lambda a name keeps and a `def` inside a `def`, each called in the body by its name, take what
+/// each call hands them (#239), as a function of the module does, and as a closure a `let` keeps does in Rust.
+#[test]
+fn a_closures_parameter_is_what_its_calls_hand_it() {
+    common::a_closures_parameter_is_what_its_calls_hand_it("python", &["knot.settings.settings", "knot.settings.lock"]);
+}
+
+/// A class is a path's where ty finds it in a path library (`knowledge::PYTHON_PATH_CLASSES`),
+/// never by its name alone. In the receivers pair, `walked` opens the data file a walk ends at, by
+/// the project's own dataclass `Path`, and `first` makes the walk from the first aisle
+/// (`Path("aisle-1", end)`). The clean side annotates `walk: Path`, and `walked` takes the
+/// project's class, as it would one of any other name. On both sides the aisle's literal is no
+/// part of where the file is: the place starts at what `first` is handed, and neither function
+/// decides one.
+#[test]
+fn places_a_project_class_named_as_a_path_class_is_the_projects() {
+    let p = common::pair("receivers/python");
+    assert!(edge(&p.clean, "shelf.walk.walked", "shelf.walk.Path", EdgeKind::Takes), "walked takes the project's Path");
+    for (side, g) in [("clean", &p.clean), ("shortcut", &p.shortcut)] {
+        let read = touches(g, "shelf.walk.walked", "disk_read");
+        assert!(!read.is_empty(), "{side}: walked reads the file");
+        assert!(read.iter().all(|t| !t.fixed && t.fixed_by.is_empty()), "{side}: no function decides the place: {read:?}");
+        assert!(
+            !check(g).iter().any(|f| f.principle == "places" && f.node.starts_with("shelf.walk.")),
+            "{side}: neither function names a place of its own"
+        );
     }
 }
 
@@ -2726,4 +2761,10 @@ fn places_a_path_a_class_builds_is_the_path_written_out() {
     let (c, s) = (files(&read("clean")), files(&read("shortcut")));
     assert_eq!(c, s);
     assert!(c.iter().any(|(f, a, by)| f == "bench.keep.save_report" && a == ".made/report.txt" && by == &["bench.cli.main"]), "{c:?}");
+}
+
+/// The parents pair: `source.parent` of `~/data/{name}` is `~/data`, as `Path::parent` and `path.dirname` are (#284).
+#[test]
+fn places_a_parent_drops_the_last_part_of_a_path() {
+    common::a_parent_drops_the_last_part_of_a_path("python", "shelf.summary.summarise", "shelf.summary.log");
 }

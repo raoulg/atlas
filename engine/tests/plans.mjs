@@ -2,7 +2,8 @@
 // it: `node plans.mjs PLAN_JS DATA_JSON ROUTE...` prints one JSON object per route. `engine/tests/plans.rs` hands it the
 // page's data of a program and compares the facts with the plan written down beside the program.
 //
-// - `step PATH`, `choice PATH`: an occurrence (a call, by the names on its path from the route) and a choice;
+// - `step PATH`, `choice PATH`: an occurrence (a call, by the names on its path from the route) and a choice; a call
+//   that may run one of several functions says how many (`step PATH one of N`);
 // - `line A > B CHANNEL`: a line of the plan, its channel `value`, `own`, `reached`, `call` or `back`;
 // - `home VALUE FRAME`: the frame a value stands in when every step is open (`outside` when none holds it);
 // - `side PLACE left|right|between|both`: where a place of the world stands, decided on the closed picture.
@@ -23,7 +24,7 @@ const D = JSON.parse(fs.readFileSync(dataJson, "utf8"));
 // `ATLAS_FINE_BUDGET=n` cuts the plan as a large program's is cut (`plan.js`, `FINE_BUDGET`)
 const window = process.env.ATLAS_FINE_BUDGET ? {ATLAS_FINE_BUDGET: Number(process.env.ATLAS_FINE_BUDGET)} : {};
 const M = new Function("D", "window", fs.readFileSync(planJs, "utf8") + `
-return {V, plan, imageOf, checkOpenings, treeInfo, stepLabel, typeLabel, sideOfRoles, familyOf, kindOf, byId, ordersOn, stepOf, opens, frameOf, valueBox, foldDirs, filePath, valuesOf, closedFamily, typesIn, lightOf, cutBy, familyFrames, here};`)(D, window);
+return {V, plan, imageOf, checkOpenings, treeInfo, stepLabel, oneOf, typeLabel, sideOfRoles, familyOf, kindOf, byId, ordersOn, stepOf, opens, frameOf, valueBox, foldDirs, filePath, valuesOf, closedFamily, typesIn, lightOf, cutBy, familyFrames, here};`)(D, window);
 const {V} = M;
 
 const SIDES = {in: "left", out: "right", mid: "between", both: "both"};
@@ -104,7 +105,12 @@ function read(route) {
     return v;
   };
   const facts = [];
-  for (const n of nodes.values()) if (n.parent !== null && n.parent !== undefined) facts.push(`${n.synthetic ? "choice" : "step"} ${name.get(n.id)}${M.treeInfo.get(n.key)?.recursive ? " recursive" : ""}`);
+  // a step that is a call into a family says how many functions it may run, as its label does
+  for (const n of nodes.values()) {
+    if (n.parent === null || n.parent === undefined) continue;
+    const one = n.synthetic ? 0 : M.oneOf(n.key);
+    facts.push(`${n.synthetic ? "choice" : "step"} ${name.get(n.id)}${M.treeInfo.get(n.key)?.recursive ? " recursive" : ""}${one ? ` one of ${one}` : ""}`);
+  }
   const channel = (k, r) => k.startsWith("e:") ? "call" : k.startsWith("w:") ? (r ? "reached" : "own") : r ? "value reached" : "value";
   for (const P of F.pills.values()) {
     for (const [k, r] of P.D) facts.push(`line ${valueName(k)} > ${occ(P.id)} ${channel(k, r)}`);

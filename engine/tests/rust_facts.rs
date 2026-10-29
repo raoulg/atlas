@@ -1,8 +1,9 @@
 //! What the Rust reader reads off one construct of the language, each on a program written for it
 //! under `tests/rust`: a workspace's crates and their modules, a trait's implementations and what
 //! they call, a re-export of a whole module, the types a receiver has, what `&mut self` changes,
-//! the options clap declares for every subcommand, the places a file written is made at, and the
-//! values a generic holds.
+//! the options clap declares for every subcommand, the places a file written is made at, the
+//! values a generic holds, the namespace a call's name is looked up in, and what a unit struct and
+//! a trait below its supertraits run.
 
 use std::path::PathBuf;
 
@@ -163,7 +164,6 @@ fn a_generic_s_arguments_are_its_values() {
 /// `clash` the binary defines, as `other()` calls `other`; the crate's own name is a module, which
 /// no call runs.
 #[test]
-#[ignore = "#220: a call of a function named like its crate resolves to the crate's module"]
 fn a_function_named_like_its_crate_is_called() {
     let g = read("clash");
     let main = g.node("clash.main").unwrap();
@@ -171,4 +171,43 @@ fn a_function_named_like_its_crate_is_called() {
     assert_eq!(steps, ["clash.clash", "clash.other"]);
     let written = places(&g, "clash.main");
     assert!(written.contains(&place("disk_write", "write", "$TMPDIR/clash.txt")), "{written:?}");
+}
+
+/// A unit struct's name is a value of it, built where it is named: a method called on it runs its
+/// type's method, whether the call is written on the name (`Plain.show(..)`) or on a local bound to
+/// it (`let plain = Plain; plain.show(..)`). Each builds a `Plain`, then runs `Plain.show` on it.
+#[test]
+fn a_unit_struct_named_as_a_receiver_runs_its_type_s_method() {
+    let g = read("supertraits");
+    for f in ["supertraits.plain", "supertraits.bound"] {
+        let steps: Vec<&str> = g.node(f).unwrap().sites.iter().map(|s| s.to.as_str()).collect();
+        assert_eq!(steps, ["supertraits.Plain", "supertraits.Plain.show"], "{f}");
+    }
+}
+
+/// A trait is below its supertraits (`trait Block: Named`): a value of it runs their methods along
+/// its order, as a type runs the methods of the traits it implements. `block.name()` on a `&dyn
+/// Block` may run, for each type that implements `Block`, the `name` that type runs: `Plain` runs
+/// `Named`'s own, `Fancy` its override.
+#[test]
+fn a_trait_object_runs_its_supertraits_methods() {
+    let g = read("supertraits");
+    assert!(edge(&g, EdgeKind::Inherits, "supertraits.Block", "supertraits.Named"), "trait Block: Named");
+    let bodies = atlas_engine::flow::bodies(&g);
+    let call = bodies["supertraits.named"].steps().into_iter().find(|s| s.to.ends_with(".name")).expect("named asks the name");
+    let mut may: Vec<String> =
+        std::iter::once(call.to.clone()).chain(call.alts(&bodies).iter().map(|k| atlas_engine::flow::split(k).0.to_string())).collect();
+    may.sort();
+    // for each type below `Block`, its own `name` where it has one, else the supertrait's
+    let mut each: Vec<String> = g
+        .edges
+        .iter()
+        .filter(|e| e.kind == EdgeKind::Inherits && e.dst == "supertraits.Block")
+        .map(|e| format!("{}.name", e.src))
+        .map(|own| if g.node(&own).is_some() { own } else { "supertraits.Named.name".to_string() })
+        .collect();
+    each.sort();
+    each.dedup();
+    assert_eq!(each.len(), 2, "{each:?}");
+    assert_eq!(may, each);
 }

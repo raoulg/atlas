@@ -94,7 +94,21 @@ impl<'a> Eval<'a> {
     /// What the library's path function `f`, named `name`, makes of what it is handed, where ty
     /// finds the call goes into that library (knowledge::PYTHON_PATH_FUNCTIONS).
     fn path_function(&self, m: &Module, f: TsNode, name: &str) -> Option<PathFn> {
-        knowledge::PYTHON_PATH_FUNCTIONS.iter().find(|(lib, n, _)| *n == name && self.of_library(m, f, lib)).map(|(_, _, k)| *k)
+        let class = knowledge::PYTHON_PATH_CLASSES.iter().any(|(lib, c)| *c == name && self.of_library(m, f, lib));
+        let function = || knowledge::PYTHON_PATH_FUNCTIONS.iter().find(|(lib, n, _)| *n == name && self.of_library(m, f, lib));
+        if class {
+            return Some(PathFn::Join);
+        }
+        function().map(|(_, _, k)| *k)
+    }
+
+    /// Whether calling `f` makes a path of the parts it is handed: where ty finds the call goes
+    /// into the library of the path class `f` names (knowledge::PYTHON_PATH_CLASSES), as
+    /// `Path(..)` and `pathlib.Path(..)` do. A class of the project's own of the same name is the
+    /// project's.
+    pub fn makes_path(&self, m: &Module, f: TsNode) -> bool {
+        let name = called(f, &m.src);
+        knowledge::PYTHON_PATH_CLASSES.iter().any(|(lib, c)| *c == name && self.of_library(m, f, lib))
     }
 
     /// What the method `f` of a library's path, named `name`, makes of the path it is called on,
@@ -388,6 +402,32 @@ impl<'a> Eval<'a> {
         Some(self.of(at, over, depth + 1))
     }
 
+    /// What the parameter `param`, at `slot`, of a function defined in a body is handed where the
+    /// body calls it by the name `kept` it keeps the function by: a function written as a value
+    /// (`read = lambda name: open(root / name)`) or defined in the body (`def read(name: str)`),
+    /// called with `read("pyproject.toml")`. Each call's argument, as a function's parameter is what
+    /// its callers hand it; a call is the name's where ty finds the name defined at `kept`.
+    fn called_with(&self, at: At, kept: TsNode, slot: usize, param: &str, depth: u32) -> Option<Vec<Built>> {
+        let src = &at.m.src;
+        // the body the function is defined in: around the definition `kept` names, or the assignment
+        let owner = kept.parent().filter(|d| d.kind() == "function_definition").unwrap_or(kept);
+        let scope = enclosing_def(owner).unwrap_or_else(|| at.m.tree.root_node());
+        let file = path_str(&at.m.path);
+        let mut out: Vec<Built> = vec![];
+        for call in walk(scope, &["call"]) {
+            let Some(callee) = call.child_by_field_name("function").filter(|c| c.kind() == "identifier") else { continue };
+            if !matches!(self.def(at.m, callee), Some(Target::Here { file: ref d, at }) if *d == file && at == kept.start_byte()) {
+                continue;
+            }
+            let Some(args) = call.child_by_field_name("arguments") else { continue };
+            let handed = positional(args).get(slot).copied().or_else(|| keyword(args, src, param));
+            if let Some(a) = handed {
+                out = union(out, self.of(at, a, depth + 1));
+            }
+        }
+        (!out.is_empty()).then_some(out)
+    }
+
     /// Whether the key of the subscript `e` of `value` is bound by a loop over `value`'s keys:
     /// `for k in d`, `for k in sorted(d)`, `for k in d.keys()`.
     fn ranges_over(&self, e: TsNode, value: TsNode, src: &[u8]) -> bool {
@@ -623,7 +663,12 @@ impl<'a> Eval<'a> {
             // (`sorted(ps, key=lambda p: ..)`): one of the elements, as in `for p in ps`
             "lambda_parameters" => {
                 let slot = named_children(p).iter().position(|x| x.id() == n.id())?;
-                let values = self.on_each(at.of_definition(m, offset), p.parent().filter(|l| l.kind() == "lambda")?, slot, depth)?;
+                let (here, lambda) = (at.of_definition(m, offset), p.parent().filter(|l| l.kind() == "lambda")?);
+                // or the function written as a value is kept by a name the body calls it by
+                let kept = || {
+                    lambda.parent().filter(|a| a.kind() == "assignment")?.child_by_field_name("left").filter(|l| l.kind() == "identifier")
+                };
+                let values = self.on_each(here, lambda, slot, depth).or_else(|| self.called_with(here, kept()?, slot, &name, depth))?;
                 (!values.iter().all(|b| matches!(b.as_slice(), [Seg::Hole(_)]))).then_some(values)
             }
             "parameters"
@@ -632,6 +677,18 @@ impl<'a> Eval<'a> {
             | "typed_default_parameter"
             | "list_splat_pattern"
             | "dictionary_splat_pattern" => {
+                // a parameter of a function defined in another's body: what that body hands it
+                let (list, item) = if p.kind() == "parameters" { (p, n) } else { (p.parent()?, p) };
+                let def = list.parent().filter(|d| d.kind() == "function_definition");
+                let outer = def.filter(|d| !in_class(*d)).and_then(enclosing_def);
+                if let (Some(d), Some(outer)) = (def, outer) {
+                    let names: Vec<String> = parameters(outer, &m.src, in_class(outer)).into_iter().map(|(n, _)| n).collect();
+                    let there = At { m, scope: Some(outer), params: &names };
+                    let slot = named_children(list).iter().filter(|x| x.kind() != "comment").position(|x| x.id() == item.id());
+                    if let Some(v) = slot.and_then(|s| self.called_with(there, d.child_by_field_name("name")?, s, &name, depth)) {
+                        return Some(v);
+                    }
+                }
                 Some(vec![if within(at.scope) && at.params.contains(&name) { vec![Seg::Param(name)] } else { hole(&name) }])
             }
             _ => None,
@@ -648,8 +705,8 @@ impl<'a> Eval<'a> {
         };
         let positional: Vec<TsNode> =
             args.iter().copied().filter(|a| !matches!(a.kind(), "keyword_argument" | "list_splat" | "dictionary_splat")).collect();
-        let parts = call_path(f, src);
-        let last = parts.last().map(String::as_str).or_else(|| f.child_by_field_name("attribute").map(|a| text(a, src))).unwrap_or("");
+        let last = called(f, src);
+        let last = last.as_str();
         let receiver = || f.child_by_field_name("object").map(|o| self.of(at, o, depth + 1)).unwrap_or_else(|| vec![hole("value")]);
         let joined = |xs: &[TsNode]| {
             xs.iter().fold(vec![vec![]], |acc: Vec<Built>, a| {
@@ -908,6 +965,13 @@ pub(super) fn entry_defaults<'t>(def: TsNode<'t>, src: &[u8]) -> Vec<(String, Ts
         }
     }
     out
+}
+
+/// The name a call's function `f` goes by: `Path` of `Path(..)` and of `pathlib.Path(..)`,
+/// `joinpath` of `data_dir().joinpath(..)`.
+fn called(f: TsNode, src: &[u8]) -> String {
+    let parts = call_path(f, src);
+    parts.last().cloned().or_else(|| f.child_by_field_name("attribute").map(|a| text(a, src).to_string())).unwrap_or_default()
 }
 
 /// The positional arguments of an argument list, in order.

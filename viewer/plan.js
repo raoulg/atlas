@@ -750,15 +750,27 @@ const typePlace = t => {
   return {id: "t:" + t, label: typeLabel(t) + (closedFam ? ` (${opensInto(t)})` : ""), kind: (n ? n.kind === "external" : t.startsWith("ext:")) ? "ext" : "type", hue: hueOf(n), type: t};
 };
 const stepName = id => { if (id.startsWith("part:")) { const p = PARTS.find(x => x.id === id.slice(5)) || {}; return `${p.id} · ${p.language}`; } if (id.startsWith("unit:")) return unitLabel(id.slice(5)); const n = byId.get(id); if (!V.route && n.entry) return entryLabel(n); if (n.kind === "class") return nameOf(n) + "()"; if (n.make) return n.name; if (isCtor(n) && !n.on_class) return typeLabel(n.cls) + "()"; return n.cls ? `${typeLabel(n.cls)}.${nameOf(n)}` : nameOf(n); };
-// a step's name: a method run on a subclass is that class's, one its call names is its own class's, a library's
-// operation is its own name
+// the call names the method it runs, through a class (`Section.show(s, h)`) or through `super()`: the call's own site,
+// or for what a call may run instead, the site of that call
+const namesItsMethod = key => {
+  const i = treeInfo.get(key), s = (i?.dispatch != null ? treeInfo.get(i.dispatch) : i)?.site;
+  return !!s && (!!s.named || !!s.after);
+};
+// a step's name: a method run on a class it is known to run on is that class's (`D.f`, `mathematics.md`, "Method
+// resolution order"), one its call names is its own class's, a library's operation is its own name
 const stepLabel = key => {
   const info = treeInfo.get(key);
   if (!info) return stepName(key);
   if (info.step.startsWith("op:")) return info.step.slice(3);
   if (info.built) return typeLabel(info.built) + "()";
   const n = byId.get(info.step);
-  return info.on && !info.named && n && n.cls && !isCtor(n) ? `${typeLabel(info.on)}.${nameOf(n)}` : stepName(info.step);
+  return info.on && !namesItsMethod(key) && n && n.cls && !isCtor(n) ? `${typeLabel(info.on)}.${nameOf(n)}` : stepName(info.step);
+};
+// how many functions the call at a step may run, one of them: the one it reaches, unless an interface, a protocol, a
+// trait or an abstract class only declares it, and each it may run instead; 0 where it runs one function
+const oneOf = key => {
+  const alts = treeInfo.get(key)?.alts ?? bodyOf(stepOf(key), null).alts ?? [];
+  return alts.length ? alts.length + (byId.get(stepOf(key))?.declared ? 0 : 1) : 0;
 };
 // what the call at a step of the route may run instead, where its call says so (a call that names its method)
 const callAlts = key => (treeInfo.get(key)?.named ? treeInfo.get(key).alts : null);
@@ -1077,7 +1089,7 @@ const build = (node, parent, caller) => {
     const fid = "n:" + node.id, kids = [];
     // what the step shows closed, kept for the places it shows: opening it refines the code and leaves them where they stood
     const shut = fine || node.id === V.route || libraryClass(stepOf(node.id)) ? null : stepMorphism(node.id, false, false);
-    frames.set(fid, {id: fid, step: node.id, parent, hue: node.hue, branch: node.branch, choice: node.choice, anchor: node.id === V.route, ...(node.parse ? {parse: true} : {}), closed: shut && {goes: shut.goes, cod: shut.cod, hb: !!parent && !caller && !/^(part|unit|op):/.test(node.id) && goesBack(node.id, shut.cod, shut.errs)}, title: (node.id === V.route ? entryTitle(node.id) : stepLabel(node.id)) + (node.choice ? " · one of" : "")});
+    frames.set(fid, {id: fid, step: node.id, parent, hue: node.hue, branch: node.branch, choice: node.choice, anchor: node.id === V.route, ...(node.parse ? {parse: true} : {}), closed: shut && {goes: shut.goes, cod: shut.cod, hb: !!parent && !caller && !/^(part|unit|op):/.test(node.id) && goesBack(node.id, shut.cod, shut.errs)}, title: (node.id === V.route ? entryTitle(node.id) : stepLabel(node.id)) + (node.choice ? ` · one of ${oneOf(node.id)}` : "")});
     const lib = libraryClass(stepOf(node.id));
     // a library class that is the route starts at its public methods; met inside a route it is a call like another, with its own arrow
     const own = (lib && node.id === V.route) || node.id.startsWith("unit:") ? {dom: new Map(), cod: new Map(), goes: new Map()} : stepMorphism(node.id, true, node.id === V.route);

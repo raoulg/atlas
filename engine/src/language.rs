@@ -127,7 +127,7 @@ impl Language for Python {
     /// from there however far its libraries are read.
     fn environment(&self, repo: &Repo, opts: &Options) -> Vec<Check> {
         let (packages, project_root) = Python::reading(repo, opts);
-        pytypes::environment(&python::types_root(&packages, project_root.as_deref()))
+        pytypes::environment(repo, &python::types_root(&packages, project_root.as_deref()))
     }
 }
 

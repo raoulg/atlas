@@ -333,7 +333,7 @@ pub fn parse(repo: &Repo, packages: &[PathBuf], project_root: Option<&Path>, opt
         }
     }
 
-    let types = read_libraries(&mut parser, &mut modules, &mut store, &types_root, opts)?;
+    let types = read_libraries(repo, &mut parser, &mut modules, &mut store, &types_root, opts)?;
     for m in modules.values_mut() {
         collect_symbols(m, &mut store);
     }
@@ -361,6 +361,7 @@ pub fn parse(repo: &Repo, packages: &[PathBuf], project_root: Option<&Path>, opt
 /// not a package the effect tables describe, and not one with compiled code. Returns ty's
 /// answers for every module read.
 fn read_libraries(
+    repo: &Repo,
     parser: &mut Parser,
     modules: &mut IndexMap<String, Module>,
     store: &mut GraphBuilder,
@@ -369,7 +370,7 @@ fn read_libraries(
 ) -> Result<Types> {
     let entry = |m: &Module| (crate::tree::path_str(&m.path), m.path.clone());
     let mut files: Vec<(String, PathBuf)> = modules.values().map(entry).collect();
-    let Some(ty) = Ty::new(root_dir, &files, opts.cache.as_ref()) else { return Ok(Types::default()) };
+    let Some(ty) = Ty::new(repo, root_dir, &files, opts.cache.as_ref()) else { return Ok(Types::default()) };
     let mut types = ty.read(&files, &files);
     let mut reached = types.libs.clone();
     let used: HashSet<String> = reached.iter().map(|(m, _)| package_of(m)).collect();

@@ -1,0 +1,77 @@
+# `report(section: Section, ..)` shows a heading on a section the code declares: a `Section` or a class below it. A
+# `Section` runs the `show` it inherits from `Block`, a `Boxed` its own (`mathematics.md`, "Method resolution order").
+# The call is one of two functions, each named by the class it runs on: `Block.show` on a `Section` is `Section.show`,
+# and `Boxed.show` runs on any `Boxed` (#292). What the call is handed crosses to the override, which runs on the
+# section; `Block.show`'s own body uses only the heading. `Boxed.show` raises on an empty heading: the error is made in
+# its arm, and each border it crosses hands it on, up to the route.
+route notes.report.report
+step report/read_text                                     # `source.read_text()`
+step report/Section.show one of 2                         # `section.show(heading)`: `Section.show` or `Boxed.show`
+step report/Section.show/Boxed.show                       # what it runs on a `Boxed`
+choice report/Section.show/Boxed.show/?1                  # `if not heading:`
+step report/Section.show/Boxed.show/?1/ValueError()
+
+line entry > report call
+line Disk(report.source) > report own
+line report/read_text > _·heading@report/read_text value
+line Section·section > report value
+line _·heading@report/read_text > report/Section.show value
+line report/Section.show > Screen own
+line Section·section > report/Section.show/Boxed.show value
+line _·heading@report/read_text > report/Section.show/Boxed.show value
+line report/Section.show/Boxed.show > Screen own
+line report/Section.show/Boxed.show/?1/ValueError() > ValueError@report/Section.show/Boxed.show/?1 value
+line ValueError@report/Section.show/Boxed.show/?1 > report/Section.show/Boxed.show value
+line report/Section.show/Boxed.show > ValueError@report/Section.show/? value
+line ValueError@report/Section.show/? > report/Section.show value
+line report/Section.show > ValueError@report/Section.show value
+line ValueError@report/Section.show > report value
+line report > ValueError@report value
+
+home Section·section report
+home _·heading@report/read_text report
+home ValueError@report/Section.show/Boxed.show/?1 report/Section.show/Boxed.show
+home ValueError@report/Section.show/? report/Section.show
+home ValueError@report/Section.show report
+home ValueError@report report
+
+side entry left
+side Disk(report.source) left
+side Screen right
+
+# `note(block: Block, ..)` on a declared `Block`: a `Block` runs its own `show`, which is `Block.show` by either name,
+# and a `Boxed` below it its override. One of two, as for a section.
+route notes.report.note
+step note/read_text
+step note/Block.show one of 2                             # `block.show(heading)`: `Block.show` or `Boxed.show`
+step note/Block.show/Boxed.show
+choice note/Block.show/Boxed.show/?1
+step note/Block.show/Boxed.show/?1/ValueError()
+
+line entry > note call
+line Disk(note.source) > note own
+line note/read_text > _·heading@note/read_text value
+line Block·block > note value
+line _·heading@note/read_text > note/Block.show value
+line note/Block.show > Screen own
+line Block·block > note/Block.show/Boxed.show value
+line _·heading@note/read_text > note/Block.show/Boxed.show value
+line note/Block.show/Boxed.show > Screen own
+line note/Block.show/Boxed.show/?1/ValueError() > ValueError@note/Block.show/Boxed.show/?1 value
+line ValueError@note/Block.show/Boxed.show/?1 > note/Block.show/Boxed.show value
+line note/Block.show/Boxed.show > ValueError@note/Block.show/? value
+line ValueError@note/Block.show/? > note/Block.show value
+line note/Block.show > ValueError@note/Block.show value
+line ValueError@note/Block.show > note value
+line note > ValueError@note value
+
+home Block·block note
+home _·heading@note/read_text note
+home ValueError@note/Block.show/Boxed.show/?1 note/Block.show/Boxed.show
+home ValueError@note/Block.show/? note/Block.show
+home ValueError@note/Block.show note
+home ValueError@note note
+
+side entry left
+side Disk(note.source) left
+side Screen right

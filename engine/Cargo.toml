@@ -16,6 +16,7 @@ indexmap.workspace = true
 serde_yaml = "0.9"
 toml = "1"
 regex = "1"
+rustc-hash = "2"
 sqlparser = { version = "0.63", features = ["visitor"] }
 walkdir = "2"
 ignore = "0.4"

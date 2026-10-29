@@ -74,6 +74,10 @@ pub fn boundary_rust(parts: &[String]) -> Option<Crossing> {
             return Some(Crossing::to(World::Screen));
         }
     }
+    // a socket's traffic: `TcpStream::connect(addr)`, `conn.read(..)`; binding or a timeout moves none
+    if has(k::RUST_NET_MODULE) {
+        return k::RUST_SOCKET_OPS.contains(&last).then_some(Crossing::to(World::Net));
+    }
     // a program is run by a `Command`; `process::exit` ends this one and runs none
     if has(k::RUST_COMMAND) {
         return Some(Crossing::to(World::Process));
@@ -856,6 +860,33 @@ mod tests {
         let local = facts(c("net"), Some("datasets"), "load_dataset", &p(&["csv", "data/train.csv"]));
         assert_eq!((kind(&local), local.artifact.as_str()), ("disk_read", "data/train.csv"), "a builtin loader reads local files");
         assert!(requests(&["url", "params"], "get") && !requests(&["key", "default"], "get"), "a request is handed a URL");
+    }
+
+    /// Isomorphic is the same: a socket is the network in Python and in Rust, and the operations
+    /// that say the same thing cross alike. Connecting, sending and receiving reach it; binding an
+    /// address, accepting a connection, shutting a half and setting a timeout move no data.
+    #[test]
+    fn a_socket_moves_data_alike_in_python_and_rust() {
+        let rs = |xs: &[&str]| name(boundary_rust(&xs.iter().map(|s| s.to_string()).collect::<Vec<_>>()));
+        let py = |op: &str| name(boundary(Some("socket"), &parts(&["sock", op])));
+        let alike = [
+            ("connect", "TcpStream", "connect"),
+            ("recv", "TcpStream", "read"),
+            ("recv_into", "TcpStream", "read_exact"),
+            ("send", "TcpStream", "write"),
+            ("sendall", "TcpStream", "write_all"),
+            ("shutdown", "TcpStream", "shutdown"),
+            ("settimeout", "TcpStream", "set_read_timeout"),
+            ("bind", "TcpListener", "bind"),
+            ("accept", "TcpListener", "accept"),
+            ("sendto", "UdpSocket", "send_to"),
+            ("recvfrom", "UdpSocket", "recv_from"),
+        ];
+        for (p, ty, r) in alike {
+            assert_eq!(py(p), rs(&["std", "net", ty, r]), "Python's `socket.{p}` and Rust's `{ty}::{r}`");
+        }
+        assert_eq!(py("recv"), Some("net"), "a socket's traffic reaches the network");
+        assert_eq!(rs(&["std", "net", "IpAddr", "from_str"]), None, "an address parsed moves nothing");
     }
 
     #[test]

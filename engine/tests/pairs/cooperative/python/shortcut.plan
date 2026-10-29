@@ -31,7 +31,7 @@ side Web left                                                                   
 # read, else the network and then the store.
 
 route news.read.cached_lines
-step cached_lines/Cached.read                                                     # `source.read()`, one of two
+step cached_lines/Cached.read one of 2                                            # `source.read()`, one of two
 step cached_lines/Cached.read/Store.has
 choice cached_lines/Cached.read/?1
 step cached_lines/Cached.read/?1/Store.get

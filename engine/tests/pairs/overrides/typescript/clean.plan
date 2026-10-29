@@ -4,9 +4,9 @@
 # reads the value it is handed, not the Handler. Each result, a string, goes back to the dispatch that ran it.
 
 route events.handlers.Handler
-step Handler()/Handler.handle
+step Handler()/Handler.handle one of 2
 step Handler()/Handler.handle/ClickHandler.handle
-step Handler()/Handler.log
+step Handler()/Handler.log one of 2
 step Handler()/Handler.log/ClickHandler.log
 
 line entry > Handler()/Handler.handle call

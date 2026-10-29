@@ -744,7 +744,6 @@ const KIND_NAME = {cmd: "start", file: "file", db: "database", web: "web", scree
 const placeKind = id => id.startsWith("e:") ? "cmd" : placeGlyph.get(id) || (/^w:(File|Disk)/.test(id) ? "file" : /^w:(DuckDB|SQLite|GraphDB|SQL)\b/.test(id) ? "db" : id.startsWith("w:Web") ? "web" : id.startsWith("w:Screen") ? "screen" : /^w:(LLM|Model)\b/.test(id) ? "model" : id.startsWith("w:open") ? "proc" : null);
 const glyphSvg = kind => `<svg class="glyph" width="13" height="13" viewBox="0 0 14 14" style="color:var(--k-${kind})">${GLYPH[kind]}</svg>`;
 function glyphAt(parent, kind, x, y) { const g = el("g", {class: "glyph", transform: `translate(${x},${y})`, style: `color:var(--k-${kind})`}, parent); g.innerHTML = GLYPH[kind]; return g; }
-const altCount = id => (bodyOf(id, null).alts || []).length;
 // two orders of ids as one: what both hold keeps its order, and between two such, what only the
 // first holds comes before what only the second holds, as a diff interleaves lines
 const interleave = (xs, ys) => {
@@ -1205,7 +1204,7 @@ async function renderPlaat(mine) {
     if (P.own && P.steps[0].startsWith("part:")) { const rs = requesters(P.steps[0].slice(5)); return rs.length <= 2 ? rs.join(", ") : `${rs.slice(0, 2).join(", ")} +${rs.length - 2}`; }
     if (P.own) return stepLabel(P.steps[0]);
     const ns = [...new Set(P.steps.map(stepLabel))], text = ns.length <= 2 ? ns.join(", ") : `${ns.slice(0, 2).join(", ")} +${ns.length - 2}`;
-    const at = treeInfo.get(P.steps[0]), alts = P.steps.length === 1 && !stepOf(P.steps[0]).startsWith("op:") ? (at ? at.alts.length : altCount(P.steps[0])) : 0;
+    const alts = P.steps.length === 1 && !stepOf(P.steps[0]).startsWith("op:") ? oneOf(P.steps[0]) : 0;
     return (P.steps.some(st => treeInfo.get(st)?.recursive) ? "↻ " : P.steps.some(openable) || !V.route ? "▸ " : "") + text + (alts ? ` · one of ${alts}` : "") + (P.folded ? ` · +${P.folded} types` : "");
   };
   // in a union, a step named otherwise in A reads `old → new`

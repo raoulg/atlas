@@ -22,12 +22,13 @@ def data_dir():
 
 
 def summarise(name):
-    """Count the lines of the data file `name` and write the count to a `.count` file beside it."""
+    """Count the lines of the data file `name`, write the count to a `.count` file beside it and log it."""
     source = data_dir().joinpath(name)
     with open(source) as lines:
         count = len(lines.readlines())
     with open(source.with_suffix(".count"), "w") as out:
         out.write(f"{count}\n")
+    log(source, count)
     return count
 
 

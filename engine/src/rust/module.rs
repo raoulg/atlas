@@ -478,7 +478,9 @@ fn glob_of<'m>(m: &'m Module, parts: &[String]) -> Option<&'m String> {
 
 /// What a path names where a value is wanted, as where it is called: where it names a module,
 /// the function of that name the module's parent declares or re-exports
-/// (`mod download; pub use download::download;`), since Rust keeps modules apart from values.
+/// (`mod download; pub use download::download;`), since Rust keeps modules apart from values. A
+/// name of one segment is first the value the module declares or imports by it: a crate's name is a
+/// module, so `clash()` in the crate `clash` calls the function `clash` beside it.
 pub(super) fn resolve_value(
     m: &Module,
     parts: &[String],
@@ -486,6 +488,12 @@ pub(super) fn resolve_value(
     nodes: &IndexMap<String, Node>,
     crate_ids: &HashMap<String, String>,
 ) -> Option<String> {
+    if let [name] = parts {
+        let value = |id: &&String| nodes.get(*id).is_some_and(|n| n.kind != NodeKind::Module);
+        if let Some(own) = m.symbols.get(name).filter(value).or_else(|| m.bindings.get(name).filter(value)) {
+            return Some(own.clone());
+        }
+    }
     let r = resolve(m, parts, modules, nodes, crate_ids)?;
     if nodes.get(&r).map_or(true, |n| n.kind != NodeKind::Module) {
         return Some(r);

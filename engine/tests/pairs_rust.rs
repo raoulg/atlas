@@ -14,6 +14,7 @@ mod common;
 
 use common::Pair;
 
+use std::collections::BTreeSet;
 use std::path::PathBuf;
 use std::sync::OnceLock;
 
@@ -1430,23 +1431,37 @@ fn composition_a_method_called_by_its_path_runs_on_its_first_argument() {
 /// A call by name runs, for each type its value may be, the method that type runs (#268), as in Python and TypeScript:
 /// a value of a struct is of that struct, built at the call or declared, since no type is below a struct; one the code
 /// declares of a trait (`&dyn Block`) may be of any type that implements it. The built pair (`tests/pairs/built/rust`)
-/// shows a heading on a block: the clean side is handed a `&dyn Block`, so `block.show(..)` may run `Boxed.show`; the
-/// shortcut builds a `Plain` where it shows it, which runs the trait's own `show` alone. `Boxed.show`'s `heading` holds
-/// the heading exactly where the call may run it (#263).
+/// shows a heading on a block under the block's name: the clean side is handed a `&dyn Block`, so `block.show(..)` may
+/// run `Boxed.show`; the shortcut builds a `Plain` where it shows it, a unit struct named as the value (`Plain.show(..)`),
+/// which runs the trait's own `show` alone. `Boxed.show`'s `heading` holds the heading exactly where the call may run it
+/// (#263). The name is a supertrait's method (`trait Block: Named`, #285): on the `&dyn Block` it may run the `name` of
+/// each type below `Block`, on the `Plain` that type's alone.
 #[test]
 fn built_a_value_of_a_struct_runs_its_type_and_one_of_a_trait_any_type_below() {
     for side in ["clean", "shortcut"] {
         let g = analyze(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/pairs/built/rust").join(side), &Options::default())
             .expect("reads");
         let bodies = atlas_engine::flow::bodies(&g);
-        let call = bodies["notes.report"].steps().into_iter().find(|s| s.to == "notes.Block.show").expect("report shows");
-        let runs = call.alts(&bodies).iter().any(|k| atlas_engine::flow::split(k).0 == "notes.Boxed.show");
+        // the bodies a call may run: a trait's method without a body of its own runs none
+        let may = |method: &str| -> BTreeSet<String> {
+            let call = bodies["notes.report"].steps().into_iter().find(|s| s.to.ends_with(method)).expect("report calls it");
+            std::iter::once(call.to.clone())
+                .chain(call.alts(&bodies).iter().map(|k| atlas_engine::flow::split(k).0.to_string()))
+                .filter(|f| !node(&g, f).declared)
+                .collect()
+        };
+        let runs = may(".show").contains("notes.Boxed.show");
         assert_eq!(runs, side == "clean", "{side}");
         assert_eq!(
             node(&g, "notes.Boxed.show").uses.iter().any(|u| u.name == "heading"),
             runs,
             "{side}: the parameter follows what the call runs"
         );
+        let named: BTreeSet<String> = match side {
+            "clean" => ["notes.Plain.name", "notes.Boxed.name"].map(String::from).into(),
+            _ => ["notes.Plain.name"].map(String::from).into(),
+        };
+        assert_eq!(may(".name"), named, "{side}");
     }
 }
 
@@ -1650,4 +1665,43 @@ fn a_recursive_call_takes_what_its_call_hands_it() {
 #[test]
 fn a_list_made_by_a_literal_is_made_by_the_body() {
     common::a_list_made_by_a_literal_is_made_by_the_body("rust", "by_literal", "by_call", "by_constant");
+}
+
+/// One side of the sockets pair (`tests/pairs/sockets/rust`): a server that greets each client by
+/// the name it sends and lets the client read the greeting before the connection closes.
+fn greeter(side: &str) -> Graph {
+    analyze(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/pairs/sockets/rust").join(side), &Options::default()).expect("reads")
+}
+
+/// A call leaves something behind, and a socket is a place: what a function reads from or writes to
+/// std's `TcpStream` reaches the network, as what Python's `socket` receives and sends does. The
+/// clean server lingers as TCP asks: it shuts its writing half and reads what the client still sends,
+/// so `linger` reaches the network and nothing is asked. The shortcut sleeps a moment and drops the
+/// connection: its `linger` reaches no place, and Atlas asks what the wait leaves behind. Binding an
+/// address, shutting a half and setting a timeout move no data, on both sides.
+#[test]
+fn nothing_a_socket_is_a_place() {
+    let (c, s) = (greeter("clean"), greeter("shortcut"));
+    assert_eq!(found(&c, "nothing"), Vec::<String>::new());
+    assert_eq!(found(&s, "nothing"), ["greeter.linger"]);
+    let ops = |g: &Graph, f: &str| touches(g, f, "net").iter().map(|t| t.op.clone()).collect::<Vec<_>>();
+    assert_eq!(ops(&c, "greeter.linger"), ["read"], "what the client still sends is read from the network");
+    assert!(ops(&s, "greeter.linger").is_empty(), "a wait reaches no place");
+    for g in [&c, &s] {
+        assert_eq!(ops(g, "greeter.answer"), ["read", "write_all"], "the name is received and the greeting sent");
+        assert!(node(g, "greeter.main").touches.is_empty(), "binding an address and accepting a connection move no data");
+    }
+}
+
+/// The parents pair: `source.parent()` of `~/data/{name}` is `~/data`, as `Path.parent` and `path.dirname` are (#284).
+#[test]
+fn places_a_parent_drops_the_last_part_of_a_path() {
+    common::a_parent_drops_the_last_part_of_a_path("rust", "shelf.summarise", "shelf.log");
+}
+
+/// The closures pair: a closure a `let` keeps and the body calls takes what each call hands it (#239), as a function of
+/// the module does, and as a lambda or a `def` inside a `def` does in Python.
+#[test]
+fn a_closures_parameter_is_what_its_calls_hand_it() {
+    common::a_closures_parameter_is_what_its_calls_hand_it("rust", &["knot.settings", "knot.lock"]);
 }

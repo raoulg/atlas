@@ -41,13 +41,29 @@ pub fn request_way(method: &str) -> Option<Dir> {
 /// serve their routes.
 pub const LOCAL_HOSTS: &[&str] = &["localhost", "127.0.0.1", "0.0.0.0", "[::1]"];
 
-/// What else an app or a router registers a route by, beside an HTTP method: a websocket
-/// (FastAPI), any method (Express's `all`).
-pub const ROUTE_KINDS: &[&str] = &["websocket", "all"];
+/// What else an app or a router registers a route by, beside an HTTP method and `EVERY_METHOD`:
+/// a websocket (FastAPI).
+pub const ROUTE_KINDS: &[&str] = &["websocket"];
+
+/// What an app or a router registers a route that serves every method by: `app.all(path, ..)` in
+/// Express, Hono, Koa's router and Fastify. Every method is the top of the set of methods: all of
+/// `HTTP_METHODS`, so a request at the route's path meets it whatever its method.
+pub const EVERY_METHOD: &[&str] = &["all"];
 
 /// Whether an app's or a router's method of this name registers a route.
 pub fn registers_route(verb: &str) -> bool {
-    HTTP_METHODS.contains(&verb) || ROUTE_KINDS.contains(&verb)
+    HTTP_METHODS.contains(&verb) || ROUTE_KINDS.contains(&verb) || EVERY_METHOD.contains(&verb)
+}
+
+/// The methods a route registered by this name serves, upper case as a route's label writes them:
+/// the one it is named for (`get`, `websocket`), or each of `HTTP_METHODS` in their order for a
+/// registration of `EVERY_METHOD`.
+pub fn methods_served(verb: &str) -> Vec<String> {
+    if EVERY_METHOD.contains(&verb) {
+        HTTP_METHODS.iter().map(|m| m.to_uppercase()).collect()
+    } else {
+        vec![verb.to_uppercase()]
+    }
 }
 
 /// Web frameworks that register a function as a route by a decorator, by package. A decorator
@@ -877,8 +893,6 @@ pub const PACKAGES: &[(Registry, &str, World)] = &[
     (Crates, "tokio_tungstenite", NET),
     (Crates, "curl", NET),
     (Crates, "axum", NET),
-    (Crates, "TcpStream", NET),
-    (Crates, "TcpListener", NET),
     (Npm, "axios", NET),
     (Npm, "ky", NET),
     (Npm, "ofetch", NET),
@@ -972,6 +986,34 @@ pub fn request_by_data(op: &str) -> Option<&'static RequestByData> {
 
 /// A socket's connecting, sending and receiving: the network calls that are handed no URL.
 pub const SOCKET_OPS: &[&str] = &["connect", "send", "sendall", "sendto", "recv", "recvfrom", "recv_into"];
+
+/// Rust's module whose types are sockets: std's `net` (`TcpStream`, `TcpListener`, `UdpSocket`),
+/// and the async runtimes' of that name.
+pub const RUST_NET_MODULE: &str = "net";
+
+/// A Rust socket's connecting, sending and receiving, as `SOCKET_OPS` are Python's: a stream sends
+/// and receives through `io::Write` and `io::Read`, a datagram socket by its own names. Binding an
+/// address, accepting a connection, shutting a half and setting a timeout move no data, in either
+/// language.
+pub const RUST_SOCKET_OPS: &[&str] = &[
+    "connect",
+    "connect_timeout",
+    "read",
+    "read_exact",
+    "read_to_end",
+    "read_to_string",
+    "read_vectored",
+    "peek",
+    "write",
+    "write_all",
+    "write_vectored",
+    "write_fmt",
+    "send",
+    "send_to",
+    "recv",
+    "recv_from",
+    "peek_from",
+];
 
 /// Whether a web library's operation moves data: a request by its method or its kind, or a
 /// socket's traffic.
@@ -1627,10 +1669,11 @@ pub const HUB_LOADER: &str = "load_dataset";
 
 // ---------- paths ----------
 
-/// The constructors a path is made by from its parts: pathlib's, Rust's `Path::new` and
-/// `PathBuf::from`, the web platform's `URL`.
-pub const PATH_MAKERS: &[&str] =
-    &["Path", "PurePath", "PosixPath", "WindowsPath", "PurePosixPath", "PureWindowsPath", "Path::new", "PathBuf::from", "URL", "new URL"];
+/// The constructors a path or a URL is made by from its parts, by the name the code calls them by,
+/// where that name is the language's own: Rust's `Path::new` and `PathBuf::from`, the web
+/// platform's `URL`. Python's are classes of a library, known where ty finds them
+/// (`PYTHON_PATH_CLASSES`).
+pub const PATH_MAKERS: &[&str] = &["Path::new", "PathBuf::from", "URL", "new URL"];
 
 /// Libraries whose values are paths: a method of one names its file by the path it is called on.
 /// importlib's are what a package ships (`files("pages").joinpath("template.html").read_text()`).
@@ -1804,18 +1847,27 @@ pub const RUST_PATH_FUNCTIONS: &[(&str, &str, PathFn)] = &[
     ("env", "var_os", PathFn::Environment),
 ];
 
+/// Python's classes whose values are paths, by the library module ty finds the class in (or one
+/// above it) and its name: pathlib's, and `os.PathLike`, the protocol every path keeps. A value
+/// made of one joins the parts it is made of (`Path(root, "data")`; `Path()`, made of none, is
+/// `.`), and a parameter of a library function typed as one is handed a path. A class of the
+/// project's own of the same name is the project's.
+pub const PYTHON_PATH_CLASSES: &[(&str, &str)] = &[
+    ("pathlib", "Path"),
+    ("pathlib", "PurePath"),
+    ("pathlib", "PosixPath"),
+    ("pathlib", "WindowsPath"),
+    ("pathlib", "PurePosixPath"),
+    ("pathlib", "PureWindowsPath"),
+    ("os", "PathLike"),
+];
+
 /// Python's path functions, by the library module ty finds the call goes into (or one above it)
 /// and their name: `Path.cwd()`, `os.getenv("DATA", "data")`, `os.path.join(a, b)` (`os.path` is
-/// `posixpath` or `ntpath`, by the platform), and pathlib's classes, which join the parts they are
-/// made of (`Path(root, "data")`; `Path()`, made of none, is `.`). A function or a class of the
-/// project's own of the same name is no path function.
+/// `posixpath` or `ntpath`, by the platform). A path class made of its parts is one as well, a
+/// join (`PYTHON_PATH_CLASSES`). A function of the project's own of the same name is no path
+/// function.
 pub const PYTHON_PATH_FUNCTIONS: &[(&str, &str, PathFn)] = &[
-    ("pathlib", "Path", PathFn::Join),
-    ("pathlib", "PurePath", PathFn::Join),
-    ("pathlib", "PosixPath", PathFn::Join),
-    ("pathlib", "WindowsPath", PathFn::Join),
-    ("pathlib", "PurePosixPath", PathFn::Join),
-    ("pathlib", "PureWindowsPath", PathFn::Join),
     ("pathlib", "cwd", PathFn::Here),
     ("pathlib", "home", PathFn::Home),
     ("os", "getenv", PathFn::Environment),

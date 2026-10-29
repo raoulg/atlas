@@ -847,11 +847,17 @@ fn a_body_is_what_a_route_runs() {
     assert!(edges(&g, EdgeKind::Calls).contains(&("dispatch.count".into(), "dispatch.Language.parse".into())));
 }
 
-/// A call on a value whose type is known runs that type's method, whatever made the value.
+/// A call on a value whose type is known runs that type's method, whatever made the value and however the call is
+/// written: on a unit struct's name bound to a local (`let words = Words; words.parse(text)`), and through the trait
+/// with the value handed first (`Language::parse(&Words, text)`), which is the same call. Neither runs the trait's
+/// method, whose alternatives are every implementation.
 #[test]
-#[ignore = "#207: a value made by a unit struct's name has no type"]
 fn a_call_on_a_known_value_runs_its_type_s_method() {
-    assert!(edges(&dispatch(), EdgeKind::Calls).contains(&("dispatch.words".into(), "dispatch.Words.parse".into())));
+    let calls = edges(&dispatch(), EdgeKind::Calls);
+    for f in ["dispatch.words", "dispatch.words_through_the_trait"] {
+        let from: Vec<&str> = calls.iter().filter(|(s, _)| s == f).map(|(_, d)| d.as_str()).collect();
+        assert_eq!(from, ["dispatch.Words.parse"], "{f}");
+    }
 }
 
 fn dispatch() -> Graph {

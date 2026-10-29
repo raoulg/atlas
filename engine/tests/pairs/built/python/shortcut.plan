@@ -1,0 +1,43 @@
+# The shortcut builds each value where it shows it: `Section().show(heading)` is of `Section` and no class below, so the
+# call runs the one `show` a `Section` runs, `Block.show`, named by the class it runs on, and is no choice. Nothing it
+# runs raises.
+route notes.report.report
+step report/read_text
+step report/Section()
+step report/Section.show                                  # `Section().show(heading)`: one function
+
+line entry > report call
+line Disk(report.source) > report own
+line report/read_text > _·heading@report/read_text value
+line report/Section() > Section@report/Section() value
+line Section@report/Section() > report/Section.show value
+line _·heading@report/read_text > report/Section.show value
+line report/Section.show > Screen own
+
+home _·heading@report/read_text report
+home Section@report/Section() report
+
+side entry left
+side Disk(report.source) left
+side Screen right
+
+# `Block().show(heading)` is of `Block` alone: `Block.show`, though `Boxed` overrides it below.
+route notes.report.note
+step note/read_text
+step note/Block()
+step note/Block.show
+
+line entry > note call
+line Disk(note.source) > note own
+line note/read_text > _·heading@note/read_text value
+line note/Block() > Block@note/Block() value
+line Block@note/Block() > note/Block.show value
+line _·heading@note/read_text > note/Block.show value
+line note/Block.show > Screen own
+
+home _·heading@note/read_text note
+home Block@note/Block() note
+
+side entry left
+side Disk(note.source) left
+side Screen right

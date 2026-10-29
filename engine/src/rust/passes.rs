@@ -371,7 +371,8 @@ pub(super) fn collect_uses(m: &mut Module, crate_ids: &HashMap<String, String>, 
     }
 }
 
-/// The `impl` blocks of the modules `ids`: methods on their types, and the traits they implement.
+/// The `impl` blocks of the modules `ids`: methods on their types, and the traits they implement; and the
+/// supertraits each of their traits is below.
 pub(super) fn collect_impls(
     modules: &IndexMap<String, Module>,
     store: &mut GraphBuilder,
@@ -380,6 +381,24 @@ pub(super) fn collect_impls(
 ) {
     let mut impls: Vec<Impl> = vec![];
     for m in ids.iter().filter_map(|id| modules.get(id)) {
+        // a trait below its supertraits (`trait Block: Named`): every type that implements it implements them, and a
+        // value of it runs their methods, as a type runs the methods of the traits it implements
+        for item in items(m.tree.root_node()).into_iter().filter(|i| i.kind() == "trait_item") {
+            let Some(name) = item.child_by_field_name("name") else { continue };
+            let tr = format!("{}.{}", m.id, text(name, &m.src));
+            for bound in item.child_by_field_name("bounds").map(named_children).unwrap_or_default() {
+                let parts = path_parts(Some(bound), &m.src);
+                if parts.is_empty() {
+                    continue;
+                }
+                let sup = resolve(m, &parts, modules, &store.nodes, crate_ids).unwrap_or_else(|| format!("ext:{}", parts.join(".")));
+                if sup.starts_with("ext:") {
+                    store.ext_node(&sup);
+                }
+                store.add_edge(&tr, &sup, EdgeKind::Inherits, None);
+                store.classes.entry(tr.clone()).or_default().resolved.push(sup);
+            }
+        }
         for item in items(m.tree.root_node()).into_iter().filter(|i| i.kind() == "impl_item") {
             impls.push(Impl {
                 module: m.id.clone(),

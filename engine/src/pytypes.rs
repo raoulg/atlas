@@ -93,10 +93,17 @@ pub struct Param {
     pub file: Option<FileArg>,
 }
 
-/// The standard library's types for a path and for a file, by the class that defines them.
-fn file_of(class: &str) -> Option<FileArg> {
+/// The standard library's types for a path and for a file, by the class that defines them and the
+/// module ty finds it in: a path where the class is a path library's
+/// (`knowledge::PYTHON_PATH_CLASSES`).
+fn file_of(module: &str, class: &str) -> Option<FileArg> {
+    let path = crate::knowledge::PYTHON_PATH_CLASSES
+        .iter()
+        .any(|(lib, c)| *c == class && (module == *lib || module.strip_prefix(lib).is_some_and(|r| r.starts_with('.'))));
+    if path {
+        return Some(FileArg::Path);
+    }
     match class {
-        "PathLike" | "PurePath" | "Path" | "PurePosixPath" | "PureWindowsPath" | "PosixPath" | "WindowsPath" => Some(FileArg::Path),
         "SupportsRead" | "SupportsReadline" => Some(FileArg::Reads),
         "SupportsWrite" => Some(FileArg::Writes),
         "IO" | "TextIO" | "BinaryIO" | "IOBase" | "RawIOBase" | "BufferedIOBase" | "TextIOBase" | "TextIOWrapper" | "BufferedReader"
@@ -242,10 +249,11 @@ impl Types {
         self.files.get(file)
     }
 
-    /// Ask ty about `files`, read as part of the project at `root`. A file is named by the path
-    /// Atlas knows it by; a notebook's positions are in its cells joined as ruff joins them.
-    pub fn read(root: &Path, files: &[(String, PathBuf)]) -> Types {
-        Ty::new(root, files, None).map(|ty| ty.read(files, files)).unwrap_or_default()
+    /// Ask ty about `files`, read as part of the project at `at`, a directory of the reading
+    /// `repo`. A file is named by the path Atlas knows it by; a notebook's positions are in its
+    /// cells joined as ruff joins them.
+    pub fn read(repo: &Repo, at: &Path, files: &[(String, PathBuf)]) -> Types {
+        Ty::new(repo, at, files, None).map(|ty| ty.read(files, files)).unwrap_or_default()
     }
 }
 
@@ -440,11 +448,11 @@ impl Kept {
 const KEPT: &str = "python-types";
 
 impl Ty {
-    /// ty over the project at `root`, whose own files are `own`; what it says of an installed
-    /// library's file is kept in `cache`.
-    pub fn new(root: &Path, own: &[(String, PathBuf)], cache: Option<&Cache>) -> Option<Ty> {
-        let root = absolute(root)?;
-        let (db, setup) = TyDb::new(&root);
+    /// ty over the project at `at`, a directory of the reading `repo`, whose own files are `own`;
+    /// what it says of an installed library's file is kept in `cache`.
+    pub fn new(repo: &Repo, at: &Path, own: &[(String, PathBuf)], cache: Option<&Cache>) -> Option<Ty> {
+        let root = absolute(at)?;
+        let (db, setup) = TyDb::new(repo, at, &root);
         let (environment, env) = (setup.environment, setup.env.clone());
         let kept = cache.map(|c| Kept::new(c, setup));
         let own = own.iter().filter_map(|(_, p)| absolute(p)).map(|p| key(p.as_std_path())).collect();
@@ -745,20 +753,22 @@ struct Settings {
     python_version: Option<String>,
     extra_paths: Vec<String>,
     roots: Vec<String>,
-    file: Option<SystemPathBuf>,
+    /// The file the environment is configured in, by its name in the project's directory.
+    file: Option<&'static str>,
     /// The project's name and the lowest Python it supports, from `[project]`.
     name: Option<String>,
     requires: Option<String>,
 }
 
 impl Settings {
-    fn of(root: &SystemPath) -> Settings {
-        let read = |name: &str| Repo::text_at(root.join(name).as_std_path()).and_then(|s| s.parse::<toml::Table>().ok());
+    /// What the project at `root` configures, read through the reading `repo` it is a directory
+    /// of. A directory outside the reading (the one a package read without a project is imported
+    /// from) configures nothing: a project there is read as the project (`Repo::asked`).
+    fn of(repo: &Repo, root: &Path) -> Settings {
+        let read = |name: &str| repo.text(root.join(name)).and_then(|s| s.parse::<toml::Table>().ok());
         let (table, file) = match read("ty.toml") {
-            Some(t) => (t.get("environment").cloned(), root.join("ty.toml")),
-            None => {
-                (read("pyproject.toml").and_then(|t| t.get("tool")?.get("ty")?.get("environment").cloned()), root.join("pyproject.toml"))
-            }
+            Some(t) => (t.get("environment").cloned(), "ty.toml"),
+            None => (read("pyproject.toml").and_then(|t| t.get("tool")?.get("ty")?.get("environment").cloned()), "pyproject.toml"),
         };
         let project = read("pyproject.toml").and_then(|t| t.get("project").cloned());
         let name = project.as_ref().and_then(|p| p.get("name")?.as_str().map(String::from));
@@ -808,22 +818,22 @@ struct Setup {
 }
 
 impl Setup {
-    /// How ty reads the project at `root`, with the search paths it reads with.
-    fn of(root: &SystemPath, system: &OsSystem, vendored: &VendoredFileSystem) -> (Setup, SearchPaths) {
-        let settings = Settings::of(root);
+    /// How ty reads the project at `at`, a directory of the reading `repo`, with the search paths
+    /// it reads with; `root` is `at` as the file system resolves it.
+    fn of(repo: &Repo, at: &Path, root: &SystemPath, system: &OsSystem, vendored: &VendoredFileSystem) -> (Setup, SearchPaths) {
+        let settings = Settings::of(repo, at);
         let mut roots: Vec<SystemPathBuf> = settings.roots.iter().map(|r| root.join(r)).collect();
         if roots.is_empty() {
             // the layouts ty finds by itself: the root, `src` and maturin's `python` where they are
             // no package, and a nested `<name>/<name>`
             roots.push(root.to_path_buf());
             for dir in ["src", "python"] {
-                let d = root.join(dir);
-                if system.is_directory(&d) && !system.is_file(&d.join("__init__.py")) {
-                    roots.push(d);
+                if repo.is_dir(at.join(dir)) && !repo.is_file(at.join(dir).join("__init__.py")) {
+                    roots.push(root.join(dir));
                 }
             }
             if let Some(name) = settings.name.as_deref().map(|n| n.replace('-', "_")) {
-                if system.is_directory(&root.join(&name).join(&name)) {
+                if repo.is_dir(at.join(&name).join(&name)) {
                     roots.push(root.join(&name));
                 }
             }
@@ -832,10 +842,7 @@ impl Setup {
         search.extra_paths = settings.extra_paths.iter().map(|p| root.join(p)).collect();
         let (venv, found) = match &settings.python {
             Some(p) => {
-                let origin = SysPrefixPathOrigin::ConfigFileSetting(
-                    Arc::new(settings.file.clone().unwrap_or_else(|| root.join("pyproject.toml"))),
-                    None,
-                );
+                let origin = SysPrefixPathOrigin::ConfigFileSetting(Arc::new(root.join(settings.file.unwrap_or("pyproject.toml"))), None);
                 (root.join(p), PythonEnvironment::new(root.join(p), origin, system).ok())
             }
             // the project's `.venv`; a `VIRTUAL_ENV`, a conda environment or a python on `PATH` are the shell's
@@ -966,12 +973,13 @@ impl Setup {
     }
 }
 
-/// What a reading of the Python project at `root` takes from outside it: where ty finds the
-/// modules its code and its libraries import, as checks of how each stands.
-pub fn environment(root: &Path) -> Vec<Check> {
-    let Some(root) = absolute(root) else { return vec![] };
+/// What a reading of the Python project at `at`, a directory of the reading `repo`, takes from
+/// outside it: where ty finds the modules its code and its libraries import, as checks of how each
+/// stands.
+pub fn environment(repo: &Repo, at: &Path) -> Vec<Check> {
+    let Some(root) = absolute(at) else { return vec![] };
     let system = OsSystem::new(&root);
-    let (setup, _) = Setup::of(&root, &system, ty_vendored::file_system());
+    let (setup, _) = Setup::of(repo, at, &root, &system, ty_vendored::file_system());
     setup.checks().into_iter().map(|(_, c)| c).collect()
 }
 
@@ -1142,8 +1150,9 @@ struct TyDb {
 }
 
 impl TyDb {
-    /// The database for the project at `root`, and how it reads the project.
-    fn new(root: &SystemPath) -> (TyDb, Setup) {
+    /// The database for the project at `at`, a directory of the reading `repo`, and how it reads
+    /// the project; `root` is `at` as the file system resolves it.
+    fn new(repo: &Repo, at: &Path, root: &SystemPath) -> (TyDb, Setup) {
         let system = OsSystem::new(root);
         let vendored = ty_vendored::file_system().clone();
         let mut db = TyDb {
@@ -1156,7 +1165,7 @@ impl TyDb {
             analysis_settings: AnalysisSettings::default().into(),
         };
         db.files().try_add_root(&db, root, FileRootKind::Project);
-        let (mut setup, search_paths) = Setup::of(root, &db.system, &db.vendored);
+        let (mut setup, search_paths) = Setup::of(repo, at, root, &db.system, &db.vendored);
         search_paths.try_register_static_roots(&db);
         db.program_settings = ProgramSettings {
             python_version: PythonVersionWithSource { version: setup.version, source: PythonVersionSource::default() },
@@ -1352,18 +1361,23 @@ impl Reader<'_, '_> {
                 _ => {}
             }
         }
-        let class = |t: &Type| -> Option<String> {
+        // a class by the module ty finds it in and its name
+        let class = |t: &Type| -> Option<(String, String)> {
             let TypeDefinition::StaticClass(_) = t.definition(self.db, &env)? else { return None };
             let r = t.definition(self.db, &env)?.focus_range(self.db)?;
             let text = ruff_db::source::source_text(self.db, r.file());
-            text.as_str().get(r.range().start().to_usize()..r.range().end().to_usize()).map(String::from)
+            let name = text.as_str().get(r.range().start().to_usize()..r.range().end().to_usize()).map(String::from)?;
+            let module = file_to_module(self.db, self.db.program_file(r.file()).resolver_file(self.db))?;
+            Some((module.name(self.db).to_string(), name))
         };
         let each: Vec<Param> = params
             .into_iter()
             .map(|(name, (a, b))| {
                 let inside = parts.details.iter().zip(&parts.targets).filter(|(_, r)| u32::from(r.start()) >= a && u32::from(r.end()) <= b);
                 let kinds: Vec<FileArg> = inside
-                    .filter_map(|(d, _)| if let TypeDetail::Type(t) = d { class(t).and_then(|c| file_of(&c)) } else { None })
+                    .filter_map(
+                        |(d, _)| if let TypeDetail::Type(t) = d { class(t).and_then(|(module, c)| file_of(&module, &c)) } else { None },
+                    )
                     .collect();
                 let annotation =
                     parts.label.get(a as usize..b as usize).and_then(|s| s.split_once(':')).map(|(_, t)| t.trim()).unwrap_or("");
@@ -1593,7 +1607,8 @@ mod tests {
                 (file.to_string(), at)
             })
             .collect();
-        let types = super::Types::read(&root, &listed);
+        let repo = crate::language::read(&root, &crate::Options::default()).expect("reads the project");
+        let types = super::Types::read(&repo, &root, &listed);
         let _ = std::fs::remove_dir_all(&root);
         listed
             .iter()
