@@ -1407,6 +1407,29 @@ fn composition_a_method_called_by_its_path_runs_on_its_first_argument() {
     assert_eq!(to("sources.any"), [("sources.Source.read".to_string(), String::new())]);
 }
 
+/// A call by name runs, for each type its value may be, the method that type runs (#268), as in Python and TypeScript:
+/// a value of a struct is of that struct, built at the call or declared, since no type is below a struct; one the code
+/// declares of a trait (`&dyn Block`) may be of any type that implements it. The built pair (`tests/pairs/built/rust`)
+/// shows a heading on a block: the clean side is handed a `&dyn Block`, so `block.show(..)` may run `Boxed.show`; the
+/// shortcut builds a `Plain` where it shows it, which runs the trait's own `show` alone. `Boxed.show`'s `heading` holds
+/// the heading exactly where the call may run it (#263).
+#[test]
+fn built_a_value_of_a_struct_runs_its_type_and_one_of_a_trait_any_type_below() {
+    for side in ["clean", "shortcut"] {
+        let g = analyze(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/pairs/built/rust").join(side), &Options::default())
+            .expect("reads");
+        let bodies = atlas_engine::flow::bodies(&g);
+        let call = bodies["notes.report"].steps().into_iter().find(|s| s.to == "notes.Block.show").expect("report shows");
+        let runs = call.alts(&bodies).iter().any(|k| atlas_engine::flow::split(k).0 == "notes.Boxed.show");
+        assert_eq!(runs, side == "clean", "{side}");
+        assert_eq!(
+            node(&g, "notes.Boxed.show").uses.iter().any(|u| u.name == "heading"),
+            runs,
+            "{side}: the parameter follows what the call runs"
+        );
+    }
+}
+
 /// A version of the sunspots pipeline (`tests/pairs/pipeline`).
 fn sunspots(version: &str) -> Graph {
     analyze(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/pairs/pipeline").join(version), &Options::default()).expect("reads")

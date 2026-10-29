@@ -201,6 +201,8 @@ pub fn placed<'t>(
 #[derive(Default)]
 pub struct Step {
     pub on: String,
+    /// The value the call runs on is built at the call (`Site::built`).
+    pub built: bool,
     pub on_receiver: bool,
     pub named: bool,
     /// The call is made through its method's class or path, and the first argument by place is the
@@ -1046,6 +1048,7 @@ impl<'t, 's> Steps<'t, 's> {
             line: line(c),
             to: to.to_string(),
             on: step.on,
+            built: step.built,
             on_receiver: step.on_receiver,
             named: step.named,
             after: step.after,

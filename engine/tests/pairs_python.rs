@@ -809,6 +809,47 @@ fn through_a_call_runs_the_same_functions_for_the_route_its_parameters_and_its_e
     }
 }
 
+// ---------- built: a value built at the call is of its class, a declared one of it or any below ----------
+
+/// The built pair (`tests/pairs/built/python`): `report` shows a heading on a `Section`, a block that shows as any
+/// `Block` does, and `note` on a `Block`; `Boxed`, below `Section`, shows it boxed. The clean side is handed the section
+/// and the block, of the classes their parameters declare or any below; the shortcut builds each where it shows it,
+/// `Section().show(heading)` and `Block().show(heading)`, so neither is ever boxed.
+fn built() -> &'static Pair {
+    static PAIR: OnceLock<Pair> = OnceLock::new();
+    PAIR.get_or_init(|| common::pair("built/python"))
+}
+
+/// A call by name runs, for each class its value may be, the method that class runs along its order (`mathematics.md`,
+/// "Method resolution order", #268): a value built at the call is of the class it builds and none below it, a value the
+/// code declares of a class may be of it or of any class below. So a declared `Section` may run `Boxed.show` though
+/// `Section` runs `Block.show`, and a built `Block` runs `Block.show` alone though `Boxed` overrides it. Each call of
+/// `show` may run `Boxed.show` exactly where it hands on the error `Boxed.show` raises, and `Boxed.show`'s `heading`
+/// holds a heading exactly where a call may run it (#263).
+#[test]
+fn built_a_value_built_at_the_call_runs_its_class_and_a_declared_one_any_class_below() {
+    let [show, boxed] = ["notes.sections.Block.show", "notes.sections.Boxed.show"];
+    for (side, g) in [("clean", &built().clean), ("shortcut", &built().shortcut)] {
+        let bodies = flow::bodies(g);
+        let mut any = false;
+        for f in ["notes.report.report", "notes.report.note"] {
+            let call = bodies[f].steps().into_iter().find(|s| s.to == show).unwrap_or_else(|| panic!("{side}: {f} shows"));
+            let may: BTreeSet<&str> =
+                std::iter::once(call.to.as_str()).chain(call.alts(&bodies).iter().map(|k| flow::split(k).0)).collect();
+            let runs = may.contains(boxed);
+            let site = g.node(f).unwrap().sites.iter().find(|s| s.to == show).unwrap();
+            assert_eq!(site.fails.iter().any(|e| e == "ext:builtins.ValueError"), runs, "{side} {f}: the error follows what the call runs");
+            assert_eq!(runs, side == "clean", "{side} {f}: {may:?}");
+            any |= runs;
+        }
+        assert_eq!(
+            g.node(boxed).unwrap().uses.iter().any(|u| u.name == "heading"),
+            any,
+            "{side}: the parameter follows what the calls run"
+        );
+    }
+}
+
 // ---------- a library's facts hold where ty finds that library ----------
 
 /// The files `id` touches, each by its kind and the term its path is (`~/data/{name}`).
