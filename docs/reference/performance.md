@@ -25,27 +25,64 @@ they ran. The time before the first phase (parsing the command, cloning a URL) i
 ## How a measure is judged
 
 GitHub's hosted runners are shared machines: the same build varies by some percent from night to night,
-and the CPU model under `ubuntu-24.04` is not always the same. The judgement is made for that:
+and the CPU model under `ubuntu-24.04` is not always the same. One night says too little to report on, and
+counting nights is guessing; a slowdown is reported when it is reproduced.
 
 - **Baseline**: the median of the measure's last 10 runs, taken from the runs on the same CPU model when
   there are at least 3 of them, else from all. With fewer than 3 runs a measure has no baseline and is
   not judged.
 - **Suspect**: a run lies past its baseline by more than the largest of 20 % of the baseline, three
   spreads of the window (its median absolute deviation, scaled to a standard deviation), and a floor of
-  0.5 s or 50 MB. The floor keeps a test that takes a tenth of a second from raising anything.
-- **Slower**: suspect on this run and on the run before. A single slow night is noise until the next one
-  says otherwise; `workflow_dispatch` asks the next one at once.
+  0.5 s or 50 MB. A suspect measure says nothing yet: it is a reason to measure again.
+- **Reproduced**: in the same run, the last commit on which the measure lay within its baseline (A) and
+  the commit measured (B) are built and measured interleaved, A B A B, five rounds (two for a clean build),
+  on this runner: what the machine does to one it does to the other. The slowdown is reproduced when every
+  round of B is slower than every round of A, and the medians differ by more than the floor. Five rounds
+  each, all of B past all of A, happens by chance once in 252.
+- **Graded by its size**: reproduced below 1.5 times A is *small*: it is commented on the tracking issue
+  *Atlas got slower: the nightly measure of next* (label `performance`), with the two commits and the
+  A/B numbers, to find out where it came from. From 1.5 times A it is *large*: the range from A to B is
+  bisected in the same run, and an issue of its own, titled *Urgent*, names the landing. Not reproduced,
+  it was the runner: a line in the summary, nothing more.
 
-Slower measures are written at the top of the run's summary, as warnings on the run, and in the tracking
-issue *Atlas got slower: the nightly measure of next* (label `performance`): opened when none is open,
-commented on when one is. A measure is reported to the issue once, on the run it becomes slower; it
-stays marked slower in the summary for as long as it lasts. A measure that stays slower raises its own
-baseline after some nights, and is then no longer reported: the issue is where it is answered. The run
-itself fails only when it could not measure (a build, a reading or a test that fails, a subject that could
-not be fetched, a series that could not be kept): a regression is a finding, a failure is a gap.
+A measure reproduced on one night is known on the next: it is marked in the summary and the charts, and
+neither measured again nor reported again until its baseline has taken it in. The run fails only when
+it could not measure (a build, a reading or a test that fails, a subject that could not be fetched, a
+series that could not be kept): a regression is a finding, a failure is a gap.
 
-A slower measure is a question, as a finding of `atlas check` is: about the change between the two commits
-the issue names, about the runner, or about the measure.
+A slower measure is a question, as a finding of `atlas check` is: about the change between the two commits,
+about the runner, or about the measure.
+
+## Creep, against the last release
+
+A slowdown of a few percent per landing never makes one night suspect. Every Monday the job `weekly`
+measures `next` against the last release tag the same way, interleaved on one runner: Atlas reading itself
+cold and warm, its peak memory, two of the programs cold, and the clean release build. The standing goes,
+one line per measure, to the issue *Atlas's performance against the last release*.
+
+## Looking back
+
+Every night is kept with its commit, so where a measure went from 30 s to 45 s over a week, the range is
+known. Run the workflow `perf` by hand with `mode: bisect`, `from`, `to` (default `next`) and the measure as
+`perf-data` names it, and optionally an `issue` to comment the result on. A range of at most twelve
+landings is measured landing by landing, all in each round: one landing that made most of the difference
+is named, and where none did, each landing's share is listed. A longer range is halved toward the half that
+grew the most. Locally:
+
+```sh
+uv run tools/perf.py bisect --repo . --from v0.69.3 --to next --measure read/atlas/cold/seconds --subject atlas=. --out bisect.json
+```
+
+## In every release
+
+A release's notes carry the main measures against the release before, from the series, so that a release
+cannot get slower without its page saying so:
+
+```sh
+uv run tools/perf.py release-bars --data <a checkout of perf-data> --repo . --before v0.69.3 --after next
+```
+
+prints the `Bars:` line for the release's point on performance (`tools/release_page.py` draws it).
 
 ## The series
 
@@ -57,9 +94,11 @@ GitHub shows that README at the branch; the documentation site is not touched.
 
 ## Cost
 
-One `ubuntu-24.04` runner a night, under 45 minutes: the clean build, three rounds of cold and warm
-readings of five subjects, the tests' build (from the cache of this job) and one run of every test binary.
-The job's timeout is 75 minutes.
+One `ubuntu-24.04` runner a night, under 45 minutes when nothing is suspect: the clean build, three rounds
+of cold and warm readings of five subjects, the tests' build (from the cache of this job) and one run of
+every test binary. A suspect night adds the reproduction (two builds and five interleaved rounds of what is
+suspect) and, for a large slowdown, the bisection; the job's timeout is 150 minutes. The weekly job builds
+two commits and measures six things interleaved, within the same timeout.
 
 ## Running it by hand
 
