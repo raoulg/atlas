@@ -29,6 +29,7 @@ pub mod remote;
 pub mod repo;
 pub mod revelation;
 pub mod rust;
+pub mod shapes;
 pub mod sight;
 pub mod story;
 pub mod tree;

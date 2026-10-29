@@ -757,6 +757,26 @@ it in: `Boekwinkel(Winkel[Boek])` keeps the promise of `Winkel[Boek]`, the base'
 stands where another does when it has every member the other declares.
 **Where.** Principle `overrides`; `model::linearization`; for Python ty decides it (`pytypes.rs`).
 
+### Shapes and their rank
+**What.** A shaped array type `D[A, s]` (dtype `D`, array type `A`) has a shape `s`, a word over axes: a named axis
+(`batch`), a variable bound once per checked call; an anonymous one (`_`), free per array; a fixed size (`3`); a size
+an expression gives (`{self.hidden_size}`); and at most one run of axes (`...`, `*name`). A shape stands for the set of
+concrete shapes it admits, and `s ≤ t` when every array of `s` is one of `t`: a preorder by containment. The rank
+`r(s)` is the number of single axes, exact, or "at least" where a run stands. It is a map from shapes to ranks; its
+fibers, over one `D` and `A`, are the rank families, and the most general shape of each fiber, every axis anonymous
+after a run where the rank is open (`_ _`, `... _`), is an upper bound of it: every shape of the fiber is `≤` it.
+**In Atlas.** Each shape the code writes is a type of its own, named by its shape: two names are two variables, so
+`batch dim` and `batch ndim` are two types, and so are `Float[..]` and `Int[..]`. A shape stands in its rank family
+as a subclass stands in its base (Coequalizer: a quotient), where the program's types hold two shapes of that rank:
+closed, `Float[Tensor, _ _]` stands for the rank-2 float tensors the picture holds; opened, it is a frame around the
+shapes themselves. The family is drawn in jaxtyping's own notation, and where the code writes that shape it is the
+family's own type, as a base the program uses is. The family is a quotient of the picture, never a fact of the graph:
+the shapes, the steps and their lines are the same with it closed or open. The preorder is what an override keeps
+(Behavioural subtyping); a family is never ordered above another in the picture, since the ranks are no base the
+code names. Names are not unified across axes, so `batch batch` is read as `batch _`.
+**Where.** `shapes.rs` (`Array`, `Axis`, `Rank`, `family_id`), `families.rs` (the rank as a kind), principle
+`overrides` (`Array::fits`); the pair `shapes/python`.
+
 ### Method resolution order
 **What.** A linear extension of the order of inheritance: one sequence of a class and its
 ancestors in which every class comes before its bases and each class's bases keep the order it

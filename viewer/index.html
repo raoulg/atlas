@@ -1047,7 +1047,8 @@ async function renderPlaat(mine) {
     places.delete(F.id); keep.delete(F.id);
     const inFam = new Set([f, ...(members.get(f) || [])]);
     const viaOf = m => (inn.get(m) || []).find(e => e.kind === "has" && inFam.has(e.src) && e.via)?.via;
-    const isSub = m => { let cur = m; for (let i = 0; i < 10; i++) { const b = (out.get(cur) || []).find(e => e.kind === "inherits" && inFam.has(e.dst)); if (!b) return false; if (b.dst === f) return true; cur = b.dst; } return false; };
+    // a kind of the family stands in it by the engine's `kind`: a subclass, or a shape of the family's rank
+    const isSub = m => { if (kindOf(m) === f) return true; let cur = m; for (let i = 0; i < 10; i++) { const b = (out.get(cur) || []).find(e => e.kind === "inherits" && inFam.has(e.dst)); if (!b) return false; if (b.dst === f) return true; cur = b.dst; } return false; };
     // a frame holds the kinds its values can be: a value of one kind is that kind and what derives from it, in the fiber
     const below = (m, t) => { let cur = m; for (let i = 0; i < 10 && cur; i++) { if (cur === t) return true; cur = (out.get(cur) || []).find(e => e.kind === "inherits")?.dst; } return false; };
     const can = m => !isSub(m) || (here(m) && [...F.types].some(t => t === f || below(m, t)));
