@@ -91,6 +91,14 @@ pub fn upgrade(exe: &Path, nightly: bool, windows: bool) -> String {
 /// The last answer about updates, kept in the machine's cache beside the answers the engine keeps.
 const ANSWER: &str = "update.json";
 
+/// Said once a day, with the update check: the command's next name, and what must follow it.
+const RENAME: &str = "Note: from Atlas 0.70 this command is `atlas-code`, since other tools install an `atlas` too.\n\
+Scripts and MCP registrations that run `atlas` need the new name; `alias atlas=atlas-code` keeps the short one.\n\
+https://github.com/raoulg/atlas/issues/281";
+
+/// When the note was last said.
+const SAID: &str = "rename-said";
+
 fn now() -> u64 {
     SystemTime::now().duration_since(UNIX_EPOCH).map_or(0, |d| d.as_secs())
 }
@@ -152,6 +160,11 @@ pub fn begin() -> Check {
         return Check(None);
     }
     let this = Build::this();
+    let said = Cache::answer(SAID).and_then(|text| text.trim().parse::<u64>().ok());
+    if said.map_or(true, |at| now().saturating_sub(at) >= DAY) {
+        eprintln!("{RENAME}");
+        Cache::keep_answer(SAID, &now().to_string());
+    }
     let cached = Cache::answer(ANSWER).as_deref().and_then(read).filter(|(_, built, _)| *built == key(&this));
     if let Some((_, _, latest)) = &cached {
         if let Some(line) = newer(&this, latest) {
