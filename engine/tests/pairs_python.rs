@@ -857,6 +857,55 @@ fn places_a_path_method_holds_where_ty_finds_a_path() {
     assert!(shortcut.iter().all(|(_, what)| !what.contains("data")), "no place is guessed from a method's name: {shortcut:?}");
 }
 
+/// A path's attribute holds where ty finds the attribute is the path library's
+/// (`knowledge::PYTHON_PATH_ATTRIBUTES`), never by its name alone. In the receivers pair, `log`
+/// appends to a log in the directory above the data file it is handed (`source.parent`), and
+/// `shelved` opens the file an `Entry` names by the shelf it stands on and its name there
+/// (`entry.parent`, `entry.name`): the project's own fields, named as pathlib's attributes are. The
+/// clean side annotates `source: Path`, so its `parent` is the directory above the file; the shortcut
+/// leaves it out, ty does not know what `source` is, and the directory stays a hole by the name the
+/// code gives it rather than a guess. On both sides the entry's `parent` is its field, never the
+/// directory above the entry.
+#[test]
+fn places_a_path_attribute_holds_where_ty_finds_a_path() {
+    let p = common::pair("receivers/python");
+    let clean = terms(&p.clean, "shelf.summary.log");
+    assert!(clean.contains(&("disk_write".to_string(), "{source}/../shelf.log".to_string())), "{clean:?}");
+    let shortcut = terms(&p.shortcut, "shelf.summary.log");
+    assert!(shortcut.iter().any(|(k, _)| k == "disk_write"), "{shortcut:?}");
+    assert!(
+        shortcut.iter().all(|(_, what)| !what.contains("{source}/..")),
+        "no directory is guessed from an attribute's name: {shortcut:?}"
+    );
+    for (side, g) in [("clean", &p.clean), ("shortcut", &p.shortcut)] {
+        let shelved = terms(g, "shelf.summary.shelved");
+        assert!(shelved.iter().any(|(k, _)| k == "disk_read"), "{side}: {shelved:?}");
+        assert!(shelved.iter().all(|(_, what)| !what.contains("..")), "{side}: a field named `parent` is no directory up: {shelved:?}");
+    }
+}
+
+/// A class and the attributes of the project's own are the project's, whatever their names: a
+/// dataclass named as pathlib's class, with fields named as its attributes (`Path`, `parent`,
+/// `name`, `parents`), reads what the same dataclass with other names reads, and nothing it reads is
+/// a directory above another.
+#[test]
+fn places_a_project_attribute_named_as_a_librarys_is_the_projects() {
+    let stop = |class: &str, before: &str, name: &str, ancestors: &str| {
+        format!(
+            "from dataclasses import dataclass\n\n\n@dataclass(frozen=True)\nclass {class}:\n    {before}: str\n    {name}: str\n    {ancestors}: list[str]\n\n\ndef run(stop: {class}) -> None:\n    print(open({class}(stop.{before}, \"index.html\", []).{name}).read())\n    print(open(stop.{before} + \"/\" + stop.{name}).read())\n    print(open(stop.{ancestors}[1] + \"/index.html\").read())\n"
+        )
+    };
+    let named = terms(&program("own-path", &stop("Path", "parent", "name", "parents")), "demo.core.run");
+    let other = terms(&program("own-stop", &stop("Stop", "before", "label", "earlier")), "demo.core.run");
+    // the same terms, holes named by the fields the code writes
+    let renamed: BTreeSet<(String, String)> = other
+        .into_iter()
+        .map(|(k, what)| (k, what.replace("{before}", "{parent}").replace("{earlier}", "{parents}").replace("{label}", "{name}")))
+        .collect();
+    assert_eq!(named, renamed);
+    assert!(named.iter().all(|(_, what)| !what.contains("..")), "{named:?}");
+}
+
 /// A method of the project's own is the project's, whatever its name: a class whose methods are
 /// named as pathlib's (`home`, `with_name`) reads what a class with other names for the same
 /// methods reads, and neither is the user's home.
