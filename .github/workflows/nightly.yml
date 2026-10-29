@@ -118,8 +118,9 @@ jobs:
           gh release create "nightly-$STAMP" dist/* --repo "$GITHUB_REPOSITORY" --prerelease --target "$SHA" \
             --title "nightly $STAMP" --notes "$notes"
           if gh release view nightly --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            gh api -X PATCH "repos/$GITHUB_REPOSITORY/git/refs/tags/nightly" -f sha="$SHA" -F force=true >/dev/null
+            # the files first, then the tag: Studio asks the tag which commit is newest, and installs these files
             gh release upload nightly dist/* --repo "$GITHUB_REPOSITORY" --clobber
+            gh api -X PATCH "repos/$GITHUB_REPOSITORY/git/refs/tags/nightly" -f sha="$SHA" -F force=true >/dev/null
             gh release edit nightly --repo "$GITHUB_REPOSITORY" --notes "$notes"
           else
             gh release create nightly dist/* --repo "$GITHUB_REPOSITORY" --prerelease --target "$SHA" \
