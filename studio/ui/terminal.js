@@ -14,29 +14,8 @@
   };
   const dockOf = (value) => Object.hasOwn(DOCKS, value) ? value : 'bottom';
 
-  // The panel's size once its inner edge is dragged from `from` to `to` (pointer positions, {x, y}):
-  // as much larger as the edge moved away from the panel, within its least size and `most`.
-  function dragged(dock, size, from, to, most) {
-    const {axis, grows, least} = DOCKS[dockOf(dock)];
-    return Math.max(least, Math.min(Math.max(least, most), size + grows * (to[axis] - from[axis])));
-  }
-
-  // A dock's button: the window in small, the panel's side filled.
-  const SVG = 'http://www.w3.org/2000/svg';
-  function glyph(dock) {
-    const svg = document.createElementNS(SVG, 'svg');
-    svg.setAttribute('viewBox', '0 0 14 12');
-    svg.setAttribute('aria-hidden', 'true');
-    const shape = (tag, attributes) => {
-      const made = document.createElementNS(SVG, tag);
-      for (const [name, value] of Object.entries(attributes)) made.setAttribute(name, value);
-      svg.append(made);
-    };
-    shape('rect', {x: 0.5, y: 0.5, width: 13, height: 11, fill: 'none', stroke: 'currentColor'});
-    const side = {bottom: {x: 1, y: 7, width: 12, height: 4}, left: {x: 1, y: 1, width: 5, height: 10}, right: {x: 8, y: 1, width: 5, height: 10}}[dock];
-    shape('rect', {...side, fill: 'currentColor'});
-    return svg;
-  }
+  // The panel's size once its inner edge is dragged from `from` to `to` (pointer positions, {x, y}).
+  const dragged = (dock, size, from, to, most) => root.AtlasPanel.dragged(DOCKS[dockOf(dock)], size, from, to, most);
 
   const node = (tag, className, label) => {
     const element = document.createElement(tag);
@@ -69,7 +48,7 @@
       button.dataset.dock = dock;
       button.title = `Dock the terminal ${label}`;
       button.setAttribute('role', 'radio');
-      button.append(glyph(dock));
+      button.append(root.AtlasPanel.glyph(root.AtlasPanel.PARTS[dock]));
       button.addEventListener('click', () => bridge.dock(dock));
       return button;
     });

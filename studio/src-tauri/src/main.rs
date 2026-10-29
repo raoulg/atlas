@@ -395,7 +395,7 @@ async fn newer_build(app: &tauri::AppHandle, now: bool) -> Result<Option<update:
     tauri::async_runtime::spawn_blocking(move || newer.map(update::shown)).await.map_err(|e| e.to_string())
 }
 
-/// Studio's settings, for the window that asks: its appearance, where its terminal docks, and the coding agents
+/// Studio's settings, for the window that asks: its appearance, where its terminal and its preview dock, and the coding agents
 /// with Atlas or without.
 #[tauri::command]
 fn get_settings(window: tauri::Window, app: tauri::AppHandle, state: tauri::State<'_, StudioState>) -> serde_json::Value {
@@ -403,6 +403,7 @@ fn get_settings(window: tauri::Window, app: tauri::AppHandle, state: tauri::Stat
     serde_json::json!({
         "appearance": settings::appearance(&app),
         "terminal": settings::terminal_dock(&app),
+        "preview": settings::preview_side(&app),
         "agents": settings::agents(workspace.as_deref()),
     })
 }
@@ -410,6 +411,11 @@ fn get_settings(window: tauri::Window, app: tauri::AppHandle, state: tauri::Stat
 #[tauri::command]
 fn set_terminal_dock(app: tauri::AppHandle, dock: settings::Dock) -> Result<(), String> {
     settings::set_terminal_dock(&app, dock)
+}
+
+#[tauri::command]
+fn set_preview_dock(app: tauri::AppHandle, side: settings::Side) -> Result<(), String> {
+    settings::set_preview_side(&app, side)
 }
 
 #[tauri::command]
@@ -608,6 +614,7 @@ fn main() {
             get_settings,
             set_appearance,
             set_terminal_dock,
+            set_preview_dock,
             register_agent,
             install_update,
             read_workspace_file,

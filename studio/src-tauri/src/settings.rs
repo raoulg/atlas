@@ -1,4 +1,4 @@
-//! Studio's settings: its theme and where its terminal docks, kept in its configuration folder and set on
+//! Studio's settings: its theme and where its terminal and its preview dock, kept in its configuration folder and set on
 //! every window, and
 //! whether the coding agents on this machine have Atlas's MCP server, registered for every project as
 //! `docs/reference/install.md` says (`claude mcp add --scope user atlas -- atlas-code mcp`, and Codex's
@@ -136,13 +136,38 @@ pub fn terminal_dock<R: Runtime>(app: &AppHandle<R>) -> Dock {
 }
 
 fn dock_of(kept: &serde_json::Value) -> Dock {
-    serde_json::from_value(kept["terminal"].clone()).unwrap_or_default()
+    chosen(kept, "terminal")
+}
+
+/// A choice kept under `key`; one Studio does not know is its default.
+fn chosen<T: serde::de::DeserializeOwned + Default>(kept: &serde_json::Value, key: &str) -> T {
+    serde_json::from_value(kept[key].clone()).unwrap_or_default()
 }
 
 /// Dock the terminal of every window, and keep it.
 pub fn set_terminal_dock<R: Runtime>(app: &AppHandle<R>, dock: Dock) -> Result<(), String> {
     let _ = app.emit("terminal-dock", dock);
     keep(app, serde_json::json!({ "terminal": dock }))
+}
+
+/// Where the preview stands: beside the main view, on the left or the right.
+#[derive(serde::Serialize, serde::Deserialize, Clone, Copy, Debug, Default, PartialEq)]
+#[serde(rename_all = "lowercase")]
+pub enum Side {
+    Left,
+    #[default]
+    Right,
+}
+
+/// The side chosen; one Studio does not know is the right.
+pub fn preview_side<R: Runtime>(app: &AppHandle<R>) -> Side {
+    chosen(&read(app), "preview")
+}
+
+/// Dock the preview of every window, and keep it.
+pub fn set_preview_side<R: Runtime>(app: &AppHandle<R>, side: Side) -> Result<(), String> {
+    let _ = app.emit("preview-dock", side);
+    keep(app, serde_json::json!({ "preview": side }))
 }
 
 /// The mode on every window: the system's, or light or dark.
@@ -309,6 +334,20 @@ mod tests {
     fn a_dock_studio_does_not_know_is_the_bottom() {
         for (kept, dock) in [("{}", Dock::Bottom), (r#"{"terminal":"left"}"#, Dock::Left), (r#"{"terminal":"top"}"#, Dock::Bottom)] {
             assert_eq!(dock_of(&serde_json::from_str(kept).unwrap()), dock, "{kept}");
+        }
+    }
+
+    /// A preview's side read from the file is one Studio can show: the right where it names none or one it does not know,
+    /// and the terminal's dock is no side of it.
+    #[test]
+    fn a_side_studio_does_not_know_is_the_right() {
+        for (kept, side) in [
+            ("{}", Side::Right),
+            (r#"{"preview":"left"}"#, Side::Left),
+            (r#"{"preview":"bottom"}"#, Side::Right),
+            (r#"{"terminal":"left"}"#, Side::Right),
+        ] {
+            assert_eq!(chosen::<Side>(&serde_json::from_str(kept).unwrap(), "preview"), side, "{kept}");
         }
     }
 

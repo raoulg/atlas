@@ -17,6 +17,7 @@
   <script defer src="lesson.js"></script>
   <script defer src="lesson.html.js"></script>
   <script defer src="lesson.mount.js"></script>
+  <script defer src="panel.js"></script>
   <script defer src="files.js"></script>
   <script defer src="terminal.js"></script>
   <script defer src="workspaces.js"></script>
@@ -59,7 +60,9 @@
               <section id="lesson-panel" aria-label="Lesson" hidden></section>
             </section>
           </div>
-          <aside id="preview" class="preview" aria-label="Preview" hidden></aside>
+          <aside id="preview" class="preview" aria-label="Preview" hidden>
+            <div id="preview-grip" class="preview-grip" title="Drag to resize"></div>
+          </aside>
         </div>
         <section id="terminal-panel" class="terminal-panel" aria-label="Terminal" hidden>
           <div id="terminal-grip" class="terminal-grip" title="Drag to resize"></div>
