@@ -168,3 +168,25 @@ fn view_writes_the_page_in_a_view() {
     assert_eq!(replies[0]["result"]["isError"], true);
     assert!(text(&replies[0]).contains("unknown field `rout`"), "{}", text(&replies[0]));
 }
+
+#[test]
+fn invalid_utf8_line_gets_a_parse_error_and_the_next_line_is_read() {
+    let root = concat!(env!("CARGO_MANIFEST_DIR"), "/..");
+    let cache = std::env::temp_dir().join(format!("atlas-mcp-cache-{}", std::process::id()));
+    let mut child = Command::new(env!("CARGO_BIN_EXE_atlas"))
+        .arg("mcp")
+        .current_dir(root)
+        .env("XDG_CACHE_HOME", cache)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .spawn()
+        .expect("atlas mcp starts");
+    let mut stdin = child.stdin.take().unwrap();
+    stdin.write_all(b"\xff\n{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"ping\"}\n").unwrap();
+    drop(stdin);
+    let out = child.wait_with_output().unwrap();
+    let replies: Vec<Value> = String::from_utf8(out.stdout).unwrap().lines().map(|l| serde_json::from_str(l).unwrap()).collect();
+    assert_eq!(replies.len(), 2, "a malformed line gets an error and does not end the session");
+    assert_eq!(replies[0]["error"]["code"], -32700);
+    assert_eq!(replies[1], json!({ "jsonrpc": "2.0", "id": 1, "result": {} }));
+}

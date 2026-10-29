@@ -47,8 +47,16 @@ about built code that leans on one.";
 /// Answer every message on stdin until it closes, reading repositories with `opts`.
 pub fn serve(opts: &Options) -> Result<()> {
     let mut stdout = std::io::stdout().lock();
-    for line in std::io::stdin().lock().lines() {
+    for line in std::io::stdin().lock().split(b'\n') {
         let line = line?;
+        let line = match String::from_utf8(line) {
+            Ok(line) => line,
+            Err(e) => {
+                writeln!(stdout, "{}", error(Value::Null, -32700, &format!("not UTF-8: {e}")))?;
+                stdout.flush()?;
+                continue;
+            }
+        };
         if line.trim().is_empty() {
             continue;
         }
