@@ -12,6 +12,8 @@ use std::sync::{Arc, Mutex};
 
 use anyhow::Result;
 
+use crate::model::Lang;
+
 /// Directories no author writes in, never walked: dependencies and a build's output.
 
 struct Listing {
@@ -37,7 +39,7 @@ pub struct Repo {
     /// The directory the reading was asked for, when what was read is the project around it.
     asked: Option<PathBuf>,
     /// The language a part is read in, when its manifest names it.
-    language: Option<&'static str>,
+    language: Option<Lang>,
     /// Files whose contents this reading consumed, relative to the listing root.
     read_files: Arc<Mutex<BTreeSet<PathBuf>>>,
 }
@@ -127,12 +129,12 @@ impl Repo {
     }
 
     /// The part read in `language`, the language of the manifest that roots it.
-    pub fn read_as(self, language: &'static str) -> Repo {
+    pub fn read_as(self, language: Lang) -> Repo {
         Repo { language: Some(language), ..self }
     }
 
     /// The language a part is read in, when its manifest names it.
-    pub fn language(&self) -> Option<&'static str> {
+    pub fn language(&self) -> Option<Lang> {
         self.language
     }
 

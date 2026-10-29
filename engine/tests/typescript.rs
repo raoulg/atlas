@@ -5,7 +5,7 @@ use std::collections::HashSet;
 use std::path::PathBuf;
 
 use atlas_engine::principles::check;
-use atlas_engine::{analyze, EdgeKind, EntryKind, Graph, NodeKind, Options};
+use atlas_engine::{analyze, EdgeKind, EntryKind, Graph, Lang, NodeKind, Options};
 
 fn fixture() -> Graph {
     let repo = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixture-ts");
@@ -25,7 +25,7 @@ fn has(set: &HashSet<(String, String)>, src: &str, dst: &str) -> bool {
 #[test]
 fn files_are_modules_and_types_are_types() {
     let g = fixture();
-    assert_eq!((g.language.as_str(), g.root.as_str()), ("typescript", "fixture-ts"));
+    assert_eq!((g.language.one(), g.root.as_str()), (Some(Lang::TypeScript), "fixture-ts"));
     let kind = |id: &str| g.node(&format!("fixture-ts.{id}")).map(|n| n.kind);
     assert_eq!(kind("lib.model"), Some(NodeKind::Module));
     assert_eq!(kind("lib"), Some(NodeKind::Module), "lib/index.ts stands for lib");

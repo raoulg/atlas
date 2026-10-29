@@ -6,7 +6,8 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use indexmap::IndexMap;
 
 use crate::model::{
-    Bucket, Dir, Edge, EdgeKind, Entry, EntryKind, Graph, Held, Node, NodeKind, Signature, Site, Slot, Stats, Touch, Unresolved, World,
+    Bucket, Dir, Edge, EdgeKind, Entry, EntryKind, Graph, Held, Lang, Node, NodeKind, Signature, Site, Slot, Stats, Touch, Unresolved,
+    World,
 };
 
 /// Per-class facts that only matter during resolution.
@@ -359,7 +360,7 @@ impl GraphBuilder {
 
     /// The graph, once every file is parsed: the scratch is dropped, the names that did not
     /// resolve are counted.
-    pub fn finish(self, root: String, project_root: Option<&std::path::Path>, language: &str) -> Graph {
+    pub fn finish(self, root: String, project_root: Option<&std::path::Path>, language: Lang) -> Graph {
         let mut top: Vec<(String, u32)> = self.unresolved.iter().map(|(k, v)| (k.clone(), *v)).collect();
         let mut nodes = self.nodes;
         for (id, info) in &self.classes {

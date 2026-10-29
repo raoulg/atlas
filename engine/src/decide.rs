@@ -1,6 +1,6 @@
 //! A vision decided: its files written into the tree, what it adds marked as prophecy.
 
-use crate::model::{Graph, Node, NodeKind};
+use crate::model::{Graph, Lang, Node, NodeKind};
 use crate::repo::Repo;
 use anyhow::Context;
 
@@ -71,7 +71,7 @@ pub fn prophetize(
             added.iter().copied().filter(|n| !n.cls.as_deref().is_some_and(|c| added.iter().any(|a| a.id == c))).collect();
         let lang = crate::language::of_file(rel);
         // what only Python asks: a body ty accepts in a sketch, and the `prophecy` the decorator calls
-        let python = lang.as_ref().is_some_and(|l| l.name() == "python");
+        let python = lang.as_ref().is_some_and(|l| l.lang() == Lang::Python);
         let mut new_lines: Vec<String> = lines.iter().map(|l| l.to_string()).collect();
         // what is written at a line: the body of a Python sketch that ty would refuse, and the marker
         // of an item; from the bottom up, so that a line added does not move one still to come

@@ -114,6 +114,8 @@ is chosen (`if not xs: return Failed(..)`), is that choice with what follows it 
 Fit(..)` after it runs otherwise, as an `else` would write it. A repository's graph is the coproduct of its parts' graphs, glued only
 along the libraries and places of the world they share (a pushout over those): two parts whose code
 holds one name stay two, each name injected under where its part lies (`orders/app`, `billing/app`).
+Each part is read in one language, so the graph's languages are the image of its parts': a set, empty for no parts,
+the union of theirs for a merge (`model::Languages`); one language is a value of the closed set Atlas reads (`Lang`).
 A call into a family runs one of its overrides, decided at run time, so its codomain is the coproduct of theirs: it
 hands on each error any of them can end with, as a call hands on each its one callee can end with, never one chosen
 for it (#213).
