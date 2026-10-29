@@ -160,8 +160,18 @@ irm https://raw.githubusercontent.com/raoulg/atlas/main/install-studio.ps1 | iex
 
 Every [release](https://github.com/raoulg/atlas/releases/latest) also has the disk images
 (`atlas-studio-aarch64-apple-darwin.dmg` for Apple silicon, `atlas-studio-x86_64-apple-darwin.dmg` for
-Intel) and the Windows setup program. Studio is not signed with a paid identity, so macOS and Windows
-ask once before its first start: [how to allow it](docs/reference/install.md#atlas-studio).
+Intel) and the Windows setup program.
+
+**The first start.** Studio is not signed with a paid identity, so the system asks once before it
+opens an app installed with Homebrew or from a downloaded disk image or setup program:
+
+- **macOS** says Atlas Studio cannot be opened. Close that dialog, open **System Settings ›
+  Privacy & Security**, scroll down to the line about Atlas Studio, choose **Open Anyway** and confirm
+  with your password. From then on Studio opens as any app, its own updates included.
+- **Windows** SmartScreen says it protected your PC: choose **More info**, then **Run anyway**.
+
+The install scripts download with `curl`, which leaves no mark of the internet on the app, so what
+they install opens without asking. [More on installing Studio](docs/reference/install.md#atlas-studio).
 
 ### After installing
 
