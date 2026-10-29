@@ -714,8 +714,9 @@ fn router_pkg(parts: &[String], m: &Module) -> bool {
 }
 
 /// The routes a module registers on its routers: `app.get("/x", (c) => ..)` is a handler at
-/// `GET /x`, and `app.route("/api", sub)` (`app.use` in Express) mounts one router on another.
-/// An inline handler is a function of its own, named by its route.
+/// `GET /x`, `app.all("/x", ..)` one at every method (`knowledge::methods_served`), and
+/// `app.route("/api", sub)` (`app.use` in Express) mounts one router on another. An inline handler
+/// is a function of its own, named by its registration (`ALL /x`).
 pub(super) fn collect_routes(m: &mut Module, store: &mut GraphBuilder) {
     let tree = m.tree.clone();
     let src = m.src.clone();
@@ -767,15 +768,16 @@ pub(super) fn collect_routes(m: &mut Module, store: &mut GraphBuilder) {
         if !knowledge::registers_route(&verb) {
             continue;
         }
-        let method = if verb == "all" { "GET".to_string() } else { verb.to_uppercase() };
-        let label = format!("{method} {path}");
+        // the route as served, by the methods it serves; an inline handler is named by its registration as written
+        let label = format!("{} {path}", knowledge::methods_served(&verb).join("|"));
+        let written = format!("{} {path}", verb.to_uppercase());
         let Some(handler) = args.last().filter(|a| a.id() != args[0].id()) else { continue };
         let id = match handler.kind() {
             "arrow_function" | "function_expression" | "function" => {
                 let body = handler.child_by_field_name("body").unwrap_or(*handler);
-                let id = add_function(m, store, &format!("{router}.{}", label.replace('.', "_")), c, *handler, body, None);
+                let id = add_function(m, store, &format!("{router}.{}", written.replace('.', "_")), c, *handler, body, None);
                 if let Some(n) = store.nodes.get_mut(&id) {
-                    n.name = label.clone();
+                    n.name = written;
                 }
                 store.add_edge(&m.id.clone(), &id, EdgeKind::Contains, None);
                 id

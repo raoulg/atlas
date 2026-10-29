@@ -41,13 +41,29 @@ pub fn request_way(method: &str) -> Option<Dir> {
 /// serve their routes.
 pub const LOCAL_HOSTS: &[&str] = &["localhost", "127.0.0.1", "0.0.0.0", "[::1]"];
 
-/// What else an app or a router registers a route by, beside an HTTP method: a websocket
-/// (FastAPI), any method (Express's `all`).
-pub const ROUTE_KINDS: &[&str] = &["websocket", "all"];
+/// What else an app or a router registers a route by, beside an HTTP method and `EVERY_METHOD`:
+/// a websocket (FastAPI).
+pub const ROUTE_KINDS: &[&str] = &["websocket"];
+
+/// What an app or a router registers a route that serves every method by: `app.all(path, ..)` in
+/// Express, Hono, Koa's router and Fastify. Every method is the top of the set of methods: all of
+/// `HTTP_METHODS`, so a request at the route's path meets it whatever its method.
+pub const EVERY_METHOD: &[&str] = &["all"];
 
 /// Whether an app's or a router's method of this name registers a route.
 pub fn registers_route(verb: &str) -> bool {
-    HTTP_METHODS.contains(&verb) || ROUTE_KINDS.contains(&verb)
+    HTTP_METHODS.contains(&verb) || ROUTE_KINDS.contains(&verb) || EVERY_METHOD.contains(&verb)
+}
+
+/// The methods a route registered by this name serves, upper case as a route's label writes them:
+/// the one it is named for (`get`, `websocket`), or each of `HTTP_METHODS` in their order for a
+/// registration of `EVERY_METHOD`.
+pub fn methods_served(verb: &str) -> Vec<String> {
+    if EVERY_METHOD.contains(&verb) {
+        HTTP_METHODS.iter().map(|m| m.to_uppercase()).collect()
+    } else {
+        vec![verb.to_uppercase()]
+    }
 }
 
 /// Web frameworks that register a function as a route by a decorator, by package. A decorator

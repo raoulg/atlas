@@ -934,7 +934,7 @@ fn command_options(seen: &Seen, cli: &knowledge::CliFramework, decorated: TsNode
 /// is handed. A path that is not a literal leaves the label at the method.
 fn route(web: &knowledge::WebFramework, name: &str, call: Option<TsNode>, src: &[u8]) -> Option<String> {
     let methods: Vec<String> = if knowledge::registers_route(name) {
-        vec![name.to_uppercase()]
+        knowledge::methods_served(name)
     } else if web.routes.contains(&name) {
         let listed = match call.and_then(|c| by_name(c, web.methods, src)) {
             Some(h) if matches!(h.kind(), "list" | "tuple" | "set") => named_children(h),
