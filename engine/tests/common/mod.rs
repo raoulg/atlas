@@ -368,3 +368,28 @@ pub fn a_list_made_by_a_literal_is_made_by_the_body(language: &str, literal: &st
         assert_eq!(by_literal, &contracted, "{at}: {literal} draws as {call} does");
     }
 }
+
+/// The closures pair: a function written in a body (a closure, a lambda, a `def` inside a `def`) and called there by the
+/// name the body keeps it by is a function, and its parameter is what each call hands it, as a module's function's
+/// parameter is what its callers hand it (#239, CLAUDE.md, "Isomorphic is the same"). The clean side reads a project's
+/// settings through a function of the module, `text(root, "knot.toml")`; the shortcut writes the same function in the
+/// body, `text("knot.toml")`. Each of `functions` reads the same files on both sides: the files the calls name, never a
+/// hole named by the parameter.
+#[allow(dead_code)]
+pub fn a_closures_parameter_is_what_its_calls_hand_it(language: &str, functions: &[&str]) {
+    let p = pair(&format!("closures/{language}"));
+    // the files a function reads: its own touches, and those it hands a callee the place of
+    let read = |g: &Graph, f: &str| -> BTreeSet<String> {
+        g.nodes
+            .iter()
+            .flat_map(|n| n.touches.iter().filter(move |t| n.id == f || t.by.iter().any(|b| b == f)))
+            .filter(|t| t.kind_name() == "disk_read")
+            .map(|t| t.artifact.clone())
+            .collect()
+    };
+    for f in functions {
+        let (clean, shortcut) = (read(&p.clean, f), read(&p.shortcut, f));
+        assert!(!clean.is_empty() && clean.iter().all(|a| !a.contains("{name}")), "{language}: {f} reads named files: {clean:?}");
+        assert_eq!(shortcut, clean, "{language}: {f} reads what a function of the module reads");
+    }
+}

@@ -1651,3 +1651,10 @@ fn a_recursive_call_takes_what_its_call_hands_it() {
 fn a_list_made_by_a_literal_is_made_by_the_body() {
     common::a_list_made_by_a_literal_is_made_by_the_body("rust", "by_literal", "by_call", "by_constant");
 }
+
+/// The closures pair: a closure a `let` keeps and the body calls takes what each call hands it (#239), as a function of
+/// the module does, and as a lambda or a `def` inside a `def` does in Python.
+#[test]
+fn a_closures_parameter_is_what_its_calls_hand_it() {
+    common::a_closures_parameter_is_what_its_calls_hand_it("rust", &["knot.settings", "knot.lock"]);
+}

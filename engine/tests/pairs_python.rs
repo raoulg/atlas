@@ -925,6 +925,13 @@ fn places_a_path_attribute_holds_where_ty_finds_a_path() {
     }
 }
 
+/// The closures pair: a lambda a name keeps and a `def` inside a `def`, each called in the body by its name, take what
+/// each call hands them (#239), as a function of the module does, and as a closure a `let` keeps does in Rust.
+#[test]
+fn a_closures_parameter_is_what_its_calls_hand_it() {
+    common::a_closures_parameter_is_what_its_calls_hand_it("python", &["knot.settings.settings", "knot.settings.lock"]);
+}
+
 /// A class is a path's where ty finds it in a path library (`knowledge::PYTHON_PATH_CLASSES`),
 /// never by its name alone. In the receivers pair, `walked` opens the data file a walk ends at, by
 /// the project's own dataclass `Path`, and `first` makes the walk from the first aisle
