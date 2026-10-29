@@ -11,6 +11,13 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 const DAY: u64 = 24 * 60 * 60;
 const API: &str = "https://api.github.com/repos/raoulg/atlas/releases";
+/// The site, at its own address: the window loads a release's notes from it.
+const SITE: &str = "https://atlas.pttrn.io";
+
+/// The page of a release's notes on the site.
+fn notes_of(version: &str) -> String {
+    format!("{SITE}/releases/{version}/")
+}
 
 /// Which build this is: `0.68.0`, nightly or not, and the commit it is made from.
 #[derive(Clone, Debug, PartialEq, Eq, serde::Serialize)]
@@ -76,7 +83,7 @@ pub fn newer(this: &Build, latest: &Latest) -> Option<Newer> {
     let (theirs, ours) = (numbers(&latest.release)?, numbers(&this.version)?);
     (theirs > ours).then(|| {
         let version = latest.release.trim_start_matches('v').to_string();
-        let notes = format!("https://raoulg.github.io/atlas/releases/{version}/");
+        let notes = notes_of(&version);
         Newer { version, nightly: false, notes, page: true, installs, current: false }
     })
 }
@@ -99,7 +106,7 @@ pub fn changes(this: &Build) -> Newer {
     let at =
         |notes: String, page: bool| Newer { version: version.clone(), nightly: this.nightly, notes, page, installs: false, current: true };
     if !this.nightly {
-        let page = format!("https://raoulg.github.io/atlas/releases/{version}/");
+        let page = notes_of(&version);
         if answers(&page) {
             return at(page, true);
         }
@@ -112,15 +119,21 @@ pub fn changes(this: &Build) -> Newer {
     at(format!("https://github.com/raoulg/atlas/commits/{commit}"), false)
 }
 
-/// Whether a page is there.
+/// Whether a page is there: the address itself answers, over https. curl refuses any other protocol and
+/// follows no redirect, so a redirect is no page: what it points to is another address, which the
+/// window may not load.
 fn answers(url: &str) -> bool {
     Command::new("curl")
-        .args(["-fsSI", "--max-time", "10", url])
+        .args(["-sSI", "--max-time", "10", "--proto", "=https", "-o", "/dev/null", "-w", "%{http_code}", url])
         .stdin(Stdio::null())
-        .stdout(Stdio::null())
         .stderr(Stdio::null())
-        .status()
-        .is_ok_and(|status| status.success())
+        .output()
+        .is_ok_and(|out| arrived(&String::from_utf8_lossy(&out.stdout)))
+}
+
+/// Whether the status curl says is the page itself: 200, never a redirect or an error.
+fn arrived(code: &str) -> bool {
+    code.trim() == "200"
 }
 
 /// What GitHub says one field of a release is.
@@ -260,10 +273,18 @@ mod tests {
         let this = Build { version: "0.68.0".into(), nightly: false, commit: "abc".into() };
         let newer = newer(&this, &Latest { release: "v0.69.0".into(), ..Latest::default() }).unwrap();
         assert_eq!(newer.version, "0.69.0");
-        assert_eq!(newer.notes, "https://raoulg.github.io/atlas/releases/0.69.0/");
+        assert_eq!(newer.notes, "https://atlas.pttrn.io/releases/0.69.0/");
         assert!(newer.page);
         assert_eq!(super::newer(&this, &Latest { release: "v0.68.0".into(), ..Latest::default() }), None);
         assert_eq!(super::newer(&this, &Latest { release: "v0.67.9".into(), ..Latest::default() }), None);
+    }
+
+    #[test]
+    fn only_the_page_itself_is_a_page() {
+        assert!(arrived("200"));
+        for code in ["301", "302", "308", "404", "000", ""] {
+            assert!(!arrived(code), "{code}");
+        }
     }
 
     #[test]

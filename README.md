@@ -10,7 +10,7 @@
 <p align="center">
   <a href="https://raoulg.github.io/atlas/"><b>Take the tour</b></a> ·
   <a href="#install">Install</a> ·
-  <a href="https://raoulg.github.io/atlas/releases/">What's new</a> ·
+  <a href="https://atlas.pttrn.io/releases/">What's new</a> ·
   <a href="docs/llms.txt">For agents</a>
 </p>
 
@@ -84,7 +84,7 @@ Atlas comes in two forms, around the same engine:
   history and a terminal in one window, one workspace per repository. It carries its own `atlas`, so
   it needs no installed command line.
 
-What changed in each release, with pictures: [the release notes](https://raoulg.github.io/atlas/releases/).
+What changed in each release, with pictures: [the release notes](https://atlas.pttrn.io/releases/).
 
 ### The command line
 
