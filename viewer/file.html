@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data: https:; style-src 'unsafe-inline'; font-src data:">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>/*__TITLE__*/</title>
+<style>
+/*__FONTS__*/
+:root{
+  --bg:#F4F1EC; --panel:#FFFFFF; --panel-2:#FAF8F5; --ink:#111111; --ink-2:#5A544D; --ink-3:#857D73;
+  --line:#E2DCD3; --line-2:#ECE7E0; --focus:#1D5A73;
+  --sans:"Outfit","Helvetica Neue",Helvetica,system-ui,sans-serif;
+  --mono:"JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
+  color-scheme:light;
+}
+@media (prefers-color-scheme: dark){ :root:not([data-theme="light"]){
+  --bg:#141210; --panel:#1B1815; --panel-2:#221E1A; --ink:#F4F1EC; --ink-2:#B8B0A5; --ink-3:#857C71;
+  --line:#2B2621; --line-2:#221E1A; --focus:#86B9C9; color-scheme:dark;
+}}
+:root[data-theme="dark"]{
+  --bg:#141210; --panel:#1B1815; --panel-2:#221E1A; --ink:#F4F1EC; --ink-2:#B8B0A5; --ink-3:#857C71;
+  --line:#2B2621; --line-2:#221E1A; --focus:#86B9C9; color-scheme:dark;
+}
+body{margin:0;background:var(--panel);color:var(--ink);font:14px/1.6 var(--sans)}
+article{max-width:860px;margin:0 auto;padding:22px 28px 60px}
+article.text{max-width:none;padding:0}
+h1,h2,h3,h4{font-weight:500;line-height:1.25;margin:1.4em 0 .5em}
+h1{font-size:26px} h2{font-size:20px;border-bottom:1px solid var(--line-2);padding-bottom:4px} h3{font-size:16px}
+a{color:var(--focus)}
+code{font:12.5px var(--mono);background:var(--panel-2);padding:1px 4px}
+pre{font:12.5px/1.5 var(--mono);background:var(--panel-2);border:1px solid var(--line-2);padding:10px 12px;overflow:auto}
+pre code{background:none;padding:0}
+article.text pre{border:0;margin:0;padding:14px 16px;min-height:100vh;counter-reset:l}
+blockquote{margin:0;padding:0 14px;border-left:3px solid var(--line);color:var(--ink-2)}
+table{border-collapse:collapse} th,td{border:1px solid var(--line);padding:4px 9px;text-align:left}
+img{max-width:100%}
+hr{border:0;border-top:1px solid var(--line)}
+.none{color:var(--ink-3);padding:24px 28px}
+.picture{display:flex;justify-content:center;padding:22px}
+</style>
+/*__BODY__*/
+</html>

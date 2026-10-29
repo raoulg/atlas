@@ -141,11 +141,6 @@ const REVIEWED: &[(&str, &str, &str)] = &[
     ),
     (
         "choices",
-        "atlas-code.history.Server.respond",
-        "`respond` is shared with `atlas serve`, which lets a POST through to its own routes, while history's own server answers it 405: the two tests mean two things",
-    ),
-    (
-        "choices",
         "atlas-engine.flow.arrow_of",
         "`arrow_of` and `body_of` each read `NodeKind`, the type that says what a node is, for a question of their own (a class's arrow, an entry class's body); that a `Node` is one struct for every kind is #13",
     ),
