@@ -106,107 +106,235 @@ section li{margin:4px 0}
 <nav><a href="../">Releases</a><a href="../../">Atlas</a><a href="https://github.com/raoulg/atlas/releases/tag/v0.70.0">Download</a></nav></header>
 <p class="eyebrow">Release 0.70.0</p>
 <h1>What changed in Atlas 0.70.0</h1>
-<div class="lede"><p>Atlas 0.70.0 reads a library&#x27;s facts only where ty finds that library, works out what a call runs once for everything that asks, and writes into your tree exactly what it is asked to. <code>atlas serve</code> and <code>atlas mcp</code> keep the notes you and your agent share whole, and a fault in one file or one call no longer ends the run.</p></div>
+<div class="lede"><p>Atlas 0.70.0 stops guessing where your code says nothing, works out what a call runs once for every question that asks, and writes into your tree exactly what it is asked to. A fault in one file or one call no longer ends the run, and Atlas now measures itself every night.</p></div>
 <div class="legend"><span><i class="swatch" style="border-color:var(--del)"></i>only in the release before</span><span><i class="swatch" style="border-color:var(--add)"></i>only in 0.70.0</span><span><i class="swatch" style="border-color:var(--edit)"></i>its text changed, its arrow not</span></div>
-<section><h2>A library&#x27;s facts hold where ty finds that library</h2><p>Atlas read <code>x.home()</code> as your home directory and <code>x.joinpath(..)</code>, <code>x.with_suffix(..)</code>, <code>x.parent</code> and <code>Path(..)</code> as a path&#x27;s, whatever <code>x</code> was. They now hold only where ty finds the call or the attribute in pathlib, importlib or os. A class of your own with a <code>home()</code> method or a <code>parent</code> field is followed into its own code, and where ty cannot say what a value is (a function without a return annotation), the place is a hole named by the code instead of a guess.</p><p>The receivers pair shows it: the same program once annotated and once not. Unannotated, 0.69.2 drew the guess <code>Disk({$SHELF_DATA}/{name})</code>; 0.70.0 draws <code>Disk(summarise.source)</code>, the place the code leaves unnamed, and the annotated side reads the path as before. TypeScript&#x27;s test files, client makers and the conditions of a package&#x27;s <code>exports</code> are tables too, and <code>exports</code> is resolved in the order the package writes, as Node does. In a notebook only IPython&#x27;s own commands are set aside, so a line Black wraps before <code>%</code> or <code>!=</code> is read whole.</p><div class="card"><h3><a href="https://github.com/raoulg/atlas/issues/264">#264</a>Library facts in the readers&#x27; control flow: Python path methods by name, TypeScript conventions; notebook magics comment out wrapped lines</h3><details><summary>In Atlas's own code · atlas-engine.language.Language.parse</summary><div class="pair"><figure><div class="shot"><img src="../../releases/0.70.0/report/264/b1-change.png" alt="" loading="lazy"></div><figcaption><code>Makers</code> added, <code>makes</code> added, <code>PathFn</code> changed, <code>PathMethod</code> changed, <code>TestFiles</code> added, <code>holds</code> added</figcaption></figure></div></details></div><div class="pictures"><a href="../../releases/0.70.0/img/receivers-before.png"><img src="../../releases/0.70.0/img/receivers-before.png" alt="" loading="lazy"></a><a href="../../releases/0.70.0/img/receivers-after.png"><img src="../../releases/0.70.0/img/receivers-after.png" alt="" loading="lazy"></a></div><p class="issues"><a href="https://github.com/raoulg/atlas/issues/264">#264</a>, <a href="https://github.com/raoulg/atlas/issues/266">#266</a>, <a href="https://github.com/raoulg/atlas/issues/261">#261</a></p></section><section><h2>What a call runs is one answer</h2><p>The route, what a parameter holds and which errors a call hands on now all ask one question: which functions may this call run. A call through a class (<code>Section.show(section, heading)</code>, <code>Section.prototype.show.call(..)</code>) runs that method and no override of it; the route drew it so, but an override&#x27;s parameter still counted as filled by such a call. A value built at the call (<code>Block().show()</code>) runs its own class&#x27;s method only, and a value of a declared class (<code>section: Section</code>) may run every override below it; a <code>super()</code> call and a class built through a base&#x27;s initializer follow the route the same way.</p><figure class="diagram"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 940 346" role="img" aria-label="Which functions a call may run, and what follows from it, in 0.69.2 and 0.70.0, on the through and built pairs where Boxed overrides Section.show"><defs><marker id="d-head" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 L10 5 L0 10 z" style="fill:var(--ink-3)"/></marker></defs>
-  <g style="font-family:var(--sans);font-size:15px;fill:var(--ink-2)">
-    <text x="20" y="34">a call, and what it may run</text>
-    <text x="520" y="34" style="text-anchor:middle">0.69.2</text>
-    <text x="780" y="34" style="text-anchor:middle;fill:var(--ink)">0.70.0</text>
-  </g>
-  <g style="stroke:var(--line);stroke-width:1">
-    <line x1="20" y1="52" x2="920" y2="52"/>
-    <line x1="20" y1="98" x2="920" y2="98"/>
-    <line x1="20" y1="144" x2="920" y2="144"/>
-    <line x1="20" y1="190" x2="920" y2="190"/>
-    <line x1="20" y1="236" x2="920" y2="236"/>
-    <line x1="20" y1="282" x2="920" y2="282"/>
-    <line x1="20" y1="328" x2="920" y2="328"/>
-  </g>
-  <text x="20" y="82" style="font-family:var(--mono);font-size:13px;fill:var(--ink)">Section.show(section, heading)</text>
-  <text x="520" y="82" style="font-family:var(--mono);font-size:13px;text-anchor:middle;fill:var(--ink-3)">runs Section.show</text>
-  <text x="780" y="82" style="font-family:var(--mono);font-size:13px;text-anchor:middle;fill:var(--accent);font-weight:600">runs Section.show</text>
-  <text x="20" y="128" style="font-family:var(--mono);font-size:13px;fill:var(--ink)">  … Boxed.show reads heading</text>
-  <text x="520" y="128" style="font-family:var(--mono);font-size:13px;text-anchor:middle;fill:var(--ink-3)">yes, from nowhere</text>
-  <text x="780" y="128" style="font-family:var(--mono);font-size:13px;text-anchor:middle;fill:var(--accent);font-weight:600">no</text>
-  <text x="20" y="174" style="font-family:var(--mono);font-size:13px;fill:var(--ink)">Block().show(..), built at the call</text>
-  <text x="520" y="174" style="font-family:var(--mono);font-size:13px;text-anchor:middle;fill:var(--ink-3)">may run Boxed.show</text>
-  <text x="780" y="174" style="font-family:var(--mono);font-size:13px;text-anchor:middle;fill:var(--accent);font-weight:600">runs Block.show</text>
-  <text x="20" y="220" style="font-family:var(--mono);font-size:13px;fill:var(--ink)">  … hands on Boxed’s ValueError</text>
-  <text x="520" y="220" style="font-family:var(--mono);font-size:13px;text-anchor:middle;fill:var(--ink-3)">yes</text>
-  <text x="780" y="220" style="font-family:var(--mono);font-size:13px;text-anchor:middle;fill:var(--accent);font-weight:600">no</text>
-  <text x="20" y="266" style="font-family:var(--mono);font-size:13px;fill:var(--ink)">section.show(..), section: Section</text>
-  <text x="520" y="266" style="font-family:var(--mono);font-size:13px;text-anchor:middle;fill:var(--ink-3)">runs Block.show</text>
-  <text x="780" y="266" style="font-family:var(--mono);font-size:13px;text-anchor:middle;fill:var(--accent);font-weight:600">may run Boxed.show</text>
-  <text x="20" y="312" style="font-family:var(--mono);font-size:13px;fill:var(--ink)">  … hands on Boxed’s ValueError</text>
-  <text x="520" y="312" style="font-family:var(--mono);font-size:13px;text-anchor:middle;fill:var(--ink-3)">no</text>
-  <text x="780" y="312" style="font-family:var(--mono);font-size:13px;text-anchor:middle;fill:var(--accent);font-weight:600">yes</text>
+<section><h2>Where the code says nothing, Atlas no longer guesses</h2><p>A method called <code>home()</code> was your home directory to Atlas, whatever object it was called on, and so were <code>joinpath</code>, <code>with_suffix</code>, <code>parent</code> and <code>Path(..)</code>: Atlas went by the name. Now a library&#x27;s fact holds only where ty finds that library. Your own <code>Archive.home()</code> is followed into its own code, and where ty cannot say what a value is, the place keeps the name the code gives it instead of a guess.</p><div class="example"><pre><code>&quot;&quot;&quot;Write a line to the log of an archive.&quot;&quot;&quot;
+
+from pathlib import Path
+
+
+class Archive:
+    def __init__(self, root: str) -&gt; None:
+        self.root = root
+
+    def home(self) -&gt; Path:
+        return Path(self.root)
+
+
+def log(archive: Archive, line: str) -&gt; None:
+    with open(archive.home() / &quot;log.txt&quot;, &quot;a&quot;) as f:
+        f.write(line + &quot;\n&quot;)</code></pre><div class="pair"><figure><div class="shot"><img src="img/home-before.png" alt="" loading="lazy"></div><figcaption><span class="tag before">0.69.2</span></figcaption></figure><figure><div class="shot"><img src="img/home-after.png" alt="" loading="lazy"></div><figcaption><span class="tag after">0.70.0</span></figcaption></figure></div></div><p class="issues"><a href="https://github.com/raoulg/atlas/issues/264">#264</a>, <a href="https://github.com/raoulg/atlas/issues/266">#266</a>, <a href="https://github.com/raoulg/atlas/issues/261">#261</a></p></section><section><h2>What a call runs is one answer</h2><p>Which functions may this call run? The route, what a parameter holds and which errors a call hands on now all ask that one question, and get one answer. A value built at the call runs its own class&#x27;s method; a value of a declared class may run every override below it; a call through a class runs that method and no override.</p><figure class="diagram"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 450" role="img" aria-label="Three ways to call show over Block, Section and Boxed, and what each may run in 0.70.0; below, one question that the route, the parameters and the errors all ask"><defs><marker id="d-head" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 L10 5 L0 10 z" style="fill:var(--ink-3)"/></marker></defs>
+<text x="170" y="32" style="font-family:var(--mono);font-size:15px;fill:var(--ink);text-anchor:middle;font-weight:600">Block().show(h)</text>
+<text x="170" y="52" style="font-family:var(--sans);font-size:13px;fill:var(--ink-2);text-anchor:middle;font-weight:400">built at the call</text>
+<line x1="170" y1="112" x2="170" y2="132" style="stroke:var(--line);stroke-width:2;fill:none"/>
+<line x1="170" y1="162" x2="170" y2="182" style="stroke:var(--line);stroke-width:2;fill:none"/>
+<rect x="90" y="80" width="160" height="32" rx="8" style="fill:var(--key);fill-opacity:0.16;stroke:var(--key);stroke-width:2"/>
+<text x="170" y="101" style="font-family:var(--mono);font-size:13px;fill:var(--ink);text-anchor:middle;font-weight:600">Block.show</text>
+<rect x="90" y="130" width="160" height="32" rx="8" style="fill:var(--panel);fill-opacity:1;stroke:var(--line);stroke-width:1.2"/>
+<text x="170" y="151" style="font-family:var(--mono);font-size:13px;fill:var(--ink);text-anchor:middle;font-weight:400">Section</text>
+<rect x="90" y="180" width="160" height="32" rx="8" style="fill:var(--panel);fill-opacity:1;stroke:var(--line);stroke-width:1.2"/>
+<text x="170" y="201" style="font-family:var(--mono);font-size:13px;fill:var(--ink-3);text-anchor:middle;font-weight:400">Boxed.show</text>
+<text x="170" y="246" style="font-family:var(--mono);font-size:13px;fill:var(--key);text-anchor:middle;font-weight:600">runs Block.show</text>
+<text x="480" y="32" style="font-family:var(--mono);font-size:15px;fill:var(--ink);text-anchor:middle;font-weight:600">section.show(h)</text>
+<text x="480" y="52" style="font-family:var(--sans);font-size:13px;fill:var(--ink-2);text-anchor:middle;font-weight:400">section: Section, declared</text>
+<line x1="480" y1="112" x2="480" y2="132" style="stroke:var(--line);stroke-width:2;fill:none"/>
+<line x1="480" y1="162" x2="480" y2="182" style="stroke:var(--line);stroke-width:2;fill:none"/>
+<rect x="400" y="80" width="160" height="32" rx="8" style="fill:var(--key);fill-opacity:0.16;stroke:var(--key);stroke-width:2"/>
+<text x="480" y="101" style="font-family:var(--mono);font-size:13px;fill:var(--ink);text-anchor:middle;font-weight:600">Block.show</text>
+<rect x="400" y="130" width="160" height="32" rx="8" style="fill:var(--panel);fill-opacity:1;stroke:var(--line);stroke-width:1.2"/>
+<text x="480" y="151" style="font-family:var(--mono);font-size:13px;fill:var(--ink);text-anchor:middle;font-weight:400">Section</text>
+<rect x="400" y="180" width="160" height="32" rx="8" style="fill:var(--key);fill-opacity:0.16;stroke:var(--key);stroke-width:2"/>
+<text x="480" y="201" style="font-family:var(--mono);font-size:13px;fill:var(--ink);text-anchor:middle;font-weight:600">Boxed.show</text>
+<text x="480" y="246" style="font-family:var(--mono);font-size:13px;fill:var(--key);text-anchor:middle;font-weight:600">may run Block.show or Boxed.show</text>
+<text x="790" y="32" style="font-family:var(--mono);font-size:15px;fill:var(--ink);text-anchor:middle;font-weight:600">Section.show(s, h)</text>
+<text x="790" y="52" style="font-family:var(--sans);font-size:13px;fill:var(--ink-2);text-anchor:middle;font-weight:400">through the class</text>
+<line x1="790" y1="112" x2="790" y2="132" style="stroke:var(--line);stroke-width:2;fill:none"/>
+<line x1="790" y1="162" x2="790" y2="182" style="stroke:var(--line);stroke-width:2;fill:none"/>
+<rect x="710" y="80" width="160" height="32" rx="8" style="fill:var(--key);fill-opacity:0.16;stroke:var(--key);stroke-width:2"/>
+<text x="790" y="101" style="font-family:var(--mono);font-size:13px;fill:var(--ink);text-anchor:middle;font-weight:600">Block.show</text>
+<rect x="710" y="130" width="160" height="32" rx="8" style="fill:var(--panel);fill-opacity:1;stroke:var(--line);stroke-width:1.2"/>
+<text x="790" y="151" style="font-family:var(--mono);font-size:13px;fill:var(--ink);text-anchor:middle;font-weight:400">Section</text>
+<rect x="710" y="180" width="160" height="32" rx="8" style="fill:var(--panel);fill-opacity:1;stroke:var(--line);stroke-width:1.2"/>
+<text x="790" y="201" style="font-family:var(--mono);font-size:13px;fill:var(--ink-3);text-anchor:middle;font-weight:400">Boxed.show</text>
+<text x="790" y="246" style="font-family:var(--mono);font-size:13px;fill:var(--key);text-anchor:middle;font-weight:600">runs Block.show, no override</text>
+<line x1="20" y1="272" x2="940" y2="272" style="stroke:var(--line);stroke-width:1;fill:none"/>
+<rect x="380" y="292" width="200" height="40" rx="8" style="fill:var(--panel);fill-opacity:1;stroke:var(--ink);stroke-width:1.6"/>
+<text x="480" y="317" style="font-family:var(--sans);font-size:14px;fill:var(--ink);text-anchor:middle;font-weight:600">what may this call run?</text>
+<path d="M480 332 C 480 352, 170 352, 170 372" style="stroke:var(--key);stroke-width:1.6;fill:none" marker-end="url(#d-head)"/>
+<rect x="60" y="376" width="220" height="34" rx="8" style="fill:var(--panel);fill-opacity:1;stroke:var(--line);stroke-width:1.2"/>
+<text x="170" y="398" style="font-family:var(--sans);font-size:13px;fill:var(--ink-2);text-anchor:middle;font-weight:400">the route&#x27;s steps</text>
+<path d="M480 332 C 480 352, 480 352, 480 372" style="stroke:var(--key);stroke-width:1.6;fill:none" marker-end="url(#d-head)"/>
+<rect x="370" y="376" width="220" height="34" rx="8" style="fill:var(--panel);fill-opacity:1;stroke:var(--line);stroke-width:1.2"/>
+<text x="480" y="398" style="font-family:var(--sans);font-size:13px;fill:var(--ink-2);text-anchor:middle;font-weight:400">what a parameter holds</text>
+<path d="M480 332 C 480 352, 790 352, 790 372" style="stroke:var(--key);stroke-width:1.6;fill:none" marker-end="url(#d-head)"/>
+<rect x="680" y="376" width="220" height="34" rx="8" style="fill:var(--panel);fill-opacity:1;stroke:var(--line);stroke-width:1.2"/>
+<text x="790" y="398" style="font-family:var(--sans);font-size:13px;fill:var(--ink-2);text-anchor:middle;font-weight:400">which errors it hands on</text>
+<text x="20" y="312" style="font-family:var(--sans);font-size:13px;fill:var(--key);text-anchor:start;font-weight:600">0.70.0: one answer</text>
+<text x="20" y="330" style="font-family:var(--sans);font-size:13px;fill:var(--del);text-anchor:start;font-weight:400">0.69.2: three, which disagreed</text>
+<text x="20" y="438" style="font-family:var(--sans);font-size:12.5px;fill:var(--ink-3);text-anchor:start;font-weight:400">teal: what the call may run. Boxed overrides show below Section, which inherits it from Block.</text>
 </svg>
-<figcaption>What a call may run, on the through and built pairs: <code>Boxed</code> overrides <code>show</code> below <code>Section</code>, and <code>Block</code> is the class <code>Section</code> inherits it from.</figcaption></figure><div class="card"><h3><a href="https://github.com/raoulg/atlas/issues/263">#263</a>What a call runs is written twice in builder.rs, and the two disagree on calls through a class</h3><details><summary>In Atlas's own code · atlas-engine.flow.Ix.new</summary><div class="pair"><figure><div class="shot"><img src="../../releases/0.70.0/report/263/b1-change.png" alt="" loading="lazy"></div><figcaption><code>Family</code> changed, <code>settle_fails</code> changed, <code>settle_parameters</code> changed, <code>Ix</code> changed, <code>of</code> added, <code>Runs</code> added</figcaption></figure></div></details></div><p class="issues"><a href="https://github.com/raoulg/atlas/issues/263">#263</a>, <a href="https://github.com/raoulg/atlas/issues/268">#268</a></p></section><section><h2>Atlas writes into your tree what it is asked to</h2><p>Breaking a seal (<code>unseal</code>) takes out <code>sealed=..</code> and the separator that joins it, and leaves every other byte of the file as it was, in every language&#x27;s marker. A file emptied after Atlas read it is an error, not a crash. A vision is placed at the path it names, from the directory it is asked for: a vision of <code>utils.py</code> no longer takes the items of <code>src/utils.py</code>, and a vision of new files only is placed where it names them.</p><figure class="diagram"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 254" role="img" aria-label="A marker line after breaking its seal, and a vision placed by its path, in 0.69.2 and 0.70.0"><defs><marker id="d-head" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 L10 5 L0 10 z" style="fill:var(--ink-3)"/></marker></defs>
-  <g style="font-family:var(--sans);font-size:15px;fill:var(--ink-2)">
-    <text x="20" y="34">what Atlas writes into the tree</text>
-    <text x="560" y="34" style="text-anchor:middle">0.69.2</text>
-    <text x="800" y="34" style="text-anchor:middle;fill:var(--ink)">0.70.0</text>
-  </g>
-  <g style="stroke:var(--line);stroke-width:1">
-    <line x1="20" y1="52" x2="940" y2="52"/>
-    <line x1="20" y1="98" x2="940" y2="98"/>
-    <line x1="20" y1="144" x2="940" y2="144"/>
-    <line x1="20" y1="190" x2="940" y2="190"/>
-    <line x1="20" y1="236" x2="940" y2="236"/>
-  </g>
-  <text x="20" y="82" style="font-family:var(--mono);font-size:13px;fill:var(--ink)">#[doc = &quot;prophecy: supersedes=Sink sealed=#7&quot;]</text>
-  <text x="560" y="82" style="font-family:var(--mono);font-size:13px;text-anchor:middle;fill:var(--ink-3)">&quot;prophecy:supersedes=Sink&quot;</text>
-  <text x="800" y="82" style="font-family:var(--mono);font-size:13px;text-anchor:middle;fill:var(--accent);font-weight:600">&quot;prophecy: supersedes=Sink&quot;</text>
-  <text x="20" y="128" style="font-family:var(--mono);font-size:13px;fill:var(--ink)">the file emptied after reading</text>
-  <text x="560" y="128" style="font-family:var(--mono);font-size:13px;text-anchor:middle;fill:var(--ink-3)">the call crashes</text>
-  <text x="800" y="128" style="font-family:var(--mono);font-size:13px;text-anchor:middle;fill:var(--accent);font-weight:600">read it again</text>
-  <text x="20" y="174" style="font-family:var(--mono);font-size:13px;fill:var(--ink)">vision of sink.py, two sink.py in the tree</text>
-  <text x="560" y="174" style="font-family:var(--mono);font-size:13px;text-anchor:middle;fill:var(--ink-3)">refused for the other</text>
-  <text x="800" y="174" style="font-family:var(--mono);font-size:13px;text-anchor:middle;fill:var(--accent);font-weight:600">placed at its path</text>
-  <text x="20" y="220" style="font-family:var(--mono);font-size:13px;fill:var(--ink)">vision of new files only</text>
-  <text x="560" y="220" style="font-family:var(--mono);font-size:13px;text-anchor:middle;fill:var(--ink-3)">placed by a guess</text>
-  <text x="800" y="220" style="font-family:var(--mono);font-size:13px;text-anchor:middle;fill:var(--accent);font-weight:600">placed at its path</text>
+</figure><p class="issues"><a href="https://github.com/raoulg/atlas/issues/263">#263</a>, <a href="https://github.com/raoulg/atlas/issues/268">#268</a></p></section><section><h2>Atlas writes into your tree what it is asked to</h2><p>Breaking a seal cuts out <code>sealed=..</code> and nothing else, in every language&#x27;s marker. A vision lands on the path it names, even where another file has the same name.</p><figure class="diagram"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 290" role="img" aria-label="Breaking a seal cuts out sealed=#7 alone in 0.70.0, where 0.69.2 also took a space; a vision of sink.py lands on src/archive/sink.py in 0.70.0, where 0.69.2 could take src/archive/store/sink.py"><defs><marker id="d-head" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 L10 5 L0 10 z" style="fill:var(--ink-3)"/></marker></defs>
+<text x="20" y="30" style="font-family:var(--sans);font-size:15px;fill:var(--ink);text-anchor:start;font-weight:600">unseal #7: a cut, not a rewrite</text>
+<text x="20" y="66" style="font-family:var(--sans);font-size:12.5px;fill:var(--ink-3);text-anchor:start;font-weight:400">the marker</text>
+<text x="110" y="66" style="font-family:var(--mono);font-size:14px;fill:var(--ink);white-space:pre"><tspan style="fill:var(--ink)">#[doc = &quot;prophecy: supersedes=Sink</tspan><tspan style="fill:var(--edit);text-decoration:line-through;font-weight:700"> sealed=#7</tspan><tspan style="fill:var(--ink)">&quot;]</tspan></text>
+<text x="20" y="112" style="font-family:var(--sans);font-size:12.5px;fill:var(--del);text-anchor:start;font-weight:600">0.69.2</text>
+<text x="110" y="112" style="font-family:var(--mono);font-size:14px;fill:var(--ink);white-space:pre"><tspan style="fill:var(--ink)">#[doc = &quot;prophecy:</tspan><tspan style="fill:var(--del);font-weight:700">‸</tspan><tspan style="fill:var(--ink)">supersedes=Sink&quot;]</tspan></text>
+<text x="110" y="134" style="font-family:var(--sans);font-size:12.5px;fill:var(--del);text-anchor:start;font-weight:400">the seal went, and the author&#x27;s space with it</text>
+<text x="20" y="176" style="font-family:var(--sans);font-size:12.5px;fill:var(--key);text-anchor:start;font-weight:600">0.70.0</text>
+<text x="110" y="176" style="font-family:var(--mono);font-size:14px;fill:var(--ink);white-space:pre"><tspan style="fill:var(--ink)">#[doc = &quot;prophecy: supersedes=Sink&quot;]</tspan></text>
+<text x="110" y="198" style="font-family:var(--sans);font-size:12.5px;fill:var(--key);text-anchor:start;font-weight:400">the seal went, every other byte as it was,</text>
+<text x="110" y="216" style="font-family:var(--sans);font-size:12.5px;fill:var(--key);text-anchor:start;font-weight:400">in Python, Rust and TypeScript</text>
+<line x1="560" y1="20" x2="560" y2="280" style="stroke:var(--line);stroke-width:1"/>
+<text x="590" y="30" style="font-family:var(--sans);font-size:15px;fill:var(--ink);text-anchor:start;font-weight:600">a vision of sink.py, asked for src/archive</text>
+<rect x="590" y="50" width="130" height="38" rx="8" style="fill:var(--panel);stroke:var(--ink);stroke-width:1.5"/>
+<text x="655" y="74" style="font-family:var(--mono);font-size:13px;fill:var(--ink);text-anchor:middle;font-weight:400">vision: sink.py</text>
+<text x="700" y="128" style="font-family:var(--mono);font-size:14px;fill:var(--ink);text-anchor:start;font-weight:400">src/archive/</text>
+<text x="722" y="160" style="font-family:var(--mono);font-size:14px;fill:var(--ink);text-anchor:start;font-weight:400">sink.py</text>
+<text x="722" y="194" style="font-family:var(--mono);font-size:14px;fill:var(--ink);text-anchor:start;font-weight:400">store/</text>
+<text x="744" y="228" style="font-family:var(--mono);font-size:14px;fill:var(--ink);text-anchor:start;font-weight:400">sink.py</text>
+<path d="M670 88 C 670 140, 690 155, 716 155" style="stroke:var(--key);stroke-width:2;fill:none" marker-end="url(#d-head)"/>
+<path d="M620 88 C 620 210, 680 223, 738 223" style="stroke:var(--del);stroke-width:1.6;fill:none;stroke-dasharray:5 4" marker-end="url(#d-head)"/>
+<text x="800" y="156" style="font-family:var(--sans);font-size:12.5px;fill:var(--key);text-anchor:start;font-weight:600">0.70.0:</text>
+<text x="800" y="172" style="font-family:var(--sans);font-size:12.5px;fill:var(--key);text-anchor:start;font-weight:400">the path it names</text>
+<text x="822" y="224" style="font-family:var(--sans);font-size:12.5px;fill:var(--del);text-anchor:start;font-weight:600">0.69.2: a file</text>
+<text x="822" y="240" style="font-family:var(--sans);font-size:12.5px;fill:var(--del);text-anchor:start;font-weight:400">whose name ends so</text>
+<text x="590" y="272" style="font-family:var(--sans);font-size:12.5px;fill:var(--key);text-anchor:start;font-weight:400">a vision of new files only is placed where it names them too</text>
 </svg>
-<figcaption>A Rust marker after its seal is broken, and where a vision is placed, in 0.69.2 and in 0.70.0.</figcaption></figure><div class="card"><h3><a href="https://github.com/raoulg/atlas/issues/258">#258</a>Unseal and vision write into the tree what they were not asked to: unseal rewrites the marker, panics on an empty file; a vision matches files by suffix</h3><details><summary>In Atlas's own code · atlas-engine.decide.Placed.in_tree</summary><div class="pair"><figure><div class="shot"><img src="../../releases/0.70.0/report/258/b1-change.png" alt="" loading="lazy"></div><figcaption><code>Placed</code> added, <code>in_tree</code> added, <code>in_vision</code> added, <code>of</code> added, <code>text_in_tree</code> added, <code>seal_in</code> added</figcaption></figure></div></details></div><p class="issues"><a href="https://github.com/raoulg/atlas/issues/258">#258</a>, <a href="https://github.com/raoulg/atlas/issues/267">#267</a></p></section><section><h2>The page and the agent keep their notes whole</h2><p>The notes, the look and what the page shows are written whole and under a lock, between the page&#x27;s requests and the agent&#x27;s process, so two writers never lose or mix a note; a notes file that does not parse is an error and is never overwritten. <code>atlas serve</code> answers every request within bounds (a deadline, a size for the head and the body, a number of connections at once), and a route that changes something or runs an analysis answers only the page itself, never another web page. A panic in one MCP tool fails that call and the server goes on; a panic while drawing shows on the page; a panic inside ty leaves that one file untyped; a notebook that does not parse is skipped with a word.</p><figure class="diagram"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 940 392" role="img" aria-label="What atlas serve and atlas mcp do with shared notes and with requests, in 0.69.2 and 0.70.0"><defs><marker id="d-head" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 L10 5 L0 10 z" style="fill:var(--ink-3)"/></marker></defs>
-  <g style="font-family:var(--sans);font-size:15px;fill:var(--ink-2)">
-    <text x="20" y="34">the page, the agent, and a request</text>
-    <text x="540" y="34" style="text-anchor:middle">0.69.2</text>
-    <text x="790" y="34" style="text-anchor:middle;fill:var(--ink)">0.70.0</text>
-  </g>
-  <g style="stroke:var(--line);stroke-width:1">
-    <line x1="20" y1="52" x2="920" y2="52"/>
-    <line x1="20" y1="98" x2="920" y2="98"/>
-    <line x1="20" y1="144" x2="920" y2="144"/>
-    <line x1="20" y1="190" x2="920" y2="190"/>
-    <line x1="20" y1="236" x2="920" y2="236"/>
-    <line x1="20" y1="282" x2="920" y2="282"/>
-    <line x1="20" y1="328" x2="920" y2="328"/>
-    <line x1="20" y1="374" x2="920" y2="374"/>
-  </g>
-  <text x="20" y="82" style="font-family:var(--mono);font-size:13px;fill:var(--ink)">two notes written at once</text>
-  <text x="540" y="82" style="font-family:var(--mono);font-size:13px;text-anchor:middle;fill:var(--ink-3)">one may be lost</text>
-  <text x="790" y="82" style="font-family:var(--mono);font-size:13px;text-anchor:middle;fill:var(--accent);font-weight:600">both kept</text>
-  <text x="20" y="128" style="font-family:var(--mono);font-size:13px;fill:var(--ink)">notes.json that does not read</text>
-  <text x="540" y="128" style="font-family:var(--mono);font-size:13px;text-anchor:middle;fill:var(--ink-3)">replaced by the new note</text>
-  <text x="790" y="128" style="font-family:var(--mono);font-size:13px;text-anchor:middle;fill:var(--accent);font-weight:600">left as it is</text>
-  <text x="20" y="174" style="font-family:var(--mono);font-size:13px;fill:var(--ink)">resolve {&quot;id&quot;: 4294967297}</text>
-  <text x="540" y="174" style="font-family:var(--mono);font-size:13px;text-anchor:middle;fill:var(--ink-3)">resolves note 1</text>
-  <text x="790" y="174" style="font-family:var(--mono);font-size:13px;text-anchor:middle;fill:var(--accent);font-weight:600">refused</text>
-  <text x="20" y="220" style="font-family:var(--mono);font-size:13px;fill:var(--ink)">GET /api/look from another site</text>
-  <text x="540" y="220" style="font-family:var(--mono);font-size:13px;text-anchor:middle;fill:var(--ink-3)">the look is taken</text>
-  <text x="790" y="220" style="font-family:var(--mono);font-size:13px;text-anchor:middle;fill:var(--accent);font-weight:600">403</text>
-  <text x="20" y="266" style="font-family:var(--mono);font-size:13px;fill:var(--ink)">a client that sends nothing</text>
-  <text x="540" y="266" style="font-family:var(--mono);font-size:13px;text-anchor:middle;fill:var(--ink-3)">a thread held for ever</text>
-  <text x="790" y="266" style="font-family:var(--mono);font-size:13px;text-anchor:middle;fill:var(--accent);font-weight:600">408 after 10 s</text>
-  <text x="20" y="312" style="font-family:var(--mono);font-size:13px;fill:var(--ink)">a panic in one MCP tool</text>
-  <text x="540" y="312" style="font-family:var(--mono);font-size:13px;text-anchor:middle;fill:var(--ink-3)">atlas mcp ends</text>
-  <text x="790" y="312" style="font-family:var(--mono);font-size:13px;text-anchor:middle;fill:var(--accent);font-weight:600">that call fails</text>
-  <text x="20" y="358" style="font-family:var(--mono);font-size:13px;fill:var(--ink)">a panic inside ty on one file</text>
-  <text x="540" y="358" style="font-family:var(--mono);font-size:13px;text-anchor:middle;fill:var(--ink-3)">the run ends</text>
-  <text x="790" y="358" style="font-family:var(--mono);font-size:13px;text-anchor:middle;fill:var(--accent);font-weight:600">that file untyped</text>
+</figure><p class="issues"><a href="https://github.com/raoulg/atlas/issues/258">#258</a>, <a href="https://github.com/raoulg/atlas/issues/267">#267</a></p></section><section><h2>The page and the agent keep their notes whole</h2><p>The page and your agent write the same notes. When both wrote at once, a note could vanish; now a lock between the two makes one wait for the other. <code>atlas serve</code> answers every request within bounds, and what changes something answers only its own page, never another website.</p><figure class="diagram"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 305" role="img" aria-label="Swimlanes: in 0.69.2 the page and the agent both read notes 1 and 2, write their own new note, and note 3 is lost; in 0.70.0 a lock makes the agent wait, and notes 1 to 4 are kept"><defs><marker id="d-head" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 L10 5 L0 10 z" style="fill:var(--ink-3)"/></marker></defs>
+<text x="20" y="28" style="font-family:var(--sans);font-size:15px;fill:var(--del);text-anchor:start;font-weight:600">0.69.2</text>
+<text x="20" y="75" style="font-family:var(--mono);font-size:13px;fill:var(--ink-2);text-anchor:start;font-weight:400">page</text>
+<line x1="110" y1="70" x2="460" y2="70" style="stroke:var(--line);stroke-width:1;fill:none;stroke-dasharray:2 4"/>
+<text x="20" y="155" style="font-family:var(--mono);font-size:13px;fill:var(--ink-2);text-anchor:start;font-weight:400">notes.json</text>
+<line x1="110" y1="150" x2="460" y2="150" style="stroke:var(--line);stroke-width:1;fill:none;stroke-dasharray:2 4"/>
+<text x="20" y="235" style="font-family:var(--mono);font-size:13px;fill:var(--ink-2);text-anchor:start;font-weight:400">agent</text>
+<line x1="110" y1="230" x2="460" y2="230" style="stroke:var(--line);stroke-width:1;fill:none;stroke-dasharray:2 4"/>
+<text x="500" y="28" style="font-family:var(--sans);font-size:15px;fill:var(--key);text-anchor:start;font-weight:600">0.70.0</text>
+<text x="500" y="75" style="font-family:var(--mono);font-size:13px;fill:var(--ink-2);text-anchor:start;font-weight:400">page</text>
+<line x1="590" y1="70" x2="940" y2="70" style="stroke:var(--line);stroke-width:1;fill:none;stroke-dasharray:2 4"/>
+<text x="500" y="155" style="font-family:var(--mono);font-size:13px;fill:var(--ink-2);text-anchor:start;font-weight:400">notes.json</text>
+<line x1="590" y1="150" x2="940" y2="150" style="stroke:var(--line);stroke-width:1;fill:none;stroke-dasharray:2 4"/>
+<text x="500" y="235" style="font-family:var(--mono);font-size:13px;fill:var(--ink-2);text-anchor:start;font-weight:400">agent</text>
+<line x1="590" y1="230" x2="940" y2="230" style="stroke:var(--line);stroke-width:1;fill:none;stroke-dasharray:2 4"/>
+<circle cx="140" cy="150" r="10" style="fill:var(--panel);stroke:var(--ink-2);stroke-width:1.6"/><text x="140" y="154.5" style="font-family:var(--mono);font-size:12px;fill:var(--ink-2);text-anchor:middle;font-weight:600">1</text>
+<circle cx="164" cy="150" r="10" style="fill:var(--panel);stroke:var(--ink-2);stroke-width:1.6"/><text x="164" y="154.5" style="font-family:var(--mono);font-size:12px;fill:var(--ink-2);text-anchor:middle;font-weight:600">2</text>
+<path d="M150 140 L165 80" style="stroke:var(--ink-3);stroke-width:1.2;fill:none" marker-end="url(#d-head)"/>
+<text x="172" y="84" style="font-family:var(--sans);font-size:12px;fill:var(--ink-3);text-anchor:start;font-weight:400">reads 1 2</text>
+<path d="M150 160 L175 220" style="stroke:var(--ink-3);stroke-width:1.2;fill:none" marker-end="url(#d-head)"/>
+<text x="182" y="226" style="font-family:var(--sans);font-size:12px;fill:var(--ink-3);text-anchor:start;font-weight:400">reads 1 2</text>
+<text x="268" y="64" style="font-family:var(--sans);font-size:12px;fill:var(--ink-2);text-anchor:start;font-weight:400">writes 1 2 3</text>
+<path d="M300 72 L300 132" style="stroke:var(--ink-3);stroke-width:1.2;fill:none" marker-end="url(#d-head)"/>
+<text x="346" y="250" style="font-family:var(--sans);font-size:12px;fill:var(--ink-2);text-anchor:start;font-weight:400">writes 1 2 4</text>
+<path d="M380 232 L380 168" style="stroke:var(--ink-3);stroke-width:1.2;fill:none" marker-end="url(#d-head)"/>
+<circle cx="390" cy="118" r="10" style="fill:var(--panel);stroke:var(--del);stroke-width:1.6;stroke-dasharray:3 2"/><text x="390" y="122.5" style="font-family:var(--mono);font-size:12px;fill:var(--del);text-anchor:middle;font-weight:600">3</text>
+<text x="404" y="104" style="font-family:var(--sans);font-size:12px;fill:var(--del);text-anchor:start;font-weight:600">lost</text>
+<circle cx="330" cy="150" r="10" style="fill:var(--panel);stroke:var(--ink-2);stroke-width:1.6"/><text x="330" y="154.5" style="font-family:var(--mono);font-size:12px;fill:var(--ink-2);text-anchor:middle;font-weight:600">1</text>
+<circle cx="354" cy="150" r="10" style="fill:var(--panel);stroke:var(--ink-2);stroke-width:1.6"/><text x="354" y="154.5" style="font-family:var(--mono);font-size:12px;fill:var(--ink-2);text-anchor:middle;font-weight:600">2</text>
+<circle cx="378" cy="150" r="10" style="fill:var(--panel);stroke:var(--ink-2);stroke-width:1.6"/><text x="378" y="154.5" style="font-family:var(--mono);font-size:12px;fill:var(--ink-2);text-anchor:middle;font-weight:600">4</text>
+<rect x="600" y="58" width="170" height="108" rx="6" style="fill:var(--key);fill-opacity:0.08;stroke:var(--key);stroke-width:1.2;stroke-dasharray:4 3"/>
+<text x="608" y="180" style="font-family:var(--mono);font-size:11.5px;fill:var(--key);text-anchor:start;font-weight:400">lock</text>
+<circle cx="620" cy="150" r="10" style="fill:var(--panel);stroke:var(--ink-2);stroke-width:1.6"/><text x="620" y="154.5" style="font-family:var(--mono);font-size:12px;fill:var(--ink-2);text-anchor:middle;font-weight:600">1</text>
+<circle cx="644" cy="150" r="10" style="fill:var(--panel);stroke:var(--ink-2);stroke-width:1.6"/><text x="644" y="154.5" style="font-family:var(--mono);font-size:12px;fill:var(--ink-2);text-anchor:middle;font-weight:600">2</text>
+<text x="612" y="84" style="font-family:var(--sans);font-size:12px;fill:var(--ink-2);text-anchor:start;font-weight:400">reads, writes 1 2 3</text>
+<path d="M660 90 L660 132" style="stroke:var(--ink-3);stroke-width:1.2;fill:none" marker-end="url(#d-head)"/>
+<line x1="620" y1="230" x2="780" y2="230" style="stroke:var(--key);stroke-width:1.4;fill:none;stroke-dasharray:3 3"/>
+<text x="640" y="250" style="font-family:var(--sans);font-size:12px;fill:var(--key);text-anchor:start;font-weight:400">waits</text>
+<rect x="790" y="134" width="140" height="108" rx="6" style="fill:var(--key);fill-opacity:0.08;stroke:var(--key);stroke-width:1.2;stroke-dasharray:4 3"/>
+<text x="800" y="226" style="font-family:var(--sans);font-size:12px;fill:var(--ink-2);text-anchor:start;font-weight:400">reads, writes</text>
+<path d="M840 214 L840 168" style="stroke:var(--ink-3);stroke-width:1.2;fill:none" marker-end="url(#d-head)"/>
+<circle cx="822" cy="150" r="10" style="fill:var(--panel);stroke:var(--key);stroke-width:1.6"/><text x="822" y="154.5" style="font-family:var(--mono);font-size:12px;fill:var(--key);text-anchor:middle;font-weight:600">1</text>
+<circle cx="846" cy="150" r="10" style="fill:var(--panel);stroke:var(--key);stroke-width:1.6"/><text x="846" y="154.5" style="font-family:var(--mono);font-size:12px;fill:var(--key);text-anchor:middle;font-weight:600">2</text>
+<circle cx="870" cy="150" r="10" style="fill:var(--panel);stroke:var(--key);stroke-width:1.6"/><text x="870" y="154.5" style="font-family:var(--mono);font-size:12px;fill:var(--key);text-anchor:middle;font-weight:600">3</text>
+<circle cx="894" cy="150" r="10" style="fill:var(--panel);stroke:var(--key);stroke-width:1.6"/><text x="894" y="154.5" style="font-family:var(--mono);font-size:12px;fill:var(--key);text-anchor:middle;font-weight:600">4</text>
+<text x="20" y="290" style="font-family:var(--sans);font-size:12.5px;fill:var(--ink-3);text-anchor:start;font-weight:400">the page and the agent are two processes; one advisory lock on notes.json holds between them. A notes file that does not read is left as it is.</text>
 </svg>
-<figcaption>What the page, the agent and a request meet, in 0.69.2 and in 0.70.0.</figcaption></figure><p class="issues"><a href="https://github.com/raoulg/atlas/issues/259">#259</a>, <a href="https://github.com/raoulg/atlas/issues/260">#260</a>, <a href="https://github.com/raoulg/atlas/issues/261">#261</a></p></section><section><h2>Smaller corrections</h2><p>A repository of several parts counts the calls Atlas did not follow over all its parts. Steps past <code>z</code> are lettered <code>aa</code>, <code>ab</code>, … as a spreadsheet names its columns, so no label names two branches. <code>atlas check</code> exits 1 when it has questions and 2 when it could not read, and removes a cloned repository on either.</p><div class="card"><h3><a href="https://github.com/raoulg/atlas/issues/262">#262</a>Merging parts: panics on none, concatenates the unresolved top, cuts a shared library file; the cache sweeps one directory per process</h3><details><summary>In Atlas's own code · atlas-engine.changes.keep</summary><div class="pair"><figure><div class="shot"><img src="../../releases/0.70.0/report/262/b1-change.png" alt="" loading="lazy"></div><figcaption><code>new</code> changed, <code>put</code> changed, <code>keep</code> changed, <code>kept</code> changed, <code>overlay</code> added, <code>ranked</code> added</figcaption></figure></div></details></div><div class="card"><h3><a href="https://github.com/raoulg/atlas/issues/265">#265</a>Step letters repeat after 26 arms; atlas check exits with process::exit and one code for findings and failure</h3><details><summary>In Atlas's own code · atlas.home.made</summary><div class="pair"><figure><div class="shot"><img src="../../releases/0.70.0/report/265/b1-change.png" alt="" loading="lazy"></div><figcaption><code>Options</code> changed, <code>of</code> changed, <code>temporary</code> changed, <code>letter</code> changed, <code>successor</code> added, <code>Cli</code> changed</figcaption></figure></div></details></div><p class="issues"><a href="https://github.com/raoulg/atlas/issues/262">#262</a>, <a href="https://github.com/raoulg/atlas/issues/265">#265</a></p></section>
+</figure><p class="issues"><a href="https://github.com/raoulg/atlas/issues/259">#259</a>, <a href="https://github.com/raoulg/atlas/issues/260">#260</a></p></section><section><h2>A fault stays where it happens</h2><p>One panic inside ty, one MCP tool call that fails, one notebook that does not parse: in 0.69.2 any of them ended the whole run. Now that one file is read untyped, that one call answers an error, and everything else goes on.</p><figure class="diagram"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 280" role="img" aria-label="In 0.69.2 one panic in one file stopped the whole run; in 0.70.0 a fault stays in its compartment: that file untyped, that call an error"><defs><marker id="d-head" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 L10 5 L0 10 z" style="fill:var(--ink-3)"/></marker></defs>
+<path d="M30 70 L430 70 L390 190 L70 190 Z" style="stroke:var(--ink-2);stroke-width:2;fill:none"/><text x="30" y="40" style="font-family:var(--sans);font-size:15px;fill:var(--del);text-anchor:start;font-weight:600">0.69.2: one hull</text>
+<path d="M48 120 L412 120 L390 190 L70 190 Z" style="stroke:var(--del);stroke-width:0;fill:var(--del)"/>
+<path d="M50 118 L410 118 L390 190 L70 190 Z" style="fill:var(--del);fill-opacity:.22;stroke:none"/>
+<text x="230" y="112" style="font-family:var(--sans);font-size:12.5px;fill:var(--del);text-anchor:middle;font-weight:400">a panic in ty on one file</text>
+<text x="230" y="234" style="font-family:var(--sans);font-size:13px;fill:var(--del);text-anchor:middle;font-weight:600">the whole run stops</text>
+<path d="M520 70 L930 70 L890 190 L560 190 Z" style="stroke:var(--ink-2);stroke-width:2;fill:none"/><text x="520" y="40" style="font-family:var(--sans);font-size:15px;fill:var(--key);text-anchor:start;font-weight:600">0.70.0: compartments</text>
+<path d="M543 140 L626 140 L626 190 L560 190 Z" style="fill:var(--del);fill-opacity:.22"/>
+<text x="593.0" y="112" style="font-family:var(--sans);font-size:12px;fill:var(--ink-2);text-anchor:middle;font-weight:400">a file</text>
+<line x1="626.0" y1="70" x2="626.0" y2="190" style="stroke:var(--ink-2);stroke-width:1.6;fill:none"/>
+<text x="659.0" y="112" style="font-family:var(--sans);font-size:12px;fill:var(--ink-2);text-anchor:middle;font-weight:400">a notebook</text>
+<line x1="692.0" y1="70" x2="692.0" y2="190" style="stroke:var(--ink-2);stroke-width:1.6;fill:none"/>
+<text x="725.0" y="112" style="font-family:var(--sans);font-size:12px;fill:var(--ink-2);text-anchor:middle;font-weight:400">an MCP call</text>
+<line x1="758.0" y1="70" x2="758.0" y2="190" style="stroke:var(--ink-2);stroke-width:1.6;fill:none"/>
+<text x="791.0" y="112" style="font-family:var(--sans);font-size:12px;fill:var(--ink-2);text-anchor:middle;font-weight:400">a request</text>
+<line x1="824.0" y1="70" x2="824.0" y2="190" style="stroke:var(--ink-2);stroke-width:1.6;fill:none"/>
+<text x="857.0" y="112" style="font-family:var(--sans);font-size:12px;fill:var(--ink-2);text-anchor:middle;font-weight:400">a drawing</text>
+<text x="590" y="174" style="font-family:var(--sans);font-size:11.5px;fill:var(--del);text-anchor:middle;font-weight:600">untyped</text>
+<text x="725" y="234" style="font-family:var(--sans);font-size:13px;fill:var(--key);text-anchor:middle;font-weight:600">that file untyped, that call an error: the rest is read</text>
+<text x="30" y="266" style="font-family:var(--sans);font-size:12.5px;fill:var(--ink-3);text-anchor:start;font-weight:400">a hull is a run of Atlas, a compartment one file, one tool call, one request, one drawing; water is a panic or a file that does not parse</text>
+</svg>
+</figure><p class="issues"><a href="https://github.com/raoulg/atlas/issues/261">#261</a></p></section><section><h2>Letters past z, and an exit status CI can read</h2><p>Steps past <code>z</code> go on as <code>aa</code>, <code>ab</code>, as a spreadsheet names its columns, so no label names two branches. <code>atlas check</code> exits 1 when it has questions and 2 when it could not read.</p><figure class="diagram"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 275" role="img" aria-label="Step letters past z go on as aa, ab in 0.70.0 where 0.69.2 began at a again; atlas check exits 0, 1 or 2, where 0.69.2 gave 1 for a failure too"><defs><marker id="d-head" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 L10 5 L0 10 z" style="fill:var(--ink-3)"/></marker></defs>
+<text x="20" y="30" style="font-family:var(--sans);font-size:15px;fill:var(--ink);text-anchor:start;font-weight:600">a match of 30 arms, step 2</text>
+<text x="20" y="62" style="font-family:var(--sans);font-size:13px;fill:var(--del);text-anchor:start;font-weight:600">0.69.2</text>
+<rect x="20" y="79" width="70" height="24" rx="12" style="fill:var(--panel);fill-opacity:1;stroke:var(--ink-3);stroke-width:1.5"/><text x="55" y="96" style="font-family:var(--mono);font-size:13px;fill:var(--ink-3);text-anchor:middle;font-weight:600">2y</text>
+<rect x="20" y="113" width="70" height="24" rx="12" style="fill:var(--panel);fill-opacity:1;stroke:var(--ink-3);stroke-width:1.5"/><text x="55" y="130" style="font-family:var(--mono);font-size:13px;fill:var(--ink-3);text-anchor:middle;font-weight:600">2z</text>
+<rect x="20" y="147" width="70" height="24" rx="12" style="fill:var(--panel);fill-opacity:1;stroke:var(--del);stroke-width:1.5"/><text x="55" y="164" style="font-family:var(--mono);font-size:13px;fill:var(--del);text-anchor:middle;font-weight:600">2a</text>
+<rect x="20" y="181" width="70" height="24" rx="12" style="fill:var(--panel);fill-opacity:1;stroke:var(--del);stroke-width:1.5"/><text x="55" y="198" style="font-family:var(--mono);font-size:13px;fill:var(--del);text-anchor:middle;font-weight:600">2b</text>
+<text x="260" y="62" style="font-family:var(--sans);font-size:13px;fill:var(--key);text-anchor:start;font-weight:600">0.70.0</text>
+<rect x="260" y="79" width="70" height="24" rx="12" style="fill:var(--panel);fill-opacity:1;stroke:var(--ink-3);stroke-width:1.5"/><text x="295" y="96" style="font-family:var(--mono);font-size:13px;fill:var(--ink-3);text-anchor:middle;font-weight:600">2y</text>
+<rect x="260" y="113" width="70" height="24" rx="12" style="fill:var(--panel);fill-opacity:1;stroke:var(--ink-3);stroke-width:1.5"/><text x="295" y="130" style="font-family:var(--mono);font-size:13px;fill:var(--ink-3);text-anchor:middle;font-weight:600">2z</text>
+<rect x="260" y="147" width="70" height="24" rx="12" style="fill:var(--panel);fill-opacity:1;stroke:var(--key);stroke-width:1.5"/><text x="295" y="164" style="font-family:var(--mono);font-size:13px;fill:var(--key);text-anchor:middle;font-weight:600">2aa</text>
+<rect x="260" y="181" width="70" height="24" rx="12" style="fill:var(--panel);fill-opacity:1;stroke:var(--key);stroke-width:1.5"/><text x="295" y="198" style="font-family:var(--mono);font-size:13px;fill:var(--key);text-anchor:middle;font-weight:600">2ab</text>
+<text x="100" y="166" style="font-family:var(--sans);font-size:12.5px;fill:var(--del);text-anchor:start;font-weight:400">= arm 1 again</text>
+<text x="340" y="166" style="font-family:var(--sans);font-size:12.5px;fill:var(--key);text-anchor:start;font-weight:400">arm 27</text>
+<text x="260" y="252" style="font-family:var(--sans);font-size:12.5px;fill:var(--key);text-anchor:start;font-weight:400">an override of a lettered step: 2a-a</text>
+<line x1="500" y1="20" x2="500" y2="270" style="stroke:var(--line);stroke-width:1;fill:none"/>
+<text x="530" y="30" style="font-family:var(--sans);font-size:15px;fill:var(--ink);text-anchor:start;font-weight:600">atlas check, and what CI reads</text>
+<rect x="530" y="54" width="170" height="32" rx="8" style="fill:var(--panel);fill-opacity:1;stroke:var(--line);stroke-width:1.2"/>
+<text x="615" y="75" style="font-family:var(--sans);font-size:13px;fill:var(--ink-2);text-anchor:middle;font-weight:400">nothing to ask</text>
+<line x1="700" y1="70" x2="860" y2="70" style="stroke:var(--key);stroke-width:1.6;fill:none" marker-end="url(#d-head)"/>
+<circle cx="884" cy="70" r="17" style="fill:var(--panel);stroke:var(--key);stroke-width:2"/>
+<text x="884" y="75" style="font-family:var(--mono);font-size:15px;fill:var(--key);text-anchor:middle;font-weight:700">0</text>
+<rect x="530" y="114" width="170" height="32" rx="8" style="fill:var(--panel);fill-opacity:1;stroke:var(--line);stroke-width:1.2"/>
+<text x="615" y="135" style="font-family:var(--sans);font-size:13px;fill:var(--ink-2);text-anchor:middle;font-weight:400">questions</text>
+<line x1="700" y1="130" x2="860" y2="130" style="stroke:var(--key);stroke-width:1.6;fill:none" marker-end="url(#d-head)"/>
+<circle cx="884" cy="130" r="17" style="fill:var(--panel);stroke:var(--key);stroke-width:2"/>
+<text x="884" y="135" style="font-family:var(--mono);font-size:15px;fill:var(--key);text-anchor:middle;font-weight:700">1</text>
+<rect x="530" y="174" width="170" height="32" rx="8" style="fill:var(--panel);fill-opacity:1;stroke:var(--line);stroke-width:1.2"/>
+<text x="615" y="195" style="font-family:var(--sans);font-size:13px;fill:var(--ink-2);text-anchor:middle;font-weight:400">could not read</text>
+<line x1="700" y1="190" x2="860" y2="190" style="stroke:var(--key);stroke-width:1.6;fill:none" marker-end="url(#d-head)"/>
+<circle cx="884" cy="190" r="17" style="fill:var(--panel);stroke:var(--key);stroke-width:2"/>
+<text x="884" y="195" style="font-family:var(--mono);font-size:15px;fill:var(--key);text-anchor:middle;font-weight:700">2</text>
+<path d="M700 190 C 760 190, 790 150, 860 136" style="stroke:var(--del);stroke-width:1.6;fill:none;stroke-dasharray:5 4" marker-end="url(#d-head)"/>
+<text x="735" y="222" style="font-family:var(--sans);font-size:12.5px;fill:var(--del);text-anchor:start;font-weight:400">0.69.2: 1 as well</text>
+<text x="530" y="252" style="font-family:var(--sans);font-size:12.5px;fill:var(--key);text-anchor:start;font-weight:400">and a cloned repository is removed on every exit</text>
+</svg>
+</figure><p class="issues"><a href="https://github.com/raoulg/atlas/issues/265">#265</a>, <a href="https://github.com/raoulg/atlas/issues/262">#262</a></p></section><section><h2>Atlas measures itself, every night</h2><p>Every night Atlas builds itself, reads itself and a handful of public programs, cold and warm, and runs its tests, and keeps the numbers. One slow night is noise; two in a row open an issue. It runs at night on <code>next</code>, so no commit pays for it. The first measurement already shows where a cold reading goes, and what comes next (<a href="https://github.com/raoulg/atlas/issues/287">#287</a>, <a href="https://github.com/raoulg/atlas/issues/288">#288</a>, <a href="https://github.com/raoulg/atlas/issues/289">#289</a>, <a href="https://github.com/raoulg/atlas/issues/290">#290</a>).</p><figure class="diagram"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 265" role="img" aria-label="Ten nights of a cold reading of Atlas; night 8 is above the band of the last nights and suspect, night 9 again, and an issue opens"><defs><marker id="d-head" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 L10 5 L0 10 z" style="fill:var(--ink-3)"/></marker></defs>
+<text x="20" y="30" style="font-family:var(--sans);font-size:15px;fill:var(--ink);text-anchor:start;font-weight:600">every night on next: a cold reading of Atlas, in seconds</text>
+<rect x="70" y="130" width="780" height="56" rx="4" style="fill:var(--key);fill-opacity:0.1;stroke:var(--key);stroke-width:0"/>
+<text x="858" y="162" style="font-family:var(--sans);font-size:12px;fill:var(--key);text-anchor:start;font-weight:400">the last nights</text>
+<line x1="70" y1="200" x2="850" y2="200" style="stroke:var(--line);stroke-width:1;fill:none"/>
+<polyline points="90,158 172,151 254,165 336,158 418,144 500,158 582,151 664,74 746,67 828,151" style="fill:none;stroke:var(--ink-3);stroke-width:1.4"/>
+<circle cx="90" cy="158" r="5" style="fill:var(--ink-2)"/>
+<text x="90" y="222" style="font-family:var(--sans);font-size:11.5px;fill:var(--ink-3);text-anchor:middle;font-weight:400">night 1</text>
+<circle cx="172" cy="151" r="5" style="fill:var(--ink-2)"/>
+<text x="172" y="222" style="font-family:var(--sans);font-size:11.5px;fill:var(--ink-3);text-anchor:middle;font-weight:400">night 2</text>
+<circle cx="254" cy="165" r="5" style="fill:var(--ink-2)"/>
+<text x="254" y="222" style="font-family:var(--sans);font-size:11.5px;fill:var(--ink-3);text-anchor:middle;font-weight:400">night 3</text>
+<circle cx="336" cy="158" r="5" style="fill:var(--ink-2)"/>
+<text x="336" y="222" style="font-family:var(--sans);font-size:11.5px;fill:var(--ink-3);text-anchor:middle;font-weight:400">night 4</text>
+<circle cx="418" cy="144" r="5" style="fill:var(--ink-2)"/>
+<text x="418" y="222" style="font-family:var(--sans);font-size:11.5px;fill:var(--ink-3);text-anchor:middle;font-weight:400">night 5</text>
+<circle cx="500" cy="158" r="5" style="fill:var(--ink-2)"/>
+<text x="500" y="222" style="font-family:var(--sans);font-size:11.5px;fill:var(--ink-3);text-anchor:middle;font-weight:400">night 6</text>
+<circle cx="582" cy="151" r="5" style="fill:var(--ink-2)"/>
+<text x="582" y="222" style="font-family:var(--sans);font-size:11.5px;fill:var(--ink-3);text-anchor:middle;font-weight:400">night 7</text>
+<circle cx="664" cy="74" r="5" style="fill:var(--edit)"/>
+<text x="664" y="222" style="font-family:var(--sans);font-size:11.5px;fill:var(--ink-3);text-anchor:middle;font-weight:400">night 8</text>
+<circle cx="746" cy="67" r="5" style="fill:var(--del)"/>
+<text x="746" y="222" style="font-family:var(--sans);font-size:11.5px;fill:var(--ink-3);text-anchor:middle;font-weight:400">night 9</text>
+<circle cx="828" cy="151" r="5" style="fill:var(--ink-2)"/>
+<text x="828" y="222" style="font-family:var(--sans);font-size:11.5px;fill:var(--ink-3);text-anchor:middle;font-weight:400">night 10</text>
+<text x="658" y="60" style="font-family:var(--sans);font-size:12.5px;fill:var(--edit);text-anchor:end;font-weight:400">suspect</text>
+<text x="756" y="53" style="font-family:var(--sans);font-size:12.5px;fill:var(--del);text-anchor:start;font-weight:600">twice: an issue opens</text>
+<text x="20" y="252" style="font-family:var(--sans);font-size:12.5px;fill:var(--ink-3);text-anchor:start;font-weight:400">one slow night is noise; two in a row is a signal. No commit and no landing runs anything for it.</text>
+</svg>
+</figure><div class="bars"><div class="bar"><span class="l">Linking Atlas&#x27;s own code</span><div class="v" style="width:82.00%"><span>22 s</span></div></div><div class="bar"><span class="l">Linking the libraries it calls</span><div class="v" style="width:54.05%"><span>14.5 s</span></div></div><div class="bar"><span class="l">What each route runs (flow)</span><div class="v" style="width:10.06%"><span>2.7 s</span></div></div><div class="bar"><span class="l">Everything else</span><div class="v" style="width:0.40%"><span>0.1 s</span></div></div><p class="cap">Where a cold reading of Atlas itself spends its time, release build, median of three rounds (<a href="https://github.com/raoulg/atlas/issues/270">#270</a>).</p></div><p class="issues"><a href="https://github.com/raoulg/atlas/issues/271">#271</a>, <a href="https://github.com/raoulg/atlas/issues/270">#270</a></p></section>
 <nav class="pager"><a class="older" href="../0.69.2/">← Atlas 0.69.2</a></nav>
 <footer>Made by tools/release_page.py from docs/releases/0.70.0.md and the notes in docs/changes.</footer>
 </main>

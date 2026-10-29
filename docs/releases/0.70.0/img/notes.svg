@@ -1,0 +1,47 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 305" role="img" aria-label="Swimlanes: in 0.69.2 the page and the agent both read notes 1 and 2, write their own new note, and note 3 is lost; in 0.70.0 a lock makes the agent wait, and notes 1 to 4 are kept">
+<text x="20" y="28" style="font-family:var(--sans);font-size:15px;fill:var(--del);text-anchor:start;font-weight:600">0.69.2</text>
+<text x="20" y="75" style="font-family:var(--mono);font-size:13px;fill:var(--ink-2);text-anchor:start;font-weight:400">page</text>
+<line x1="110" y1="70" x2="460" y2="70" style="stroke:var(--line);stroke-width:1;fill:none;stroke-dasharray:2 4"/>
+<text x="20" y="155" style="font-family:var(--mono);font-size:13px;fill:var(--ink-2);text-anchor:start;font-weight:400">notes.json</text>
+<line x1="110" y1="150" x2="460" y2="150" style="stroke:var(--line);stroke-width:1;fill:none;stroke-dasharray:2 4"/>
+<text x="20" y="235" style="font-family:var(--mono);font-size:13px;fill:var(--ink-2);text-anchor:start;font-weight:400">agent</text>
+<line x1="110" y1="230" x2="460" y2="230" style="stroke:var(--line);stroke-width:1;fill:none;stroke-dasharray:2 4"/>
+<text x="500" y="28" style="font-family:var(--sans);font-size:15px;fill:var(--key);text-anchor:start;font-weight:600">0.70.0</text>
+<text x="500" y="75" style="font-family:var(--mono);font-size:13px;fill:var(--ink-2);text-anchor:start;font-weight:400">page</text>
+<line x1="590" y1="70" x2="940" y2="70" style="stroke:var(--line);stroke-width:1;fill:none;stroke-dasharray:2 4"/>
+<text x="500" y="155" style="font-family:var(--mono);font-size:13px;fill:var(--ink-2);text-anchor:start;font-weight:400">notes.json</text>
+<line x1="590" y1="150" x2="940" y2="150" style="stroke:var(--line);stroke-width:1;fill:none;stroke-dasharray:2 4"/>
+<text x="500" y="235" style="font-family:var(--mono);font-size:13px;fill:var(--ink-2);text-anchor:start;font-weight:400">agent</text>
+<line x1="590" y1="230" x2="940" y2="230" style="stroke:var(--line);stroke-width:1;fill:none;stroke-dasharray:2 4"/>
+<circle cx="140" cy="150" r="10" style="fill:var(--panel);stroke:var(--ink-2);stroke-width:1.6"/><text x="140" y="154.5" style="font-family:var(--mono);font-size:12px;fill:var(--ink-2);text-anchor:middle;font-weight:600">1</text>
+<circle cx="164" cy="150" r="10" style="fill:var(--panel);stroke:var(--ink-2);stroke-width:1.6"/><text x="164" y="154.5" style="font-family:var(--mono);font-size:12px;fill:var(--ink-2);text-anchor:middle;font-weight:600">2</text>
+<path d="M150 140 L165 80" style="stroke:var(--ink-3);stroke-width:1.2;fill:none" marker-end="url(#d-head)"/>
+<text x="172" y="84" style="font-family:var(--sans);font-size:12px;fill:var(--ink-3);text-anchor:start;font-weight:400">reads 1 2</text>
+<path d="M150 160 L175 220" style="stroke:var(--ink-3);stroke-width:1.2;fill:none" marker-end="url(#d-head)"/>
+<text x="182" y="226" style="font-family:var(--sans);font-size:12px;fill:var(--ink-3);text-anchor:start;font-weight:400">reads 1 2</text>
+<text x="268" y="64" style="font-family:var(--sans);font-size:12px;fill:var(--ink-2);text-anchor:start;font-weight:400">writes 1 2 3</text>
+<path d="M300 72 L300 132" style="stroke:var(--ink-3);stroke-width:1.2;fill:none" marker-end="url(#d-head)"/>
+<text x="346" y="250" style="font-family:var(--sans);font-size:12px;fill:var(--ink-2);text-anchor:start;font-weight:400">writes 1 2 4</text>
+<path d="M380 232 L380 168" style="stroke:var(--ink-3);stroke-width:1.2;fill:none" marker-end="url(#d-head)"/>
+<circle cx="390" cy="118" r="10" style="fill:var(--panel);stroke:var(--del);stroke-width:1.6;stroke-dasharray:3 2"/><text x="390" y="122.5" style="font-family:var(--mono);font-size:12px;fill:var(--del);text-anchor:middle;font-weight:600">3</text>
+<text x="404" y="104" style="font-family:var(--sans);font-size:12px;fill:var(--del);text-anchor:start;font-weight:600">lost</text>
+<circle cx="330" cy="150" r="10" style="fill:var(--panel);stroke:var(--ink-2);stroke-width:1.6"/><text x="330" y="154.5" style="font-family:var(--mono);font-size:12px;fill:var(--ink-2);text-anchor:middle;font-weight:600">1</text>
+<circle cx="354" cy="150" r="10" style="fill:var(--panel);stroke:var(--ink-2);stroke-width:1.6"/><text x="354" y="154.5" style="font-family:var(--mono);font-size:12px;fill:var(--ink-2);text-anchor:middle;font-weight:600">2</text>
+<circle cx="378" cy="150" r="10" style="fill:var(--panel);stroke:var(--ink-2);stroke-width:1.6"/><text x="378" y="154.5" style="font-family:var(--mono);font-size:12px;fill:var(--ink-2);text-anchor:middle;font-weight:600">4</text>
+<rect x="600" y="58" width="170" height="108" rx="6" style="fill:var(--key);fill-opacity:0.08;stroke:var(--key);stroke-width:1.2;stroke-dasharray:4 3"/>
+<text x="608" y="180" style="font-family:var(--mono);font-size:11.5px;fill:var(--key);text-anchor:start;font-weight:400">lock</text>
+<circle cx="620" cy="150" r="10" style="fill:var(--panel);stroke:var(--ink-2);stroke-width:1.6"/><text x="620" y="154.5" style="font-family:var(--mono);font-size:12px;fill:var(--ink-2);text-anchor:middle;font-weight:600">1</text>
+<circle cx="644" cy="150" r="10" style="fill:var(--panel);stroke:var(--ink-2);stroke-width:1.6"/><text x="644" y="154.5" style="font-family:var(--mono);font-size:12px;fill:var(--ink-2);text-anchor:middle;font-weight:600">2</text>
+<text x="612" y="84" style="font-family:var(--sans);font-size:12px;fill:var(--ink-2);text-anchor:start;font-weight:400">reads, writes 1 2 3</text>
+<path d="M660 90 L660 132" style="stroke:var(--ink-3);stroke-width:1.2;fill:none" marker-end="url(#d-head)"/>
+<line x1="620" y1="230" x2="780" y2="230" style="stroke:var(--key);stroke-width:1.4;fill:none;stroke-dasharray:3 3"/>
+<text x="640" y="250" style="font-family:var(--sans);font-size:12px;fill:var(--key);text-anchor:start;font-weight:400">waits</text>
+<rect x="790" y="134" width="140" height="108" rx="6" style="fill:var(--key);fill-opacity:0.08;stroke:var(--key);stroke-width:1.2;stroke-dasharray:4 3"/>
+<text x="800" y="226" style="font-family:var(--sans);font-size:12px;fill:var(--ink-2);text-anchor:start;font-weight:400">reads, writes</text>
+<path d="M840 214 L840 168" style="stroke:var(--ink-3);stroke-width:1.2;fill:none" marker-end="url(#d-head)"/>
+<circle cx="822" cy="150" r="10" style="fill:var(--panel);stroke:var(--key);stroke-width:1.6"/><text x="822" y="154.5" style="font-family:var(--mono);font-size:12px;fill:var(--key);text-anchor:middle;font-weight:600">1</text>
+<circle cx="846" cy="150" r="10" style="fill:var(--panel);stroke:var(--key);stroke-width:1.6"/><text x="846" y="154.5" style="font-family:var(--mono);font-size:12px;fill:var(--key);text-anchor:middle;font-weight:600">2</text>
+<circle cx="870" cy="150" r="10" style="fill:var(--panel);stroke:var(--key);stroke-width:1.6"/><text x="870" y="154.5" style="font-family:var(--mono);font-size:12px;fill:var(--key);text-anchor:middle;font-weight:600">3</text>
+<circle cx="894" cy="150" r="10" style="fill:var(--panel);stroke:var(--key);stroke-width:1.6"/><text x="894" y="154.5" style="font-family:var(--mono);font-size:12px;fill:var(--key);text-anchor:middle;font-weight:600">4</text>
+<text x="20" y="290" style="font-family:var(--sans);font-size:12.5px;fill:var(--ink-3);text-anchor:start;font-weight:400">the page and the agent are two processes; one advisory lock on notes.json holds between them. A notes file that does not read is left as it is.</text>
+</svg>

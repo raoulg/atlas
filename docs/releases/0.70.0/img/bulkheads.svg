@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 280" role="img" aria-label="In 0.69.2 one panic in one file stopped the whole run; in 0.70.0 a fault stays in its compartment: that file untyped, that call an error">
+<path d="M30 70 L430 70 L390 190 L70 190 Z" style="stroke:var(--ink-2);stroke-width:2;fill:none"/><text x="30" y="40" style="font-family:var(--sans);font-size:15px;fill:var(--del);text-anchor:start;font-weight:600">0.69.2: one hull</text>
+<path d="M48 120 L412 120 L390 190 L70 190 Z" style="stroke:var(--del);stroke-width:0;fill:var(--del)"/>
+<path d="M50 118 L410 118 L390 190 L70 190 Z" style="fill:var(--del);fill-opacity:.22;stroke:none"/>
+<text x="230" y="112" style="font-family:var(--sans);font-size:12.5px;fill:var(--del);text-anchor:middle;font-weight:400">a panic in ty on one file</text>
+<text x="230" y="234" style="font-family:var(--sans);font-size:13px;fill:var(--del);text-anchor:middle;font-weight:600">the whole run stops</text>
+<path d="M520 70 L930 70 L890 190 L560 190 Z" style="stroke:var(--ink-2);stroke-width:2;fill:none"/><text x="520" y="40" style="font-family:var(--sans);font-size:15px;fill:var(--key);text-anchor:start;font-weight:600">0.70.0: compartments</text>
+<path d="M543 140 L626 140 L626 190 L560 190 Z" style="fill:var(--del);fill-opacity:.22"/>
+<text x="593.0" y="112" style="font-family:var(--sans);font-size:12px;fill:var(--ink-2);text-anchor:middle;font-weight:400">a file</text>
+<line x1="626.0" y1="70" x2="626.0" y2="190" style="stroke:var(--ink-2);stroke-width:1.6;fill:none"/>
+<text x="659.0" y="112" style="font-family:var(--sans);font-size:12px;fill:var(--ink-2);text-anchor:middle;font-weight:400">a notebook</text>
+<line x1="692.0" y1="70" x2="692.0" y2="190" style="stroke:var(--ink-2);stroke-width:1.6;fill:none"/>
+<text x="725.0" y="112" style="font-family:var(--sans);font-size:12px;fill:var(--ink-2);text-anchor:middle;font-weight:400">an MCP call</text>
+<line x1="758.0" y1="70" x2="758.0" y2="190" style="stroke:var(--ink-2);stroke-width:1.6;fill:none"/>
+<text x="791.0" y="112" style="font-family:var(--sans);font-size:12px;fill:var(--ink-2);text-anchor:middle;font-weight:400">a request</text>
+<line x1="824.0" y1="70" x2="824.0" y2="190" style="stroke:var(--ink-2);stroke-width:1.6;fill:none"/>
+<text x="857.0" y="112" style="font-family:var(--sans);font-size:12px;fill:var(--ink-2);text-anchor:middle;font-weight:400">a drawing</text>
+<text x="590" y="174" style="font-family:var(--sans);font-size:11.5px;fill:var(--del);text-anchor:middle;font-weight:600">untyped</text>
+<text x="725" y="234" style="font-family:var(--sans);font-size:13px;fill:var(--key);text-anchor:middle;font-weight:600">that file untyped, that call an error: the rest is read</text>
+<text x="30" y="266" style="font-family:var(--sans);font-size:12.5px;fill:var(--ink-3);text-anchor:start;font-weight:400">a hull is a run of Atlas, a compartment one file, one tool call, one request, one drawing; water is a panic or a file that does not parse</text>
+</svg>
