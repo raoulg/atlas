@@ -47,7 +47,7 @@ fn repository() -> PathBuf {
 
 /// The server, keeping what it keeps in a cache of the tests' own, and the address it serves at,
 /// read from what it says when it starts.
-fn serve(repo: &Path) -> (Child, String) {
+fn serve(repo: &Path) -> (Served, String) {
     let cache = std::env::temp_dir().join(format!("atlas-history-cache-{}", std::process::id()));
     let mut child = Command::new(env!("CARGO_BIN_EXE_atlas"))
         .args(["history", "--no-open", "--port", "0"])
@@ -56,16 +56,36 @@ fn serve(repo: &Path) -> (Child, String) {
         .stderr(Stdio::piped())
         .spawn()
         .expect("atlas history starts");
+    let stderr = child.stderr.take().unwrap();
+    let child = Served(child);
     let mut line = String::new();
-    BufReader::new(child.stderr.take().unwrap()).read_line(&mut line).unwrap();
+    BufReader::new(stderr).read_line(&mut line).unwrap();
     let at = line.split("http://").nth(1).and_then(|r| r.split('/').next()).unwrap_or_else(|| panic!("an address: {line}")).to_string();
     (child, at)
 }
 
-/// A GET request as a browser sends it, sent to `host`: the status line and the body.
+/// The server a test started, ended with the test however the test ends.
+struct Served(Child);
+
+impl Drop for Served {
+    fn drop(&mut self) {
+        let _ = self.0.kill();
+        let _ = self.0.wait();
+    }
+}
+
+/// A GET request as a browser sends it from the history's own page, sent to `host`: the status line
+/// and the body.
 fn get(at: &str, host: &str, path: &str) -> (String, String) {
+    get_from(at, host, path, "same-origin")
+}
+
+/// A GET request as a browser sends it from a page that is `site` to the server's address.
+fn get_from(at: &str, host: &str, path: &str, site: &str) -> (String, String) {
     let mut conn = TcpStream::connect(at).unwrap();
-    write!(conn, "GET {path} HTTP/1.1\r\nHost: {host}\r\nAccept: */*\r\n\r\n").unwrap();
+    // an answer that does not come fails the test rather than holding it
+    conn.set_read_timeout(Some(std::time::Duration::from_secs(120))).unwrap();
+    write!(conn, "GET {path} HTTP/1.1\r\nHost: {host}\r\nAccept: */*\r\nSec-Fetch-Site: {site}\r\n\r\n").unwrap();
     let mut text = String::new();
     conn.read_to_string(&mut text).unwrap();
     let (head, body) = text.split_once("\r\n\r\n").unwrap();
@@ -82,7 +102,7 @@ fn project(html: &str) -> Value {
 #[test]
 fn the_history_serves_its_log_and_the_union_of_two_commits() {
     let repo = repository();
-    let (mut child, at) = serve(&repo);
+    let (child, at) = serve(&repo);
     assert!(at.starts_with("127.0.0.1:"), "this machine only: {at}");
 
     let (status, body) = get(&at, &at, "/api/log?all=1&n=300");
@@ -118,12 +138,13 @@ fn the_history_serves_its_log_and_the_union_of_two_commits() {
     assert!(project(&html).get("diff").is_none(), "one reading has no diff");
 
     assert_eq!(get(&at, "example.org", "/api/log").0, "HTTP/1.1 403 Forbidden", "a page of another site is refused");
+    assert_eq!(get_from(&at, &at, "/view?b=HEAD", "cross-site").0, "HTTP/1.1 403 Forbidden", "and runs no analysis");
+    assert_eq!(get_from(&at, &at, "/view?b=HEAD", "none").0, "HTTP/1.1 200 OK", "a link the reader opens draws");
     assert_eq!(get(&at, &at, "/view?a=nothing-by-this-name").0, "HTTP/1.1 500 Internal Server Error");
     assert_eq!(get(&at, &at, "/nothing").0, "HTTP/1.1 404 Not Found");
     let (status, page) = get(&at, &at, "/");
     assert!(status.ends_with("200 OK") && !page.contains("/*__FONTS__*/"), "the history page, with its fonts");
 
-    let _ = child.kill();
-    let _ = child.wait();
+    drop(child);
     let _ = std::fs::remove_dir_all(repo.parent().unwrap());
 }
