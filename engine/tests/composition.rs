@@ -51,7 +51,7 @@ fn reversing_nested_calls_preserves_order_and_marks_occurrences_not_functions() 
     }
     let changed = changes::between("HEAD~1", Some("HEAD"), &a, &b);
     let route = changed.routes.iter().find(|r| r.id == "composition.run").expect("the route composition differs");
-    assert_eq!(route.status, "changed");
+    assert_eq!(route.status, Status::Changed);
     assert!(route.steps_added.is_empty() && route.steps_removed.is_empty());
     assert!(route.places_added.is_empty() && route.places_removed.is_empty());
     assert_eq!(route.compositions_changed.len(), 1);
