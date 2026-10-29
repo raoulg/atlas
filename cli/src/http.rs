@@ -304,7 +304,7 @@ fn own(headers: &HashMap<String, String>, host: &str) -> bool {
 }
 
 /// A part of an address with its escapes (`%2F`, `+`) read back.
-fn decoded(s: &str) -> String {
+pub(crate) fn decoded(s: &str) -> String {
     let (bytes, mut out, mut i) = (s.as_bytes(), Vec::with_capacity(s.len()), 0);
     while i < bytes.len() {
         let hex = bytes.get(i + 1..i + 3).and_then(|h| std::str::from_utf8(h).ok()).and_then(|h| u8::from_str_radix(h, 16).ok());

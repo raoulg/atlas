@@ -361,8 +361,8 @@ def main(atlas, out=None):
             # the fifth commit against the sixth, as one picture
             page.goto(server.url('/history'), wait_until='networkidle')
             settle(page, 2000)
-            page.get_by_text('Leave out the months with too few').first.click()
-            page.get_by_text('Mark the maxima of the cycles').first.click(modifiers=['Shift'])
+            page.get_by_text('Mark the maxima of the cycles').first.click()
+            page.get_by_text('Leave out the months with too few').first.click(modifiers=['Shift'])
             settle(page, 4000)
             view = page.frame_locator('iframe')
             routes = view.locator('#entry').evaluate("s => [...s.options].map(o => [o.value, o.textContent])")

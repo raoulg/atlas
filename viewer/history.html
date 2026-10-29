@@ -131,6 +131,55 @@ main{position:relative;min-width:0;min-height:0;background:var(--bg)}
   header .brand b,header .brand span,.cmp .s{display:none}
   .cmp .side.wt .s{display:inline}
 }
+
+/* what the page shows of B: its picture or its files */
+.modes{display:flex;flex:none;border:1px solid var(--line)}
+.modes button{font:inherit;font-size:12px;border:0;background:var(--panel);color:var(--ink-2);padding:3px 10px;cursor:pointer}
+.modes button+button{border-left:1px solid var(--line)}
+.modes button[aria-pressed="true"]{background:var(--ink);color:var(--panel)}
+.cmp .verb{color:var(--ink-3);font-size:12px;flex:none}
+#files{position:absolute;inset:0;z-index:3;display:grid;grid-template-columns:minmax(200px,300px) minmax(0,1fr);background:var(--panel)}
+#files[hidden]{display:none}
+#files .list{display:flex;flex-direction:column;min-height:0;border-right:1px solid var(--line)}
+#files .find{display:flex;flex-direction:column;gap:6px;padding:10px 12px;border-bottom:1px solid var(--line-2)}
+#files .find input[type=search]{font:inherit;font-size:12px;padding:4px 7px;border:1px solid var(--line);background:var(--panel-2);color:var(--ink)}
+#files .find label{font-size:12px;color:var(--ink-2);display:flex;align-items:center;gap:6px}
+#files .find input[type=checkbox]{accent-color:var(--focus);margin:0}
+#fl{flex:1;min-height:0;overflow:auto;padding:4px 0}
+#fl button{display:block;width:100%;text-align:left;font:12px/22px var(--mono);border:0;background:none;color:var(--ink);padding:0 12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:pointer}
+#fl button .dir{color:var(--ink-3)}
+#fl button:hover{background:color-mix(in oklab, var(--ink) 5%, transparent)}
+#fl button[aria-current="true"]{background:color-mix(in oklab, var(--focus) 16%, transparent);box-shadow:inset 3px 0 0 var(--focus)}
+#fl .none{padding:8px 12px;font-size:12px;color:var(--ink-3)}
+#doc{width:100%;height:100%;border:0;display:block;background:var(--panel)}
+
+/* the menu of a commit, and the question an action asks before it runs */
+#menu{position:fixed;z-index:30;min-width:230px;background:var(--panel);border:1px solid var(--line);box-shadow:0 10px 30px rgba(0,0,0,.2);padding:4px 0;color-scheme:var(--scheme)}
+#menu[hidden]{display:none}
+#menu button{display:flex;justify-content:space-between;gap:18px;width:100%;text-align:left;font:inherit;font-size:13px;border:0;background:none;color:var(--ink);padding:5px 14px;cursor:pointer;white-space:nowrap}
+#menu button:hover:not(:disabled),#menu button:focus-visible{background:color-mix(in oklab, var(--focus) 14%, transparent);outline:none}
+#menu button:disabled{color:var(--ink-3);cursor:default}
+#menu button small{color:var(--ink-3);font:11px var(--mono)}
+#menu hr{border:0;border-top:1px solid var(--line-2);margin:4px 0}
+#ask{border:1px solid var(--line);background:var(--panel);color:var(--ink);padding:0;width:min(480px,calc(100vw - 32px));box-shadow:0 18px 50px rgba(0,0,0,.28);color-scheme:var(--scheme)}
+#ask::backdrop{background:color-mix(in oklab, var(--bg) 50%, transparent)}
+#ask form{display:flex;flex-direction:column;gap:10px;padding:16px 18px}
+#ask h2{margin:0;font-size:15px;font-weight:500}
+#ask p{margin:0;color:var(--ink-2)}
+#ask label{display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--ink-2)}
+#ask label.choice{flex-direction:row;align-items:center;gap:8px;font-size:13px;color:var(--ink)}
+#ask input[type=text],#ask textarea{font:13px var(--mono);padding:5px 8px;border:1px solid var(--line);background:var(--panel-2);color:var(--ink)}
+#ask textarea{min-height:56px;resize:vertical}
+#ask .cmd{font:12px var(--mono);background:var(--panel-2);border:1px solid var(--line-2);padding:7px 9px;white-space:pre-wrap;word-break:break-all}
+#ask .said{font:12px var(--mono);white-space:pre-wrap;max-height:200px;overflow:auto;margin:0}
+#ask .said.bad{color:var(--alert)}
+#ask .warn{color:var(--alert)}
+#ask .buttons{display:flex;justify-content:flex-end;gap:8px;margin-top:4px}
+#ask .buttons button{font:inherit;font-size:13px;padding:4px 14px;border:1px solid var(--line);background:var(--panel);color:var(--ink);cursor:pointer}
+#ask .buttons button.go{background:var(--focus);border-color:var(--focus);color:var(--panel)}
+#ask .buttons button:disabled{opacity:.5;cursor:default}
+#toast{position:fixed;left:50%;bottom:22px;transform:translateX(-50%);z-index:40;background:var(--ink);color:var(--panel);padding:6px 14px;font-size:12px}
+#toast[hidden]{display:none}
 </style>
 <script>/*__PALETTE__*/</script>
 
@@ -140,6 +189,10 @@ main{position:relative;min-width:0;min-height:0;background:var(--bg)}
     <div class="brand"><img alt=""><b>Atlas</b><span>history</span></div>
     <button class="ctl" id="histbtn" type="button" aria-controls="hist">hide commits</button>
     <div class="cmp" id="cmp" aria-live="polite"></div>
+    <div class="modes" role="group" aria-label="what to show of B">
+      <button type="button" id="m-picture" aria-pressed="true" title="the Atlas picture">picture</button>
+      <button type="button" id="m-files" aria-pressed="false" title="the files of B, markdown rendered">files</button>
+    </div>
     <div class="spacer"></div>
     <a class="ctl" id="open" target="_blank" rel="noopener" title="open this picture alone in a new tab">open ↗</a>
   </header>
@@ -152,18 +205,29 @@ main{position:relative;min-width:0;min-height:0;background:var(--bg)}
     </div>
     <div class="hint">
       <span><kbd>↑</kbd> <kbd>↓</kbd></span><span>move through the history</span>
-      <span><kbd>Enter</kbd></span><span>compare this commit (A) with the working tree (B)</span>
-      <span><kbd>⇧</kbd> <kbd>Enter</kbd> · <kbd>⇧</kbd> click</span><span>make this commit B</span>
+      <span><kbd>Enter</kbd> · click</span><span>show this commit (B)</span>
+      <span><kbd>⇧</kbd> <kbd>Enter</kbd> · <kbd>⇧</kbd> click</span><span>compare it (A) with what is shown (B)</span>
       <span><kbd>Esc</kbd></span><span>B alone</span>
+      <span>right-click · <kbd>⇧</kbd> <kbd>F10</kbd></span><span>copy, tag, checkout, push, pull</span>
     </div>
     <div id="resizer" title="drag to resize the history"></div>
   </section>
   <main>
     <iframe id="pic" title="the Atlas picture of A and B"></iframe>
-    <div id="pick" hidden><div>Pick a commit to see it beside the working tree (<kbd>Enter</kbd>), or two to see as one (<kbd>⇧</kbd> click).</div></div>
+    <div id="files" hidden>
+      <div class="list">
+        <div class="find"><input type="search" id="ffind" placeholder="find a file" aria-label="find a file"><label><input type="checkbox" id="fmd" checked> markdown only</label></div>
+        <div id="fl" role="list"></div>
+      </div>
+      <iframe id="doc" title="a file of B" sandbox="allow-same-origin"></iframe>
+    </div>
+    <div id="pick" hidden><div>Pick a commit to see it (click), and a second to compare with it (<kbd>⇧</kbd> click).</div></div>
     <div id="reading" hidden><div class="card"><span id="readwhat"></span><span class="bar"></span></div></div>
   </main>
 </div>
+<div id="menu" role="menu" hidden></div>
+<dialog id="ask"><form method="dialog"></form></dialog>
+<div id="toast" role="status" hidden></div>
 
 <script>
 (function(){
@@ -195,12 +259,17 @@ const S = {
   all: store.get("atlas.history.all") !== "0",
   pages: 1,
   log: null,
-  rows: [],          // the working tree, then the commits, in the order they are drawn
-  at: new Map(),     // hash → row
+  rows: [],          // the working tree when it has changes, then the commits, in the order they are drawn
+  at: new Map(),     // hash → row; a clean working tree is the row of HEAD
   lay: null,
   known: new Map(),  // every commit seen, so A and B keep their names when their rows are not loaded
+  head: null,        // the commit HEAD is at
+  dirty: false,      // whether the working tree differs from HEAD
+  branch: null,      // HEAD's branch, what it follows, and the git commands that push and pull it
   a: own.get("a") || null,
   b: own.get("b") || WT,
+  mode: own.get("m") === "files" ? "files" : "picture",
+  file: own.get("f") || null,
   cursor: 0,
   first: true,
 };
@@ -225,11 +294,17 @@ const remember = view => {
   if (S.a) q.set("a", S.a);
   if (S.b !== WT) q.set("b", S.b);
   if (view) q.set("v", view);
+  if (S.mode === "files") q.set("m", "files");
+  if (S.mode === "files" && S.file) q.set("f", S.file);
   const s = q.toString();
   try { history.replaceState(null, "", s ? "#" + s : location.pathname + location.search); } catch {}
 };
 const label = h => {
-  if (h === WT) return {short: "", subject: "working tree"};
+  if (h === WT) {
+    const head = S.known.get(S.head);
+    if (!S.log) return {short: "", subject: "working tree"};
+    return {short: "", subject: S.dirty ? `working tree · ${treeState(S.log)}` : head ? `working tree, clean at ${head.short}` : "working tree"};
+  }
   const c = S.known.get(h);
   return c || {short: h.slice(0, 7), subject: ""};
 };
@@ -323,10 +398,13 @@ function drawLanes() {
   }
   for (const [key, d] of paths) sv("path", {d, class: key.endsWith("t") ? "tail" : "", style: `stroke:${hue(parseInt(key, 10))}`}, svg);
   sv("g", {id: "rings"}, svg);
+  // HEAD is a hollow dot in its line's colour; the uncommitted changes above it a grey one
   nodes.forEach((nd, i) => {
-    const wt = S.rows[i].hash === WT;
-    sv("circle", {cx: X(nd.lane), cy: Y(i), r: wt ? 5 : 4.5, "data-i": i,
-      style: wt ? "fill:var(--panel);stroke:var(--ink-3);stroke-width:2" : `fill:${hue(nd.color)};stroke:var(--panel);stroke-width:1.5`}, svg);
+    const wt = S.rows[i].hash === WT, head = S.rows[i].hash === S.head;
+    sv("circle", {cx: X(nd.lane), cy: Y(i), r: wt || head ? 5 : 4.5, "data-i": i,
+      style: wt ? "fill:var(--panel);stroke:var(--ink-3);stroke-width:2"
+        : head ? `fill:var(--panel);stroke:${hue(nd.color)};stroke-width:2.5`
+        : `fill:${hue(nd.color)};stroke:var(--panel);stroke-width:1.5`}, svg);
   });
 }
 
@@ -396,13 +474,15 @@ function drawRows() {
     msg.appendChild(el("span"));
     if (c.hash === WT) {
       r.classList.add("wt");
-      const t = el("span", "t"); t.append(el("b", null, "Working tree"), " · " + treeState(S.log));
+      const t = el("span", "t"); t.append(el("b", null, "Uncommitted changes"), " · " + treeState(S.log));
       msg.appendChild(t);
       r.append(msg, el("span", "hash"), el("span", "when", "now"));
+      r.title = "the working tree: what HEAD's commit does not hold yet";
     } else {
       msg.append(...pills(c, S.lay.nodes[i].color), el("span", "t", c.subject));
       r.append(msg, el("span", "hash", c.short), el("span", "when", when(c.time)));
-      r.title = `${c.hash}\n${c.author} · ${new Date(c.time * 1000).toLocaleString()}\n\n${c.subject}`;
+      const head = c.hash === S.head ? `HEAD: the working tree stands on this commit${S.dirty ? ", with the changes above" : ", and is clean"}\n` : "";
+      r.title = `${head}${c.hash}\n${c.author} · ${new Date(c.time * 1000).toLocaleString()}\n\n${c.subject}`;
     }
     frag.appendChild(r);
   });
@@ -455,11 +535,13 @@ function paint() {
   }
   const cmp = $("cmp");
   cmp.replaceChildren();
-  if (S.a) cmp.append(side(S.a, "a"), el("span", "arrow", "→"));
-  cmp.append(side(S.b, "b"));
-  if (!S.a) cmp.append(el("span", "alone", "alone"));
-  document.title = S.a ? `${label(S.a).short} → ${S.b === WT ? "working tree" : label(S.b).short} · Atlas history` : "Atlas history";
+  if (S.a) cmp.append(el("span", "verb", "comparing"), side(S.a, "a"), el("span", "arrow", "→"), side(S.b, "b"));
+  else cmp.append(el("span", "verb", "showing"), side(S.b, "b"));
+  const name = h => h === WT ? "working tree" : label(h).short;
+  document.title = S.a ? `${name(S.a)} → ${name(S.b)} · Atlas history` : S.b === WT ? "Atlas history" : `${name(S.b)} · Atlas history`;
 }
+// a row's revision: a clean working tree is HEAD's commit, and its row stands for both
+const rowRev = i => { const h = S.rows[i].hash; return !S.dirty && h === S.head ? WT : h; };
 function cursorTo(i, scroll) {
   const old = list.children[S.cursor];
   if (old) old.classList.remove("cur");
@@ -473,7 +555,7 @@ function cursorTo(i, scroll) {
 function pick(a, b) {
   S.b = b;
   S.a = a === b ? null : a;
-  paint(); show();
+  paint(); present();
 }
 
 // keys act while the history (or nothing) has the focus; inside the picture they are the viewer's
@@ -481,6 +563,12 @@ document.addEventListener("keydown", e => {
   if (e.target !== rowsEl && e.target !== document.body) return;
   if (e.ctrlKey || e.metaKey || e.altKey || !S.rows.length || app.classList.contains("nohist")) return;
   const n = S.rows.length, page = Math.max(1, Math.floor(rowsEl.clientHeight / ROW) - 1);
+  if (e.key === "ContextMenu" || (e.key === "F10" && e.shiftKey)) {
+    const box = list.children[S.cursor].getBoundingClientRect();
+    openMenu(S.cursor, box.left + 40, box.bottom);
+    e.preventDefault();
+    return;
+  }
   let to;
   switch (e.key) {
     case "ArrowDown": to = S.cursor + 1; break;
@@ -490,9 +578,9 @@ document.addEventListener("keydown", e => {
     case "Home": to = 0; break;
     case "End": to = n - 1; break;
     case "Enter": {
-      const h = S.rows[S.cursor].hash;
-      if (e.shiftKey) pick(S.a, h);
-      else pick(h === WT ? null : h, WT);
+      const h = rowRev(S.cursor);
+      if (e.shiftKey) pick(h, S.b);
+      else pick(null, h);
       e.preventDefault();
       return;
     }
@@ -508,14 +596,264 @@ document.addEventListener("keydown", e => {
 list.addEventListener("click", e => {
   const r = e.target.closest(".row");
   if (!r) return;
-  const i = +r.dataset.i, h = S.rows[i].hash;
+  const i = +r.dataset.i, h = rowRev(i);
   cursorTo(i, false);
   rowsEl.focus({preventScroll: true});
-  if (e.shiftKey) pick(S.a, h);
-  // the working tree can only be B: a click on it makes it B, or shows B alone when it is B already
-  else if (h === WT) pick(S.b === WT ? null : S.a, WT);
-  else pick(h, S.b);
+  // a click shows a revision on its own; a ⇧ click compares it, as A, with the one shown
+  if (e.shiftKey) pick(h, S.b);
+  else pick(null, h);
 });
+list.addEventListener("contextmenu", e => {
+  const r = e.target.closest(".row");
+  if (!r) return;
+  e.preventDefault();
+  cursorTo(+r.dataset.i, false);
+  openMenu(+r.dataset.i, e.clientX, e.clientY);
+});
+
+/* ---- B's files: read from its commit, markdown rendered by the server ---- */
+const filesEl = $("files"), fl = $("fl"), doc = $("doc"), ffind = $("ffind"), fmd = $("fmd");
+let filesOf = null, fileList = [], docShown = "";
+const isMd = p => /\.(md|markdown)$/i.test(p);
+function present() {
+  filesEl.hidden = S.mode !== "files";
+  $("m-picture").setAttribute("aria-pressed", S.mode === "picture" ? "true" : "false");
+  $("m-files").setAttribute("aria-pressed", S.mode === "files" ? "true" : "false");
+  if (S.mode === "files") { $("pick").hidden = true; reading.hidden = true; files(); }
+  else show();
+  remember(kept);
+}
+for (const [id, mode] of [["m-picture", "picture"], ["m-files", "files"]])
+  $(id).addEventListener("click", () => { S.mode = mode; present(); });
+async function files() {
+  const rev = S.b;
+  // a commit's files stay as they are; the working tree's are read again
+  if (filesOf !== rev || rev === WT) {
+    filesOf = rev;
+    if (!fileList.length) fl.replaceChildren(el("div", "none", "reading the files…"));
+    let got;
+    try {
+      const r = await fetch(`/api/tree?rev=${encodeURIComponent(rev)}`);
+      if (!r.ok) throw new Error((await r.text()) || r.status);
+      got = (await r.json()).files || [];
+    } catch (err) {
+      if (filesOf === rev) { filesOf = null; fl.replaceChildren(el("div", "none", "the files could not be read: " + err.message)); }
+      return;
+    }
+    if (filesOf !== rev || S.mode !== "files") return;
+    fileList = got; docShown = "";
+  }
+  const want = S.file && fileList.includes(S.file) ? S.file
+    : fileList.find(f => /^readme\.md$/i.test(f)) || fileList.find(isMd) || fileList[0] || null;
+  openFile(want);
+}
+function listFiles() {
+  const find = ffind.value.trim().toLowerCase(), only = fmd.checked;
+  const shown = fileList.filter(p => (!only || isMd(p)) && (!find || p.toLowerCase().includes(find)));
+  const frag = document.createDocumentFragment();
+  for (const p of shown.slice(0, 2000)) {
+    const b = el("button"), cut = p.lastIndexOf("/");
+    b.type = "button"; b.dataset.path = p; b.title = p;
+    if (cut >= 0) b.append(el("span", "dir", p.slice(0, cut + 1)));
+    b.append(p.slice(cut + 1));
+    if (p === S.file) b.setAttribute("aria-current", "true");
+    frag.appendChild(b);
+  }
+  if (!shown.length) frag.appendChild(el("div", "none", fileList.length ? "no file matches" : "no files"));
+  if (shown.length > 2000) frag.appendChild(el("div", "none", `${shown.length - 2000} more: narrow the search`));
+  fl.replaceChildren(frag);
+}
+function openFile(p) {
+  S.file = p;
+  remember(kept);
+  listFiles();
+  const url = p ? `/file?rev=${encodeURIComponent(S.b)}&path=${encodeURIComponent(p)}` : "about:blank";
+  if (url !== docShown) { docShown = url; doc.src = url; }
+}
+fl.addEventListener("click", e => { const b = e.target.closest("button[data-path]"); if (b) openFile(b.dataset.path); });
+ffind.addEventListener("input", listFiles);
+fmd.addEventListener("change", listFiles);
+// the file's page runs no script: this page hands it the theme, and follows its links
+const theme = () => {
+  let d; try { d = doc.contentDocument; } catch { return; }
+  if (!d || !d.documentElement) return;
+  const root = document.documentElement;
+  if (root.dataset.theme) d.documentElement.dataset.theme = root.dataset.theme;
+  else delete d.documentElement.dataset.theme;
+  d.documentElement.style.cssText = root.style.cssText;
+};
+new MutationObserver(theme).observe(document.documentElement, {attributes: true, attributeFilter: ["style", "data-theme"]});
+doc.addEventListener("load", () => {
+  theme();
+  let d; try { d = doc.contentDocument; } catch { return; }
+  if (!d) return;
+  d.addEventListener("click", e => {
+    const a = e.target.closest && e.target.closest("a[href]");
+    if (!a) return;
+    const href = a.getAttribute("href");
+    if (href.startsWith("#")) return;
+    e.preventDefault();
+    if (href.startsWith("/file?")) { const p = new URLSearchParams(href.slice(6).split("#")[0]).get("path"); if (p) openFile(p); return; }
+    window.open(a.href, "_blank", "noopener");
+  });
+});
+
+/* ---- the menu of a row, and what its actions ask first ---- */
+const menu = $("menu"), ask = $("ask"), toastEl = $("toast");
+let toastTimer = 0;
+function toast(text) {
+  toastEl.textContent = text; toastEl.hidden = false;
+  clearTimeout(toastTimer); toastTimer = setTimeout(() => { toastEl.hidden = true; }, 1800);
+}
+async function copy(text, what) {
+  try { await navigator.clipboard.writeText(text); }
+  catch {
+    const t = el("textarea"); t.value = text; document.body.appendChild(t); t.select();
+    try { document.execCommand("copy"); } finally { t.remove(); }
+  }
+  toast("copied " + what);
+}
+const plural = (n, one) => `${n} ${one}${n === 1 ? "" : "s"}`;
+function closeMenu(focus) {
+  if (menu.hidden) return;
+  menu.hidden = true;
+  if (focus) rowsEl.focus({preventScroll: true});
+}
+function openMenu(i, x, y) {
+  const row = S.rows[i], rev = rowRev(i), c = row.hash === WT ? null : row, b = S.branch || {};
+  const items = [];
+  const item = (text, hint, act, off) => {
+    const btn = el("button");
+    btn.type = "button"; btn.setAttribute("role", "menuitem");
+    btn.append(el("span", null, text));
+    if (hint) btn.append(el("small", null, hint));
+    btn.disabled = !!off;
+    btn.addEventListener("click", () => { closeMenu(false); act(); });
+    items.push(btn);
+  };
+  const line = () => { if (items.length && items[items.length - 1].tagName !== "HR") items.push(el("hr")); };
+  item(rev === WT ? "Show the working tree" : "Show this commit", "click", () => pick(null, rev));
+  if (rev !== WT) item("Compare with the working tree", "", () => pick(rev, WT));
+  if (S.b !== rev && S.b !== WT) item(`Compare with ${label(S.b).short}`, "⇧ click", () => pick(rev, S.b));
+  if (c) {
+    line();
+    item("Copy commit hash", c.short, () => copy(c.hash, c.hash));
+    item("Copy subject", "", () => copy(c.subject, "the subject"));
+    line();
+    item("Add tag…", "", () => tagAsk(c));
+    item("Checkout…", "", () => checkoutAsk(c));
+  }
+  line();
+  const name = b.name || "HEAD";
+  item(b.pull ? `Pull ${name}` : "Pull", b.pull ? (b.behind ? `${b.behind} behind ${b.upstream}` : `from ${b.upstream}`) : b.name ? "no upstream" : "no branch", pullAsk, !b.pull);
+  item(b.push ? `Push ${name}` : "Push", b.push ? (b.upstream ? (b.ahead ? `${b.ahead} ahead of ${b.upstream}` : `to ${b.upstream}`) : `to ${b.push[2]}`) : b.name ? "no remote" : "no branch", pushAsk, !b.push);
+  menu.replaceChildren(...items);
+  menu.hidden = false;
+  menu.style.left = Math.max(4, Math.min(x, innerWidth - menu.offsetWidth - 4)) + "px";
+  menu.style.top = Math.max(4, Math.min(y, innerHeight - menu.offsetHeight - 4)) + "px";
+  menu.querySelector("button:not(:disabled)")?.focus();
+}
+menu.addEventListener("keydown", e => {
+  const all = [...menu.querySelectorAll("button:not(:disabled)")], at = all.indexOf(document.activeElement);
+  if (e.key === "Escape" || e.key === "Tab") { closeMenu(true); e.preventDefault(); }
+  else if (e.key === "ArrowDown") { all[(at + 1) % all.length]?.focus(); e.preventDefault(); }
+  else if (e.key === "ArrowUp") { all[(at - 1 + all.length) % all.length]?.focus(); e.preventDefault(); }
+  e.stopPropagation();
+});
+document.addEventListener("pointerdown", e => { if (!menu.contains(e.target)) closeMenu(false); }, true);
+for (const ev of ["resize", "blur"]) window.addEventListener(ev, () => closeMenu(false));
+rowsEl.addEventListener("scroll", () => closeMenu(false));
+
+// a word of a git command as a shell would want it
+const quote = s => /^[\w./@:+=,-]+$/.test(s) ? s : "'" + s.replace(/'/g, "'\\''") + "'";
+// Ask before running git: what it does, the fields it needs, and the command it runs, which `args`
+// gives (none while a field is missing). The server runs only the commands this page offers.
+function question(title, intro, body, args) {
+  const f = el("form"), cmd = el("div", "cmd"), said = el("pre", "said");
+  const cancel = el("button", null, "Cancel"), go = el("button", "go", "Run"), buttons = el("div", "buttons");
+  cancel.type = go.type = "button";
+  said.hidden = true;
+  buttons.append(cancel, go);
+  f.append(el("h2", null, title), ...intro, ...body, el("p", null, "Runs:"), cmd, said, buttons);
+  const update = () => {
+    const a = args();
+    cmd.textContent = a ? "git " + a.map(quote).join(" ") : "…";
+    go.disabled = !a;
+  };
+  f.addEventListener("input", update);
+  f.addEventListener("change", update);
+  f.addEventListener("submit", e => { e.preventDefault(); if (go.isConnected && !go.disabled) go.click(); });
+  cancel.addEventListener("click", () => ask.close());
+  go.addEventListener("click", async () => {
+    const a = args();
+    if (!a) return;
+    go.disabled = cancel.disabled = true; go.textContent = "running…";
+    let ok = false, text;
+    try {
+      const r = await fetch("/api/git", {method: "POST", headers: {"content-type": "application/json", "x-atlas": "1"}, body: JSON.stringify({run: a})});
+      text = await r.text(); ok = r.ok;
+      if (ok) text = JSON.parse(text).said || "done";
+    } catch (err) { text = err.message; }
+    for (const x of f.querySelectorAll("input,textarea")) x.disabled = true;
+    said.hidden = false; said.textContent = text; said.classList.toggle("bad", !ok);
+    go.remove(); cancel.disabled = false; cancel.textContent = "Close"; cancel.focus();
+    if (ok) toast(title.replace(/…$/, "") + ": done");
+    load(true);
+  });
+  update();
+  ask.replaceChildren(f);
+  ask.showModal();
+  (f.querySelector("input:not([type=radio]),textarea") || f.querySelector("input:checked") || go).focus();
+}
+const field = (text, input) => { const l = el("label", null, text); l.appendChild(input); return l; };
+function tagAsk(c) {
+  const name = el("input"), msg = el("textarea");
+  name.type = "text"; name.placeholder = "v1.2.0"; name.autocomplete = "off"; name.spellcheck = false;
+  msg.placeholder = "optional: with a message the tag is annotated";
+  question(`Add a tag to ${c.short}`, [el("p", null, c.subject)],
+    [field("name", name), field("message", msg), el("p", null, "The tag stays on this machine until it is pushed (git push origin <name>).")],
+    () => {
+      const n = name.value.trim(), m = msg.value.trim();
+      if (!n || n.startsWith("-") || /[\s~^:?*[\\]|\.\.|@\{/.test(n)) return null;
+      return m ? ["tag", "-a", n, "-m", m, c.hash] : ["tag", n, c.hash];
+    });
+}
+function checkoutAsk(c) {
+  const refs = (c.refs || []).filter(r => r.name !== "HEAD" && !/\/HEAD$/.test(r.name));
+  const locals = refs.filter(r => r.kind === "head" || r.kind === "branch").map(r => r.name);
+  const options = locals.map(n => ({text: `the branch ${n}` + (n === S.branch?.name ? " (checked out)" : ""), args: ["switch", n], off: n === S.branch?.name}));
+  for (const r of refs.filter(r => r.kind === "remote")) {
+    const short = r.name.slice(r.name.indexOf("/") + 1);
+    if (!locals.includes(short)) options.push({text: `a new branch ${short}, following ${r.name}`, args: ["switch", "--track", r.name]});
+  }
+  options.push({text: `the commit itself (a detached HEAD at ${c.short})`, args: ["switch", "--detach", c.hash], off: !S.dirty && c.hash === S.head && !S.branch?.name});
+  const first = options.find(o => !o.off);
+  const radios = options.map((o, k) => {
+    const r = el("input"), l = el("label", "choice");
+    r.type = "radio"; r.name = "to"; r.value = k; r.disabled = !!o.off; r.checked = o === first;
+    l.append(r, o.text);
+    return l;
+  });
+  const intro = [el("p", null, c.subject)];
+  if (S.dirty) intro.push(el("p", "warn", `The working tree has ${treeState(S.log)}: git carries them over where they do not conflict with ${c.short}, and refuses otherwise.`));
+  question(`Check out ${c.short}`, intro, [el("p", null, "Switch the working tree to"), ...radios], () => {
+    const k = radios.findIndex(l => l.firstChild.checked);
+    return k >= 0 ? options[k].args : null;
+  });
+}
+function pullAsk() {
+  const b = S.branch;
+  if (!b?.pull) return;
+  question(`Pull ${b.name}`, [el("p", null, `Fetches ${b.upstream} and moves ${b.name} forward to it, when ${b.name} has no commits of its own that ${b.upstream} lacks; git refuses otherwise.` + (b.behind ? ` As far as the last fetch knew, ${b.name} is ${plural(b.behind, "commit")} behind.` : ""))], [], () => b.pull);
+}
+function pushAsk() {
+  const b = S.branch;
+  if (!b?.push) return;
+  const to = b.upstream || `${b.push[2]}/${b.name}`;
+  const intro = [el("p", null, b.upstream ? `Sends ${b.name}'s ${plural(b.ahead, "commit")} that ${b.upstream} lacks to it.` : `Sends ${b.name} to ${b.push[2]}, and makes it follow ${to}.`)];
+  if (/^(main|master)$/.test(b.name)) intro.push(el("p", "warn", `This pushes to ${b.name}.`));
+  question(`Push ${b.name}`, intro, [], () => b.push);
+}
 
 /* ---- reading the history ---- */
 // `quiet`: a look whether git moved (a commit, a push, a fetch, a checkout), which redraws only what differs
@@ -541,8 +879,14 @@ async function load(quiet) {
   for (const c of commits) S.known.set(c.hash, c);
   const keep = S.rows[S.cursor] ? S.rows[S.cursor].hash : null;
   S.log = log;
-  S.rows = [{hash: WT, parents: log.head ? [log.head] : [], refs: [], subject: "", time: null}, ...commits];
+  S.head = log.head || null;
+  S.dirty = !!log.dirty || !commits.length;
+  S.branch = log.branch || null;
+  // the working tree has a row of its own only when it holds what HEAD's commit does not
+  const tree = {hash: WT, parents: log.head ? [log.head] : [], refs: [], subject: "", time: null};
+  S.rows = S.dirty ? [tree, ...commits] : commits;
   S.at = new Map(S.rows.map((c, i) => [c.hash, i]));
+  if (!S.dirty) S.at.set(WT, S.at.get(S.head));
   S.lay = layout(S.rows);
   drawLanes();
   drawRows();
@@ -598,7 +942,9 @@ allBox.addEventListener("change", () => {
   apply(); }
 
 paint();
-if (served && !own.get("a") && !own.get("b")) $("pick").hidden = false; else show();
+if (S.mode === "files") present();
+else if (served && !own.get("a") && !own.get("b")) $("pick").hidden = false;
+else show();
 load();
 // git changes beside the page: while it is in view, it looks every few seconds and whenever it comes back
 { let looking = false;
