@@ -47,7 +47,7 @@ fn bare(f: &Finding) -> Finding {
 
 /// A finding by what it says, wherever its line stands.
 fn said(f: &Finding) -> (&'static str, String, String) {
-    (f.principle, f.node.clone(), f.what.clone())
+    (f.principle.id(), f.node.clone(), f.what.clone())
 }
 
 const COMMENT: [(&str, &str); 3] = [("python", "#"), ("rust", "//"), ("typescript", "//")];

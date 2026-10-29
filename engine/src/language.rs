@@ -9,6 +9,7 @@ use std::path::{Path, PathBuf};
 use anyhow::Result;
 
 use crate::cache::Check;
+use crate::lang::Lang;
 use crate::model::{Graph, Leaves};
 use crate::options::Options;
 use crate::prophecy::Form;
@@ -16,7 +17,8 @@ use crate::repo::Repo;
 use crate::{entries, knowledge, python, pytypes, rust, typescript};
 
 pub trait Language {
-    fn name(&self) -> &'static str;
+    /// The language it reads.
+    fn lang(&self) -> Lang;
     /// The files that root a part in the language: each says that its directory holds a project.
     fn manifests(&self) -> &'static [&'static str];
     /// The extensions of the files that hold its code as text.
@@ -66,8 +68,8 @@ pub fn read(dir: &Path, opts: &Options) -> Result<Repo> {
 pub struct Python;
 
 impl Language for Python {
-    fn name(&self) -> &'static str {
-        "python"
+    fn lang(&self) -> Lang {
+        Lang::Python
     }
     fn manifests(&self) -> &'static [&'static str] {
         knowledge::PYTHON_PROJECT_FILES
@@ -98,7 +100,7 @@ impl Language for Python {
         }
         let (mut b, root) = python::parse(repo, &packages, project_root.as_deref(), opts)?;
         entries::mark_scripts(repo, &mut b, project_root.as_deref());
-        Ok(b.finish(root, project_root.as_deref(), self.name()))
+        Ok(b.finish(root, project_root.as_deref(), self.lang()))
     }
     /// A project reads its packages; a project file anywhere else below it roots a project of
     /// its own (a workspace's member).
@@ -148,8 +150,8 @@ impl Python {
 pub struct Rust;
 
 impl Language for Rust {
-    fn name(&self) -> &'static str {
-        "rust"
+    fn lang(&self) -> Lang {
+        Lang::Rust
     }
     fn manifests(&self) -> &'static [&'static str] {
         &["Cargo.toml"]
@@ -168,7 +170,7 @@ impl Language for Rust {
     }
     fn parse(&self, repo: &Repo, opts: &Options) -> Result<Graph> {
         let (b, root) = rust::parse(repo, opts)?;
-        Ok(b.finish(root, Some(repo.root()), self.name()))
+        Ok(b.finish(root, Some(repo.root()), self.lang()))
     }
     /// The compiler asks for every type, `pub` is the export, and a trait's implementation has the
     /// trait's signature.
@@ -191,8 +193,8 @@ impl Language for Rust {
 pub struct TypeScript;
 
 impl Language for TypeScript {
-    fn name(&self) -> &'static str {
-        "typescript"
+    fn lang(&self) -> Lang {
+        Lang::TypeScript
     }
     fn manifests(&self) -> &'static [&'static str] {
         &["package.json"]
@@ -211,7 +213,7 @@ impl Language for TypeScript {
     }
     fn parse(&self, repo: &Repo, opts: &Options) -> Result<Graph> {
         let (b, root) = typescript::parse(repo, opts)?;
-        Ok(b.finish(root, Some(repo.root()), self.name()))
+        Ok(b.finish(root, Some(repo.root()), self.lang()))
     }
     /// The compiler works out what a function gives, which a reader of its declaration does not
     /// see (`isolatedDeclarations` asks for it), and holds an override to what its base gives but
@@ -252,14 +254,23 @@ pub fn comment_of(path: &str) -> Option<&'static str> {
     languages().into_iter().find(|l| l.sources().contains(&ext)).map(|l| l.comment())
 }
 
-/// What the language of that name leaves its author to write.
-pub fn leaves(name: &str) -> Leaves {
-    languages().into_iter().find(|l| l.name() == name).map_or_else(Leaves::default, |l| l.leaves())
+/// What the language leaves its author to write.
+pub fn leaves(lang: Lang) -> Leaves {
+    reader(lang).leaves()
 }
 
-/// Whether the language of that name compares types by their members.
-pub fn structural(name: &str) -> bool {
-    languages().into_iter().find(|l| l.name() == name).is_some_and(|l| l.structural())
+/// Whether the language compares types by their members.
+pub fn structural(lang: Lang) -> bool {
+    reader(lang).structural()
+}
+
+/// The reader of a language.
+pub fn reader(lang: Lang) -> Box<dyn Language> {
+    match lang {
+        Lang::Python => Box::new(Python),
+        Lang::Rust => Box::new(Rust),
+        Lang::TypeScript => Box::new(TypeScript),
+    }
 }
 
 /// The language whose code a file holds, by its extension.
@@ -276,8 +287,8 @@ pub fn languages() -> Vec<Box<dyn Language>> {
 /// The language a repo is written in: a part's, the language of its manifest; a package directory,
 /// given or asked for, means Python.
 pub fn detect(repo: &Repo, opts: &Options) -> Option<Box<dyn Language>> {
-    if let Some(name) = repo.language() {
-        return languages().into_iter().find(|l| l.name() == name);
+    if let Some(lang) = repo.language() {
+        return Some(reader(lang));
     }
     if opts.package.is_some() || repo.asked().is_some() {
         return Some(Box::new(Python));

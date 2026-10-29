@@ -6,7 +6,7 @@
 
 use std::path::PathBuf;
 
-use atlas_engine::principles::{check, PRINCIPLES};
+use atlas_engine::principles::{check, Principle};
 use atlas_engine::{analyze, Options};
 
 struct Said {
@@ -116,7 +116,7 @@ fn each_principle_says_what_it_said() {
 
 #[test]
 fn every_principle_has_its_wording_kept() {
-    for p in PRINCIPLES {
-        assert!(SAID.iter().any(|s| s.principle == p.id), "{} has no sentence in SAID", p.id);
+    for p in Principle::ALL {
+        assert!(SAID.iter().any(|s| p == s.principle), "{p} has no sentence in SAID");
     }
 }

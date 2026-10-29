@@ -131,6 +131,9 @@ svg#canvas:active{cursor:grabbing}
 #crumbs button{font:inherit;font-family:var(--mono);font-size:11px;border:1px solid var(--line);background:var(--panel);color:var(--ink);border-radius:0;padding:1px 9px;cursor:pointer}
 #crumbs button:hover{border-color:var(--ink-3)}
 #crumbs button.all{margin-left:8px;font-weight:600}
+/* a strip over the picture takes the pointer only where it draws something */
+#crumbs,#zoomctl,#hint{pointer-events:none}
+#crumbs > *,#zoomctl > *,#hint > *{pointer-events:auto}
 .sedge.reach{stroke-dasharray:5 4}
 .sedge.back{stroke-dasharray:1 3;stroke-linecap:round}
 .sedge.uses{stroke-dasharray:1 3;stroke-linecap:round;opacity:.7}
@@ -456,6 +459,24 @@ function clicks(node, once, twice) {
 }
 listen(document, "keydown", ev => { if (ev.key === "Escape" && pinned.size) { pinned.clear(); repaintPins(); crumbs(); } });
 svg.call(zoom).on("dblclick.zoom", null);
+// a wheel takes the camera from a move under way (after a render, `goTo`, `centre`, `fit`, + and −)
+svg.node().addEventListener("wheel", () => svg.interrupt(), {capture: true, passive: true, signal: controller.signal});
+// a press on the picture released outside the frame (Studio's bar, another window) never reaches the page: the first
+// move with no button held ends the drag, so the picture stops following the pointer
+{ let pressed = false;
+  listen(svg.node(), "mousedown", ev => { pressed = ev.button === 0; }, true);
+  listen(window, "mouseup", () => { pressed = false; }, true);
+  listen(window, "mousemove", ev => {
+    if (!pressed || ev.buttons & 1) return;
+    pressed = false;
+    window.dispatchEvent(new MouseEvent("mouseup", {clientX: ev.clientX, clientY: ev.clientY, screenX: ev.screenX, screenY: ev.screenY, view: window}));
+  }, true); }
+// what stands on the picture passes a wheel on to it: the state bar, the zoom's buttons and the hint let the pointer
+// through where they draw nothing (CSS); their words and buttons, the legend and the status bar hand it to the zoom
+for (const id of ["crumbs", "legend", "zoomctl", "hint", "readstate"]) listen(document.getElementById(id), "wheel", ev => {
+  ev.preventDefault();
+  svg.node().dispatchEvent(new WheelEvent("wheel", ev));
+});
 // a double click on empty space lets the pinned boxes go
 svg.on("dblclick.pins", ev => { if (pinned.size && !ev.target.closest("g.tstep, g.tnode")) { pinned.clear(); repaintPins(); crumbs(); } });
 // the height the state bar takes at the top of the canvas, when it shows
@@ -487,7 +508,7 @@ function fit(animate = false, pad = 40, tries = 0) {
   const bb = document.getElementById("scene").getBBox();
   if (!bb.width || !bb.height) return;
   const top = barHeight();  // keep the state bar clear
-  let s = Math.max(0.08, Math.min((W - pad*2) / bb.width, (H - top - pad*2) / bb.height, 1.4));
+  let s = Math.max(zoom.scaleExtent()[0], Math.min((W - pad*2) / bb.width, (H - top - pad*2) / bb.height, 1.4));
   let t = d3.zoomIdentity.translate(W/2 - s*(bb.x + bb.width/2), top + (H - top)/2 - s*(bb.y + bb.height/2)).scale(s);
   if (animate) svg.transition().duration(300).call(zoom.transform, t); else svg.call(zoom.transform, t);
 }
@@ -495,8 +516,16 @@ document.getElementById("fit").onclick = () => fit(true);
 document.getElementById("zin").onclick = () => svg.transition().duration(150).call(zoom.scaleBy, 1.25);
 document.getElementById("zout").onclick = () => svg.transition().duration(150).call(zoom.scaleBy, 0.8);
 document.getElementById("zone").onclick = () => { const t = d3.zoomTransform(svg.node()); svg.transition().duration(200).call(zoom.transform, d3.zoomIdentity.translate(t.x, t.y).scale(1)); };
-let userZoomed = false;
-zoom.on("zoom.user", ev => { if (ev.sourceEvent) userZoomed = true; });
+// a move is the reader's when it comes with an event not felt before: a move the page makes while a wheel or a drag is
+// under way comes with that gesture's last event again
+let userZoomed = false, felt = null;
+zoom.on("zoom.user", ev => {
+  if (!ev.sourceEvent || ev.sourceEvent === felt) return;
+  felt = ev.sourceEvent;
+  userZoomed = true;
+  // a wheel or a drag while a new reading is drawn moves the camera the page comes back to
+  if (back) back.t = [ev.transform.x, ev.transform.y, ev.transform.k];
+});
 listen(window, "resize", () => { if (!userZoomed) { if (lessonEmbed) frameLesson(lessonAt); else fit(); } });
 { const rz = document.getElementById("resizer"); let drag = false;
   rz.addEventListener("mousedown", e => { drag = true; e.preventDefault(); document.body.style.cursor = "col-resize"; });
@@ -533,7 +562,7 @@ let hoverTarget = null;  // shows what is under the pointer in the inspector
       if (peeking) peek(false); else if (hoverTarget) { hoverTarget(); peek(true); }
     } else if (ev.key === "Escape" && peeking) { peek(false); ev.stopPropagation(); }
   }, true);
-  document.getElementById("canvas").addEventListener("click", ev => { if (app.classList.contains("peek") && !ev.target.closest("g.tstep, g.tnode, .frame")) peek(false); });
+  listen(document.getElementById("canvas"), "click", ev => { if (app.classList.contains("peek") && !ev.target.closest("g.tstep, g.tnode, .frame")) peek(false); });
   document.getElementById("peekclose").onclick = () => peek(false);
   document.getElementById("peekpin").onclick = () => { peek(false); document.getElementById("codetoggle").click(); }; }
 
@@ -1656,14 +1685,14 @@ async function renderPlaat(mine) {
   for (const q of pos.values()) { x0 = Math.min(x0, q.x); y0 = Math.min(y0, q.y); x1 = Math.max(x1, q.x + q.w); y1 = Math.max(y1, q.y + q.h); }
   x0 = Math.min(x0, 20); y0 = Math.min(y0, 10);
   const W = svg.node().clientWidth, H = svg.node().clientHeight, top = document.getElementById("crumbs").offsetHeight + 14, pad = 30;
-  const fitK = Math.max(0.08, Math.min((W - 2 * pad) / (x1 - x0), (H - top - 2 * pad) / (y1 - y0), 1.4));
+  const fitK = Math.max(zoom.scaleExtent()[0], Math.min((W - 2 * pad) / (x1 - x0), (H - top - 2 * pad) / (y1 - y0), 1.4));
   const t0 = d3.zoomTransform(svg.node());
   const alt = id => [id, "group:" + id, "n:" + id, id.replace(/^o:/, "n:"), id.replace(/^(n|o|group):/, "")];
   const anchorIn = m => { for (const id of alt(plaatAnchor)) if (m.has(id)) return m.get(id); return null; };
   const a0 = plaatAnchor && !plaatFit ? anchorIn(prevPos) : null, a1 = a0 ? anchorIn(pos) : null;
   let t1;
   if (a0 && a1) {
-    const k = Math.min(t0.k, (W - 2 * pad) / a1.w, (H - top - 2 * pad) / a1.h);
+    const k = Math.max(zoom.scaleExtent()[0], Math.min(t0.k, (W - 2 * pad) / a1.w, (H - top - 2 * pad) / a1.h));
     let tx = t0.x + t0.k * a0.x - k * a1.x, ty = t0.y + t0.k * a0.y - k * a1.y;
     // the box opened stands wholly in view
     tx = Math.min(Math.max(tx, pad - k * a1.x), W - pad - k * (a1.x + a1.w));
@@ -2281,7 +2310,14 @@ async function redraw() {
     const t = d3.zoomTransform(svg.node());
     const resume = {view, selected, pinned: [...pinned], t: [t.x, t.y, t.k], state: viewData()};
     dispose();
-    document.getElementById("app").replaceWith(template.cloneNode(true));
+    // the picture's svg, and the zoom bound to it, live as long as the page: a new reading draws in the same svg, so
+    // a wheel gesture the browser holds to it goes on into the new picture
+    const app = template.cloneNode(true), canvas = svg.node(), blank = app.querySelector("#canvas");
+    svg.interrupt();
+    delete canvas.__zooming;
+    canvas.replaceChildren(...blank.childNodes);
+    blank.replaceWith(canvas);
+    document.getElementById("app").replaceWith(app);
     mount(data, resume);
   } catch (err) {
     const fault = document.getElementById("fault");
@@ -2295,6 +2331,7 @@ function comeBack() {
   for (const id of back.pinned || []) pinned.add(id);
   if (pinned.size) { repaintPins(); crumbs(); }
   svg.call(zoom.transform, d3.zoomIdentity.translate(back.t[0], back.t[1]).scale(back.t[2]));
+  back = null;
 }
 // alt-click on a box or a line: a note on it, for the agent
 const noteEl = html("div"); noteEl.id = "notefield"; noteEl.hidden = true; document.body.appendChild(noteEl);

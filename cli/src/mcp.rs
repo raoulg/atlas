@@ -8,6 +8,7 @@ use std::io::{BufRead, Write};
 use std::path::PathBuf;
 
 use anyhow::Result;
+use atlas_engine::principles::Principle;
 use atlas_engine::sight::Sight;
 use atlas_engine::{principles, remote, story, Graph, Options};
 use serde::Deserialize;
@@ -280,24 +281,23 @@ fn tools() -> Value {
 fn call(name: &str, args: &Value, opts: &Options) -> Option<Result<String, String>> {
     let text = |k: &str| args.get(k).and_then(Value::as_str);
     Some(match name {
-        "principles" => Ok(principles::PRINCIPLES.iter().map(|p| format!("{} · {}", p.id, p.asks)).collect::<Vec<_>>().join("\n")),
+        "principles" => Ok(Principle::ALL.iter().map(|p| format!("{} · {}", p.id(), p.asks())).collect::<Vec<_>>().join("\n")),
         "explain" => {
             let id = text("principle").unwrap_or("");
-            principles::explain(id).map(str::to_string).ok_or_else(|| unknown_principle(id))
+            Principle::parse(id).and_then(principles::explain).map(str::to_string).ok_or_else(|| unknown_principle(id))
         }
         "check" => parts_of(text("path"), opts).and_then(|gs| {
-            if let Some(p) = text("principle").filter(|p| !principles::PRINCIPLES.iter().any(|x| x.id == *p)) {
-                return Err(unknown_principle(p));
-            }
-            let asked: Vec<&principles::Principle> =
-                principles::PRINCIPLES.iter().filter(|p| text("principle").map_or(true, |id| p.id == id)).collect();
+            let asked: Vec<Principle> = match text("principle") {
+                None => Principle::ALL.to_vec(),
+                Some(id) => vec![Principle::parse(id).ok_or_else(|| unknown_principle(id))?],
+            };
             let found: Vec<Vec<principles::Finding>> = gs.iter().map(atlas_engine::aside::check).collect();
             // whether a decision sets anything aside is asked of every finding, whichever are shown
             let stale = atlas_engine::aside::stale(&gs.iter().zip(&found).map(|(g, f)| (g, f.as_slice())).collect::<Vec<_>>());
             let parts: Vec<(String, Vec<principles::Finding>)> = gs
                 .iter()
                 .zip(found)
-                .map(|(g, f)| (g.root.clone(), f.into_iter().filter(|f| asked.iter().any(|p| p.id == f.principle)).collect()))
+                .map(|(g, f)| (g.root.clone(), f.into_iter().filter(|f| asked.contains(&f.principle)).collect()))
                 .collect();
             if args.get("json").and_then(Value::as_bool) == Some(true) {
                 let reports: Vec<Value> = parts.iter().map(|(root, findings)| json!({ "root": root, "findings": findings })).collect();
@@ -631,7 +631,7 @@ fn parts_of(path: Option<&str>, opts: &Options) -> Result<Vec<Graph>, String> {
 }
 
 fn unknown_principle(id: &str) -> String {
-    let ids: Vec<&str> = principles::PRINCIPLES.iter().map(|p| p.id).collect();
+    let ids: Vec<&str> = Principle::ALL.iter().map(|p| p.id()).collect();
     format!("No principle `{id}`; the principles are {}.", ids.join(", "))
 }
 
