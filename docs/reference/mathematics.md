@@ -692,14 +692,15 @@ by a literal, `Steps::literals` (`body.rs`), and those a function declares, `dec
 **In Atlas.** A filter and a quotient commute exactly when the filter's predicate is saturated by
 the quotient's equivalence. Otherwise the order of a view is meaning, and Atlas takes the filter
 first, so the reader decides what exists before the quotient decides how it groups. A type picked
-in the Type lattice is the set of its values, the type and every class below it, and the Flowchart
+in the Type lattice is the set of its values, the type and every type below it (a class below its base, a type
+below the family `kind` puts it in, a shape below its rank family: the lattice draws both orders as one), and the Flowchart
 lights its fiber in a route: a box is lit by what it is, so a closed family the pick cuts in two
 opens, and a box lit whole opens into lit kinds. What a box holds inside (a family its parts, a step
 the values its inner steps make and take) is lit dashed and does not open: a step claims no type.
 **Where.** `design.md` §1, "When order matters"; `engine/tests/laws.rs` holds both orders to each
 other on graphs `proptest` draws, and shows a filter that cuts a class in two. The pick:
 `valuesOf`, `typesIn`, `lightOf` and `cutBy` in `viewer/plan.js`, held on every route of the pairs
-and plans by `engine/tests/plans.rs` (#296).
+and plans by `engine/tests/plans.rs` (#296, #306), with the law that the pick of what a box is lights it whole.
 
 ## Type theory
 

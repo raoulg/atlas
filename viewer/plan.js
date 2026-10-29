@@ -725,10 +725,14 @@ function familyFrames(places) {
   }
   return frames;
 }
-// a type picked is a set of values: the class and every class below it (a value of a subclass is a value of the class)
+// a type picked is a set of values: the type and every type below it, a class below its base or a type below the family
+// `kind` puts it in (a value of a subclass is a value of the class, a shaped array one of its rank family)
 const valuesOf = id => {
   const S = new Set([id]), stack = [id];
-  while (stack.length) for (const e of inn.get(stack.pop()) || []) if (e.kind === "inherits" && !S.has(e.src)) { S.add(e.src); stack.push(e.src); }
+  while (stack.length) {
+    const t = stack.pop();
+    for (const m of [...(inn.get(t) || []).filter(e => e.kind === "inherits").map(e => e.src), ...(members.get(t) || []).filter(m => kindOf(m) === t)]) if (!S.has(m)) { S.add(m); stack.push(m); }
+  }
   return S;
 };
 // what a box is and what it holds: a closed family's box, and an open family's frame (`frame`), is a value of the family's
