@@ -173,7 +173,7 @@ fn view_writes_the_page_in_a_view() {
 fn invalid_utf8_line_gets_a_parse_error_and_the_next_line_is_read() {
     let root = concat!(env!("CARGO_MANIFEST_DIR"), "/..");
     let cache = std::env::temp_dir().join(format!("atlas-mcp-cache-{}", std::process::id()));
-    let mut child = Command::new(env!("CARGO_BIN_EXE_atlas"))
+    let mut child = Command::new(env!("CARGO_BIN_EXE_atlas-code"))
         .arg("mcp")
         .current_dir(root)
         .env("XDG_CACHE_HOME", cache)
