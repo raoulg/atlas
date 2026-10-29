@@ -1577,7 +1577,7 @@ impl<'a, 't> Body<'a, 't> {
 
     /// A loop as the step it is: it takes what it goes over, and gives each element under the
     /// name it binds (`for n in &g.nodes` takes `g` and gives `n`), of the class `loops` found.
-    fn each(&mut self, steps: &mut Steps, pat: TsNode<'t>, value: TsNode<'t>) {
+    fn each(&mut self, steps: &mut Steps<'t, '_>, pat: TsNode<'t>, value: TsNode<'t>) {
         let names: Vec<String> = walk(pat, &["identifier"]).into_iter().map(|i| text(i, self.src).to_string()).collect();
         // it goes over what it is handed, or over what a step of the program gives it (`store.rows()`);
         // over a parameter of no type of the code's (`notes: &[String]`) it makes no value, as over
@@ -1639,7 +1639,7 @@ impl<'a, 't> Body<'a, 't> {
 
     /// One call of the body, as the step it is: a struct literal, a method on a value, or a path,
     /// written as an expression or among a macro's tokens.
-    fn call(&mut self, steps: &mut Steps, c: TsNode<'t>) {
+    fn call(&mut self, steps: &mut Steps<'t, '_>, c: TsNode<'t>) {
         if c.kind() == "struct_expression" {
             return self.literal(steps, c);
         }
@@ -1663,7 +1663,7 @@ impl<'a, 't> Body<'a, 't> {
     /// `params![.., round2(e.amount)]`): it runs like any call, so it is followed like one. A
     /// method is followed on a receiver the body knows the class of (`store.rows()`, `self.f()`,
     /// `self.conn.f()`).
-    fn token_call(&mut self, steps: &mut Steps, c: TsNode<'t>) {
+    fn token_call(&mut self, steps: &mut Steps<'t, '_>, c: TsNode<'t>) {
         let src = self.src;
         let Some(called) = token_callee(c, src) else { return };
         self.handed_on(steps, c);
@@ -1692,7 +1692,7 @@ impl<'a, 't> Body<'a, 't> {
     }
 
     /// `Type { .. }`: a value of one of the program's types, built from its fields.
-    fn literal(&self, steps: &mut Steps, c: TsNode<'t>) {
+    fn literal(&self, steps: &mut Steps<'t, '_>, c: TsNode<'t>) {
         let Some(r) = self
             .resolve(&path_parts(c.child_by_field_name("name"), self.src))
             .filter(|r| !r.starts_with("ext:"))
@@ -1707,7 +1707,7 @@ impl<'a, 't> Body<'a, 't> {
 
     /// `Markdown`, named where a value goes: a unit struct named as a value is a value of it,
     /// built, also where a method is called on it (`Plain.show()`).
-    fn unit(&self, steps: &mut Steps, c: TsNode<'t>) {
+    fn unit(&self, steps: &mut Steps<'t, '_>, c: TsNode<'t>) {
         let is = |p: TsNode, field: &str| p.child_by_field_name(field).map(|v| v.id()) == Some(c.id());
         let value = c.parent().map_or(false, |p| match p.kind() {
             "arguments" | "return_expression" | "array_expression" | "tuple_expression" | "reference_expression" => true,
@@ -1743,7 +1743,7 @@ impl<'a, 't> Body<'a, 't> {
     /// on (`text.lines().map(Expense::parse)`) calls it there, as the closure `|line|
     /// Expense::parse(line)` would: a step written where the function is named, handed the element,
     /// a part of what the method runs on, and what it gives goes into the step around it.
-    fn handed_on(&mut self, steps: &mut Steps, c: TsNode<'t>) {
+    fn handed_on(&mut self, steps: &mut Steps<'t, '_>, c: TsNode<'t>) {
         let element = function(c)
             .filter(|f| f.kind() == "field_expression")
             .and_then(|f| f.child_by_field_name("field"))
@@ -1800,7 +1800,7 @@ impl<'a, 't> Body<'a, 't> {
     /// A call Atlas reads as computing what it gives, `written` as the code writes it: where what
     /// it gives goes nowhere, or is the last value of a block that gives none, the call is made for
     /// an effect Atlas does not see.
-    fn dropped(&self, steps: &mut Steps, c: TsNode<'t>, written: &str) {
+    fn dropped(&self, steps: &mut Steps<'t, '_>, c: TsNode<'t>, written: &str) {
         let body = self.def.child_by_field_name("body");
         let last = body.and_then(|b| b.named_child(b.named_child_count().saturating_sub(1)));
         if self.unit && last.map(|l| l.id()) == Some(c.id()) {
@@ -1811,7 +1811,7 @@ impl<'a, 't> Body<'a, 't> {
     }
 
     /// A library's operation not read: a step where the body keeps what it gives.
-    fn library_step(&self, steps: &mut Steps, c: TsNode<'t>, op: &str, recv: Option<TsNode<'t>>) {
+    fn library_step(&self, steps: &mut Steps<'t, '_>, c: TsNode<'t>, op: &str, recv: Option<TsNode<'t>>) {
         let hands = self.call_hands(c, recv, &steps.kept);
         if self.keeps_command_line.contains(&c.id()) {
             return steps.parses(c, op, hands, self.gives(c, None), vec![]);
@@ -1863,7 +1863,15 @@ impl<'a, 't> Body<'a, 't> {
 
     /// A step to one of the program's own functions or types; a method called on a value of a
     /// kind of its own type (a trait's method on a type that implements it) runs on that kind.
-    fn own_step(&mut self, steps: &mut Steps, c: TsNode<'t>, t: &str, recv: Option<TsNode<'t>>, class: Option<&str>, via: Option<String>) {
+    fn own_step(
+        &mut self,
+        steps: &mut Steps<'t, '_>,
+        c: TsNode<'t>,
+        t: &str,
+        recv: Option<TsNode<'t>>,
+        class: Option<&str>,
+        via: Option<String>,
+    ) {
         let kind = if self.store.nodes[t].kind == NodeKind::Class { EdgeKind::Instantiates } else { EdgeKind::Calls };
         let on_receiver = recv.map_or(false, |r| r.kind() == "self");
         let on = class.filter(|k| self.store.nodes[t].cls.as_deref().map_or(false, |b| b != *k)).unwrap_or_default().to_string();
@@ -1947,7 +1955,7 @@ impl<'a, 't> Body<'a, 't> {
 
     /// `receiver.method(..)`: the program's method on the class the receiver holds, or a
     /// library's operation, which may touch the world through the value its chain made.
-    fn method_call(&mut self, steps: &mut Steps, c: TsNode<'t>, f: TsNode<'t>) {
+    fn method_call(&mut self, steps: &mut Steps<'t, '_>, c: TsNode<'t>, f: TsNode<'t>) {
         let src = self.src;
         let (Some(value), Some(field)) = (f.child_by_field_name("value"), f.child_by_field_name("field")) else { return };
         let method = text(field, src).to_string();
@@ -2212,7 +2220,7 @@ impl<'a, 't> Body<'a, 't> {
 
     /// `path::to::f(..)`, `Self::f(..)`, `Type::new(..)`: the program's function or type, or a
     /// library's, which may cross into the world.
-    fn path_call(&mut self, steps: &mut Steps, c: TsNode<'t>, mut parts: Vec<String>) {
+    fn path_call(&mut self, steps: &mut Steps<'t, '_>, c: TsNode<'t>, mut parts: Vec<String>) {
         if parts.is_empty() {
             // a call through a value no path names (`(self.on_done)()`) is one Atlas cannot follow
             if let Some(f) = function(c).filter(|_| c.kind() == "call_expression") {
@@ -2465,9 +2473,9 @@ const USES: UseSyntax = UseSyntax {
         _ => None,
     },
     leaves: |n, body| {
+        // the last named child of the block, which stands in it
         n.kind() == "return_expression"
-            || (n.parent().map(|p| p.id()) == Some(body.id())
-                && !matches!(n.kind(), "expression_statement" | "let_declaration" | "empty_statement")
+            || (!matches!(n.kind(), "expression_statement" | "let_declaration" | "empty_statement")
                 && body.named_child(body.named_child_count().saturating_sub(1)).map(|l| l.id()) == Some(n.id()))
     },
     fails: panics,

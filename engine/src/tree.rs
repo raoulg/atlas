@@ -117,31 +117,78 @@ pub fn holds(body: TsNode, src: &[u8], is: fn(TsNode, &[u8]) -> bool, nested: &[
     false
 }
 
+/// `n` and the named nodes under it that are of one of `kinds`, pre-order, source order.
 pub fn walk<'t>(n: TsNode<'t>, kinds: &[&str]) -> Vec<TsNode<'t>> {
+    let mut of = Kinds::new(kinds);
     let mut out = vec![];
-    let mut stack = vec![n];
-    while let Some(cur) = stack.pop() {
-        if kinds.contains(&cur.kind()) {
-            out.push(cur);
+    preorder(n, |x| {
+        if of.holds(x) {
+            out.push(x);
         }
-        for k in named_children(cur).into_iter().rev() {
-            stack.push(k);
-        }
-    }
+    });
     out
 }
 
 /// Every named node under `n`, pre-order, source order.
 pub fn walk_all<'t>(n: TsNode<'t>) -> Vec<TsNode<'t>> {
     let mut out = vec![];
-    let mut stack = vec![n];
-    while let Some(cur) = stack.pop() {
-        out.push(cur);
-        for k in named_children(cur).into_iter().rev() {
-            stack.push(k);
+    preorder(n, |x| out.push(x));
+    out
+}
+
+/// Visits `n` and the named nodes under it, pre-order, source order, going down through named nodes only: one cursor
+/// over the tree, no list of children made per node.
+fn preorder<'t>(n: TsNode<'t>, mut visit: impl FnMut(TsNode<'t>)) {
+    visit(n);
+    let mut c = n.walk();
+    if !c.goto_first_child() {
+        return;
+    }
+    let mut depth = 1;
+    loop {
+        let cur = c.node();
+        if cur.is_named() {
+            visit(cur);
+            if c.goto_first_child() {
+                depth += 1;
+                continue;
+            }
+        }
+        while !c.goto_next_sibling() {
+            c.goto_parent();
+            depth -= 1;
+            if depth == 0 {
+                return;
+            }
         }
     }
-    out
+}
+
+/// Whether a node is of one of a list of kinds, by the id of its kind: a node's kind is a function of that id, so each
+/// id's answer is looked up by name once and the name is not read again for every node.
+struct Kinds<'k> {
+    kinds: &'k [&'k str],
+    seen: [(u16, bool); 32],
+    len: usize,
+}
+
+impl<'k> Kinds<'k> {
+    fn new(kinds: &'k [&'k str]) -> Self {
+        Kinds { kinds, seen: [(0, false); 32], len: 0 }
+    }
+
+    fn holds(&mut self, n: TsNode) -> bool {
+        let id = n.kind_id();
+        if let Some((_, is)) = self.seen[..self.len].iter().find(|(k, _)| *k == id) {
+            return *is;
+        }
+        let is = self.kinds.contains(&n.kind());
+        if self.len < self.seen.len() {
+            self.seen[self.len] = (id, is);
+            self.len += 1;
+        }
+        is
+    }
 }
 
 /// What a direct child is to the choice that holds it.
@@ -205,15 +252,19 @@ fn statement_of(g: TsNode) -> TsNode {
     }
 }
 
-/// The guards before `n` in its block, the nearest first, each with its choice and the arm `n` is in.
-pub fn guarded_by(n: TsNode, src: &[u8], ids: &std::collections::HashMap<usize, u32>, syn: &ChoiceSyntax) -> Vec<(u32, u32)> {
+/// The guards among the statements `before` a node in its block, the nearest first, each with its choice and the arm the
+/// node is in.
+pub fn guarded_by<'t>(
+    before: impl IntoIterator<Item = TsNode<'t>>,
+    src: &[u8],
+    ids: &std::collections::HashMap<usize, u32>,
+    syn: &ChoiceSyntax,
+) -> Vec<(u32, u32)> {
     let mut out = vec![];
-    let mut s = n.prev_named_sibling();
-    while let Some(st) = s {
+    for st in before {
         if let Some(g) = choice_of(st, ids).filter(|g| (syn.guards)(*g, src)) {
             out.push((ids[&g.id()], after_guard(g, src, ids, syn)));
         }
-        s = st.prev_named_sibling();
     }
     out
 }
@@ -258,23 +309,6 @@ pub fn number_choices(body: TsNode, src: &[u8], syn: &ChoiceSyntax) -> std::coll
         }
     }
     ids
-}
-
-/// The arms of the choices `n` sits in, from the outermost in: of each choice that holds it, and of each guard before it
-/// in a block that holds it.
-pub fn arms_of(n: TsNode, body: TsNode, src: &[u8], ids: &std::collections::HashMap<usize, u32>, syn: &ChoiceSyntax) -> Vec<(u32, u32)> {
-    let mut out = vec![];
-    let mut child = n;
-    while child.id() != body.id() {
-        let Some(p) = child.parent() else { break };
-        out.extend(guarded_by(child, src, ids, syn));
-        if let (Some(&c), Part::Arm(a)) = (ids.get(&p.id()), (syn.part)(p, child, src)) {
-            out.push((c, a));
-        }
-        child = p;
-    }
-    out.reverse();
-    out
 }
 
 /// The choice `n` helps decide: the nearest choice whose deciding part holds it. A
@@ -633,7 +667,7 @@ pub fn payload_of(call: TsNode, src: &[u8], what: &str, arg_field: &str, locals:
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
 
     /// Whether the first call in `code` is handed a place that starts at a literal, where `maker`
@@ -675,6 +709,74 @@ mod tests {
         assert!(rs("fn f() { Path::new(\"a.toml\").exists(); }"));
         assert!(!rs("fn f() { std::fs::read_to_string(root.join(\"Cargo.toml\")); }"));
         assert!(!rs("fn f() { std::fs::write(&out, html); }"));
+    }
+
+    /// Programs in each language, one of them written wrong, with the trees tree-sitter reads of them.
+    pub(crate) fn trees() -> Vec<(tree_sitter::Tree, &'static str)> {
+        let rust = r#"fn f(xs: &[u32]) -> Result<u32, E> {
+    // first
+    let Some(x) = xs.first() else { return Err(E) };
+    let ys: Vec<_> = xs.iter().map(|y| y + 1).collect();
+    if ys.is_empty() { return Ok(0); }
+    match x { 0 => g(&mut s)?, n => h(n, "{n}")? };
+    Ok(*x)
+}
+"#;
+        let python = r#"def f(xs):
+    if not xs:
+        return None
+    ys = [y + 1 for y in xs]  # each
+    with open(p) as h:
+        h.write(f"{ys}")
+    return lambda z: z.v
+"#;
+        let typescript = r#"function f(xs: number[]): number {
+  if (!xs.length) { throw new Error('none'); }
+  const ys = xs.map((y) => y + 1);
+  return ys.reduce((a, b) => a + b, 0) ?? 0;
+}
+"#;
+        let programs: [(tree_sitter::Language, &'static str); 4] = [
+            (tree_sitter_rust::LANGUAGE.into(), rust),
+            (tree_sitter_python::LANGUAGE.into(), python),
+            (tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into(), typescript),
+            (tree_sitter_rust::LANGUAGE.into(), "fn f( { let x = ; g(x }\n"),
+        ];
+        programs
+            .into_iter()
+            .map(|(lang, code)| {
+                let mut p = tree_sitter::Parser::new();
+                p.set_language(&lang).unwrap();
+                (p.parse(code, None).unwrap(), code)
+            })
+            .collect()
+    }
+
+    /// `walk_all` is the named nodes under a node in pre-order, going down through named nodes, and `walk` those of them
+    /// of the kinds it is given.
+    #[test]
+    fn a_walk_is_the_preorder_of_named_nodes_of_its_kinds() {
+        fn preorder<'t>(n: TsNode<'t>, out: &mut Vec<TsNode<'t>>) {
+            out.push(n);
+            for c in named_children(n) {
+                preorder(c, out);
+            }
+        }
+        let ids = |ns: &[TsNode]| ns.iter().map(|n| n.id()).collect::<Vec<_>>();
+        let lists: [&[&str]; 3] = [&["identifier"], &["identifier", "call_expression", "call", "comment", "ERROR", "("], &[]];
+        for (tree, code) in trees() {
+            let mut all = vec![];
+            preorder(tree.root_node(), &mut all);
+            for n in &all {
+                let mut under = vec![];
+                preorder(*n, &mut under);
+                assert_eq!(ids(&walk_all(*n)), ids(&under), "{code}");
+                for kinds in lists {
+                    let of: Vec<TsNode> = under.iter().copied().filter(|x| kinds.contains(&x.kind())).collect();
+                    assert_eq!(ids(&walk(*n, kinds)), ids(&of), "{code} {kinds:?}");
+                }
+            }
+        }
     }
 
     /// What a call touches is read whole: two long commands that start alike stay two.
