@@ -234,6 +234,31 @@ only the first draws the group, since only its code says the files belong togeth
 `flow.rs` (`Touch::place`, its coarse place), `index.html` (the storage quotient); the pair
 `workbench`.
 
+### Who makes a path whole: a monotone formula
+**What.** A monotone Boolean formula over a set of atoms, in disjunctive normal form: a disjunction
+of conjunctions, with no negation. A conjunction is a set of atoms (`a∧b = b∧a`, `a∧a = a`) and the
+disjunction a set of conjunctions (`x∨y = y∨x`), so the formula is a set of sets. It holds at an
+assignment when every atom of one of its conjunctions does. The empty conjunction is true: the unit
+of `∧`.
+**In Atlas.** A touch whose path others make whole runs in a route only where they are on the
+calls (pushforward, rule 5). The atoms are of two kinds, conditions of one kind on a route
+(`Atom`): it reaches a caller whose call hands what makes the path whole, or it starts at an entry
+whose users hand it. `Touch::by` is the formula: each conjunction a set of conditions that make the
+path whole together (one caller set up the object whose field holds the root, another handed the
+rest), any conjunction enough. The order the code is read in says nothing: `a&b` and `b&a` are one
+conjunction, and two alternatives in either order one formula. A role one condition plays is no
+part of the set: the function a request is from is kept beside it, in `Whole { asks, with }`, where
+the request is drawn.
+Where two callers meet a path, the conjunction is the union of theirs (`Whole::and`), so the meet
+keeps every condition of both, however many levels of callers hand the path up. Its unit is the
+function the touch is in: every route that runs the touch reaches it, so `In(f)` there is the empty
+conjunction, and only there; one level up, the caller that hands the path is a condition like any
+other. The graph's JSON writes each conjunction `a&b`, its conditions in order, an entry's users as
+`users_of:e`, and the alternatives in order; a conjunction of one entry's users alone is written in
+`users_of`. It reads them back once.
+**Where.** `model.rs` (`Atom`, `Both`, `Touch::by`, `Touch::in_route`), `paths.rs` (`Whole`,
+`Callers::of`, `place_calls`), `plan.js` (`inRoute`); the pair `handing`.
+
 ### Yoneda: what changed
 **What.** An object is determined up to isomorphism by the arrows into it, `Hom(−, A)`, and
 dually by the arrows out of it.

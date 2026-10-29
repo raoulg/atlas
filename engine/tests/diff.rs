@@ -166,7 +166,7 @@ fn made_whole(g: &Graph, d: &Diff, r: Reading, caller: &str) -> Vec<(String, Sid
     side.nodes
         .iter()
         .flat_map(|n| &n.touches)
-        .filter(|t| t.by.iter().any(|b| b.split('&').any(|f| f == caller)))
+        .filter(|t| t.by.iter().any(|b| b.members().any(|f| f == caller)))
         .map(|t| (t.drawn().place.id, t.drawn().side))
         .collect()
 }

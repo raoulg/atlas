@@ -361,7 +361,7 @@ impl<'g> Story<'g> {
             }
             seen.iter()
                 .filter_map(|f| self.nodes.get(f))
-                .flat_map(|n| n.touches.iter().flat_map(|t| t.by.iter().flat_map(|f| f.split('&').map(str::to_string))))
+                .flat_map(|n| n.touches.iter().flat_map(|t| t.by.iter().flat_map(|b| b.members().map(str::to_string))))
                 .collect()
         });
         let mut on: Vec<&str> = path.iter().map(String::as_str).filter(|f| made.contains(*f)).collect();
