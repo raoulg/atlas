@@ -530,14 +530,29 @@ pub fn unquote(raw: &str) -> String {
 /// first argument, or the receiver it is called on) is built up from a literal:
 /// `open("out.csv")`, `Path("data") / name`, `f"out/{x}.png"`, `Path::new("a.toml")`. False
 /// when it starts at a value from elsewhere: `root / "x.csv"`, `root.join("Cargo.toml")`,
-/// `f"{root}/x"`.
+/// `f"{root}/x"`. Which calls make a path or a URL of their first argument is the reader's to
+/// say (`makes_path`).
 ///
 /// When the operation works on the path it is called on (`dir.glob("*")`), only that path
 /// counts: the argument is a pattern below it, or what is written.
-pub fn starts_at_literal(call: TsNode, src: &[u8], string_kinds: &[&str], arg_field: &str, on_receiver: bool) -> bool {
+pub fn starts_at_literal(
+    call: TsNode,
+    src: &[u8],
+    string_kinds: &[&str],
+    arg_field: &str,
+    on_receiver: bool,
+    makes_path: &dyn Fn(TsNode) -> bool,
+) -> bool {
     let receiver = call.child_by_field_name("function").and_then(receiver_of);
     let first = if on_receiver { None } else { call.child_by_field_name(arg_field).and_then(first_arg) };
-    [receiver, first].into_iter().flatten().any(|e| head_literal(e, src, string_kinds))
+    [receiver, first].into_iter().flatten().any(|e| head_literal(e, src, string_kinds, makes_path))
+}
+
+/// Whether a call's function makes a path or a URL of its first argument, by the name the code
+/// calls it by (`knowledge::PATH_MAKERS`): for a language whose makers are its own words
+/// (`Path::new`, `new URL`).
+pub fn path_maker_named(src: &[u8]) -> impl Fn(TsNode) -> bool + '_ {
+    move |f: TsNode| crate::knowledge::PATH_MAKERS.contains(&text(f, src))
 }
 
 /// `x` in `x.method`, for Python attributes and Rust field expressions.
@@ -554,35 +569,32 @@ fn first_arg(args: TsNode) -> Option<TsNode> {
 }
 
 /// Whether an expression's value starts at a literal: the leftmost operand of a `/` or a
-/// `+`, the receiver of a method, the first argument of a constructor like `Path(..)`.
-pub fn head_literal(e: TsNode, src: &[u8], string_kinds: &[&str]) -> bool {
+/// `+`, the receiver of a method, the first argument of a call that makes a path or a URL of it
+/// (`Path("data")`, where `makes_path`, the reader's, says `Path` is such a maker).
+pub fn head_literal(e: TsNode, src: &[u8], string_kinds: &[&str], makes_path: &dyn Fn(TsNode) -> bool) -> bool {
     let child = |f: &str| e.child_by_field_name(f);
+    let head = |n: TsNode| head_literal(n, src, string_kinds, makes_path);
     match e.kind() {
         k if string_kinds.contains(&k) => {
             let lit = unquote(text(e, src));
             // `{root}/x` (Python) and `${root}/x` (a template string) start at a value
             !lit.is_empty() && !lit.starts_with('{') && !lit.starts_with("${")
         }
-        "binary_operator" | "binary_expression" => child("left").map_or(false, |l| head_literal(l, src, string_kinds)),
-        "keyword_argument" => child("value").map_or(false, |v| head_literal(v, src, string_kinds)),
-        "parenthesized_expression" | "reference_expression" => {
-            child("value").or_else(|| first_arg(e)).map_or(false, |v| head_literal(v, src, string_kinds))
-        }
+        "binary_operator" | "binary_expression" => child("left").map_or(false, head),
+        "keyword_argument" => child("value").map_or(false, head),
+        "parenthesized_expression" | "reference_expression" => child("value").or_else(|| first_arg(e)).map_or(false, head),
         "call" | "call_expression" | "new_expression" => {
             let Some(f) = child("function").or_else(|| child("constructor")) else { return false };
-            match receiver_of(f) {
-                Some(r) => head_literal(r, src, string_kinds),
-                // only a path or URL builder starts the place at its argument; what any other
-                // function makes of a string (a key, a name) is not known here
-                None if crate::knowledge::PATH_MAKERS.contains(&text(f, src)) => {
-                    child("arguments").and_then(first_arg).map_or(false, |a| head_literal(a, src, string_kinds))
-                }
-                None => false,
+            // only a path or URL maker starts the place at its argument; what any other function
+            // makes of a string (a key, a name) is not known here
+            if makes_path(f) {
+                return child("arguments").and_then(first_arg).map_or(false, head);
             }
+            receiver_of(f).map_or(false, head)
         }
-        "attribute" | "field_expression" | "member_expression" => receiver_of(e).map_or(false, |r| head_literal(r, src, string_kinds)),
+        "attribute" | "field_expression" | "member_expression" => receiver_of(e).map_or(false, head),
         // `format!("out/{}.png", x)`: the template decides
-        "macro_invocation" => walk(e, string_kinds).first().map_or(false, |l| head_literal(*l, src, string_kinds)),
+        "macro_invocation" => walk(e, string_kinds).first().map_or(false, |l| head(*l)),
         _ => false,
     }
 }
@@ -624,8 +636,9 @@ pub fn payload_of(call: TsNode, src: &[u8], what: &str, arg_field: &str, locals:
 mod tests {
     use super::*;
 
-    /// Whether the first call in `code` is handed a place that starts at a literal.
-    fn fixed(lang: tree_sitter::Language, code: &str, call: &str, strings: &[&str]) -> bool {
+    /// Whether the first call in `code` is handed a place that starts at a literal, where `maker`
+    /// names the calls that make a path of their first argument.
+    fn fixed(lang: tree_sitter::Language, code: &str, call: &str, strings: &[&str], maker: &dyn Fn(TsNode, &[u8]) -> bool) -> bool {
         let mut p = tree_sitter::Parser::new();
         p.set_language(&lang).unwrap();
         let tree = p.parse(code, None).unwrap();
@@ -634,12 +647,13 @@ mod tests {
             .child_by_field_name("function")
             .map(|f| text(f, code.as_bytes()).rsplit(['.', ':']).next().unwrap_or("").to_string())
             .unwrap_or_default();
-        starts_at_literal(c, code.as_bytes(), strings, "arguments", crate::effects::on_receiver(&op))
+        starts_at_literal(c, code.as_bytes(), strings, "arguments", crate::effects::on_receiver(&op), &|f| maker(f, code.as_bytes()))
     }
 
     #[test]
     fn a_place_is_fixed_when_it_starts_at_a_literal() {
-        let py = |code: &str| fixed(tree_sitter_python::LANGUAGE.into(), code, "call", &["string"]);
+        // what the Python reader asks ty, here a name that stands for a path class
+        let py = |code: &str| fixed(tree_sitter_python::LANGUAGE.into(), code, "call", &["string"], &|f, src| text(f, src) == "Path");
         assert!(py("open('out.csv', 'w')"));
         assert!(py("pd.read_csv(Path('data') / name)"));
         assert!(py("Path('data/x.csv').read_text()"));
@@ -651,7 +665,12 @@ mod tests {
         assert!(!py("self.path.read_text()"));
         assert!(!py("cache_dir.glob(f'*_{tag}')"), "a pattern below a directory handed in");
         assert!(!py("p.write_text('done')"), "what is written is not where");
-        let rs = |code: &str| fixed(tree_sitter_rust::LANGUAGE.into(), code, "call_expression", &["string_literal", "raw_string_literal"]);
+        assert!(!py("open(Key('data').name)"), "what a call that makes no path makes of a literal is not known");
+        let rs = |code: &str| {
+            fixed(tree_sitter_rust::LANGUAGE.into(), code, "call_expression", &["string_literal", "raw_string_literal"], &|f, src| {
+                path_maker_named(src)(f)
+            })
+        };
         assert!(rs("fn f() { std::fs::read_to_string(\"Cargo.toml\"); }"));
         assert!(rs("fn f() { Path::new(\"a.toml\").exists(); }"));
         assert!(!rs("fn f() { std::fs::read_to_string(root.join(\"Cargo.toml\")); }"));

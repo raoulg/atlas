@@ -94,7 +94,21 @@ impl<'a> Eval<'a> {
     /// What the library's path function `f`, named `name`, makes of what it is handed, where ty
     /// finds the call goes into that library (knowledge::PYTHON_PATH_FUNCTIONS).
     fn path_function(&self, m: &Module, f: TsNode, name: &str) -> Option<PathFn> {
-        knowledge::PYTHON_PATH_FUNCTIONS.iter().find(|(lib, n, _)| *n == name && self.of_library(m, f, lib)).map(|(_, _, k)| *k)
+        let class = knowledge::PYTHON_PATH_CLASSES.iter().any(|(lib, c)| *c == name && self.of_library(m, f, lib));
+        let function = || knowledge::PYTHON_PATH_FUNCTIONS.iter().find(|(lib, n, _)| *n == name && self.of_library(m, f, lib));
+        if class {
+            return Some(PathFn::Join);
+        }
+        function().map(|(_, _, k)| *k)
+    }
+
+    /// Whether calling `f` makes a path of the parts it is handed: where ty finds the call goes
+    /// into the library of the path class `f` names (knowledge::PYTHON_PATH_CLASSES), as
+    /// `Path(..)` and `pathlib.Path(..)` do. A class of the project's own of the same name is the
+    /// project's.
+    pub fn makes_path(&self, m: &Module, f: TsNode) -> bool {
+        let name = called(f, &m.src);
+        knowledge::PYTHON_PATH_CLASSES.iter().any(|(lib, c)| *c == name && self.of_library(m, f, lib))
     }
 
     /// What the method `f` of a library's path, named `name`, makes of the path it is called on,
@@ -648,8 +662,8 @@ impl<'a> Eval<'a> {
         };
         let positional: Vec<TsNode> =
             args.iter().copied().filter(|a| !matches!(a.kind(), "keyword_argument" | "list_splat" | "dictionary_splat")).collect();
-        let parts = call_path(f, src);
-        let last = parts.last().map(String::as_str).or_else(|| f.child_by_field_name("attribute").map(|a| text(a, src))).unwrap_or("");
+        let last = called(f, src);
+        let last = last.as_str();
         let receiver = || f.child_by_field_name("object").map(|o| self.of(at, o, depth + 1)).unwrap_or_else(|| vec![hole("value")]);
         let joined = |xs: &[TsNode]| {
             xs.iter().fold(vec![vec![]], |acc: Vec<Built>, a| {
@@ -908,6 +922,13 @@ pub(super) fn entry_defaults<'t>(def: TsNode<'t>, src: &[u8]) -> Vec<(String, Ts
         }
     }
     out
+}
+
+/// The name a call's function `f` goes by: `Path` of `Path(..)` and of `pathlib.Path(..)`,
+/// `joinpath` of `data_dir().joinpath(..)`.
+fn called(f: TsNode, src: &[u8]) -> String {
+    let parts = call_path(f, src);
+    parts.last().cloned().or_else(|| f.child_by_field_name("attribute").map(|a| text(a, src).to_string())).unwrap_or_default()
 }
 
 /// The positional arguments of an argument list, in order.
