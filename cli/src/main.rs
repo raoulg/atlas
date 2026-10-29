@@ -141,6 +141,26 @@ fn examples() -> String {
     s
 }
 
+/// How a decision is written that sets a finding of `atlas-code check` aside: in the code, or by
+/// path in `.atlasignore` (`docs/reference/principles.md`).
+fn decisions() -> String {
+    let (head, cmd, dim) = (STYLES.get_header(), STYLES.get_literal(), Style::new().effects(Effects::DIMMED));
+    format!(
+        "{head}Decisions:{head:#}
+  Where the code is right as it is, write the decision down with its reason: check sets the
+  findings it answers aside, counts them, lists them with --all and keeps them in --json.
+
+  In the code, after the line comment, for that line or the line below:
+    {cmd}# atlas: ignore[changes] in place for the frame rate{cmd:#}
+  For whole paths, one a line in {cmd}.atlasignore{cmd:#} at the top of the repository:
+    {cmd}src/sim/particles.py  changes  # in place for the frame rate{cmd:#}
+    {cmd}src/legacy/**                  # ported pipeline, rewrite planned{cmd:#}
+  {dim}A pattern as .gitignore writes one, the principles it answers, the reason after #.
+  No principle named answers them all; a decision that answers nothing is asked about.{dim:#}
+"
+    )
+}
+
 /// What the exit status says, as ruff and grep say it: what was asked is done, `atlas-code check` has
 /// something to ask, or Atlas could not do what was asked (a path it cannot read, a clone that
 /// fails, a command line it does not take).
@@ -236,6 +256,7 @@ enum Cmd {
     ///
     /// Exit status 0 when there is nothing to ask, 1 when there is, 2 when Atlas could not read the
     /// repository.
+    #[command(after_long_help = decisions())]
     Check {
         /// Repository root or git URL; default: the current directory.
         repo: Option<PathBuf>,

@@ -229,6 +229,24 @@ trace, is in [principles.md](principles.md), with what each rule cannot see. A f
 to look at the code and at what the rule claims, never a verdict and never a target: Atlas keeps
 what `atlas-code check` asks of itself as a reviewed list, each finding with why it stands.
 
+Where the code is right as it is, write the decision down with its reason, and check sets the
+findings it answers aside: counted in the summary, listed with `--all`, kept in `--json` as `aside`.
+In the code it stands after the language's line comment; for whole paths, a `.atlasignore` at the
+top of the repository holds one a line, a pattern as `.gitignore` writes one, the principles it
+answers (none: all of them) and the reason after `#`:
+
+```gitignore
+src/sim/particles.py  changes   # in place for the frame rate, see docs/perf.md
+src/legacy/**                   # ported pipeline, rewrite planned
+```
+
+```python
+def step(pool: Pool) -> None:  # atlas: ignore[changes] in place for the frame rate
+```
+
+A decision that sets nothing aside, gives no reason or names a principle that is none is asked
+about in turn. `atlas-code check --help` shows the forms; [principles.md](principles.md) has the rest.
+
 ## Revelation: what a design leaves to build
 
 A design can live in the tree as sketch code, marked as not built yet: a *prophecy*. Python marks
