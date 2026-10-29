@@ -89,16 +89,8 @@ pub fn request_of(op: &str, url: Vec<Built>) -> Vec<Built> {
     cross(&[method], &url, " ")
 }
 
-/// A request as its method and path, the method left out where the code does not say it.
-pub fn request(method: &str, path: &str) -> String {
-    if method.is_empty() {
-        path.to_string()
-    } else {
-        format!("{method} {path}")
-    }
-}
-
-/// A request's method and path; the method is empty where the code does not say it.
+/// A request's method and path, as a rendered term writes them; the method is empty where the
+/// code does not say it. The one place a rendered request is split.
 pub fn method_and_path(request: &str) -> (&str, &str) {
     match request.split_once(' ') {
         Some((m, p)) if !m.starts_with('/') => (m, p),
@@ -106,15 +98,56 @@ pub fn method_and_path(request: &str) -> (&str, &str) {
     }
 }
 
-/// The routes of `routes` (handler, method, path) that serve a request: by its method when the
-/// code says it, and its path; a literal segment serves before a parameter (`/years` before
-/// `/{year}`).
-pub fn serving<'r>(routes: &'r [(String, String, String)], method: &str, path: &str) -> Vec<&'r (String, String, String)> {
-    let known = !method.is_empty() && !method.contains('{');
-    let served: Vec<&(String, String, String)> =
-        routes.iter().filter(|(_, m, p)| (!known || m.split('|').any(|x| x == method)) && route_matches(p, path)).collect();
-    let fewest = served.iter().map(|(_, _, p)| p.matches('{').count()).min().unwrap_or(0);
-    served.into_iter().filter(|(_, _, p)| p.matches('{').count() == fewest).collect()
+impl crate::model::Request {
+    /// A request as a rendered term writes it (`method_and_path`): a method that is a value the
+    /// code does not say (`{method}`) is none.
+    pub fn of(rendered: &str) -> crate::model::Request {
+        let (method, path) = method_and_path(rendered);
+        let said = !method.is_empty() && !method.contains('{');
+        crate::model::Request { method: said.then(|| crate::model::Method::new(method)), path: path.to_string() }
+    }
+}
+
+impl From<String> for crate::model::Request {
+    fn from(s: String) -> crate::model::Request {
+        crate::model::Request::of(&s)
+    }
+}
+
+/// A route of the program by the function that handles it, at a path the code names: what a
+/// request may meet.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Served {
+    pub handler: String,
+    pub route: crate::model::Route,
+}
+
+impl Served {
+    pub fn path(&self) -> &str {
+        self.route.path.as_deref().unwrap_or_default()
+    }
+}
+
+/// The routes these nodes serve at a path the code names, each by its handler.
+pub fn served<'n>(nodes: impl IntoIterator<Item = &'n crate::model::Node>) -> Vec<Served> {
+    nodes
+        .into_iter()
+        .filter_map(|n| {
+            let route = n.entry.as_ref().filter(|e| e.kind == crate::model::EntryKind::Route)?.request.clone()?;
+            route.path.is_some().then(|| Served { handler: n.id.clone(), route })
+        })
+        .collect()
+}
+
+/// The routes of `routes` that serve a request: by its method when the code says it, and its
+/// path; a literal segment serves before a parameter (`/years` before `/{year}`).
+pub fn serving<'r>(routes: &'r [Served], request: &crate::model::Request) -> Vec<&'r Served> {
+    let served: Vec<&Served> = routes
+        .iter()
+        .filter(|s| request.method.as_ref().map_or(true, |m| s.route.methods.contains(m)) && route_matches(s.path(), &request.path))
+        .collect();
+    let fewest = served.iter().map(|s| s.path().matches('{').count()).min().unwrap_or(0);
+    served.into_iter().filter(|s| s.path().matches('{').count() == fewest).collect()
 }
 
 /// A part of a path as the code builds it.
@@ -854,7 +887,7 @@ fn decided(b: &Built, t: &crate::model::Touch) -> bool {
     let given = |s: &str| s.is_empty() || s.starts_with(['{', '$', '~']);
     match t.kind {
         World::Net => {
-            let url = rendered.split_once(' ').map_or(rendered.as_str(), |(_, u)| u);
+            let url = method_and_path(&rendered).1;
             url.contains("://") && !given(url)
         }
         World::Disk if matches!(b.first(), Some(Seg::Package(_))) => t.dir == Some(Dir::Write),
@@ -914,16 +947,8 @@ pub fn complete<H: Handing>(
 /// Each touch keeps where it became whole, so a route shows the places its own calls hand; where
 /// a completion names no place, the call keeps the touch it was read with.
 pub fn place_calls(store: &mut crate::builder::GraphBuilder, completed: Vec<Completed>, origin: bool) {
-    use crate::model::{Crossing, EdgeKind, EntryKind, Touch, World};
-    let routes: Vec<(String, String, String)> = store
-        .nodes
-        .values()
-        .filter_map(|n| {
-            let e = n.entry.as_ref().filter(|e| e.kind == EntryKind::Route)?;
-            let (method, path) = e.label.split_once(' ')?;
-            Some((n.id.clone(), method.to_string(), path.to_string()))
-        })
-        .collect();
+    use crate::model::{Crossing, EdgeKind, Request, Touch, World};
+    let routes = served(store.nodes.values());
     // the class each of the program's methods is of: the type whose code it is; a library's types
     // keep no places of the program
     let class_of: HashMap<String, String> = store
@@ -993,16 +1018,14 @@ pub fn place_calls(store: &mut crate::builder::GraphBuilder, completed: Vec<Comp
                 let before = placed.len();
                 let fixed: Vec<String> = decider.iter().cloned().collect();
                 decides.extend(fixed.iter().cloned());
-                // a request's method, when the code says it, and its URL
-                let (method, url) = match rendered.split_once(' ') {
-                    Some((m, u)) if t.kind == World::Net => (m.to_ascii_uppercase(), u.to_string()),
-                    _ => (String::new(), rendered.clone()),
-                };
                 if t.kind == World::Net {
+                    // a request's method, when the code says it, and its URL
+                    let request = Request::of(&rendered);
+                    let url = request.path.clone();
                     let mut served = false;
                     if url.starts_with('/') && origin {
-                        for (handler, _, path) in serving(&routes, &method, &url) {
-                            store.add_edge(asker, handler, EdgeKind::Requests, Some(path.clone()));
+                        for s in serving(&routes, &request) {
+                            store.add_edge(asker, &s.handler, EdgeKind::Requests, Some(s.path().to_string()));
                             served = true;
                         }
                     } else if let Some(host) = crate::effects::facts(Crossing::to(World::Net), None, &t.op, std::slice::from_ref(&url))
@@ -1020,7 +1043,7 @@ pub fn place_calls(store: &mut crate::builder::GraphBuilder, completed: Vec<Comp
                     }
                     // a request no route of the part serves may be another part's
                     if let Some(path) = asked_path(&url).filter(|_| !served) {
-                        store.ask(asker, request(&method, &path));
+                        store.ask(asker, Request { path, ..request });
                     }
                 } else if let World::Db(db) = t.kind {
                     if crate::knowledge::opens_a_file(db, &t.op) {

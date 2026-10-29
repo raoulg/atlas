@@ -74,11 +74,125 @@ pub struct Entry {
     /// it reads as its usage line, `$ sunspots --raw --figure --months`.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub options: Vec<String>,
+    /// For a route: the requests it serves, of which the label is the words. None where the route
+    /// serves no request a program sends (a page's route in the browser).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub request: Option<Route>,
 }
 
 impl Entry {
     pub fn new(kind: EntryKind, label: impl Into<String>) -> Entry {
-        Entry { kind, label: label.into(), options: vec![] }
+        Entry { kind, label: label.into(), options: vec![], request: None }
+    }
+
+    /// A route that serves `route`, labelled by it.
+    pub fn route(route: Route) -> Entry {
+        let mut e = Entry::new(EntryKind::Route, String::new());
+        e.serve(route);
+        e
+    }
+
+    /// Serve `route`: the label is its words, written by `Route`'s `Display` alone.
+    pub fn serve(&mut self, route: Route) {
+        self.label = route.to_string();
+        self.request = Some(route);
+    }
+}
+
+/// A method a route serves or a request goes by, upper case as the protocol writes it (`GET`,
+/// `WEBSOCKET`). Methods go in the order of the table of methods, `knowledge::REQUEST_WAYS`,
+/// which orders them (`Ord`, beside the table).
+#[derive(Serialize, Deserialize, TS, Clone, Debug, PartialEq, Eq, Hash)]
+#[serde(transparent)]
+#[ts(export)]
+pub struct Method(String);
+
+impl Method {
+    pub fn new(name: &str) -> Method {
+        Method(name.to_ascii_uppercase())
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl std::fmt::Display for Method {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+/// The methods a route serves: a set, so the order the code lists them in says nothing
+/// (`["POST", "GET"]`, `{"GET", "POST"}`). Written `GET|POST`, in the order of its methods.
+#[derive(Serialize, Deserialize, TS, Clone, Debug, Default, PartialEq, Eq, Hash)]
+#[serde(transparent)]
+#[ts(export)]
+pub struct Methods(pub BTreeSet<Method>);
+
+impl Methods {
+    /// The methods of these names, in any case.
+    pub fn of<S: AsRef<str>>(names: impl IntoIterator<Item = S>) -> Methods {
+        Methods(names.into_iter().map(|n| Method::new(n.as_ref())).collect())
+    }
+
+    pub fn contains(&self, m: &Method) -> bool {
+        self.0.contains(m)
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = &Method> {
+        self.0.iter()
+    }
+}
+
+impl std::fmt::Display for Methods {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        let names: Vec<&str> = self.0.iter().map(Method::as_str).collect();
+        f.write_str(&names.join("|"))
+    }
+}
+
+/// The requests a route serves: its methods at its path. No path where the code names no
+/// literal one. Written `GET|POST /items`, or the methods alone without a path.
+#[derive(Serialize, Deserialize, TS, Clone, Debug, PartialEq, Eq, Hash)]
+#[ts(export)]
+pub struct Route {
+    pub methods: Methods,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub path: Option<String>,
+}
+
+impl std::fmt::Display for Route {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        match &self.path {
+            Some(p) => write!(f, "{} {p}", self.methods),
+            None => write!(f, "{}", self.methods),
+        }
+    }
+}
+
+/// A request a function makes whole: its method where the code says it, and its path. Written
+/// `GET /api/items/{id}`, or the path alone where the code does not say the method, and read
+/// back where a rendered request is split (`From<String>`, beside `paths::method_and_path`).
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, Hash)]
+#[serde(into = "String", from = "String")]
+pub struct Request {
+    pub method: Option<Method>,
+    pub path: String,
+}
+
+impl std::fmt::Display for Request {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        match &self.method {
+            Some(m) => write!(f, "{m} {}", self.path),
+            None => f.write_str(&self.path),
+        }
+    }
+}
+
+impl From<Request> for String {
+    fn from(r: Request) -> String {
+        r.to_string()
     }
 }
 
@@ -151,7 +265,8 @@ pub struct Node {
     /// The requests it makes whole that no route of its own part serves: the method when the code
     /// says it, and the path (`GET /api/items/{id}`). Another part's route may serve them.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub asks: Vec<String>,
+    #[ts(type = "Array<string>")]
+    pub asks: Vec<Request>,
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub is_pkg: bool,
     /// For a method: it is called on its class, not on a value of it, so the class is no input.
@@ -1746,6 +1861,14 @@ mod tests {
             })
     }
 
+    /// Methods a route is registered with, as the code lists them (a method of `REQUEST_WAYS`, a
+    /// websocket, or one no table names), and the same methods in another order.
+    fn listed_twice() -> impl proptest::strategy::Strategy<Value = (Vec<String>, Vec<String>)> {
+        use proptest::prelude::*;
+        proptest::collection::vec("get|head|options|post|put|patch|delete|websocket|[a-z]{3,6}", 1..5)
+            .prop_flat_map(|ms| (Just(ms.clone()), Just(ms).prop_shuffle()))
+    }
+
     proptest::proptest! {
         /// Law: who makes a path whole is a disjunction of conjunctions, a set of sets
         /// (`a∧b = b∧a`, `a∨b = b∨a`). Writing the conditions of each conjunction and the
@@ -1765,6 +1888,40 @@ mod tests {
             proptest::prop_assert_eq!(serde_json::from_str::<Touch>(&json).unwrap(), t.clone());
             let reached = |f: &str| reached.contains(f);
             proptest::prop_assert_eq!(t.in_route(&entry, &reached), u.in_route(&entry, &reached));
+        }
+
+        /// Law: a route serves a set of methods (`GET∨POST = POST∨GET`, `GET∨GET = GET`). Methods
+        /// listed in another order, repeated, or in another case give the same route, the same label
+        /// and the same JSON, and the JSON reads back as the route it was written from.
+        #[test]
+        fn the_order_methods_are_listed_in_says_nothing(
+            (listed, again) in listed_twice(),
+            twice in proptest::bool::ANY,
+            path in proptest::option::of("(/[a-z{}]{1,4}){1,3}"),
+        ) {
+            let mut again: Vec<String> = again.iter().map(|m| m.to_ascii_uppercase()).collect();
+            if twice {
+                again.extend(again.clone());
+            }
+            let (r, s) = (Route { methods: Methods::of(&listed), path: path.clone() }, Route { methods: Methods::of(&again), path });
+            proptest::prop_assert_eq!(&r, &s);
+            proptest::prop_assert_eq!(r.to_string(), s.to_string());
+            let json = serde_json::to_string(&r).unwrap();
+            proptest::prop_assert_eq!(&json, &serde_json::to_string(&s).unwrap());
+            proptest::prop_assert_eq!(serde_json::from_str::<Route>(&json).unwrap(), r);
+        }
+
+        /// Law: a request is written `METHOD path`, or its path alone where the code does not say
+        /// the method, and what is written reads back as the request (`Display`, `Request::of`).
+        #[test]
+        fn a_request_reads_back_as_written(
+            method in proptest::option::of("get|post|delete|[a-z]{3,6}"),
+            path in "(/[a-z{}]{1,4}){1,3}",
+        ) {
+            let r = Request { method: method.as_deref().map(Method::new), path };
+            proptest::prop_assert_eq!(Request::of(&r.to_string()), r.clone());
+            let json = serde_json::to_string(&r).unwrap();
+            proptest::prop_assert_eq!(serde_json::from_str::<Request>(&json).unwrap(), r);
         }
     }
 }

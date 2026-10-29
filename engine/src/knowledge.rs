@@ -31,6 +31,33 @@ pub const HTTP_METHODS: &[&str] = &{
     out
 };
 
+/// Where a method stands among the methods a route serves: in the order of `REQUEST_WAYS`, then
+/// of the other kinds of route (`ROUTE_KINDS`), then after every method these name.
+pub fn method_rank(method: &str) -> usize {
+    let at = |table: &[&str]| table.iter().position(|m| m.eq_ignore_ascii_case(method));
+    at(HTTP_METHODS).or_else(|| at(ROUTE_KINDS).map(|i| HTTP_METHODS.len() + i)).unwrap_or(usize::MAX)
+}
+
+/// Methods go in the order of this table (`method_rank`), equal ranks by name.
+impl Ord for crate::model::Method {
+    fn cmp(&self, other: &crate::model::Method) -> std::cmp::Ordering {
+        (method_rank(self.as_str()), self.as_str()).cmp(&(method_rank(other.as_str()), other.as_str()))
+    }
+}
+
+impl PartialOrd for crate::model::Method {
+    fn partial_cmp(&self, other: &crate::model::Method) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl crate::model::Methods {
+    /// Every method a request goes by (`HTTP_METHODS`): the top of the set.
+    pub fn every() -> crate::model::Methods {
+        crate::model::Methods::of(HTTP_METHODS)
+    }
+}
+
 /// The way a request goes by its method, in any case (`delete`, `DELETE`); none where the code
 /// does not say the method.
 pub fn request_way(method: &str) -> Option<Dir> {
@@ -55,14 +82,14 @@ pub fn registers_route(verb: &str) -> bool {
     HTTP_METHODS.contains(&verb) || ROUTE_KINDS.contains(&verb) || EVERY_METHOD.contains(&verb)
 }
 
-/// The methods a route registered by this name serves, upper case as a route's label writes them:
-/// the one it is named for (`get`, `websocket`), or each of `HTTP_METHODS` in their order for a
-/// registration of `EVERY_METHOD`.
-pub fn methods_served(verb: &str) -> Vec<String> {
+/// The methods a route registered by this name serves: the one it is named for (`get`,
+/// `websocket`), or every method, the top of the set (`Methods::every`), for a registration of
+/// `EVERY_METHOD`.
+pub fn methods_served(verb: &str) -> crate::model::Methods {
     if EVERY_METHOD.contains(&verb) {
-        HTTP_METHODS.iter().map(|m| m.to_uppercase()).collect()
+        crate::model::Methods::every()
     } else {
-        vec![verb.to_uppercase()]
+        crate::model::Methods::of([verb])
     }
 }
 

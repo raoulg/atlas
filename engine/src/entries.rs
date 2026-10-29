@@ -41,10 +41,12 @@ pub fn mount_routes(
     for (id, router) in routes {
         let prefix = full(router);
         let Some(e) = store.nodes.get_mut(id).and_then(|n| n.entry.as_mut()).filter(|e| e.kind == EntryKind::Route) else { continue };
-        let Some((method, path)) = e.label.split_once(' ') else { continue };
+        let Some(mut route) = e.request.clone() else { continue };
+        let Some(path) = route.path.as_deref() else { continue };
         let path = if path == "/" && !prefix.is_empty() { "" } else { path };
         let segs: Vec<String> = format!("{prefix}{path}").split('/').map(segment).collect();
-        e.label = format!("{method} {}", segs.join("/"));
+        route.path = Some(segs.join("/"));
+        e.serve(route);
     }
 }
 

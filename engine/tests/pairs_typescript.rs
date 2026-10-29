@@ -1992,28 +1992,27 @@ fn places_a_path_a_class_builds_is_the_path_written_out() {
 /// handler, which is the route at the path for every method there is.
 #[test]
 fn a_request_meets_the_routes_that_serve_its_method() {
-    use atlas_engine::EntryKind;
+    use atlas_engine::{EntryKind, Methods};
     let read = |side: &str| {
         analyze(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/pairs/methods/typescript").join(side), &Options::default())
             .unwrap_or_else(|e| panic!("the {side} side parses: {e}"))
     };
     // the routes a function of the page meets, each by the methods it serves
-    let met = |g: &Graph, f: &str| -> Vec<BTreeSet<String>> {
+    let met = |g: &Graph, f: &str| -> Vec<Methods> {
         let src = format!("{}.page.{f}", g.root);
         g.edges
             .iter()
             .filter(|e| e.kind == EdgeKind::Requests && e.src == src)
             .map(|e| {
                 let entry = g.node(&e.dst).and_then(|n| n.entry.as_ref()).filter(|x| x.kind == EntryKind::Route);
-                let label = &entry.unwrap_or_else(|| panic!("{} is a route", e.dst)).label;
-                let (methods, path) = label.split_once(' ').expect("a method and a path");
-                assert_eq!(path, "/api/notes", "{label}");
-                methods.split('|').map(String::from).collect()
+                let route = entry.and_then(|x| x.request.clone()).unwrap_or_else(|| panic!("{} is a route that serves requests", e.dst));
+                assert_eq!(route.path.as_deref(), Some("/api/notes"), "{route}");
+                route.methods
             })
             .collect()
     };
-    let one = |m: &str| BTreeSet::from([m.to_string()]);
-    let every: BTreeSet<String> = atlas_engine::knowledge::HTTP_METHODS.iter().map(|m| m.to_uppercase()).collect();
+    let one = |m: &str| Methods::of([m]);
+    let every: Methods = Methods::of(atlas_engine::knowledge::HTTP_METHODS);
     let (c, s) = (read("clean"), read("shortcut"));
     assert_eq!(met(&c, "notes"), [one("GET")], "the clean GET meets the GET handler alone");
     assert_eq!(met(&c, "keep"), [one("POST")], "the clean POST meets the POST handler alone");

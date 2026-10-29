@@ -18,7 +18,7 @@ use super::module::{
 use super::paths::{self, Eval};
 use crate::builder::{foreign_type, ClassInfo, Declared, GraphBuilder};
 use crate::knowledge;
-use crate::model::{Dir, EdgeKind, Entry, EntryKind, Node, NodeKind, Touch, World};
+use crate::model::{Dir, EdgeKind, Entry, EntryKind, Node, NodeKind, Route, Touch, World};
 use crate::repo::{normal, Repo};
 use crate::tree::{beneath, named_children, span, text, unquote, walk};
 
@@ -326,6 +326,8 @@ pub(super) fn collect_symbols(m: &mut Module, store: &mut GraphBuilder) {
             _ => {}
         }
     }
+    // a file route is a page the browser shows at its path: a route that serves no request a
+    // program sends, so it is labelled by its path alone
     if let Some(path) = route {
         if let Some(n) = store.nodes.get_mut(&m.id) {
             n.entry = Some(Entry::new(EntryKind::Route, if path == "__root" { "/ (root)".into() } else { path }));
@@ -769,7 +771,7 @@ pub(super) fn collect_routes(m: &mut Module, store: &mut GraphBuilder) {
             continue;
         }
         // the route as served, by the methods it serves; an inline handler is named by its registration as written
-        let label = format!("{} {path}", knowledge::methods_served(&verb).join("|"));
+        let served = Route { methods: knowledge::methods_served(&verb), path: Some(path.clone()) };
         let written = format!("{} {path}", verb.to_uppercase());
         let Some(handler) = args.last().filter(|a| a.id() != args[0].id()) else { continue };
         let id = match handler.kind() {
@@ -789,7 +791,7 @@ pub(super) fn collect_routes(m: &mut Module, store: &mut GraphBuilder) {
             _ => continue,
         };
         if let Some(n) = store.nodes.get_mut(&id).filter(|n| n.entry.is_none()) {
-            n.entry = Some(Entry::new(EntryKind::Route, label));
+            n.entry = Some(Entry::route(served));
             m.routes.push((id, router.clone()));
         }
     }
