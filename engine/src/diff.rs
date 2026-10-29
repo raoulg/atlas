@@ -22,7 +22,7 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 use serde::Serialize;
 
-use crate::model::{EdgeKind, Entry, Graph, Held, Node, NodeKind, Site, Touch};
+use crate::model::{Both, EdgeKind, Entry, Graph, Held, Node, NodeKind, Site, Touch};
 
 /// How a thing of the union stands to the two readings: B adds it, B no longer has it, or both
 /// hold it and its own arrows differ.
@@ -369,11 +369,14 @@ impl Renames {
         let m = |s: &mut String| *s = self.map(s);
         for n in &mut a.nodes {
             for t in n.touches.iter_mut().chain(n.instead.iter_mut()) {
-                let holder = match (t.by.as_slice(), t.users_of.as_slice()) {
-                    ([h], _) | ([], [h]) => h.as_str(),
-                    _ => n.id.as_str(),
+                // one alternative of one caller names a holder; a conjunction of several callers names none
+                let alternatives: Vec<&Both> = t.by.iter().collect();
+                let holder = match (alternatives.as_slice(), t.users_of.as_slice()) {
+                    ([b], _) => b.single(),
+                    ([], [h]) => Some(h.as_str()),
+                    _ => Some(n.id.as_str()),
                 };
-                if let Some((old, new)) = owners.get(holder) {
+                if let Some((old, new)) = holder.and_then(|h| owners.get(h)) {
                     if let Some(rest) = t.what.strip_prefix(&format!("{old}.")) {
                         t.what = format!("{new}.{rest}");
                     }
@@ -393,9 +396,7 @@ impl Renames {
                 s.hands.iter_mut().chain(s.gives.iter_mut()).for_each(|h| m(&mut h.ty));
             }
             for t in n.touches.iter_mut().chain(n.instead.iter_mut()) {
-                for f in t.by.iter_mut() {
-                    *f = f.split('&').map(|x| self.map(x)).collect::<Vec<_>>().join("&");
-                }
+                t.by = t.by.iter().map(|b| b.map(|x| self.map(x))).collect();
                 t.users_of.iter_mut().for_each(m);
             }
         }
@@ -947,7 +948,7 @@ impl<'g> Index<'g> {
         let nodes: HashMap<&str, &Node> = g.nodes.iter().map(|n| (n.id.as_str(), n)).collect();
         let mut made: HashMap<&str, Vec<&Touch>> = HashMap::new();
         for t in g.nodes.iter().flat_map(|n| &n.touches) {
-            for f in t.by.iter().flat_map(|f| f.split('&')) {
+            for f in t.by.iter().flat_map(Both::members) {
                 // a file named by a value the caller is handed itself (`Store.path`) waits for the
                 // caller's own callers: the caller does not make it whole
                 if !nodes.get(f).map_or(false, |h| holds_open(h, t)) {

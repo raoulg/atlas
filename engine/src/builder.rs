@@ -238,7 +238,7 @@ impl GraphBuilder {
         let t = self.owned(id, t);
         let Some(n) = self.nodes.get_mut(id) else { return };
         if !n.instead.iter().any(|x| x.kind == t.kind && x.what == t.what && x.op == t.op && x.line == t.line) {
-            n.instead.push(Touch { n: 1, by: vec![], users_of: vec![], ..t });
+            n.instead.push(Touch { n: 1, by: BTreeSet::new(), users_of: vec![], ..t });
         }
     }
 
@@ -342,11 +342,7 @@ impl GraphBuilder {
                     x.by.clear();
                     x.users_of.clear();
                 } else {
-                    for f in t.by {
-                        if !x.by.contains(&f) {
-                            x.by.push(f);
-                        }
-                    }
+                    x.by.extend(t.by);
                     for e in t.users_of {
                         if !x.users_of.contains(&e) {
                             x.users_of.push(e);

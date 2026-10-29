@@ -11,7 +11,7 @@ use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
 
 use indexmap::IndexMap;
 
-use crate::model::{Edge, EdgeKind, Graph, Node, NodeKind, Touch};
+use crate::model::{Both, Edge, EdgeKind, Graph, Node, NodeKind, Touch};
 
 pub trait View {
     fn apply(&self, g: &Graph) -> Graph;
@@ -364,21 +364,20 @@ fn glue(lib: &Library, dropped: &HashSet<String>) -> HashMap<String, Glued> {
         for (x, at) in beyond {
             let n = lib.nodes[x];
             for t in &n.touches {
-                let mut by = vec![];
+                let mut by = std::collections::BTreeSet::new();
                 let mut whole = t.by.is_empty() && t.users_of.is_empty();
                 for alt in &t.by {
-                    let parts: Vec<&str> = alt.split('&').collect();
-                    if parts.iter().any(|&p| gone(p) && !within.contains(p)) {
+                    if alt.members().any(|p| gone(p) && !within.contains(p)) {
                         continue;
                     }
-                    let rest: Vec<&str> = parts.into_iter().filter(|&p| !within.contains(p) && p != f.id).collect();
-                    if rest.is_empty() {
+                    let rest: Both = alt.members().filter(|&p| !within.contains(p) && p != f.id).map(str::to_string).collect();
+                    if rest.0.is_empty() {
                         whole = true;
                         break;
                     }
-                    by.push(rest.join("&"));
+                    by.insert(rest);
                 }
-                let (by, users_of) = if whole { (vec![], vec![]) } else { (by, t.users_of.clone()) };
+                let (by, users_of) = if whole { (Default::default(), vec![]) } else { (by, t.users_of.clone()) };
                 if by.is_empty() && users_of.is_empty() && !whole {
                     continue;
                 }

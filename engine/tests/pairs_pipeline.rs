@@ -37,7 +37,12 @@ use std::path::PathBuf;
 use std::sync::OnceLock;
 
 use atlas_engine::principles::check;
-use atlas_engine::{analyze, EdgeKind, EntryKind, Graph, Held, Node, NodeKind, Options, Site, Touch, World};
+use atlas_engine::{analyze, Both, EdgeKind, EntryKind, Graph, Held, Node, NodeKind, Options, Site, Touch, World};
+
+/// Callers each of whom makes a path whole alone, the disjunction `a ∨ b` as `Touch::by` holds it.
+fn by<const N: usize>(callers: [&str; N]) -> BTreeSet<Both> {
+    callers.into_iter().map(Both::one).collect()
+}
 
 fn read(version: &str) -> Graph {
     analyze(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/pairs/pipeline").join(version), &Options::default()).unwrap()
@@ -253,7 +258,7 @@ fn the_same_from_outside_typescript() {
 #[test]
 fn the_same_from_outside_python_clean_reads_the_path_download_gives_back() {
     let read = touches(clean(), "sunspots.series.load", "disk_read");
-    assert!(read.iter().any(|t| t.artifact == "data/raw/sunspots.csv" && !t.fixed && t.by == ["sunspots.cli.run"]), "{read:#?}");
+    assert!(read.iter().any(|t| t.artifact == "data/raw/sunspots.csv" && !t.fixed && t.by == by(["sunspots.cli.run"])), "{read:#?}");
 }
 
 /// The directory the clean functions make for their file is the directory of the path the
@@ -262,7 +267,7 @@ fn the_same_from_outside_python_clean_reads_the_path_download_gives_back() {
 fn the_same_from_outside_python_clean_makes_the_parent_of_the_path_handed_in_as_part_of_writing_it() {
     for (f, dir) in [("sunspots.download.download", "data/raw/"), ("sunspots.plot.Plot.save", "figures/")] {
         let ts = touches(clean(), f, "disk_write");
-        let route: Vec<_> = ts.iter().filter(|t| t.by == ["sunspots.cli.run"]).collect();
+        let route: Vec<_> = ts.iter().filter(|t| t.by == by(["sunspots.cli.run"])).collect();
         assert!(route.iter().all(|t| t.op != "mkdir"), "{f}: {ts:#?}");
         assert!(route.iter().any(|t| t.artifact.starts_with(dir)), "{f}: {ts:#?}");
     }
@@ -273,7 +278,7 @@ fn the_same_from_outside_python_clean_makes_the_parent_of_the_path_handed_in_as_
 #[test]
 fn the_same_from_outside_typescript_reads_the_path_download_gives_back() {
     let read = touches(typescript(), "sunspots.series.load", "disk_read");
-    assert!(read.iter().any(|t| t.artifact == "data/raw/sunspots.csv" && !t.fixed && t.by == ["sunspots.cli.main"]), "{read:#?}");
+    assert!(read.iter().any(|t| t.artifact == "data/raw/sunspots.csv" && !t.fixed && t.by == by(["sunspots.cli.main"])), "{read:#?}");
 }
 
 /// The directory the TypeScript functions make for their file is the directory of the path the
@@ -282,7 +287,7 @@ fn the_same_from_outside_typescript_reads_the_path_download_gives_back() {
 fn the_same_from_outside_typescript_makes_the_parent_of_the_path_handed_in_as_part_of_writing_it() {
     for (f, dir) in [("sunspots.download.download", "data/raw/"), ("sunspots.plot.saveSvg", "figures/")] {
         let ts = touches(typescript(), f, "disk_write");
-        let route: Vec<_> = ts.iter().filter(|t| t.by == ["sunspots.cli.main"]).collect();
+        let route: Vec<_> = ts.iter().filter(|t| t.by == by(["sunspots.cli.main"])).collect();
         assert!(route.iter().all(|t| t.op != "mkdir"), "{f}: {ts:#?}");
         assert!(route.iter().any(|t| t.artifact.starts_with(dir)), "{f}: {ts:#?}");
     }
@@ -302,7 +307,7 @@ fn the_same_from_outside_rust_clean() {
 #[test]
 fn the_same_from_outside_rust_clean_reads_the_path_download_gives_back() {
     let read = touches(rust_clean(), "sunspots.series.load", "disk_read");
-    assert!(read.iter().any(|t| t.artifact == "data/raw/sunspots.csv" && !t.fixed && t.by == ["sunspots.main.main"]), "{read:#?}");
+    assert!(read.iter().any(|t| t.artifact == "data/raw/sunspots.csv" && !t.fixed && t.by == by(["sunspots.main.main"])), "{read:#?}");
 }
 
 /// The directory the clean Rust functions make for their file is the directory of the path
@@ -312,7 +317,7 @@ fn the_same_from_outside_rust_clean_reads_the_path_download_gives_back() {
 fn the_same_from_outside_rust_clean_makes_the_parent_of_the_path_handed_in_as_part_of_writing_it() {
     for (f, dir) in [("sunspots.download.download", "data/raw/"), ("sunspots.plot.Plot.save", "figures/")] {
         let ts = touches(rust_clean(), f, "disk_write");
-        let route: Vec<_> = ts.iter().filter(|t| t.by == ["sunspots.main.main"]).collect();
+        let route: Vec<_> = ts.iter().filter(|t| t.by == by(["sunspots.main.main"])).collect();
         assert!(route.iter().all(|t| t.op != "create_dir_all"), "{f}: {ts:#?}");
         assert!(route.iter().any(|t| t.artifact.starts_with(dir)), "{f}: {ts:#?}");
     }
@@ -370,13 +375,16 @@ fn python_clean_the_places_are_made_whole_at_the_entry() {
     assert_eq!(found(c, "places"), Vec::<String>::new());
     let at_the_entry = |f: &str, kind: &str, artifact: &str| {
         let ts = touches(c, f, kind);
-        assert!(ts.iter().any(|t| t.artifact == artifact && !t.fixed && t.by == ["sunspots.cli.run"]), "{f} {kind} {artifact}: {ts:#?}");
+        assert!(
+            ts.iter().any(|t| t.artifact == artifact && !t.fixed && t.by == by(["sunspots.cli.run"])),
+            "{f} {kind} {artifact}: {ts:#?}"
+        );
     };
     at_the_entry("sunspots.download.download", "net", "www.sidc.be");
     at_the_entry("sunspots.download.download", "disk_write", "data/raw/sunspots.csv");
     at_the_entry("sunspots.plot.Plot.save", "disk_write", "figures/sunspots.png");
     // the read is made whole at the entry too, though Atlas has only its format
-    assert!(touches(c, "sunspots.series.load", "disk_read").iter().all(|t| !t.fixed && t.by == ["sunspots.cli.run"]));
+    assert!(touches(c, "sunspots.series.load", "disk_read").iter().all(|t| !t.fixed && t.by == by(["sunspots.cli.run"])));
 }
 
 // ---------- Python, sloppy ----------
@@ -638,7 +646,10 @@ fn typescript_the_places_are_made_whole_at_the_entry() {
         ("sunspots.plot.saveSvg", "disk_write", "figures/sunspots.svg"),
     ] {
         let ts = touches(t, f, kind);
-        assert!(ts.iter().any(|x| x.artifact == artifact && !x.fixed && x.by == ["sunspots.cli.main"]), "{f} {kind} {artifact}: {ts:#?}");
+        assert!(
+            ts.iter().any(|x| x.artifact == artifact && !x.fixed && x.by == by(["sunspots.cli.main"])),
+            "{f} {kind} {artifact}: {ts:#?}"
+        );
     }
 }
 
@@ -745,7 +756,10 @@ fn rust_clean_the_places_are_made_whole_at_main() {
         ("sunspots.plot.Plot.save", "disk_write", "figures/sunspots.png"),
     ] {
         let ts = touches(r, f, kind);
-        assert!(ts.iter().any(|t| t.artifact == artifact && !t.fixed && t.by == ["sunspots.main.main"]), "{f} {kind} {artifact}: {ts:#?}");
+        assert!(
+            ts.iter().any(|t| t.artifact == artifact && !t.fixed && t.by == by(["sunspots.main.main"])),
+            "{f} {kind} {artifact}: {ts:#?}"
+        );
     }
 }
 
@@ -833,7 +847,7 @@ fn the_port_saves_without_returning_a_destination() {
             .collect();
         assert_eq!(writes.len(), 1, "{}: save writes one figure", p.language);
         let (touch, drawn) = writes[0];
-        assert_eq!(touch.by, [p.run], "{}: the entry supplies the destination", p.language);
+        assert_eq!(touch.by, by([p.run]), "{}: the entry supplies the destination", p.language);
         assert_eq!(drawn.side, atlas_engine::flow::Side::Out);
         assert_eq!(drawn.place.id, format!("w:File:{}", touch.artifact));
         assert!(outside(p.g, p.run).contains(&("disk_write".into(), touch.artifact.clone())));
@@ -986,7 +1000,7 @@ fn the_port_reaches_the_raw_file_and_the_figure_through_its_options() {
             .into_iter()
             .flat_map(|(step, f)| {
                 node(p.g, f).touches.iter().filter(named).map(move |t| {
-                    (step, t.kind_name().to_string(), any_format(&t.artifact), t.fixed, t.by == [p.run] && t.users_of.is_empty())
+                    (step, t.kind_name().to_string(), any_format(&t.artifact), t.fixed, t.by == by([p.run]) && t.users_of.is_empty())
                 })
             })
             .collect();

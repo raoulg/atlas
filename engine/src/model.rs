@@ -919,9 +919,10 @@ pub struct Touch {
     /// The lines of the other calls it stands for, each once: two `write_text` calls of one file,
     /// one in an arm and one after a read, are one touch that runs on both lines.
     pub also_at: Vec<u32>,
-    /// The functions whose calls hand what makes its path or statement whole, where that is not
-    /// its own function: a route shows it when it reaches one of them (`a&b`: both).
-    pub by: Vec<String>,
+    /// The callers whose calls hand what makes its path or statement whole, where that is not its
+    /// own function: a disjunction of conjunctions, so a route shows it when it reaches every
+    /// caller of one of them (`mathematics.md`, "Who makes a path whole").
+    pub by: BTreeSet<Both>,
     /// The entries whose users hand what makes it whole: their own routes show it.
     pub users_of: Vec<String>,
     /// What the call gives goes to nothing its function hands on: it only decides a choice, goes
@@ -949,7 +950,7 @@ impl Touch {
             fixed_by: vec![],
             line: 0,
             also_at: vec![],
-            by: vec![],
+            by: BTreeSet::new(),
             users_of: vec![],
             checks: false,
             holder: String::new(),
@@ -961,7 +962,7 @@ impl Touch {
     /// them, one whole by what an entry's users hand in that entry's route.
     pub fn in_route(&self, entry: &str, reached: &dyn Fn(&str) -> bool) -> bool {
         (self.by.is_empty() && self.users_of.is_empty())
-            || self.by.iter().any(|f| f.split('&').all(reached))
+            || self.by.iter().any(|b| b.holds(reached))
             || self.users_of.iter().any(|e| e == entry)
     }
 
@@ -977,6 +978,58 @@ impl Touch {
     /// The direction as the graph's JSON writes it beside the kind.
     pub fn dir_name(&self) -> &'static str {
         self.crossing().dir_name()
+    }
+}
+
+/// Callers that make a path whole together: a conjunction, so a set (`a∧b = b∧a`, `a∧a = a`).
+/// The graph's JSON writes it `a&b`, its members in order.
+#[derive(Clone, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct Both(pub BTreeSet<String>);
+
+impl Both {
+    /// The conjunction of one caller.
+    pub fn one(f: impl Into<String>) -> Both {
+        Both(BTreeSet::from([f.into()]))
+    }
+
+    /// The callers, in order.
+    pub fn members(&self) -> impl Iterator<Item = &str> {
+        self.0.iter().map(String::as_str)
+    }
+
+    /// The one caller, when the conjunction has one.
+    pub fn single(&self) -> Option<&str> {
+        match self.0.len() {
+            1 => self.members().next(),
+            _ => None,
+        }
+    }
+
+    /// Whether a route that reaches `reached` reaches every caller.
+    pub fn holds(&self, reached: &dyn Fn(&str) -> bool) -> bool {
+        self.members().all(reached)
+    }
+
+    /// The conjunction of what `f` makes of each caller.
+    pub fn map(&self, f: impl FnMut(&str) -> String) -> Both {
+        Both(self.members().map(f).collect())
+    }
+
+    /// The conjunction the graph's JSON writes `a&b`.
+    pub fn parse(s: &str) -> Both {
+        Both(s.split('&').map(str::to_string).collect())
+    }
+}
+
+impl std::fmt::Display for Both {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.members().collect::<Vec<_>>().join("&"))
+    }
+}
+
+impl FromIterator<String> for Both {
+    fn from_iter<I: IntoIterator<Item = String>>(xs: I) -> Both {
+        Both(xs.into_iter().collect())
     }
 }
 
@@ -1030,7 +1083,11 @@ impl From<Touch> for TouchJson {
             fixed_by: t.fixed_by,
             line: t.line,
             also_at: t.also_at,
-            by: t.by,
+            by: {
+                let mut by: Vec<String> = t.by.iter().map(Both::to_string).collect();
+                by.sort();
+                by
+            },
             users_of: t.users_of,
             checks: t.checks,
             holder: t.holder,
@@ -1055,7 +1112,7 @@ impl TryFrom<TouchJson> for Touch {
             fixed_by: j.fixed_by,
             line: j.line,
             also_at: j.also_at,
-            by: j.by,
+            by: j.by.iter().map(|b| Both::parse(b)).collect(),
             users_of: j.users_of,
             checks: j.checks,
             holder: j.holder,
@@ -1449,9 +1506,7 @@ impl Graph {
                 held(&mut t.on);
             }
             for t in n.touches.iter_mut().chain(n.instead.iter_mut()) {
-                for f in &mut t.by {
-                    *f = f.split('&').map(to).collect::<Vec<_>>().join("&");
-                }
+                t.by = t.by.iter().map(|b| b.map(to)).collect();
                 t.users_of.iter_mut().chain(t.fixed_by.iter_mut()).for_each(&m);
                 if !t.holder.is_empty() {
                     m(&mut t.holder);
@@ -1596,5 +1651,39 @@ mod tests {
     fn a_contradiction_keeps_a_class_before_its_ancestors_and_a_cycle_ends() {
         assert_eq!(mro("K", &[("K", &["A", "B"]), ("B", &["A"])]), ["K", "B", "A"]);
         assert_eq!(mro("A", &[("A", &["B"]), ("B", &["A"])]), ["A", "B"]);
+    }
+
+    /// Callers, conjunctions of them as the graph's JSON writes them, and the same conjunctions
+    /// with the members of each and the alternatives in another order.
+    fn written_twice() -> impl proptest::strategy::Strategy<Value = (Vec<String>, Vec<String>)> {
+        use proptest::prelude::*;
+        let both = proptest::collection::vec("[a-e](\\.[a-c])?", 1..4);
+        proptest::collection::vec(both, 0..4)
+            .prop_flat_map(|alts| {
+                let shuffled: Vec<_> = alts.iter().map(|b| Just(b.clone()).prop_shuffle()).collect();
+                (Just(alts), shuffled.prop_shuffle())
+            })
+            .prop_map(|(alts, shuffled)| {
+                let written = |xs: &[Vec<String>]| xs.iter().map(|b| b.join("&")).collect::<Vec<_>>();
+                (written(&alts), written(&shuffled))
+            })
+    }
+
+    proptest::proptest! {
+        /// Law: who makes a path whole is a disjunction of conjunctions, a set of sets
+        /// (`a∧b = b∧a`, `a∨b = b∨a`). Writing the members of each conjunction and the alternatives
+        /// in another order gives the same touch, the same JSON, and the same routes it runs in.
+        #[test]
+        fn the_order_callers_are_written_in_says_nothing(
+            (by, again) in written_twice(),
+            reached in proptest::collection::btree_set("[a-e](\\.[a-c])?", 0..8),
+        ) {
+            let touch = |by: Vec<String>| Touch::try_from(TouchJson { kind: "disk_read".into(), by, ..TouchJson::default() }).unwrap();
+            let (t, u) = (touch(by), touch(again));
+            proptest::prop_assert_eq!(&t, &u);
+            proptest::prop_assert_eq!(serde_json::to_string(&t).unwrap(), serde_json::to_string(&u).unwrap());
+            let reached = |f: &str| reached.contains(f);
+            proptest::prop_assert_eq!(t.in_route("a", &reached), u.in_route("a", &reached));
+        }
     }
 }

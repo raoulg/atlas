@@ -6,7 +6,13 @@ use std::process::Command;
 
 use atlas_engine::decide::{prophetize, Prophetized};
 use atlas_engine::revelation::{revelation, Stand};
-use atlas_engine::{analyze, flow, Graph, Options};
+use atlas_engine::{analyze, flow, Both, Graph, Options};
+
+/// Callers each of whom makes a path whole alone, the disjunction `a ∨ b` as `Touch::by` holds it.
+#[allow(dead_code)]
+pub fn by<const N: usize>(callers: [&str; N]) -> BTreeSet<Both> {
+    callers.into_iter().map(Both::one).collect()
+}
 
 /// A pair below `engine/tests/pairs`: the same program once as good practice writes it and once
 /// with the usual shortcut.
@@ -406,7 +412,7 @@ pub fn a_closures_parameter_is_what_its_calls_hand_it(language: &str, functions:
     let read = |g: &Graph, f: &str| -> BTreeSet<String> {
         g.nodes
             .iter()
-            .flat_map(|n| n.touches.iter().filter(move |t| n.id == f || t.by.iter().any(|b| b == f)))
+            .flat_map(|n| n.touches.iter().filter(move |t| n.id == f || t.by.contains(&Both::one(f))))
             .filter(|t| t.kind_name() == "disk_read")
             .map(|t| t.artifact.clone())
             .collect()

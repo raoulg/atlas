@@ -19,7 +19,7 @@ use std::sync::OnceLock;
 
 use atlas_engine::flow::{self, Side, Step};
 use atlas_engine::principles::{check, Finding};
-use atlas_engine::{analyze, EdgeKind, EntryKind, Graph, NodeKind, Options, Touch, World};
+use atlas_engine::{analyze, Both, EdgeKind, EntryKind, Graph, NodeKind, Options, Touch, World};
 
 fn side(name: &str) -> Graph {
     analyze(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/pairs/python").join(name), &Options::default()).unwrap()
@@ -198,7 +198,7 @@ fn places_where_the_program_starts_names_the_config_file() {
     let (c, s) = (clean(), shortcut());
     assert!(found(c, "places").is_empty());
     let read = touches(c, "harvest.settings.load_settings", "disk_read");
-    assert!(read.iter().any(|t| t.artifact == "harvest.toml" && !t.fixed && t.by.contains(&"harvest.cli.collect".to_string())), "{read:?}");
+    assert!(read.iter().any(|t| t.artifact == "harvest.toml" && !t.fixed && t.by.contains(&Both::one("harvest.cli.collect"))), "{read:?}");
     // the shortcut's read is in the graph, at the file it names
     let read = touches(s, "harvest.settings.load_settings", "disk_read");
     assert!(read.iter().any(|t| t.artifact == "harvest.json" && t.by.is_empty()), "{read:?}");
@@ -416,7 +416,10 @@ fn a_place_carries_a_what_the_service_url() {
 #[test]
 fn a_place_carries_a_what_the_url_the_entry_hands_the_client() {
     let net = touches(clean(), "harvest.client.WeatherClient.latest", "net");
-    assert!(net.iter().any(|t| t.artifact == "api.weather.example" && t.by.iter().any(|b| b.contains("harvest.cli.collect"))), "{net:?}");
+    assert!(
+        net.iter().any(|t| t.artifact == "api.weather.example" && t.by.iter().any(|b| b.members().any(|f| f == "harvest.cli.collect"))),
+        "{net:?}"
+    );
 }
 
 /// Every place carries a what, and settings have a type. Python's clean settings are a frozen
@@ -2507,7 +2510,7 @@ fn diamond_a_call_through_a_class_runs_its_method() {
     assert!(steps.iter().all(|(_, alts)| alts.is_empty()), "no step may run another in its place: {steps:?}");
     assert!(ran(g, headlines).contains("news.sources.Cached.read") && ran(g, headlines).contains("news.store.Store.get"));
     let read = touches(g, "news.store.Store.get", "disk_read");
-    assert!(read.iter().any(|t| t.what == "{cache}/{url}" && t.by.iter().any(|b| b == headlines)), "{read:?}");
+    assert!(read.iter().any(|t| t.what == "{cache}/{url}" && t.by.contains(&Both::one(headlines))), "{read:?}");
     let bodies = atlas_engine::flow::bodies(&news().clean);
     let read = &bodies[&atlas_engine::flow::key("news.sources.Feed.read", "news.sources.Feed")];
     let ran: Vec<(&str, &str, bool)> = read.steps().iter().map(|s| (s.to.as_str(), s.on.as_str(), s.named)).collect();
@@ -2600,7 +2603,10 @@ fn diamond_the_file_a_feed_reads_is_named_where_it_is_built() {
     for (side, g) in [("clean", &news().clean), ("shortcut", &news().shortcut)] {
         assert!(ran(g, "news.read.headlines").contains("news.store.Store.get"), "{side}");
         let read = touches(g, "news.store.Store.get", "disk_read");
-        assert!(read.iter().any(|t| t.what.starts_with("{cache}/") && t.by.iter().any(|b| b == "news.read.headlines")), "{side}: {read:?}");
+        assert!(
+            read.iter().any(|t| t.what.starts_with("{cache}/") && t.by.contains(&Both::one("news.read.headlines"))),
+            "{side}: {read:?}"
+        );
     }
 }
 

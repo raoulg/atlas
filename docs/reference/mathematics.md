@@ -234,6 +234,24 @@ only the first draws the group, since only its code says the files belong togeth
 `flow.rs` (`Touch::place`, its coarse place), `index.html` (the storage quotient); the pair
 `workbench`.
 
+### Who makes a path whole: a monotone formula
+**What.** A monotone Boolean formula over a set of atoms, in disjunctive normal form: a disjunction
+of conjunctions, with no negation. A conjunction is a set of atoms (`a∧b = b∧a`, `a∧a = a`) and the
+disjunction a set of conjunctions (`x∨y = y∨x`), so the formula is a set of sets. It holds at an
+assignment when every atom of one of its conjunctions does. The empty conjunction is true: the unit
+of `∧`.
+**In Atlas.** A touch whose path its callers make whole runs in a route only where they are on the
+calls (pushforward, rule 5). The atoms are callers, an atom holds where the route reaches that
+caller, and `Touch::by` is the formula: each conjunction a set of callers that make the path whole
+together (one set up the object whose field holds the root, another handed the rest), any
+conjunction enough. The order the code is read in says nothing: `a&b` and `b&a` are one
+conjunction, and two alternatives in either order one formula. A role one member plays is no part
+of the set: the caller a request is from is kept beside it, in `Whole::In { asks, with }`, where
+the request is drawn. The graph's JSON writes each conjunction `a&b`, its members in order, and the
+alternatives in order, and reads them back once.
+**Where.** `model.rs` (`Both`, `Touch::by`, `Touch::in_route`), `paths.rs` (`Whole`,
+`Callers::of`, `place_calls`).
+
 ### Yoneda: what changed
 **What.** An object is determined up to isomorphism by the arrows into it, `Hom(−, A)`, and
 dually by the arrows out of it.

@@ -1,8 +1,8 @@
-use std::collections::HashSet;
+use std::collections::{BTreeSet, HashSet};
 use std::path::PathBuf;
 
 use atlas_engine::view::{by_module, hide_private, reach_from, Compose, View};
-use atlas_engine::{analyze, EdgeKind, EntryKind, Graph, NodeKind, Options};
+use atlas_engine::{analyze, Both, EdgeKind, EntryKind, Graph, NodeKind, Options};
 
 fn fixture() -> Graph {
     let repo = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixture");
@@ -180,9 +180,9 @@ fn a_driver_says_which_way_the_data_goes() {
 #[test]
 fn an_object_holds_what_its_constructor_was_handed() {
     let g = fixture();
-    let keep: Vec<(&str, Vec<String>)> =
+    let keep: Vec<(&str, BTreeSet<Both>)> =
         g.node("fixture.store.Cache.keep").unwrap().touches.iter().map(|t| (t.artifact.as_str(), t.by.clone())).collect();
-    assert_eq!(keep, [("warm/a.txt", vec!["fixture.store.warm".to_string()])]);
+    assert_eq!(keep, [("warm/a.txt", BTreeSet::from([Both::one("fixture.store.warm")]))]);
     // a dataclass is built from its fields: `Bin(root=Path("tidy"))`
     let drop: Vec<&str> = g.node("fixture.store.Bin.drop").unwrap().touches.iter().map(|t| t.artifact.as_str()).collect();
     assert_eq!(drop, ["tidy/x.txt"]);
@@ -676,7 +676,7 @@ fn rust_is_read_by_rusts_semantics() {
 fn rust_reads_paths_as_built() {
     let g = analyze(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixture-rs"), &Options::default()).unwrap();
     let t = |id: &str| {
-        let mut out: Vec<(String, String, Vec<String>, Vec<String>)> = g
+        let mut out: Vec<(String, String, BTreeSet<Both>, Vec<String>)> = g
             .node(&format!("handed.world.{id}"))
             .unwrap()
             .touches
@@ -687,11 +687,14 @@ fn rust_reads_paths_as_built() {
         out.sort();
         out
     };
-    let here = |kind: &str, artifact: &str| (kind.to_string(), artifact.to_string(), vec![], vec![]);
-    let by = |kind: &str, artifact: &str, f: &str| (kind.to_string(), artifact.to_string(), vec![format!("handed.world.{f}")], vec![]);
-    let users = |kind: &str, f: &str| (kind.to_string(), String::new(), vec![], vec![format!("handed.world.{f}")]);
+    let here = |kind: &str, artifact: &str| (kind.to_string(), artifact.to_string(), BTreeSet::new(), vec![]);
+    let by = |kind: &str, artifact: &str, f: &str| {
+        (kind.to_string(), artifact.to_string(), BTreeSet::from([Both::one(format!("handed.world.{f}"))]), vec![])
+    };
+    let users = |kind: &str, f: &str| (kind.to_string(), String::new(), BTreeSet::new(), vec![format!("handed.world.{f}")]);
     // a file whose name is known under a directory its users hand is that name under that directory, by its name
-    let under = |kind: &str, file: &str, f: &str| (kind.to_string(), format!("{{dir}}/{file}"), vec![], vec![format!("handed.world.{f}")]);
+    let under =
+        |kind: &str, file: &str, f: &str| (kind.to_string(), format!("{{dir}}/{file}"), BTreeSet::new(), vec![format!("handed.world.{f}")]);
     assert_eq!(
         t("report"),
         [by("disk_write", "site/report.html", "publish"), under("disk_write", "report.html", "report")],
