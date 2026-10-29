@@ -48,10 +48,11 @@ side Disk(pick.path) left
 side Screen right
 
 # `draw_all` calls `draw` on each Shape it is handed: the loop is a step of its own, which takes the shapes and gives
-# each `s` (#103), and the call runs one of the overrides on it, a choice between them.
+# each `s` (#103), and the call runs on it the `draw` its class runs, a choice between them: a declared `Shape` may be a
+# `Shape`, a `Circle` or a `Square`, so the call is one of three, `Shape.draw` among them (#292).
 route counter.draw_all
 step draw_all/for s in shapes
-step draw_all/Shape.draw
+step draw_all/Shape.draw one of 3
 step draw_all/Shape.draw/Circle.draw
 step draw_all/Shape.draw/Square.draw
 
