@@ -1,0 +1,34 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 940 346" role="img" aria-label="Which functions a call may run, and what follows from it, in 0.69.2 and 0.70.0, on the through and built pairs where Boxed overrides Section.show">
+  <g style="font-family:var(--sans);font-size:15px;fill:var(--ink-2)">
+    <text x="20" y="34">a call, and what it may run</text>
+    <text x="520" y="34" style="text-anchor:middle">0.69.2</text>
+    <text x="780" y="34" style="text-anchor:middle;fill:var(--ink)">0.70.0</text>
+  </g>
+  <g style="stroke:var(--line);stroke-width:1">
+    <line x1="20" y1="52" x2="920" y2="52"/>
+    <line x1="20" y1="98" x2="920" y2="98"/>
+    <line x1="20" y1="144" x2="920" y2="144"/>
+    <line x1="20" y1="190" x2="920" y2="190"/>
+    <line x1="20" y1="236" x2="920" y2="236"/>
+    <line x1="20" y1="282" x2="920" y2="282"/>
+    <line x1="20" y1="328" x2="920" y2="328"/>
+  </g>
+  <text x="20" y="82" style="font-family:var(--mono);font-size:13px;fill:var(--ink)">Section.show(section, heading)</text>
+  <text x="520" y="82" style="font-family:var(--mono);font-size:13px;text-anchor:middle;fill:var(--ink-3)">runs Section.show</text>
+  <text x="780" y="82" style="font-family:var(--mono);font-size:13px;text-anchor:middle;fill:var(--accent);font-weight:600">runs Section.show</text>
+  <text x="20" y="128" style="font-family:var(--mono);font-size:13px;fill:var(--ink)">  … Boxed.show reads heading</text>
+  <text x="520" y="128" style="font-family:var(--mono);font-size:13px;text-anchor:middle;fill:var(--ink-3)">yes, from nowhere</text>
+  <text x="780" y="128" style="font-family:var(--mono);font-size:13px;text-anchor:middle;fill:var(--accent);font-weight:600">no</text>
+  <text x="20" y="174" style="font-family:var(--mono);font-size:13px;fill:var(--ink)">Block().show(..), built at the call</text>
+  <text x="520" y="174" style="font-family:var(--mono);font-size:13px;text-anchor:middle;fill:var(--ink-3)">may run Boxed.show</text>
+  <text x="780" y="174" style="font-family:var(--mono);font-size:13px;text-anchor:middle;fill:var(--accent);font-weight:600">runs Block.show</text>
+  <text x="20" y="220" style="font-family:var(--mono);font-size:13px;fill:var(--ink)">  … hands on Boxed’s ValueError</text>
+  <text x="520" y="220" style="font-family:var(--mono);font-size:13px;text-anchor:middle;fill:var(--ink-3)">yes</text>
+  <text x="780" y="220" style="font-family:var(--mono);font-size:13px;text-anchor:middle;fill:var(--accent);font-weight:600">no</text>
+  <text x="20" y="266" style="font-family:var(--mono);font-size:13px;fill:var(--ink)">section.show(..), section: Section</text>
+  <text x="520" y="266" style="font-family:var(--mono);font-size:13px;text-anchor:middle;fill:var(--ink-3)">runs Block.show</text>
+  <text x="780" y="266" style="font-family:var(--mono);font-size:13px;text-anchor:middle;fill:var(--accent);font-weight:600">may run Boxed.show</text>
+  <text x="20" y="312" style="font-family:var(--mono);font-size:13px;fill:var(--ink)">  … hands on Boxed’s ValueError</text>
+  <text x="520" y="312" style="font-family:var(--mono);font-size:13px;text-anchor:middle;fill:var(--ink-3)">no</text>
+  <text x="780" y="312" style="font-family:var(--mono);font-size:13px;text-anchor:middle;fill:var(--accent);font-weight:600">yes</text>
+</svg>
