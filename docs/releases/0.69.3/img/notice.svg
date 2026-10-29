@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 920 190" role="img" aria-label="A terminal: atlas check prints, once a day, that from Atlas 0.70 the command is atlas-code, what needs the new name, and the alias that keeps the short one, before its own output">
+  <rect x="1" y="1" width="918" height="188" rx="6" style="fill:var(--panel);stroke:var(--line)"/>
+  <g style="font-family:var(--mono);font-size:13.5px">
+    <text x="22" y="36" style="fill:var(--ink-3)">$ <tspan style="fill:var(--ink)">atlas check .</tspan></text>
+    <text x="22" y="68" style="fill:var(--accent)">Note: from Atlas 0.70 this command is `atlas-code`, since other tools install an `atlas` too.</text>
+    <text x="22" y="90" style="fill:var(--accent)">Scripts and MCP registrations that run `atlas` need the new name; `alias atlas=atlas-code` keeps the short one.</text>
+    <text x="22" y="112" style="fill:var(--accent)">https://github.com/raoulg/atlas/issues/281</text>
+    <text x="22" y="144" style="fill:var(--ink)">board · 0 questions</text>
+    <text x="22" y="172" style="fill:var(--ink-3)">… once a day, at a terminal; ATLAS_NO_UPDATE_CHECK=1 silences it</text>
+  </g>
+</svg>
