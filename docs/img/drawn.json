@@ -1514,8 +1514,28 @@
     "Disk(Environment.real.path)"
    ],
    [
+    "w:Disk:Repo.resolved.path",
+    "Disk(Repo.resolved.path)"
+   ],
+   [
     "w:Disk:in",
     "from disk"
+   ],
+   [
+    "w:Global:ruff_db.panic.CAPTURE_PANIC_INFO",
+    "from Global(ruff_db.panic.CAPTURE_PANIC_INFO) \u21c4the same place, on the other side"
+   ],
+   [
+    "w:Global:ruff_db.panic.CAPTURE_PANIC_INFO \u21c4",
+    "into Global(ruff_db.panic.CAPTURE_PANIC_INFO) \u21c4the same place, on the other side"
+   ],
+   [
+    "w:Global:ruff_db.panic.LAST_BACKTRACE",
+    "Global(ruff_db.panic.LAST_BACKTRACE)"
+   ],
+   [
+    "w:Screen",
+    "Screen"
    ],
    [
     "w:Type:atlas-engine.environment.Environment",
@@ -1546,6 +1566,18 @@
    [
     "n:atlas-engine.analyze/1",
     "t:atlas-engine.model.Graph@n:atlas-engine.analyze/1"
+   ],
+   [
+    "n:atlas-engine.analyze/1",
+    "w:Global:ruff_db.panic.CAPTURE_PANIC_INFO \u21c4"
+   ],
+   [
+    "n:atlas-engine.analyze/1",
+    "w:Global:ruff_db.panic.LAST_BACKTRACE"
+   ],
+   [
+    "n:atlas-engine.analyze/1",
+    "w:Screen"
    ],
    [
     "o:atlas-engine.analyze",
@@ -1588,7 +1620,15 @@
     "n:atlas-engine.analyze/1"
    ],
    [
+    "w:Disk:Repo.resolved.path",
+    "n:atlas-engine.analyze/1"
+   ],
+   [
     "w:Disk:in",
+    "n:atlas-engine.analyze/1"
+   ],
+   [
+    "w:Global:ruff_db.panic.CAPTURE_PANIC_INFO",
     "n:atlas-engine.analyze/1"
    ],
    [

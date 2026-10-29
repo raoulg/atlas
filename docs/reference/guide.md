@@ -24,7 +24,9 @@ Read it from left to right:
   bar is a value of a type in memory: `Options`, `Repo`, `Graph`. Arrows run in
   call order.
 - **On the right** is what the route leaves: the places it writes, and those it reads only to
-  check or count what it wrote there. A place one step writes and a later step reads stands
+  check or count what it wrote there. `analyze` leaves little: the `Screen`, where it says which file
+  it skipped or could not type, and the globals of ruff_db's panic handler, which it sets to catch a
+  panic inside ty, so that one file's fault leaves that file untyped and the rest is read. A place one step writes and a later step reads stands
   between the two, inside the step that runs both, as the value between two arrows does. A
   place the route uses and also changes stands twice, `from X ⇄` on the left and `into X ⇄` on
   the right; ⇄ goes from the one to the other. A line marked `?` goes to a place the code does
