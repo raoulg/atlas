@@ -12,14 +12,14 @@
 
 mod common;
 
-use common::Pair;
+use common::{by, Pair};
 
 use std::collections::BTreeSet;
 use std::path::PathBuf;
 use std::sync::OnceLock;
 
 use atlas_engine::principles::{check, Finding};
-use atlas_engine::{analyze, flow, EdgeKind, Graph, Node, NodeKind, Options, Touch};
+use atlas_engine::{analyze, flow, Both, EdgeKind, Graph, Node, NodeKind, Options, Touch};
 
 fn side(name: &str) -> Graph {
     let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/pairs/typescript").join(name);
@@ -74,7 +74,7 @@ fn unseen<'g>(g: &'g Graph, id: &str) -> Vec<&'g str> {
 }
 
 /// The places a function's touches of `kind` name, with the functions that make them whole.
-fn places(g: &Graph, id: &str, kind: &str) -> Vec<(String, Vec<String>)> {
+fn places(g: &Graph, id: &str, kind: &str) -> Vec<(String, BTreeSet<Both>)> {
     touches(g, id, kind).into_iter().map(|t| (t.artifact.clone(), t.by.clone())).collect()
 }
 
@@ -295,13 +295,10 @@ fn composition_a_method_on_what_a_guard_narrowed_is_the_language_s() {
 #[test]
 fn places_are_decided_where_the_program_starts() {
     let (c, s) = (clean(), shortcut());
-    assert_eq!(
-        places(c, "rates.file.FileRates.latest", "disk_read"),
-        [("data/rates.json".to_string(), vec!["expenses.cli.main".to_string()])]
-    );
+    assert_eq!(places(c, "rates.file.FileRates.latest", "disk_read"), [("data/rates.json".to_string(), by(["expenses.cli.main"]))]);
     assert_eq!(
         places(c, "config.loadConfig", "disk_read").iter().find(|(a, _)| !a.is_empty()).map(|(_, by)| by.clone()),
-        Some(vec!["expenses.server".to_string(), "expenses.cli.main".to_string()])
+        Some(by(["expenses.server", "expenses.cli.main"]))
     );
     assert!(asked_anywhere(c, "places").is_empty(), "{:?}", asked_anywhere(c, "places"));
     // the shortcut's reads and writes are still there, made whole in the library itself
@@ -1196,9 +1193,9 @@ fn changes_a_call_gives_anew_what_it_changes_of_what_it_is_handed() {
 #[test]
 fn changes_a_request_through_a_client_a_field_holds_reaches_the_web() {
     let c = ledger("clean");
-    let sent: Vec<(&str, &str, &[String])> =
-        node(&c, "ledger.remove").touches.iter().map(|t| (t.kind_name(), t.op.as_str(), t.by.as_slice())).collect();
-    assert_eq!(sent, [("net", "delete", ["ledger.ledger.main".to_string()].as_slice())]);
+    let sent: Vec<(&str, &str, &BTreeSet<Both>)> =
+        node(&c, "ledger.remove").touches.iter().map(|t| (t.kind_name(), t.op.as_str(), &t.by)).collect();
+    assert_eq!(sent, [("net", "delete", &by(["ledger.ledger.main"]))]);
 }
 
 // ---------- layers: the package quotient the picture draws ----------
@@ -1466,13 +1463,13 @@ fn diamond_a_feed_hands_its_arguments_to_the_constructor_it_runs() {
     for side in ["clean", "shortcut"] {
         let g = &news(side);
         let headlines = format!("{}.read.headlines", g.root);
-        let made = |f: &str, kind: &str| -> Vec<(String, Vec<String>)> {
+        let made = |f: &str, kind: &str| -> Vec<(String, BTreeSet<Both>)> {
             touches(g, f, kind).iter().map(|t| (t.what.clone(), t.by.clone())).collect()
         };
         let fetched = made("sources.Source.read", "net");
-        assert!(fetched.iter().any(|(_, by)| by.contains(&headlines)), "{side}: {fetched:?}");
+        assert!(fetched.iter().any(|(_, by)| by.contains(&Both::one(&headlines))), "{side}: {fetched:?}");
         let read = made("store.Store.get", "disk_read");
-        let in_headlines = |by: &[String]| by.iter().any(|b| b.split('&').any(|f| f == headlines));
+        let in_headlines = |by: &BTreeSet<Both>| by.iter().any(|b| b.members().any(|f| f == headlines));
         assert!(read.iter().any(|(what, by)| what.starts_with("{cache}/") && in_headlines(by)), "{side}: {read:?}");
         assert!(edge(g, EdgeKind::Calls, "sources.Cached.constructor", "sources.Source.constructor"), "{side}");
         assert!(findings(g).is_empty(), "{side}: {:?}", findings(g).iter().map(|f| format!("{} {}", f.node, f.what)).collect::<Vec<_>>());
@@ -1528,8 +1525,8 @@ fn diamond_the_name_of_a_feed_s_file_is_its_url() {
     for side in ["clean", "shortcut"] {
         let g = news(side);
         let headlines = format!("{}.read.headlines", g.root);
-        let read = touches(&g, "store.Store.get", "disk_read");
-        assert!(read.iter().any(|t| t.what == "{cache}/{url}" && t.by.contains(&headlines)), "{side}: {read:?}");
+        let (read, (route, _)) = (touches(&g, "store.Store.get", "disk_read"), route_runs(&g, &headlines));
+        assert!(read.iter().any(|t| t.what == "{cache}/{url}" && t.in_route(&headlines, &|f| route.contains(f))), "{side}: {read:?}");
     }
 }
 

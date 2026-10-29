@@ -12,7 +12,7 @@
 
 mod common;
 
-use common::Pair;
+use common::{by, Pair};
 
 use std::collections::BTreeSet;
 use std::path::PathBuf;
@@ -257,14 +257,14 @@ fn places_where_data_lives_is_decided_where_the_program_starts() {
     let c = clean();
     assert_eq!(found(c, "places"), Vec::<String>::new());
     let settings = touches(c, "spend.config.Config.load", "disk_read");
-    assert!(settings.iter().any(|t| t.artifact == "spend.toml" && !t.fixed && t.by == ["spend.main"]), "{settings:#?}");
+    assert!(settings.iter().any(|t| t.artifact == "spend.toml" && !t.fixed && t.by == by(["spend.main"])), "{settings:#?}");
     let report = touches(c, "spend.report.write", "disk_write");
-    assert!(report.iter().all(|t| t.artifact == "reports/" && !t.fixed && t.by == ["spend.main"]), "{report:#?}");
+    assert!(report.iter().all(|t| t.artifact == "reports/" && !t.fixed && t.by == by(["spend.main"])), "{report:#?}");
 
     // the shortcut's settings are still read, at a place made whole in the library itself
     let s = shortcut();
     let settings = touches(s, "spend.config.load", "disk_read");
-    assert!(!settings.is_empty() && settings.iter().all(|t| t.by.is_empty() && t.users_of.is_empty()), "{settings:#?}");
+    assert!(!settings.is_empty() && settings.iter().all(|t| t.by.is_empty()), "{settings:#?}");
 }
 
 /// Library code does not decide where data lives. A library function that falls back to a path of

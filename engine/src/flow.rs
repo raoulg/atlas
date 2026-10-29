@@ -14,7 +14,7 @@ use indexmap::IndexMap;
 use rustc_hash::{FxHashMap, FxHashSet};
 use serde::Serialize;
 
-use crate::model::{Db, Dir, Edge, EdgeKind, Graph, Held, Leaves, Node, NodeKind, Site, Touch, World};
+use crate::model::{Both, Db, Dir, Edge, EdgeKind, Graph, Held, Leaves, Node, NodeKind, Site, Touch, World};
 
 /// Wire the steps of every body: a call written inside another call hands it its result, under
 /// the name the body gives it or, without one, under the step's own (`#n`, unique in the graph);
@@ -802,8 +802,7 @@ fn contexts<'g>(ix: &Ix<'g>, id: &str) -> Vec<Vec<&'g str>> {
         let Some(&n) = ix.nodes.get(f) else { continue };
         for t in &n.touches {
             for by in &t.by {
-                let mut makers: Vec<&'g str> = by.split('&').filter_map(|m| ix.nodes.get_key_value(m).map(|(k, _)| *k)).collect();
-                makers.sort();
+                let makers: Vec<&'g str> = by.members().filter_map(|m| ix.nodes.get_key_value(m).map(|(k, _)| *k)).collect();
                 if !makers.is_empty() && !out.contains(&makers) {
                     out.push(makers);
                 }
@@ -1251,7 +1250,7 @@ struct Ix<'g> {
     mro: RefCell<HashMap<&'g str, Vec<&'g str>>>,
     /// What each part's language leaves its author to write, by the part's id, the first part's for a node of none.
     leaves: Vec<(&'g str, Leaves)>,
-    /// The callers a touch of each body or of what it may run is made whole by (`Touch::by`, `Touch::users_of`), by the
+    /// The callers a touch of each body or of what it may run is made whole by (`Touch::by`), by the
     /// body, by their numbers (`Ix::name`): the only functions on a chain of calls that change what it touches below them.
     consulted: RefCell<FxHashMap<(u32, u32), Rc<BTreeSet<u32>>>>,
     /// The names of bodies, classes and places, each by its number (`Ix::name`).
@@ -1364,7 +1363,7 @@ impl<'g> Ix<'g> {
             }
             let Some(&n) = self.nodes.get(f.as_str()) else { continue };
             for t in &n.touches {
-                out.extend(t.by.iter().flat_map(|b| b.split('&')).chain(t.users_of.iter().map(String::as_str)).map(|f| self.name(f)));
+                out.extend(t.by.iter().flat_map(Both::names).map(|f| self.name(f)));
             }
             for call in self.calls(k, n, &c).iter() {
                 for (t, tc) in &call.runs {
@@ -1749,7 +1748,11 @@ mod tests {
             let mut nodes = vec![worker("leaf", &[(Dir::Write, 2)], &[], vec![])];
             for i in 0..k {
                 let below = if i + 1 < k { format!("f{}", i + 1) } else { "leaf".to_string() };
-                let made = Touch { artifact: format!("out{i}/"), by: vec![format!("f{i}")], ..Touch::new(World::Disk, Some(Dir::Write)) };
+                let made = Touch {
+                    artifact: format!("out{i}/"),
+                    by: [crate::model::Both::one(format!("f{i}"))].into(),
+                    ..Touch::new(World::Disk, Some(Dir::Write))
+                };
                 nodes.push(crate::model::Node { touches: vec![made], ..worker(&format!("s{i}"), &[], &[], vec![]) });
                 nodes.push(worker(&format!("f{i}"), &[], &[(&format!("s{i}"), 3), (&below, 4)], vec![]));
             }

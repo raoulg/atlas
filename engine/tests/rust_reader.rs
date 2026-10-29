@@ -2,7 +2,9 @@
 //! holds through a pattern or a variant, the value a call gives as a receiver, what a glob brings
 //! in, and what a command line derived with clap holds.
 
-use atlas_engine::{analyze, EdgeKind, EntryKind, Graph, Options};
+use std::collections::BTreeSet;
+
+use atlas_engine::{analyze, Both, EdgeKind, EntryKind, Graph, Options};
 
 /// A crate written to a directory of its own, read, and removed.
 fn written(name: &str, files: &[(&str, &str)]) -> Graph {
@@ -20,7 +22,7 @@ fn written(name: &str, files: &[(&str, &str)]) -> Graph {
 }
 
 /// A function's touches as (kind, operation, place, the functions that make it whole).
-fn places(g: &Graph, id: &str) -> Vec<(String, String, String, Vec<String>)> {
+fn places(g: &Graph, id: &str) -> Vec<(String, String, String, BTreeSet<Both>)> {
     let mut out: Vec<_> = g
         .node(id)
         .unwrap_or_else(|| panic!("no node {id}"))
@@ -32,8 +34,8 @@ fn places(g: &Graph, id: &str) -> Vec<(String, String, String, Vec<String>)> {
     out
 }
 
-fn place(kind: &str, op: &str, artifact: &str, by: &[&str]) -> (String, String, String, Vec<String>) {
-    (kind.to_string(), op.to_string(), artifact.to_string(), by.iter().map(|b| b.to_string()).collect())
+fn place(kind: &str, op: &str, artifact: &str, by: &[&str]) -> (String, String, String, BTreeSet<Both>) {
+    (kind.to_string(), op.to_string(), artifact.to_string(), by.iter().map(|b| Both::one(*b)).collect())
 }
 
 /// Isomorphic is the same: a line written to `io::stderr()` or `io::stdout()` is shown to the human

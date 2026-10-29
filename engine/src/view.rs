@@ -11,7 +11,7 @@ use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
 
 use indexmap::IndexMap;
 
-use crate::model::{Edge, EdgeKind, Graph, Node, NodeKind, Touch};
+use crate::model::{Atom, Both, Edge, EdgeKind, Graph, Node, NodeKind, Touch};
 
 pub trait View {
     fn apply(&self, g: &Graph) -> Graph;
@@ -364,25 +364,30 @@ fn glue(lib: &Library, dropped: &HashSet<String>) -> HashMap<String, Glued> {
         for (x, at) in beyond {
             let n = lib.nodes[x];
             for t in &n.touches {
-                let mut by = vec![];
-                let mut whole = t.by.is_empty() && t.users_of.is_empty();
+                let mut by = std::collections::BTreeSet::new();
+                let mut whole = t.by.is_empty();
                 for alt in &t.by {
-                    let parts: Vec<&str> = alt.split('&').collect();
-                    if parts.iter().any(|&p| gone(p) && !within.contains(p)) {
+                    if alt.members().any(|p| gone(p) && !within.contains(p)) {
                         continue;
                     }
-                    let rest: Vec<&str> = parts.into_iter().filter(|&p| !within.contains(p) && p != f.id).collect();
-                    if rest.is_empty() {
+                    // the callers beyond the border are the border itself; an entry stays a condition
+                    let rest: Both = alt
+                        .0
+                        .iter()
+                        .filter(|a| !matches!(a, Atom::Reaches(p) if within.contains(p.as_str()) || *p == f.id))
+                        .cloned()
+                        .collect();
+                    if rest.0.is_empty() {
                         whole = true;
                         break;
                     }
-                    by.push(rest.join("&"));
+                    by.insert(rest);
                 }
-                let (by, users_of) = if whole { (vec![], vec![]) } else { (by, t.users_of.clone()) };
-                if by.is_empty() && users_of.is_empty() && !whole {
+                let by = if whole { Default::default() } else { by };
+                if by.is_empty() && !whole {
                     continue;
                 }
-                add(&mut glued.touches, Touch { line: at, by, users_of, ..t.clone() });
+                add(&mut glued.touches, Touch { line: at, by, ..t.clone() });
             }
             for t in &n.instead {
                 add(&mut glued.instead, Touch { line: at, ..t.clone() });

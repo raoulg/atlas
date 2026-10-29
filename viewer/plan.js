@@ -345,10 +345,12 @@ function reach(id, on, root = null, chain = null, alts = null) {
 }
 // a route shows the places its own calls hand: a touch whose path or statement a caller makes
 // whole, when the route reaches that caller, and under a step of it, when the caller is on the
-// calls that lead there (`path`); one an entry's users hand, in that entry's route; and a call
-// none of whose touches it runs, as the call was read. A method runs on an instance its class's
-// constructor built, before the route or in it, so a value the constructor holds (`self.path`) is
-// whole wherever a method of its class runs
+// calls that lead there (`path`); one an entry's users hand, in that entry's route; one that
+// several make whole together (`a&b`, an entry's users among them as `users_of:e`), where each
+// holds; and a call none of whose touches it runs, as the call was read. A method runs on an
+// instance its class's constructor built, before the route or in it, so a value the constructor
+// holds (`self.path`) is whole wherever a method of its class runs
+const USERS = "users_of:";
 const builtFor = (g, seen) => {
   const c = byId.get(g);
   return !!(c?.ctor && c.cls) && [...seen].some(f => { const m = byId.get(f); return m && !m.ctor && m.cls === c.cls; });
@@ -356,7 +358,7 @@ const builtFor = (g, seen) => {
 const inRoute = (t, root, path) => {
   if (!root || (!(t.by || []).length && !(t.users_of || []).length) || (t.users_of || []).includes(root)) return true;
   const seen = path || reach(root, null).nodes;
-  return (t.by || []).some(f => f.split("&").every(g => seen.has(g) || builtFor(g, seen)));
+  return (t.by || []).some(f => f.split("&").every(g => g.startsWith(USERS) ? g.slice(USERS.length) === root : seen.has(g) || builtFor(g, seen)));
 };
 function touchesIn(n, root, path) {
   const own = (n.touches || []).filter(has);
@@ -2026,7 +2028,7 @@ const cutArrows = new Map(), makerSets = new Map(), siteIds = new WeakMap();
 // the callers whose calls make a path whole for a touch the step reaches: the only ones its arrow depends on
 const pathMakers = (step, on, alts = null) => {
   const k = `${SIDE}|${step}@${on || ""}${alts ? "!" + alts : ""}`;
-  if (!makerSets.has(k)) makerSets.set(k, new Set([...reach(step, on, null, null, alts).nodes].flatMap(id => (byId.get(id)?.touches || []).flatMap(t => (t.by || []).flatMap(f => f.split("&"))))));
+  if (!makerSets.has(k)) makerSets.set(k, new Set([...reach(step, on, null, null, alts).nodes].flatMap(id => (byId.get(id)?.touches || []).flatMap(t => (t.by || []).flatMap(f => f.split("&").filter(g => !g.startsWith(USERS)))))));
   return makerSets.get(k);
 };
 let sites = 0;
