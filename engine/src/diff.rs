@@ -369,17 +369,18 @@ impl Renames {
         let m = |s: &mut String| *s = self.map(s);
         for n in &mut a.nodes {
             for t in n.touches.iter_mut().chain(n.instead.iter_mut()) {
-                // one alternative of one caller names a holder; a conjunction of several callers names none
-                let alternatives: Vec<&Both> = t.by.iter().collect();
-                let holder = match (alternatives.as_slice(), t.users_of.as_slice()) {
-                    ([b], _) => b.single(),
-                    ([], [h]) => Some(h.as_str()),
-                    _ => Some(n.id.as_str()),
+                // the value is one of the parameters of a function that makes the place whole (a
+                // caller or an entry of a condition), or of the touch's own where none does
+                let holders: Vec<&str> = match t.by.is_empty() {
+                    true => vec![n.id.as_str()],
+                    false => t.by.iter().flat_map(Both::names).collect(),
                 };
-                if let Some((old, new)) = holder.and_then(|h| owners.get(h)) {
-                    if let Some(rest) = t.what.strip_prefix(&format!("{old}.")) {
-                        t.what = format!("{new}.{rest}");
-                    }
+                let renamed = holders.iter().filter_map(|h| owners.get(*h)).find_map(|(old, new)| {
+                    let rest = t.what.strip_prefix(&format!("{old}."))?;
+                    Some(format!("{new}.{rest}"))
+                });
+                if let Some(what) = renamed {
+                    t.what = what;
                 }
             }
         }
@@ -397,7 +398,6 @@ impl Renames {
             }
             for t in n.touches.iter_mut().chain(n.instead.iter_mut()) {
                 t.by = t.by.iter().map(|b| b.map(|x| self.map(x))).collect();
-                t.users_of.iter_mut().for_each(m);
             }
         }
         for e in &mut a.edges {
@@ -963,7 +963,7 @@ impl<'g> Index<'g> {
     /// read where its callers make them whole, and those its calls make whole by what it hands
     /// them. A place a caller makes whole is the caller's arrow, not the callee's.
     fn own_touches(&self, n: &'g Node) -> Vec<&'g Touch> {
-        let own = n.touches.iter().filter(|t| t.by.is_empty() && t.users_of.is_empty()).chain(&n.instead);
+        let own = n.touches.iter().filter(|t| t.by.is_empty()).chain(&n.instead);
         own.chain(self.made.get(n.id.as_str()).into_iter().flatten().copied()).collect()
     }
 

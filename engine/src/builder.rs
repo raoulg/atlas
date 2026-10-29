@@ -238,7 +238,7 @@ impl GraphBuilder {
         let t = self.owned(id, t);
         let Some(n) = self.nodes.get_mut(id) else { return };
         if !n.instead.iter().any(|x| x.kind == t.kind && x.what == t.what && x.op == t.op && x.line == t.line) {
-            n.instead.push(Touch { n: 1, by: BTreeSet::new(), users_of: vec![], ..t });
+            n.instead.push(Touch { n: 1, by: BTreeSet::new(), ..t });
         }
     }
 
@@ -326,8 +326,7 @@ impl GraphBuilder {
                 // one call that uses what it reads makes the touch a use
                 x.checks &= t.checks;
                 // whole in its own function is whole in every route; else in the routes of each
-                let whole_here = |y: &Touch| y.by.is_empty() && y.users_of.is_empty();
-                let here = whole_here(x) || whole_here(&t);
+                let here = x.by.is_empty() || t.by.is_empty();
                 // a place is decided where any of the calls that touch it decides it
                 x.fixed |= t.fixed;
                 for f in t.fixed_by {
@@ -340,14 +339,8 @@ impl GraphBuilder {
                 }
                 if here {
                     x.by.clear();
-                    x.users_of.clear();
                 } else {
                     x.by.extend(t.by);
-                    for e in t.users_of {
-                        if !x.users_of.contains(&e) {
-                            x.users_of.push(e);
-                        }
-                    }
                 }
             }
             None => n.touches.push(Touch { n: 1, ..t }),
@@ -804,7 +797,7 @@ fn serve_data(nodes: &mut IndexMap<String, Node>) {
 /// Whether touch `t` only prepares a place that another of `all` reads or writes, in every route
 /// `t` is in: the other is in every route, or in the same ones.
 fn prepares(t: &Touch, all: &[Touch]) -> bool {
-    let along = |d: &Touch| (d.by.is_empty() && d.users_of.is_empty()) || (d.by == t.by && d.users_of == t.users_of);
+    let along = |d: &Touch| d.by.is_empty() || d.by == t.by;
     let data = |d: &&Touch| d.kind == t.kind && !d.shape() && along(d);
     match t.kind {
         World::Disk => {

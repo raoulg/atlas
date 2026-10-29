@@ -1525,8 +1525,8 @@ fn diamond_the_name_of_a_feed_s_file_is_its_url() {
     for side in ["clean", "shortcut"] {
         let g = news(side);
         let headlines = format!("{}.read.headlines", g.root);
-        let read = touches(&g, "store.Store.get", "disk_read");
-        assert!(read.iter().any(|t| t.what == "{cache}/{url}" && t.by.contains(&Both::one(&headlines))), "{side}: {read:?}");
+        let (read, (route, _)) = (touches(&g, "store.Store.get", "disk_read"), route_runs(&g, &headlines));
+        assert!(read.iter().any(|t| t.what == "{cache}/{url}" && t.in_route(&headlines, &|f| route.contains(f))), "{side}: {read:?}");
     }
 }
 

@@ -999,9 +999,11 @@ fn the_port_reaches_the_raw_file_and_the_figure_through_its_options() {
         let reached: BTreeSet<(&str, String, String, bool, bool)> = [("download", p.download), ("load", p.load), ("save", p.save)]
             .into_iter()
             .flat_map(|(step, f)| {
-                node(p.g, f).touches.iter().filter(named).map(move |t| {
-                    (step, t.kind_name().to_string(), any_format(&t.artifact), t.fixed, t.by == by([p.run]) && t.users_of.is_empty())
-                })
+                node(p.g, f)
+                    .touches
+                    .iter()
+                    .filter(named)
+                    .map(move |t| (step, t.kind_name().to_string(), any_format(&t.artifact), t.fixed, t.by == by([p.run])))
             })
             .collect();
         assert_eq!(reached, want, "{}", p.language);

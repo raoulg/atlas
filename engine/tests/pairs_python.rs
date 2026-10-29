@@ -2510,7 +2510,8 @@ fn diamond_a_call_through_a_class_runs_its_method() {
     assert!(steps.iter().all(|(_, alts)| alts.is_empty()), "no step may run another in its place: {steps:?}");
     assert!(ran(g, headlines).contains("news.sources.Cached.read") && ran(g, headlines).contains("news.store.Store.get"));
     let read = touches(g, "news.store.Store.get", "disk_read");
-    assert!(read.iter().any(|t| t.what == "{cache}/{url}" && t.by.contains(&Both::one(headlines))), "{read:?}");
+    let route = ran(g, headlines);
+    assert!(read.iter().any(|t| t.what == "{cache}/{url}" && t.in_route(headlines, &|f| route.contains(f))), "{read:?}");
     let bodies = atlas_engine::flow::bodies(&news().clean);
     let read = &bodies[&atlas_engine::flow::key("news.sources.Feed.read", "news.sources.Feed")];
     let ran: Vec<(&str, &str, bool)> = read.steps().iter().map(|s| (s.to.as_str(), s.on.as_str(), s.named)).collect();
@@ -2602,9 +2603,9 @@ fn cooperative_a_call_by_name_may_run_a_sibling_s_method() {
 fn diamond_the_file_a_feed_reads_is_named_where_it_is_built() {
     for (side, g) in [("clean", &news().clean), ("shortcut", &news().shortcut)] {
         assert!(ran(g, "news.read.headlines").contains("news.store.Store.get"), "{side}");
-        let read = touches(g, "news.store.Store.get", "disk_read");
+        let (read, route) = (touches(g, "news.store.Store.get", "disk_read"), ran(g, "news.read.headlines"));
         assert!(
-            read.iter().any(|t| t.what.starts_with("{cache}/") && t.by.contains(&Both::one("news.read.headlines"))),
+            read.iter().any(|t| t.what.starts_with("{cache}/") && t.in_route("news.read.headlines", &|f| route.contains(f))),
             "{side}: {read:?}"
         );
     }
@@ -2773,4 +2774,47 @@ fn places_a_path_a_class_builds_is_the_path_written_out() {
 #[test]
 fn places_a_parent_drops_the_last_part_of_a_path() {
     common::a_parent_drops_the_last_part_of_a_path("python", "shelf.summary.summarise", "shelf.summary.log");
+}
+
+// ---------- handing: a helper writes, under each caller, that caller's file ----------
+
+/// The handing pair (#279): `main` sets up the shelf's folder, and each of the shelf's methods
+/// names its own file in it and hands the path on, two levels of callers making it whole. The
+/// clean side writes every file through one helper, `write`; the shortcut writes each file in the
+/// method that names it. Rule 5 of the pushforward (`mathematics.md`): a place a caller makes
+/// whole is touched under a step only where that caller is on the calls that lead there, so what a
+/// step writes is the code's fact, not how the writing is factored. On both sides, under
+/// `keep_report` the route writes the report alone and under `keep_log` the log alone; the sides
+/// differ in where the writing is: one function, or each method.
+#[test]
+fn handing_a_helper_writes_under_each_caller_that_caller_s_file() {
+    let p = common::pair("handing/python");
+    let main = "shelf.cli.main";
+    // what the route writes under `step`: the touches of what the step runs, whose makers are on
+    // the calls that lead there or below it
+    let written = |g: &Graph, step: &str| -> BTreeSet<String> {
+        let below = ran(g, step);
+        let on = |f: &str| f == main || below.contains(f);
+        g.nodes
+            .iter()
+            .filter(|n| below.contains(&n.id))
+            .flat_map(|n| n.touches_in(main, &on))
+            .filter(|t| t.kind_name() == "disk_write" && !t.artifact.is_empty())
+            .map(|t| t.artifact.clone())
+            .collect()
+    };
+    for (side, g) in [("clean", &p.clean), ("shortcut", &p.shortcut)] {
+        let route = ran(g, main);
+        assert!(route.contains("shelf.store.Shelf.keep_report") && route.contains("shelf.store.Shelf.keep_log"), "{side}");
+        assert_eq!(written(g, "shelf.store.Shelf.keep_report"), BTreeSet::from(["out/report.txt".to_string()]), "{side}");
+        assert_eq!(written(g, "shelf.store.Shelf.keep_log"), BTreeSet::from(["out/log.txt".to_string()]), "{side}");
+    }
+    let writers = |g: &Graph| -> BTreeSet<String> {
+        g.nodes.iter().filter(|n| n.touches.iter().any(|t| t.kind_name() == "disk_write")).map(|n| n.id.clone()).collect()
+    };
+    assert_eq!(writers(&p.clean), BTreeSet::from(["shelf.store.write".to_string()]));
+    assert_eq!(
+        writers(&p.shortcut),
+        BTreeSet::from(["shelf.store.Shelf.keep_log".to_string(), "shelf.store.Shelf.keep_report".to_string()])
+    );
 }

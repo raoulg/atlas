@@ -15,6 +15,8 @@ use std::sync::OnceLock;
 
 use regex::Regex;
 
+use crate::model::{Atom, Both};
+
 /// A regex compiled once, at its first use.
 pub fn re(cell: &'static OnceLock<Regex>, pattern: &str) -> &'static Regex {
     cell.get_or_init(|| Regex::new(pattern).unwrap())
@@ -570,12 +572,13 @@ pub fn folders<'a>(places: impl Iterator<Item = &'a str> + Clone) -> HashSet<Str
     places.filter(|a| !a.ends_with('/') && below.contains(a)).map(str::to_string).collect()
 }
 
-/// The name of the one value `built` holds, where it is whole in `holder`, when it is one of
-/// `holder`'s parameters, by the function's owner (`GraphBuilder::owner`): the parameter a
-/// constructor takes is its class's (`Store.path`), a method's its class's and its own
-/// (`Repo.read.dir`), any other function's its own (`main.out`). Nothing when the alternatives hold more than one value,
-/// or a value with a literal part.
-fn by_value<'b>(store: &crate::builder::GraphBuilder, holder: &str, mut built: impl Iterator<Item = &'b Built>) -> Option<String> {
+/// The name of the one value `built` holds, where it is whole in `holders` (the functions of the
+/// conditions that make it whole), when it is a parameter of one of them, by that function's
+/// owner (`GraphBuilder::owner`): the parameter a constructor takes is its class's (`Store.path`),
+/// a method's its class's and its own (`Repo.read.dir`), any other function's its own
+/// (`main.out`). Nothing when the alternatives hold more than one value, or a value with a literal
+/// part, or when it is a parameter of more than one of them.
+fn by_value<'b>(store: &crate::builder::GraphBuilder, holders: &[&str], mut built: impl Iterator<Item = &'b Built>) -> Option<String> {
     let name = |b: &Built| match b.as_slice() {
         [Seg::Hole(x) | Seg::Param(x) | Seg::Held(_, x)] => Some(x.clone()),
         _ => None,
@@ -586,7 +589,8 @@ fn by_value<'b>(store: &crate::builder::GraphBuilder, holder: &str, mut built: i
     }
     // a value of one of the holder's parameters; anything else unknown (what the environment
     // says) keeps the name the code gives it
-    store.nodes.get(holder).filter(|n| n.params.iter().any(|p| !p.receiver && p.name == first))?;
+    let takes = |h: &&&str| store.nodes.get(**h).is_some_and(|n| n.params.iter().any(|p| !p.receiver && p.name == first));
+    let [holder] = holders.iter().filter(takes).collect::<Vec<_>>()[..] else { return None };
     Some(format!("{}.{first}", store.owner(holder)?))
 }
 
@@ -621,37 +625,64 @@ pub fn substitute(b: &Built, mut value: impl FnMut(&str) -> Vec<Built>) -> Vec<B
     })
 }
 
-/// Where a value built from parameters becomes whole: in a function, from what its calls hand,
-/// together with the callers that make it whole with it (where it takes two: the one that handed
-/// the rest and the one that built an object whose field holds its root); or at an entry, from
-/// what the entry's users hand it.
+/// Where a value built from parameters becomes whole: a conjunction of conditions on a route
+/// (`model::Atom`): in a function, from what its calls hand, or at an entry, from what the entry's
+/// users hand it; and where it takes several, also the others (the caller that built an object
+/// whose field holds its root, and the one that handed the rest).
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub enum Whole {
-    /// `asks` hands what is left: the part of a URL that picks the route that serves it, so the
-    /// caller a request is from. `with` are the other callers of the conjunction, never `asks`.
-    In {
-        asks: String,
-        with: BTreeSet<String>,
-    },
-    Users(String),
+pub struct Whole {
+    /// Where what is left is handed: the part of a URL that picks the route that serves it, so the
+    /// function a request is from.
+    pub asks: Atom,
+    /// The other conditions of the conjunction, never `asks`.
+    pub with: BTreeSet<Atom>,
 }
 
 impl Whole {
     /// Whole in `f` alone.
     pub fn at(f: impl Into<String>) -> Whole {
-        Whole::In { asks: f.into(), with: BTreeSet::new() }
+        Whole { asks: Atom::Reaches(f.into()), with: BTreeSet::new() }
+    }
+
+    /// Whole by what the users of entry `e` hand it.
+    pub fn users(e: impl Into<String>) -> Whole {
+        Whole { asks: Atom::Starts(e.into()), with: BTreeSet::new() }
     }
 
     /// Whether whole in `f` alone.
     fn is_at(&self, f: &str) -> bool {
-        matches!(self, Whole::In { asks, with } if asks == f && with.is_empty())
+        self.with.is_empty() && self.asks == Atom::Reaches(f.to_string())
+    }
+
+    /// Whole where both are, `self` handing what is left: the union of the conditions, with the
+    /// function a touch is in, `home`, as the unit, since every route that runs the touch reaches
+    /// it (`mathematics.md`, "Who makes a path whole").
+    fn and(self, other: &Whole, home: &str) -> Whole {
+        if self.is_at(home) {
+            return other.clone();
+        }
+        if other.is_at(home) {
+            return self;
+        }
+        let Whole { asks, mut with } = self;
+        with.extend(std::iter::once(&other.asks).chain(&other.with).cloned());
+        with.remove(&asks);
+        Whole { asks, with }
+    }
+
+    /// The conjunction a touch in `home` holds: every condition but reaching `home`; empty where
+    /// the value is whole in `home` itself.
+    fn both(&self, home: &str) -> Both {
+        let home = Atom::Reaches(home.to_string());
+        std::iter::once(&self.asks).chain(&self.with).filter(|a| **a != home).cloned().collect()
     }
 }
 
-/// What completes a value through the callers of the function it is built in: the program's
-/// calls, its families, the defaults its parameters declare, which functions are entries, and
-/// whether a value, as far as it is whole, decides where its call goes.
+/// What completes a value through the callers of the function it is built in, `home`: the
+/// program's calls, its families, the defaults its parameters declare, which functions are
+/// entries, and whether a value, as far as it is whole, decides where its call goes.
 pub struct Callers<'c, H> {
+    pub home: &'c str,
     pub calls: &'c [H],
     pub family: &'c crate::builder::Family,
     pub default: &'c dyn Fn(&str, &str) -> Vec<Built>,
@@ -710,18 +741,9 @@ impl<H: Handing> Callers<'_, H> {
                     // a value that what the object holds decides is decided where the object was built
                     let by = here.clone().or_else(|| (self.decides)(&x).then_some(object.decided_in.clone()).flatten());
                     for rest in self.of(f, &x, None, by.as_deref(), depth + 1) {
-                        // whole where both are: a route reaches the one that built the object and
-                        // the one that handed `f` the rest
-                        let w = &object.whole;
-                        let both = match (w, rest.whole) {
-                            (_, x) if x.is_at(f) => w.clone(),
-                            (Whole::In { asks: a, with: aw }, Whole::In { asks, mut with }) if !w.is_at(f) => {
-                                with.extend(std::iter::once(a).chain(aw).cloned());
-                                with.remove(&asks);
-                                Whole::In { asks, with }
-                            }
-                            (_, w2) => w2,
-                        };
+                        // whole where both are: every condition of the one that built the object and
+                        // of the one that handed `f` the rest
+                        let both = rest.whole.and(&object.whole, self.home);
                         out.push(Completion { whole: both, set_up_in: rest.set_up_in.or_else(|| Some(g.clone())), ..rest });
                         if out.len() >= COMPLETIONS {
                             return out;
@@ -774,7 +796,7 @@ impl<H: Handing> Callers<'_, H> {
         let mut out: Vec<Completion> = if (self.entry)(f) {
             substitute(b, unknown)
                 .into_iter()
-                .map(|term| Completion { whole: Whole::Users(f.to_string()), term, decided_in: here.clone(), set_up_in: None })
+                .map(|term| Completion { whole: Whole::users(f), term, decided_in: here.clone(), set_up_in: None })
                 .collect()
         } else {
             vec![]
@@ -865,7 +887,7 @@ pub fn complete<H: Handing>(
         .into_iter()
         .map(|(f, t, built)| {
             let decides = |b: &Built| decided(b, &t);
-            let callers = Callers { calls: handing, family, default, entry, decides: &decides };
+            let callers = Callers { home: &f, calls: handing, family, default, entry, decides: &decides };
             let found = built
                 .iter()
                 .flat_map(|b| match names_its_places(b, t.kind) {
@@ -929,8 +951,8 @@ pub fn place_calls(store: &mut crate::builder::GraphBuilder, completed: Vec<Comp
         }
         // a route that reaches none of the callers that make it whole sees the call as it was read,
         // a file named by the value its function holds as it is where nothing calls the function
-        if wholes.iter().any(|w| !w.is_at(&f)) {
-            let what = if t.kind == World::Disk { by_value(store, &f, built.iter()) } else { None };
+        if wholes.iter().any(|w| !w.both(&f).0.is_empty()) {
+            let what = if t.kind == World::Disk { by_value(store, &[f.as_str()], built.iter()) } else { None };
             let dir = if t.kind == World::Net { way_of_request(built.iter()).or(t.dir) } else { t.dir };
             store.instead(
                 &f,
@@ -943,17 +965,12 @@ pub fn place_calls(store: &mut crate::builder::GraphBuilder, completed: Vec<Comp
             );
         }
         for whole in wholes {
-            let (by, users_of) = match whole {
-                w if w.is_at(&f) => (BTreeSet::new(), vec![]),
-                Whole::In { asks, with } => (BTreeSet::from([std::iter::once(asks).chain(with).cloned().collect()]), vec![]),
-                Whole::Users(e) => (BTreeSet::new(), vec![e.clone()]),
-            };
-            // the caller a request is from, and the one function the value is whole in, where it is
-            // whole in one: a conjunction of several callers names none
-            let (asker, holder) = match whole {
-                Whole::In { asks, with } => (asks, with.is_empty().then_some(asks)),
-                Whole::Users(e) => (e, Some(e)),
-            };
+            let both = whole.both(&f);
+            let by: BTreeSet<Both> = if both.0.is_empty() { BTreeSet::new() } else { BTreeSet::from([both.clone()]) };
+            // the function a request is from, and the functions the value is whole in: its own where
+            // no other makes it whole
+            let asker = whole.asks.name();
+            let holders: Vec<&str> = if both.0.is_empty() { vec![f.as_str()] } else { both.names().collect() };
             // the way a request goes, where the method its alternatives say gives one
             let alternatives = found.iter().filter(|c| c.whole == *whole).map(|c| &c.term);
             // or one whose value a caller's object holds, set up where the completion went through
@@ -1043,7 +1060,7 @@ pub fn place_calls(store: &mut crate::builder::GraphBuilder, completed: Vec<Comp
                 // else one of whose methods writes the root itself (`Tmp::new`)
                 let holder = held.clone().or_else(|| deciders.iter().find_map(|d| class_of.get(d).cloned())).unwrap_or_default();
                 deciders.retain(|d| *d != f);
-                Touch { artifact, dir, fixed, fixed_by: deciders, by: by.clone(), users_of: users_of.clone(), holder, ..t.clone() }
+                Touch { artifact, dir, fixed, fixed_by: deciders, by: by.clone(), holder, ..t.clone() }
             };
             // a file whose path is one value no literal makes is named by that value where it is
             // whole, so every call handed it touches the same place: `path` in a helper and
@@ -1051,7 +1068,7 @@ pub fn place_calls(store: &mut crate::builder::GraphBuilder, completed: Vec<Comp
             // no place is named by is the term it evaluates to, its unknown parts left as the names
             // the code gives them, and what the environment says as its variable
             let named = |built: &[&Built]| {
-                let value = if t.kind == World::Disk { holder.and_then(|h| by_value(store, h, built.iter().copied())) } else { None };
+                let value = if t.kind == World::Disk { by_value(store, &holders, built.iter().copied()) } else { None };
                 value.or_else(|| {
                     let mut terms: Vec<String> = vec![];
                     for b in built {
@@ -1144,7 +1161,7 @@ mod tests {
         let t = crate::model::Touch::new(crate::model::World::Disk, Some(dir));
         let decides = |b: &Built| decided(b, &t);
         let family = crate::builder::Family::default();
-        let callers = Callers { calls, family: &family, default, entry: &|_| false, decides: &decides };
+        let callers = Callers { home: "read", calls, family: &family, default, entry: &|_| false, decides: &decides };
         callers.at("read", &vec![Seg::Param("path".into())], 0)
     }
 
@@ -1332,6 +1349,37 @@ mod tests {
             proptest::prop_assert_eq!(handed.len(), 1);
             proptest::prop_assert_eq!(substitute(&parent(&t), hand), vec![parent(&handed[0])]);
         }
+
+        /// Law: where two callers meet a path, the meet keeps every condition of both, the
+        /// function the touch is in (`h`) being its unit: the conjunction a touch holds is the
+        /// union of theirs, whichever side is the unit, a caller or an entry's users, and the
+        /// one that hands what is left asks. So the meet is commutative, associative and
+        /// idempotent on what a route must do for the touch to run.
+        #[test]
+        fn the_meet_keeps_every_condition(a in a_whole(), b in a_whole(), c in a_whole()) {
+            let h = "h";
+            let cond = |w: &Whole| w.both(h).0;
+            let union = |x: &Whole, y: &Whole| cond(x).union(&cond(y)).cloned().collect::<BTreeSet<_>>();
+            proptest::prop_assert_eq!(cond(&a.clone().and(&b, h)), union(&a, &b));
+            proptest::prop_assert_eq!(cond(&a.clone().and(&b, h).and(&c, h)), cond(&a.clone().and(&b.clone().and(&c, h), h)));
+            proptest::prop_assert_eq!(cond(&a.clone().and(&a, h)), cond(&a));
+            proptest::prop_assert_eq!(a.clone().and(&Whole::at(h), h), a.clone());
+            proptest::prop_assert_eq!(Whole::at(h).and(&a, h), a.clone());
+            if !a.is_at(h) && !b.is_at(h) {
+                proptest::prop_assert_eq!(a.clone().and(&b, h).asks, a.asks.clone());
+            }
+        }
+    }
+
+    /// Where a value becomes whole: the function a touch is in (`h`), callers, and entries whose
+    /// users hand it, each alone or with others.
+    fn a_whole() -> impl proptest::strategy::Strategy<Value = Whole> {
+        use proptest::prelude::*;
+        let atom = (any::<bool>(), "[a-c]|h").prop_map(|(users, f)| if users { Atom::Starts(f) } else { Atom::Reaches(f) });
+        (atom.clone(), proptest::collection::btree_set(atom, 0..3)).prop_map(|(asks, mut with)| {
+            with.remove(&asks);
+            Whole { asks, with }
+        })
     }
 
     /// The directory of a path of several parts is the path without its last, also where the last

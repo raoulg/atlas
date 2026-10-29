@@ -676,25 +676,26 @@ fn rust_is_read_by_rusts_semantics() {
 fn rust_reads_paths_as_built() {
     let g = analyze(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixture-rs"), &Options::default()).unwrap();
     let t = |id: &str| {
-        let mut out: Vec<(String, String, BTreeSet<Both>, Vec<String>)> = g
+        let mut out: Vec<(String, String, BTreeSet<Both>)> = g
             .node(&format!("handed.world.{id}"))
             .unwrap()
             .touches
             .iter()
             .filter(|t| t.op != "open")
-            .map(|t| (t.kind_name().to_string(), t.artifact.clone(), t.by.clone(), t.users_of.clone()))
+            .map(|t| (t.kind_name().to_string(), t.artifact.clone(), t.by.clone()))
             .collect();
         out.sort();
         out
     };
-    let here = |kind: &str, artifact: &str| (kind.to_string(), artifact.to_string(), BTreeSet::new(), vec![]);
+    let here = |kind: &str, artifact: &str| (kind.to_string(), artifact.to_string(), BTreeSet::new());
     let by = |kind: &str, artifact: &str, f: &str| {
-        (kind.to_string(), artifact.to_string(), BTreeSet::from([Both::one(format!("handed.world.{f}"))]), vec![])
+        (kind.to_string(), artifact.to_string(), BTreeSet::from([Both::one(format!("handed.world.{f}"))]))
     };
-    let users = |kind: &str, f: &str| (kind.to_string(), String::new(), BTreeSet::new(), vec![format!("handed.world.{f}")]);
+    let users = |kind: &str, f: &str| (kind.to_string(), String::new(), BTreeSet::from([Both::users(format!("handed.world.{f}"))]));
     // a file whose name is known under a directory its users hand is that name under that directory, by its name
-    let under =
-        |kind: &str, file: &str, f: &str| (kind.to_string(), format!("{{dir}}/{file}"), BTreeSet::new(), vec![format!("handed.world.{f}")]);
+    let under = |kind: &str, file: &str, f: &str| {
+        (kind.to_string(), format!("{{dir}}/{file}"), BTreeSet::from([Both::users(format!("handed.world.{f}"))]))
+    };
     assert_eq!(
         t("report"),
         [by("disk_write", "site/report.html", "publish"), under("disk_write", "report.html", "report")],

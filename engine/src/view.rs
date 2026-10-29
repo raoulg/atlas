@@ -11,7 +11,7 @@ use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
 
 use indexmap::IndexMap;
 
-use crate::model::{Both, Edge, EdgeKind, Graph, Node, NodeKind, Touch};
+use crate::model::{Atom, Both, Edge, EdgeKind, Graph, Node, NodeKind, Touch};
 
 pub trait View {
     fn apply(&self, g: &Graph) -> Graph;
@@ -365,23 +365,29 @@ fn glue(lib: &Library, dropped: &HashSet<String>) -> HashMap<String, Glued> {
             let n = lib.nodes[x];
             for t in &n.touches {
                 let mut by = std::collections::BTreeSet::new();
-                let mut whole = t.by.is_empty() && t.users_of.is_empty();
+                let mut whole = t.by.is_empty();
                 for alt in &t.by {
                     if alt.members().any(|p| gone(p) && !within.contains(p)) {
                         continue;
                     }
-                    let rest: Both = alt.members().filter(|&p| !within.contains(p) && p != f.id).map(str::to_string).collect();
+                    // the callers beyond the border are the border itself; an entry stays a condition
+                    let rest: Both = alt
+                        .0
+                        .iter()
+                        .filter(|a| !matches!(a, Atom::Reaches(p) if within.contains(p.as_str()) || *p == f.id))
+                        .cloned()
+                        .collect();
                     if rest.0.is_empty() {
                         whole = true;
                         break;
                     }
                     by.insert(rest);
                 }
-                let (by, users_of) = if whole { (Default::default(), vec![]) } else { (by, t.users_of.clone()) };
-                if by.is_empty() && users_of.is_empty() && !whole {
+                let by = if whole { Default::default() } else { by };
+                if by.is_empty() && !whole {
                     continue;
                 }
-                add(&mut glued.touches, Touch { line: at, by, users_of, ..t.clone() });
+                add(&mut glued.touches, Touch { line: at, by, ..t.clone() });
             }
             for t in &n.instead {
                 add(&mut glued.instead, Touch { line: at, ..t.clone() });

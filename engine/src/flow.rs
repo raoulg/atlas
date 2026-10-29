@@ -1250,7 +1250,7 @@ struct Ix<'g> {
     mro: RefCell<HashMap<&'g str, Vec<&'g str>>>,
     /// What each part's language leaves its author to write, by the part's id, the first part's for a node of none.
     leaves: Vec<(&'g str, Leaves)>,
-    /// The callers a touch of each body or of what it may run is made whole by (`Touch::by`, `Touch::users_of`), by the
+    /// The callers a touch of each body or of what it may run is made whole by (`Touch::by`), by the
     /// body, by their numbers (`Ix::name`): the only functions on a chain of calls that change what it touches below them.
     consulted: RefCell<FxHashMap<(u32, u32), Rc<BTreeSet<u32>>>>,
     /// The names of bodies, classes and places, each by its number (`Ix::name`).
@@ -1363,7 +1363,7 @@ impl<'g> Ix<'g> {
             }
             let Some(&n) = self.nodes.get(f.as_str()) else { continue };
             for t in &n.touches {
-                out.extend(t.by.iter().flat_map(Both::members).chain(t.users_of.iter().map(String::as_str)).map(|f| self.name(f)));
+                out.extend(t.by.iter().flat_map(Both::names).map(|f| self.name(f)));
             }
             for call in self.calls(k, n, &c).iter() {
                 for (t, tc) in &call.runs {
