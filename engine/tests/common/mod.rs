@@ -390,6 +390,7 @@ pub fn a_parent_drops_the_last_part_of_a_path(language: &str, read: &str, log: &
         assert_eq!(written.len(), 1, "{language} {side}: the log is written once: {written:?}");
         let beside = written[0].strip_prefix(dir.as_str()).is_some_and(|name| !name.contains('/'));
         assert_eq!(beside, side == "clean", "{language} {side}: the log {written:?} in the data files' directory {dir}");
+    }
 }
 
 /// The closures pair: a function written in a body (a closure, a lambda, a `def` inside a `def`) and called there by the
