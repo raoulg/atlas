@@ -1044,6 +1044,13 @@ async function renderPlaat(mine) {
     for (const k of F.kids) { places.set(k.id, {...k, inFrame: F.id}); keep.add(k.id); }
   }
 
+  // at the pick, the closed families the picked values cut in two open, until none does: a lit box is all of the type
+  if (lit?.fresh) {
+    const cut = cutBy(lit.types, [...places.values()].filter(p => keep.has(p.id)));
+    if (cut.length) { for (const f of cut) V.open.families.add(f); crumbs(); writeView(); return renderPlaat(mine); }
+    lit.fresh = false;
+  }
+
   // the node a step stands for, as a finding names it: a package (not its own module beside its
   // subpackages), a part, the function a call runs. An open step's own pill stands for its
   // function, so its frame is marked where that pill is not drawn; an open part's own pill is only
@@ -1054,12 +1061,6 @@ async function renderPlaat(mine) {
   // code, a step of a body, a place. A type the picture draws as a box of its own, or inside a closed
   // family, is not inside a package, and a finding the picture marks with a dot is not inside one
   // either. Edges are not counted: they show at the border, or once the box is opened.
-  // at the pick, the closed families the picked values cut in two open, until none does: a lit box is all of the type
-  if (lit?.fresh) {
-    const cut = cutBy(lit.types, [...places.values()].filter(p => keep.has(p.id)));
-    if (cut.length) { for (const f of cut) V.open.families.add(f); crumbs(); writeView(); return renderPlaat(mine); }
-    lit.fresh = false;
-  }
   const alone = new Set(), inFamily = new Set();
   for (const p of places.values()) if (p.type && keep.has(p.id)) { alone.add(p.type); if (closedFamily(p)) for (const m of members.get(p.type) || []) inFamily.add(m); }
   const notAlone = id => !alone.has(id) && !inFamily.has(id);

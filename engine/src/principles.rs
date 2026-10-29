@@ -14,6 +14,7 @@ use serde::Serialize;
 use crate::model::{
     Compare, Dir, Edge, EdgeKind, EntryKind, Graph, Held, Leaves, Node, NodeKind, Param, Part, Returns, Signature, Site, Touch, World,
 };
+use crate::shapes::Array;
 
 /// A principle by its id and what it asks of code.
 pub struct Principle {
@@ -871,49 +872,13 @@ fn has_members(ix: &Index, x: &str, y: &str, structural: bool, assumed: &mut Vec
 /// promise no type checker reads (`Float[Tensor, "batch dim"]` where `Float[Tensor, "..."]` is
 /// promised).
 fn shapes_fit(ix: &Index, base: &Node, m: &Node) -> bool {
-    let shapes: Vec<Array> = ix.targets(&base.id, EdgeKind::Returns).iter().filter_map(|p| array_of_id(p)).collect();
+    let shapes: Vec<Array> = ix.targets(&base.id, EdgeKind::Returns).iter().filter_map(|p| Array::of_id(p)).collect();
     shapes.is_empty()
-        || ix.targets(&m.id, EdgeKind::Returns).iter().filter_map(|g| array_of_id(g)).all(|g| shapes.iter().any(|p| array_fits(&g, p)))
-}
-
-/// An array annotation, jaxtyping style: dtype, array type and dims (`Float`, `Tensor`, `batch dim`).
-#[derive(PartialEq, Debug)]
-struct Array {
-    dtype: String,
-    array: String,
-    dims: Vec<String>,
-}
-
-/// A shaped array's id (`ext:jaxtyping.Float[Tensor, batch dim]`) as an array.
-fn array_of_id(id: &str) -> Option<Array> {
-    let rest = crate::knowledge::shaped(id)?;
-    let (dtype, inner) = rest.split_once('[')?;
-    let (array, dims) = inner.strip_suffix(']')?.split_once(',')?;
-    Some(Array { dtype: dtype.into(), array: array.trim().into(), dims: dims.split_whitespace().map(str::to_string).collect() })
+        || ix.targets(&m.id, EdgeKind::Returns).iter().filter_map(|g| Array::of_id(g)).all(|g| shapes.iter().any(|p| g.fits(p)))
 }
 
 fn array_id_fits(given: &str, promised: &str) -> bool {
-    matches!((array_of_id(given), array_of_id(promised)), (Some(g), Some(p)) if array_fits(&g, &p))
-}
-
-/// A given array keeps a promised one when dtype and array type agree and the promised dims
-/// admit the given ones: `...` (or `*name`) any run of dims, a name or `_` any one dim, a
-/// number only itself.
-fn array_fits(given: &Array, promised: &Array) -> bool {
-    if given.dtype != promised.dtype || given.array != promised.array {
-        return false;
-    }
-    let one = |p: &str, g: &str| !p.chars().all(|c| c.is_ascii_digit()) || p == g;
-    let (p, g) = (&promised.dims, &given.dims);
-    match p.iter().position(|d| d == "..." || d.starts_with('*')) {
-        None => p.len() == g.len() && p.iter().zip(g).all(|(p, g)| one(p, g)),
-        Some(i) => {
-            let tail = p.len() - i - 1;
-            g.len() >= i + tail
-                && p[..i].iter().zip(g).all(|(p, g)| one(p, g))
-                && p[i + 1..].iter().zip(&g[g.len() - tail..]).all(|(p, g)| one(p, g))
-        }
-    }
+    matches!((Array::of_id(given), Array::of_id(promised)), (Some(g), Some(p)) if g.fits(&p))
 }
 
 // ---------- places ----------

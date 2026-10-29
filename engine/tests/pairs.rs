@@ -192,3 +192,48 @@ fn a_request_goes_the_way_its_method_says() {
         assert_eq!(side(&at(shortcut, "order")), [Side::Open], "{shortcut}: a method looked up at run time says no way");
     }
 }
+
+/// A shaped array is a type of its own and stands in its rank family (`docs/reference/mathematics.md`, "Shapes and their
+/// rank"). The clean components say the shape of what they take and give (`Float[Tensor, "batch dim"]`); the shortcut
+/// says `Tensor`. Each shape of the clean side stays its own type, and stands in a family that is a shape of its dtype,
+/// array type and rank which it fits, shared by exactly the shapes of that rank, where the graph holds two of them: the
+/// quotient is the rank, never the names (`batch dim` and `batch ndim` are two types of one family), and never the dtype
+/// (`Int[Tensor, batch seq]` is rank 2 and alone). The shortcut's steps all take and give the one `Tensor`, so the
+/// picture cannot tell a reducer from a projection: what the code does not say, Atlas does not draw.
+#[test]
+fn a_shape_stands_in_its_rank_family_and_stays_a_type_of_its_own() {
+    use atlas_engine::shapes::Array;
+    use std::collections::BTreeSet;
+    let (clean, shortcut) = (pair("shapes/python/clean"), pair("shapes/python/shortcut"));
+    let types = atlas_engine::families::families(&clean);
+    let shaped: Vec<(String, Array)> = clean.nodes.iter().filter_map(|n| Some((n.id.clone(), Array::of_id(&n.id)?))).collect();
+    let names: BTreeSet<String> = shaped.iter().map(|(_, a)| a.to_string()).collect();
+    assert!(names.contains("Float[Tensor, batch dim]") && names.contains("Float[Tensor, batch ndim]"), "{names:?}");
+    for (t, a) in &shaped {
+        let kin: Vec<&Array> = shaped
+            .iter()
+            .filter(|(u, b)| u != t && b.dtype == a.dtype && b.array == a.array && b.rank() == a.rank())
+            .map(|(_, b)| b)
+            .collect();
+        match types.kind.get(t) {
+            Some(k) => {
+                let k = Array::of_id(k).unwrap_or_else(|| panic!("{t} stands in {k}, no shape"));
+                assert!(a.fits(&k) && k.rank() == a.rank(), "{a} stands in {k}");
+                assert!(!kin.is_empty(), "{a} is alone in its rank and stands in {k}");
+                for (u, _) in shaped.iter().filter(|(u, b)| u != t && kin.contains(&b)) {
+                    assert_eq!(types.kind.get(u).or(Some(u)).and_then(|k| Array::of_id(k)), Some(k.clone()), "{a} and {u} share a rank");
+                }
+            }
+            None => assert!(kin.is_empty() || types.members.contains_key(t), "{a} shares its rank with {kin:?} and stands in no family"),
+        }
+    }
+    assert!(types.kind.values().collect::<BTreeSet<_>>().len() >= 2, "the clean side has families of two ranks: {:?}", types.kind);
+    // the shortcut: one type for every tensor, in no family
+    let tensors = |f: &str, kind: EdgeKind| -> Vec<String> {
+        shortcut.edges.iter().filter(|e| e.src == f && e.kind == kind).map(|e| e.dst.clone()).collect()
+    };
+    let steps = ["Lookup", "MeanPool", "Projection", "Concatenate"].map(|c| format!("mesh.components.{c}.forward"));
+    let all: BTreeSet<String> = steps.iter().flat_map(|f| [tensors(f, EdgeKind::Takes), tensors(f, EdgeKind::Returns)].concat()).collect();
+    assert_eq!(all, BTreeSet::from(["ext:torch.Tensor".to_string()]));
+    assert!(atlas_engine::families::families(&shortcut).kind.is_empty());
+}

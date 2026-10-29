@@ -23,6 +23,8 @@ const has = x => !SIDE || inReading(x, SIDE);
 const edgesBy = new Map();
 for (const e of D.edges) { const k = `${e.src}>${e.dst}>${e.kind}`; if (!edgesBy.has(k)) edgesBy.set(k, []); edgesBy.get(k).push(e); }
 const edgeOn = (src, dst, kind) => { const es = edgesBy.get(`${src}>${dst}>${kind}`); return !es || es.some(has); };
+// a type's id as its module and its own name; a shaped array's shape is part of its name (`ext:jaxtyping.Float[Tensor, ... d]`)
+const idName = id => { const s = id.replace(/^ext:/, ""), cut = s.includes("[") ? s.indexOf("[") : s.length, head = s.slice(0, cut).split("."); return {module: head.slice(0, -1).join("."), name: head.pop() + s.slice(cut)}; };
 // a node by the name it has in the reading drawn: one B renamed has its old name in A
 const nameOf = n => SIDE === "a" && DIFF?.renamed[n.id] ? DIFF.renamed[n.id].split(".").pop() : n.name;
 // a step of a body as the reading drawn has it: in A, a step both readings hold is handed what A hands it
@@ -129,7 +131,7 @@ const holdsFigures = (cls, seen = new Set()) => {
 };
 // whether a parameter holds a value of a type: one its type holds as its language reads it (`Param::holds`, by name: a map
 // holds its values by its keys), or a sum written in place, by the names of its variants (`r: Fit | Failed`)
-const writesType = (p, x) => { const w = new Set(p.holds || []), b = id => id.replace(/^ext:/, "").split(".").pop(); return w.has(b(x)) || (VARIANTS.has(x) && VARIANTS.get(x).every(v => w.has(b(v)))); };
+const writesType = (p, x) => { const w = new Set(p.holds || []), b = id => idName(id).name; return w.has(b(x)) || (VARIANTS.has(x) && VARIANTS.get(x).every(v => w.has(b(v)))); };
 // the values a call is handed and gives, one value per name: the variants of a sum a name holds are the sum, a value
 // of no type a constructor gives is of the class it builds, one a change gives is the value it was handed, and one
 // handed by a name of no type is the value
@@ -403,9 +405,9 @@ const folds = k => kindsOf(k).length + (here(k) ? 1 : 0) > 1;
 // a type opens when it has kinds or parts of its own, or holds what it shares; (n) counts the types it opens into
 const opens = t => folds(t) || partsOf(t).length > 0 || sharedOf(t).length > 0;
 const opensInto = t => kindsOf(t).length + partsOf(t).length + sharedOf(t).length + (here(t) ? 1 : 0);
-const bare = id => byId.has(id) ? nameOf(byId.get(id)) : id.replace(/^ext:/, "").split(".").pop();
+const bare = id => byId.has(id) ? nameOf(byId.get(id)) : idName(id).name;
 const nameCount = new Map(); for (const n of D.nodes) if (n.kind === "class" || n.kind === "external") nameCount.set(bare(n.id), (nameCount.get(bare(n.id)) || 0) + 1);
-const typeLabel = id => { const b = bare(id); if ((nameCount.get(b) || 0) > 1) { const mod = (byId.get(id)?.module || id.replace(/^ext:/, "").split(".").slice(0, -1).join(".")).split(".").pop(); return mod ? `${mod}.${b}` : b; } return b; };
+const typeLabel = id => { const b = bare(id); if ((nameCount.get(b) || 0) > 1) { const mod = (byId.get(id)?.module || idName(id).module).split(".").pop(); return mod ? `${mod}.${b}` : b; } return b; };
 const entryTitle = id => { const n = byId.get(id); return n.entry ? `${KIND_LABEL[n.entry.kind]} ${n.entry.label}` : short(id); };
 // what a step changes in place is in its codomain too: `T -> T`
 
@@ -711,7 +713,8 @@ function familyFrames(places) {
     const f = F.fam, at = F.at;
     const inFam = new Set([f, ...(members.get(f) || [])]);
     const viaOf = m => (inn.get(m) || []).find(e => e.kind === "has" && inFam.has(e.src) && e.via)?.via;
-    const isSub = m => { let cur = m; for (let i = 0; i < 10; i++) { const b = (out.get(cur) || []).find(e => e.kind === "inherits" && inFam.has(e.dst)); if (!b) return false; if (b.dst === f) return true; cur = b.dst; } return false; };
+    // a kind of the family stands in it by the engine's `kind`: a subclass, or a shape of the family's rank
+    const isSub = m => { if (kindOf(m) === f) return true; let cur = m; for (let i = 0; i < 10; i++) { const b = (out.get(cur) || []).find(e => e.kind === "inherits" && inFam.has(e.dst)); if (!b) return false; if (b.dst === f) return true; cur = b.dst; } return false; };
     // a frame holds the kinds its values can be: a value of one kind is that kind and what derives from it, in the fiber
     const below = (m, t) => { let cur = m; for (let i = 0; i < 10 && cur; i++) { if (cur === t) return true; cur = (out.get(cur) || []).find(e => e.kind === "inherits")?.dst; } return false; };
     const can = m => !isSub(m) || (here(m) && [...F.types].some(t => t === f || below(m, t)));
@@ -743,7 +746,8 @@ const lightOf = (S, p) => {
 const cutBy = (S, places) => [...places].filter(p => closedFamily(p) && typesIn(p).some(t => S.has(t)) && !typesIn(p).every(t => S.has(t))).map(p => p.type);
 const typePlace = t => {
   const n = byId.get(t), closedFam = t !== V.route && opens(t) && !V.open.families.has(t);
-  return {id: "t:" + t, label: typeLabel(t) + (closedFam ? ` (${opensInto(t)})` : ""), kind: n && n.kind === "external" ? "ext" : "type", hue: hueOf(n), type: t};
+  // a family no type of the code's is (a rank of shaped arrays, `Float[Tensor, _ _]`) is of the library its members are
+  return {id: "t:" + t, label: typeLabel(t) + (closedFam ? ` (${opensInto(t)})` : ""), kind: (n ? n.kind === "external" : t.startsWith("ext:")) ? "ext" : "type", hue: hueOf(n), type: t};
 };
 const stepName = id => { if (id.startsWith("part:")) { const p = PARTS.find(x => x.id === id.slice(5)) || {}; return `${p.id} · ${p.language}`; } if (id.startsWith("unit:")) return unitLabel(id.slice(5)); const n = byId.get(id); if (!V.route && n.entry) return entryLabel(n); if (n.kind === "class") return nameOf(n) + "()"; if (n.make) return n.name; if (isCtor(n) && !n.on_class) return typeLabel(n.cls) + "()"; return n.cls ? `${typeLabel(n.cls)}.${nameOf(n)}` : nameOf(n); };
 // a step's name: a method run on a subclass is that class's, one its call names is its own class's, a library's
@@ -1042,7 +1046,7 @@ const stepMorphism = (key, own, isAnchor, leaf) => {
   // the names its body binds, by a step or by its own code (`Node::binds`, a literal among them)
   const fnode = byId.get(step), declared = declaredIn(step);
   const kept_ = new Set((fnode?.touches || []).filter(t => t.kind === "global").map(t => t.what));
-  const modular = u => !!u.name && !u.name.startsWith("#") && !!u.type && !declared.has(u.name) && !kept_.has(u.name) && u.name !== u.type.replace(/^ext:/, "").split(".").pop();
+  const modular = u => !!u.name && !u.name.startsWith("#") && !!u.type && !declared.has(u.name) && !kept_.has(u.name) && u.name !== idName(u.type).name;
   const uses = (!own || step.startsWith("op:") ? [] : !leaf ? (fnode?.uses || []).filter(u => u.name || u.type) : (fnode?.uses || []).filter(modular).map(u => ({...u, arms: []}))).map(u => (modular(u) ? {...u, extern: true} : u));
   // what an opened step changes of a value it was handed goes out at its border as what its steps made of it: its own arrow
   // takes the value each name it changes holds at its end (`self`, `lines`), of whatever type
