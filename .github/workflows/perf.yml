@@ -1,31 +1,59 @@
 name: perf
 
-# Every night, how fast `next` builds, reads and tests, measured on one runner type and kept as a series
-# per measure on the branch `perf-data` (`history.jsonl` and a README of charts). The release build is
-# timed clean, with no compile cache; `atlas view` is timed cold and warm on Atlas itself and on the
-# programs `laws.yml` reads, at the same revisions; each test binary is timed on its own. A measure past
-# its baseline on two runs in a row is slower: the run's summary says so and the tracking issue (label
-# `performance`) is opened or commented on. A run that cannot measure fails. Nothing here runs on a push
-# or a pull request. `tools/perf.py` measures and judges; `docs/reference/performance.md` says how.
+# How fast `next` builds, reads and tests, measured on one runner type and kept as a series per measure on
+# the branch `perf-data` (`history.jsonl` and a README of charts). Every night: the release build timed
+# clean, `atlas-code view` cold and warm on Atlas itself and on the programs `laws.yml` reads, each test binary
+# on its own. A measure past its baseline is suspect, and says nothing yet: the same run builds the last
+# commit that lay within it and measures the two interleaved on this runner. Only what that reproduces is
+# reported, graded by its size: a small slowdown comments on the tracking issue, a large one is bisected on
+# the spot and opens an urgent issue that names its landing. Every week the same comparison is made between
+# `next` and the last release. By hand, any range can be bisected for a measure. A run that cannot measure
+# fails; nothing here runs on a push or a pull request. `tools/perf.py` measures and judges;
+# `docs/reference/performance.md` says how.
 
 on:
   schedule:
-    - cron: "30 4 * * *"
+    - cron: "30 4 * * *" # every night
+    - cron: "30 5 * * 1" # every Monday: next against the last release
   workflow_dispatch:
+    inputs:
+      mode:
+        description: "nightly, weekly, or bisect"
+        type: choice
+        options: [nightly, weekly, bisect]
+        default: nightly
+      from:
+        description: "bisect: the commit it was fast at"
+      to:
+        description: "bisect: the commit it is slow at (default: next)"
+      measure:
+        description: "bisect: the measure, as perf-data names it (read/atlas/cold/seconds)"
+      issue:
+        description: "bisect: the issue to comment the result on (optional)"
 
 permissions:
   contents: write # the series, on perf-data
-  issues: write # the tracking issue
+  issues: write # the tracking issues
 
 concurrency:
   group: perf
   cancel-in-progress: false
 
+env:
+  # the subjects of a reproduction: Atlas in each commit's own tree, the programs as fetched
+  SUBJECTS: >-
+    --subject atlas=.
+    --subject goad_toolkit=${{ github.workspace }}/programs/goad_toolkit
+    --subject vectormesh=${{ github.workspace }}/programs/vectormesh
+    --subject pluim=${{ github.workspace }}/programs/pluim
+    --subject ordash=${{ github.workspace }}/programs/ordash
+
 jobs:
-  measure:
+  nightly:
+    if: (github.event_name == 'schedule' && github.event.schedule == '30 4 * * *') || (github.event_name == 'workflow_dispatch' && inputs.mode == 'nightly')
     # one runner type, named, so that a new image is a change to this file and not a step in the series
     runs-on: ubuntu-24.04
-    timeout-minutes: 75
+    timeout-minutes: 150
     env:
       RUN: ${{ github.workspace }}/run.json
     steps:
@@ -33,6 +61,7 @@ jobs:
         with:
           ref: next
           path: atlas
+          fetch-depth: 0 # a reproduction checks out the commit it measures against
       - name: the series so far
         working-directory: atlas
         run: |
@@ -65,13 +94,13 @@ jobs:
         env:
           CARGO_TARGET_DIR: ${{ github.workspace }}/clean
         run: |
-          uv run tools/perf.py time build/release --out "$RUN" -- cargo build --release --locked -p atlas
-          cp "$CARGO_TARGET_DIR/release/atlas" "$RUNNER_TEMP/atlas"
+          uv run tools/perf.py time build/release --out "$RUN" -- cargo build --release --locked -p atlas-code
+          cp "$CARGO_TARGET_DIR/release/atlas-code" "$RUNNER_TEMP/atlas-code"
           rm -rf "$CARGO_TARGET_DIR"
       - name: the readings, cold and warm
         working-directory: atlas
         run: |
-          uv run tools/perf.py read --atlas "$RUNNER_TEMP/atlas" --rounds 3 --out "$RUN" \
+          uv run tools/perf.py read --atlas "$RUNNER_TEMP/atlas-code" --rounds 3 --out "$RUN" \
             --subject atlas=. \
             --subject goad_toolkit=../programs/goad_toolkit \
             --subject vectormesh=../programs/vectormesh \
@@ -92,6 +121,22 @@ jobs:
             --commit "$(git rev-parse HEAD)" \
             --url "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" \
             --data-url "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/tree/perf-data" \
+            --summary "$GITHUB_STEP_SUMMARY" --suspects "$GITHUB_WORKSPACE/suspects.json"
+      - name: what is suspect, measured again against the last commit within its baseline
+        if: steps.record.outputs.suspect == 'true'
+        working-directory: atlas
+        run: |
+          # shellcheck disable=SC2086 # $SUBJECTS splits into its --subject arguments
+          uv run tools/perf.py reproduce --repo . --suspects "$GITHUB_WORKSPACE/suspects.json" $SUBJECTS \
+            --bisect-large --out "$GITHUB_WORKSPACE/reproduced.json"
+      - name: graded
+        id: conclude
+        if: steps.record.outputs.suspect == 'true'
+        working-directory: atlas
+        run: |
+          uv run tools/perf.py conclude --data "$GITHUB_WORKSPACE/data" --reproduced "$GITHUB_WORKSPACE/reproduced.json" \
+            --url "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" \
+            --data-url "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/tree/perf-data" \
             --summary "$GITHUB_STEP_SUMMARY" --alert "$GITHUB_WORKSPACE/alert.md"
       - name: the series, kept
         working-directory: data
@@ -101,12 +146,19 @@ jobs:
           git add -A
           git commit -q -m "perf: next at $(git -C ../atlas rev-parse --short HEAD)"
           git push origin perf-data
-      - name: the tracking issue
-        if: steps.record.outputs.slower == 'true'
+      # a large slowdown is an issue of its own, which names its landing; a small one goes to the tracking issue
+      - name: the issue
+        if: steps.conclude.outputs.alert == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
+          URGENT: ${{ steps.conclude.outputs.urgent }}
           TITLE: "Atlas got slower: the nightly measure of next"
         run: |
+          if [ "$URGENT" = true ]; then
+            gh issue create --repo "$GITHUB_REPOSITORY" --label performance \
+              --title "Urgent: Atlas got much slower ($(date -u +%Y-%m-%d))" --body-file "$GITHUB_WORKSPACE/alert.md"
+            exit 0
+          fi
           open=$(gh issue list --repo "$GITHUB_REPOSITORY" --label performance --state open --search "\"$TITLE\" in:title" --json number,title \
             --jq "map(select(.title == env.TITLE)) | .[0].number // empty")
           if [ -n "$open" ]; then
@@ -120,6 +172,113 @@ jobs:
           name: perf
           path: |
             run.json
+            suspects.json
+            reproduced.json
             alert.md
             data/README.md
+          if-no-files-found: ignore
+
+  # next against the last release, measured interleaved on one runner: creep that no single night shows
+  weekly:
+    if: (github.event_name == 'schedule' && github.event.schedule == '30 5 * * 1') || (github.event_name == 'workflow_dispatch' && inputs.mode == 'weekly')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 150
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: next
+          path: atlas
+          fetch-depth: 0
+      - name: the programs, at the revisions laws.yml reads
+        run: |
+          get() { git init -q "programs/$1" && git -C "programs/$1" fetch -q --depth 1 "https://github.com/raoulg/$1" "$2" && git -C "programs/$1" checkout -q FETCH_HEAD; }
+          get goad_toolkit 929d37cc588b27f599b7fbe2e4f5d9733619f897
+          get vectormesh 201a85048dc872bfc3115d09542529302b45a3ec
+          get pluim a5b8c804da33c93b1e36344072adccc3479b5b24
+          get ordash 1b4942228b1b22a91c065e1093a14a106fab9f2b
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: astral-sh/setup-uv@v10.3.0
+      - name: next against the last release
+        working-directory: atlas
+        run: |
+          release=$(git tag -l 'v*' --sort=-v:refname | head -1)
+          echo "RELEASE=$release" >> "$GITHUB_ENV"
+          # shellcheck disable=SC2086 # $SUBJECTS splits into its --subject arguments
+          uv run tools/perf.py reproduce --repo . --a "$release" --b HEAD $SUBJECTS \
+            --measure read/atlas/cold/seconds --measure read/atlas/warm/seconds --measure read/atlas/cold/peak_rss \
+            --measure read/vectormesh/cold/seconds --measure read/goad_toolkit/cold/seconds \
+            --measure build/release/seconds \
+            --out "$GITHUB_WORKSPACE/weekly.json"
+          uv run tools/perf.py conclude --reproduced "$GITHUB_WORKSPACE/weekly.json" --release "$release" \
+            --standing "$GITHUB_WORKSPACE/standing.md"
+          cat "$GITHUB_WORKSPACE/standing.md" >> "$GITHUB_STEP_SUMMARY"
+      - name: the standing, on its issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TITLE: "Atlas's performance against the last release"
+        run: |
+          open=$(gh issue list --repo "$GITHUB_REPOSITORY" --label performance --state open --search "\"$TITLE\" in:title" --json number,title \
+            --jq "map(select(.title == env.TITLE)) | .[0].number // empty")
+          if [ -n "$open" ]; then
+            gh issue comment "$open" --repo "$GITHUB_REPOSITORY" --body-file "$GITHUB_WORKSPACE/standing.md"
+          else
+            gh issue create --repo "$GITHUB_REPOSITORY" --label performance --title "$TITLE" --body-file "$GITHUB_WORKSPACE/standing.md"
+          fi
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: perf-weekly
+          path: |
+            weekly.json
+            standing.md
+          if-no-files-found: ignore
+
+  # where a slowdown came from, looked for by hand: the landing on a range that made a measure slower
+  bisect:
+    if: github.event_name == 'workflow_dispatch' && inputs.mode == 'bisect'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 240
+    env:
+      FROM: ${{ inputs.from }}
+      TO: ${{ inputs.to || 'HEAD' }}
+      MEASURE: ${{ inputs.measure }}
+      ISSUE: ${{ inputs.issue }}
+    steps:
+      - name: what to bisect
+        run: |
+          [ -n "$FROM" ] && [ -n "$MEASURE" ] || { echo "::error::bisect needs from and measure"; exit 1; }
+      - uses: actions/checkout@v7
+        with:
+          ref: next
+          path: atlas
+          fetch-depth: 0
+      - name: the programs, at the revisions laws.yml reads
+        run: |
+          get() { git init -q "programs/$1" && git -C "programs/$1" fetch -q --depth 1 "https://github.com/raoulg/$1" "$2" && git -C "programs/$1" checkout -q FETCH_HEAD; }
+          get goad_toolkit 929d37cc588b27f599b7fbe2e4f5d9733619f897
+          get vectormesh 201a85048dc872bfc3115d09542529302b45a3ec
+          get pluim a5b8c804da33c93b1e36344072adccc3479b5b24
+          get ordash 1b4942228b1b22a91c065e1093a14a106fab9f2b
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: astral-sh/setup-uv@v10.3.0
+      - name: bisected
+        working-directory: atlas
+        run: |
+          # shellcheck disable=SC2086 # $SUBJECTS splits into its --subject arguments
+          uv run tools/perf.py bisect --repo . --from "$FROM" --to "$TO" --measure "$MEASURE" $SUBJECTS \
+            --out "$GITHUB_WORKSPACE/bisect.json" | tee "$GITHUB_WORKSPACE/bisect.md"
+          cat "$GITHUB_WORKSPACE/bisect.md" >> "$GITHUB_STEP_SUMMARY"
+      - name: the result, on the issue
+        if: inputs.issue != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh issue comment "$ISSUE" --repo "$GITHUB_REPOSITORY" --body-file "$GITHUB_WORKSPACE/bisect.md"
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: perf-bisect
+          path: bisect.json
           if-no-files-found: ignore

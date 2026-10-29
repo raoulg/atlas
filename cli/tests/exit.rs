@@ -1,4 +1,4 @@
-//! What the exit status says, as `atlas --help` writes it: 0 when `atlas check` has nothing to
+//! What the exit status says, as `atlas-code --help` writes it: 0 when `atlas-code check` has nothing to
 //! ask, 1 when it has, 2 when Atlas could not do what was asked; and whatever it says, the process
 //! ends with what it holds dropped, the temporary clone of a git URL among it.
 
@@ -21,7 +21,7 @@ fn scratch(name: &str) -> PathBuf {
 
 /// Atlas run with `tmp` as the place it lays out what it removes again, keeping nothing.
 fn atlas(args: &[&str], tmp: &Path) -> Output {
-    Command::new(env!("CARGO_BIN_EXE_atlas"))
+    Command::new(env!("CARGO_BIN_EXE_atlas-code"))
         .arg("--no-cache")
         .args(args)
         .current_dir(root())
@@ -33,7 +33,7 @@ fn atlas(args: &[&str], tmp: &Path) -> Output {
         .expect("atlas runs")
 }
 
-/// Whether `atlas check --json` asks anything: a finding no decision sets aside, or a decision that
+/// Whether `atlas-code check --json` asks anything: a finding no decision sets aside, or a decision that
 /// sets nothing aside.
 fn asks(report: &Value) -> bool {
     let open = report["parts"]
@@ -45,7 +45,7 @@ fn asks(report: &Value) -> bool {
     open || !report["stale"].as_array().unwrap().is_empty()
 }
 
-/// The status of `atlas check` says whether it has something to ask, as its report does: on the
+/// The status of `atlas-code check` says whether it has something to ask, as its report does: on the
 /// pair of a choice, the clean side asks nothing and the shortcut asks.
 #[test]
 fn the_status_says_whether_check_asks() {

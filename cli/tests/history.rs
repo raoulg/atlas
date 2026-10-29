@@ -1,4 +1,4 @@
-//! `atlas history` spoken to as the browser speaks to it: its history as JSON, and a viewer page
+//! `atlas-code history` spoken to as the browser speaks to it: its history as JSON, and a viewer page
 //! of the union of two commits.
 
 use std::io::{BufRead, BufReader, Read, Write};
@@ -49,13 +49,13 @@ fn repository() -> PathBuf {
 /// read from what it says when it starts.
 fn serve(repo: &Path) -> (Served, String) {
     let cache = std::env::temp_dir().join(format!("atlas-history-cache-{}", std::process::id()));
-    let mut child = Command::new(env!("CARGO_BIN_EXE_atlas"))
+    let mut child = Command::new(env!("CARGO_BIN_EXE_atlas-code"))
         .args(["history", "--no-open", "--port", "0"])
         .arg(repo)
         .env("XDG_CACHE_HOME", cache)
         .stderr(Stdio::piped())
         .spawn()
-        .expect("atlas history starts");
+        .expect("atlas-code history starts");
     let stderr = child.stderr.take().unwrap();
     let child = Served(child);
     let mut line = String::new();

@@ -1,10 +1,10 @@
 # Atlas Studio
 
-Atlas Studio is a native Tauri window for a repository's Atlas view and history. It starts the matching `atlas` CLI as a sidecar on loopback and keeps one sidecar per open workspace. The view and history come from `atlas serve` and share its repository index.
+Atlas Studio is a native Tauri window for a repository's Atlas view and history. It starts the matching `atlas-code` CLI as a sidecar on loopback and keeps one sidecar per open workspace. The view and history come from `atlas-code serve` and share its repository index.
 
 ## Install as an app
 
-`build-app.sh` builds Studio with the matching release `atlas` inside it. On macOS it installs `Atlas Studio.app` into `~/Applications`, where Launchpad, Spotlight and the Dock find it; give another folder as its argument to install there. On Linux and Windows it leaves the platform's packages in `studio/src-tauri/target/release/bundle`. It needs the Tauri CLI:
+`build-app.sh` builds Studio with the matching release `atlas-code` inside it. On macOS it installs `Atlas Studio.app` into `~/Applications`, where Launchpad, Spotlight and the Dock find it; give another folder as its argument to install there. On Linux and Windows it leaves the platform's packages in `studio/src-tauri/target/release/bundle`. It needs the Tauri CLI:
 
 ```sh
 cargo install tauri-cli --version "^2" --locked
@@ -34,7 +34,7 @@ On Windows, run `./studio/prepare-sidecar.ps1` in PowerShell before the Tauri bu
 
 ## Updates
 
-Once a day Studio asks GitHub whether a newer build of its channel is out, as the CLI does: a release for a release build, the newest nightly for a nightly build (and for a build of `next`). Which build Studio is, its own `atlas` says (`atlas --version`), which is of the same commit and channel. When one is, a button in the status bar says so, and a page shows what changed: the release's page of notes (`releases/<version>/` on the documentation site), or for a nightly, or a release without a page, a link to the changes on GitHub. The page opens by itself once per newer build. **Update and restart** installs it where Studio is: on macOS through `install-studio.sh` into the app's own folder, then Studio starts again; on Windows the setup program runs, passive, and starts Studio again. Atlas Studio › Check for Updates… (Help › Check for Updates… on Windows and Linux) asks at once. Atlas Studio › What's New in Atlas Studio x.y.z (under Help elsewhere), **What’s new** in Settings, or a click on the version at the right of the status bar, shows the same page for the build that runs: its release's notes, else its release on GitHub, else, for a build that is no release yet, the commits it is made of. `ATLAS_NO_UPDATE_CHECK` set turns the daily look off.
+Once a day Studio asks GitHub whether a newer build of its channel is out, as the CLI does: a release for a release build, the newest nightly for a nightly build (and for a build of `next`). Which build Studio is, its own `atlas` says (`atlas-code --version`), which is of the same commit and channel. When one is, a button in the status bar says so, and a page shows what changed: the release's page of notes (`releases/<version>/` on the documentation site), or for a nightly, or a release without a page, a link to the changes on GitHub. The page opens by itself once per newer build. **Update and restart** installs it where Studio is: on macOS through `install-studio.sh` into the app's own folder, then Studio starts again; on Windows the setup program runs, passive, and starts Studio again. Atlas Studio › Check for Updates… (Help › Check for Updates… on Windows and Linux) asks at once. Atlas Studio › What's New in Atlas Studio x.y.z (under Help elsewhere), **What’s new** in Settings, or a click on the version at the right of the status bar, shows the same page for the build that runs: its release's notes, else its release on GitHub, else, for a build that is no release yet, the commits it is made of. `ATLAS_NO_UPDATE_CHECK` set turns the daily look off.
 
 ## Workspaces
 
@@ -42,7 +42,7 @@ Studio keeps the last twenty workspaces it opened. ⌘O (File › Open Workspace
 
 ## Windows
 
-Every window is one workspace, with its own `atlas serve` and its own terminals. File › New Window (⌘N) opens one on the page of workspaces; **Open workspace** in the top bar and ⌘O open that page in the window you are in. A workspace already open in another window brings that window to the front, since two servers on one repository would share what it keeps in `.atlas/`. On macOS the windows share a tab group: Window › Merge All Windows makes them tabs. Closing a window ends its server and its shells. The window's title names its workspace, and the status bar names Studio's build.
+Every window is one workspace, with its own `atlas-code serve` and its own terminals. File › New Window (⌘N) opens one on the page of workspaces; **Open workspace** in the top bar and ⌘O open that page in the window you are in. A workspace already open in another window brings that window to the front, since two servers on one repository would share what it keeps in `.atlas/`. On macOS the windows share a tab group: Window › Merge All Windows makes them tabs. Closing a window ends its server and its shells. The window's title names its workspace, and the status bar names Studio's build.
 
 ## Settings
 
@@ -51,7 +51,7 @@ Atlas Studio › Settings… (⌘,; File › Settings… on Windows and Linux):
 - **Appearance**: System, Light or Dark, and the theme shown in each: Atlas Light, Catppuccin Latte, GitHub Light, Gruvbox Light or Solarized Light; Atlas Dark, Catppuccin Mocha, Dracula, Gruvbox Dark, Nord or Solarized Dark. Every window follows it, with its terminal and the Atlas view, history and loading page in it. View › Light or Dark (⇧⌘L, Ctrl+Shift+L elsewhere), or ◐ in the status bar, switches between the two themes.
 
 A theme names the roles Atlas's colours go by (`--bg`, `--ink`, `--focus`, the hues, the colours of the kinds of place), from its own published palette (`ui/themes.js`); Studio's colours (`ui/theme.css`) are mixes of those roles. The pages Studio frames know no themes: they take the roles in their address (`palette=`) and, when the theme changes, as a message from Studio's origin, each value checked to be a colour (`viewer/palette.js`).
-- **Coding agents**: whether Claude Code and Codex have Atlas's MCP server, registered once for every project as `docs/reference/install.md` says. **Add Atlas** runs that command, with the CLI of Studio's own channel on the `PATH` (`atlas`, or `atlas-nightly` for Atlas Studio Nightly), else Studio's own; the agent connects to it in a new session (or `/mcp` in Claude Code).
+- **Coding agents**: whether Claude Code and Codex have Atlas's MCP server, registered once for every project as `docs/reference/install.md` says. **Add Atlas** runs that command, with the CLI of Studio's own channel on the `PATH` (`atlas`, or `atlas-code-nightly` for Atlas Studio Nightly), else Studio's own; the agent connects to it in a new session (or `/mcp` in Claude Code).
 - **Version**, and a check for updates.
 
 `settings.json` in Studio's configuration folder keeps the appearance and where the terminal docks (`terminal`: `bottom`, `left` or `right`).
@@ -60,13 +60,13 @@ A theme names the roles Atlas's colours go by (`--bg`, `--ink`, `--focus`, the h
 
 In Studio the Atlas view draws no header of its own: its controls (the project, Flowchart / Type lattice / Signature flow, the entry point, what it counts, export, jump to a symbol) stand in Studio's top bar beside the workspace's name. The page opens with `?host=` and Studio's origin; it describes its controls to Studio and does what Studio's bar asks, as messages addressed to that origin only. In a browser the page keeps its header and its link to the history; in Studio the history is in the sidebar (⌘2, with ⌘1 for the Atlas view). **export** saves the page through the system's save dialog.
 
-While Atlas draws, a bar shows how far reading the project's code is; the picture opens when it is done, and a second bar in the picture follows the library calls. Each bar keeps even with the time its phase took at the last few starts of `atlas serve` for this repository of the same kind (the slowest of the last three, kept in `.atlas/timings.json`; a bar that expects too little would wait before its end): a start that finds the index of its build of Atlas apart from one that reads everything, as the first start after a new build does. Then it slows down without arriving while the phase takes longer.
+While Atlas draws, a bar shows how far reading the project's code is; the picture opens when it is done, and a second bar in the picture follows the library calls. Each bar keeps even with the time its phase took at the last few starts of `atlas-code serve` for this repository of the same kind (the slowest of the last three, kept in `.atlas/timings.json`; a bar that expects too little would wait before its end): a start that finds the index of its build of Atlas apart from one that reads everything, as the first start after a new build does. Then it slows down without arriving while the phase takes longer.
 
 ## Files
 
-The sidebar shows the workspace's files as Atlas reads them: what `atlas serve` answers at `/api/files`, the listing `Repo` reads, without hidden directories, what git ignores, dependencies and build output. A filled dot marks a file the graph defines something in (a module, class or function); an open dot marks a physical file only. The tree follows the working tree while the workspace is open.
+The sidebar shows the workspace's files as Atlas reads them: what `atlas-code serve` answers at `/api/files`, the listing `Repo` reads, without hidden directories, what git ignores, dependencies and build output. A filled dot marks a file the graph defines something in (a module, class or function); an open dot marks a physical file only. The tree follows the working tree while the workspace is open.
 
-A traced file opens where the picture has it: a module that is an entry point (a notebook, a script) on its route, as `atlas view notebook.ipynb` does, any other on its module's box. Any other file opens in the preview at the right, as a traced one does with alt-click, ⇧Enter or the ⧉ on its row. The box selected in the Atlas view marks its file in the tree with ◇. Arrow keys move through the tree, Right and Left open and close a folder, Enter opens a file.
+A traced file opens where the picture has it: a module that is an entry point (a notebook, a script) on its route, as `atlas-code view notebook.ipynb` does, any other on its module's box. Any other file opens in the preview at the right, as a traced one does with alt-click, ⇧Enter or the ⧉ on its row. The box selected in the Atlas view marks its file in the tree with ◇. Arrow keys move through the tree, Right and Left open and close a folder, Enter opens a file.
 
 The preview shows:
 

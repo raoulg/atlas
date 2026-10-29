@@ -175,7 +175,7 @@
     }
 
     // where a traced file's reading starts: the route of the entry point it defines (a notebook or a
-    // script is one itself, a command line is a function in it), as a file named to `atlas view` opens;
+    // script is one itself, a command line is a function in it), as a file named to `atlas-code view` opens;
     // else its module's box, else the first thing defined in it
     const reading = (facts) => facts.find((fact) => fact.entry) || facts.find((fact) => fact.kind === 'module') || facts[0];
 

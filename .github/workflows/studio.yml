@@ -65,9 +65,9 @@ jobs:
           node-version: 22
       - name: the atlas CLI, as Studio's sidecar
         run: |
-          cargo build --release --locked --target ${{ matrix.target }} -p atlas
+          cargo build --release --locked --target ${{ matrix.target }} -p atlas-code
           mkdir -p studio/src-tauri/binaries
-          cp target/${{ matrix.target }}/release/atlas studio/src-tauri/binaries/atlas-${{ matrix.target }}
+          cp target/${{ matrix.target }}/release/atlas-code studio/src-tauri/binaries/atlas-code-${{ matrix.target }}
       - name: the disk image
         working-directory: studio
         run: |
@@ -82,7 +82,7 @@ jobs:
           codesign --verify --deep --strict "$app"
           plutil -p "$app/Contents/Info.plist" | grep CFBundleShortVersionString
           test "$(plutil -extract CFBundleIdentifier raw "$app/Contents/Info.plist")" = "$STUDIO_ID"
-          if [ "${{ matrix.target }}" = aarch64-apple-darwin ]; then "$app/Contents/MacOS/atlas" --version; fi
+          if [ "${{ matrix.target }}" = aarch64-apple-darwin ]; then "$app/Contents/MacOS/atlas-code" --version; fi
           hdiutil detach "$mount"
       - uses: actions/upload-artifact@v7
         with:
@@ -104,9 +104,9 @@ jobs:
       - name: the atlas CLI, as Studio's sidecar
         shell: bash
         run: |
-          cargo build --release --locked --target $TARGET -p atlas
+          cargo build --release --locked --target $TARGET -p atlas-code
           mkdir -p studio/src-tauri/binaries
-          cp target/$TARGET/release/atlas.exe studio/src-tauri/binaries/atlas-$TARGET.exe
+          cp target/$TARGET/release/atlas-code.exe studio/src-tauri/binaries/atlas-code-$TARGET.exe
       - name: the setup program
         shell: bash
         working-directory: studio
@@ -121,7 +121,7 @@ jobs:
           Start-Process -Wait -FilePath ".\atlas-studio-$env:TARGET-setup.exe" -ArgumentList '/S'
           $dir = Join-Path $env:LOCALAPPDATA $env:STUDIO_APP
           Get-ChildItem $dir | Select-Object Name, Length | Format-Table | Out-String | Write-Host
-          & (Join-Path $dir 'atlas.exe') --version
+          & (Join-Path $dir 'atlas-code.exe') --version
           if ($LASTEXITCODE -ne 0) { exit 1 }
       - uses: actions/upload-artifact@v7
         with:

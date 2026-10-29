@@ -1,10 +1,10 @@
-//! What `atlas --help` prints: the banner, a picture of seven lines, whole at any width the help is
+//! What `atlas-code --help` prints: the banner, a picture of seven lines, whole at any width the help is
 //! wrapped to.
 
 use std::process::Command;
 
 fn help(columns: &str) -> String {
-    let out = Command::new(env!("CARGO_BIN_EXE_atlas")).arg("--help").env("COLUMNS", columns).output().expect("atlas runs");
+    let out = Command::new(env!("CARGO_BIN_EXE_atlas-code")).arg("--help").env("COLUMNS", columns).output().expect("atlas runs");
     assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
     String::from_utf8(out.stdout).expect("utf-8")
 }

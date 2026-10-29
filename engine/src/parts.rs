@@ -57,7 +57,7 @@ pub fn graph_of(repo: &Repo, opts: &Options) -> Result<Graph> {
     Ok(crate::view::View::apply(&crate::view::reached(&g, opts.libraries), &g))
 }
 
-/// Each part's own graph, read in its language: what `atlas check` asks, part by part. Each
+/// Each part's own graph, read in its language: what `atlas-code check` asks, part by part. Each
 /// repository is read once; a part is a view of its reading.
 pub fn analyze_parts(repos: &[PathBuf], opts: &Options) -> Result<Vec<Graph>> {
     for _ in 0..3 {

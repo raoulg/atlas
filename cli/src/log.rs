@@ -1,4 +1,4 @@
-//! What `atlas serve` says to the person who started it: that it runs and where, then only what is
+//! What `atlas-code serve` says to the person who started it: that it runs and where, then only what is
 //! worth knowing, a line each, with the time and who did it: the page drawn, an export, a note
 //! written, and what an agent did with it or where it pointed the page. In the logo's colours in a
 //! terminal; plain elsewhere, or with `NO_COLOR`.
@@ -12,7 +12,7 @@ use clap::builder::styling::{AnsiColor, Effects, Style};
 pub enum Who {
     /// The reader of the page.
     You,
-    /// An agent, through `atlas mcp`.
+    /// An agent, through `atlas-code mcp`.
     Agent,
     /// The server itself.
     Atlas,
@@ -39,9 +39,9 @@ impl Log {
     pub fn start(&self, project: &str, url: &str) {
         let (bold, dim, petrol) =
             (Style::new().effects(Effects::BOLD), Style::new().effects(Effects::DIMMED), AnsiColor::Cyan.on_default());
-        self.write(&format!("{} {}", self.paint(bold, "atlas serve"), self.paint(dim, &format!("· {project}"))));
+        self.write(&format!("{} {}", self.paint(bold, "atlas-code serve"), self.paint(dim, &format!("· {project}"))));
         self.write(&format!("  {}  {}", self.paint(dim, "page "), self.paint(petrol.effects(Effects::UNDERLINE), url)));
-        self.write(&format!("  {}  atlas mcp: shown · look · notes · resolve", self.paint(dim, "agent")));
+        self.write(&format!("  {}  atlas-code mcp: shown · look · notes · resolve", self.paint(dim, "agent")));
         self.write(&format!("  {}  ctrl-c", self.paint(dim, "stop ")));
     }
 

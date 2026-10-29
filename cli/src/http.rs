@@ -1,4 +1,4 @@
-//! HTTP/1.1 for the pages Atlas serves on this machine (`atlas history`, `atlas serve`): one request
+//! HTTP/1.1 for the pages Atlas serves on this machine (`atlas-code history`, `atlas-code serve`): one request
 //! per connection, read whole, and one answer written back. A server answers only at the addresses it
 //! serves, so a page of another site that renamed itself to this machine is refused, and a request
 //! that changes something or runs an analysis must come from Atlas's own page (`Request::own`).
