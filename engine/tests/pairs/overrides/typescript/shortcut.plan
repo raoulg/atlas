@@ -3,9 +3,9 @@
 # that may be no Click is `check`'s to ask; the plan draws what is handed.
 
 route events.handlers.Handler
-step Handler()/Handler.handle
+step Handler()/Handler.handle one of 2
 step Handler()/Handler.handle/ClickHandler.handle
-step Handler()/Handler.log
+step Handler()/Handler.log one of 2
 step Handler()/Handler.log/ClickHandler.log
 
 line entry > Handler()/Handler.handle call

@@ -4,7 +4,7 @@
 # it) and hands it back at its own moment; the dispatch hands on what its override gave, at its own (law 4, Moment).
 
 route books.Store
-step Store()/Store.get
+step Store()/Store.get one of 1
 step Store()/Store.get/Shelf.get
 step Store()/Store.get/Shelf.get/Book()
 
