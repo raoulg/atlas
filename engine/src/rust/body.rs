@@ -1356,7 +1356,8 @@ impl<'a, 't> Body<'a, 't> {
         match v.kind() {
             k if WRAPPERS.contains(&k) => self.value_class(wrapped(v)?),
             "self" => self.cls.clone(),
-            "identifier" => self.locals.get(text(v, src), v.start_byte()).cloned(),
+            "identifier" => self.locals.get(text(v, src), v.start_byte()).cloned().or_else(|| self.unit_struct(v)),
+            "scoped_identifier" => self.unit_struct(v),
             "struct_expression" => self.resolve(&path_parts(v.child_by_field_name("name"), src)).and_then(|r| self.class_of(&r)),
             "call_expression" if function(v).map_or(false, |f| f.kind() == "field_expression") => {
                 let f = function(v)?;
@@ -1668,7 +1669,10 @@ impl<'a, 't> Body<'a, 't> {
             Called::Path(parts) => return self.path_call(steps, c, parts),
             Called::Method(recv, method) => (recv, method),
         };
-        let owner = |t: TsNode| if t.kind() == "self" { self.cls.clone() } else { self.locals.get(text(t, src), t.start_byte()).cloned() };
+        let owner = |t: TsNode| match t.kind() {
+            "self" => self.cls.clone(),
+            _ => self.locals.get(text(t, src), t.start_byte()).cloned().or_else(|| self.unit_struct(t)),
+        };
         let class = match recv.as_slice() {
             [r] => owner(*r),
             [o, f] => owner(*o).and_then(|c| self.store.classes.get(&c)).and_then(|k| k.attr_types.get(text(*f, src)).cloned()),
@@ -1700,13 +1704,12 @@ impl<'a, 't> Body<'a, 't> {
     }
 
     /// `Markdown`, named where a value goes: a unit struct named as a value is a value of it,
-    /// built.
+    /// built, also where a method is called on it (`Plain.show()`).
     fn unit(&self, steps: &mut Steps, c: TsNode<'t>) {
-        let src = self.src;
         let is = |p: TsNode, field: &str| p.child_by_field_name(field).map(|v| v.id()) == Some(c.id());
         let value = c.parent().map_or(false, |p| match p.kind() {
             "arguments" | "return_expression" | "array_expression" | "tuple_expression" | "reference_expression" => true,
-            "let_declaration" | "field_initializer" | "match_arm" => is(p, "value"),
+            "let_declaration" | "field_initializer" | "match_arm" | "field_expression" => is(p, "value"),
             "assignment_expression" => is(p, "right"),
             "block" => p.named_child(p.named_child_count().saturating_sub(1)).map(|x| x.id()) == Some(c.id()),
             _ => false,
@@ -1715,15 +1718,22 @@ impl<'a, 't> Body<'a, 't> {
         if !value {
             return;
         }
-        let Some(r) = self.resolve(&path_parts(Some(c), src)).filter(|r| !r.starts_with("ext:")).and_then(|r| self.class_of(&r)) else {
-            return;
-        };
-        // a struct with fields, or an enum, is no value by its name alone
-        if self.store.classes.get(&r).map_or(false, |k| !k.fields.is_empty() || !k.variants.is_empty()) {
-            return;
-        }
+        let Some(r) = self.unit_struct(c) else { return };
         let step = Step { gives: self.gives(c, Some(&r)), ..Default::default() };
         steps.call(c, &r, EdgeKind::Instantiates, None, step);
+    }
+
+    /// The unit struct a path written as a value names (`Words`, `formats::Words`): its name alone is a value of it,
+    /// built there. A struct with fields, a tuple struct (whose name is the function that builds one), an enum or a
+    /// trait is no value by its name alone, and neither is a name the body binds.
+    fn unit_struct(&self, v: TsNode) -> Option<String> {
+        if v.kind() == "identifier" && self.parameter.get(text(v, self.src), v.start_byte()).is_some() {
+            return None;
+        }
+        let r = self.resolve(&path_parts(Some(v), self.src)).filter(|r| !r.starts_with("ext:")).and_then(|r| self.class_of(&r))?;
+        let n = self.store.nodes.get(&r)?;
+        let def = self.modules.get(&n.module).and_then(|home| def_node(home, n))?;
+        (def.kind() == "struct_item" && def.child_by_field_name("body").is_none()).then_some(r)
     }
 
     /// An own function handed on as a value (`xs.iter().map(Self::label)`, `thread::spawn(run)`):
@@ -1940,8 +1950,7 @@ impl<'a, 't> Body<'a, 't> {
         let (Some(value), Some(field)) = (f.child_by_field_name("value"), f.child_by_field_name("field")) else { return };
         let method = text(field, src).to_string();
         let receiver = match value.kind() {
-            "self" => self.cls.clone(),
-            "identifier" => self.locals.get(text(value, src), value.start_byte()).cloned(),
+            "self" | "identifier" => self.value_class(value),
             "field_expression" => {
                 let v = value.child_by_field_name("value").map(|v| opened(v, src));
                 let fld = value.child_by_field_name("field").map(|x| text(x, src)).unwrap_or("");

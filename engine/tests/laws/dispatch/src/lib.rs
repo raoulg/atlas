@@ -34,3 +34,7 @@ pub fn words(text: &str) -> usize {
     let words = Words;
     words.parse(text)
 }
+
+pub fn words_through_the_trait(text: &str) -> usize {
+    Language::parse(&Words, text)
+}
