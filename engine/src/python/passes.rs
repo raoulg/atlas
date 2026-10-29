@@ -19,7 +19,7 @@ use super::module::{
 use super::paths::{self, At, Built, Eval};
 use crate::builder::{foreign_type, ClassInfo, GraphBuilder};
 use crate::knowledge;
-use crate::model::{Dir, EdgeKind, Entry, EntryKind, Node, NodeKind, Touch, World};
+use crate::model::{Dir, EdgeKind, Entry, EntryKind, Methods, Node, NodeKind, Route, Touch, World};
 use crate::pytypes::{Target, Types};
 use crate::tree::{field_children, literals, named_children, span, text, unquote, walk};
 
@@ -834,7 +834,7 @@ fn mark_registered(
                         return Some(entry);
                     }
                     if let Some(web) = from.as_deref().and_then(knowledge::web_framework) {
-                        return route(web, name, call, &m.src).map(|label| Entry::new(EntryKind::Route, label));
+                        return route(web, name, call, &m.src).map(Entry::route);
                     }
                     let on_server = f.kind() == "attribute" && f.child_by_field_name("object").map_or(false, server);
                     (on_server && knowledge::TOOL_DECORATORS.contains(&name)).then(|| {
@@ -929,11 +929,11 @@ fn command_options(seen: &Seen, cli: &knowledge::CliFramework, decorated: TsNode
     out
 }
 
-/// The route a web framework's decorator registers, as `METHOD /path`: the method it is named for,
-/// else the methods it is handed (`GET|POST`, a string or an enum's member each), and the path it
-/// is handed. A path that is not a literal leaves the label at the method.
-fn route(web: &knowledge::WebFramework, name: &str, call: Option<TsNode>, src: &[u8]) -> Option<String> {
-    let methods: Vec<String> = if knowledge::registers_route(name) {
+/// The route a web framework's decorator registers: the method it is named for, else the methods
+/// it is handed (a string or an enum's member each, in a list, a tuple or a set, whose order says
+/// nothing), and the path it is handed. A path that is not a literal leaves the route without one.
+fn route(web: &knowledge::WebFramework, name: &str, call: Option<TsNode>, src: &[u8]) -> Option<Route> {
+    let methods = if knowledge::registers_route(name) {
         knowledge::methods_served(name)
     } else if web.routes.contains(&name) {
         let listed = match call.and_then(|c| by_name(c, web.methods, src)) {
@@ -941,28 +941,23 @@ fn route(web: &knowledge::WebFramework, name: &str, call: Option<TsNode>, src: &
             Some(h) => vec![h],
             None => vec![],
         };
-        let handed: Vec<String> = listed
-            .into_iter()
-            .filter_map(|x| match x.kind() {
-                "string" => Some(unquote(text(x, src))),
-                "attribute" => x.child_by_field_name("attribute").map(|a| text(a, src).to_string()),
-                _ => None,
-            })
-            .map(|x| x.to_uppercase())
-            .collect();
-        if handed.is_empty() {
-            vec![knowledge::DEFAULT_METHOD.to_uppercase()]
+        let handed = Methods::of(listed.into_iter().filter_map(|x| match x.kind() {
+            "string" => Some(unquote(text(x, src))),
+            "attribute" => x.child_by_field_name("attribute").map(|a| text(a, src).to_string()),
+            _ => None,
+        }));
+        if handed.0.is_empty() {
+            Methods::of([knowledge::DEFAULT_METHOD])
         } else {
             handed
         }
     } else {
         return None;
     };
-    let method = methods.join("|");
     Some(match call.and_then(|c| handed(c, 0, web.path, src)) {
-        None => format!("{method} /"),
-        Some(p) if p.kind() == "string" && walk(p, &["interpolation"]).is_empty() => format!("{method} {}", unquote(text(p, src))),
-        Some(_) => method,
+        None => Route { methods, path: Some("/".into()) },
+        Some(p) if p.kind() == "string" && walk(p, &["interpolation"]).is_empty() => Route { methods, path: Some(unquote(text(p, src))) },
+        Some(_) => Route { methods, path: None },
     })
 }
 

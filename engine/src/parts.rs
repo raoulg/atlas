@@ -9,9 +9,9 @@ use anyhow::Result;
 
 use crate::cache::{Check, Written};
 use crate::knowledge;
-use crate::model::{Edge, EdgeKind, EntryKind, Graph, Lang, NodeKind, Part};
+use crate::model::{Edge, EdgeKind, Graph, Lang, Node, NodeKind, Part};
 use crate::options::Options;
-use crate::paths::{method_and_path, serving};
+use crate::paths::{served, serving, Served};
 use crate::repo::Repo;
 
 /// The directories whose manifests root a part: the repository itself, and every manifest
@@ -411,24 +411,20 @@ pub fn join(g: &mut Graph) {
     if g.parts.len() < 2 {
         return;
     }
-    let mut routes: HashMap<&str, Vec<(String, String, String)>> = HashMap::new();
+    let mut routes: HashMap<&str, Vec<&Node>> = HashMap::new();
     for n in &g.nodes {
-        let Some(e) = n.entry.as_ref().filter(|e| e.kind == EntryKind::Route) else { continue };
-        let Some((method, path)) = e.label.split_once(' ') else { continue };
-        if method.split('|').all(|m| knowledge::registers_route(&m.to_ascii_lowercase())) && path.len() > 1 {
-            routes.entry(n.part.as_str()).or_default().push((n.id.clone(), method.to_string(), path.to_string()));
-        }
+        routes.entry(n.part.as_str()).or_default().push(n);
     }
+    let routes: Vec<(&str, Vec<Served>)> = routes.into_iter().map(|(part, nodes)| (part, served(nodes))).collect();
     let mut edges: BTreeMap<(String, String), String> = BTreeMap::new();
     for n in g.nodes.iter().filter(|n| !n.asks.is_empty()) {
         for ask in &n.asks {
-            let (method, path) = method_and_path(ask);
             for (part, served) in &routes {
                 if *part == n.part {
                     continue;
                 }
-                for (handler, _, route) in serving(served, method, path) {
-                    edges.entry((n.id.clone(), handler.clone())).or_insert_with(|| route.clone());
+                for s in serving(served, ask) {
+                    edges.entry((n.id.clone(), s.handler.clone())).or_insert_with(|| s.path().to_string());
                 }
             }
         }

@@ -269,7 +269,7 @@ impl GraphBuilder {
     }
 
     /// A request `id` makes whole that no route of its part serves.
-    pub fn ask(&mut self, id: &str, request: String) {
+    pub fn ask(&mut self, id: &str, request: crate::model::Request) {
         let Some(n) = self.nodes.get_mut(id) else { return };
         if !n.asks.contains(&request) {
             n.asks.push(request);

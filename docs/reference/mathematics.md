@@ -210,8 +210,13 @@ written, a test whether it is there, a copy or a move into it or out of it, its 
 (`File({main.folder}/note.json)` for the rename that moves a note in, the read and the `remove_file`
 alike). The place is the term; its label says the term's patterns in words, from the
 file up (`every *.xml in OW-bestanden/ in each folder in {base_dir}/`), and the term is under the
-pointer. Words are a label, never an identity: two places are one when their terms are.
-**Where.** `paths.rs` (`Seg`, `join`, `place`, `folders`, `bound`, `with_suffix`, `Callers`),
+pointer. Words are a label, never an identity: two places are one when their terms are. A route
+is one in the same way, by what it serves: a set of methods at a path. `methods=["POST", "GET"]`,
+`["GET", "POST"]` and `{"GET", "POST"}` are one set, and a registration for every method
+(`app.all`) is the top of the set. Its label, `GET|POST /items`, writes the set in the order of
+`knowledge::REQUEST_WAYS`; a request meets a route whose set holds its method, at its path.
+**Where.** `paths.rs` (`Seg`, `join`, `place`, `folders`, `bound`, `with_suffix`, `Callers`,
+`served`, `serving`), `model.rs` (`Route`, `Methods`, `Request`),
 the readers' `paths.rs` (`Eval::of`), `flow.rs` (`Touch::place`), `plan.js` (`pathWords`); the
 pairs `python/paths`, `places` and `kept`.
 
