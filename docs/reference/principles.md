@@ -309,8 +309,9 @@ its own and its ancestors': each method by name, with a signature that keeps the
 field by name, holding a type that fits the other's where the graph has the types of both. A type
 with a private method is had only by its subclasses. An array's shape is a promise no type checker
 reads (jaxtyping's `Float[Tensor, "batch dim"]`): each array an override gives has a shape its
-base allows, where `...` stands for any run of dimensions, a name for any one, and a number for
-itself.
+base allows, where `...` (or `*name`) stands for any run of dimensions, a name for any one, and a
+number for itself; an array the override gives with a run of its own fits where every array it may
+be does (`docs/reference/mathematics.md`, "Shapes and their rank").
 
 What the rule cannot see:
 
