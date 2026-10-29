@@ -1984,3 +1984,42 @@ fn places_a_path_a_class_builds_is_the_path_written_out() {
     assert_eq!(c, s);
     assert!(c.iter().any(|(f, a, by)| f == "keep.saveReport" && a == ".made/report.txt" && by == &["bench.cli.main"]), "{c:?}");
 }
+
+// ---------- methods: the methods a route serves ----------
+
+/// The methods pair, `methods/typescript`: a page that asks the server it is served by for its notes (a GET) and
+/// keeps one (a POST). The clean server registers one handler for each method (`app.get`, `app.post`); the shortcut
+/// registers one for every method (`app.all`) and looks at the method in its body. A route serves a set of methods, and
+/// `all` serves the top of that set, every method: a request meets a route whose set holds its method, at its path.
+/// So each clean request meets the handler of its own method and no other, and both shortcut requests meet the one
+/// handler, which is the route at the path for every method there is.
+#[test]
+fn a_request_meets_the_routes_that_serve_its_method() {
+    use atlas_engine::EntryKind;
+    let read = |side: &str| {
+        analyze(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/pairs/methods/typescript").join(side), &Options::default())
+            .unwrap_or_else(|e| panic!("the {side} side parses: {e}"))
+    };
+    // the routes a function of the page meets, each by the methods it serves
+    let met = |g: &Graph, f: &str| -> Vec<BTreeSet<String>> {
+        let src = format!("{}.page.{f}", g.root);
+        g.edges
+            .iter()
+            .filter(|e| e.kind == EdgeKind::Requests && e.src == src)
+            .map(|e| {
+                let entry = g.node(&e.dst).and_then(|n| n.entry.as_ref()).filter(|x| x.kind == EntryKind::Route);
+                let label = &entry.unwrap_or_else(|| panic!("{} is a route", e.dst)).label;
+                let (methods, path) = label.split_once(' ').expect("a method and a path");
+                assert_eq!(path, "/api/notes", "{label}");
+                methods.split('|').map(String::from).collect()
+            })
+            .collect()
+    };
+    let one = |m: &str| BTreeSet::from([m.to_string()]);
+    let every: BTreeSet<String> = atlas_engine::knowledge::HTTP_METHODS.iter().map(|m| m.to_uppercase()).collect();
+    let (c, s) = (read("clean"), read("shortcut"));
+    assert_eq!(met(&c, "notes"), [one("GET")], "the clean GET meets the GET handler alone");
+    assert_eq!(met(&c, "keep"), [one("POST")], "the clean POST meets the POST handler alone");
+    assert_eq!(met(&s, "notes"), [every.clone()], "the shortcut's GET meets the handler of every method");
+    assert_eq!(met(&s, "keep"), [every], "the shortcut's POST meets the handler of every method");
+}
