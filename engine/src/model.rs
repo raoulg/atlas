@@ -3,7 +3,7 @@
 //! Everything between `parse` and `layout` is `Graph -> Graph`. The JSON shape is the
 //! contract with the frontend; `ts-rs` generates the TypeScript side from these types.
 
-use std::collections::{BTreeMap, HashMap, VecDeque};
+use std::collections::{BTreeMap, BTreeSet, HashMap, VecDeque};
 
 use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
@@ -1218,13 +1218,93 @@ impl std::ops::AddAssign for Unresolved {
     }
 }
 
+/// A language Atlas reads, written by its name: `python`, `rust`, `typescript`.
+#[derive(Serialize, Deserialize, TS, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
+#[serde(rename_all = "lowercase")]
+#[ts(export)]
+pub enum Lang {
+    Python,
+    Rust,
+    TypeScript,
+}
+
+impl Lang {
+    /// Every language, in the order of their names.
+    pub const ALL: [Lang; 3] = [Lang::Python, Lang::Rust, Lang::TypeScript];
+
+    /// Its name, as the JSON writes it.
+    pub fn name(self) -> &'static str {
+        match self {
+            Lang::Python => "python",
+            Lang::Rust => "rust",
+            Lang::TypeScript => "typescript",
+        }
+    }
+}
+
+impl std::fmt::Display for Lang {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.name())
+    }
+}
+
+/// The languages a graph is read in: the image of its parts' languages, since a repository's graph
+/// is the coproduct of its parts' and each part is read in one. Empty for no parts; a merge's is
+/// the union of the merged graphs'. The JSON writes the one name when there is one and nothing
+/// otherwise; a graph read back without one takes its parts' (`Graph`'s `Deserialize`).
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Languages(pub BTreeSet<Lang>);
+
+impl Languages {
+    /// The one language, when there is exactly one.
+    pub fn one(&self) -> Option<Lang> {
+        match self.0.len() {
+            1 => self.0.first().copied(),
+            _ => None,
+        }
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = Lang> + '_ {
+        self.0.iter().copied()
+    }
+
+    /// Not exactly one language: what the JSON leaves out.
+    pub fn not_one(&self) -> bool {
+        self.one().is_none()
+    }
+}
+
+impl From<Lang> for Languages {
+    fn from(l: Lang) -> Languages {
+        Languages(BTreeSet::from([l]))
+    }
+}
+
+impl FromIterator<Lang> for Languages {
+    fn from_iter<I: IntoIterator<Item = Lang>>(it: I) -> Languages {
+        Languages(it.into_iter().collect())
+    }
+}
+
+impl Serialize for Languages {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        self.one().serialize(s)
+    }
+}
+
+impl<'de> Deserialize<'de> for Languages {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Languages, D::Error> {
+        Ok(Option::<Lang>::deserialize(d)?.into_iter().collect())
+    }
+}
+
 /// One part of a repository: what one manifest roots (a crate, a Python package, an app),
 /// read in its own language.
-#[derive(Serialize, Deserialize, TS, Clone, Debug, Default, PartialEq)]
+#[derive(Serialize, Deserialize, TS, Clone, Debug, PartialEq)]
 #[ts(export)]
 pub struct Part {
     pub id: String,
-    pub language: String,
+    pub language: Lang,
     /// The directory that holds the part's manifest.
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub dir: String,
@@ -1256,13 +1336,14 @@ pub struct Leaves {
 }
 
 #[derive(Serialize, Deserialize, TS, Clone, Debug, Default)]
+#[serde(remote = "Self")]
 #[ts(export)]
 pub struct Graph {
     pub root: String,
-    /// The language the repo was parsed as: `python`, `rust`, `typescript`; empty when its
-    /// parts are read in several.
-    #[serde(default, skip_serializing_if = "String::is_empty")]
-    pub language: String,
+    /// The languages the repo was parsed in, one per part: `python`, `rust`, `typescript`.
+    #[serde(default, skip_serializing_if = "Languages::not_one")]
+    #[ts(as = "Option<Lang>", optional)]
+    pub language: Languages,
     /// The directory that holds the repo's own manifests: Makefile, pyproject.toml, Cargo.toml.
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub project_root: String,
@@ -1288,6 +1369,24 @@ impl Node {
         let same_call = |a: &Touch, b: &Touch| a.line == b.line && a.op == b.op && a.kind == b.kind;
         let read: Vec<&Touch> = self.instead.iter().filter(|t| !runs.iter().any(|o| same_call(o, t))).collect();
         runs.into_iter().chain(read).collect()
+    }
+}
+
+impl Serialize for Graph {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        Graph::serialize(self, s)
+    }
+}
+
+/// A graph whose JSON names no language is read in its parts' languages: none for no parts, each of
+/// them where the parts are read in several.
+impl<'de> Deserialize<'de> for Graph {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Graph, D::Error> {
+        let mut g = Graph::deserialize(d)?;
+        if g.language.0.is_empty() {
+            g.language = g.parts.iter().map(|p| p.language).collect();
+        }
+        Ok(g)
     }
 }
 

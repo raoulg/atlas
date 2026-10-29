@@ -2,9 +2,9 @@
 //! not follow are counted by name over all of them, and a file two parts keep lines of keeps every
 //! line either shows.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
-use atlas_engine::{diff, parts, Graph, Stats};
+use atlas_engine::{diff, parts, Graph, Lang, Part, Stats};
 use proptest::prelude::*;
 
 /// Counts of names, the most first and equal counts by name.
@@ -95,5 +95,52 @@ proptest! {
             prop_assert_eq!(*line, if shows { source[i].as_str() } else { "" }, "line {}", i + 1);
         }
         prop_assert_eq!(merged, merge(shown_of(&source, &b, lb), shown_of(&source, &a, la)));
+    }
+}
+
+/// A part's graph as it is read: in one language, each of its parts in that language.
+fn read_in(language: Lang, parts: usize) -> Graph {
+    let part = |i: usize| Part {
+        id: format!("p{i}"),
+        language,
+        dir: String::new(),
+        leaves: atlas_engine::language::leaves(language),
+        structural: atlas_engine::language::structural(language),
+    };
+    Graph { language: language.into(), parts: (0..parts).map(part).collect(), ..Default::default() }
+}
+
+/// Law: a language is written by its name, and read back from it.
+#[test]
+fn a_language_is_written_by_its_name() {
+    for l in Lang::ALL {
+        assert_eq!(serde_json::to_value(l).unwrap(), l.name());
+        assert_eq!(serde_json::from_value::<Lang>(serde_json::json!(l.name())).unwrap(), l);
+    }
+}
+
+proptest! {
+    /// Law: a repository's graph is the coproduct of its parts', each read in one language, so its
+    /// languages are the image of theirs: the merge's are the union of the merged graphs', in two
+    /// steps as at once. The JSON writes the one name where there is one and none otherwise, and the
+    /// graph read back from it has the languages it was written with.
+    #[test]
+    fn the_merged_languages_are_the_union_of_the_parts(read in proptest::collection::vec((proptest::sample::select(Lang::ALL.to_vec()), 1usize..3), 0..5)) {
+        let graphs: Vec<Graph> = read.iter().map(|(l, n)| read_in(*l, *n)).collect();
+        let union: BTreeSet<Lang> = read.iter().map(|(l, _)| *l).collect();
+        let merged = parts::merge("repo", graphs.clone());
+        prop_assert_eq!(&merged.language.0, &union);
+
+        let (first, rest) = graphs.split_at(graphs.len() / 2);
+        let halves = vec![parts::merge("repo", first.to_vec()), parts::merge("repo", rest.to_vec())];
+        prop_assert_eq!(&parts::merge("repo", halves).language, &merged.language);
+
+        for g in graphs.iter().chain([&merged]) {
+            let written = json(g);
+            let one = (g.language.0.len() == 1).then(|| g.language.0.first().unwrap().name());
+            prop_assert_eq!(written.get("language").and_then(|v| v.as_str()), one);
+            let back: Graph = serde_json::from_value(written).unwrap();
+            prop_assert_eq!(&back.language, &g.language);
+        }
     }
 }

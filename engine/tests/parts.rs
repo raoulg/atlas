@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 use atlas_engine::parts::{analyze_parts, analyze_repo, roots};
 use atlas_engine::principles::check;
 use atlas_engine::repo::Repo;
-use atlas_engine::{analyze, EdgeKind, EntryKind, Graph, NodeKind, Options};
+use atlas_engine::{analyze, EdgeKind, EntryKind, Graph, Lang, Languages, NodeKind, Options};
 
 fn fixture() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixture-parts")
@@ -25,11 +25,11 @@ fn label(g: &Graph, id: &str) -> String {
 /// none of its members have distinct roots is `a_manifest_no_part_reads_roots_one`.
 #[test]
 fn every_manifest_roots_a_part() {
-    let found: Vec<(String, &str)> = roots(&Repo::read(&fixture(), &[]).unwrap(), &Options::default())
+    let found: Vec<(String, Lang)> = roots(&Repo::read(&fixture(), &[]).unwrap(), &Options::default())
         .into_iter()
         .map(|(d, l)| (d.file_name().unwrap().to_string_lossy().to_string(), l))
         .collect();
-    assert_eq!(found, [("fixture-parts".to_string(), "python"), ("web".to_string(), "typescript")]);
+    assert_eq!(found, [("fixture-parts".to_string(), Lang::Python), ("web".to_string(), Lang::TypeScript)]);
 }
 
 fn manifests() -> PathBuf {
@@ -42,22 +42,22 @@ fn manifests() -> PathBuf {
 #[test]
 fn a_manifest_no_part_reads_roots_one() {
     let repo = Repo::read(&manifests(), &[]).unwrap();
-    let found: Vec<(String, &str)> = roots(&repo, &Options::default())
+    let found: Vec<(String, Lang)> = roots(&repo, &Options::default())
         .into_iter()
         // a part's directory as a path relative to the repository, written with `/` on every system
         .map(|(d, l)| (d.strip_prefix(manifests()).unwrap().to_string_lossy().replace('\\', "/"), l))
         .collect();
     let want = [
-        ("", "python"),
-        ("crates", "rust"),
-        ("crates/fuzz", "rust"),
-        ("deep/a/b/c/d/e", "python"),
-        ("members/hatched", "python"),
-        ("members/poems", "python"),
-        ("members/settled", "python"),
-        ("members/single", "python"),
-        ("members/spaced", "python"),
-        ("members/zoo", "python"),
+        ("", Lang::Python),
+        ("crates", Lang::Rust),
+        ("crates/fuzz", Lang::Rust),
+        ("deep/a/b/c/d/e", Lang::Python),
+        ("members/hatched", Lang::Python),
+        ("members/poems", Lang::Python),
+        ("members/settled", Lang::Python),
+        ("members/single", Lang::Python),
+        ("members/spaced", Lang::Python),
+        ("members/zoo", Lang::Python),
     ];
     assert_eq!(found, want.map(|(d, l)| (d.to_string(), l)));
 }
@@ -210,13 +210,13 @@ fn a_repository_of_scripts_beside_a_requirements_file_is_a_part() {
         std::fs::create_dir_all(file.parent().unwrap()).unwrap();
         std::fs::write(file, body).unwrap();
     }
-    let found: Vec<(String, &str)> = roots(&Repo::read(&dir, &[]).unwrap(), &Options::default())
+    let found: Vec<(String, Lang)> = roots(&Repo::read(&dir, &[]).unwrap(), &Options::default())
         .into_iter()
         .map(|(d, l)| (d.strip_prefix(&dir).unwrap().to_string_lossy().replace('\\', "/"), l))
         .collect();
     let g = analyze_repo(&[dir.clone()], &Options::default());
     let _ = std::fs::remove_dir_all(&dir);
-    assert_eq!(found, [(String::new(), "python"), ("tools".to_string(), "python")], "each project file roots a part");
+    assert_eq!(found, [(String::new(), Lang::Python), ("tools".to_string(), Lang::Python)], "each project file roots a part");
     let g = g.expect("a repository of scripts beside a requirements.txt is read");
     let mut scripts: Vec<(String, String)> = g
         .nodes
@@ -235,13 +235,13 @@ fn a_repository_of_scripts_beside_a_requirements_file_is_a_part() {
 #[test]
 fn the_parts_are_one_graph() {
     let g = shop();
-    let parts: Vec<(&str, &str)> = g.parts.iter().map(|p| (p.id.as_str(), p.language.as_str())).collect();
-    assert_eq!(parts, [("shop", "python"), ("web", "typescript")]);
-    assert_eq!(g.language, "", "read in two languages");
+    let parts: Vec<(&str, Lang)> = g.parts.iter().map(|p| (p.id.as_str(), p.language)).collect();
+    assert_eq!(parts, [("shop", Lang::Python), ("web", Lang::TypeScript)]);
+    assert_eq!(g.language, [Lang::Python, Lang::TypeScript].into_iter().collect::<Languages>(), "read in two languages");
     assert_eq!(g.node("shop.api.item").unwrap().part, "shop");
     assert_eq!(g.node("web.lib.client.item").unwrap().part, "web");
-    let each: Vec<String> = analyze_parts(&[fixture()], &Options::default()).unwrap().into_iter().map(|g| g.language).collect();
-    assert_eq!(each, ["python", "typescript"]);
+    let each: Vec<Languages> = analyze_parts(&[fixture()], &Options::default()).unwrap().into_iter().map(|g| g.language).collect();
+    assert_eq!(each, [Lang::Python.into(), Lang::TypeScript.into()]);
 }
 
 fn twins() -> PathBuf {
