@@ -9,7 +9,7 @@ use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
-pub use crate::language::Lang;
+pub use crate::lang::Lang;
 
 #[derive(Serialize, Deserialize, TS, Clone, Copy, PartialEq, Eq, Hash, Debug)]
 #[serde(rename_all = "snake_case")]

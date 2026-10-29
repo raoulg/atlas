@@ -15,6 +15,7 @@ pub mod environment;
 pub mod families;
 pub mod flow;
 pub mod knowledge;
+pub mod lang;
 pub mod language;
 pub mod model;
 pub mod options;
