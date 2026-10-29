@@ -9,7 +9,7 @@ Open [index.html](index.html) in a browser. The file is self-contained and uses 
 - The right side previews a selected Markdown, HTML, PDF, or source file. The Markdown pane has Preview and Source states. The PDF page and HTML content are illustrative renderings.
 - The bottom line keeps the active worktree, analysis state, and selected graph element visible.
 
-The `atlas view .` diagram states the intended route: `Disk(repo) → Repo.read → Repo → Language.parse → Graph → (Flow, Findings) → Html → File(html) → open`. It depicts graph structure and source location as different kinds of navigation. A physical directory is not a graph node.
+The `atlas-code view .` diagram states the intended route: `Disk(repo) → Repo.read → Repo → Language.parse → Graph → (Flow, Findings) → Html → File(html) → open`. It depicts graph structure and source location as different kinds of navigation. A physical directory is not a graph node.
 
 ## Interaction to try
 

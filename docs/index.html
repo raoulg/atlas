@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Atlas: see what your code is, and point at it</title>
-<meta name="description" content="Atlas draws what a program is, beneath the language it is written in, so that you and your coding agent can look at the same picture: what a change did, a note on a box, a design before it is built.">
+<title>Atlas — your code's topology</title>
+<meta name="description" content="Atlas — your code's topology. Atlas draws what a program is, beneath the language it is written in, so that you and your coding agent can look at the same picture: what a change did, a note on a box, a design before it is built.">
 <link rel="icon" href="logo.svg">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -464,10 +464,10 @@ document.documentElement.classList.add('js');
     <div class="mcp">
       <h3>Connect Atlas to your agent once</h3>
       <p class="os">Claude Code</p>
-      <pre>claude mcp add --scope user atlas -- atlas mcp</pre>
+      <pre>claude mcp add --scope user atlas -- atlas-code mcp</pre>
       <p class="os">Codex</p>
-      <pre>codex mcp add atlas -- &quot;$(command -v atlas)&quot; mcp</pre>
-      <p>Then run <code>atlas serve</code> in a repository and open the page it prints. What follows is a session with Claude Code on the sunspots program: what was said in the chat, and what the page showed.</p>
+      <pre>codex mcp add atlas -- &quot;$(command -v atlas-code)&quot; mcp</pre>
+      <p>Then run <code>atlas-code serve</code> in a repository and open the page it prints. What follows is a session with Claude Code on the sunspots program: what was said in the chat, and what the page showed.</p>
     </div>
     <div class="session">
       <h3>1 &middot; You ask where something happens; the agent points at it</h3>
@@ -514,7 +514,7 @@ document.documentElement.classList.add('js');
     </div>
     <div class="stage" role="tabpanel" id="st-left" aria-labelledby="tb-left">
       <div class="session">
-        <figure class="chat"><figcaption>In the chat</figcaption><div class="chatlog"><p class="you">How far along is the implementation?</p><p class="ran">Used atlas: revelation &rsaquo;</p><div class="said"><p>Let me use <code>atlas revelation</code> to check.</p><p>The design is in place, but none of it is built yet. Atlas lists three prophecies, each with one body still to write:</p><table><tr><th>Where</th><th>What</th><th>Still to do</th></tr><tr><td><code>cli.py:32</code></td><td><code>run_cycles</code>, which will replace <code>run</code></td><td>1 body</td></tr><tr><td><code>plot.py:44</code></td><td><code>Cycles</code>, the figure with the maxima marked</td><td>1 body</td></tr><tr><td><code>series.py:29</code></td><td><code>peaks</code>, which finds the maximum of each cycle</td><td>1 body</td></tr></table><p>Nothing built leans on them yet, so <code>run</code> and <code>Trend</code> keep working as they do now.</p><p>The real work is in <code>peaks</code>, finding the maxima, and in <code>Cycles.draw</code>, marking them on the figure. <code>run_cycles</code> already calls everything in the right order; all it needs is to lose its marker. Shall I build it?</p></div></div></figure>
+        <figure class="chat"><figcaption>In the chat</figcaption><div class="chatlog"><p class="you">How far along is the implementation?</p><p class="ran">Used atlas: revelation &rsaquo;</p><div class="said"><p>Let me use <code>atlas-code revelation</code> to check.</p><p>The design is in place, but none of it is built yet. Atlas lists three prophecies, each with one body still to write:</p><table><tr><th>Where</th><th>What</th><th>Still to do</th></tr><tr><td><code>cli.py:32</code></td><td><code>run_cycles</code>, which will replace <code>run</code></td><td>1 body</td></tr><tr><td><code>plot.py:44</code></td><td><code>Cycles</code>, the figure with the maxima marked</td><td>1 body</td></tr><tr><td><code>series.py:29</code></td><td><code>peaks</code>, which finds the maximum of each cycle</td><td>1 body</td></tr></table><p>Nothing built leans on them yet, so <code>run</code> and <code>Trend</code> keep working as they do now.</p><p>The real work is in <code>peaks</code>, finding the maxima, and in <code>Cycles.draw</code>, marking them on the figure. <code>run_cycles</code> already calls everything in the right order; all it needs is to lose its marker. Shall I build it?</p></div></div></figure>
         <figure class="code fill"><figcaption>In your files: the design, with its markers in purple</figcaption><div class="clip"><pre># series.py
 <span class="m">@prophecy()</span>
 def peaks(frame: pd.DataFrame, years: int) -&gt; pd.DataFrame:
@@ -543,7 +543,7 @@ def run_cycles(raw: Path = RAW, figure: Path = FIGURE, months: int = 13, years: 
     frame = peaks(smooth(load(raw), settings.months), years)
     Cycles(settings).save(frame, figure)</pre></div></figure>
       </div>
-      <p class="cap"><b>You ask how far along it is.</b> Each new part carries a marker, <code>@prophecy</code>, and <code>atlas revelation</code> lists them: what each replaces, and how many bodies are left to write. The design is done when the list is empty.</p>
+      <p class="cap"><b>You ask how far along it is.</b> Each new part carries a marker, <code>@prophecy</code>, and <code>atlas-code revelation</code> lists them: what each replaces, and how many bodies are left to write. The design is done when the list is empty.</p>
     </div>
     <div class="stage" role="tabpanel" id="st-built" aria-labelledby="tb-built">
       <div class="session">
@@ -577,7 +577,7 @@ def run_cycles(raw: Path = RAW, figure: Path = FIGURE, months: int = 13, years: 
     frame = peaks(smooth(load(raw), settings.months), years)
     Cycles(settings).save(frame, figure)</pre></div></figure>
       </div>
-      <p class="cap"><b>Built.</b> The agent writes the bodies and takes the markers away. <code>atlas revelation</code> finds no prophecies any more, and the dotted boxes are solid: the same route, built.</p>
+      <p class="cap"><b>Built.</b> The agent writes the bodies and takes the markers away. <code>atlas-code revelation</code> finds no prophecies any more, and the dotted boxes are solid: the same route, built.</p>
     </div>
   </div>
 </section>
@@ -973,12 +973,12 @@ def run_cycles(raw: Path = RAW, figure: Path = FIGURE, months: int = 13, years: 
   <p class="os">Windows, in PowerShell</p>
   <pre>irm https://raw.githubusercontent.com/raoulg/atlas/main/install.ps1 | iex</pre>
   <p class="os">From source, with a <a href="https://rustup.rs">Rust toolchain</a></p>
-  <pre>cargo install --locked --git https://github.com/raoulg/atlas atlas</pre>
-  <p class="explain" style="margin-top:20px">And then <code>atlas serve</code>.</p>
+  <pre>cargo install --locked --git https://github.com/raoulg/atlas atlas-code</pre>
+  <p class="explain" style="margin-top:20px">And then <code>atlas-code serve</code>.</p>
   <p class="os" style="margin-top:20px">Your coding agent, once for every project</p>
-  <pre>claude mcp add --scope user atlas -- atlas mcp
-codex mcp add atlas -- &quot;$(command -v atlas)&quot; mcp</pre>
-  <p class="explain">Claude Code's <code>--scope user</code> makes Atlas available in every project. Codex keeps its servers in one configuration for all projects and starts them without your shell's <code>PATH</code>, so it is given the binary's full path, which <code>command -v atlas</code> prints. Then <code>atlas serve</code> in any repository is all it takes: the agent's <code>atlas mcp</code> works on the repository the agent runs in, and shares the page with you.</p>
+  <pre>claude mcp add --scope user atlas -- atlas-code mcp
+codex mcp add atlas -- &quot;$(command -v atlas-code)&quot; mcp</pre>
+  <p class="explain">Claude Code's <code>--scope user</code> makes Atlas available in every project. Codex keeps its servers in one configuration for all projects and starts them without your shell's <code>PATH</code>, so it is given the binary's full path, which <code>command -v atlas</code> prints. Then <code>atlas-code serve</code> in any repository is all it takes: the agent's <code>atlas-code mcp</code> works on the repository the agent runs in, and shares the page with you.</p>
   <p class="explain">Homebrew and how Atlas tells you about updates: <a href="reference/install.md">install</a>.</p>
 </section>
 

@@ -77,7 +77,7 @@ Read it from left to right:
   packages that hand the focus data or take data from it, and click one of those to add
   it to the focus. The state bar names the packages around the focus, the most exchanged
   first, to add with one click.
-- **A vermilion dot in a corner is a finding** of `atlas check` (below) about that box, pill
+- **A vermilion dot in a corner is a finding** of `atlas-code check` (below) about that box, pill
   or route: hover the dot for what Atlas sees there and the question it asks. The dot sits
   inside its box, so findings move no box and no line. Atlas's own picture has none.
 - **Double-click a box** to pin its lines, to study or compare what it connects.
@@ -96,27 +96,27 @@ The same route as text, with its steps in call order, is the MCP tool `route` (s
 ## Use
 
 ```bash
-atlas serve                     # the repository you are in, as a page to work in with your agent
-atlas view                      # the same picture as one HTML file; opens in your browser
-atlas view ../api ../web        # two repositories as parts of one picture
-atlas view notebooks/explore.ipynb   # one file, with its project, opened on its route
-atlas view https://github.com/o/r/tree/main/src/pkg   # one folder of a repository, from its URL
-atlas check                     # where the code and the design principles disagree
-atlas revelation                # the sketch code kept in the tree, and what is left to build
-atlas changes                   # what your edits did to the routes, their places and the findings
-atlas changes v1..main          # what one revision did against another
-atlas history                   # the history in your browser: pick two commits, see them as one picture
-atlas --help
+atlas-code serve                     # the repository you are in, as a page to work in with your agent
+atlas-code view                      # the same picture as one HTML file; opens in your browser
+atlas-code view ../api ../web        # two repositories as parts of one picture
+atlas-code view notebooks/explore.ipynb   # one file, with its project, opened on its route
+atlas-code view https://github.com/o/r/tree/main/src/pkg   # one folder of a repository, from its URL
+atlas-code check                     # where the code and the design principles disagree
+atlas-code revelation                # the sketch code kept in the tree, and what is left to build
+atlas-code changes                   # what your edits did to the routes, their places and the findings
+atlas-code changes v1..main          # what one revision did against another
+atlas-code history                   # the history in your browser: pick two commits, see them as one picture
+atlas-code --help
 ```
 
-`atlas serve` is the page to work in (see Serve, below). `atlas view` writes the same page as a
+`atlas-code serve` is the page to work in (see Serve, below). `atlas-code view` writes the same page as a
 single HTML file and opens it, to keep, to send, or for a script or an agent to make. No server
 runs and your code stays on your machine. The file goes to `.atlas/` at the top of the git repository (`--out` names
 another place), where you and an agent working there both find it; the folder ignores itself,
-so git never sees it. `atlas analyze` writes its `graph.json` there too. The page fetches only its drawing libraries (d3, elk, highlight.js) from a
+so git never sees it. `atlas-code analyze` writes its `graph.json` there too. The page fetches only its drawing libraries (d3, elk, highlight.js) from a
 CDN. It has three views. The **Flowchart** is the one to start with. Type lattice and
 Signature flow are earlier experiments. The header names the build that drew
-the page, as `atlas --version` does: `0.4.0 (b0ead14)`. The minor number goes up when what
+the page, as `atlas-code --version` does: `0.4.0 (b0ead14)`. The minor number goes up when what
 Atlas reads or draws changes, the patch number for a fix.
 
 Atlas reads:
@@ -181,7 +181,7 @@ glob (`use plotters::prelude::*`) is that library's. In TypeScript, what `parseA
 option holds its `default:`, and an object literal declared as one of the program's types
 (`const settings: Settings = {..}`) is a step that makes that value.
 
-`atlas check` asks for a return annotation where callers use what a function gives back.
+`atlas-code check` asks for a return annotation where callers use what a function gives back.
 
 Entry points come from the code itself. Atlas finds:
 
@@ -204,7 +204,7 @@ steps take what it gives straight from the entry, and clicking the entry shows t
 
 ## Check: the picture as a list of questions
 
-`atlas check` reads the same graph and lists where the code and eleven design principles
+`atlas-code check` reads the same graph and lists where the code and eleven design principles
 disagree. Each finding ends in a question for the author. Atlas coaches; it does not fix.
 The questions are grouped by principle, and the reason they share is said once, above them.
 Below them a table counts the questions of each principle in each part. `--json` gives the
@@ -227,7 +227,7 @@ findings as data.
 Each principle, with its reasoning, the idioms behind it and what each language lets Atlas
 trace, is in [principles.md](principles.md), with what each rule cannot see. A finding is a signal
 to look at the code and at what the rule claims, never a verdict and never a target: Atlas keeps
-what `atlas check` asks of itself as a reviewed list, each finding with why it stands.
+what `atlas-code check` asks of itself as a reviewed list, each finding with why it stands.
 
 ## Revelation: what a design leaves to build
 
@@ -238,11 +238,11 @@ project, in a module that imports nothing of the project; Atlas matches it by na
 type. `veiled` says the place is known and the shape is not, `sealed="#144"` that the shape waits
 on an open question.
 
-A prophecy is a todo, not a finding: `atlas check` leaves its empty bodies alone, and asks about
+A prophecy is a todo, not a finding: `atlas-code check` leaves its empty bodies alone, and asks about
 the built code that leans on it, because production would run on a stub. What a prophecy
 supersedes is still asked about, with the prophecy as the answer.
 
-`atlas revelation` lists every prophecy: what it supersedes, the bodies still to write, whether it
+`atlas-code revelation` lists every prophecy: what it supersedes, the bodies still to write, whether it
 is veiled or sealed, and the built code that leans on it. The sketch is done when the list is
 empty; a prophecy is fulfilled when its marker is gone. The page draws a prophecy in its own
 colour with a dotted border (finer when it is veiled), as a route of its own for each operation of it, and its
@@ -250,7 +250,7 @@ inspector says what it supersedes and what supersedes a box. Agents ask the same
 tool `revelation`.
 
 A prophecy whose shape waits on an open question is *sealed* on its issue (`sealed="#144"`, or
-`owner/repo#144`). `atlas revelation --seals` (the MCP tool `seals`) lists the seals, each with
+`owner/repo#144`). `atlas-code revelation --seals` (the MCP tool `seals`) lists the seals, each with
 what `gh` says of its issue: open, closed (then the seal can be broken) or unknown, where there is
 no `gh`, no network or no such issue. The MCP tool `unseal` breaks them: it takes `sealed=..` out of
 the marker of the prophecies named, or of every one whose issue is closed, and changes nothing
@@ -265,14 +265,14 @@ with a sketch: the new item takes a new name and supersedes the old one.
 
 ## Changes: what an edit did
 
-`atlas changes [<rev>]` reads the working tree against a git revision (`HEAD` by default)
+`atlas-code changes [<rev>]` reads the working tree against a git revision (`HEAD` by default)
 and lists what the edit did: the routes added and removed, the steps and places each route
 gains and loses, those it keeps whose own arrows differ (`~`, with what they were), the ordered
 compositions that differ, what changed on no route, and the findings it raises and resolves. It
-is read from the union `atlas view --since` draws, so the list holds what the picture marks.
+is read from the union `atlas-code view --since` draws, so the list holds what the picture marks.
 Changing call order or repeating a call changes a composition even when the route reaches the
 same functions. JSON records each such function with its `before` and `after` bodies under
-`compositions_changed`; each body retains its choices and dispatch. `atlas changes A..B` compares two
+`compositions_changed`; each body retains its choices and dispatch. `atlas-code changes A..B` compares two
 revisions the same way (a side left out is `HEAD`, as in git). In a design loop, that is the
 question after every step: does the change do what it was meant to, and nothing else? A
 revision is read from git into a directory of its own; the working tree and the index stay
@@ -289,7 +289,7 @@ since HEAD
 A function renamed with the same typed arrows is one step, changed: `~ step cli.draw: renamed from
 cli.plot · was plot(frame: Frame, out: Path) → None`.
 
-`atlas view --since <rev>` draws the revision and the working tree as one picture
+`atlas-code view --since <rev>` draws the revision and the working tree as one picture
 (`--until <rev>` draws two revisions): what both hold, drawn once, with what changed marked as a
 diff marks lines.
 
@@ -307,7 +307,7 @@ one. The route list marks a route `+`, `−` or `~`.
 
 ## History: two commits as one picture
 
-`atlas history [repo]` serves the repository's history on this machine and opens it in the
+`atlas-code history [repo]` serves the repository's history on this machine and opens it in the
 browser: the commits of every branch and tag, and beside them the picture of the one you pick, or
 of two you pick as one picture, marked as above. The working tree is the newest row. It answers
 at `127.0.0.1` only (`--port N` picks the port, `--no-open` leaves the browser closed), reads each
@@ -318,8 +318,8 @@ request, so an edit shows when you pick it again.
 
 [The tour](https://raoulg.github.io/atlas/#point) shows what follows, drawn from one real run.
 
-`atlas serve [repo]` serves the picture of the working tree on this machine (`127.0.0.1`,
-`--port N`, `--no-open`), and shares it with the agent you work with through `atlas mcp`. Its
+`atlas-code serve [repo]` serves the picture of the working tree on this machine (`127.0.0.1`,
+`--port N`, `--no-open`), and shares it with the agent you work with through `atlas-code mcp`. Its
 terminal says that it runs and where, then a line for each thing worth knowing: the files that
 changed, the picture drawn, an export, a note, and what the agent did with it.
 
@@ -352,15 +352,15 @@ changed, the picture drawn, an export, a note, and what the agent did with it.
   chat, and reading a note does not resolve it. Hover the ring for the notes, and for the commit
   that fixed one, if one did. Alt-click a box with a resolved note to open it again with what is
   still unclear. A note is for the work at hand: a resolved note stays on the picture while this
-  `atlas serve` runs, and the next one starts without it. What must last, the agent puts in an
-  issue, with a link to the note's place that opens it in `atlas serve` (each repository is
+  `atlas-code serve` runs, and the next one starts without it. What must last, the agent puts in an
+  issue, with a link to the note's place that opens it in `atlas-code serve` (each repository is
   served at a port of its own, the same each time). Esc, the field's ✕ or a click beside it
   drops a note before it is kept.
-- **History.** **history** opens the commits beside the page, as `atlas history` does, from the
+- **History.** **history** opens the commits beside the page, as `atlas-code history` does, from the
   same process. Pick a commit to see it beside the working tree, or two to see as one; **✕ close
   history** goes back to the page.
 - **Export.** **export** keeps the picture as one HTML file, opened in the view you have: the
-  file `atlas view` writes.
+  file `atlas-code view` writes.
 
 What the page and the agent share is kept in `.atlas/` (`shown.json`, `look.json`,
 `notes.json`, `serving.json`, `vision.json`, `annotations.json`), so the two need not run
@@ -375,7 +375,7 @@ directory per build of Atlas:
 - what ty says of a file of an installed Python library, by the file's bytes and the environment
   it is read in: the distributions installed, the `.pth` files, the Python ty reads with, and the
   names the project's own modules take before a library's;
-- the parts of a commit, for `atlas changes`, `atlas view --since` and `atlas history`, while what
+- the parts of a commit, for `atlas-code changes`, `atlas-code view --since` and `atlas-code history`, while what
   the reading took from outside the commit (a crate by its path, a fetched crate, the environment
   beside the repository) stands as it did.
 
@@ -385,7 +385,7 @@ same either way. `--no-cache` reads everything anew and keeps nothing.
 
 ## Give your coding agent the same picture
 
-`atlas mcp` serves Atlas over the [Model Context Protocol](https://modelcontextprotocol.io).
+`atlas-code mcp` serves Atlas over the [Model Context Protocol](https://modelcontextprotocol.io).
 The tools are `principles`, `check`, `explain`, `routes`, `route`, `choices` and `changes`;
 `route` returns what one entry point does, step by step, `choices` the choices it makes with what
 decides each branch, and `changes` what the working tree did
@@ -394,15 +394,15 @@ edit against what it was meant to do. Register it once, for every project, in
 [Claude Code](https://claude.com/claude-code) and in [Codex](https://openai.com/codex):
 
 ```bash
-claude mcp add --scope user atlas -- atlas mcp
-codex mcp add atlas -- "$(command -v atlas)" mcp
+claude mcp add --scope user atlas -- atlas-code mcp
+codex mcp add atlas -- "$(command -v atlas-code)" mcp
 ```
 
 Claude Code's `--scope user` makes it available in every project. Codex keeps its servers in one
 configuration for all projects and starts them without your shell's `PATH`, so it is given the
-binary's full path, which `command -v atlas` prints. The server works on the repository the agent
-runs in, so `atlas serve` in any repository is all it takes. Any other MCP client takes the same
-command: `{"command": "atlas", "args": ["mcp"]}`, with the full path where the client does not
+binary's full path, which `command -v atlas-code` prints. The server works on the repository the agent
+runs in, so `atlas-code serve` in any repository is all it takes. Any other MCP client takes the same
+command: `{"command": "atlas-code", "args": ["mcp"]}`, with the full path where the client does not
 pass on your `PATH`.
 
 ## Keep the picture in your README current

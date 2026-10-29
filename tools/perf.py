@@ -11,7 +11,7 @@
 `time`, `read` and `tests` measure and add their measures to the run file RUN (JSON):
 
 - `time` runs a command once: its wall time and the peak resident memory of its largest process.
-- `read` draws each subject with `atlas view --timings`, cold (an empty cache and no index) and warm (the
+- `read` draws each subject with `atlas-code view --timings`, cold (an empty cache and no index) and warm (the
   same again), `--rounds` times: the median wall time, peak memory and the phases Atlas reports (read,
   check, flow, page).
 - `tests` builds the test binaries once (`cargo test --no-run`), then runs each on its own as `cargo test`
@@ -429,7 +429,7 @@ def main() -> None:
     p.add_argument("--out", type=Path, required=True)
     p.set_defaults(func=command_time)
 
-    p = commands.add_parser("read", help="time atlas view, cold and warm, on subjects")
+    p = commands.add_parser("read", help="time atlas-code view, cold and warm, on subjects")
     p.add_argument("--atlas", type=Path, required=True)
     p.add_argument("--subject", action="append", required=True, help="NAME=PATH")
     p.add_argument("--rounds", type=int, default=3)

@@ -2,7 +2,7 @@
 # requires-python = ">=3.11"
 # dependencies = ["playwright"]
 # ///
-"""Take a picture of a page `atlas view` wrote, in the light and the dark theme.
+"""Take a picture of a page `atlas-code view` wrote, in the light and the dark theme.
 
     uv run tools/atlas_picture.py PAGE PICTURE
 

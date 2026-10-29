@@ -1,6 +1,6 @@
 //! Whether a newer build of the channel Studio is from is out, asked once a day, as the CLI asks it
 //! (`cli/src/update.rs`): a stable build looks for a newer release, a nightly for a newer commit of
-//! the nightly. Which build Studio is, its sidecar says (`atlas --version`): it is of the same commit
+//! the nightly. Which build Studio is, its sidecar says (`atlas-code --version`): it is of the same commit
 //! and channel. GitHub is asked through `curl`, so Studio carries no TLS of its own, and the last
 //! answer is kept in Studio's configuration folder. Updating runs the install script of the channel
 //! into the folder Studio runs from (macOS), or the setup program (Windows).
@@ -20,9 +20,9 @@ pub struct Build {
     pub commit: String,
 }
 
-/// The build `atlas --version` names: `atlas 0.68.0-nightly (9a7ecf0)`, `atlas 0.68.0 (9a7ecf0+)`.
+/// The build `atlas-code --version` names: `atlas-code 0.68.0-nightly (9a7ecf0)`, `atlas-code 0.68.0 (9a7ecf0+)`.
 pub fn build_of(said: &str) -> Option<Build> {
-    let rest = said.trim().strip_prefix("atlas ")?;
+    let rest = said.trim().strip_prefix("atlas-code ")?;
     let (version, commit) = match rest.split_once(" (") {
         Some((v, c)) => (v, c.trim_end_matches(')').trim_end_matches('+')),
         None => (rest, ""),
@@ -248,10 +248,10 @@ mod tests {
     #[test]
     fn the_sidecar_says_which_build_it_is() {
         assert_eq!(
-            build_of("atlas 0.68.0-nightly (9a7ecf0)\n"),
+            build_of("atlas-code 0.68.0-nightly (9a7ecf0)\n"),
             Some(Build { version: "0.68.0".into(), nightly: true, commit: "9a7ecf0".into() })
         );
-        assert_eq!(build_of("atlas 0.68.0 (9a7ecf0+)"), Some(Build { version: "0.68.0".into(), nightly: false, commit: "9a7ecf0".into() }));
+        assert_eq!(build_of("atlas-code 0.68.0 (9a7ecf0+)"), Some(Build { version: "0.68.0".into(), nightly: false, commit: "9a7ecf0".into() }));
         assert_eq!(build_of("something else"), None);
     }
 

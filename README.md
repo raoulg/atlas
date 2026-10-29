@@ -7,6 +7,8 @@
 
 <h1 align="center">Atlas</h1>
 
+<p align="center"><b>Atlas — your code's topology</b></p>
+
 <p align="center">
   <a href="https://raoulg.github.io/atlas/"><b>Take the tour</b></a> ·
   <a href="#install">Install</a> ·
@@ -78,11 +80,14 @@ workflow behind it is [one you can copy](docs/reference/ci.md). Click the pictur
 
 Atlas comes in two forms, around the same engine:
 
-- **The command line**, `atlas`, for macOS, Linux and Windows. `atlas view .` opens the picture of a
-  repository in your browser, and `atlas serve` keeps that page open while you and your agent work.
+- **The command line**, `atlas-code`, for macOS, Linux and Windows. `atlas-code view .` opens the picture of a
+  repository in your browser, and `atlas-code serve` keeps that page open while you and your agent work.
 - **Atlas Studio**, a desktop app for macOS (Apple silicon and Intel) and Windows: the picture, its
-  history and a terminal in one window, one workspace per repository. It carries its own `atlas`, so
+  history and a terminal in one window, one workspace per repository. It carries its own `atlas-code`, so
   it needs no installed command line.
+
+The command is `atlas-code`, since other tools (ariga's database toolkit, MongoDB's Atlas CLI) install an
+`atlas` too. For the short name, add an alias to your shell: `alias atlas=atlas-code`.
 
 What changed in each release, with pictures: [the release notes](https://raoulg.github.io/atlas/releases/).
 
@@ -100,7 +105,7 @@ curl -fsSL https://raw.githubusercontent.com/raoulg/atlas/main/install.sh | sh
 irm https://raw.githubusercontent.com/raoulg/atlas/main/install.ps1 | iex
 ```
 
-**Homebrew** (the formula is `atlas-code`: homebrew-core has an `atlas` of its own):
+**Homebrew:**
 
 ```bash
 brew install raoulg/tap/atlas-code
@@ -109,7 +114,7 @@ brew install raoulg/tap/atlas-code
 **From source**, with a [Rust toolchain](https://rustup.rs):
 
 ```bash
-cargo install --locked --git https://github.com/raoulg/atlas atlas
+cargo install --locked --git https://github.com/raoulg/atlas atlas-code
 ```
 
 **Nothing to install on your machine**, a managed laptop for instance: a GitHub workflow draws the

@@ -1,4 +1,4 @@
-//! `atlas mcp` spoken to as a client would: one JSON-RPC message per line.
+//! `atlas-code mcp` spoken to as a client would: one JSON-RPC message per line.
 
 use std::io::Write;
 use std::process::{Command, Stdio};
@@ -10,14 +10,14 @@ use serde_json::{json, Value};
 fn session(msgs: &[Value]) -> Vec<Value> {
     let root = concat!(env!("CARGO_MANIFEST_DIR"), "/..");
     let cache = std::env::temp_dir().join(format!("atlas-mcp-cache-{}", std::process::id()));
-    let mut child = Command::new(env!("CARGO_BIN_EXE_atlas"))
+    let mut child = Command::new(env!("CARGO_BIN_EXE_atlas-code"))
         .arg("mcp")
         .current_dir(root)
         .env("XDG_CACHE_HOME", cache)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .spawn()
-        .expect("atlas mcp starts");
+        .expect("atlas-code mcp starts");
     let mut stdin = child.stdin.take().unwrap();
     for m in msgs {
         writeln!(stdin, "{m}").unwrap();
@@ -83,7 +83,7 @@ fn a_client_initializes_lists_and_calls() {
     assert_eq!(replies[6]["error"]["code"], -32602, "an unknown tool is a protocol error");
 }
 
-/// `check` with `json: true` gives the findings as data, the document `atlas check --json` prints: per
+/// `check` with `json: true` gives the findings as data, the document `atlas-code check --json` prints: per
 /// part its findings, each with what it is about, by role and id.
 #[test]
 fn check_gives_the_findings_as_data() {

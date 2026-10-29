@@ -78,13 +78,13 @@ text and the page are read from the same Flow, so the two see the same route.
 ignores, no dependency or build directory) and the files named on the command line. **read: Disk
 → Repo** is the one place the engine touches a repository: the listing is read once, a file's
 text once, when a reader first asks, and a part of the repository is a view of the same reading.
-A package named on its own (`atlas view src/pkg`) is read as the project it is in, asked for that
+A package named on its own (`atlas-code view src/pkg`) is read as the project it is in, asked for that
 package: finding the project is part of reading, and nothing after it looks at the disk. A
 worktree's `.atlas/index/` keeps each part's graph between readings, with the listed files, the
 contents the part read and its language environment as the conditions for reuse. CLI, serve and
 MCP read through the same index; `--no-cache` reads anew. A reading checks its complete input
 witness before it is published, including the repository listing and external environment.
-`atlas serve` keeps the last complete reading available while the next is drawn. Its viewer loads
+`atlas-code serve` keeps the last complete reading available while the next is drawn. Its viewer loads
 one HTML shell and receives each complete graph, flow and set of findings at `/api/snapshot`;
 the selected route, filters and opened boxes belong to the view across those readings.
 What a library's code and types are is the environment's, not the repository's: read by ty, from `node_modules`, from where Cargo keeps a crate. **Graph** is the one central type: typed nodes
@@ -135,7 +135,7 @@ are two values, also when they have one type (`Serial([a, b])` takes both).
 
 A view is its fibers and its ideals: `{route, kind, part, focus, open: {parts, units, steps,
 functions, families, places, dirs}}`. The page writes it to its address after every drawing, so
-a picture is a link, and `atlas view --view` and the MCP tool `view` draw a page in a view an
+a picture is a link, and `atlas-code view --view` and the MCP tool `view` draw a page in a view an
 agent wrote. A step opens by its path through the route (`pkg.cli.build/2`, the third call of
 `build`) or, for whoever names functions rather than calls, every step of a function at once
 (`open.functions`). The page applies the fibers first, then the quotients by the ideals' cuts.
@@ -296,11 +296,11 @@ faster in Rust). A native shell (Tauri) can wrap the same code later.
 | Layer | Choice | Why |
 |---|---|---|
 | Engine | Rust: the `tree-sitter` crates, ty's crates for Python's types, `sqlparser`, `serde` | Grammars compile in; Python's types come from a type checker, not from guesses; quotients, fibers and effect signatures are small enough to own. |
-| Viewer | one HTML file baked into the binary: SVG, d3 for pan and zoom, elkjs for layered layout, highlight.js for code | No server and no build step: `atlas view` writes a page and opens it. The flows are DAG-shaped, and layered layout is what a reader expects. |
-| Agent | `atlas mcp`: JSON-RPC over stdio | The agent asks the same engine the page is drawn from. |
+| Viewer | one HTML file baked into the binary: SVG, d3 for pan and zoom, elkjs for layered layout, highlight.js for code | No server and no build step: `atlas-code view` writes a page and opens it. The flows are DAG-shaped, and layered layout is what a reader expects. |
+| Agent | `atlas-code mcp`: JSON-RPC over stdio | The agent asks the same engine the page is drawn from. |
 | Distribution | one static binary per platform, built by the release workflow | `cargo install --path cli`, or the install scripts. |
 
-`atlas history` serves the viewer beside a repository's history, on 127.0.0.1 only, with the
+`atlas-code history` serves the viewer beside a repository's history, on 127.0.0.1 only, with the
 standard library's TCP and nothing else: GET requests, one thread per connection, each revision
 read once per commit and the working tree on every request. Live reload is planned (M2).
 
@@ -419,7 +419,7 @@ for no route: it stays on the picture, sent to an address the code does not name
 is one step per part (memory stays inside it; what it reads and writes in the world, and
 the HTTP of the parts it requests, stand outside), a click opens a part into its packages,
 and keeping to one part is its fiber, in which another part is the web place it is
-reached through. `atlas check` reads each part in its own language.
+reached through. `atlas-code check` reads each part in its own language.
 
 **Packages** — one level down, the same quotient by module path: a part's packages (the
 children of its own package, a crate's modules, an app's directories; scripts and
@@ -472,7 +472,7 @@ project does not reach is dropped; what it calls in another library stays that l
 Not read: the standard library, a package the effect tables already describe (a
 network, database, file or model library, plotly), and a package with compiled code, whose
 source cannot be followed to the bottom. A library's code is drawn where a route steps into it,
-not as a package of the project, and `atlas check` does not judge it. A class handed to code
+not as a package of the project, and `atlas-code check` does not judge it. A class handed to code
 Atlas reads (`pipeline.add(DiffValues)`) is built there.
 
 The rule is the same in every language. TypeScript reads a package in `node_modules` from what
@@ -604,9 +604,9 @@ The engine marks the nodes, the edges, the steps and touches of a node both read
 index), and the places, by the calls that touch them. In a picture a value stands at its moments,
 so a box of a value is changed when a line drawn into or out of it is in one reading only: the page
 draws each reading by itself and marks what their union holds once. The page shows no list of
-changes; `atlas changes A..B` and the MCP tool `changes` give the agent the list, read from the
+changes; `atlas-code changes A..B` and the MCP tool `changes` give the agent the list, read from the
 same union: each route in A and in B, the steps and places it gains and loses, those it has in both
-that the union marks changed, and apart what the union marks that no route reaches. `atlas history`
+that the union marks changed, and apart what the union marks that no route reaches. `atlas-code history`
 serves the commits and these pictures on this machine.
 
 *Decision (PTT-495): a closed box is a point of a quotient.* Its own arrows are the lines that cross

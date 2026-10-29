@@ -3,12 +3,12 @@
 # dependencies = ["playwright"]
 # ///
 """Draw the history of the tour on `docs/index.html` with an Atlas build: the commits of a
-repository as `atlas serve` lists them, with two of them drawn as one picture beside the list.
+repository as `atlas-code serve` lists them, with two of them drawn as one picture beside the list.
 
     uv run tools/interaction_pictures.py ATLAS [OUTDIR]
 
 One subject, the sunspots pipeline of `engine/tests/pairs/pipeline/python-clean`, is grown in a
-scratch repository as six commits that each add a step. `atlas serve` serves it, and its history page
+scratch repository as six commits that each add a step. `atlas-code serve` serves it, and its history page
 is driven in the installed Chrome as a person drives it: the fifth commit and the sixth picked, the
 route `run` chosen, once in the light theme and once in the dark. Nothing is drawn by hand: each picture is a screenshot of the page.
 """
@@ -310,7 +310,7 @@ def scratch(tmp):
 
 
 class Served:
-    """`atlas serve`, and the address it serves at."""
+    """`atlas-code serve`, and the address it serves at."""
 
     def __init__(self, atlas, repo):
         self.proc = subprocess.Popen([atlas, 'serve', '--no-open', '--port', '0', str(repo)],
@@ -321,7 +321,7 @@ class Served:
                 self.at = m.group(1)
                 break
         else:
-            raise RuntimeError('atlas serve did not say where it serves')
+            raise RuntimeError('atlas-code serve did not say where it serves')
 
     def url(self, path='/'):
         return f'http://{self.at}{path}'

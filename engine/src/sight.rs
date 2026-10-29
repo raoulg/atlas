@@ -4,7 +4,7 @@
 //! a route's steps into their bodies, families into their members, a place into the places it
 //! stands for, a directory into its files). The page applies the fibers first, then the quotients
 //! by the ideals' cuts (`view`), and writes its sight to its address after every drawing, so that a
-//! picture is a link; `atlas view --view`, `atlas mcp`'s `view` and `look` hand a page the sight an
+//! picture is a link; `atlas-code view --view`, `atlas-code mcp`'s `view` and `look` hand a page the sight an
 //! agent wrote.
 //!
 //! Its serde form is the page's: `{route, kind, part, focus, open: {parts, units, steps,
