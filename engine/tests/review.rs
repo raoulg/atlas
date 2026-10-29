@@ -189,11 +189,6 @@ const REVIEWED: &[(&str, &str, &str)] = &[
         "atlas-engine.flow.body_of",
         "a method's call is resolved along the order of the class it runs on (`Ix::step_of`); a function's call, or a library operation the graph does not hold, runs itself: dispatch is a fact of methods alone",
     ),
-    (
-        "nothing",
-        "atlas-code.http.linger",
-        "`linger` acts on the network through std's `TcpStream`, which `knowledge.rs` names no place for: #291",
-    ),
 ];
 
 /// Atlas is its own first subject, and `atlas check` is a signal on it as on any code: never an
