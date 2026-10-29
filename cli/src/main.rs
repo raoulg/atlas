@@ -225,6 +225,9 @@ enum Cmd {
         /// `parts`, `units`, `steps`, `families`, `places`, `dirs`, as the page's address writes them.
         #[arg(long, value_name = "JSON")]
         view: Option<Sight>,
+        /// Write how long each phase took (read, check, flow, page), in seconds, as JSON to this file
+        #[arg(long, value_name = "FILE", hide = true)]
+        timings: Option<PathBuf>,
     },
     /// Where the code and the design principles disagree, each with a question
     ///
@@ -307,7 +310,8 @@ enum Cmd {
 
 /// The page of `repos`, or of one of them `since` a revision (`until` another), written to `out`,
 /// else beside `home`, the folder of the first of them when it is not a clone. It opens in `sight`,
-/// and on the route of a file named on the command line.
+/// and on the route of a file named on the command line. How long each phase took goes to `timings`, as
+/// JSON, where one is named.
 fn view(
     repos: &[PathBuf],
     opts: &Options,
@@ -315,20 +319,49 @@ fn view(
     shown_in_browser: bool,
     (since, until): (Option<&str>, Option<&str>),
     sight: Option<Sight>,
+    timings: Option<&Path>,
 ) -> Result<()> {
+    let mut phases = Phases::new();
     let read = page::reading(repos, opts, since, until)?;
+    phases.done("read");
     let findings = read.findings();
+    phases.done("check");
     let (graph, compared) = read.drawn();
     let flow = atlas_engine::flow::of(&graph);
+    phases.done("flow");
     let opens = page::Opens { route: named_route(&graph, &opts.named), sight, served: None, preliminary: false };
     let html = page::Html::of(&graph, &flow, &findings, compared.as_ref(), &opens)?;
     let out = out.unwrap_or_else(|| home::made(home, &format!("{}.html", graph.root)));
     html.write(&out)?;
+    phases.done("page");
+    if let Some(timings) = timings {
+        std::fs::write(timings, serde_json::to_string(&phases.took)?)?;
+    }
     eprintln!("{} · wrote {}", page::summary(&graph), out.display());
     if shown_in_browser {
         page::open(out.as_os_str());
     }
     Ok(())
+}
+
+/// How long each phase of a command took, in seconds, in the order they ran: what `--timings` writes,
+/// for a benchmark to read (`tools/perf.py`).
+struct Phases {
+    last: std::time::Instant,
+    took: serde_json::Map<String, serde_json::Value>,
+}
+
+impl Phases {
+    fn new() -> Phases {
+        Phases { last: std::time::Instant::now(), took: serde_json::Map::new() }
+    }
+
+    /// The phase `name` ended now; it began where the one before it ended.
+    fn done(&mut self, name: &str) {
+        let now = std::time::Instant::now();
+        self.took.insert(name.to_string(), (now - self.last).as_secs_f64().into());
+        self.last = now;
+    }
 }
 
 /// The route of a file named on the command line: the entry that lies in one of the `named`, by its id.
@@ -471,12 +504,12 @@ fn run(cli: Cli) -> Result<ExitCode> {
     let cache = if cli.no_cache { None } else { atlas_engine::cache::Cache::new(version::VERSION.as_str()) };
     let mut opts = Options { libraries: cli.libraries, cache, ..Options::default() };
     match cli.cmd {
-        Cmd::View { repos, out, no_open, since, until, view: sight } => {
+        Cmd::View { repos, out, no_open, since, until, view: sight, timings } => {
             let repos = if repos.is_empty() { vec![std::env::current_dir()?] } else { repos };
             let (repos, clones): (Vec<PathBuf>, Vec<Option<remote::Clone>>) =
                 repos.into_iter().map(|r| local(r, &mut opts)).collect::<Result<Vec<_>>>()?.into_iter().unzip();
             let home = clones[0].is_none().then(|| repos[0].as_path());
-            view(&repos, &opts, (out, home), !no_open, (since.as_deref(), until.as_deref()), sight)?
+            view(&repos, &opts, (out, home), !no_open, (since.as_deref(), until.as_deref()), sight, timings.as_deref())?
         }
         Cmd::Mcp => mcp::serve(&opts)?,
         Cmd::History { repo, port, no_open } => {
