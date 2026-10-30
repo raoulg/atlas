@@ -285,7 +285,8 @@ const arrowOf = id => {
 };
 const stepsIn = b => b.items.flatMap(it => it.members ? it.members : [it]);
 // the names a function's body binds by its own code, no step of it (`Node::binds`): a value the body makes itself, by a
-// literal or in an arm, which no caller holds and no module keeps
+// literal, by any expression that is no name and no projection of one (`mask = samples.abs() > 0`), or in an arm, which
+// no caller holds and no module keeps
 const ownBound = id => new Set((byId.get(id)?.binds || []).map(b => b.name));
 // the names a function declares: its parameters, and what its body binds, by a step (`Site::gives`, not a value the step is
 // handed and gives anew) or by its own code. A name it uses that it does not declare is its module's (a constant,
@@ -1061,7 +1062,7 @@ const stepMorphism = (key, own, isAnchor, leaf) => {
   // the instance a method runs on is a use by no name and of its class (#126)
   // what a module holds (`PLANS[mode]`, `DEFAULT_SETTINGS.months`): a name of a type the function does not declare, keep as a
   // global or name as its class; a body with no steps reads it by its own code too. The function declares its parameters and
-  // the names its body binds, by a step or by its own code (`Node::binds`, a literal among them)
+  // the names its body binds, by a step or by its own code (`Node::binds`: a literal, an expression no step makes)
   const fnode = byId.get(step), declared = declaredIn(step);
   const kept_ = new Set((fnode?.touches || []).filter(t => t.kind === "global").map(t => t.what));
   const modular = u => !!u.name && !u.name.startsWith("#") && !!u.type && !declared.has(u.name) && !kept_.has(u.name) && u.name !== idName(u.type).name;
@@ -1354,12 +1355,14 @@ const bound = (P, k, nm = (P.dn && P.dn.get(k)) || "", within = false) => {
   // what a call hands is named in the body that makes the call: an opened step's own arrow is handed it by its caller's
   let f = P.own ? frames.get(P.parent)?.parent : P.parent;
   while (f && frames.get(f)?.synthetic) f = frames.get(f).parent;
-  // a name the body binds by its own code, no step of it (a literal, `items = []`), holds the value the body made there, in
-  // its frame, also the route's and also in a step planned by itself (#237); a literal of no type of the code's is no value
-  if (f && ownBound(stepOf(frames.get(f).step)).has(nm)) return k.startsWith("t:") ? bodyMade(k, f, nm) : false;
+  const declared = !!f && !frames.get(f)?.anchor && (byId.get(stepOf(frames.get(f).step))?.params || []).some(p => p.name === nm);
+  // a name the body binds by its own code, no step of it (`items = []`, `mask = x > 0`), holds the value the body made there, in
+  // its frame, also the route's and also in a step planned by itself (#237); a literal of no type of the code's is no value. A
+  // parameter the body also binds anew (`x = x * mask`) is, in a step planned by itself, what its caller hands it: the
+  // caller's to say, as it is with the step open
+  if (f && ownBound(stepOf(frames.get(f).step)).has(nm) && !(alone && inner && declared)) return k.startsWith("t:") ? bodyMade(k, f, nm) : false;
   // a name the body's own function does not declare (a module's constant) is what the module holds: from beyond, as before,
   // also in a step planned by itself, whose caller does not hold it either (#183)
-  const declared = !!f && !frames.get(f)?.anchor && (byId.get(stepOf(frames.get(f).step))?.params || []).some(p => p.name === nm);
   if (alone) return inner && declared ? condOf(k, nm) : null;
   if (!declared) return null;
   return bodyMade(k, f, nm);

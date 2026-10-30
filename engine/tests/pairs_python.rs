@@ -2745,6 +2745,13 @@ fn a_list_made_by_a_literal_is_made_by_the_body() {
     common::a_list_made_by_a_literal_is_made_by_the_body("python", "by_literal", "by_call", "by_constant");
 }
 
+/// The locals pair: a list the body writes of what it is handed is the body's own, never a module's name (#318), as an
+/// array is in Rust and in TypeScript.
+#[test]
+fn a_local_is_bound_by_the_bodys_own_code() {
+    common::a_local_is_bound_by_the_bodys_own_code("python", "_pair");
+}
+
 /// The workbench pair, `workbench/python`: what the program makes, kept in a folder of the project's
 /// own. The clean side gives the folder a class whose method names each file in it
 /// (`Workbench.of(project).file("report.txt")`); the shortcut hands the folder around as a bare path (`made_dir(project) / "report.txt"`).

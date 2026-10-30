@@ -1667,6 +1667,13 @@ fn a_list_made_by_a_literal_is_made_by_the_body() {
     common::a_list_made_by_a_literal_is_made_by_the_body("rust", "by_literal", "by_call", "by_constant");
 }
 
+/// The locals pair: an array the body writes of what it is handed is the body's own, never a module's name (#318), as
+/// a list is in Python and an array in TypeScript.
+#[test]
+fn a_local_is_bound_by_the_bodys_own_code() {
+    common::a_local_is_bound_by_the_bodys_own_code("rust", "pair");
+}
+
 /// One side of the sockets pair (`tests/pairs/sockets/rust`): a server that greets each client by
 /// the name it sends and lets the client read the greeting before the connection closes.
 fn greeter(side: &str) -> Graph {
