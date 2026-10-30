@@ -2185,9 +2185,15 @@ impl<'a, 't> Body<'a, 't> {
                 let built = crate::paths::request_of(&op, address.or(on).map(|a| self.eval.of(self.at(), a, 0)).unwrap_or_default());
                 self.touch(c, kind, &op, &subtree()).into_iter().map(|t| (t, built.clone())).collect()
             }
-            // a request on a client, at the URL its method is handed
+            // a request on a client, at the URL its method is handed, first unless the crate says
+            // otherwise (knowledge::REQUEST_URL_AT)
             Some((kind, op, call, false, _)) if kind.world == World::Net && first(call).is_some() => {
-                let built = crate::paths::request_of(&op, first(call).map(|a| self.eval.of(self.at(), a, 0)).unwrap_or_default());
+                let krate = made.as_ref().and_then(|x| x.ty.first()).map(String::as_str);
+                let at = knowledge::REQUEST_URL_AT.iter().find(|(k, m, _)| Some(*k) == krate && *m == op).map_or(0, |(_, _, i)| *i);
+                let url = call
+                    .child_by_field_name("arguments")
+                    .and_then(|a| named_children(a).into_iter().filter(|x| !x.kind().ends_with("comment")).nth(at));
+                let built = crate::paths::request_of(&op, url.map(|a| self.eval.of(self.at(), a, 0)).unwrap_or_default());
                 self.touch(c, kind, &op, &subtree()).into_iter().map(|t| (t, built.clone())).collect()
             }
             // a method of a path, at the path it is called on: `cli.raw.exists()`

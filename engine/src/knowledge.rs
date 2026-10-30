@@ -1757,20 +1757,27 @@ pub const PATH_PATTERNS: &[(&str, &str, usize)] = &[("glob", "", 1), ("rglob", "
 
 /// A library's function that lists the directory it is handed, as a path's `iterdir()` does: each
 /// element is below the directory, `*`. Where `names` holds, an element is the name alone, which
-/// the code puts back below the directory itself (`os.path.join(d, name)`); else it is the path
-/// (`os.scandir(d)`, whose entries are paths).
+/// the code puts back below the directory itself (`os.path.join(d, name)`, `path.join(d, name)` of
+/// Node's `readdirSync(d)`); else it is the path (`os.scandir(d)` and Rust's `fs::read_dir(d)`, whose
+/// entries are paths). A Rust library is named by its path (`std::fs`).
 pub struct Listing {
     pub library: &'static str,
     pub function: &'static str,
     pub names: bool,
 }
 
-pub const LISTINGS_BELOW: &[Listing] =
-    &[Listing { library: "os", function: "listdir", names: true }, Listing { library: "os", function: "scandir", names: false }];
+pub const LISTINGS_BELOW: &[Listing] = &[
+    Listing { library: "os", function: "listdir", names: true },
+    Listing { library: "os", function: "scandir", names: false },
+    Listing { library: "std::fs", function: "read_dir", names: false },
+    Listing { library: "fs", function: "readdirSync", names: true },
+    Listing { library: "fs", function: "readdir", names: true },
+];
 
 /// The attributes of a listing's element that are the path the element is at, by the library and
-/// the element's class: `entry.path` of an `os.DirEntry`.
-pub const ELEMENT_PATHS: &[(&str, &str, &str)] = &[("os", "DirEntry", "path")];
+/// the element's class: `entry.path` of an `os.DirEntry`, `entry.path()` of a `std::fs::DirEntry`
+/// (the one class `read_dir`'s elements are).
+pub const ELEMENT_PATHS: &[(&str, &str, &str)] = &[("os", "DirEntry", "path"), ("std::fs", "DirEntry", "path")];
 
 /// Functions that give back the elements of the collection they are handed, in another order or
 /// kind: `sorted(paths)` holds the paths `paths` holds.
@@ -2457,3 +2464,36 @@ pub const PYTHON_FILE_CLASSES: &[(&str, &str, crate::pytypes::FileArg)] = {
         ("_io", "FileIO", Open),
     ]
 };
+
+/// Rust's maps written out by their pairs, by the type and the function that builds one:
+/// `HashMap::from([("item", "/api/items"), ..])` holds each pair's second under its first.
+pub const RUST_MAPS_FROM_PAIRS: &[(&str, &str)] =
+    &[("HashMap", "from"), ("BTreeMap", "from"), ("IndexMap", "from"), ("HashMap", "from_iter"), ("BTreeMap", "from_iter")];
+
+/// The macros that write a list out by its elements: `vec![a, b]`.
+pub const RUST_LIST_MACROS: &[&str] = &["vec"];
+
+/// The methods of a map, a slice or a `Vec` that give the value a key or an index picks, as `d[k]`
+/// does: `paths.get(key)`.
+pub const RUST_LOOKUPS: &[&str] = &["get"];
+
+/// The methods of an iterator, or of what can be iterated, that give back elements of what they are
+/// called on: `fs::read_dir(d)?.flatten()` holds the entries `read_dir` lists.
+pub const RUST_SAME_ELEMENTS: &[&str] =
+    &["iter", "into_iter", "flatten", "filter", "rev", "skip", "take", "peekable", "collect", "cloned", "copied", "sorted"];
+
+/// The methods of an iterator that give what the closure they are handed gives for each element:
+/// `entries.map(|e| e.path())` holds the paths of the entries.
+pub const RUST_GIVES_EACH: &[&str] = &["map", "filter_map", "flat_map"];
+
+/// The argument a request's URL is handed at, where it is not the first, by the crate and the
+/// method: reqwest's `client.request(Method::POST, url)` is handed the method first.
+pub const REQUEST_URL_AT: &[(&str, &str, usize)] = &[("reqwest", "request", 1)];
+
+/// The methods of an array that give back elements of the array they are called on:
+/// `names.filter(..)` holds names `names` holds.
+pub const TYPESCRIPT_SAME_ELEMENTS: &[&str] = &["filter", "sort", "toSorted", "reverse", "toReversed"];
+
+/// The methods of an array that give what the function they are handed gives for each element:
+/// `names.map((n) => path.join(d, n))` holds the paths it joins.
+pub const TYPESCRIPT_GIVES_EACH: &[&str] = &["map", "flatMap"];
