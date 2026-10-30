@@ -1982,7 +1982,9 @@ const imageOf = (F, opened, folded, {fineKeys = false} = {}) => {
   for (const P of [...pills.values()]) if (P.backTo && !pills.has(P.backTo)) delete P.backTo;
   for (const P of pills.values()) if (P.backTo) inc.set(`${P.backFrom}|back`, {way: "B", P: P.backFrom, k: P.backTo, p: P.id, c: P.backTo});
   // places with the same incidence are one block of the quotient with a multiplicity: the values that only one closed step takes
-  // and no step makes are the same block (one neighbour, no maker), drawn as a count on the step and drawn apart when it opens
+  // and no step makes are the same block (one neighbour, no maker), drawn as a count on the step and drawn apart when it opens.
+  // A value the body makes in a frame of its own (`@`, made there by no step) stands in that frame, and a block of the
+  // quotient holds no values of two frames: it is drawn by itself
   const joined = new Map(), at = new Map();
   for (const i of inc.values()) {
     if (i.way === "B") continue;
@@ -1992,7 +1994,7 @@ const imageOf = (F, opened, folded, {fineKeys = false} = {}) => {
   const free = new Map();
   for (const [id, e] of at) {
     const pl = places.get(id);
-    if (e.ways.size !== 1 || !e.ways.has("D") || e.blocks.size !== 1 || !pl || !/^[tv]:/.test(id) || (pl.type && (opens(pl.type) || pl.type === V.route)) || famId(pl)) continue;
+    if (e.ways.size !== 1 || !e.ways.has("D") || e.blocks.size !== 1 || !pl || pl.at || !/^[tv]:/.test(id) || (pl.type && (opens(pl.type) || pl.type === V.route)) || famId(pl)) continue;
     const b = [...e.blocks][0], P = pills.get(b);
     if (!P || P.own || /^(unit|part):/.test(P.steps[0])) continue;
     if (!free.has(b)) free.set(b, []);
