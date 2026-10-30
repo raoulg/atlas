@@ -845,7 +845,10 @@ of `C.f` may run `B.f` on a `D`, though `B` is not below `C`, and there its `sup
 alternative is that method on that class, a body as any step on a known class runs it, named by the
 class it runs on (`D.f`); one of a class below the method's own runs on any value of its class, whose
 class is not known. A call through a class, and a `super()` call on a value whose class is known, run
-the one their call names. A value built at the call (`Block().show()`, `new Block().show()`, a unit struct's
+the one their call names. The name `D.f` is the author's name for the `f` a `D` runs first along its order, so it
+names a step only where that is what runs: an alternative of a `super()` call runs the next `f` after `K`, which
+`D.f` does not name (on a `D(B, C)`, `D.f` is `B.f` where `super().f()` in `B` runs `C.f`), and is named by the
+class that defines it, as the same call on a value whose class is known is (`C.f`). A value built at the call (`Block().show()`, `new Block().show()`, a unit struct's
 name `Plain.show()`) is of that class alone; a declared one (a parameter, an annotation, a return type, a field)
 may be that class or any below it. A Rust trait is below its supertraits (`trait Block: Named`), so a value of it
 runs their methods along its order. A call through a trait (`Language::parse(&words, text)`) names no class: the
