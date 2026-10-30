@@ -678,7 +678,9 @@ parse the command line to the entry. The closed picture is `F/q`:
   the caller has one, else the latest of its kind the body made, else one its body binds out of the
   plan's sight, which the caller does not see either; a name its function does not declare (a module's
   constant) is what the module holds, from beyond, as it is with the step open. A function declares its parameters and
-  the names its body binds, by a step or by its own code (a literal), none of them from beyond. The image depends on the
+  the names its body binds, by a step or by its own code (a literal), none of them from beyond. A value it takes by a name
+  its caller holds is the caller's to say: from beyond where the caller's value is, and only then does it count among the
+  values of one kind from beyond that keep their names. The image depends on the
   callers that make its paths whole and on which of the functions its body calls are on the path, which stay closed. What its border hands
   on is what it hands on open: an error as an error, a result of no type back to its caller, a value
   of no type by its name; and the types its body holds are the route's fiber, as they are open. The cut
@@ -719,7 +721,7 @@ the field an argument reads, `Steps::fills` and `Steps::read_of` (`body.rs`); th
 which parameters of no type of the code's hold a value, `builder::settle_parameters`; the fields a condition tests,
 `Steps::tests` (`body.rs`), and whether a figure is made sure of, `guarded` in `viewer/plan.js`; the names a body binds
 by a literal, `Steps::literals` (`body.rs`), and those a function declares, `declaredIn` and `bodyMade` in
-`viewer/plan.js`; `tools/pictures.py`; `engine/tests/plans.rs`; the recursion and literals pairs
+`viewer/plan.js`; the values of one kind from beyond that keep their names, `split` and `splitBy` in `viewer/plan.js`; `tools/pictures.py`; `engine/tests/plans.rs`; the recursion and literals pairs
 (`common::a_recursive_call_takes_what_its_call_hands_it`, `common::a_list_made_by_a_literal_is_made_by_the_body`).
 
 ### Saturation: when the order of a view does not matter

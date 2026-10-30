@@ -131,3 +131,4 @@ smallest that showed one law:
 | `lent-after-the-put` | a part set whole to a chart is that chart: a figure lent to the chart after the put is the one the board's part draws on (#179) |
 | `drawn-after-the-put` | the same, the other way round: the figure the board makes through its part is the chart's, and the chart's own name draws on it again (#179) |
 | `folds-two-levels` | files folded into directories nested in one another that hold the same files (`data/`, `data/*/`) are one box: opening it shows the files in one step (#227) |
+| `door-tensor-pad` | a value a step planned by itself takes by a name its caller holds is the caller's: a cut door names the one value of its kind from beyond as its opened picture does, by its type alone (#319) |

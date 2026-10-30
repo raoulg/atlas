@@ -1808,16 +1808,28 @@ const toShown = m => { const out = new Map(); m.forEach((r, k) => { const k2 = s
 if (!fine) for (const P of pills.values()) { P.D = toShown(P.D); P.C = toShown(P.C); }
 // a value no step makes is its type, from beyond; it keeps the name that holds it where a step takes two of one kind: they
 // are two values (`consume(a, b)` takes two records, `report(c, q)` a Circle and a Square), also once their family closes
-// them into one box
-const split = new Set();
+// them into one box. A value a step planned by itself takes by a name its caller holds (`condOf`) is the caller's to say:
+// from beyond where the caller's value is, made in a frame where that is made there (#319). `splitBy` keeps, of each step,
+// the values of each kind it takes from beyond or from its caller: each by its key in this plan, its name and whether it is
+// its caller's
+const split = new Set(), splitBy = [];
 if (fine) {
-  const unmade = k => k.startsWith("t:") && places.get(k)?.name && !places.get(k).at;
-  for (const P of pills.values()) for (const m of [P.D, P.C]) {
-    // a step beyond the cut takes what the steps of its body take, each by itself: they decide, in its plan
-    if (P.cut) { for (const t of P.split) split.add(t); continue; }
-    const seen = new Map();
-    for (const k of m.keys()) if (unmade(k)) { const t = kindOf(places.get(k).type); if (!seen.has(t)) seen.set(t, new Set()); seen.get(t).add(places.get(k).name); }
-    for (const [t, ns] of seen) if (ns.size > 1) split.add(t);
+  const unmade = k => k.startsWith("t:") && !!places.get(k)?.name && !places.get(k).at;
+  const entry = k => (unmade(k) ? [k, places.get(k).name, !!places.get(k).cond] : null);
+  for (const P of pills.values()) {
+    // a step beyond the cut takes what the steps of its body take, each by itself: they decide, in its plan, and here is
+    // what its caller holds of those that are its caller's
+    const takes = P.cut
+      ? P.split.map(([t, es]) => [t, es.map(([k, nm, cond]) => (!cond ? [k, nm, false] : P.boundOf?.has(k) ? entry(P.boundOf.get(k)) : null)).filter(Boolean)])
+      : [P.D, P.C].flatMap(m => {
+          const by = new Map();
+          for (const k of m.keys()) { const e = entry(k); if (!e) continue; const t = kindOf(places.get(k).type); if (!by.has(t)) by.set(t, []); by.get(t).push(e); }
+          return [...by];
+        });
+    for (const [t, es] of takes) {
+      splitBy.push([t, es]);
+      if (new Set(es.filter(e => !e[2]).map(e => e[1])).size > 1) split.add(t);
+    }
   }
   // the figures of the route, numbered in the order its steps make them
   if (!alone) {
@@ -1830,7 +1842,7 @@ if (fine) {
       pl.label = pl.short = `Figure ${++n} · ${pl.figure}`;
     }
   }
-  return {places, pills, frames, found, updated, split, heldOf, originOf};
+  return {places, pills, frames, found, updated, split, splitBy, heldOf, originOf};
 }
 // what the steps do at each place of the world: read it, write it, go there without saying which
 // way; whether a route finds what it reads there; whether a step that reads it hands on what it read
@@ -2047,7 +2059,7 @@ const cutArrow = key => {
     const at = "@n:" + key, strip = k => (k.endsWith(at) ? k.slice(0, -at.length) : k);
     // the types its body holds, inside it as well as at its border: the route's fiber, on which its families are taken, is
     // the same whether the step is cut or open (#183)
-    const r = {key, dom: new Map(), cod: new Map(), dn: new Map(), cn: new Map(), goes: P?.goes || new Map(), mult: {D: new Map(), C: new Map()}, places: new Map(), split: F.split, errs: new Set(), types: typesOf(F)};
+    const r = {key, dom: new Map(), cod: new Map(), dn: new Map(), cn: new Map(), goes: P?.goes || new Map(), mult: {D: new Map(), C: new Map()}, places: new Map(), split: F.splitBy, errs: new Set(), types: typesOf(F)};
     for (const [way, m, n, far, names, into] of [["D", P?.D, P?.Dn, P?.Dr, r.dn, r.dom], ["C", P?.C, P?.Cn, P?.Cr, r.cn, r.cod]]) for (const [k, flag] of m || []) {
       // what it hands on keeps the name that holds it, also one its call gives by no name, which the caller's own code reads
       // (`#..`, `Node::uses`), and a value of no type of the code's, which is its name (#183)
