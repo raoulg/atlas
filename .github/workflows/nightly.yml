@@ -1,7 +1,10 @@
 name: nightly
 
-# The nightly build of `next`, made when `next` has moved and `ci` is green for its commit: the CLI
-# for five platforms and Atlas Studio for macOS and Windows (`studio.yml`). Every
+# The nightly build of `next`, made when `next` has moved and `ci`'s tests, run here on three platforms
+# for exactly that commit, are green: the CLI for five platforms and Atlas Studio for macOS and Windows
+# (`studio.yml`). A failing test is a red nightly and no new build; the last one stays. A push to `next`
+# runs no `ci` of its own, so this is where `next` is tested on Linux and Windows; while a stable release
+# is prepared, a nightly is started by hand whenever a build is wanted. Every
 # build is its own immutable pre-release, `nightly-<yyyymmddHHMM>`, which the tap's formula names
 # with its checksums; the newest seven are kept. The pre-release `nightly` is the moving pointer
 # `install.sh` reads: its assets are replaced in place and its tag moved to the build. A
@@ -10,11 +13,11 @@ name: nightly
 
 on:
   schedule:
-    - cron: "0 3 * * *"
+    - cron: "30 3 * * *"
   workflow_dispatch:
     inputs:
       force:
-        description: "Build even when next has not moved or ci is not green"
+        description: "Build even when next has not moved since the last nightly"
         type: boolean
         default: false
 
@@ -40,7 +43,6 @@ jobs:
         run: |
           sha=$(git rev-parse HEAD)
           last=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/nightly" -q .object.sha 2>/dev/null || echo none)
-          ci=$(gh run list --workflow ci.yml --branch next --commit "$sha" --json conclusion -q '.[0].conclusion' 2>/dev/null || echo none)
           echo "sha=$sha" >> "$GITHUB_OUTPUT"
           echo "stamp=$(date -u +%Y%m%d%H%M)" >> "$GITHUB_OUTPUT"
           if [ "$FORCE" = true ]; then
@@ -48,16 +50,20 @@ jobs:
           elif [ "$last" = "$sha" ]; then
             echo "next has not moved since the last nightly ($sha)"
             echo "build=false" >> "$GITHUB_OUTPUT"
-          elif [ "$ci" != success ]; then
-            echo "ci is not green for $sha ($ci): no nightly"
-            echo "build=false" >> "$GITHUB_OUTPUT"
           else
             echo "build=true" >> "$GITHUB_OUTPUT"
           fi
 
-  build:
+  # the tests of the commit to build, on three platforms: nothing below runs unless they are green
+  test:
     needs: decide
     if: needs.decide.outputs.build == 'true'
+    uses: ./.github/workflows/ci.yml
+    with:
+      ref: ${{ needs.decide.outputs.sha }}
+
+  build:
+    needs: [decide, test]
     strategy:
       matrix:
         include:
@@ -94,8 +100,7 @@ jobs:
   # Atlas Studio for macOS and Windows of the same commit: its installers go into the nightly with the CLI's
   # archives, so the release's Studio build runs every night before a tag needs it.
   studio:
-    needs: decide
-    if: needs.decide.outputs.build == 'true'
+    needs: [decide, test]
     uses: ./.github/workflows/studio.yml
     with:
       ref: ${{ needs.decide.outputs.sha }}
