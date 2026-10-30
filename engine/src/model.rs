@@ -1046,7 +1046,8 @@ pub struct Touch {
     /// Who makes its path or statement whole, where that is not its own function: callers whose
     /// calls hand what does, and entries whose users hand it. A disjunction of conjunctions, so a
     /// route shows it when every condition of one of them holds: it reaches each caller and starts
-    /// at the entry (`mathematics.md`, "Who makes a path whole"). Empty: whole in its own function.
+    /// at the entry (`mathematics.md`, "Who makes a path whole"). Kept with no conjunction beside
+    /// one it contains (`absorb`). Empty: whole in its own function.
     pub by: BTreeSet<Both>,
     /// What the call gives goes to nothing its function hands on: it only decides a choice, goes
     /// to an error, or is dropped. A read that checks what is there, not one that uses it.
@@ -1228,6 +1229,16 @@ impl FromIterator<Atom> for Both {
     }
 }
 
+/// Who makes a path whole in its canonical form: a monotone formula as the set of its minimal
+/// conjunctions. A conjunction that contains another holds only where the other does, so the
+/// formula with it is the formula without it (`a ∨ (a∧b) = a`): none is kept beside one it
+/// contains, and two formulas that hold at the same routes are one (`mathematics.md`, "Who makes a
+/// path whole"). Every formula is made or changed through it: read, merged, renamed, glued.
+pub fn absorb(by: &mut BTreeSet<Both>) {
+    let all: Vec<Both> = by.iter().cloned().collect();
+    by.retain(|b| !all.iter().any(|c| c != b && c.0.is_subset(&b.0)));
+}
+
 /// A touch as the graph's JSON writes it.
 #[derive(Serialize, Deserialize, TS, Clone, Debug, Default, PartialEq, Eq)]
 pub struct TouchJson {
@@ -1300,6 +1311,8 @@ impl TryFrom<TouchJson> for Touch {
     type Error = String;
     fn try_from(j: TouchJson) -> Result<Touch, String> {
         let c = Crossing::named(&j.kind, &j.dir).ok_or_else(|| format!("no part of the world called `{}`", j.kind))?;
+        let mut by: BTreeSet<Both> = j.by.iter().map(|b| Both::parse(b)).chain(j.users_of.into_iter().map(Both::users)).collect();
+        absorb(&mut by);
         Ok(Touch {
             kind: c.world,
             dir: c.dir,
@@ -1313,7 +1326,7 @@ impl TryFrom<TouchJson> for Touch {
             fixed_by: j.fixed_by,
             line: j.line,
             also_at: j.also_at,
-            by: j.by.iter().map(|b| Both::parse(b)).chain(j.users_of.into_iter().map(Both::users)).collect(),
+            by,
             checks: j.checks,
             holder: j.holder,
         })
@@ -1707,6 +1720,7 @@ impl Graph {
             }
             for t in n.touches.iter_mut().chain(n.instead.iter_mut()) {
                 t.by = t.by.iter().map(|b| b.map(to)).collect();
+                absorb(&mut t.by);
                 t.fixed_by.iter_mut().for_each(&m);
                 if !t.holder.is_empty() {
                     m(&mut t.holder);
@@ -1913,6 +1927,36 @@ mod tests {
             proptest::prop_assert_eq!(serde_json::from_str::<Touch>(&json).unwrap(), t.clone());
             let reached = |f: &str| reached.contains(f);
             proptest::prop_assert_eq!(t.in_route(&entry, &reached), u.in_route(&entry, &reached));
+        }
+
+        /// Law: who makes a path whole is a monotone formula, and two formulas that hold at the same
+        /// routes are one (absorption, `a ∨ (a∧b) = a`). A formula with conjunctions added that
+        /// contain one of its own gives the same touch and the same JSON as the formula alone; no
+        /// conjunction the touch keeps contains another; and it runs where the formula as written
+        /// holds.
+        #[test]
+        fn a_conjunction_that_contains_another_adds_nothing(
+            (by, _) in written_twice(),
+            more in proptest::collection::vec((0usize..4, "(users_of:)?[a-e](\\.[a-c])?"), 0..4),
+            entry in "[a-e]",
+            reached in proptest::collection::btree_set("[a-e](\\.[a-c])?", 0..8),
+        ) {
+            let mut longer = by.clone();
+            for (i, extra) in &more {
+                if !by.is_empty() {
+                    longer.push(format!("{}&{extra}", by[i % by.len()]));
+                }
+            }
+            let touch = |by: Vec<String>| Touch::try_from(TouchJson { kind: "disk_read".into(), by, ..TouchJson::default() }).unwrap();
+            let (t, u) = (touch(by), touch(longer.clone()));
+            proptest::prop_assert_eq!(&t, &u);
+            proptest::prop_assert_eq!(serde_json::to_string(&t).unwrap(), serde_json::to_string(&u).unwrap());
+            for a in u.by.iter() {
+                proptest::prop_assert!(u.by.iter().all(|b| a == b || !a.0.is_subset(&b.0)), "{a} beside one that contains it");
+            }
+            let reached = |f: &str| reached.contains(f);
+            let as_written = longer.is_empty() || longer.iter().any(|b| Both::parse(b).holds(&entry, &reached));
+            proptest::prop_assert_eq!(u.in_route(&entry, &reached), as_written);
         }
 
         /// Law: a route serves a set of methods (`GET∨POST = POST∨GET`, `GET∨GET = GET`). Methods

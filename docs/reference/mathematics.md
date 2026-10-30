@@ -244,14 +244,22 @@ only the first draws the group, since only its code says the files belong togeth
 of conjunctions, with no negation. A conjunction is a set of atoms (`a∧b = b∧a`, `a∧a = a`) and the
 disjunction a set of conjunctions (`x∨y = y∨x`), so the formula is a set of sets. It holds at an
 assignment when every atom of one of its conjunctions does. The empty conjunction is true: the unit
-of `∧`.
+of `∧`. A conjunction that contains another holds only where the other does, so it adds nothing
+(absorption, `a ∨ (a∧b) = a`): two formulas that hold at the same assignments are one formula, and
+its canonical form is the set of its minimal conjunctions, none containing another. An atom that
+stands only in a conjunction that contains another is no condition of the formula: no assignment
+changes its value by it.
 **In Atlas.** A touch whose path others make whole runs in a route only where they are on the
 calls (pushforward, rule 5). The atoms are of two kinds, conditions of one kind on a route
 (`Atom`): it reaches a caller whose call hands what makes the path whole, or it starts at an entry
 whose users hand it. `Touch::by` is the formula: each conjunction a set of conditions that make the
 path whole together (one caller set up the object whose field holds the root, another handed the
 rest), any conjunction enough. The order the code is read in says nothing: `a&b` and `b&a` are one
-conjunction, and two alternatives in either order one formula. A role one condition plays is no
+conjunction, and two alternatives in either order one formula. Nor does how the value got there:
+`Touch::by` is kept in its canonical form (`absorb`), so a conjunction beside one it contains (the
+`lens` pair's `Roster.load&Roster.reread` beside `Roster.load`, a Roster reread from one `load`
+built) is not written, and the callers the arrow of a step depends on are those of the minimal
+conjunctions. A role one condition plays is no
 part of the set: the function a request is from is kept beside it, in `Whole { asks, with }`, where
 the request is drawn.
 Where two callers meet a path, the conjunction is the union of theirs (`Whole::and`), so the meet
@@ -261,7 +269,7 @@ conjunction, and only there; one level up, the caller that hands the path is a c
 other. The graph's JSON writes each conjunction `a&b`, its conditions in order, an entry's users as
 `users_of:e`, and the alternatives in order; a conjunction of one entry's users alone is written in
 `users_of`. It reads them back once.
-**Where.** `model.rs` (`Atom`, `Both`, `Touch::by`, `Touch::in_route`), `paths.rs` (`Whole`,
+**Where.** `model.rs` (`Atom`, `Both`, `absorb`, `Touch::by`, `Touch::in_route`), `paths.rs` (`Whole`,
 `Callers::of`, `place_calls`), `plan.js` (`inRoute`); the pair `handing`.
 
 ### Yoneda: what changed
