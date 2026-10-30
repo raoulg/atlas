@@ -1705,3 +1705,33 @@ fn places_a_parent_drops_the_last_part_of_a_path() {
 fn a_closures_parameter_is_what_its_calls_hand_it() {
     common::a_closures_parameter_is_what_its_calls_hand_it("rust", &["knot.settings", "knot.lock"]);
 }
+
+/// A value built at the call is built where it is named, among a macro's tokens as outside them (#299): a unit struct's
+/// name is a value of it (`docs/reference/mathematics.md`, "Method resolution order"), so `println!("{}:", Plain.name())`
+/// builds a `Plain` and runs `name` on it, as `Plain.show(..)` written outside the macro builds one and runs `show` on it.
+/// The shortcut of the built pair (`tests/pairs/built/rust`) writes both forms: each method it runs on a `Plain` is handed,
+/// as the value it runs on, the `Plain` the step right before it builds. The clean side is handed its block and builds none.
+#[test]
+fn built_a_unit_struct_named_in_a_macro_is_built_where_it_is_named() {
+    for side in ["clean", "shortcut"] {
+        let g = analyze(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/pairs/built/rust").join(side), &Options::default())
+            .expect("reads");
+        let sites = &node(&g, "notes.report").sites;
+        // a method of `Plain`'s own, or a trait's run on a `Plain` (`Block.show`)
+        let on_plain = |s: &Site| s.to.starts_with("notes.Plain.") || s.on == "notes.Plain";
+        let runs: Vec<usize> = (0..sites.len()).filter(|&i| on_plain(&sites[i])).collect();
+        for &i in &runs {
+            let built = i.checked_sub(1).map(|b| &sites[b]).filter(|b| b.to == "notes.Plain");
+            let built = built.unwrap_or_else(|| panic!("{side}: no Plain is built before {}", sites[i].to));
+            assert!(
+                sites[i].hands.iter().any(|h| built.gives.contains(h) && h.fills == [atlas_engine::Slot::Receiver]),
+                "{side}: {} runs on the Plain built for it: {:?}",
+                sites[i].to,
+                sites[i].hands
+            );
+        }
+        let builds = sites.iter().filter(|s| s.to == "notes.Plain").count();
+        assert_eq!(builds, runs.len(), "{side}: one Plain built for each method run on one");
+        assert_eq!(runs.len(), if side == "shortcut" { 2 } else { 0 }, "{side}: `Plain.name()` in the macro and `Plain.show(..)`");
+    }
+}
