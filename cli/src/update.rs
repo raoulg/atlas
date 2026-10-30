@@ -14,7 +14,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use atlas_engine::cache::Cache;
 
 const DAY: u64 = 24 * 60 * 60;
-const API: &str = "https://api.github.com/repos/raoulg/atlas/releases";
+const API: &str = "https://api.github.com/repos/raoulg/atlas";
 
 /// Which build this is.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -107,8 +107,8 @@ fn key(this: &Build) -> String {
     format!("{}/{}/{}", this.channel, this.version, this.commit)
 }
 
-/// One GET of the GitHub API, the field `field` of its answer.
-fn get(path: &str, field: &str) -> Option<String> {
+/// One GET of the GitHub API, the field at `pointer` in its answer (`/object/sha`).
+fn get(path: &str, pointer: &str) -> Option<String> {
     let out = Command::new("curl")
         .args(["-fsS", "--max-time", "3", "-H", "Accept: application/vnd.github+json", &format!("{API}/{path}")])
         .stdin(Stdio::null())
@@ -116,14 +116,17 @@ fn get(path: &str, field: &str) -> Option<String> {
         .output()
         .ok()?;
     let v: serde_json::Value = serde_json::from_slice(&out.stdout).ok()?;
-    v[field].as_str().map(str::to_string)
+    v.pointer(pointer)?.as_str().map(str::to_string)
 }
 
+/// The newest build of this one's channel: the latest release's tag, or the commit the tag `nightly` is
+/// at. The nightly moves that tag once its files are up; the release `nightly` keeps the commit it was
+/// made at as its target, so its target says nothing.
 fn ask(this: &Build) -> Option<Latest> {
     Some(if this.nightly() {
-        Latest { nightly: get("tags/nightly", "target_commitish")?, ..Latest::default() }
+        Latest { nightly: get("git/ref/tags/nightly", "/object/sha")?, ..Latest::default() }
     } else {
-        Latest { release: get("latest", "tag_name")?, ..Latest::default() }
+        Latest { release: get("releases/latest", "/tag_name")?, ..Latest::default() }
     })
 }
 
