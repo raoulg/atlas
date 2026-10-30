@@ -2,7 +2,7 @@ name: ci
 
 on:
   push:
-    branches: [main, next]
+    branches: [main, next, "release-*"]
   pull_request:
 
 # a push stops the runs of the commits before it on the same branch: only the newest commit's run
