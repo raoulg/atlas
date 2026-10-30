@@ -347,9 +347,13 @@ pub struct Node {
     /// bound to gives where no step makes it (`let out = match f { "csv" => String::from(..), _ =>
     /// format!(..) }`, `x = a if c else b`). Each name once in each arm, with its type when known and
     /// the arms the value is made in. Such an arm makes the name's value as an arm whose step gives it
-    /// does. Outside the choices, the names it binds by a literal, a value made by no step that reads
-    /// no value (`let mut held = vec![]`, `items = []`), with no arms: the body makes that value
-    /// itself, as a call handed nothing makes it (`Vec::new()`, `list()`).
+    /// does. Outside the choices, with no arms, the names it binds to a value no step makes: a literal
+    /// (`let mut held = vec![]`, `items = []`), which the body makes as a call handed nothing makes it
+    /// (`Vec::new()`, `list()`), or any other expression (`mask = samples.abs() > 0`, `let total = a +
+    /// b`, `const shown = n > 0`), whatever it reads. Each is the body's own value, never a module's
+    /// (#318). A name bound to another, to what a step gives or to a part of either (`width =
+    /// settings.width`, `g = &figures().clean`) holds that value, and a function written in place is a
+    /// function: none of these.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub binds: Vec<Use>,
     /// What its body's own code sets a part of a value to, by assignment through the name that holds

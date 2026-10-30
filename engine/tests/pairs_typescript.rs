@@ -1956,6 +1956,13 @@ fn a_list_made_by_a_literal_is_made_by_the_body() {
     common::a_list_made_by_a_literal_is_made_by_the_body("typescript", "byLiteral", "byCall", "byConstant");
 }
 
+/// The locals pair: an array the body writes of what it is handed is the body's own, never a module's name (#318), as a
+/// list is in Python and an array in Rust.
+#[test]
+fn a_local_is_bound_by_the_bodys_own_code() {
+    common::a_local_is_bound_by_the_bodys_own_code("typescript", "pair");
+}
+
 /// The workbench pair, `workbench/typescript`: what the program makes, kept in a folder of the project's
 /// own. The clean side gives the folder a class whose method names each file in it
 /// (`Workbench.of(project).file("report.txt")`); the shortcut hands the folder around as a bare path (`join(madeDir(project), "report.txt")`).

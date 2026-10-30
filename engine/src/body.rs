@@ -769,6 +769,22 @@ impl<'t, 's> Steps<'t, 's> {
         (!fields.is_empty() && (u.names.contains(&k.kind()) || u.reads.contains(&k.kind()))).then(|| (k, fields.join(".")))
     }
 
+    /// Whether `n` is a part of a value the body has, no value of its own: a name, what a step gives, or a field or an element
+    /// of either (`x`, `self.rows`, `sites[i]`, `figures().clean`).
+    fn part_of_a_value(&self, n: TsNode<'t>) -> bool {
+        let u = self.uses;
+        let mut k = beneath(n, u.wrappers);
+        loop {
+            if let Some((of, _)) = (u.field)(k, self.src) {
+                k = beneath(of, u.wrappers);
+            } else if let Some(inner) = u.keeps.contains(&k.kind()).then(|| k.named_child(0)).flatten() {
+                k = beneath(inner, u.wrappers);
+            } else {
+                return u.names.contains(&k.kind()) || u.reads.contains(&k.kind()) || self.sites.iter().any(|s| s.span == span(k));
+            }
+        }
+    }
+
     /// The fields `e` reads of the value `h` the name `n` holds, where `e` is `n` or a projection of it: those it reads of
     /// `n` (`fields`) after the projection `n` is bound to first, where the reader finds the value at the name of a
     /// binding that reaches `n` (`mathematics.md`, "One fine plan": a projection bound to a name is still the projection).
@@ -846,6 +862,18 @@ impl<'t, 's> Steps<'t, 's> {
     /// reads (`fig, ax = self.fig, self.ax` binds `ax` to `ax`). An element is left out (`row = self.rows[k]` is `rows`).
     fn bound_by(&self, binding: TsNode<'t>, name: &str) -> Option<String> {
         let u = self.uses;
+        let part = self.bound_to(binding, name)?;
+        match self.projection(part) {
+            Some((_, fields)) => Some(fields),
+            None if u.names.contains(&part.kind()) || u.reads.contains(&part.kind()) => Some(String::new()),
+            None => None,
+        }
+    }
+
+    /// The expression `binding` binds `name` to: its value, or, where the binding and its value are written as as many parts,
+    /// the part at the name's place (`fig, ax = self.fig, self.ax` binds `ax` to `self.ax`).
+    fn bound_to(&self, binding: TsNode<'t>, name: &str) -> Option<TsNode<'t>> {
+        let u = self.uses;
         let (targets, value) = (u.binds)(binding)?;
         let each = |x: TsNode<'t>| named_children(x).into_iter().filter(|c| !c.kind().ends_with("comment")).collect::<Vec<_>>();
         let part = match ((u.pairs)(targets, value), each(targets), each(value)) {
@@ -855,12 +883,7 @@ impl<'t, 's> Steps<'t, 's> {
             }
             _ => value,
         };
-        let part = beneath(part, u.wrappers);
-        match self.projection(part) {
-            Some((_, fields)) => Some(fields),
-            None if u.names.contains(&part.kind()) || u.reads.contains(&part.kind()) => Some(String::new()),
-            None => None,
-        }
+        Some(beneath(part, u.wrappers))
     }
 
     /// Whether the body's own code reads what step `i` of the program's code gives, by no name: through
@@ -1408,11 +1431,14 @@ impl<'t, 's> Steps<'t, 's> {
         }
     }
 
-    /// What the arms of the body's choices bind a name to by the body's own code (`Node::binds`): of
-    /// each binding of the body, what it binds that no step makes, where that is made in an arm, either
-    /// the binding standing in the arm (`unit = KELVIN`) or the value it binds being a choice whose arm
-    /// gives it (`let out = match f { .. }`, `x = a if c else b`). What a loop binds, its step gives;
-    /// a field or an element is kept beyond a name.
+    /// What the body binds a name to by its own code (`Node::binds`): of each binding of the body, what
+    /// it binds that no step makes. In an arm, either the binding standing in the arm (`unit = KELVIN`)
+    /// or the value it binds being a choice whose arm gives it (`let out = match f { .. }`, `x = a if c
+    /// else b`); outside the choices, a literal (`items = []`) or any other expression (`mask =
+    /// samples.abs() > 0`, `let total = a + b`): the body makes that value itself, whatever it reads.
+    /// What a loop binds, its step gives; a field or an element is kept beyond a name; a name bound to
+    /// another, to what a step gives or to a part of either (`width = settings.width`) holds that value
+    /// (`Node::uses`); a function written in place is a function.
     fn binds(&self) -> Vec<Use> {
         let u = self.uses;
         let steps: HashSet<(u32, u32)> = self.sites.iter().map(|s| s.span).filter(|s| *s != (0, 0)).collect();
@@ -1441,7 +1467,27 @@ impl<'t, 's> Steps<'t, 's> {
                 }
                 let arms = self.arms(leaf);
                 let by_literal = arms.is_empty() && literal(leaf);
-                for name in names.iter().filter(|_| !arms.is_empty() || by_literal) {
+                // outside the choices, an expression that is no name, no step and no part of what either holds, and in which
+                // no step gives the name: a value the body makes itself, as by a literal. Several names bound to one value it does not
+                // write as as many parts are parts of that value; a function written in place is a function, no value
+                let whole = beneath(value, u.wrappers);
+                let by_own_code = |name: &str| {
+                    arms.is_empty()
+                        && !u.updates.contains(&b.kind())
+                        && !self.decides(b)
+                        && self.bound_to(b, name).is_some_and(|part| {
+                            let within = |s: &Site| part.start_byte() <= s.span.0 as usize && s.span.1 as usize <= part.end_byte();
+                            (names.len() == 1 || part.id() != whole.id())
+                                && !self.part_of_a_value(part)
+                                && !named_children(part).into_iter().any(|x| (u.binders)(part, x) == Some(true))
+                                && !self
+                                    .sites
+                                    .iter()
+                                    .filter(|s| s.span != (0, 0))
+                                    .any(|s| within(s) && (s.span == span(part) || s.gives.iter().any(|g| g.name == name)))
+                        })
+                };
+                for name in names.iter().filter(|n| !arms.is_empty() || by_literal || by_own_code(n)) {
                     let one = Use { name: name.clone(), ty: String::new(), arms: arms.clone(), param: false };
                     if !out.contains(&one) {
                         out.push(one);
