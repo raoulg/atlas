@@ -18,7 +18,7 @@ const DISK_WRITE: Crossing = Crossing::write(World::Disk);
 /// socket's address), or it sends or receives on a socket. Building a client, or reading a
 /// response that has arrived (`resp.headers.get(..)`), is handed none.
 pub fn requests(params: &[&str], op: &str) -> bool {
-    params.iter().any(|p| matches!(*p, "url" | "uri" | "address")) || k::SOCKET_OPS.contains(&op)
+    params.iter().any(|p| matches!(*p, "url" | "uri" | "address")) || k::python_socket_op(op)
 }
 
 /// Whether a Python package is a network library, whose calls `requests` decides.
@@ -75,8 +75,8 @@ pub fn boundary_rust(parts: &[String]) -> Option<Crossing> {
         }
     }
     // a socket's traffic: `TcpStream::connect(addr)`, `conn.read(..)`; binding or a timeout moves none
-    if has(k::RUST_NET_MODULE) {
-        return k::RUST_SOCKET_OPS.contains(&last).then_some(Crossing::to(World::Net));
+    if k::socket_path(parts) {
+        return k::rust_socket_op(last).then_some(Crossing::to(World::Net));
     }
     // a program is run by a `Command`; `process::exit` ends this one and runs none
     if has(k::RUST_COMMAND) {
@@ -381,11 +381,29 @@ pub fn on_receiver(op: &str) -> bool {
     k::ON_THE_PATH.contains(&op)
 }
 
-/// The host of a URL: `https://huggingface.co/api/x` -> `huggingface.co`.
+/// The host of a URL: `https://huggingface.co/api/x` -> `huggingface.co`; a socket's address is
+/// its own (`127.0.0.1:7878`), as a URL's host is the place it names.
 fn host(s: &str) -> Option<String> {
+    if socket_address(s) {
+        return Some(s.to_string());
+    }
     let rest = s.split_once("://")?.1;
     let h = rest.split(['/', '?', '#']).next()?;
     (!h.is_empty() && !h.contains('{')).then(|| h.to_string())
+}
+
+/// Whether a text is a socket's address, a host and a port: `127.0.0.1:7878`, `localhost:80`,
+/// `[::1]:8080`.
+pub fn socket_address(s: &str) -> bool {
+    let Some((h, port)) = s.rsplit_once(':') else { return false };
+    let host = match h.strip_prefix('[').and_then(|h| h.strip_suffix(']')) {
+        Some(v6) => !v6.is_empty() && v6.chars().all(|c| c.is_ascii_hexdigit() || c == ':'),
+        // a name or an address of four numbers, never a time of day (`12:30`)
+        None => {
+            h.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '-')) && h.chars().any(|c| c == '.' || c.is_ascii_alphabetic())
+        }
+    };
+    host && (1..=5).contains(&port.len()) && port.chars().all(|c| c.is_ascii_digit())
 }
 
 /// A file mode literal: `r`, `wb`, `a+`.
@@ -863,30 +881,60 @@ mod tests {
     }
 
     /// Isomorphic is the same: a socket is the network in Python and in Rust, and the operations
-    /// that say the same thing cross alike. Connecting, sending and receiving reach it; binding an
+    /// that say the same thing cross alike. Each operation that moves data is named in both
+    /// languages, and every name of it reaches the network, in every module of sockets; binding an
     /// address, accepting a connection, shutting a half and setting a timeout move no data.
     #[test]
     fn a_socket_moves_data_alike_in_python_and_rust() {
-        let rs = |xs: &[&str]| name(boundary_rust(&xs.iter().map(|s| s.to_string()).collect::<Vec<_>>()));
+        let rs = |xs: &[&str]| name(boundary_rust(&parts(xs)));
         let py = |op: &str| name(boundary(Some("socket"), &parts(&["sock", op])));
-        let alike = [
-            ("connect", "TcpStream", "connect"),
-            ("recv", "TcpStream", "read"),
-            ("recv_into", "TcpStream", "read_exact"),
-            ("send", "TcpStream", "write"),
-            ("sendall", "TcpStream", "write_all"),
+        for op in k::SOCKET_OPS {
+            assert!(!op.python.is_empty() && !op.rust.is_empty(), "{:?} and {:?}: named in both", op.python, op.rust);
+            for (p, r) in op.python.iter().flat_map(|p| op.rust.iter().map(move |r| (p, r))) {
+                for module in k::RUST_SOCKET_MODULES {
+                    let path: Vec<&str> = module.iter().copied().chain(["TcpStream", r]).collect();
+                    assert_eq!(py(p), rs(&path), "Python's `socket.{p}` and Rust's `{}`", path.join("::"));
+                }
+                assert_eq!(py(p), Some("net"), "a socket's traffic reaches the network");
+            }
+        }
+        let still = [
             ("shutdown", "TcpStream", "shutdown"),
             ("settimeout", "TcpStream", "set_read_timeout"),
             ("bind", "TcpListener", "bind"),
+            ("listen", "TcpListener", "listen"),
             ("accept", "TcpListener", "accept"),
-            ("sendto", "UdpSocket", "send_to"),
-            ("recvfrom", "UdpSocket", "recv_from"),
         ];
-        for (p, ty, r) in alike {
-            assert_eq!(py(p), rs(&["std", "net", ty, r]), "Python's `socket.{p}` and Rust's `{ty}::{r}`");
+        for (p, ty, r) in still {
+            assert_eq!((py(p), rs(&["std", "net", ty, r])), (None, None), "Python's `socket.{p}` and Rust's `{ty}::{r}` move no data");
         }
-        assert_eq!(py("recv"), Some("net"), "a socket's traffic reaches the network");
         assert_eq!(rs(&["std", "net", "IpAddr", "from_str"]), None, "an address parsed moves nothing");
+    }
+
+    /// A library is judged by its own row, whatever module its path runs through (#302): a network
+    /// library's call in its `net` module crosses as its calls elsewhere do (`hyper::net`), and a
+    /// crate no table names reaches nothing through a module of that name. Only the modules of
+    /// sockets are judged by the socket table.
+    #[test]
+    fn a_library_is_judged_by_its_own_row_whatever_module_its_path_runs_through() {
+        let rs = |xs: &[&str]| name(boundary_rust(&parts(xs)));
+        for op in ["get", "read", "send", "new", "shutdown"] {
+            assert_eq!(rs(&["hyper", "net", "HttpConnector", op]), rs(&["hyper", "client", "HttpConnector", op]), "hyper's `{op}`");
+            assert_eq!(rs(&["netcode", "net", "TcpStream", op]), None, "a crate no table names: `{op}`");
+        }
+    }
+
+    /// A socket's address names its place as a URL's host does (#302): connecting to
+    /// `127.0.0.1:7878` reaches the place a request to `http://127.0.0.1:7878/` reaches; a time of
+    /// day names none.
+    #[test]
+    fn a_socket_address_names_its_place() {
+        let net = |op: &str, l: &str| facts(c("net"), None, op, &lits(&[l])).artifact;
+        for at in ["127.0.0.1:7878", "localhost:80", "[::1]:8080", "greeter.example.org:443"] {
+            assert_eq!(net("connect", at), net("get", &format!("http://{at}/greeting")), "{at}");
+            assert_eq!(net("connect", at), at);
+        }
+        assert_eq!(net("connect", "12:30"), "");
     }
 
     #[test]

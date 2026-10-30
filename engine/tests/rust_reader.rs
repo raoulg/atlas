@@ -553,3 +553,21 @@ fn a_let_else_keeps_what_it_binds_and_a_macro_s_method_on_self_is_handed_the_ins
     assert_eq!(name.hands.iter().map(|h| (h.ty.as_str(), h.name.as_str())).collect::<Vec<_>>(), [("kept.Touch", "")]);
     assert_eq!(name.hands[0].fills, [atlas_engine::Slot::Receiver]);
 }
+
+/// Isomorphic is the same: a listener's connections are doors to the address it is bound to however the code takes them
+/// (`incoming()`, `accept()` taken apart in a `let` or in a `match` arm), and a clone of a connection is a door to the same
+/// place, so what each is handed to reads and writes there (#302).
+#[test]
+fn a_listener_s_connections_are_doors_to_its_address() {
+    let g = written(
+        "doors",
+        &[(
+            "src/main.rs",
+            "use std::io::{Read, Write};\nuse std::net::{TcpListener, TcpStream};\n\nconst ADDRESS: &str = \"127.0.0.1:7878\";\n\nfn each(listener: TcpListener) {\n    for conn in listener.incoming() {\n        read(conn.unwrap());\n    }\n}\n\nfn one(listener: &TcpListener) -> std::io::Result<()> {\n    let (conn, _) = listener.accept()?;\n    write(conn.try_clone()?);\n    Ok(())\n}\n\nfn matched(listener: &TcpListener) {\n    let conn = match listener.accept() {\n        Ok((conn, _)) => conn,\n        Err(_) => return,\n    };\n    read(conn);\n}\n\nfn read(mut conn: TcpStream) {\n    let mut buf = [0; 16];\n    let _ = conn.read(&mut buf);\n}\n\nfn write(mut conn: TcpStream) {\n    let _ = conn.write_all(b\"hi\");\n}\n\nfn main() -> std::io::Result<()> {\n    let listener = TcpListener::bind(ADDRESS)?;\n    one(&listener)?;\n    matched(&listener);\n    each(listener);\n    Ok(())\n}\n",
+        )],
+    );
+    for f in ["doors.read", "doors.write"] {
+        let reached: BTreeSet<String> = places(&g, f).into_iter().filter(|p| p.0 == "net").map(|p| p.2).collect();
+        assert_eq!(reached, BTreeSet::from(["127.0.0.1:7878".to_string()]), "{f}: {:?}", places(&g, f));
+    }
+}

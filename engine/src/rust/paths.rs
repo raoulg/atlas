@@ -93,6 +93,11 @@ impl<'a> Eval<'a> {
                 cross(&field("left"), &field("right"), "")
             }
             "call_expression" => self.call(at, e, depth),
+            // a dereference is the value it refers to, as a reference is
+            "unary_expression" if e.child(0).map_or(false, |o| o.kind() == "*") => first(e),
+            // what leaves (`return`, `break`, `continue`) gives no value where it stands: an arm
+            // that leaves adds none to its `match`
+            "return_expression" | "break_expression" | "continue_expression" => vec![],
             "macro_invocation" => self.macro_value(at, e, depth),
             "closure_expression" => field("body"),
             "block" => tail(e).map(|t| self.of(at, t, depth + 1)).unwrap_or_default(),
@@ -125,6 +130,19 @@ impl<'a> Eval<'a> {
                         .taken_apart(at, pattern, &field, value, depth)
                         .unwrap_or_else(|| vec![hole(&self.local(at.m, scope, name))])
                 }
+                Some(Bound::Element(value, i)) => {
+                    if let Some(values) = self.element(at, value, i, depth) {
+                        return named_by(&self.local(at.m, scope, name), values);
+                    }
+                }
+                // one of the values the loop goes through; an iterable of nothing known leaves the
+                // name the code gives the element
+                Some(Bound::Each(value)) => {
+                    let values = self.of(at, value, depth + 1);
+                    if !values.iter().all(|b| matches!(b.as_slice(), [Seg::Hole(_)])) {
+                        return named_by(&self.local(at.m, scope, name), values);
+                    }
+                }
                 None => {}
             }
             if at.params.iter().any(|p| p == name) {
@@ -135,6 +153,22 @@ impl<'a> Eval<'a> {
             }
         }
         self.constant(at.m, &[name.to_string()], depth).unwrap_or_else(|| vec![hole(name)])
+    }
+
+    /// The element `i` of what `value` gives, where the code says it: of a tuple it writes, or of the
+    /// pair a socket's `accept` gives, whose first is a door to the listener's place.
+    fn element(&self, at: At<'a, '_>, value: TsNode<'a>, i: usize, depth: u32) -> Option<Vec<Built>> {
+        let value = beneath(value, super::module::WRAPPERS);
+        match value.kind() {
+            "tuple_expression" => named_children(value).get(i).map(|x| self.of(at, *x, depth + 1)),
+            "call_expression" => {
+                let f = value.child_by_field_name("function").filter(|f| f.kind() == "field_expression")?;
+                let method = text(f.child_by_field_name("field")?, &at.m.src);
+                let on = f.child_by_field_name("value")?;
+                knowledge::RUST_DOOR_KEEPERS.contains(&(method, Some(i))).then(|| self.of(at, on, depth + 1))
+            }
+            _ => None,
+        }
     }
 
     /// The name a value bound in a function goes by beyond it: the binding's with the function's
@@ -445,6 +479,9 @@ impl<'a> Eval<'a> {
                 // what an `Option` or a `Result` holds, or what it falls back to where it holds nothing
                 None if super::module::OR_ELSE.contains(&method) && !method.starts_with("map") => or_else(on(), arg(0)),
                 None if knowledge::hands_on(method) && !matches!(method, "map" | "and_then") => on(),
+                // a door to the place of the socket it is called on: a clone, the connections a
+                // listener accepts
+                None if knowledge::RUST_DOOR_KEEPERS.contains(&(method, None)) => on(),
                 None => self.method_given(at, recv, method, &args, depth).unwrap_or_else(|| vec![hole("call")]),
             };
         }
@@ -454,6 +491,10 @@ impl<'a> Eval<'a> {
             return arg(0);
         }
         let n = parts.len();
+        // a socket opened at the address it is handed is a door to that place
+        if let Some((_, _, i)) = knowledge::RUST_DOORS.iter().find(|(on, name, _)| n >= 2 && parts[n - 2] == *on && parts[n - 1] == *name) {
+            return arg(*i);
+        }
         let known = knowledge::RUST_PATH_FUNCTIONS
             .iter()
             .find(|(on, name, _)| n >= 2 && parts[n - 2] == *on && parts[n - 1] == *name)
@@ -729,10 +770,13 @@ fn enclosing_fn(n: TsNode) -> Option<TsNode> {
 }
 
 /// What a binding of a name holds: a value, the field a struct pattern takes out of the value it
-/// matches, or for a parameter of a closure a `let` keeps, what each call of the closure hands it.
+/// matches, an element of the tuple it matches, one of the values a loop goes through, or for a
+/// parameter of a closure a `let` keeps, what each call of the closure hands it.
 enum Bound<'a> {
     Value(TsNode<'a>),
     Field(TsNode<'a>, String, TsNode<'a>),
+    Element(TsNode<'a>, usize),
+    Each(TsNode<'a>),
     Handed(Vec<TsNode<'a>>),
 }
 
@@ -740,10 +784,12 @@ enum Bound<'a> {
 /// is written last: a `let` complete before `pos`, or a pattern (`if let` in the block it opens,
 /// `let .. else` after it, a `match` arm in its arm) that binds the whole value, takes the value
 /// `Some` or `Ok` holds out of it (`if let Some(dir) = to.parent()`), which holds what that one
-/// holds, or takes a field out of a struct or a variant (`Cmd::Analyze { out, .. }`), or a
-/// parameter of the closure `pos` is in (`handed`).
+/// holds, takes an element out of a tuple (`let (conn, _) = listener.accept()?`), or takes a field
+/// out of a struct or a variant (`Cmd::Analyze { out, .. }`), a `for` loop's name in its body, or
+/// a parameter of the closure `pos` is in (`handed`).
 fn bound<'a>(scope: TsNode<'a>, name: &str, pos: usize, src: &[u8]) -> Option<Bound<'a>> {
     let named = |p: TsNode| matches!(p.kind(), "identifier" | "mut_pattern") && text(p, src).trim_start_matches("mut ") == name;
+    let element = |t: TsNode| (t.kind() == "tuple_pattern").then(|| named_children(t).into_iter().position(|x| named(x))).flatten();
     let binds = |p: TsNode<'a>, v: TsNode<'a>| -> Option<Bound<'a>> {
         if named(p) {
             return Some(Bound::Value(v));
@@ -751,11 +797,12 @@ fn bound<'a>(scope: TsNode<'a>, name: &str, pos: usize, src: &[u8]) -> Option<Bo
         let ty = p.child_by_field_name("type");
         let inner: Vec<TsNode> = named_children(p).into_iter().filter(|c| Some(c.id()) != ty.map(|t| t.id())).collect();
         match p.kind() {
-            "tuple_struct_pattern"
-                if ty.map_or(false, |t| super::module::HOLDING.contains(&text(t, src))) && matches!(inner.as_slice(), [x] if named(*x)) =>
-            {
-                Some(Bound::Value(v))
-            }
+            "tuple_struct_pattern" if ty.map_or(false, |t| super::module::HOLDING.contains(&text(t, src))) => match inner.as_slice() {
+                [x] if named(*x) => Some(Bound::Value(v)),
+                [x] => element(*x).map(|i| Bound::Element(v, i)),
+                _ => None,
+            },
+            "tuple_pattern" => element(p).map(|i| Bound::Element(v, i)),
             "struct_pattern" => inner.into_iter().filter(|f| f.kind() == "field_pattern").find_map(|f| {
                 let field = text(f.child_by_field_name("name")?, src).to_string();
                 let held = f.child_by_field_name("pattern").map_or(field == name, named);
@@ -766,8 +813,12 @@ fn bound<'a>(scope: TsNode<'a>, name: &str, pos: usize, src: &[u8]) -> Option<Bo
     };
     let around = |n: Option<TsNode>| n.map_or(false, |n| n.start_byte() <= pos && pos < n.end_byte());
     let mut best: Option<(usize, Bound<'a>)> = None;
-    for b in walk(scope, &["let_declaration", "let_condition", "match_arm"]) {
+    for b in walk(scope, &["let_declaration", "let_condition", "match_arm", "for_expression"]) {
         let found = match b.kind() {
+            "for_expression" => {
+                let (Some(p), Some(v)) = (b.child_by_field_name("pattern"), b.child_by_field_name("value")) else { continue };
+                (around(b.child_by_field_name("body")) && named(p)).then(|| (p.end_byte(), Bound::Each(v)))
+            }
             "let_declaration" => {
                 let (Some(p), Some(v)) = (b.child_by_field_name("pattern"), b.child_by_field_name("value")) else { continue };
                 (b.end_byte() <= pos).then(|| binds(p, v)).flatten().map(|x| (b.end_byte(), x))

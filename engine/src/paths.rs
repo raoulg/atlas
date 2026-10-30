@@ -879,8 +879,9 @@ fn way_of_request<'b>(mut built: impl Iterator<Item = &'b Built>) -> Option<crat
 /// Whether the code decides where a call goes, once its path or URL is whole: it starts at
 /// something the code holds, a literal or a constant, not at what a caller hands, an input with a
 /// default, or what the environment says (a value, the user's home `~`, the system's `$TMPDIR`).
-/// A request's URL is decided only with its host. A file read from where the package's code lies
-/// is part of the package; one written there is a place the code decides.
+/// A request's URL is decided only with its host, a socket's address whole. A file read from
+/// where the package's code lies is part of the package; one written there is a place the code
+/// decides.
 fn decided(b: &Built, t: &crate::model::Touch) -> bool {
     use crate::model::{Dir, World};
     let rendered = inputs(b);
@@ -888,7 +889,7 @@ fn decided(b: &Built, t: &crate::model::Touch) -> bool {
     match t.kind {
         World::Net => {
             let url = method_and_path(&rendered).1;
-            url.contains("://") && !given(url)
+            (url.contains("://") || crate::effects::socket_address(url)) && !given(url)
         }
         World::Disk if matches!(b.first(), Some(Seg::Package(_))) => t.dir == Some(Dir::Write),
         World::Disk => !given(&rendered),
