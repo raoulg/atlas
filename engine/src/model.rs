@@ -477,13 +477,22 @@ impl Param {
     }
 }
 
+/// A type's own name: its id without the library or module it is in (`ext:pandas.DataFrame` is `DataFrame`). A
+/// shaped array keeps its shape, a dot in it too: `ext:jaxtyping.Float[Tensor, batch {self.size}]` is
+/// `Float[Tensor, batch {self.size}]`.
+pub fn type_name(id: &str) -> &str {
+    let s = id.strip_prefix("ext:").unwrap_or(id);
+    let head = &s[..s.find('[').unwrap_or(s.len())];
+    &s[head.rfind('.').map_or(0, |i| i + 1)..]
+}
+
 /// The names of `held`, each as the last part of the type it resolves to: a type written through an
 /// alias (`Order as Parcel`, `use tree_sitter::Node as TsNode`) is the type it stands for, held by that
 /// type's name, as the `takes` it resolves to names it. A name that resolves to nothing stays as written.
 pub fn resolve_held(held: &[String], resolve: &impl Fn(&str) -> Option<String>) -> Vec<String> {
     let mut out: Vec<String> = vec![];
     for h in held {
-        let name = resolve(h).map_or(h.clone(), |id| id.strip_prefix("ext:").unwrap_or(&id).rsplit('.').next().unwrap_or(&id).to_string());
+        let name = resolve(h).map_or(h.clone(), |id| type_name(&id).to_string());
         if !out.contains(&name) {
             out.push(name);
         }
@@ -1805,6 +1814,22 @@ pub fn edge_name(k: &EdgeKind) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A parameter holds the type its function takes by that type's own name, whatever its id holds: a module path, or a
+    /// shape with a dot in it (`{self.size}`), which is part of the name and no module.
+    #[test]
+    fn a_parameter_holds_the_type_it_takes_by_its_own_name() {
+        for (written, id, name) in [
+            ("Frame", "pandas.core.frame.Frame", "Frame"),
+            ("Frame", "ext:pandas.Frame", "Frame"),
+            ("Float[Tensor, batch dim]", "ext:jaxtyping.Float[Tensor, batch dim]", "Float[Tensor, batch dim]"),
+            ("Float[Tensor, batch {self.size}]", "ext:jaxtyping.Float[Tensor, batch {self.size}]", "Float[Tensor, batch {self.size}]"),
+            ("Float[Tensor, ... {self.a.b}]", "ext:jaxtyping.Float[Tensor, ... {self.a.b}]", "Float[Tensor, ... {self.a.b}]"),
+        ] {
+            assert_eq!(type_name(id), name, "{id}");
+            assert_eq!(resolve_held(&[written.to_string()], &|_| Some(id.to_string())), [name], "{id}");
+        }
+    }
 
     /// The method resolution order of `class` in a hierarchy written as `(class, [bases])`.
     fn mro<'a>(class: &'a str, hierarchy: &'a [(&'a str, &'a [&'a str])]) -> Vec<&'a str> {
