@@ -1,12 +1,12 @@
 name: ci
 
-# The tests on three platforms: on every push to main, on a pull request, by hand, and called by the
+# The tests on three platforms: on every push to main and to a release branch, on a pull request, by hand, and called by the
 # nightly for the commit it builds, which it builds only once these are green. A push to next runs
 # none: a round's integrating agent runs the suite before it lands, and the nightly asks the three
 # platforms once a night.
 on:
   push:
-    branches: [main]
+    branches: [main, "release-*"]
   pull_request:
   workflow_dispatch:
   workflow_call:
