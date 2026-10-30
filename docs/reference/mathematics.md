@@ -248,16 +248,30 @@ only the first draws the group, since only its code says the files belong togeth
 of conjunctions, with no negation. A conjunction is a set of atoms (`a∧b = b∧a`, `a∧a = a`) and the
 disjunction a set of conjunctions (`x∨y = y∨x`), so the formula is a set of sets. It holds at an
 assignment when every atom of one of its conjunctions does. The empty conjunction is true: the unit
-of `∧`.
+of `∧`. A conjunction that contains another holds only where the other does, so it adds nothing
+(absorption, `a ∨ (a∧b) = a`): two formulas that hold at the same assignments are one formula, and
+its canonical form is the set of its minimal conjunctions, none containing another. An atom that
+stands only in a conjunction that contains another is no condition of the formula: no assignment
+changes its value by it.
 **In Atlas.** A touch whose path others make whole runs in a route only where they are on the
 calls (pushforward, rule 5). The atoms are of two kinds, conditions of one kind on a route
 (`Atom`): it reaches a caller whose call hands what makes the path whole, or it starts at an entry
 whose users hand it. `Touch::by` is the formula: each conjunction a set of conditions that make the
 path whole together (one caller set up the object whose field holds the root, another handed the
 rest), any conjunction enough. The order the code is read in says nothing: `a&b` and `b&a` are one
-conjunction, and two alternatives in either order one formula. A role one condition plays is no
-part of the set: the function a request is from is kept beside it, in `Whole { asks, with }`, where
-the request is drawn.
+conjunction, and two alternatives in either order one formula. Nor does how the value got there:
+`Touch::by` is kept in its canonical form (`absorb`), so a conjunction beside one it contains (the
+`lens` pair's `Roster.load&Roster.reread` beside `Roster.load`, a Roster reread from one `load`
+built) is not written, and the callers the arrow of a step depends on are those of the minimal
+conjunctions. Under a step of a route a condition holds where what ran before the step meets it,
+and a route is its steps in call order (composition): what ran before a step is the calls that lead
+there and, in each of their bodies, the steps before the one that leads there, with all they run. A
+caller that handed the rest hands it down the calls into the touch's function, so it holds only on
+them; a caller that set up the object a method on the calls runs on (its calls reach a constructor
+of that method's class) holds wherever it ran before, also in a step beside the calls (`main`
+building the shelf in `open_shelf` and keeping its report in the step after). A role one condition
+plays is no part of the set: the graph says which a caller plays, as above, and the function a
+request is from is kept beside it, in `Whole { asks, with }`, where the request is drawn.
 Where two callers meet a path, the conjunction is the union of theirs (`Whole::and`), so the meet
 keeps every condition of both, however many levels of callers hand the path up. Its unit is the
 function the touch is in: every route that runs the touch reaches it, so `In(f)` there is the empty
@@ -265,8 +279,8 @@ conjunction, and only there; one level up, the caller that hands the path is a c
 other. The graph's JSON writes each conjunction `a&b`, its conditions in order, an entry's users as
 `users_of:e`, and the alternatives in order; a conjunction of one entry's users alone is written in
 `users_of`. It reads them back once.
-**Where.** `model.rs` (`Atom`, `Both`, `Touch::by`, `Touch::in_route`), `paths.rs` (`Whole`,
-`Callers::of`, `place_calls`), `plan.js` (`inRoute`); the pair `handing`.
+**Where.** `model.rs` (`Atom`, `Both`, `absorb`, `Touch::by`, `Touch::in_route`), `paths.rs` (`Whole`,
+`Callers::of`, `place_calls`), `plan.js` (`inRoute`, `before`); the pairs `handing` and `setup`.
 
 ### Yoneda: what changed
 **What.** An object is determined up to isomorphism by the arrows into it, `Hom(−, A)`, and
@@ -381,7 +395,8 @@ line or a box that appears or disappears means:
    quotient. The fine graph is the graph of occurrences, not of functions: a place a caller makes whole
    (a path it hands down) is touched under a step only where that caller is on the calls that lead to
    the step, or below it. A helper that writes the path its caller hands writes, under each caller,
-   that caller's file.
+   that caller's file. A caller that set up the object whose field holds the root has done its part
+   wherever it ran before the step, also in a step beside those calls ("Who makes a path whole").
 6. **Places with the same incidence are one block.** The rule for lines holds for the vertices too: values
    that one closed step takes, that no step makes and that join nothing else, have the same neighbours
    (that step) and the same way (in), so they are one block of the quotient with a multiplicity `n`, drawn

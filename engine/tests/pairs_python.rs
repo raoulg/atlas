@@ -2857,4 +2857,39 @@ fn places_a_path_joined_any_way_python_joins_one_is_the_same_place() {
     }
     assert_eq!(places(&s, &forms[3]), written("data/{kind}/counts.json", true));
     assert_eq!(places(&c, &forms[3]), written("{data}/{kind}/counts.json", false));
+
+// ---------- setup: a step before the calls sets up the object a method on them runs on ----------
+
+/// The setup pair (#309): `main` sets the shelf up in a step of its own, `open_shelf`, and keeps its report and its log
+/// on it in the steps after. On the clean side the shelf is handed its folder, which `open_shelf` decides, and each
+/// method names its file in it and hands the path to `write`: the file is whole where both have run, the step that set
+/// the shelf up and the method that handed the rest. On the shortcut the folder is a constant of the module that each
+/// method reads itself, so the file is whole in the method and `open_shelf` decides nothing. A place is decided by the
+/// function whose own code decides it, and it is whole where every function that hands a part of its path has run: on
+/// both sides the route writes both files, and the sides differ in which steps that takes. Under each step the page
+/// draws it where those have run before (`setup/python/clean.plan`).
+#[test]
+fn setup_a_step_before_the_calls_sets_up_the_object_a_method_runs_on() {
+    let p = common::pair("setup/python");
+    let main = "shelf.cli.main";
+    let (open, report, log) = ("shelf.cli.open_shelf", "shelf.store.Shelf.keep_report", "shelf.store.Shelf.keep_log");
+    let written = |g: &Graph, file: &str| -> Touch {
+        let n = g.node("shelf.store.write").expect("the helper writes");
+        n.touches.iter().find(|t| t.kind_name() == "disk_write" && t.artifact == file).cloned().unwrap_or_else(|| panic!("writes {file}"))
+    };
+    let made = |t: &Touch| -> Vec<BTreeSet<String>> { t.by.iter().map(|b| b.names().map(str::to_string).collect()).collect() };
+    let set = |fs: &[&str]| -> BTreeSet<String> { fs.iter().map(|f| f.to_string()).collect() };
+    for (side, g) in [("clean", &p.clean), ("shortcut", &p.shortcut)] {
+        let route = ran(g, main);
+        for file in ["out/report.txt", "out/log.txt"] {
+            assert!(written(g, file).in_route(main, &|f: &str| route.contains(f)), "{side}: the route writes {file}");
+        }
+    }
+    for (file, method) in [("out/report.txt", report), ("out/log.txt", log)] {
+        let (clean, shortcut) = (written(&p.clean, file), written(&p.shortcut, file));
+        assert_eq!(made(&clean), [set(&[open, method])], "clean: the step that set the shelf up and the method");
+        assert_eq!(clean.fixed_by, [open], "clean: `open_shelf` decides the folder");
+        assert_eq!(made(&shortcut), [set(&[method])], "shortcut: the method alone");
+        assert_eq!(shortcut.fixed_by, [method], "shortcut: the method decides the folder");
+    }
 }
