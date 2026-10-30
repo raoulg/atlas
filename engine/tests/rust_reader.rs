@@ -224,7 +224,9 @@ fn main() {
         )],
     );
     let written = |id: &str| places(&g, id).into_iter().map(|(_, _, artifact, _)| artifact).collect::<Vec<_>>();
-    assert_eq!(written("options.main"), ["out/graph.json", "out/run.log", "out/run.log"]);
+    // the `let` and the struct pattern each hold the log's default: one place, which a name that held
+    // anything else would stand beside
+    assert_eq!(written("options.main"), ["out/graph.json", "out/run.log"]);
     assert_eq!(written("options.log"), [""], "a parameter holds what its callers hand");
     assert_eq!(written("options.grammar"), [""], "pest's `Parser` is no command line");
 }
