@@ -2133,6 +2133,21 @@ impl<'a, 't> Body<'a, 't> {
                 let built = first(call).map(|a| self.eval.of(self.at(), a, 0)).unwrap_or_default();
                 self.touch(c, kind, &op, &subtree()).into_iter().map(|t| (t, built.clone())).collect()
             }
+            // a socket's traffic, at the address its operation is handed (`send_to(buf, addr)`), else
+            // at the place of the connection it runs on, which the callers hand as they hand a path
+            Some((kind, op, call, false, _))
+                if kind.world == World::Net
+                    && made.as_ref().map_or(false, |x| knowledge::socket_path(&x.ty))
+                    && knowledge::rust_socket_op(&op) =>
+            {
+                let address = knowledge::RUST_SOCKET_ADDRESSES
+                    .iter()
+                    .find(|(o, _)| *o == op)
+                    .and_then(|(_, i)| positional(call).get(*i).copied().flatten());
+                let on = function(call).filter(|f| f.kind() == "field_expression").and_then(|f| f.child_by_field_name("value"));
+                let built = crate::paths::request_of(&op, address.or(on).map(|a| self.eval.of(self.at(), a, 0)).unwrap_or_default());
+                self.touch(c, kind, &op, &subtree()).into_iter().map(|t| (t, built.clone())).collect()
+            }
             // a request on a client, at the URL its method is handed
             Some((kind, op, call, false, _)) if kind.world == World::Net && first(call).is_some() => {
                 let built = crate::paths::request_of(&op, first(call).map(|a| self.eval.of(self.at(), a, 0)).unwrap_or_default());

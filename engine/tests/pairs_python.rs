@@ -2818,3 +2818,44 @@ fn handing_a_helper_writes_under_each_caller_that_caller_s_file() {
         BTreeSet::from(["shelf.store.Shelf.keep_log".to_string(), "shelf.store.Shelf.keep_report".to_string()])
     );
 }
+
+// ---------- sockets: a socket is a place, in Python as in Rust ----------
+
+/// The sockets pair (#291, #302), the same greeter and client as Rust's: a call leaves something behind, and a socket is
+/// a place. Isomorphic is the same: each function's traffic is the same operations of `knowledge::SOCKET_OPS` in Python
+/// as in Rust (`recv` and `read`, `sendall` and `write_all`, `create_connection` and `connect`), so the two languages
+/// draw one server and one client. The clean server lingers as TCP asks, so `linger` reaches the network and nothing is
+/// asked; the shortcut sleeps, its `linger` reaches no place, and Atlas asks what the wait leaves behind. Binding,
+/// accepting, shutting a half and setting a timeout move no data.
+#[test]
+fn nothing_a_socket_is_a_place() {
+    let (py, rs) = (common::pair("sockets/python"), common::pair("sockets/rust"));
+    assert_eq!(found(&py.clean, "nothing"), Vec::<String>::new());
+    assert_eq!(found(&py.shortcut, "nothing"), ["greeter.linger"]);
+    // the operation of `SOCKET_OPS` each of a function's touches of the network is
+    let rows = |g: &Graph, id: &str, python: bool| -> Vec<usize> {
+        let row = |op: &str| {
+            atlas_engine::knowledge::SOCKET_OPS
+                .iter()
+                .position(|o| if python { o.python.contains(&op) } else { o.rust.contains(&op) })
+                .unwrap_or_else(|| panic!("{id}: `{op}` is a socket's operation"))
+        };
+        g.node(id)
+            .unwrap_or_else(|| panic!("{id} is in the graph"))
+            .touches
+            .iter()
+            .filter(|t| t.kind_name() == "net")
+            .map(|t| row(&t.op))
+            .collect()
+    };
+    let functions = [("greeter.main", "greeter.main"), ("greeter.answer", "greeter.answer"), ("greeter.linger", "greeter.linger")];
+    let client = [("_root.ask.hear", "greeter.bin.ask.hear")];
+    for (side, p, r) in [("clean", &py.clean, &rs.clean), ("shortcut", &py.shortcut, &rs.shortcut)] {
+        for (f, g) in functions.iter().chain(&client) {
+            assert_eq!(rows(p, f, true), rows(r, g, false), "{side}: Python's `{f}` and Rust's `{g}`");
+        }
+        let connects = |g: &Graph, id: &str, python: bool| rows(g, id, python).first().copied();
+        assert_eq!(connects(p, "_root.ask.main", true), connects(r, "greeter.bin.ask.main", false), "{side}: the client connects");
+    }
+    assert!(rows(&py.clean, "greeter.linger", true).len() == 1 && rows(&py.shortcut, "greeter.linger", true).is_empty());
+}

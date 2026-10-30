@@ -239,6 +239,29 @@ only the first draws the group, since only its code says the files belong togeth
 `flow.rs` (`Touch::place`, its coarse place), `index.html` (the storage quotient); the pair
 `workbench`.
 
+### A door keeps its place
+**What.** The term algebra of places (Paths as terms) has operations that open a door at a term,
+a value through which data reaches the place the term names (`TcpStream::connect(a)`,
+`TcpListener::bind(a)`, `File::open(p)`), and operations that give a door at the same term (a
+clone, the connections a listener accepts). The term of a door is the term it is opened at, and
+substitution carries it as it carries a path: a door handed to a parameter is the door its caller
+hands.
+**In Atlas.** A library's type whose calls reach a place is a door to it (`design.md`, packages).
+An operation on a door is at the place the door's term evaluates to, wherever the door is handed:
+through parameters, `let`s, a pattern that takes it out of a pair (`let (conn, _) =
+listener.accept()?`), a loop over a listener's connections. The place of a stream socket is the
+address of its listening end, the one address the code names for it: the client names it in
+`connect`, the server in `bind`, and each connection a listener accepts is a door to it. So a
+client that writes to an address and a server that reads there meet at one place,
+Network(address), as a request meets the route served at its host and path. The peer of a
+server's connection is decided by no code and names no place. A socket's address
+(`127.0.0.1:7878`) names its place as a URL's host does. Where the code does not say the address
+(only the environment holds it), the place stays a hole, as a path's does: the gap is the code's.
+**Where.** `knowledge::RUST_DOORS`, `RUST_DOOR_KEEPERS`, `RUST_SOCKET_ADDRESSES`; the Rust reader's
+`paths.rs` (`Eval::call`, `Eval::element`, `bound`) and `body.rs` (`chain_touches`);
+`effects::socket_address`; the pair `sockets` (#302). Files handed on, and Python's and
+TypeScript's sockets, are #323.
+
 ### Who makes a path whole: a monotone formula
 **What.** A monotone Boolean formula over a set of atoms, in disjunctive normal form: a disjunction
 of conjunctions, with no negation. A conjunction is a set of atoms (`a∧b = b∧a`, `a∧a = a`) and the
