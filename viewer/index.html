@@ -1046,11 +1046,12 @@ async function renderPlaat(mine) {
   }
   // siblings that draw the same lines on the finest plan (the same places, versions and channels) are one pill: a
   // quotient of the plan's steps, so it is the same whatever else is open, and each of its lines stands for the
-  // lines of all of them. In a union, only siblings that both readings, or the same one, hold, and that changed alike
+  // lines of all of them. In a union, only siblings that both readings, or the same one, hold, and that changed alike.
+  // A step the reader opened stands on its own: opening the pill refines the quotient into its members
   const merged = new Map();
   const counts = (P, n) => P[n] || new Map([...(n[0] === "D" ? P.D : P.C)].filter(([, r]) => n[1] === "n" || r).map(([k]) => [k, 1]));
   for (const P of [...pills.values()]) {
-    if (P.own || P.hue || P.steps[0].startsWith("part:") || P.steps[0].startsWith("unit:")) continue;
+    if (P.own || P.hue || P.steps[0].startsWith("part:") || P.steps[0].startsWith("unit:") || P.steps.some(st => V.open.steps.has(st))) continue;
     const lines = P.fine ?? [...P.D.keys()].sort() + ">" + [...P.C.keys()].sort();
     const key = (P.parent || "") + "|" + lines + "|" + (P.backTo || "") + "|" + [...(P.sides || [])].sort() + "|" + stepChanged(P.steps);
     const Q = merged.get(key);
@@ -1602,7 +1603,8 @@ async function renderPlaat(mine) {
       if (stepOf(P.steps[0]).startsWith("op:")) return;
       if (P.steps.length === 1) select(stepOf(P.steps[0])); else selectArrows({fns: P.steps.map(stepOf), kind: "steps"});
       if (P.own) return;
-      if (!V.route) { if (P.steps.length === 1) { V.route = P.steps[0]; entrySel.value = V.route; V.open.steps.clear(); plaatAnchor = P.id; render(); } return; }
+      // without a route a box opens as the route; a pill of several opens into its members, each of which then does
+      if (!V.route) { if (P.steps.length === 1) { V.route = P.steps[0]; entrySel.value = V.route; V.open.steps.clear(); } else P.steps.forEach(st => V.open.steps.add(st)); plaatAnchor = P.id; render(); return; }
       const opens = P.steps.filter(openable);
       if (opens.length) { opens.forEach(id => V.open.steps.add(id)); plaatAnchor = P.id; render(); }
     }, () => pin(P.id));
