@@ -577,6 +577,22 @@ fn names_value(i: TsNode, src: &[u8]) -> bool {
     }
 }
 
+/// Whether a name among a macro's tokens stands where a value goes, as it would written outside the macro: an argument of
+/// its own, by reference or not (`format!("{:?}", Plain)`, `vec![&Plain]`), or the value a method is called on or a field
+/// read of (`Plain.name()`); not a segment of a path or a field after a `.`, and not in a pattern the macro takes
+/// (`matches!(v, Plain)`).
+fn token_value(n: TsNode, src: &[u8]) -> bool {
+    let Some(g) = n.parent().filter(|g| g.kind() == "token_tree") else { return false };
+    if in_pattern(n, src) || matches!(n.prev_sibling().map(|p| p.kind()), Some("." | "::")) {
+        return false;
+    }
+    let alone = paths::token_groups(g).into_iter().any(|group| {
+        let rest: Vec<TsNode> = group.into_iter().skip_while(|t| matches!(t.kind(), "&" | "mut" | "mutable_specifier")).collect();
+        matches!(rest.as_slice(), [one] if one.id() == n.id())
+    });
+    alone || n.next_sibling().is_some_and(|s| s.kind() == ".")
+}
+
 /// What a call is handed, by place: its arguments; among a macro's tokens, each argument that is
 /// one name or literal (`&x` is `x`), and none for one written another way.
 fn positional(c: TsNode) -> Vec<Option<TsNode>> {
@@ -1553,7 +1569,7 @@ impl<'a, 't> Body<'a, 't> {
                             if t.kind() == "self" {
                                 self.cls.clone()
                             } else {
-                                self.locals.get(text(t, src), t.start_byte()).cloned()
+                                self.locals.get(text(t, src), t.start_byte()).cloned().or_else(|| self.unit_struct(t))
                             }
                         };
                         let class = match recv.as_slice() {
@@ -1706,7 +1722,8 @@ impl<'a, 't> Body<'a, 't> {
     }
 
     /// `Markdown`, named where a value goes: a unit struct named as a value is a value of it,
-    /// built, also where a method is called on it (`Plain.show()`).
+    /// built, also where a method is called on it (`Plain.show()`), and among a macro's tokens where
+    /// they put a value (`println!("{}", Plain.name())`).
     fn unit(&self, steps: &mut Steps<'t, '_>, c: TsNode<'t>) {
         let is = |p: TsNode, field: &str| p.child_by_field_name(field).map(|v| v.id()) == Some(c.id());
         let value = c.parent().map_or(false, |p| match p.kind() {
@@ -1714,6 +1731,7 @@ impl<'a, 't> Body<'a, 't> {
             "let_declaration" | "field_initializer" | "match_arm" | "field_expression" => is(p, "value"),
             "assignment_expression" => is(p, "right"),
             "block" => p.named_child(p.named_child_count().saturating_sub(1)).map(|x| x.id()) == Some(c.id()),
+            "token_tree" => token_value(c, self.src),
             _ => false,
         });
         // a unit struct's name cannot be bound by a pattern: it is the struct wherever it is in scope
@@ -1891,6 +1909,15 @@ impl<'a, 't> Body<'a, 't> {
             "token_tree" => matches!(token_callee(c, self.src), Some(Called::Path(_))),
             _ => function(c).map_or(false, |f| f.kind() != "field_expression"),
         };
+        // among a macro's tokens a method's call is written from its receiver on, as `Body::steps_within` reads it
+        let from = match c.kind() {
+            "token_tree" => match token_callee(c, self.src) {
+                Some(Called::Method(names, _)) => names.first().map(|r| r.start_byte()),
+                _ => None,
+            },
+            _ => None,
+        };
+        let step = Step { from, ..step };
         let on_value = recv.is_some() && !by_path;
         let passed = self.passed(c, t, on_value);
         let receiver_first = !on_value && self.takes_self(t);
@@ -2096,7 +2123,17 @@ impl<'a, 't> Body<'a, 't> {
             } else {
                 0
             };
-            let moves = |i: usize, op: &str| if i < built { None } else { moved_by(&x.ty, op) };
+            // a value its constructor makes without touching anything (`OpenOptions::new()`) is set up
+            // by a file opener's options until a call opens it: `append(true)` and `create(true)` say
+            // how the call that opens it goes, and move nothing themselves
+            let option = |op: &str| knowledge::OPENS_TO_WRITE.contains(&op);
+            let set_up =
+                x.ctor.last().is_some_and(|c| knowledge::BUILDS.contains(&c.as_str())) && effects::boundary_rust(&x.ctor).is_none();
+            let opened = match set_up {
+                true => x.before.iter().chain(&here).position(|(op, _)| !option(op) && moved_by(&x.ty, op).is_some()).unwrap_or(usize::MAX),
+                false => 0,
+            };
+            let moves = |i: usize, op: &str| if i < built || (i < opened && option(op)) { None } else { moved_by(&x.ty, op) };
             let n = x.before.len();
             // the move is named by the first call a library knows by name, else the first that moves
             let (kind, op, call) = here
@@ -2133,9 +2170,30 @@ impl<'a, 't> Body<'a, 't> {
                 let built = first(call).map(|a| self.eval.of(self.at(), a, 0)).unwrap_or_default();
                 self.touch(c, kind, &op, &subtree()).into_iter().map(|t| (t, built.clone())).collect()
             }
-            // a request on a client, at the URL its method is handed
+            // a socket's traffic, at the address its operation is handed (`send_to(buf, addr)`), else
+            // at the place of the connection it runs on, which the callers hand as they hand a path
+            Some((kind, op, call, false, _))
+                if kind.world == World::Net
+                    && made.as_ref().map_or(false, |x| knowledge::socket_path(&x.ty))
+                    && knowledge::rust_socket_op(&op) =>
+            {
+                let address = knowledge::RUST_SOCKET_ADDRESSES
+                    .iter()
+                    .find(|(o, _)| *o == op)
+                    .and_then(|(_, i)| positional(call).get(*i).copied().flatten());
+                let on = function(call).filter(|f| f.kind() == "field_expression").and_then(|f| f.child_by_field_name("value"));
+                let built = crate::paths::request_of(&op, address.or(on).map(|a| self.eval.of(self.at(), a, 0)).unwrap_or_default());
+                self.touch(c, kind, &op, &subtree()).into_iter().map(|t| (t, built.clone())).collect()
+            }
+            // a request on a client, at the URL its method is handed, first unless the crate says
+            // otherwise (knowledge::REQUEST_URL_AT)
             Some((kind, op, call, false, _)) if kind.world == World::Net && first(call).is_some() => {
-                let built = crate::paths::request_of(&op, first(call).map(|a| self.eval.of(self.at(), a, 0)).unwrap_or_default());
+                let krate = made.as_ref().and_then(|x| x.ty.first()).map(String::as_str);
+                let at = knowledge::REQUEST_URL_AT.iter().find(|(k, m, _)| Some(*k) == krate && *m == op).map_or(0, |(_, _, i)| *i);
+                let url = call
+                    .child_by_field_name("arguments")
+                    .and_then(|a| named_children(a).into_iter().filter(|x| !x.kind().ends_with("comment")).nth(at));
+                let built = crate::paths::request_of(&op, url.map(|a| self.eval.of(self.at(), a, 0)).unwrap_or_default());
                 self.touch(c, kind, &op, &subtree()).into_iter().map(|t| (t, built.clone())).collect()
             }
             // a method of a path, at the path it is called on: `cli.raw.exists()`

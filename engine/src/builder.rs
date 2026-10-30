@@ -341,6 +341,7 @@ impl GraphBuilder {
                     x.by.clear();
                 } else {
                     x.by.extend(t.by);
+                    crate::model::absorb(&mut x.by);
                 }
             }
             None => n.touches.push(Touch { n: 1, ..t }),

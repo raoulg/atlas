@@ -1,0 +1,29 @@
+# The shelf is set up in a step of its own that decides nothing: the folder is the module's constant, `OUT`, which
+# each method reads itself to name its file and hand the path to `write`. The file is whole in the method, on the calls
+# that lead to `write`: under `keep_report` the route writes the report alone, under `keep_log` the log alone, as on the
+# clean side. The shelf goes from the step that built it to `main` and to each method it runs on, whose body uses none
+# of it.
+
+route shelf.cli.main
+step main/open_shelf
+step main/open_shelf/Shelf()
+step main/Shelf.keep_report
+step main/Shelf.keep_report/write
+step main/Shelf.keep_log
+step main/Shelf.keep_log/write
+
+line entry > main call
+line main/open_shelf/Shelf() > Shelf@main/open_shelf/Shelf() value
+line Shelf@main/open_shelf/Shelf() > main/open_shelf value               # the shelf built goes back
+line main/open_shelf > Shelf·shelf@main/open_shelf value
+line Shelf·shelf@main/open_shelf > main/Shelf.keep_report value           # the shelf the method runs on
+line Shelf·shelf@main/open_shelf > main/Shelf.keep_log value
+line main/Shelf.keep_report/write > File(out/report.txt) own
+line main/Shelf.keep_log/write > File(out/log.txt) own
+
+home Shelf@main/open_shelf/Shelf() main/open_shelf
+home Shelf·shelf@main/open_shelf main
+
+side entry left
+side File(out/report.txt) right
+side File(out/log.txt) right

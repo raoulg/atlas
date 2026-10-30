@@ -1011,41 +1011,79 @@ pub fn request_by_data(op: &str) -> Option<&'static RequestByData> {
     REQUESTS_BY_DATA.iter().find(|r| r.op == op)
 }
 
-/// A socket's connecting, sending and receiving: the network calls that are handed no URL.
-pub const SOCKET_OPS: &[&str] = &["connect", "send", "sendall", "sendto", "recv", "recvfrom", "recv_into"];
+/// One operation of a socket that moves data, by the names it has in Python and in Rust.
+pub struct SocketOp {
+    pub python: &'static [&'static str],
+    pub rust: &'static [&'static str],
+}
 
-/// Rust's module whose types are sockets: std's `net` (`TcpStream`, `TcpListener`, `UdpSocket`),
-/// and the async runtimes' of that name.
-pub const RUST_NET_MODULE: &str = "net";
-
-/// A Rust socket's connecting, sending and receiving, as `SOCKET_OPS` are Python's: a stream sends
-/// and receives through `io::Write` and `io::Read`, a datagram socket by its own names. Binding an
-/// address, accepting a connection, shutting a half and setting a timeout move no data, in either
-/// language.
-pub const RUST_SOCKET_OPS: &[&str] = &[
-    "connect",
-    "connect_timeout",
-    "read",
-    "read_exact",
-    "read_to_end",
-    "read_to_string",
-    "read_vectored",
-    "peek",
-    "write",
-    "write_all",
-    "write_vectored",
-    "write_fmt",
-    "send",
-    "send_to",
-    "recv",
-    "recv_from",
-    "peek_from",
+/// A socket's connecting, receiving and sending, the network calls that are handed no URL: one row
+/// per operation, each named in both languages, since forms that say the same thing are one. A Rust
+/// stream receives and sends through `io::Read` and `io::Write` (`read`, `write_fmt`); Python peeks
+/// by a flag of `recv` (`MSG_PEEK`) and formats what it sends before it sends it. A datagram socket
+/// receives from and sends to an address. Binding an address, listening, accepting a connection,
+/// shutting a half and setting a timeout move no data, in either language.
+pub const SOCKET_OPS: &[SocketOp] = &[
+    SocketOp { python: &["connect", "connect_ex", "create_connection"], rust: &["connect", "connect_timeout"] },
+    SocketOp {
+        python: &["recv", "recv_into", "recvmsg", "recvmsg_into"],
+        rust: &["read", "read_exact", "read_to_end", "read_to_string", "read_vectored", "recv", "peek"],
+    },
+    SocketOp { python: &["send", "sendall", "sendmsg", "sendfile"], rust: &["write", "write_all", "write_vectored", "write_fmt", "send"] },
+    SocketOp { python: &["recvfrom", "recvfrom_into"], rust: &["recv_from", "peek_from"] },
+    SocketOp { python: &["sendto"], rust: &["send_to"] },
 ];
 
+/// Whether a Python socket's operation moves data (`SOCKET_OPS`).
+pub fn python_socket_op(op: &str) -> bool {
+    SOCKET_OPS.iter().any(|o| o.python.contains(&op))
+}
+
+/// Whether a Rust socket's operation moves data (`SOCKET_OPS`).
+pub fn rust_socket_op(op: &str) -> bool {
+    SOCKET_OPS.iter().any(|o| o.rust.contains(&op))
+}
+
+/// The Rust modules whose types are sockets, by their path from the crate: std's `net`
+/// (`TcpStream`, `TcpListener`, `UdpSocket`) and its Unix domain sockets, and the async runtimes'.
+/// A library whose own path runs through a module of that name (`hyper::net`) is judged by its own
+/// row of `PACKAGES`.
+pub const RUST_SOCKET_MODULES: &[&[&str]] =
+    &[&["std", "net"], &["std", "os", "unix", "net"], &["tokio", "net"], &["async_std", "net"], &["async_std", "os", "unix", "net"]];
+
+/// Whether a Rust path is of a socket's module (`RUST_SOCKET_MODULES`): a type of one, or a
+/// function or a method on it.
+pub fn socket_path(parts: &[String]) -> bool {
+    RUST_SOCKET_MODULES.iter().any(|m| parts.len() > m.len() && parts.iter().zip(*m).all(|(p, m)| p == m))
+}
+
+/// The argument a Rust socket's operation is handed the address it reaches in, where it is handed
+/// one: `connect(addr)`, `send_to(buf, addr)`. Every other operation runs on a connection, and
+/// reaches the place the connection is a door to.
+pub const RUST_SOCKET_ADDRESSES: &[(&str, usize)] = &[("connect", 0), ("connect_timeout", 0), ("send_to", 1)];
+
+/// How a Rust socket is a door to a place (`docs/reference/mathematics.md`, "A door keeps its
+/// place"): a function on a socket's type that opens it at the address it is handed, by its type,
+/// its name and the argument that is the address.
+pub const RUST_DOORS: &[(&str, &str, usize)] = &[
+    ("TcpStream", "connect", 0),
+    ("TcpStream", "connect_timeout", 0),
+    ("TcpListener", "bind", 0),
+    ("UdpSocket", "bind", 0),
+    ("UnixStream", "connect", 0),
+    ("UnixListener", "bind", 0),
+    ("UnixDatagram", "bind", 0),
+];
+
+/// A method that gives a door to the place of the socket it is called on, and where in what it
+/// gives: the door itself (a clone, `try_clone`; the connections a listener accepts, `incoming`),
+/// or the first of a pair (`accept` gives the connection and the peer's address).
+pub const RUST_DOOR_KEEPERS: &[(&str, Option<usize>)] = &[("try_clone", None), ("incoming", None), ("accept", Some(0))];
+
 /// Whether a web library's operation moves data: a request by its method or its kind, or a
-/// socket's traffic.
+/// socket's traffic, as Python names it.
 pub fn moves_on_the_web(op: &str) -> bool {
-    HTTP_METHODS.contains(&op) || REQUESTS.contains(&op) || SOCKET_OPS.contains(&op)
+    HTTP_METHODS.contains(&op) || REQUESTS.contains(&op) || python_socket_op(op)
 }
 
 /// What a database driver does that reaches the database: open a connection or a session, run
@@ -1719,20 +1757,27 @@ pub const PATH_PATTERNS: &[(&str, &str, usize)] = &[("glob", "", 1), ("rglob", "
 
 /// A library's function that lists the directory it is handed, as a path's `iterdir()` does: each
 /// element is below the directory, `*`. Where `names` holds, an element is the name alone, which
-/// the code puts back below the directory itself (`os.path.join(d, name)`); else it is the path
-/// (`os.scandir(d)`, whose entries are paths).
+/// the code puts back below the directory itself (`os.path.join(d, name)`, `path.join(d, name)` of
+/// Node's `readdirSync(d)`); else it is the path (`os.scandir(d)` and Rust's `fs::read_dir(d)`, whose
+/// entries are paths). A Rust library is named by its path (`std::fs`).
 pub struct Listing {
     pub library: &'static str,
     pub function: &'static str,
     pub names: bool,
 }
 
-pub const LISTINGS_BELOW: &[Listing] =
-    &[Listing { library: "os", function: "listdir", names: true }, Listing { library: "os", function: "scandir", names: false }];
+pub const LISTINGS_BELOW: &[Listing] = &[
+    Listing { library: "os", function: "listdir", names: true },
+    Listing { library: "os", function: "scandir", names: false },
+    Listing { library: "std::fs", function: "read_dir", names: false },
+    Listing { library: "fs", function: "readdirSync", names: true },
+    Listing { library: "fs", function: "readdir", names: true },
+];
 
 /// The attributes of a listing's element that are the path the element is at, by the library and
-/// the element's class: `entry.path` of an `os.DirEntry`.
-pub const ELEMENT_PATHS: &[(&str, &str, &str)] = &[("os", "DirEntry", "path")];
+/// the element's class: `entry.path` of an `os.DirEntry`, `entry.path()` of a `std::fs::DirEntry`
+/// (the one class `read_dir`'s elements are).
+pub const ELEMENT_PATHS: &[(&str, &str, &str)] = &[("os", "DirEntry", "path"), ("std::fs", "DirEntry", "path")];
 
 /// Functions that give back the elements of the collection they are handed, in another order or
 /// kind: `sorted(paths)` holds the paths `paths` holds.
@@ -1760,6 +1805,15 @@ pub enum PathFn {
     Temp,
     /// What the environment holds for the variable its first argument names.
     Environment,
+}
+
+impl PathFn {
+    /// Whether what it makes starts where its first argument starts: a join of parts, the
+    /// directory a path is in, the argument as it is. `os.path.join("data", name)` starts at the
+    /// literal `"data"`, as `Path("data") / name` does.
+    pub fn starts_at_first(self) -> bool {
+        matches!(self, PathFn::Join | PathFn::Parent | PathFn::Same)
+    }
 }
 
 /// A command-line parser whose parsed values are attributes of one object (`args.out`): its
@@ -2384,3 +2438,62 @@ pub const TYPESCRIPT_GLOBALS: &[&str] = &[
     "setImmediate",
     "clearImmediate",
 ];
+
+/// Python's classes of a file a library function is handed, by the library module ty finds the
+/// class in (or one above it), its name and what the parameter is handed: typeshed's protocols
+/// for a file read from or written to, `typing`'s and `io`'s open files (`io`'s own classes are
+/// defined in `_io`). A parameter typed as a path class is handed a path
+/// (`PYTHON_PATH_CLASSES`). A class of the same name elsewhere is no file.
+pub const PYTHON_FILE_CLASSES: &[(&str, &str, crate::pytypes::FileArg)] = {
+    use crate::pytypes::FileArg::{Open, Reads, Writes};
+    &[
+        ("_typeshed", "SupportsRead", Reads),
+        ("_typeshed", "SupportsReadline", Reads),
+        ("_typeshed", "SupportsWrite", Writes),
+        ("typing", "IO", Open),
+        ("typing", "TextIO", Open),
+        ("typing", "BinaryIO", Open),
+        ("io", "IOBase", Open),
+        ("io", "RawIOBase", Open),
+        ("io", "BufferedIOBase", Open),
+        ("io", "TextIOBase", Open),
+        ("_io", "TextIOWrapper", Open),
+        ("_io", "BufferedReader", Open),
+        ("_io", "BufferedWriter", Open),
+        ("_io", "BufferedRandom", Open),
+        ("_io", "FileIO", Open),
+    ]
+};
+
+/// Rust's maps written out by their pairs, by the type and the function that builds one:
+/// `HashMap::from([("item", "/api/items"), ..])` holds each pair's second under its first.
+pub const RUST_MAPS_FROM_PAIRS: &[(&str, &str)] =
+    &[("HashMap", "from"), ("BTreeMap", "from"), ("IndexMap", "from"), ("HashMap", "from_iter"), ("BTreeMap", "from_iter")];
+
+/// The macros that write a list out by its elements: `vec![a, b]`.
+pub const RUST_LIST_MACROS: &[&str] = &["vec"];
+
+/// The methods of a map, a slice or a `Vec` that give the value a key or an index picks, as `d[k]`
+/// does: `paths.get(key)`.
+pub const RUST_LOOKUPS: &[&str] = &["get"];
+
+/// The methods of an iterator, or of what can be iterated, that give back elements of what they are
+/// called on: `fs::read_dir(d)?.flatten()` holds the entries `read_dir` lists.
+pub const RUST_SAME_ELEMENTS: &[&str] =
+    &["iter", "into_iter", "flatten", "filter", "rev", "skip", "take", "peekable", "collect", "cloned", "copied", "sorted"];
+
+/// The methods of an iterator that give what the closure they are handed gives for each element:
+/// `entries.map(|e| e.path())` holds the paths of the entries.
+pub const RUST_GIVES_EACH: &[&str] = &["map", "filter_map", "flat_map"];
+
+/// The argument a request's URL is handed at, where it is not the first, by the crate and the
+/// method: reqwest's `client.request(Method::POST, url)` is handed the method first.
+pub const REQUEST_URL_AT: &[(&str, &str, usize)] = &[("reqwest", "request", 1)];
+
+/// The methods of an array that give back elements of the array they are called on:
+/// `names.filter(..)` holds names `names` holds.
+pub const TYPESCRIPT_SAME_ELEMENTS: &[&str] = &["filter", "sort", "toSorted", "reverse", "toReversed"];
+
+/// The methods of an array that give what the function they are handed gives for each element:
+/// `names.map((n) => path.join(d, n))` holds the paths it joins.
+pub const TYPESCRIPT_GIVES_EACH: &[&str] = &["map", "flatMap"];

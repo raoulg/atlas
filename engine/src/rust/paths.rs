@@ -93,6 +93,24 @@ impl<'a> Eval<'a> {
                 cross(&field("left"), &field("right"), "")
             }
             "call_expression" => self.call(at, e, depth),
+            // a dereference is the value it refers to, as a reference is
+            "unary_expression" if e.child(0).map_or(false, |o| o.kind() == "*") => first(e),
+            // what leaves (`return`, `break`, `continue`) gives no value where it stands: an arm
+            // that leaves adds none to its `match`
+            "return_expression" | "break_expression" | "continue_expression" => vec![],
+            "index_expression" => {
+                let (v, k) = match named_children(e).as_slice() {
+                    [v, k] => (*v, *k),
+                    _ => return vec![hole("value")],
+                };
+                self.looked_up(at, v, k, depth).unwrap_or_else(|| vec![hole("value")])
+            }
+            // an array is the values it holds; iterating it yields one of them
+            "array_expression" => elements(e).into_iter().fold(vec![], |acc, x| union(acc, self.of(at, x, depth + 1))),
+            "macro_invocation" if self.list_macro(at.m, e) => {
+                let groups = named_children(e).into_iter().find(|x| x.kind() == "token_tree").map(token_groups).unwrap_or_default();
+                groups.iter().fold(vec![], |acc, g| union(acc, self.tokens(at, g, depth)))
+            }
             "macro_invocation" => self.macro_value(at, e, depth),
             "closure_expression" => field("body"),
             "block" => tail(e).map(|t| self.of(at, t, depth + 1)).unwrap_or_default(),
@@ -125,6 +143,19 @@ impl<'a> Eval<'a> {
                         .taken_apart(at, pattern, &field, value, depth)
                         .unwrap_or_else(|| vec![hole(&self.local(at.m, scope, name))])
                 }
+                Some(Bound::Element(value, i)) => {
+                    if let Some(values) = self.element(at, value, i, depth) {
+                        return named_by(&self.local(at.m, scope, name), values);
+                    }
+                }
+                // an element of what a loop or a method goes over: one of the values it holds; an
+                // element of nothing known leaves the name the code gives it
+                Some(Bound::Each(over)) => {
+                    let values = self.of(at, over, depth + 1);
+                    if !values.iter().all(|b| matches!(b.as_slice(), [Seg::Hole(_)])) {
+                        return named_by(&self.local(at.m, scope, name), values);
+                    }
+                }
                 None => {}
             }
             if at.params.iter().any(|p| p == name) {
@@ -135,6 +166,22 @@ impl<'a> Eval<'a> {
             }
         }
         self.constant(at.m, &[name.to_string()], depth).unwrap_or_else(|| vec![hole(name)])
+    }
+
+    /// The element `i` of what `value` gives, where the code says it: of a tuple it writes, or of the
+    /// pair a socket's `accept` gives, whose first is a door to the listener's place.
+    fn element(&self, at: At<'a, '_>, value: TsNode<'a>, i: usize, depth: u32) -> Option<Vec<Built>> {
+        let value = beneath(value, super::module::WRAPPERS);
+        match value.kind() {
+            "tuple_expression" => named_children(value).get(i).map(|x| self.of(at, *x, depth + 1)),
+            "call_expression" => {
+                let f = value.child_by_field_name("function").filter(|f| f.kind() == "field_expression")?;
+                let method = text(f.child_by_field_name("field")?, &at.m.src);
+                let on = f.child_by_field_name("value")?;
+                knowledge::RUST_DOOR_KEEPERS.contains(&(method, Some(i))).then(|| self.of(at, on, depth + 1))
+            }
+            _ => None,
+        }
     }
 
     /// The name a value bound in a function goes by beyond it: the binding's with the function's
@@ -151,6 +198,13 @@ impl<'a> Eval<'a> {
     /// The value of the `const` or `static` a path names: in the module, where its `use` leads,
     /// or in the module the path names.
     fn constant(&self, m: &'a Module, parts: &[String], depth: u32) -> Option<Vec<Built>> {
+        let (home, name, v) = self.constant_value(m, parts)?;
+        Some(named_by(&name, self.of(At { m: home, scope: None, params: &[] }, v, depth + 1)))
+    }
+
+    /// The `const` or `static` a path names: its module, its name there and the value it is
+    /// declared with.
+    fn constant_value(&self, m: &'a Module, parts: &[String]) -> Option<(&'a Module, String, TsNode<'a>)> {
         let (home, name): (&'a Module, &str) = match parts {
             [name] => match m.bindings.get(name).filter(|b| !b.starts_with("ext:")).and_then(|b| b.rsplit_once('.')) {
                 Some((mid, n)) => (self.modules.get(mid)?, n),
@@ -162,8 +216,153 @@ impl<'a> Eval<'a> {
             }
             [] => return None,
         };
-        let v = const_in(home.tree.root_node(), name, &home.src)?;
-        Some(named_by(name, self.of(At { m: home, scope: None, params: &[] }, v, depth + 1)))
+        Some((home, name.to_string(), const_in(home.tree.root_node(), name, &home.src)?))
+    }
+
+    /// `d[k]`, `d.get(k)`: `d` a collection the code writes out where it stands or where `d` is
+    /// bound (a map from its pairs, an array, a `vec!`), the value a key the code decides picks,
+    /// else one of the values `d` holds, as Python's `d[k]` is. A key the collection does not
+    /// write picks none of them, so it is one of them all.
+    fn looked_up(&self, at: At<'a, '_>, v: TsNode<'a>, k: TsNode<'a>, depth: u32) -> Option<Vec<Built>> {
+        let k = beneath(k, super::module::WRAPPERS);
+        let key = match k.kind() {
+            "integer_literal" => Some(text(k, &at.m.src).to_string()),
+            _ => match self.of(at, k, depth + 1).as_slice() {
+                [b] if crate::paths::known(b) => Some(crate::paths::render(b)),
+                _ => None,
+            },
+        };
+        let (here, held, scope) = self.written_out(at, v, depth)?;
+        let values =
+            self.picked(At { m: here, scope, params: if scope == at.scope { at.params } else { &[] } }, held, key.as_deref(), depth);
+        (!values.iter().all(|b| matches!(b.as_slice(), [Seg::Hole(_)]))).then_some(values)
+    }
+
+    /// The collection a value is, where the code writes it out: where it stands, or where the name
+    /// it is read by is bound (a `let`, a `const` or a `static`), with the module and the function
+    /// it is written in.
+    fn written_out(&self, at: At<'a, '_>, v: TsNode<'a>, depth: u32) -> Option<(&'a Module, TsNode<'a>, Option<TsNode<'a>>)> {
+        if depth > DEPTH {
+            return None;
+        }
+        let v = beneath(v, super::module::WRAPPERS);
+        let src = &at.m.src;
+        match v.kind() {
+            "array_expression" => Some((at.m, v, at.scope)),
+            "macro_invocation" if self.list_macro(at.m, v) => Some((at.m, v, at.scope)),
+            "call_expression" if self.map_from_pairs(at.m, v).is_some() => Some((at.m, v, at.scope)),
+            "identifier" => {
+                let name = text(v, src);
+                if let Some(scope) = at.scope {
+                    match bound(scope, name, v.start_byte(), src) {
+                        Some(Bound::Value(x)) => return self.written_out(at, x, depth + 1),
+                        Some(_) => return None,
+                        None if at.params.iter().any(|p| p == name) => return None,
+                        None => {}
+                    }
+                    if let Some(x) = const_in(scope, name, src) {
+                        return self.written_out(at, x, depth + 1);
+                    }
+                }
+                let (home, _, x) = self.constant_value(at.m, &[name.to_string()])?;
+                self.written_out(At { m: home, scope: None, params: &[] }, x, depth + 1)
+            }
+            "scoped_identifier" => {
+                let (home, _, x) = self.constant_value(at.m, &path_parts(Some(v), src))?;
+                self.written_out(At { m: home, scope: None, params: &[] }, x, depth + 1)
+            }
+            _ => None,
+        }
+    }
+
+    /// What a key or an index picks of a collection the code writes out (a map by a key its pairs
+    /// write, an array or a `vec!` by its place), else every value it holds.
+    fn picked(&self, at: At<'a, '_>, held: TsNode<'a>, key: Option<&str>, depth: u32) -> Vec<Built> {
+        let index = key.and_then(|k| k.parse::<usize>().ok());
+        let all = |values: Vec<Vec<Built>>| values.into_iter().fold(vec![], union);
+        if let Some(pairs) = self.map_from_pairs(at.m, held) {
+            let pairs: Vec<(TsNode<'a>, TsNode<'a>)> = elements(pairs)
+                .into_iter()
+                .filter(|p| p.kind() == "tuple_expression")
+                .filter_map(|p| match named_children(p).as_slice() {
+                    [k, v] => Some((*k, *v)),
+                    _ => None,
+                })
+                .collect();
+            let written = |k: TsNode<'a>| match self.of(at, k, depth + 1).as_slice() {
+                [b] => crate::paths::known(b).then(|| crate::paths::render(b)),
+                _ => None,
+            };
+            return match key.and_then(|key| pairs.iter().find(|(k, _)| written(*k).as_deref() == Some(key))) {
+                Some((_, v)) => self.of(at, *v, depth + 1),
+                None => all(pairs.iter().map(|(_, v)| self.of(at, *v, depth + 1)).collect()),
+            };
+        }
+        if held.kind() == "macro_invocation" {
+            let groups = named_children(held).into_iter().find(|x| x.kind() == "token_tree").map(token_groups).unwrap_or_default();
+            return match index.and_then(|i| groups.get(i)) {
+                Some(g) => self.tokens(at, g, depth),
+                None => all(groups.iter().map(|g| self.tokens(at, g, depth)).collect()),
+            };
+        }
+        let items = elements(held);
+        match index.and_then(|i| items.get(i)) {
+            Some(x) => self.of(at, *x, depth + 1),
+            None => all(items.iter().map(|x| self.of(at, *x, depth + 1)).collect()),
+        }
+    }
+
+    /// The pairs a map is built from where the code writes them out (knowledge::RUST_MAPS_FROM_PAIRS):
+    /// the array `HashMap::from([("item", "/api/items"), ..])` is handed.
+    fn map_from_pairs(&self, m: &'a Module, call: TsNode<'a>) -> Option<TsNode<'a>> {
+        if call.kind() != "call_expression" {
+            return None;
+        }
+        let parts = expand(m, &path_parts(call.child_by_field_name("function"), &m.src));
+        let n = parts.len();
+        let maps = knowledge::RUST_MAPS_FROM_PAIRS.iter().any(|(ty, f)| n >= 2 && parts[n - 2] == *ty && parts[n - 1] == *f);
+        let first = named_children(call.child_by_field_name("arguments")?).into_iter().find(|a| !a.kind().ends_with("comment"))?;
+        let first = beneath(first, super::module::WRAPPERS);
+        (maps && first.kind() == "array_expression").then_some(first)
+    }
+
+    /// Whether a macro writes a list out by its elements (knowledge::RUST_LIST_MACROS): `vec![a, b]`.
+    fn list_macro(&self, m: &Module, mac: TsNode) -> bool {
+        mac.child_by_field_name("macro")
+            .map(|x| path_parts(Some(x), &m.src))
+            .and_then(|p| p.last().cloned())
+            .is_some_and(|name| knowledge::RUST_LIST_MACROS.contains(&name.as_str()))
+    }
+
+    /// The listing of a directory (knowledge::LISTINGS_BELOW) a value comes from, where it is one
+    /// of its elements or the listing itself: through the bindings that hold it, the loops and the
+    /// methods that go over it, and the methods that hand it on (`entry?`, `.unwrap()`,
+    /// `.flatten()`).
+    fn listing_of(&self, at: At<'a, '_>, e: TsNode<'a>, depth: u32) -> Option<&'static knowledge::Listing> {
+        if depth > DEPTH {
+            return None;
+        }
+        let e = beneath(e, super::module::WRAPPERS);
+        let src = &at.m.src;
+        match e.kind() {
+            "identifier" => match bound(at.scope?, text(e, src), e.start_byte(), src)? {
+                Bound::Value(v) | Bound::Each(v) => self.listing_of(at, v, depth + 1),
+                Bound::Handed(args) => args.into_iter().find_map(|a| self.listing_of(at, a, depth + 1)),
+                Bound::Field(..) | Bound::Element(..) => None,
+            },
+            "call_expression" => {
+                let f = e.child_by_field_name("function")?;
+                if f.kind() == "field_expression" {
+                    let method = text(f.child_by_field_name("field")?, src);
+                    let keeps = knowledge::hands_on(method) && !matches!(method, "map" | "and_then");
+                    return (keeps || knowledge::RUST_SAME_ELEMENTS.contains(&method))
+                        .then(|| self.listing_of(at, f.child_by_field_name("value")?, depth + 1))
+                        .flatten();
+                }
+                listing(&expand(at.m, &path_parts(Some(f), src)))
+            }
+            _ => None,
+        }
     }
 
     /// A field of the value a method runs on, as the struct literals that build that type set it
@@ -442,9 +641,33 @@ impl<'a> Eval<'a> {
                     on().into_iter().flat_map(|b| arg(0).into_iter().map(move |x| with_extension(&b, &x))).collect()
                 }
                 Some(PathMethod::Sibling) => cross(&on().iter().map(parent).collect::<Vec<_>>(), &arg(0), "/"),
+                // the value a key picks of a collection the code writes out: `paths.get(key)`
+                None if knowledge::RUST_LOOKUPS.contains(&method) && args.len() == 1 && self.written_out(at, recv, depth).is_some() => {
+                    self.looked_up(at, recv, args[0], depth).unwrap_or_else(|| vec![hole("call")])
+                }
+                // the path a listing's element is at: `entry.path()` of `fs::read_dir(d)`'s `entry`
+                None if knowledge::ELEMENT_PATHS.iter().any(|(lib, _, m)| {
+                    *m == method && args.is_empty() && self.listing_of(at, recv, depth).is_some_and(|l| l.library == *lib)
+                }) =>
+                {
+                    on()
+                }
+                // the elements an iterator keeps, and what the closure it runs on each gives
+                None if knowledge::RUST_SAME_ELEMENTS.contains(&method) => on(),
+                None if knowledge::RUST_GIVES_EACH.contains(&method)
+                    && matches!(args.as_slice(), [c] if beneath(*c, super::module::WRAPPERS).kind() == "closure_expression") =>
+                {
+                    match self.of(at, args[0], depth + 1) {
+                        v if v.is_empty() => vec![hole("call")],
+                        v => v,
+                    }
+                }
                 // what an `Option` or a `Result` holds, or what it falls back to where it holds nothing
                 None if super::module::OR_ELSE.contains(&method) && !method.starts_with("map") => or_else(on(), arg(0)),
                 None if knowledge::hands_on(method) && !matches!(method, "map" | "and_then") => on(),
+                // a door to the place of the socket it is called on: a clone, the connections a
+                // listener accepts
+                None if knowledge::RUST_DOOR_KEEPERS.contains(&(method, None)) => on(),
                 None => self.method_given(at, recv, method, &args, depth).unwrap_or_else(|| vec![hole("call")]),
             };
         }
@@ -453,7 +676,18 @@ impl<'a> Eval<'a> {
         if matches!(parts.as_slice(), [v] if super::module::HOLDING.contains(&v.as_str())) {
             return arg(0);
         }
+        // a listing of a directory: each element is below it, `*`, as the path or as its name alone
+        if let Some(l) = listing(&parts) {
+            return match args.first().filter(|_| !l.names) {
+                Some(d) => cross(&self.of(at, *d, depth + 1), &[lit("*")], "/"),
+                None => vec![lit("*")],
+            };
+        }
         let n = parts.len();
+        // a socket opened at the address it is handed is a door to that place
+        if let Some((_, _, i)) = knowledge::RUST_DOORS.iter().find(|(on, name, _)| n >= 2 && parts[n - 2] == *on && parts[n - 1] == *name) {
+            return arg(*i);
+        }
         let known = knowledge::RUST_PATH_FUNCTIONS
             .iter()
             .find(|(on, name, _)| n >= 2 && parts[n - 2] == *on && parts[n - 1] == *name)
@@ -656,6 +890,14 @@ impl<'a> Eval<'a> {
             {
                 self.of(at, *x, depth + 1)
             }
+            // a call of one of the program's functions, each argument one name or literal:
+            // `endpoint("item")`
+            [f, call] if f.kind() == "identifier" && call.kind() == "token_tree" && call.child(0).is_some_and(|c| c.kind() == "(") => {
+                let groups = token_groups(*call);
+                let args: Vec<TsNode<'a>> =
+                    groups.iter().filter_map(|g| if let [one] = g.as_slice() { Some(*one) } else { None }).collect();
+                (args.len() == groups.len()).then(|| self.given(at, *f, &args, depth)).flatten().unwrap_or_else(|| vec![hole("value")])
+            }
             // an expression written as tokens that none of these is: no value the code names
             _ => vec![hole("value")],
         }
@@ -728,11 +970,35 @@ fn enclosing_fn(n: TsNode) -> Option<TsNode> {
     None
 }
 
+/// The elements an array the code writes out holds, or the one it repeats (`[x; n]`).
+fn elements(array: TsNode) -> Vec<TsNode> {
+    let mut cur = array.walk();
+    let repeats = array.children(&mut cur).any(|c| c.kind() == ";");
+    let items: Vec<TsNode> = named_children(array).into_iter().filter(|x| !x.kind().ends_with("comment")).collect();
+    if repeats {
+        items.into_iter().take(1).collect()
+    } else {
+        items
+    }
+}
+
+/// The library's function that lists a directory (knowledge::LISTINGS_BELOW) a path names, as its
+/// `use` expands it: `fs::read_dir` after `use std::fs`.
+fn listing(parts: &[String]) -> Option<&'static knowledge::Listing> {
+    let (function, path) = parts.split_last()?;
+    let library = path.join("::");
+    knowledge::LISTINGS_BELOW.iter().find(|l| l.function == function && l.library == library)
+}
+
 /// What a binding of a name holds: a value, the field a struct pattern takes out of the value it
-/// matches, or for a parameter of a closure a `let` keeps, what each call of the closure hands it.
+/// matches, an element of the tuple it matches, for a parameter of a closure a `let` keeps what
+/// each call of the closure hands it, or one element of what a loop or a method that runs a
+/// closure on each element goes over.
 enum Bound<'a> {
     Value(TsNode<'a>),
     Field(TsNode<'a>, String, TsNode<'a>),
+    Element(TsNode<'a>, usize),
+    Each(TsNode<'a>),
     Handed(Vec<TsNode<'a>>),
 }
 
@@ -740,10 +1006,12 @@ enum Bound<'a> {
 /// is written last: a `let` complete before `pos`, or a pattern (`if let` in the block it opens,
 /// `let .. else` after it, a `match` arm in its arm) that binds the whole value, takes the value
 /// `Some` or `Ok` holds out of it (`if let Some(dir) = to.parent()`), which holds what that one
-/// holds, or takes a field out of a struct or a variant (`Cmd::Analyze { out, .. }`), or a
-/// parameter of the closure `pos` is in (`handed`).
+/// holds, takes an element out of a tuple (`let (conn, _) = listener.accept()?`), or takes a field
+/// out of a struct or a variant (`Cmd::Analyze { out, .. }`), a `for` loop's name in its body, or
+/// a parameter of the closure `pos` is in (`handed`).
 fn bound<'a>(scope: TsNode<'a>, name: &str, pos: usize, src: &[u8]) -> Option<Bound<'a>> {
     let named = |p: TsNode| matches!(p.kind(), "identifier" | "mut_pattern") && text(p, src).trim_start_matches("mut ") == name;
+    let element = |t: TsNode| (t.kind() == "tuple_pattern").then(|| named_children(t).into_iter().position(|x| named(x))).flatten();
     let binds = |p: TsNode<'a>, v: TsNode<'a>| -> Option<Bound<'a>> {
         if named(p) {
             return Some(Bound::Value(v));
@@ -751,11 +1019,12 @@ fn bound<'a>(scope: TsNode<'a>, name: &str, pos: usize, src: &[u8]) -> Option<Bo
         let ty = p.child_by_field_name("type");
         let inner: Vec<TsNode> = named_children(p).into_iter().filter(|c| Some(c.id()) != ty.map(|t| t.id())).collect();
         match p.kind() {
-            "tuple_struct_pattern"
-                if ty.map_or(false, |t| super::module::HOLDING.contains(&text(t, src))) && matches!(inner.as_slice(), [x] if named(*x)) =>
-            {
-                Some(Bound::Value(v))
-            }
+            "tuple_struct_pattern" if ty.map_or(false, |t| super::module::HOLDING.contains(&text(t, src))) => match inner.as_slice() {
+                [x] if named(*x) => Some(Bound::Value(v)),
+                [x] => element(*x).map(|i| Bound::Element(v, i)),
+                _ => None,
+            },
+            "tuple_pattern" => element(p).map(|i| Bound::Element(v, i)),
             "struct_pattern" => inner.into_iter().filter(|f| f.kind() == "field_pattern").find_map(|f| {
                 let field = text(f.child_by_field_name("name")?, src).to_string();
                 let held = f.child_by_field_name("pattern").map_or(field == name, named);
@@ -766,8 +1035,13 @@ fn bound<'a>(scope: TsNode<'a>, name: &str, pos: usize, src: &[u8]) -> Option<Bo
     };
     let around = |n: Option<TsNode>| n.map_or(false, |n| n.start_byte() <= pos && pos < n.end_byte());
     let mut best: Option<(usize, Bound<'a>)> = None;
-    for b in walk(scope, &["let_declaration", "let_condition", "match_arm"]) {
+    for b in walk(scope, &["let_declaration", "let_condition", "match_arm", "for_expression"]) {
         let found = match b.kind() {
+            // `for entry in fs::read_dir(d)?`: one element of what the loop goes over
+            "for_expression" => {
+                let (Some(p), Some(v)) = (b.child_by_field_name("pattern"), b.child_by_field_name("value")) else { continue };
+                (named(p) && around(b.child_by_field_name("body"))).then(|| (p.end_byte(), Bound::Each(v)))
+            }
             "let_declaration" => {
                 let (Some(p), Some(v)) = (b.child_by_field_name("pattern"), b.child_by_field_name("value")) else { continue };
                 (b.end_byte() <= pos).then(|| binds(p, v)).flatten().map(|x| (b.end_byte(), x))
@@ -816,6 +1090,27 @@ fn handed<'a>(scope: TsNode<'a>, name: &str, pos: usize, src: &[u8]) -> Option<(
             Some((c, slot))
         })
         .max_by_key(|(c, _)| c.start_byte())?;
+    let end = closure.child_by_field_name("parameters")?.end_byte();
+    // a closure handed to a method that runs it on each element of what the method is called on
+    // (knowledge::RUST_EACH): its parameters from the element's place on are elements of that
+    let mut handed_to = closure;
+    while let Some(p) = handed_to.parent().filter(|p| super::module::WRAPPERS.contains(&p.kind())) {
+        handed_to = p;
+    }
+    if let Some(method) = handed_to
+        .parent()
+        .filter(|a| a.kind() == "arguments")
+        .and_then(|a| a.parent())
+        .filter(|c| c.kind() == "call_expression")
+        .and_then(|c| c.child_by_field_name("function"))
+        .filter(|f| f.kind() == "field_expression")
+    {
+        let element = method.child_by_field_name("field").and_then(|m| knowledge::rust_element(text(m, src)));
+        return match (element, method.child_by_field_name("value")) {
+            (Some(at), Some(over)) if slot >= at as usize => Some((end, Bound::Each(over))),
+            _ => None,
+        };
+    }
     let kept = closure.parent().filter(|l| l.kind() == "let_declaration")?;
     let by = kept.child_by_field_name("pattern").filter(|p| p.kind() == "identifier").map(|p| text(p, src))?;
     let args: Vec<TsNode<'a>> = walk(kept.parent()?, &["call_expression"])
@@ -826,7 +1121,6 @@ fn handed<'a>(scope: TsNode<'a>, name: &str, pos: usize, src: &[u8]) -> Option<(
             named_children(c.child_by_field_name("arguments")?).into_iter().filter(|a| !a.kind().ends_with("comment")).nth(slot)
         })
         .collect();
-    let end = closure.child_by_field_name("parameters")?.end_byte();
     (!args.is_empty()).then_some((end, Bound::Handed(args)))
 }
 

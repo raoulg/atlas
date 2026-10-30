@@ -375,12 +375,39 @@ pub fn a_list_made_by_a_literal_is_made_by_the_body(language: &str, literal: &st
     }
 }
 
+/// The locals pair of `language` (`tests/pairs/locals`): `pair` binds `both` to a list it writes of what it is handed, an
+/// expression no step makes that is no name and no projection of one. A local is bound by the body's own code whatever
+/// expression binds it, in every language (CLAUDE.md, "Isomorphic is the same"): the graph says the body binds it
+/// (`Node::binds`), and it is never a module's name, so nothing comes from beyond the clean route. The shortcut writes the
+/// module's quiet level into the list in place of a second it is handed: that level alone comes from beyond (#318). So at
+/// every budget the plan is cut at.
+#[allow(dead_code)]
+pub fn a_local_is_bound_by_the_bodys_own_code(language: &str, pair_fn: &str) {
+    let p = pair(&format!("locals/{language}"));
+    for (side, g, beyond) in [("clean", &p.clean, vec![]), ("shortcut", &p.shortcut, vec!["Level·QUIET".to_string()])] {
+        let leaf = g.node(&format!("signal.{pair_fn}")).unwrap_or_else(|| panic!("{language} {side}: no node signal.{pair_fn}"));
+        let binds: Vec<(&str, usize)> = leaf.binds.iter().map(|b| (b.name.as_str(), b.arms.len())).collect();
+        assert_eq!(binds, [("both", 0)], "{language} {side}: the body binds the list by its own code");
+        let want: BTreeSet<String> = beyond.into_iter().collect();
+        for budget in BUDGETS {
+            let plans = planned(g, &format!("locals-{language}-{side}"), budget);
+            let route = &plans["signal.paired"];
+            assert_eq!(from_beyond(route, &parameters(g, "signal.paired")), want, "{language} {side}, budget {budget:?}: from beyond");
+        }
+    }
+}
+
 /// The parents pair of `language`: `summarise` (`read`) reads the data file `~/data/{name}` and hands its path to `log` (`log`),
 /// which writes the log in the directory the file lies in. The clean side takes that directory with the path library
 /// (`Path.parent`, `Path::parent`, `path.dirname`), which all go to one function on the graph, and the directory of a path is
 /// the path without its last part, also where that part is a value the code does not say: the log rests in the directory the
 /// data file is read from (#284). The shortcut cuts the path's text at its last `/`, which no code says is a directory: the log
 /// is written, in a directory the code does not name, and never in the data files' directory. So in every language.
+///
+/// Both sides add to the log (`OpenOptions::new().append(true).create(true).open(..)`, `open(.., "a")`,
+/// `appendFileSync`): an append writes what the file holds in each language, and the path its opening call is handed is
+/// followed as a write's is (#300). A touch is named by the path its call is handed as the code builds it, so where that
+/// path is fully known it names the place itself, never a literal or an expression of the call (#301).
 #[allow(dead_code)]
 pub fn a_parent_drops_the_last_part_of_a_path(language: &str, read: &str, log: &str) {
     let p = pair(&format!("parents/{language}"));
@@ -396,6 +423,19 @@ pub fn a_parent_drops_the_last_part_of_a_path(language: &str, read: &str, log: &
         assert_eq!(written.len(), 1, "{language} {side}: the log is written once: {written:?}");
         let beside = written[0].strip_prefix(dir.as_str()).is_some_and(|name| !name.contains('/'));
         assert_eq!(beside, side == "clean", "{language} {side}: the log {written:?} in the data files' directory {dir}");
+        let node = g.node(log).unwrap_or_else(|| panic!("{language}: no node {log}"));
+        let t = node.touches.iter().find(|t| t.kind_name() == "disk_write").expect("the log is written");
+        let op = atlas_engine::effects::fs_op(&t.op);
+        assert_eq!(op, atlas_engine::effects::FsOp::Data, "{language} {side}: the append `{}` writes what the log holds", t.op);
+        if !t.artifact.contains('{') {
+            let named = atlas_engine::paths::place(&vec![atlas_engine::paths::Seg::Lit(t.what.clone())], &t.op);
+            assert_eq!(
+                named.as_ref(),
+                Some(&t.artifact),
+                "{language} {side}: the log at a known place is named by it, not by `{}`",
+                t.what
+            );
+        }
     }
 }
 

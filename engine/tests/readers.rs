@@ -71,6 +71,8 @@ fn library_knowledge_is_data() {
         .chain(k::PYTHON_PATH_ATTRIBUTES.iter().map(|(l, a, _)| (*l, *a)));
     names.extend(paths.flat_map(|(l, f)| [l, f]).filter(|n| !matches!(*n, "builtins" | "str" | "join" | "parent")));
     names.extend(k::PYTHON_ENVIRONMENT.iter().flat_map(|(l, c, _)| [*l, *c]));
+    // a file's classes hold where ty finds their library, never by their names
+    names.extend(k::PYTHON_FILE_CLASSES.iter().flat_map(|(l, c, _)| [*l, *c]));
     // a runner's test files and a package's client makers by their conventions (`open` is also a
     // word of the page and of the effects); the conditions of `exports` other than words the reader
     // uses for the language's own forms (`import`, `default`)

@@ -134,6 +134,12 @@ impl<'a> Eval<'a> {
             }
             "identifier" | "shorthand_property_identifier" => self.name(at, e, depth),
             "member_expression" => self.member(at, e, depth),
+            "subscript_expression" => self.looked_up(at, e, depth).unwrap_or_else(|| vec![hole("value")]),
+            // an array is the values it holds; iterating it yields one of them
+            "array" => {
+                named_children(e).into_iter().filter(|x| x.kind() != "comment").fold(vec![], |acc, x| union(acc, self.of(at, x, depth + 1)))
+            }
+            "spread_element" => inner(e),
             "call_expression" => self.call(at, e, depth),
             "new_expression" => {
                 // `new URL("../data", import.meta.url)`: relative to the module's own file
@@ -183,6 +189,15 @@ impl<'a> Eval<'a> {
         }
         if let Some(v) = self.option(at, e, depth) {
             return v;
+        }
+        // a property of an object the code writes out, as `x["key"]` is
+        if let Some((here, held)) = e.child_by_field_name("object").and_then(|o| self.written_out(at, o, depth)) {
+            if held.kind() == "object" {
+                let values = self.picked(here, held, Some(&last), depth);
+                if !values.iter().all(|b| matches!(b.as_slice(), [Seg::Hole(_)])) {
+                    return values;
+                }
+            }
         }
         vec![hole(&last)]
     }
@@ -373,6 +388,10 @@ impl<'a> Eval<'a> {
             "__dirname" => return vec![parent(&self.here(at.m))],
             _ => {}
         }
+        // the element a loop or a function handed to an array's method binds the name to
+        if let Some(v) = self.element(at, e, &name, depth) {
+            return v;
+        }
         // a local of the function, then its parameters
         if let Some(scope) = at.scope {
             let local = walk(scope, &["variable_declarator"])
@@ -389,17 +408,155 @@ impl<'a> Eval<'a> {
             return named_by(&name, self.of(At { m: at.m, scope: None, params: &[] }, v, depth + 1));
         }
         // a constant another module of the package exports
-        let mut bound = at.m.bindings.get(&name).cloned();
+        if let Some((home, n, v)) = self.exported(at.m, &name) {
+            return named_by(&n, self.of(At { m: home, scope: None, params: &[] }, v, depth + 1));
+        }
+        vec![hole(&name)]
+    }
+
+    /// The constant another module of the package exports that the module imports as `name`: its
+    /// module, its own name there and its value, followed through the modules that pass it on.
+    fn exported(&self, m: &Module, name: &str) -> Option<(&'a Module, String, TsNode<'a>)> {
+        let mut bound = m.bindings.get(name).cloned();
         for _ in 0..8 {
             let Some(Bound::Own(target)) = bound else { break };
-            let Some((mid, n)) = target.rsplit_once('.') else { break };
-            let Some(home) = self.modules.get(mid) else { break };
+            let (mid, n) = target.rsplit_once('.')?;
+            let home = self.modules.get(mid)?;
             if let Some(v) = top_value(home, n) {
-                return named_by(n, self.of(At { m: home, scope: None, params: &[] }, v, depth + 1));
+                return Some((home, n.to_string(), v));
             }
             bound = home.bindings.get(n).cloned();
         }
-        vec![hole(&name)]
+        None
+    }
+
+    /// The value the name `name`, read at `e`, is bound to as an element: by a loop over a
+    /// collection (`for (const p of ps)`), or as the parameter of a function handed to a method of
+    /// an array that runs it on each element (`ps.map((p) => ..)`, knowledge::TYPESCRIPT_EACH):
+    /// one of the values `ps` holds, as Python's `for p in ps` is. An element of nothing known
+    /// leaves the name the code gives it.
+    fn element<'t>(&self, at: At<'_, 't>, e: TsNode<'t>, name: &str, depth: u32) -> Option<Vec<Built>> {
+        let src = &at.m.src;
+        let inside = |n: Option<TsNode>| n.is_some_and(|n| n.start_byte() <= e.start_byte() && e.end_byte() <= n.end_byte());
+        let mut p = e.parent();
+        let over = loop {
+            let x = p?;
+            match x.kind() {
+                "for_in_statement"
+                    if x.child_by_field_name("operator").is_some_and(|o| text(o, src) == "of")
+                        && x.child_by_field_name("left").is_some_and(|l| l.kind() == "identifier" && text(l, src) == name)
+                        && inside(x.child_by_field_name("body")) =>
+                {
+                    break x.child_by_field_name("right")?;
+                }
+                // a parameter of a function inside the body binds the name, as an element or not
+                "arrow_function" | "function_expression" | "function" if inside(x.child_by_field_name("body")) => {
+                    if let Some(slot) = param_names(x, src).iter().position(|n| n == name) {
+                        break each_over(x, slot, src)?;
+                    }
+                }
+                _ => {}
+            }
+            // the function the body is: no binding beyond it is the element's
+            if at.scope.is_some_and(|s| s.id() == x.id()) {
+                return None;
+            }
+            p = x.parent();
+        };
+        // what the element is of is read where it is written: outside the function the body is, in
+        // the function around that
+        let values = if at.scope.is_some_and(|s| s.start_byte() <= over.start_byte() && over.end_byte() <= s.end_byte()) {
+            self.of(at, over, depth + 1)
+        } else {
+            let mut outer = over.parent();
+            while let Some(x) = outer.filter(|x| function_node(*x) != Some(*x)) {
+                outer = x.parent();
+            }
+            let names = outer.map(|f| param_names(f, src)).unwrap_or_default();
+            self.of(At { m: at.m, scope: outer, params: &names }, over, depth + 1)
+        };
+        (!values.iter().all(|b| matches!(b.as_slice(), [Seg::Hole(_)]))).then_some(values)
+    }
+
+    /// `x[k]`, `x` an object or an array the code writes out where it stands or where `x` is
+    /// declared: the value a key the code decides picks, else one of the values `x` holds, as
+    /// Python's `d[k]` is. A key the object does not write, or an index past the array's end, picks
+    /// none of them, so it is one of them all.
+    fn looked_up<'s>(&self, at: At<'s, 's>, e: TsNode<'s>, depth: u32) -> Option<Vec<Built>> {
+        let (v, k) = (e.child_by_field_name("object")?, beneath(e.child_by_field_name("index")?, WRAPPERS));
+        let key = match k.kind() {
+            "number" => Some(text(k, &at.m.src).to_string()),
+            _ => match self.of(at, k, depth + 1).as_slice() {
+                [b] if crate::paths::known(b) => Some(crate::paths::render(b)),
+                _ => None,
+            },
+        };
+        let (here, held) = self.written_out(at, v, depth)?;
+        let values = self.picked(here, held, key.as_deref(), depth);
+        (!values.iter().all(|b| matches!(b.as_slice(), [Seg::Hole(_)]))).then_some(values)
+    }
+
+    /// The object or array literal a value is, where the code writes it out: where it stands, or
+    /// where the name it is read by is declared, in the function, the module or the module that
+    /// exports it. A parameter is what its callers hand, which the code does not write out here.
+    fn written_out<'s>(&'s self, at: At<'s, 's>, v: TsNode<'s>, depth: u32) -> Option<(At<'s, 's>, TsNode<'s>)> {
+        if depth > DEPTH {
+            return None;
+        }
+        let v = beneath(v, WRAPPERS);
+        match v.kind() {
+            "object" | "array" => Some((at, v)),
+            "identifier" => {
+                let name = text(v, &at.m.src);
+                match self.named_value(at, v) {
+                    Some((here, _)) if here.scope.is_none() && at.params.iter().any(|p| p == name) => None,
+                    Some((here, value)) => self.written_out(here, value, depth + 1),
+                    None => {
+                        let (home, _, value) = self.exported(at.m, name)?;
+                        self.written_out(At { m: home, scope: None, params: &[] }, value, depth + 1)
+                    }
+                }
+            }
+            _ => None,
+        }
+    }
+
+    /// What a key or an index picks of an object or an array the code writes out (an object by a
+    /// key its properties write, an array by its place), else every value it holds.
+    fn picked<'s>(&self, at: At<'s, 's>, held: TsNode<'s>, key: Option<&str>, depth: u32) -> Vec<Built> {
+        let src = &at.m.src;
+        let entries: Vec<TsNode> = named_children(held).into_iter().filter(|x| x.kind() != "comment").collect();
+        if held.kind() == "array" {
+            let i = key.and_then(|k| k.parse::<usize>().ok());
+            return self.of(at, i.and_then(|i| entries.get(i).copied()).unwrap_or(held), depth + 1);
+        }
+        // a property's key as the code writes it: a name, a string, a number, or `[K]` computed
+        let named = |p: TsNode<'s>| -> Option<String> {
+            let k = p.child_by_field_name("key")?;
+            match k.kind() {
+                "computed_property_name" => match self.of(at, named_children(k).into_iter().next()?, depth + 1).as_slice() {
+                    [b] if crate::paths::known(b) => Some(crate::paths::render(b)),
+                    _ => None,
+                },
+                _ => Some(key_text(k, src)),
+            }
+        };
+        let value = |p: TsNode<'s>| match p.kind() {
+            "pair" => p.child_by_field_name("value"),
+            "shorthand_property_identifier" | "spread_element" => Some(p),
+            _ => None,
+        };
+        let picked = key.and_then(|key| {
+            entries.iter().find_map(|p| match p.kind() {
+                "pair" if named(*p).as_deref() == Some(key) => value(*p),
+                "shorthand_property_identifier" if text(*p, src) == key => Some(*p),
+                _ => None,
+            })
+        });
+        match picked {
+            Some(x) => self.of(at, x, depth + 1),
+            None => entries.into_iter().filter_map(value).fold(vec![], |acc, x| union(acc, self.of(at, x, depth + 1))),
+        }
     }
 
     fn call<'t>(&self, at: At<'_, 't>, c: TsNode<'t>, depth: u32) -> Vec<Built> {
@@ -410,6 +567,11 @@ impl<'a> Eval<'a> {
         let arg = |i: usize| args.get(i).map(|a| self.of(at, *a, depth + 1)).unwrap_or_else(|| vec![hole("value")]);
         let last = parts.last().map(String::as_str).unwrap_or("call");
         let pkg = parts.first().and_then(|h| self.package(at.m, h)).unwrap_or_default();
+        // the method a call of a value's method calls, whatever the value is written as
+        let method = match f.kind() {
+            "member_expression" => f.child_by_field_name("property").map_or("", |p| text(p, src)),
+            _ => "",
+        };
         // a path function by the package it is imported from, or by the global object it is on
         let on = if pkg.is_empty() && parts.len() == 2 { parts[0].as_str() } else { pkg.as_str() };
         match knowledge::PATH_FUNCTIONS.iter().find(|(p, f, _)| *p == on && *f == last).map(|(_, _, k)| *k) {
@@ -431,6 +593,28 @@ impl<'a> Eval<'a> {
             None if parts.as_slice() == ["String"] => arg(0),
             None if last == "toString" => {
                 f.child_by_field_name("object").map(|o| self.of(at, o, depth + 1)).unwrap_or_else(|| vec![hole("value")])
+            }
+            // a listing of a directory: each element is below it, `*`, as the path or as its name
+            // alone, which the code joins back (`path.join(d, name)`)
+            None if listing(&pkg, last).is_some() => match args.first().filter(|_| listing(&pkg, last).is_some_and(|l| !l.names)) {
+                Some(d) => cross(&self.of(at, *d, depth + 1), &[lit("*")], "/"),
+                None => vec![lit("*")],
+            },
+            // the elements a method of an array keeps (`names.filter(..)`), and what the function it
+            // runs on each element gives (`names.map((n) => path.join(d, n))`)
+            None if f.kind() == "member_expression" && knowledge::TYPESCRIPT_SAME_ELEMENTS.contains(&method) => {
+                f.child_by_field_name("object").map(|o| self.of(at, o, depth + 1)).unwrap_or_else(|| vec![hole("value")])
+            }
+            None if f.kind() == "member_expression"
+                && knowledge::TYPESCRIPT_GIVES_EACH.contains(&method)
+                && args.first().is_some_and(|a| function_node(beneath(*a, WRAPPERS)) == Some(beneath(*a, WRAPPERS))) =>
+            {
+                let gives = returns(beneath(args[0], WRAPPERS)).into_iter().fold(vec![], |acc, x| union(acc, self.of(at, x, depth + 1)));
+                if gives.is_empty() {
+                    vec![hole("call")]
+                } else {
+                    gives
+                }
             }
             None => self
                 .given(at, &parts, &args, depth)
@@ -544,6 +728,32 @@ impl<'a> Eval<'a> {
         let handed: HashMap<&str, Vec<Built>> = names.iter().zip(args).map(|(p, a)| (p.as_str(), self.of(at, *a, depth + 1))).collect();
         Some(gives.iter().flat_map(|b| substitute(b, |p| handed.get(p).cloned().unwrap_or_else(|| vec![hole(p)]))).collect())
     }
+}
+
+/// The library's function that lists a directory (knowledge::LISTINGS_BELOW) a call of `function`
+/// imported from the package `pkg` is: `fs.readdirSync`, `readdir` of `fs/promises`.
+fn listing(pkg: &str, function: &str) -> Option<&'static knowledge::Listing> {
+    knowledge::LISTINGS_BELOW.iter().find(|l| l.function == function && pkg.split('/').next() == Some(l.library))
+}
+
+/// The array a function is handed to be run on each element of, where its parameter `slot` is the
+/// one the element fills (knowledge::TYPESCRIPT_EACH): `ps` of `ps.map((p) => ..)`.
+fn each_over<'t>(f: TsNode<'t>, slot: usize, src: &[u8]) -> Option<TsNode<'t>> {
+    let mut handed = f;
+    while let Some(p) = handed.parent().filter(|p| WRAPPERS.contains(&p.kind())) {
+        handed = p;
+    }
+    let args = handed.parent().filter(|a| a.kind() == "arguments")?;
+    if named_children(args).into_iter().find(|x| x.kind() != "comment").map(|x| x.id()) != Some(handed.id()) {
+        return None;
+    }
+    let method = args.parent().filter(|c| c.kind() == "call_expression")?.child_by_field_name("function")?;
+    let method = (method.kind() == "member_expression").then_some(method)?;
+    let name = text(method.child_by_field_name("property")?, src);
+    knowledge::TYPESCRIPT_EACH
+        .iter()
+        .any(|(m, element)| *m == name && *element as usize == slot)
+        .then(|| method.child_by_field_name("object"))?
 }
 
 /// The function a module declares at its top level under `name`: `function api(..)`, or a

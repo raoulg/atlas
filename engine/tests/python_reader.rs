@@ -193,8 +193,8 @@ def run() -> None:
 }
 
 /// What hands on the value inside it, parentheses and `await`, is read as that value, wherever a
-/// value is read: the file `open` is handed is named by the call that gives it, whether the call
-/// is written plainly, in parentheses or awaited.
+/// value is read: the file `open` is handed is the place the call that gives it returns, whether
+/// the call is written plainly, in parentheses or awaited, and is named by that place (#301).
 #[test]
 fn a_value_through_its_wrappers_is_the_value_inside() {
     let g = written(
@@ -229,8 +229,7 @@ async def awaited() -> str:
         g.node(&format!("wrappers.{f}")).unwrap().touches.iter().filter(|t| t.kind_name() == "disk_read").map(|t| t.what.clone()).collect()
     };
     let plain = read("plain");
-    assert!(plain.len() == 1 && plain[0].contains("where"), "the file is named by the call `where`: {plain:?}");
+    assert_eq!(plain, ["data/notes.txt"], "the file is the place the call `where` returns");
     assert_eq!(read("parenthesized"), plain, "parentheses are the value inside");
-    let awaited: Vec<String> = read("awaited").iter().map(|w| w.replace("place", "where")).collect();
-    assert_eq!(awaited, plain, "`await place()` is named as `place()` is");
+    assert_eq!(read("awaited"), plain, "`await place()` is the place `place()` returns");
 }

@@ -102,13 +102,14 @@ impl<'a> Eval<'a> {
         function().map(|(_, _, k)| *k)
     }
 
-    /// Whether calling `f` makes a path of the parts it is handed: where ty finds the call goes
-    /// into the library of the path class `f` names (knowledge::PYTHON_PATH_CLASSES), as
-    /// `Path(..)` and `pathlib.Path(..)` do. A class of the project's own of the same name is the
-    /// project's.
+    /// Whether calling `f` makes a path that starts where its first argument does: where ty finds
+    /// the call goes into the library of the path class or the path function `f` names
+    /// (knowledge::PYTHON_PATH_CLASSES, knowledge::PYTHON_PATH_FUNCTIONS), and what that makes
+    /// starts at its first argument (`PathFn::starts_at_first`), as `Path("data")` and
+    /// `os.path.join("data", name)` do. A class or a function of the project's own of the same
+    /// name is the project's.
     pub fn makes_path(&self, m: &Module, f: TsNode) -> bool {
-        let name = called(f, &m.src);
-        knowledge::PYTHON_PATH_CLASSES.iter().any(|(lib, c)| *c == name && self.of_library(m, f, lib))
+        self.path_function(m, f, &called(f, &m.src)).is_some_and(PathFn::starts_at_first)
     }
 
     /// What the method `f` of a library's path, named `name`, makes of the path it is called on,

@@ -383,6 +383,7 @@ fn glue(lib: &Library, dropped: &HashSet<String>) -> HashMap<String, Glued> {
                     }
                     by.insert(rest);
                 }
+                crate::model::absorb(&mut by);
                 let by = if whole { Default::default() } else { by };
                 if by.is_empty() && !whole {
                     continue;

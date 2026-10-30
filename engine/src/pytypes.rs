@@ -93,23 +93,15 @@ pub struct Param {
     pub file: Option<FileArg>,
 }
 
-/// The standard library's types for a path and for a file, by the class that defines them and the
-/// module ty finds it in: a path where the class is a path library's
-/// (`knowledge::PYTHON_PATH_CLASSES`).
+/// What a parameter typed as the class `class`, which ty finds in the module `module`, is handed:
+/// a path where the class is a path library's (`knowledge::PYTHON_PATH_CLASSES`), a file where it
+/// is one of the file classes (`knowledge::PYTHON_FILE_CLASSES`).
 fn file_of(module: &str, class: &str) -> Option<FileArg> {
-    let path = crate::knowledge::PYTHON_PATH_CLASSES
-        .iter()
-        .any(|(lib, c)| *c == class && (module == *lib || module.strip_prefix(lib).is_some_and(|r| r.starts_with('.'))));
-    if path {
+    let within = |lib: &str| module == lib || module.strip_prefix(lib).is_some_and(|r| r.starts_with('.'));
+    if crate::knowledge::PYTHON_PATH_CLASSES.iter().any(|(lib, c)| *c == class && within(lib)) {
         return Some(FileArg::Path);
     }
-    match class {
-        "SupportsRead" | "SupportsReadline" => Some(FileArg::Reads),
-        "SupportsWrite" => Some(FileArg::Writes),
-        "IO" | "TextIO" | "BinaryIO" | "IOBase" | "RawIOBase" | "BufferedIOBase" | "TextIOBase" | "TextIOWrapper" | "BufferedReader"
-        | "BufferedWriter" | "BufferedRandom" | "FileIO" => Some(FileArg::Open),
-        _ => None,
-    }
+    crate::knowledge::PYTHON_FILE_CLASSES.iter().find(|(lib, c, _)| *c == class && within(lib)).map(|(_, _, k)| *k)
 }
 
 /// A value's type: as ty writes it, the classes it names (`list[Node]` names `list` and

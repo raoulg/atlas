@@ -879,8 +879,9 @@ fn way_of_request<'b>(mut built: impl Iterator<Item = &'b Built>) -> Option<crat
 /// Whether the code decides where a call goes, once its path or URL is whole: it starts at
 /// something the code holds, a literal or a constant, not at what a caller hands, an input with a
 /// default, or what the environment says (a value, the user's home `~`, the system's `$TMPDIR`).
-/// A request's URL is decided only with its host. A file read from where the package's code lies
-/// is part of the package; one written there is a place the code decides.
+/// A request's URL is decided only with its host, a socket's address whole. A file read from
+/// where the package's code lies is part of the package; one written there is a place the code
+/// decides.
 fn decided(b: &Built, t: &crate::model::Touch) -> bool {
     use crate::model::{Dir, World};
     let rendered = inputs(b);
@@ -888,7 +889,7 @@ fn decided(b: &Built, t: &crate::model::Touch) -> bool {
     match t.kind {
         World::Net => {
             let url = method_and_path(&rendered).1;
-            url.contains("://") && !given(url)
+            (url.contains("://") || crate::effects::socket_address(url)) && !given(url)
         }
         World::Disk if matches!(b.first(), Some(Seg::Package(_))) => t.dir == Some(Dir::Write),
         World::Disk => !given(&rendered),
@@ -1011,7 +1012,10 @@ pub fn place_calls(store: &mut crate::builder::GraphBuilder, completed: Vec<Comp
             let mut unnamed: Vec<&Built> = vec![];
             // the file a connection opens
             let mut opened = String::new();
-            // a file the term names with a part no code decides, by the term the code writes
+            // what names each place: a path the code writes out in full is the place itself, however it
+            // is spelled (`./out/x`, `src/../out/x`), so one file is one place by whatever call names it;
+            // a path with a part no code decides is the term the code writes, its unknown parts by the
+            // names the code gives them
             let mut terms: Vec<(String, String)> = vec![];
             for (b, decider) in found.iter().filter(|c| c.whole == *whole).map(|c| (&c.term, &c.decided_in)) {
                 let rendered = render(b);
@@ -1057,8 +1061,9 @@ pub fn place_calls(store: &mut crate::builder::GraphBuilder, completed: Vec<Comp
                             .map(|(table, dir)| (table, dir.or(t.dir), vec![])),
                     );
                 } else if let Some(p) = place(b, &t.op) {
-                    if !known(b) && !terms.iter().any(|(q, _)| *q == p) {
-                        terms.push((p.clone(), render(b).replace('\\', "/")));
+                    if !terms.iter().any(|(q, _)| *q == p) {
+                        let term = if known(b) { p.clone() } else { render(b).replace('\\', "/") };
+                        terms.push((p.clone(), term));
                     }
                     placed.push((p, t.dir, fixed));
                 } else {
@@ -1137,6 +1142,10 @@ pub fn place_calls(store: &mut crate::builder::GraphBuilder, completed: Vec<Comp
     let dirs = folders(disk.into_iter());
     for t in store.nodes.values_mut().flat_map(|n| n.touches.iter_mut().chain(n.instead.iter_mut())) {
         if t.kind == World::Disk && dirs.contains(&t.artifact) {
+            // a touch named by its place is named by the folder it is
+            if t.what == t.artifact {
+                t.what.push('/');
+            }
             t.artifact.push('/');
         }
     }

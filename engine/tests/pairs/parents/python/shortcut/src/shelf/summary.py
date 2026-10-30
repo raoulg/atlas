@@ -18,7 +18,7 @@ def summarise(name: str) -> int:
 
 
 def log(source: Path, count: int) -> None:
-    """Write the count of the data file `source` to the log in its directory."""
+    """Add the count of the data file `source` to the log in its directory."""
     folder = str(source).rsplit("/", 1)[0]
-    with open(folder + "/shelf.log", "w") as out:
+    with open(folder + "/shelf.log", "a") as out:
         out.write(f"{source.name} {count}\n")

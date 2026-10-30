@@ -398,6 +398,7 @@ impl Renames {
             }
             for t in n.touches.iter_mut().chain(n.instead.iter_mut()) {
                 t.by = t.by.iter().map(|b| b.map(|x| self.map(x))).collect();
+                crate::model::absorb(&mut t.by);
             }
         }
         for e in &mut a.edges {

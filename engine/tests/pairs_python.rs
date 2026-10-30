@@ -2745,6 +2745,13 @@ fn a_list_made_by_a_literal_is_made_by_the_body() {
     common::a_list_made_by_a_literal_is_made_by_the_body("python", "by_literal", "by_call", "by_constant");
 }
 
+/// The locals pair: a list the body writes of what it is handed is the body's own, never a module's name (#318), as an
+/// array is in Rust and in TypeScript.
+#[test]
+fn a_local_is_bound_by_the_bodys_own_code() {
+    common::a_local_is_bound_by_the_bodys_own_code("python", "_pair");
+}
+
 /// The workbench pair, `workbench/python`: what the program makes, kept in a folder of the project's
 /// own. The clean side gives the folder a class whose method names each file in it
 /// (`Workbench.of(project).file("report.txt")`); the shortcut hands the folder around as a bare path (`made_dir(project) / "report.txt"`).
@@ -2817,4 +2824,121 @@ fn handing_a_helper_writes_under_each_caller_that_caller_s_file() {
         writers(&p.shortcut),
         BTreeSet::from(["shelf.store.Shelf.keep_log".to_string(), "shelf.store.Shelf.keep_report".to_string()])
     );
+}
+
+/// Isomorphic is the same: `os.path.join("data", kind)`, `"data/" + kind` and `Path("data") / kind`
+/// each make the one path `data/{kind}`, and a function that writes one decides that place as much
+/// as one that writes another (#304). In the places pair's `stock.joined`, each form reads and
+/// writes `counts.json`: on the shortcut under `"data"`, and every function is asked, naming the
+/// same place; on the clean side under the folder it is handed, and none is. A library function's
+/// parameter goes the way its class, where ty finds it, says: `json.load` reads the file it is
+/// handed (`SupportsRead`), `json.dump` writes it (`SupportsWrite`).
+#[test]
+fn places_a_path_joined_any_way_python_joins_one_is_the_same_place() {
+    let (c, s) = (stock("clean"), stock("shortcut"));
+    let forms = ["joined", "added", "divided", "dumped"].map(|f| format!("stock.joined.{f}"));
+    assert!(found_in(&c, "places", "stock.joined").is_empty(), "{:?}", found_in(&c, "places", "stock.joined"));
+    assert_eq!(found_in(&s, "places", "stock.joined"), forms);
+    // what each form's own call and the library's touch, by the way they go: the same on every form
+    let places = |g: &Graph, f: &str| -> BTreeSet<(String, String, String, bool)> {
+        g.node(f)
+            .unwrap_or_else(|| panic!("{f} is in the graph"))
+            .touches
+            .iter()
+            .map(|t| (t.op.clone(), t.kind_name().to_string(), t.artifact.clone(), t.fixed || !t.fixed_by.is_empty()))
+            .collect()
+    };
+    let read = |file: &str, fixed: bool| {
+        BTreeSet::from(
+            [("open", "disk_read"), ("load", "disk_read")].map(|(op, k)| (op.to_string(), k.to_string(), file.to_string(), fixed)),
+        )
+    };
+    let written = |file: &str, fixed: bool| {
+        BTreeSet::from(
+            [("open", "disk_write"), ("dump", "disk_write")].map(|(op, k)| (op.to_string(), k.to_string(), file.to_string(), fixed)),
+        )
+    };
+    for f in &forms[..3] {
+        assert_eq!(places(&s, f), read("data/{kind}/counts.json", true), "{f}");
+        assert_eq!(places(&c, f), read("{data}/{kind}/counts.json", false), "{f}");
+    }
+    assert_eq!(places(&s, &forms[3]), written("data/{kind}/counts.json", true));
+    assert_eq!(places(&c, &forms[3]), written("{data}/{kind}/counts.json", false));
+}
+
+// ---------- setup: a step before the calls sets up the object a method on them runs on ----------
+
+/// The setup pair (#309): `main` sets the shelf up in a step of its own, `open_shelf`, and keeps its report and its log
+/// on it in the steps after. On the clean side the shelf is handed its folder, which `open_shelf` decides, and each
+/// method names its file in it and hands the path to `write`: the file is whole where both have run, the step that set
+/// the shelf up and the method that handed the rest. On the shortcut the folder is a constant of the module that each
+/// method reads itself, so the file is whole in the method and `open_shelf` decides nothing. A place is decided by the
+/// function whose own code decides it, and it is whole where every function that hands a part of its path has run: on
+/// both sides the route writes both files, and the sides differ in which steps that takes. Under each step the page
+/// draws it where those have run before (`setup/python/clean.plan`).
+#[test]
+fn setup_a_step_before_the_calls_sets_up_the_object_a_method_runs_on() {
+    let p = common::pair("setup/python");
+    let main = "shelf.cli.main";
+    let (open, report, log) = ("shelf.cli.open_shelf", "shelf.store.Shelf.keep_report", "shelf.store.Shelf.keep_log");
+    let written = |g: &Graph, file: &str| -> Touch {
+        let n = g.node("shelf.store.write").expect("the helper writes");
+        n.touches.iter().find(|t| t.kind_name() == "disk_write" && t.artifact == file).cloned().unwrap_or_else(|| panic!("writes {file}"))
+    };
+    let made = |t: &Touch| -> Vec<BTreeSet<String>> { t.by.iter().map(|b| b.names().map(str::to_string).collect()).collect() };
+    let set = |fs: &[&str]| -> BTreeSet<String> { fs.iter().map(|f| f.to_string()).collect() };
+    for (side, g) in [("clean", &p.clean), ("shortcut", &p.shortcut)] {
+        let route = ran(g, main);
+        for file in ["out/report.txt", "out/log.txt"] {
+            assert!(written(g, file).in_route(main, &|f: &str| route.contains(f)), "{side}: the route writes {file}");
+        }
+    }
+    for (file, method) in [("out/report.txt", report), ("out/log.txt", log)] {
+        let (clean, shortcut) = (written(&p.clean, file), written(&p.shortcut, file));
+        assert_eq!(made(&clean), [set(&[open, method])], "clean: the step that set the shelf up and the method");
+        assert_eq!(clean.fixed_by, [open], "clean: `open_shelf` decides the folder");
+        assert_eq!(made(&shortcut), [set(&[method])], "shortcut: the method alone");
+        assert_eq!(shortcut.fixed_by, [method], "shortcut: the method decides the folder");
+    }
+}
+
+// ---------- sockets: a socket is a place, in Python as in Rust ----------
+
+/// The sockets pair (#291, #302), the same greeter and client as Rust's: a call leaves something behind, and a socket is
+/// a place. Isomorphic is the same: each function's traffic is the same operations of `knowledge::SOCKET_OPS` in Python
+/// as in Rust (`recv` and `read`, `sendall` and `write_all`, `create_connection` and `connect`), so the two languages
+/// draw one server and one client. The clean server lingers as TCP asks, so `linger` reaches the network and nothing is
+/// asked; the shortcut sleeps, its `linger` reaches no place, and Atlas asks what the wait leaves behind. Binding,
+/// accepting, shutting a half and setting a timeout move no data.
+#[test]
+fn nothing_a_socket_is_a_place() {
+    let (py, rs) = (common::pair("sockets/python"), common::pair("sockets/rust"));
+    assert_eq!(found(&py.clean, "nothing"), Vec::<String>::new());
+    assert_eq!(found(&py.shortcut, "nothing"), ["greeter.linger"]);
+    // the operation of `SOCKET_OPS` each of a function's touches of the network is
+    let rows = |g: &Graph, id: &str, python: bool| -> Vec<usize> {
+        let row = |op: &str| {
+            atlas_engine::knowledge::SOCKET_OPS
+                .iter()
+                .position(|o| if python { o.python.contains(&op) } else { o.rust.contains(&op) })
+                .unwrap_or_else(|| panic!("{id}: `{op}` is a socket's operation"))
+        };
+        g.node(id)
+            .unwrap_or_else(|| panic!("{id} is in the graph"))
+            .touches
+            .iter()
+            .filter(|t| t.kind_name() == "net")
+            .map(|t| row(&t.op))
+            .collect()
+    };
+    let functions = [("greeter.main", "greeter.main"), ("greeter.answer", "greeter.answer"), ("greeter.linger", "greeter.linger")];
+    let client = [("_root.ask.hear", "greeter.bin.ask.hear")];
+    for (side, p, r) in [("clean", &py.clean, &rs.clean), ("shortcut", &py.shortcut, &rs.shortcut)] {
+        for (f, g) in functions.iter().chain(&client) {
+            assert_eq!(rows(p, f, true), rows(r, g, false), "{side}: Python's `{f}` and Rust's `{g}`");
+        }
+        let connects = |g: &Graph, id: &str, python: bool| rows(g, id, python).first().copied();
+        assert_eq!(connects(p, "_root.ask.main", true), connects(r, "greeter.bin.ask.main", false), "{side}: the client connects");
+    }
+    assert!(rows(&py.clean, "greeter.linger", true).len() == 1 && rows(&py.shortcut, "greeter.linger", true).is_empty());
 }

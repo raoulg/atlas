@@ -210,7 +210,11 @@ written, a test whether it is there, a copy or a move into it or out of it, its 
 (`File({main.folder}/note.json)` for the rename that moves a note in, the read and the `remove_file`
 alike). The place is the term; its label says the term's patterns in words, from the
 file up (`every *.xml in OW-bestanden/ in each folder in {base_dir}/`), and the term is under the
-pointer. Words are a label, never an identity: two places are one when their terms are. A route
+pointer. Words are a label, never an identity: two places are one when their terms are. What the
+graph names a touched file by (`Touch.what`) is that term too, never a literal or an expression of
+the call that touches it: a term written out in full is the place itself, however the code spells
+it (`./.made/log.txt` is `.made/log.txt`), and a term with a hole keeps the names the code gives its
+holes (`~/data/{name}`). A route
 is one in the same way, by what it serves: a set of methods at a path. `methods=["POST", "GET"]`,
 `["GET", "POST"]` and `{"GET", "POST"}` are one set, and a registration for every method
 (`app.all`) is the top of the set. Its label, `GET|POST /items`, writes the set in the order of
@@ -239,21 +243,58 @@ only the first draws the group, since only its code says the files belong togeth
 `flow.rs` (`Touch::place`, its coarse place), `index.html` (the storage quotient); the pair
 `workbench`.
 
+### A door keeps its place
+**What.** The term algebra of places (Paths as terms) has operations that open a door at a term,
+a value through which data reaches the place the term names (`TcpStream::connect(a)`,
+`TcpListener::bind(a)`, `File::open(p)`), and operations that give a door at the same term (a
+clone, the connections a listener accepts). The term of a door is the term it is opened at, and
+substitution carries it as it carries a path: a door handed to a parameter is the door its caller
+hands.
+**In Atlas.** A library's type whose calls reach a place is a door to it (`design.md`, packages).
+An operation on a door is at the place the door's term evaluates to, wherever the door is handed:
+through parameters, `let`s, a pattern that takes it out of a pair (`let (conn, _) =
+listener.accept()?`), a loop over a listener's connections. The place of a stream socket is the
+address of its listening end, the one address the code names for it: the client names it in
+`connect`, the server in `bind`, and each connection a listener accepts is a door to it. So a
+client that writes to an address and a server that reads there meet at one place,
+Network(address), as a request meets the route served at its host and path. The peer of a
+server's connection is decided by no code and names no place. A socket's address
+(`127.0.0.1:7878`) names its place as a URL's host does. Where the code does not say the address
+(only the environment holds it), the place stays a hole, as a path's does: the gap is the code's.
+**Where.** `knowledge::RUST_DOORS`, `RUST_DOOR_KEEPERS`, `RUST_SOCKET_ADDRESSES`; the Rust reader's
+`paths.rs` (`Eval::call`, `Eval::element`, `bound`) and `body.rs` (`chain_touches`);
+`effects::socket_address`; the pair `sockets` (#302). Files handed on, and Python's and
+TypeScript's sockets, are #323.
+
 ### Who makes a path whole: a monotone formula
 **What.** A monotone Boolean formula over a set of atoms, in disjunctive normal form: a disjunction
 of conjunctions, with no negation. A conjunction is a set of atoms (`a∧b = b∧a`, `a∧a = a`) and the
 disjunction a set of conjunctions (`x∨y = y∨x`), so the formula is a set of sets. It holds at an
 assignment when every atom of one of its conjunctions does. The empty conjunction is true: the unit
-of `∧`.
+of `∧`. A conjunction that contains another holds only where the other does, so it adds nothing
+(absorption, `a ∨ (a∧b) = a`): two formulas that hold at the same assignments are one formula, and
+its canonical form is the set of its minimal conjunctions, none containing another. An atom that
+stands only in a conjunction that contains another is no condition of the formula: no assignment
+changes its value by it.
 **In Atlas.** A touch whose path others make whole runs in a route only where they are on the
 calls (pushforward, rule 5). The atoms are of two kinds, conditions of one kind on a route
 (`Atom`): it reaches a caller whose call hands what makes the path whole, or it starts at an entry
 whose users hand it. `Touch::by` is the formula: each conjunction a set of conditions that make the
 path whole together (one caller set up the object whose field holds the root, another handed the
 rest), any conjunction enough. The order the code is read in says nothing: `a&b` and `b&a` are one
-conjunction, and two alternatives in either order one formula. A role one condition plays is no
-part of the set: the function a request is from is kept beside it, in `Whole { asks, with }`, where
-the request is drawn.
+conjunction, and two alternatives in either order one formula. Nor does how the value got there:
+`Touch::by` is kept in its canonical form (`absorb`), so a conjunction beside one it contains (the
+`lens` pair's `Roster.load&Roster.reread` beside `Roster.load`, a Roster reread from one `load`
+built) is not written, and the callers the arrow of a step depends on are those of the minimal
+conjunctions. Under a step of a route a condition holds where what ran before the step meets it,
+and a route is its steps in call order (composition): what ran before a step is the calls that lead
+there and, in each of their bodies, the steps before the one that leads there, with all they run. A
+caller that handed the rest hands it down the calls into the touch's function, so it holds only on
+them; a caller that set up the object a method on the calls runs on (its calls reach a constructor
+of that method's class) holds wherever it ran before, also in a step beside the calls (`main`
+building the shelf in `open_shelf` and keeping its report in the step after). A role one condition
+plays is no part of the set: the graph says which a caller plays, as above, and the function a
+request is from is kept beside it, in `Whole { asks, with }`, where the request is drawn.
 Where two callers meet a path, the conjunction is the union of theirs (`Whole::and`), so the meet
 keeps every condition of both, however many levels of callers hand the path up. Its unit is the
 function the touch is in: every route that runs the touch reaches it, so `In(f)` there is the empty
@@ -261,8 +302,8 @@ conjunction, and only there; one level up, the caller that hands the path is a c
 other. The graph's JSON writes each conjunction `a&b`, its conditions in order, an entry's users as
 `users_of:e`, and the alternatives in order; a conjunction of one entry's users alone is written in
 `users_of`. It reads them back once.
-**Where.** `model.rs` (`Atom`, `Both`, `Touch::by`, `Touch::in_route`), `paths.rs` (`Whole`,
-`Callers::of`, `place_calls`), `plan.js` (`inRoute`); the pair `handing`.
+**Where.** `model.rs` (`Atom`, `Both`, `absorb`, `Touch::by`, `Touch::in_route`), `paths.rs` (`Whole`,
+`Callers::of`, `place_calls`), `plan.js` (`inRoute`, `before`); the pairs `handing` and `setup`.
 
 ### Yoneda: what changed
 **What.** An object is determined up to isomorphism by the arrows into it, `Hom(−, A)`, and
@@ -377,7 +418,8 @@ line or a box that appears or disappears means:
    quotient. The fine graph is the graph of occurrences, not of functions: a place a caller makes whole
    (a path it hands down) is touched under a step only where that caller is on the calls that lead to
    the step, or below it. A helper that writes the path its caller hands writes, under each caller,
-   that caller's file.
+   that caller's file. A caller that set up the object whose field holds the root has done its part
+   wherever it ran before the step, also in a step beside those calls ("Who makes a path whole").
 6. **Places with the same incidence are one block.** The rule for lines holds for the vertices too: values
    that one closed step takes, that no step makes and that join nothing else, have the same neighbours
    (that step) and the same way (in), so they are one block of the quotient with a multiplicity `n`, drawn
@@ -608,7 +650,10 @@ open:
   of one: a literal fills it with none, and the route's own, which no code of the program fills, hold
   none. A name a body binds by a literal of a type of the code's (`let mut held = vec![]`, `items: list[Item] = []`)
   holds a value the body makes itself, in its frame, as the call handed nothing it is isomorphic to makes it
-  (`Vec::new()`, `list()`); the graph says which names a body binds so (`Node::binds`). What an opened step changes of a value it was handed goes out at its border as what its steps
+  (`Vec::new()`, `list()`). So does a name a body binds by any other expression (`mask = samples.abs() > 0`,
+  `let total = a + b`), whatever it reads, where that is no name, no step's result and no part of either, which
+  hold their values, and no function written in place: a local is bound by the body's own code, the same in every
+  language, and is never a module's name; the graph says which names a body binds so (`Node::binds`). What an opened step changes of a value it was handed goes out at its border as what its steps
   made of it;
 - a step that can fail has the codomain `T + E`: the error is a value its constructor makes in the arm
   that raises it, the step's border hands it on with its result, and a call that does not catch it
@@ -678,7 +723,9 @@ parse the command line to the entry. The closed picture is `F/q`:
   the caller has one, else the latest of its kind the body made, else one its body binds out of the
   plan's sight, which the caller does not see either; a name its function does not declare (a module's
   constant) is what the module holds, from beyond, as it is with the step open. A function declares its parameters and
-  the names its body binds, by a step or by its own code (a literal), none of them from beyond. The image depends on the
+  the names its body binds, by a step or by its own code (a literal, any expression no step makes), none of them from
+  beyond. A value it takes by a name its caller holds is the caller's to say: from beyond where the caller's value is,
+  and only then does it count among the values of one kind from beyond that keep their names. The image depends on the
   callers that make its paths whole and on which of the functions its body calls are on the path, which stay closed. What its border hands
   on is what it hands on open: an error as an error, a result of no type back to its caller, a value
   of no type by its name; and the types its body holds are the route's fiber, as they are open. The cut
@@ -718,9 +765,11 @@ the pairs and of its programs.
 the field an argument reads, `Steps::fills` and `Steps::read_of` (`body.rs`); the class each field of a class holds, `Node::holds`;
 which parameters of no type of the code's hold a value, `builder::settle_parameters`; the fields a condition tests,
 `Steps::tests` (`body.rs`), and whether a figure is made sure of, `guarded` in `viewer/plan.js`; the names a body binds
-by a literal, `Steps::literals` (`body.rs`), and those a function declares, `declaredIn` and `bodyMade` in
-`viewer/plan.js`; `tools/pictures.py`; `engine/tests/plans.rs`; the recursion and literals pairs
-(`common::a_recursive_call_takes_what_its_call_hands_it`, `common::a_list_made_by_a_literal_is_made_by_the_body`).
+by its own code, `Steps::binds` and `Steps::literals` (`body.rs`), and those a function declares, `declaredIn` and
+`bodyMade` in `viewer/plan.js`; the values of one kind from beyond that keep their names, `split` and `splitBy` in
+`viewer/plan.js`; `tools/pictures.py`; `engine/tests/plans.rs`; the recursion, literals and locals pairs
+(`common::a_recursive_call_takes_what_its_call_hands_it`, `common::a_list_made_by_a_literal_is_made_by_the_body`,
+`common::a_local_is_bound_by_the_bodys_own_code`).
 
 ### Saturation: when the order of a view does not matter
 **What.** A set is saturated by an equivalence when it never cuts a class in two.
@@ -845,7 +894,10 @@ of `C.f` may run `B.f` on a `D`, though `B` is not below `C`, and there its `sup
 alternative is that method on that class, a body as any step on a known class runs it, named by the
 class it runs on (`D.f`); one of a class below the method's own runs on any value of its class, whose
 class is not known. A call through a class, and a `super()` call on a value whose class is known, run
-the one their call names. A value built at the call (`Block().show()`, `new Block().show()`, a unit struct's
+the one their call names. The name `D.f` is the author's name for the `f` a `D` runs first along its order, so it
+names a step only where that is what runs: an alternative of a `super()` call runs the next `f` after `K`, which
+`D.f` does not name (on a `D(B, C)`, `D.f` is `B.f` where `super().f()` in `B` runs `C.f`), and is named by the
+class that defines it, as the same call on a value whose class is known is (`C.f`). A value built at the call (`Block().show()`, `new Block().show()`, a unit struct's
 name `Plain.show()`) is of that class alone; a declared one (a parameter, an annotation, a return type, a field)
 may be that class or any below it. A Rust trait is below its supertraits (`trait Block: Named`), so a value of it
 runs their methods along its order. A call through a trait (`Language::parse(&words, text)`) names no class: the
