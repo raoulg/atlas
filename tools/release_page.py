@@ -20,6 +20,8 @@ paragraphs (code in fences), an `Issues:` line, and the point's pictures:
   shows beneath it.
 - `Bars: label = 18.9 s; label = 0.14 s | caption`: a bar chart of measured numbers.
 - `Pictures: changes/x.jpg`: screenshots, from the notes each issue leaves in `docs/changes/`.
+- `Example: name | code`: the small program `fixtures/<name>` drawn by the release before and by this one, beneath
+  the code the point is about; `Example: name` shows the program's own code, `Example: name |` the pictures alone.
 
 A `Draw:` line says which picture is still to be made for a point; the page leaves it out and this
 tool names it, so that the release is not tagged with a point that shows nothing. The page is
@@ -282,13 +284,15 @@ def page(release: dict, older: dict | None = None, newer: dict | None = None) ->
 """
 
 
-def example(release: dict, name: str) -> str:
+def example(release: dict, spec: str) -> str:
     """A small program of `fixtures/<name>` (fixtures: Atlas reads no part there, so the program stays out
     of Atlas's own picture) and the picture of it by the release before and by this one
-    (`tools/release_example.py` draws them into `img/<name>-before.png` and `-after.png`)."""
+    (`tools/release_example.py` draws them into `img/<name>-before.png` and `-after.png`), beneath the code
+    after `|`: the program's own code where the spec names none, nothing where it is empty."""
+    name, bar, shown = (x.strip() for x in spec.partition("|"))
     folder = RELEASES / release["version"] / "fixtures" / name
     source = next((p for p in sorted(folder.rglob("*.py")) if "typings" not in p.parts), None)
-    code = source.read_text().split("\n\n\ndef main(")[0].strip() if source else ""
+    code = shown if bar else source.read_text().split("\n\n\ndef main(")[0].strip() if source else ""
     builds = {side: html.escape(v.split()[1]) if len(v.split()) > 1 else side for side, v in release.get("builds", {}).items()}
     labels = {"before": builds.get("before", "before"), "after": builds.get("after", release["version"])}
     figures = "".join(
@@ -296,7 +300,8 @@ def example(release: dict, name: str) -> str:
         f'<figcaption><span class="tag {side}">{labels[side]}</span></figcaption></figure>'
         for side in ("before", "after")
     )
-    return f'<div class="example"><pre><code>{html.escape(code)}</code></pre><div class="pair">{figures}</div></div>'
+    listing = f"<pre><code>{html.escape(code)}</code></pre>" if code else ""
+    return f'<div class="example">{listing}<div class="pair">{figures}</div></div>'
 
 
 def compare(spec: str) -> str:
