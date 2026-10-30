@@ -384,7 +384,10 @@ line or a box that appears or disappears means:
    as a count on the step (`graph_of · +25 types`). Contracting a vertex of degree one into its neighbour
    leaves the picture the same up to homotopy, and the border of the step stays whole: each line is still
    counted, and opening the step splits the block into the values, each with its line. A value that
-   another step takes or makes, a family that can be opened and the route's own values are not of the block.
+   another step takes or makes, a family that can be opened and the route's own values are not of the block,
+   and neither is a value the body makes in a frame of its own by no step (a name it binds anew): it stands
+   in that frame, the block's values stand beyond it, and closing the frame sends the two apart, so a block
+   of both would not be the image of the closed picture's.
 
 **Where.** `homeOf` and `madeAt` in `viewer/plan.js`, `addEdge` in `viewer/index.html`; `tools/pictures.py topology`
 holds the open picture to the closed one.
