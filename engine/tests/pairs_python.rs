@@ -2818,3 +2818,43 @@ fn handing_a_helper_writes_under_each_caller_that_caller_s_file() {
         BTreeSet::from(["shelf.store.Shelf.keep_log".to_string(), "shelf.store.Shelf.keep_report".to_string()])
     );
 }
+
+/// Isomorphic is the same: `os.path.join("data", kind)`, `"data/" + kind` and `Path("data") / kind`
+/// each make the one path `data/{kind}`, and a function that writes one decides that place as much
+/// as one that writes another (#304). In the places pair's `stock.joined`, each form reads and
+/// writes `counts.json`: on the shortcut under `"data"`, and every function is asked, naming the
+/// same place; on the clean side under the folder it is handed, and none is. A library function's
+/// parameter goes the way its class, where ty finds it, says: `json.load` reads the file it is
+/// handed (`SupportsRead`), `json.dump` writes it (`SupportsWrite`).
+#[test]
+fn places_a_path_joined_any_way_python_joins_one_is_the_same_place() {
+    let (c, s) = (stock("clean"), stock("shortcut"));
+    let forms = ["joined", "added", "divided", "dumped"].map(|f| format!("stock.joined.{f}"));
+    assert!(found_in(&c, "places", "stock.joined").is_empty(), "{:?}", found_in(&c, "places", "stock.joined"));
+    assert_eq!(found_in(&s, "places", "stock.joined"), forms);
+    // what each form's own call and the library's touch, by the way they go: the same on every form
+    let places = |g: &Graph, f: &str| -> BTreeSet<(String, String, String, bool)> {
+        g.node(f)
+            .unwrap_or_else(|| panic!("{f} is in the graph"))
+            .touches
+            .iter()
+            .map(|t| (t.op.clone(), t.kind_name().to_string(), t.artifact.clone(), t.fixed || !t.fixed_by.is_empty()))
+            .collect()
+    };
+    let read = |file: &str, fixed: bool| {
+        BTreeSet::from(
+            [("open", "disk_read"), ("load", "disk_read")].map(|(op, k)| (op.to_string(), k.to_string(), file.to_string(), fixed)),
+        )
+    };
+    let written = |file: &str, fixed: bool| {
+        BTreeSet::from(
+            [("open", "disk_write"), ("dump", "disk_write")].map(|(op, k)| (op.to_string(), k.to_string(), file.to_string(), fixed)),
+        )
+    };
+    for f in &forms[..3] {
+        assert_eq!(places(&s, f), read("data/{kind}/counts.json", true), "{f}");
+        assert_eq!(places(&c, f), read("{data}/{kind}/counts.json", false), "{f}");
+    }
+    assert_eq!(places(&s, &forms[3]), written("data/{kind}/counts.json", true));
+    assert_eq!(places(&c, &forms[3]), written("{data}/{kind}/counts.json", false));
+}

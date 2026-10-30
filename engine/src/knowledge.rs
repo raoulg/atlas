@@ -1762,6 +1762,15 @@ pub enum PathFn {
     Environment,
 }
 
+impl PathFn {
+    /// Whether what it makes starts where its first argument starts: a join of parts, the
+    /// directory a path is in, the argument as it is. `os.path.join("data", name)` starts at the
+    /// literal `"data"`, as `Path("data") / name` does.
+    pub fn starts_at_first(self) -> bool {
+        matches!(self, PathFn::Join | PathFn::Parent | PathFn::Same)
+    }
+}
+
 /// A command-line parser whose parsed values are attributes of one object (`args.out`): its
 /// library, the object's class, the method that declares an argument, that method's keywords
 /// for the argument's default and for the attribute's name, and the methods that parse the
@@ -2384,3 +2393,29 @@ pub const TYPESCRIPT_GLOBALS: &[&str] = &[
     "setImmediate",
     "clearImmediate",
 ];
+
+/// Python's classes of a file a library function is handed, by the library module ty finds the
+/// class in (or one above it), its name and what the parameter is handed: typeshed's protocols
+/// for a file read from or written to, `typing`'s and `io`'s open files (`io`'s own classes are
+/// defined in `_io`). A parameter typed as a path class is handed a path
+/// (`PYTHON_PATH_CLASSES`). A class of the same name elsewhere is no file.
+pub const PYTHON_FILE_CLASSES: &[(&str, &str, crate::pytypes::FileArg)] = {
+    use crate::pytypes::FileArg::{Open, Reads, Writes};
+    &[
+        ("_typeshed", "SupportsRead", Reads),
+        ("_typeshed", "SupportsReadline", Reads),
+        ("_typeshed", "SupportsWrite", Writes),
+        ("typing", "IO", Open),
+        ("typing", "TextIO", Open),
+        ("typing", "BinaryIO", Open),
+        ("io", "IOBase", Open),
+        ("io", "RawIOBase", Open),
+        ("io", "BufferedIOBase", Open),
+        ("io", "TextIOBase", Open),
+        ("_io", "TextIOWrapper", Open),
+        ("_io", "BufferedReader", Open),
+        ("_io", "BufferedWriter", Open),
+        ("_io", "BufferedRandom", Open),
+        ("_io", "FileIO", Open),
+    ]
+};
