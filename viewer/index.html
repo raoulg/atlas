@@ -471,12 +471,16 @@ svg.node().addEventListener("wheel", () => svg.interrupt(), {capture: true, pass
     pressed = false;
     window.dispatchEvent(new MouseEvent("mouseup", {clientX: ev.clientX, clientY: ev.clientY, screenX: ev.screenX, screenY: ev.screenY, view: window}));
   }, true); }
-// what stands on the picture passes a wheel on to it: the state bar, the zoom's buttons and the hint let the pointer
-// through where they draw nothing (CSS); their words and buttons, the legend and the status bar hand it to the zoom
-for (const id of ["crumbs", "legend", "zoomctl", "hint", "readstate"]) listen(document.getElementById(id), "wheel", ev => {
+// the page listens for the wheel on the document, since WebKit hands a framed page (Studio's view) a wheel only where
+// the page listens for one, and counts a listener on the document from the first wheel but one on the picture alone
+// not until the page has been used. What stands on the picture passes the wheel on to it: the state bar, the zoom's
+// buttons and the hint let the pointer through where they draw nothing (CSS); their words and buttons, the legend and
+// the status bar hand it to the zoom. A wheel over the inspector scrolls it.
+document.addEventListener("wheel", ev => {
+  if (!ev.target.closest?.("main") || svg.node().contains(ev.target)) return;
   ev.preventDefault();
   svg.node().dispatchEvent(new WheelEvent("wheel", ev));
-});
+}, {passive: false, signal: controller.signal});
 // a double click on empty space lets the pinned boxes go
 svg.on("dblclick.pins", ev => { if (pinned.size && !ev.target.closest("g.tstep, g.tnode")) { pinned.clear(); repaintPins(); crumbs(); } });
 // the height the state bar takes at the top of the canvas, when it shows
