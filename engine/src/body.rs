@@ -216,6 +216,9 @@ pub struct Step {
     pub hands: Vec<Held>,
     pub gives: Vec<Held>,
     pub command_line: Option<Vec<String>>,
+    /// Where the call is written from, where that lies before the node it is read at: among a macro's tokens a method's
+    /// call is the group it is handed, written from its receiver on (`Plain.name()`), as a call written outside one is.
+    pub from: Option<usize>,
 }
 
 /// What a call gives: the values it returns, and the named values it changes in place
@@ -873,7 +876,7 @@ impl<'t, 's> Steps<'t, 's> {
         if s.to.is_empty() || s.span == (0, 0) || s.raises || s.gives.iter().any(|g| !g.name.is_empty()) {
             return false;
         }
-        let Some(c) = self.body.descendant_for_byte_range(s.span.0 as usize, s.span.1 as usize) else { return false };
+        let Some(c) = self.read_at(s.span) else { return false };
         // what a function handed on by its name gives, the call's it is handed to (`lines.map(parse_line)`)
         if u.names.contains(&c.kind()) {
             return false;
@@ -926,6 +929,22 @@ impl<'t, 's> Steps<'t, 's> {
             }
         }
         false
+    }
+
+    /// The node a step is read at: the one its span covers, or for a call written from before that node (`Step::from`, a
+    /// method's call among a macro's tokens), the outermost node within the span that ends where it does: the group the
+    /// call is handed.
+    fn read_at(&self, (a, b): (u32, u32)) -> Option<TsNode<'t>> {
+        let (a, b) = (a as usize, b as usize);
+        let n = self.body.descendant_for_byte_range(a, b)?;
+        if n.byte_range() == (a..b) {
+            return Some(n);
+        }
+        let mut t = self.body.descendant_for_byte_range(b.saturating_sub(1), b)?;
+        while let Some(p) = t.parent().filter(|p| a <= p.start_byte() && p.end_byte() == b) {
+            t = p;
+        }
+        Some(t)
     }
 
     /// The innermost function written in place that `n` stands in, within the body: the node that binds its own names
@@ -1148,7 +1167,7 @@ impl<'t, 's> Steps<'t, 's> {
             args,
             written,
             arms: arms.clone(),
-            span: span(c),
+            span: step.from.map_or(span(c), |at| (at as u32, c.end_byte() as u32)),
             command_line: step.command_line,
             ..Default::default()
         };
