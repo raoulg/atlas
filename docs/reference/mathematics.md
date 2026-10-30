@@ -210,7 +210,11 @@ written, a test whether it is there, a copy or a move into it or out of it, its 
 (`File({main.folder}/note.json)` for the rename that moves a note in, the read and the `remove_file`
 alike). The place is the term; its label says the term's patterns in words, from the
 file up (`every *.xml in OW-bestanden/ in each folder in {base_dir}/`), and the term is under the
-pointer. Words are a label, never an identity: two places are one when their terms are. A route
+pointer. Words are a label, never an identity: two places are one when their terms are. What the
+graph names a touched file by (`Touch.what`) is that term too, never a literal or an expression of
+the call that touches it: a term written out in full is the place itself, however the code spells
+it (`./.made/log.txt` is `.made/log.txt`), and a term with a hole keeps the names the code gives its
+holes (`~/data/{name}`). A route
 is one in the same way, by what it serves: a set of methods at a path. `methods=["POST", "GET"]`,
 `["GET", "POST"]` and `{"GET", "POST"}` are one set, and a registration for every method
 (`app.all`) is the top of the set. Its label, `GET|POST /items`, writes the set in the order of
