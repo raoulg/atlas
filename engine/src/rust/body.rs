@@ -2096,7 +2096,17 @@ impl<'a, 't> Body<'a, 't> {
             } else {
                 0
             };
-            let moves = |i: usize, op: &str| if i < built { None } else { moved_by(&x.ty, op) };
+            // a value its constructor makes without touching anything (`OpenOptions::new()`) is set up
+            // by a file opener's options until a call opens it: `append(true)` and `create(true)` say
+            // how the call that opens it goes, and move nothing themselves
+            let option = |op: &str| knowledge::OPENS_TO_WRITE.contains(&op);
+            let set_up =
+                x.ctor.last().is_some_and(|c| knowledge::BUILDS.contains(&c.as_str())) && effects::boundary_rust(&x.ctor).is_none();
+            let opened = match set_up {
+                true => x.before.iter().chain(&here).position(|(op, _)| !option(op) && moved_by(&x.ty, op).is_some()).unwrap_or(usize::MAX),
+                false => 0,
+            };
+            let moves = |i: usize, op: &str| if i < built || (i < opened && option(op)) { None } else { moved_by(&x.ty, op) };
             let n = x.before.len();
             // the move is named by the first call a library knows by name, else the first that moves
             let (kind, op, call) = here

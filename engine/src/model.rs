@@ -1019,6 +1019,9 @@ pub struct Touch {
     /// Which way data goes, when the call says: a file's mode, a database statement's verb, a
     /// download or an upload.
     pub dir: Option<Dir>,
+    /// What names the place it touches: for a file whose path is followed to where it is whole, the
+    /// place itself where the path is written out in full, else the term the code writes
+    /// (`{root}/out.csv`); else what the call is handed, its literal or the name it is written as.
     pub what: String,
     pub n: u32,
     /// What flows through the boundary, as the author named it, with its type when known.
