@@ -377,16 +377,16 @@ async fn this_build(app: &tauri::AppHandle) -> Result<update::Build, String> {
 }
 
 /// Whether a newer build of Studio's channel is out: from the answer kept, asked of GitHub again when
-/// it is a day old or `now` asks for it.
+/// it is a day old, another build asked it, or `now` asks for it.
 async fn newer_build(app: &tauri::AppHandle, now: bool) -> Result<Option<update::Newer>, String> {
     let build = this_build(app).await?;
     let cache = update::Cache::of(app).ok_or("Studio has no cache folder")?;
     let mut asked = cache.asked();
-    if now || asked.stale(update::now()) {
+    if now || asked.stale(&build, update::now()) {
         let asking = build.clone();
         let latest = tauri::async_runtime::spawn_blocking(move || update::ask(&asking)).await.map_err(|e| e.to_string())?;
         if let Some(latest) = latest {
-            asked = update::Asked { checked: update::now(), latest };
+            asked = update::Asked { checked: update::now(), by: update::key(&build), latest };
             cache.keep(&asked);
         } else if now {
             return Err("GitHub did not answer; try again later".into());
