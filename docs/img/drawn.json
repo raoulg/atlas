@@ -1471,7 +1471,7 @@
    ],
    [
     "atlas-engine.parts.graph_of",
-    "\u25b8 graph_of \u00b7 +16 types7"
+    "\u25b8 graph_of \u00b7 +17 types7"
    ],
    [
     "e:atlas-engine.analyze",
@@ -1495,27 +1495,19 @@
    ],
    [
     "t:atlas-engine.model.Graph@n:atlas-engine.analyze",
-    "Graph (7)"
+    "Graph (8)"
    ],
    [
     "t:atlas-engine.model.Graph@n:atlas-engine.analyze/1",
-    "Graph (7)"
+    "Graph (8)"
    ],
    [
     "t:atlas-engine.options.Options",
-    "Options (2)"
+    "options.Options (2)"
    ],
    [
     "t:atlas-engine.repo.Repo~repo@n:atlas-engine.analyze/0",
-    "Repo (2) \u00b7 repo"
-   ],
-   [
-    "w:Disk:Environment.real.path",
-    "Disk(Environment.real.path)"
-   ],
-   [
-    "w:Disk:Repo.resolved.path",
-    "Disk(Repo.resolved.path)"
+    "Repo (3) \u00b7 repo"
    ],
    [
     "w:Disk:in",
@@ -1613,14 +1605,6 @@
    ],
    [
     "t:atlas-engine.repo.Repo~repo@n:atlas-engine.analyze/0",
-    "n:atlas-engine.analyze/1"
-   ],
-   [
-    "w:Disk:Environment.real.path",
-    "n:atlas-engine.analyze/1"
-   ],
-   [
-    "w:Disk:Repo.resolved.path",
     "n:atlas-engine.analyze/1"
    ],
    [
