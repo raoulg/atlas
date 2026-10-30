@@ -164,6 +164,18 @@ jobs:
           git pull --rebase
           git push
 
+  # The site's copy of next's documentation (`/next/`, with the coming release's notes a nightly Studio
+  # shows) follows the nightly: `atlas.yml` runs again, on main, where Pages deploys from.
+  site:
+    needs: publish
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+    steps:
+      - env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run atlas.yml --repo "$GITHUB_REPOSITORY" --ref main
+
   # The newest seven nightly builds stay; a formula a user has not updated yet names one of them.
   prune:
     needs: tap

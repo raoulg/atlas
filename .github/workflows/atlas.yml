@@ -2,6 +2,9 @@ name: atlas
 
 # The picture of Atlas's own analyze route, its page and its pill, drawn from the code on every push
 # to main and published with the documentation. This is the workflow docs/reference/ci.md describes.
+# The documentation of `next` is published beside it at `/next/`, the notes of the coming release among
+# it, which a nightly Studio shows as its What's New; each nightly runs this workflow again on `main`,
+# the one branch the `github-pages` environment deploys from.
 on:
   push:
     branches: [main]
@@ -24,12 +27,20 @@ jobs:
       url: ${{ steps.deploy.outputs.page_url }}
     steps:
       - uses: actions/checkout@v7
+      - uses: actions/checkout@v7
+        with:
+          ref: next
+          path: next
+          sparse-checkout: docs
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - uses: astral-sh/setup-uv@v10.3.0
       - run: cargo build --locked --release -p atlas-code
-      - name: Start from the documentation
-        run: cp -R docs site
+      - name: Start from the documentation, main's and next's
+        run: |
+          cp -R docs site
+          cp -R next/docs site/next
+          rm -rf next
       - name: Draw the page
         run: |
           target/release/atlas-code view --no-open --out site/atlas.html --view '{"route": "atlas-engine.analyze"}'
