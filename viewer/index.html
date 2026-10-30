@@ -847,6 +847,11 @@ const ELK_WORKER = /*__ELK_WORKER__*/null, KEPT = 48;
 const SUPERSEDED = new Error("laid out for a picture no longer asked for");
 const LAYOUTS = new Map();      // input → the promise of its layout, the least recently used first
 const rate = {ms: 0, size: 0};  // how long this page's layouts took, by their boxes and lines
+// A layer keeps the order the code gives its boxes and lines in (ELK's model order) in a picture of up to this many
+// lines. ELK sorts each layer against every line that passes through it, which grows with the square of the layer:
+// free in the pictures of a route or a package (at most about 200 lines), twenty seconds in one of 750 (#320), where
+// the boxes are too many to read an order in. Beyond it ELK orders a layer by its crossings alone.
+const ORDERED_LINES = 400;
 let elkUrl = null, layWorker = null;
 const sizeOf = n => 1 + (n.edges || []).length + (n.children || []).reduce((s, c) => s + sizeOf(c), 0);
 const startWorker = () => {
@@ -1406,7 +1411,7 @@ async function renderPlaat(mine) {
   for (const e of root.edges) { const t = bundleOf(edgeInfo.get(e.id)); if (t) (e.labels ||= []).push({text: t, width: textW(t, 6.2), height: 12}); }
   // boxes are placed by Brandes–Köpf, which grows about linearly with the lines, so a picture of a few
   // hundred lines opens at once; network simplex straightens long lines a little at ten times the cost
-  Object.assign(root, {layoutOptions: {"elk.algorithm": "layered", "elk.direction": "RIGHT", "elk.hierarchyHandling": "INCLUDE_CHILDREN", "elk.edgeRouting": "ORTHOGONAL", "elk.layered.spacing.nodeNodeBetweenLayers": "56", "elk.spacing.nodeNode": "16", "elk.layered.nodePlacement.strategy": "BRANDES_KOEPF", "elk.spacing.edgeNode": "14", "elk.layered.spacing.edgeNodeBetweenLayers": "16", "elk.layered.considerModelOrder.strategy": "NODES_AND_EDGES"}});
+  Object.assign(root, {layoutOptions: {"elk.algorithm": "layered", "elk.direction": "RIGHT", "elk.hierarchyHandling": "INCLUDE_CHILDREN", "elk.edgeRouting": "ORTHOGONAL", "elk.layered.spacing.nodeNodeBetweenLayers": "56", "elk.spacing.nodeNode": "16", "elk.layered.nodePlacement.strategy": "BRANDES_KOEPF", "elk.spacing.edgeNode": "14", "elk.layered.spacing.edgeNodeBetweenLayers": "16", "elk.layered.considerModelOrder.strategy": root.edges.length <= ORDERED_LINES ? "NODES_AND_EDGES" : "NONE"}});
   let layout;
   laying(root, () => mine === undefined || mine === renderSeq);
   try { layout = await laidOut(root); } catch (err) { if (err === SUPERSEDED) return; throw err; }
