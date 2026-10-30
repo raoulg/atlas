@@ -112,11 +112,13 @@ The rigorous half and the visual half are the same structure. Read `docs/referen
 
 ## Branches, versions and releases
 
-Two long-lived branches, one release train. Everything else is a short-lived topic branch.
+Two long-lived branches, one release train, and while a release is finished its release branch. Everything
+else is a short-lived topic branch.
 
 | Branch | Holds | Version | Built as | Who moves it |
 | --- | --- | --- | --- | --- |
 | `next` | integration: everything finished | the next minor, `X.Y.0` | nightly, `X.Y.0-nightly.<timestamp>` | the integrating agent, by merging the topic branches of a round and testing them once |
+| `release-X.Y` | the release being finished, cut from `next` | `X.Y.0` | nothing; `ci` runs on it | the agent that prepares the promotion |
 | `main` | what is released | the released `X.Y.Z` | stable, tag `vX.Y.Z` | Raoul only |
 | `<topic>` | one piece of work | none | nothing | its owner |
 
@@ -142,8 +144,13 @@ Two long-lived branches, one release train. Everything else is a short-lived top
    `topology`) once on the whole, fixes there what fails, and lands that. A failure there is found by
    testing the branches in it, not by running the suite again for each. When `next` moves before the push, merge
    it again and run again only the suites its new commits touch: documentation and CI touch none.
-3. **Promote**: when Raoul says so, `next` is merged into `main` (a merge commit), `main` is tagged
-   `vX.Y.0` and pushed; the tag builds the stable release and, with the secret `TAP_TOKEN`, updates
+3. **Cut, then promote**: once what a release carries is on `next`, the agent that prepares it cuts
+   `release-X.Y` from `next` (`git push origin <commit>:refs/heads/release-X.Y`), and new work keeps
+   landing on `next`. Only the release's own finishing lands on `release-X.Y`: its notes and pictures, and
+   a fix of something it carries, landed as on `next` (from a detached `origin/release-X.Y`) and merged
+   into `next` in the same turn, so `next` never lacks what the release has. When Raoul says so,
+   `release-X.Y` is merged into `main` (a merge commit), `main` is tagged `vX.Y.0` and pushed, and the
+   release branch is removed; the tag builds the stable release and, with the secret `TAP_TOKEN`, updates
    the tap. `main` then holds nothing `next` lacks. An agent prepares the promotion (conflicts
    resolved, docs pictures drawn, checks green, the release's notes `docs/releases/<version>.md`
    gathered from `docs/changes/` and made a page by `uv run tools/release_page.py`, which must name no
@@ -160,12 +167,13 @@ Two long-lived branches, one release train. Everything else is a short-lived top
    their checksums, and that `brew install raoulg/tap/atlas-code`, `brew install --cask raoulg/tap/atlas-studio`
    and `install.sh` install it.
 4. **Stable fix**: a bug in released behaviour is fixed on a branch from `main`, merged into `main`
-   when Raoul says so, patch number raised, tagged `vX.Y.Z`; then `main` is merged into `next` at once.
+   when Raoul says so, patch number raised, tagged `vX.Y.Z`; then `main` is merged into `next`, and into a release branch if one is open, at once.
    A fix to code that is not released yet is ordinary work on `next`.
 5. **Versions are SemVer and are raised in one place each**: the first change on `next` that alters
-   what Atlas reads, draws or checks raises the minor, once; later commits leave it alone. A stable fix
+   what Atlas reads, draws or checks raises the minor, once; later commits leave it alone. After a cut,
+   `next` says the release branch's version until that change raises it past it. A stable fix
    raises the patch. Documentation, CI and the tap raise nothing.
-6. **History is never rewritten.** No force-push to `main` or `next`, no deleted or moved `v*` tag. A
+6. **History is never rewritten.** No force-push to `main`, `next` or a release branch, no deleted or moved `v*` tag. A
    mistake is a revert commit.
 7. **Before any push or tag, read the branch** (`git branch --show-current`). A push to `main`, a `v*`
    tag, a force-push or a change of the repository's settings needs Raoul's yes in this session,
