@@ -214,7 +214,11 @@ pointer. Words are a label, never an identity: two places are one when their ter
 graph names a touched file by (`Touch.what`) is that term too, never a literal or an expression of
 the call that touches it: a term written out in full is the place itself, however the code spells
 it (`./.made/log.txt` is `.made/log.txt`), and a term with a hole keeps the names the code gives its
-holes (`~/data/{name}`). A route
+holes (`~/data/{name}`). So a library's function that writes a path another way without moving it is the
+identity on terms: made absolute (`std::path::absolute`, `pathlib`'s `absolute` and `resolve`) or with its `.` and
+`..` taken out (`path_clean::clean`), it is the place it was handed (`knowledge::RUST_PATH_FUNCTIONS`, the pair
+`spelled`). A loop of the program's own over a path's parts is code Atlas does not evaluate, and what it gives is not
+said. A route
 is one in the same way, by what it serves: a set of methods at a path. `methods=["POST", "GET"]`,
 `["GET", "POST"]` and `{"GET", "POST"}` are one set, and a registration for every method
 (`app.all`) is the top of the set. Its label, `GET|POST /items`, writes the set in the order of

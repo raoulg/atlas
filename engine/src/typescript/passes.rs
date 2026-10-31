@@ -19,8 +19,9 @@ use super::paths::{self, Eval};
 use crate::builder::{foreign_type, ClassInfo, Declared, GraphBuilder};
 use crate::knowledge;
 use crate::model::{Dir, EdgeKind, Entry, EntryKind, Node, NodeKind, Route, Touch, World};
-use crate::repo::{normal, Repo};
+use crate::repo::Repo;
 use crate::tree::{beneath, named_children, span, text, unquote, walk};
+use path_clean::clean;
 
 /// The file an import specifier names: relative to the importing file, or through a path alias.
 fn resolve_spec(spec: &str, from: &Path, aliases: &[(String, PathBuf)], files: &HashMap<PathBuf, String>) -> Option<String> {
@@ -30,7 +31,7 @@ fn resolve_spec(spec: &str, from: &Path, aliases: &[(String, PathBuf)], files: &
         let (alias, dir) = aliases.iter().find(|(a, _)| !a.is_empty() && spec.starts_with(a.as_str()))?;
         dir.join(&spec[alias.len()..])
     };
-    let base = normal(&base);
+    let base = clean(&base);
     let stripped = base.with_extension("");
     let mut candidates = vec![base.clone()];
     for b in [&base, &stripped] {
@@ -540,7 +541,7 @@ pub(super) fn collect_imports(m: &mut Module, aliases: &[(String, PathBuf)], fil
 
 /// The module a path in `package.json` names, with or without its extension.
 fn module_at(repo: &Path, path: &str, files: &HashMap<PathBuf, String>) -> Option<String> {
-    let p = normal(&repo.join(path));
+    let p = clean(&repo.join(path));
     files.get(&p).cloned().or_else(|| files.iter().find(|(f, _)| f.with_extension("") == p.with_extension("")).map(|(_, id)| id.clone()))
 }
 

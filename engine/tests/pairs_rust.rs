@@ -1306,6 +1306,28 @@ fn places_a_path_a_type_builds_is_the_path_written_out() {
     assert!(c.iter().any(|(f, a, _)| f == "bench.clear" && a == ".made/"), "{c:?}");
 }
 
+/// The spelled pair, `spelled/rust`: a note kept in a folder the caller names however it likes
+/// (`./data/../notes`), and shown again from `notes/note.txt`. The clean side writes the folder once
+/// with the libraries that say what they do to a path (`std::path::absolute`, `path_clean::clean`);
+/// the shortcut takes its `.` and `..` out in a loop of its own.
+fn spelled(side: &str) -> Graph {
+    analyze(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/pairs/spelled/rust").join(side), &Options::default()).unwrap()
+}
+
+/// A term written out in full is the place itself, however the code spells it (`docs/reference/mathematics.md`,
+/// "Paths as terms"): a path a library makes absolute or writes without its `.` and `..` is the place its term names,
+/// so the note `save` writes is the note `show` reads, one place. A loop of the program's own is not evaluated: what
+/// it gives is not said, the gap the code leaves, and no place `save` writes is the one `show` reads.
+#[test]
+fn places_a_path_written_another_way_is_the_same_place() {
+    let places = |g: &Graph, f: &str, kind: &str| -> Vec<String> { touches(g, f, kind).iter().map(|t| t.place().id).collect() };
+    let (c, s) = (spelled("clean"), spelled("shortcut"));
+    assert!(!places(&c, "notes.save", "disk_write").is_empty());
+    assert_eq!(places(&c, "notes.save", "disk_write"), places(&c, "notes.show", "disk_read"));
+    let (saved, shown) = (places(&s, "notes.save", "disk_write"), places(&s, "notes.show", "disk_read"));
+    assert!(!saved.is_empty() && saved.iter().all(|p| !shown.contains(p)), "{saved:?} {shown:?}");
+}
+
 /// The kept pair, `kept/rust`: a note kept in a file in the folder `where.txt` names, read, and
 /// taken once. The clean side writes it whole beside its file and renames it in, and names the
 /// folder (`let folder = kept::notes_folder()?`); the shortcut writes it straight in and names

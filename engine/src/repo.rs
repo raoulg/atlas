@@ -7,10 +7,11 @@
 //! from `node_modules`, from where Cargo keeps a crate.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
-use std::path::{Component, Path, PathBuf};
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
 use anyhow::Result;
+use path_clean::clean;
 
 use crate::model::Lang;
 
@@ -113,7 +114,7 @@ impl Repo {
             }
         }
         dirs.insert(PathBuf::new());
-        let root = normal(&std::path::absolute(dir)?);
+        let root = clean(std::path::absolute(dir)?);
         let listing = Listing { base: root.clone(), files, dirs, named: listed, texts: Mutex::new(HashMap::new()) };
         Ok(Repo { root, at: PathBuf::new(), listing: Arc::new(listing), asked: None, language: None, read_files: Arc::default() })
     }
@@ -170,11 +171,18 @@ impl Repo {
         }
     }
 
-    /// Where a path the caller writes from the root stands in the listing: `root/x` and `x` alike.
+    /// Where a path the caller writes from the root stands in the listing: `root/x` and `x` alike,
+    /// each written once (`a/./b/../c` is `a/c`). The top of the listing is the empty path, as the
+    /// walk names it, which `clean` writes `.`.
     fn key(&self, p: &Path) -> PathBuf {
-        let p = normal(p);
+        let p = clean(p);
         let rel = p.strip_prefix(&self.root).unwrap_or(&p);
-        normal(&self.at.join(rel))
+        let key = clean(self.at.join(rel));
+        if key == Path::new(".") {
+            PathBuf::new()
+        } else {
+            key
+        }
     }
 
     pub fn is_file(&self, p: impl AsRef<Path>) -> bool {
@@ -283,22 +291,6 @@ impl Repo {
             .map(|d| self.root.join(d))
             .collect()
     }
-}
-
-/// A path with its `.` parts taken out and each `..` taken back over the part before it; a `..`
-/// with nothing before it stays: `../api/./src/../x` is `../api/x`.
-pub fn normal(p: &Path) -> PathBuf {
-    let mut out = PathBuf::new();
-    for c in p.components() {
-        match c {
-            Component::CurDir => {}
-            Component::ParentDir if out.file_name().is_some() => {
-                out.pop();
-            }
-            other => out.push(other),
-        }
-    }
-    out
 }
 
 /// A path as one key whatever way it is written: with `/` between its parts, without Windows's
