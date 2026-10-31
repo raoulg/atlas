@@ -2148,11 +2148,13 @@ impl<'a, 't> Body<'a, 't> {
         Some(ext.strip_prefix("ext:")?.split('.').map(String::from).collect())
     }
 
-    /// What a library's method call touches, through the value its chain made: a value made by a
-    /// touch is at that touch's place (`File::open(p)`, `Command::new("git")`), and a call on it
-    /// adds a place only when it names its own (`conn.execute("INSERT INTO log ..")`); a value
-    /// built without touching anything touches where it is used, at the place its building
-    /// named (`OpenOptions::new().append(true).open("log")`).
+    /// What a library's method call touches, through the value its chain made. Traffic through a
+    /// door (a file, a socket) is a touch at the door's place, each operation its own, whether the
+    /// body opened the door or was handed it (`f.read_to_string(&mut s)` reads the file `f` was
+    /// opened at). Any other value made by a touch is at that touch's place (`Command::new("git")`),
+    /// and a call on it adds a place only when it names its own (`conn.execute("INSERT INTO log
+    /// ..")`); a value built without touching anything touches where it is used, at the place its
+    /// building named (`OpenOptions::new().append(true).open("log")`).
     /// The path a file is at is the one the call that names it is handed, as built, and a statement
     /// is what the call that runs it is handed.
     fn chain_touches(&self, c: TsNode<'t>, value: TsNode<'t>, method: &str) -> Vec<(Touch, Vec<crate::paths::Built>)> {
@@ -2194,6 +2196,16 @@ impl<'a, 't> Body<'a, 't> {
                 .enumerate()
                 .filter_map(|(i, (op, node))| moves(n + i, op).map(|k| (k, op.clone(), *node)))
                 .min_by_key(|(k, _, _)| *k == Crossing::to(World::Disk))?;
+            // traffic through a door (a value of a door's type, made by its opening or handed in),
+            // never the call that opens it: each operation is a touch at the door's place
+            let door =
+                x.ty.last().is_some_and(|t| knowledge::RUST_DOORS.iter().any(|(d, _, _)| d == t) && knowledge::rust_door(t, &op).is_none());
+            let traffic = door
+                && match kind.world {
+                    World::Net => knowledge::rust_socket_op(&op),
+                    World::Disk => knowledge::RUST_DOOR_TRAFFIC.contains(&op.as_str()),
+                    _ => false,
+                };
             let touched =
                 effects::boundary_rust(&x.ctor).is_some() || x.before.iter().enumerate().any(|(i, (op, _))| moves(i, op).is_some());
             let writes = x.before.iter().chain(&here).any(|(o, _)| knowledge::OPENS_TO_WRITE.contains(&o.as_str()));
@@ -2201,7 +2213,9 @@ impl<'a, 't> Body<'a, 't> {
                 .iter()
                 .flat_map(|(_, n)| n.child_by_field_name("arguments").map(|a| place_literals(a, src)).unwrap_or_default())
                 .collect();
-            Some((if writes && kind.world == World::Disk { Crossing::write(World::Disk) } else { kind }, op, call, touched, own))
+            // an operation goes its own way; an opening the way its options say
+            let kind = if writes && !traffic && kind.world == World::Disk { Crossing::write(World::Disk) } else { kind };
+            Some((kind, op, call, touched, own, traffic))
         });
         let first = |call: TsNode<'t>| {
             call.child_by_field_name("arguments").and_then(|a| named_children(a).into_iter().find(|x| !x.kind().ends_with("comment")))
@@ -2209,7 +2223,7 @@ impl<'a, 't> Body<'a, 't> {
         let now = |ts: Vec<Touch>| ts.into_iter().map(|t| (t, vec![])).collect::<Vec<_>>();
         match moved {
             // a statement run on a connection
-            Some((kind, op, call, _, _)) if matches!(kind.world, World::Db(_)) && self.statement(kind, first(call)).is_some() => {
+            Some((kind, op, call, _, _, _)) if matches!(kind.world, World::Db(_)) && self.statement(kind, first(call)).is_some() => {
                 let built = self.statement(kind, first(call)).unwrap_or_default();
                 self.touch(c, kind, &op, &[])
                     .into_iter()
@@ -2217,30 +2231,46 @@ impl<'a, 't> Body<'a, 't> {
                     .map(|t| (Touch { artifact: String::new(), dir: None, ..t }, built.clone()))
                     .collect()
             }
-            Some((kind, op, _, true, own)) => now(self.touch(c, kind, &op, &own).into_iter().filter(|t| !t.artifact.is_empty()).collect()),
-            // a file opened where a builder's value is used, at the path its `open` is handed
-            Some((kind, op, call, false, _)) if kind.world == World::Disk && first(call).is_some() => {
-                let built = first(call).map(|a| self.eval.of(self.at(), a, 0)).unwrap_or_default();
-                self.touch(c, kind, &op, &subtree()).into_iter().map(|t| (t, built.clone())).collect()
-            }
-            // a socket's traffic, at the address its operation is handed (`send_to(buf, addr)`), else
-            // at the place of the connection it runs on, which the callers hand as they hand a path
-            Some((kind, op, call, false, _))
-                if kind.world == World::Net
-                    && made.as_ref().map_or(false, |x| knowledge::socket_path(&x.ty))
-                    && knowledge::rust_socket_op(&op) =>
-            {
-                let address = knowledge::RUST_SOCKET_ADDRESSES
-                    .iter()
-                    .find(|(o, _)| *o == op)
+            // traffic through a door, at the door's place (`docs/reference/mathematics.md`, "A door keeps
+            // its place"), which the callers hand as they hand a path: a file's at the path it was opened
+            // at, never the buffer the operation is handed; a socket's at the address its operation is
+            // handed (`send_to(buf, addr)`), else at the address of the connection it runs on
+            Some((kind, op, call, _, _, true)) => {
+                let address = (kind.world == World::Net)
+                    .then(|| knowledge::RUST_SOCKET_ADDRESSES.iter().find(|(o, _)| *o == op))
+                    .flatten()
                     .and_then(|(_, i)| positional(call).get(*i).copied().flatten());
                 let on = function(call).filter(|f| f.kind() == "field_expression").and_then(|f| f.child_by_field_name("value"));
-                let built = crate::paths::request_of(&op, address.or(on).map(|a| self.eval.of(self.at(), a, 0)).unwrap_or_default());
+                let built = match address {
+                    Some(a) => self.eval.address(self.at(), a, 0),
+                    None => on.map(|v| self.eval.of(self.at(), v, 0)).unwrap_or_default(),
+                };
+                let built = if kind.world == World::Net { crate::paths::request_of(&op, built) } else { built };
+                // a door the body opened is at the place its opening touches, named as the opening
+                // names it; one handed in is named by the name it is handed by, never by what the
+                // operation moves (`buf`), where no caller makes its place whole
+                let opened = made.as_ref().and_then(|x| x.origin).filter(|_| address.is_none()).and_then(|o| self.opening(o, kind.world));
+                let named = on.filter(|v| address.is_none() && matches!(v.kind(), "identifier" | "field_expression" | "self"));
+                self.touch(c, kind, &op, &[])
+                    .into_iter()
+                    .map(|t| match (&opened, named) {
+                        (Some((o, b)), _) => (Touch { what: o.what.clone(), artifact: o.artifact.clone(), fixed: o.fixed, ..t }, b.clone()),
+                        (None, Some(v)) => (Touch { what: text(v, src).to_string(), artifact: String::new(), ..t }, built.clone()),
+                        (None, None) => (t, built.clone()),
+                    })
+                    .collect()
+            }
+            Some((kind, op, _, true, own, _)) => {
+                now(self.touch(c, kind, &op, &own).into_iter().filter(|t| !t.artifact.is_empty()).collect())
+            }
+            // a file opened where a builder's value is used, at the path its `open` is handed
+            Some((kind, op, call, false, _, _)) if kind.world == World::Disk && first(call).is_some() => {
+                let built = first(call).map(|a| self.eval.of(self.at(), a, 0)).unwrap_or_default();
                 self.touch(c, kind, &op, &subtree()).into_iter().map(|t| (t, built.clone())).collect()
             }
             // a request on a client, at the URL its method is handed, first unless the crate says
             // otherwise (knowledge::REQUEST_URL_AT)
-            Some((kind, op, call, false, _)) if kind.world == World::Net && first(call).is_some() => {
+            Some((kind, op, call, false, _, _)) if kind.world == World::Net && first(call).is_some() => {
                 let krate = made.as_ref().and_then(|x| x.ty.first()).map(String::as_str);
                 let at = knowledge::REQUEST_URL_AT.iter().find(|(k, m, _)| Some(*k) == krate && *m == op).map_or(0, |(_, _, i)| *i);
                 let url = call
@@ -2250,11 +2280,11 @@ impl<'a, 't> Body<'a, 't> {
                 self.touch(c, kind, &op, &subtree()).into_iter().map(|t| (t, built.clone())).collect()
             }
             // a method of a path, at the path it is called on: `cli.raw.exists()`
-            Some((kind, op, _, false, _)) if kind.world == World::Disk && knowledge::RUST_PATH_READS.contains(&op.as_str()) => {
+            Some((kind, op, _, false, _, _)) if kind.world == World::Disk && knowledge::RUST_PATH_READS.contains(&op.as_str()) => {
                 let built = self.eval.of(self.at(), value, 0);
                 self.touch(c, kind, &op, &subtree()).into_iter().map(|t| (t, built.clone())).collect()
             }
-            Some((kind, op, _, false, _)) => now(self.touch(c, kind, &op, &subtree())),
+            Some((kind, op, _, false, _, _)) => now(self.touch(c, kind, &op, &subtree())),
             // a method of a path reads the file the path is
             None if knowledge::RUST_PATH_READS.contains(&method) => {
                 let built = self.eval.of(self.at(), value, 0);
@@ -2262,6 +2292,14 @@ impl<'a, 't> Body<'a, 't> {
             }
             None => vec![],
         }
+    }
+
+    /// The touch the body made where it made the door a local holds (`origin`, the value of its
+    /// `let`), with the term its place waits for: the last touch of that line in `world`.
+    fn opening(&self, origin: TsNode<'t>, world: World) -> Option<(Touch, Vec<crate::paths::Built>)> {
+        let line = origin.start_position().row as u32 + 1;
+        let made = self.read.touches.iter().map(|t| (t, vec![])).chain(self.read.waiting.iter().map(|(t, b)| (t, b.clone())));
+        made.filter(|(t, _)| t.line == line && t.kind == world).last().map(|(t, b)| (t.clone(), b))
     }
 
     /// The touches of a call that names what it reaches by what it is handed first (the program
@@ -2435,7 +2473,13 @@ impl<'a, 't> Body<'a, 't> {
             _ if tag.world == World::Disk && !args.is_empty() => vec![(tag, args[0])],
             // a request is its method and its URL, whole where the callers make it, as a path is
             _ if tag.world == World::Net && !args.is_empty() => {
-                let built = crate::paths::request_of(op, self.eval.of(self.at(), args[0], 0));
+                // a socket's address, in each form the code writes one (`(Ipv4Addr::LOCALHOST, 7878)`)
+                let address = knowledge::RUST_SOCKET_ADDRESSES.iter().find(|(o, _)| *o == op).and_then(|(_, i)| args.get(*i));
+                let built = match address {
+                    Some(a) => self.eval.address(self.at(), *a, 0),
+                    None => self.eval.of(self.at(), args[0], 0),
+                };
+                let built = crate::paths::request_of(op, built);
                 return self.touch(c, tag, op, &literals(c, self.src, STRINGS)).into_iter().map(|t| (t, built.clone())).collect();
             }
             _ => return now(self.touch_handed(c, tag, op, args.first().copied())),

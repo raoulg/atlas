@@ -182,8 +182,9 @@ pub const ROOT_ROUTES: &[&str] = &["createRootRoute", "createRootRouteWithContex
 
 /// The parameters a call to the web names what it asks for by, the first that a call's library
 /// has: a request's URL, the Hub repository a download or an upload names (`repo_id`, and the
-/// datasets library's `path`).
-pub const ASKED_BY: &[&str] = &["url", "repo_id", "path"];
+/// datasets library's `path`), a socket's address (`create_connection(address)`, `sendto(data,
+/// address)`).
+pub const ASKED_BY: &[&str] = &["url", "repo_id", "path", "address"];
 
 /// Servers that register a function as a tool an agent may call, by a decorator on a value of
 /// the server's class: `@server.tool`, `@server.resource(..)`, `@server.prompt`. By package and
@@ -1011,27 +1012,40 @@ pub fn request_by_data(op: &str) -> Option<&'static RequestByData> {
     REQUESTS_BY_DATA.iter().find(|r| r.op == op)
 }
 
-/// One operation of a socket that moves data, by the names it has in Python and in Rust.
+/// One operation of a socket that moves data, by the names it has in Python, in Rust and in
+/// TypeScript.
 pub struct SocketOp {
     pub python: &'static [&'static str],
     pub rust: &'static [&'static str],
+    pub typescript: &'static [&'static str],
 }
 
 /// A socket's connecting, receiving and sending, the network calls that are handed no URL: one row
-/// per operation, each named in both languages, since forms that say the same thing are one. A Rust
+/// per operation, each named in every language, since forms that say the same thing are one. A Rust
 /// stream receives and sends through `io::Read` and `io::Write` (`read`, `write_fmt`); Python peeks
-/// by a flag of `recv` (`MSG_PEEK`) and formats what it sends before it sends it. A datagram socket
-/// receives from and sends to an address. Binding an address, listening, accepting a connection,
-/// shutting a half and setting a timeout move no data, in either language.
+/// by a flag of `recv` (`MSG_PEEK`) and formats what it sends before it sends it. Node receives by
+/// the event a listener waits for (`socket.on("data", ..)`, `NODE_LISTENERS`), which names the
+/// operation. A datagram socket receives from and sends to an address. Binding an address,
+/// listening, accepting a connection, shutting a half and setting a timeout move no data, in any
+/// language.
 pub const SOCKET_OPS: &[SocketOp] = &[
-    SocketOp { python: &["connect", "connect_ex", "create_connection"], rust: &["connect", "connect_timeout"] },
+    SocketOp {
+        python: &["connect", "connect_ex", "create_connection"],
+        rust: &["connect", "connect_timeout"],
+        typescript: &["connect", "createConnection"],
+    },
     SocketOp {
         python: &["recv", "recv_into", "recvmsg", "recvmsg_into"],
         rust: &["read", "read_exact", "read_to_end", "read_to_string", "read_vectored", "recv", "peek"],
+        typescript: &["data"],
     },
-    SocketOp { python: &["send", "sendall", "sendmsg", "sendfile"], rust: &["write", "write_all", "write_vectored", "write_fmt", "send"] },
-    SocketOp { python: &["recvfrom", "recvfrom_into"], rust: &["recv_from", "peek_from"] },
-    SocketOp { python: &["sendto"], rust: &["send_to"] },
+    SocketOp {
+        python: &["send", "sendall", "sendmsg", "sendfile"],
+        rust: &["write", "write_all", "write_vectored", "write_fmt", "send"],
+        typescript: &["write"],
+    },
+    SocketOp { python: &["recvfrom", "recvfrom_into"], rust: &["recv_from", "peek_from"], typescript: &["message"] },
+    SocketOp { python: &["sendto"], rust: &["send_to"], typescript: &["send"] },
 ];
 
 /// Whether a Python socket's operation moves data (`SOCKET_OPS`).
@@ -1042,6 +1056,11 @@ pub fn python_socket_op(op: &str) -> bool {
 /// Whether a Rust socket's operation moves data (`SOCKET_OPS`).
 pub fn rust_socket_op(op: &str) -> bool {
     SOCKET_OPS.iter().any(|o| o.rust.contains(&op))
+}
+
+/// Whether a Node socket's operation moves data (`SOCKET_OPS`).
+pub fn node_socket_op(op: &str) -> bool {
+    SOCKET_OPS.iter().any(|o| o.typescript.contains(&op))
 }
 
 /// The Rust modules whose types are sockets, by their path from the crate: std's `net`
@@ -1062,9 +1081,10 @@ pub fn socket_path(parts: &[String]) -> bool {
 /// reaches the place the connection is a door to.
 pub const RUST_SOCKET_ADDRESSES: &[(&str, usize)] = &[("connect", 0), ("connect_timeout", 0), ("send_to", 1)];
 
-/// How a Rust socket is a door to a place (`docs/reference/mathematics.md`, "A door keeps its
-/// place"): a function on a socket's type that opens it at the address it is handed, by its type,
-/// its name and the argument that is the address.
+/// How a Rust value is a door to a place (`docs/reference/mathematics.md`, "A door keeps its
+/// place"): a function on a door's type that opens it at the place it is handed, by the type, the
+/// name and the argument that is the place: a socket at the address it connects to or binds, a file
+/// at its path. A method's type is that of the value it is called on: `OpenOptions`'s `open`.
 pub const RUST_DOORS: &[(&str, &str, usize)] = &[
     ("TcpStream", "connect", 0),
     ("TcpStream", "connect_timeout", 0),
@@ -1073,12 +1093,144 @@ pub const RUST_DOORS: &[(&str, &str, usize)] = &[
     ("UnixStream", "connect", 0),
     ("UnixListener", "bind", 0),
     ("UnixDatagram", "bind", 0),
+    ("File", "open", 0),
+    ("File", "create", 0),
+    ("File", "create_new", 0),
+    ("OpenOptions", "open", 0),
+];
+
+/// The door a Rust function on a door's type opens (`RUST_DOORS`), by the type and the function's
+/// name: the argument that is its place.
+pub fn rust_door(ty: &str, name: &str) -> Option<usize> {
+    RUST_DOORS.iter().find(|(t, n, _)| *t == ty && *n == name).map(|(_, _, i)| *i)
+}
+
+/// The operations of Rust's `io::Read` and `io::Write`, the traffic of every door: a file's as a
+/// socket's (`SOCKET_OPS`). An operation of one on a door is at the door's place, never at the
+/// buffer it is handed (`f.read_to_string(&mut s)` reads the file `f` was opened at).
+pub const RUST_DOOR_TRAFFIC: &[&str] =
+    &["read", "read_exact", "read_to_end", "read_to_string", "read_vectored", "write", "write_all", "write_vectored", "write_fmt"];
+
+/// Calls that are another by a second name, by their paths: `File::options()` is
+/// `OpenOptions::new()`, as std says.
+pub const RUST_SAME_CALLS: &[(&[&str], &[&str])] = &[
+    (&["std", "fs", "File", "options"], &["std", "fs", "OpenOptions", "new"]),
+    (&["tokio", "fs", "File", "options"], &["tokio", "fs", "OpenOptions", "new"]),
+];
+
+/// A Rust call's path as the call it is the same as (`RUST_SAME_CALLS`), else as written.
+pub fn rust_same_call(parts: Vec<String>) -> Vec<String> {
+    match RUST_SAME_CALLS.iter().find(|(from, _)| parts.iter().map(String::as_str).eq(from.iter().copied())) {
+        Some((_, to)) => to.iter().map(|s| s.to_string()).collect(),
+        None => parts,
+    }
+}
+
+/// What makes a socket's address of a host and a port, by type and name: `SocketAddr::from((ip,
+/// port))`, `SocketAddr::new(ip, port)`, and an IP address of its four numbers (`Ipv4Addr::new(127,
+/// 0, 0, 1)`, `[127, 0, 0, 1]`). An address is written `host:port`, the one form every language's
+/// is (`127.0.0.1:7878`).
+pub const RUST_ADDRESS_MAKERS: &[(&str, &str)] = &[
+    ("SocketAddr", "from"),
+    ("SocketAddr", "new"),
+    ("SocketAddrV4", "from"),
+    ("SocketAddrV4", "new"),
+    ("IpAddr", "from"),
+    ("IpAddr", "V4"),
+    ("Ipv4Addr", "from"),
+    ("Ipv4Addr", "new"),
+];
+
+/// How a Python value is a door to a place (`RUST_DOORS`): a function of a library that opens a
+/// socket at the address it is handed, by the library, the function and the argument that is the
+/// address; none for a socket made without one, whose place the call that later binds or connects
+/// it names (`PYTHON_DOOR_PLACES`).
+pub const PYTHON_DOORS: &[(&str, &str, Option<usize>)] =
+    &[("socket", "create_connection", Some(0)), ("socket", "create_server", Some(0)), ("socket", "socket", None)];
+
+/// What a call on a Python socket made without an address names its place by, and the argument
+/// that is the address: `s.bind(address)`, `s.connect(address)`.
+pub const PYTHON_DOOR_PLACES: &[(&str, usize)] = &[("bind", 0), ("connect", 0), ("connect_ex", 0)];
+
+/// A method of a Python socket that gives a door to the place of the socket it is called on, as
+/// `RUST_DOOR_KEEPERS`: the door itself (a duplicate, `dup`), or the first of a pair (`accept` gives
+/// the connection and the peer's address).
+pub const PYTHON_DOOR_KEEPERS: &[(&str, Option<usize>)] = &[("dup", None), ("accept", Some(0))];
+
+/// The operations of a Python file object, the traffic through the door an `open` made, and which
+/// way each goes (`RUST_DOOR_TRAFFIC`): an operation of one is at the file the object was opened at.
+pub const PYTHON_FILE_TRAFFIC: &[(&str, Dir)] = &[
+    ("read", Dir::Read),
+    ("readline", Dir::Read),
+    ("readlines", Dir::Read),
+    ("readinto", Dir::Read),
+    ("write", Dir::Write),
+    ("writelines", Dir::Write),
+];
+
+/// The IP addresses a Rust library names, by type and name: `Ipv4Addr::LOCALHOST` is `127.0.0.1`.
+pub const RUST_NAMED_ADDRESSES: &[(&str, &str, &str)] = &[
+    ("Ipv4Addr", "LOCALHOST", "127.0.0.1"),
+    ("Ipv4Addr", "UNSPECIFIED", "0.0.0.0"),
+    ("Ipv6Addr", "LOCALHOST", "[::1]"),
+    ("Ipv6Addr", "UNSPECIFIED", "[::]"),
 ];
 
 /// A method that gives a door to the place of the socket it is called on, and where in what it
 /// gives: the door itself (a clone, `try_clone`; the connections a listener accepts, `incoming`),
 /// or the first of a pair (`accept` gives the connection and the peer's address).
 pub const RUST_DOOR_KEEPERS: &[(&str, Option<usize>)] = &[("try_clone", None), ("incoming", None), ("accept", Some(0))];
+
+/// Where a Node call is handed a socket's address: the argument that is the port and the one that
+/// is the host, or an options object that names both (`{ port, host }`), and the host Node takes
+/// where the call is handed none.
+pub struct NodeAddress {
+    pub port: usize,
+    pub host: usize,
+    pub default: &'static str,
+}
+
+const NODE_CONNECTS: NodeAddress = NodeAddress { port: 0, host: 1, default: "localhost" };
+const NODE_LISTENS: NodeAddress = NodeAddress { port: 0, host: 1, default: "[::]" };
+
+/// How a Node value is a door to a place (`RUST_DOORS`): a function or a class of `node:net` or
+/// `node:dgram` that opens a socket, by the package, the name and where the address is: the one it
+/// is handed (`net.createConnection(port, host)`), or none for a socket made without one
+/// (`net.createServer(..)`, `dgram.createSocket(..)`, `new net.Socket()`), whose place the call that
+/// later listens on it, binds it or connects it names (`NODE_DOOR_PLACES`).
+pub const NODE_DOORS: &[(&str, &str, Option<NodeAddress>)] = &[
+    ("net", "createConnection", Some(NODE_CONNECTS)),
+    ("net", "connect", Some(NODE_CONNECTS)),
+    ("net", "createServer", None),
+    ("net", "Socket", None),
+    ("dgram", "createSocket", None),
+];
+
+/// Whether a package's values are Node's sockets (`NODE_DOORS`).
+pub fn node_socket_package(pkg: &str) -> bool {
+    NODE_DOORS.iter().any(|(p, _, _)| *p == pkg)
+}
+
+/// What a call on a Node socket made without an address names its place by:
+/// `server.listen(port, host)`, `socket.bind(port, host)`, `socket.connect(port, host)`. A server
+/// handed no host listens on every address.
+pub const NODE_DOOR_PLACES: &[(&str, NodeAddress)] =
+    &[("listen", NODE_LISTENS), ("bind", NodeAddress { port: 0, host: 1, default: "0.0.0.0" }), ("connect", NODE_CONNECTS)];
+
+/// A Node socket's operation handed the address it reaches (`RUST_SOCKET_ADDRESSES`): a datagram's
+/// `send(msg, port, host)`.
+pub const NODE_SOCKET_ADDRESSES: &[(&str, NodeAddress)] = &[("send", NodeAddress { port: 1, host: 2, default: "127.0.0.1" })];
+
+/// The methods that register a listener for an event of a Node socket: the event names what the
+/// listener receives (`socket.on("data", ..)` receives what the peer sends, `SOCKET_OPS`).
+pub const NODE_LISTENERS: &[&str] = &["on", "once", "addListener", "prependListener", "prependOnceListener"];
+
+/// What gives a door to the place of a Node server (`RUST_DOOR_KEEPERS`): the connections it
+/// accepts, with which the function handed to the call that makes it is called
+/// (`net.createServer((conn) => ..)`), as is a listener for the event of the name
+/// (`server.on("connection", (conn) => ..)`). Each is run on every connection, as a loop over a
+/// Rust listener's `incoming()` is.
+pub const NODE_DOOR_KEEPERS: &[(&str, &str)] = &[("createServer", "connection")];
 
 /// Whether a web library's operation moves data: a request by its method or its kind, or a
 /// socket's traffic, as Python names it.

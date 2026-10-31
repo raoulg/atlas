@@ -293,21 +293,47 @@ a value through which data reaches the place the term names (`TcpStream::connect
 clone, the connections a listener accepts). The term of a door is the term it is opened at, and
 substitution carries it as it carries a path: a door handed to a parameter is the door its caller
 hands.
-**In Atlas.** A library's type whose calls reach a place is a door to it (`design.md`, packages).
-An operation on a door is at the place the door's term evaluates to, wherever the door is handed:
-through parameters, `let`s, a pattern that takes it out of a pair (`let (conn, _) =
-listener.accept()?`), a loop over a listener's connections. The place of a stream socket is the
-address of its listening end, the one address the code names for it: the client names it in
-`connect`, the server in `bind`, and each connection a listener accepts is a door to it. So a
-client that writes to an address and a server that reads there meet at one place,
-Network(address), as a request meets the route served at its host and path. The peer of a
-server's connection is decided by no code and names no place. A socket's address
-(`127.0.0.1:7878`) names its place as a URL's host does. Where the code does not say the address
-(only the environment holds it), the place stays a hole, as a path's does: the gap is the code's.
-**Where.** `knowledge::RUST_DOORS`, `RUST_DOOR_KEEPERS`, `RUST_SOCKET_ADDRESSES`; the Rust reader's
-`paths.rs` (`Eval::call`, `Eval::element`, `bound`) and `body.rs` (`chain_touches`);
-`effects::socket_address`; the pair `sockets` (#302). Files handed on, and Python's and
-TypeScript's sockets, are #323.
+**In Atlas.** A library's type whose calls reach a place is a door to it (`design.md`, packages):
+a socket, and a file once it is open. An operation on a door is at the place the door's term
+evaluates to, wherever the door is handed: through parameters, `let`s, a pattern that takes it out
+of a pair (`let (conn, _) = listener.accept()?`, `conn, _ = listener.accept()`), a loop over a
+listener's connections, the function a Node server runs on each (`net.createServer((conn) =>
+..)`). A file is read and written at the path it was opened at, never at the buffer an operation is
+handed (`f.read_to_string(&mut text)` reads the file `f` is). Where the term is not made whole (a
+route that reaches none of the callers that make it), an operation on a door the function opened
+is named as the opening names its place, and one on a door it is handed by the name it is handed
+by, never by what the operation moves. A door made without a place takes the
+one the first call on it names (`s = socket.socket(); s.bind(address)`, `server.listen(port,
+host)`).
+
+Each operation that moves data through a door is a touch of its own at the door's place, whether
+the function opened the door or was handed it; the opening is a touch where it moves data itself
+(a connect, a file opened), and binding, listening and accepting are none. Were the operations
+folded into the opening, what a function does would depend on where its door came from, and
+writing a call out in its caller's body would change what the route does, against the effect
+functor. How finely they are drawn is the view's quotient: one place on one side of a step is one
+line, whatever operations reach it (#323, `decision`).
+
+The place of a stream socket is the address of its listening end, the one address the code names
+for it: the client names it in `connect`, the server in `bind` or `listen`, and each connection a
+listener accepts is a door to it. So a client that writes to an address and a server that reads
+there meet at one place, Network(address), as a request meets the route served at its host and
+path. The peer of a server's connection is decided by no code and names no place. A socket's
+address names its place as a URL's host does, written `host:port` (`127.0.0.1:7878`) whatever form
+the code writes it in: a string, Python's pair `("127.0.0.1", 7878)`, Rust's
+`SocketAddr::from(([127, 0, 0, 1], 7878))`, the port and the host Node is handed apart
+(`net.createConnection(7878, "127.0.0.1")`). Where the code does not say the address (only the
+environment holds it), the place stays a hole, as a path's does: the gap is the code's.
+**Where.** `knowledge::SOCKET_OPS` names each operation of a socket in the three languages; the
+doors and what keeps them are tables per language: `RUST_DOORS`, `RUST_DOOR_KEEPERS`,
+`RUST_SOCKET_ADDRESSES`, `RUST_DOOR_TRAFFIC`, `RUST_ADDRESS_MAKERS`, `RUST_NAMED_ADDRESSES`,
+`RUST_SAME_CALLS`; `PYTHON_DOORS`, `PYTHON_DOOR_PLACES`, `PYTHON_DOOR_KEEPERS`,
+`PYTHON_FILE_TRAFFIC`; `NODE_DOORS`, `NODE_DOOR_PLACES`, `NODE_DOOR_KEEPERS`,
+`NODE_SOCKET_ADDRESSES`, `NODE_LISTENERS`. The readers' `paths.rs` (Rust's `Eval::call`,
+`Eval::address`, `Eval::element`, `bound`; Python's `Eval::follow`, `Eval::placed_later`,
+`Eval::element`; TypeScript's `Eval::address`, `Eval::placed_later`, `Eval::served`) and `body.rs`
+(Rust's `chain_touches`, Python's `library` and `crossed`, TypeScript's `crossed`);
+`effects::socket_address`; the pairs `sockets` (in the three languages) and `handles`.
 
 ### Who makes a path whole: a monotone formula
 **What.** A monotone Boolean formula over a set of atoms, in disjunctive normal form: a disjunction

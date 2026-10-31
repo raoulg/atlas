@@ -194,6 +194,11 @@ const REVIEWED: &[(&str, &str, &str)] = &[
         "atlas-engine.flow.body_of",
         "a method's call is resolved along the order of the class it runs on (`Ix::step_of`); a function's call, or a library operation the graph does not hold, runs itself: dispatch is a fact of methods alone",
     ),
+    (
+        "places",
+        "atlas-code.serve.serve",
+        "the page shows the repository's code, so `serve` listens on this machine alone: the loopback host is its own to fix, never a caller's; the port is the caller's (`--port`), else the repository's own, else one the system picks",
+    ),
 ];
 
 /// Atlas is its own first subject, and `atlas check` is a signal on it as on any code: never an

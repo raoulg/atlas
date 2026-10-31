@@ -15,7 +15,7 @@ use crate::knowledge::{self, PathFn};
 use crate::paths::{
     bound as named_by, cross, each, environment, environment_named, held_by, hole, lit, or_else, parent, substitute, union, Built, Seg,
 };
-use crate::tree::{beneath, named_children, path_str, text, unquote, walk};
+use crate::tree::{beneath, named_children, outermost, path_str, text, unquote, walk};
 
 const DEPTH: u32 = 12;
 
@@ -106,6 +106,8 @@ impl<'a> Eval<'a> {
             |e: TsNode<'t>| named_children(e).into_iter().next().map(|x| self.of(at, x, depth + 1)).unwrap_or_else(|| vec![hole("value")]);
         match e.kind() {
             "string" => vec![lit(&unquote(text(e, src)))],
+            // a number the code writes is what it says: a socket's port
+            "number" => vec![lit(text(e, src))],
             "template_string" => {
                 let mut out = vec![vec![]];
                 for p in named_children(e) {
@@ -153,6 +155,10 @@ impl<'a> Eval<'a> {
             // the module's own file
             "new_expression" => {
                 let args = e.child_by_field_name("arguments").map(named_children).unwrap_or_default();
+                // a socket made without an address is at the place a later call on it names
+                if self.door(at.m, e.child_by_field_name("constructor")).is_some_and(|a| a.is_none()) {
+                    return self.placed_later(at, e, depth);
+                }
                 match e.child_by_field_name("constructor").and_then(|c| self.path_function_of(at.m, c)) {
                     Some(made) => self.made(at, made, &args, depth),
                     None => vec![hole("value")],
@@ -457,7 +463,7 @@ impl<'a> Eval<'a> {
                 // a parameter of a function inside the body binds the name, as an element or not
                 "arrow_function" | "function_expression" | "function" if inside(x.child_by_field_name("body")) => {
                     if let Some(slot) = param_names(x, src).iter().position(|n| n == name) {
-                        return Some((each_over(x, slot, src)?, false));
+                        return Some((each_over(x, slot, src).or_else(|| self.served(at.m, x, slot))?, false));
                     }
                 }
                 _ => {}
@@ -670,6 +676,13 @@ impl<'a> Eval<'a> {
             "member_expression" => f.child_by_field_name("property").map_or("", |p| text(p, src)),
             _ => "",
         };
+        // a socket is at the address it is opened at (`docs/reference/mathematics.md`, "A door keeps
+        // its place"): the one it is handed, or the one a later call on it names
+        match self.door(at.m, Some(f)) {
+            Some(Some(a)) => return self.address(at, &args, a, depth),
+            Some(None) => return self.placed_later(at, c, depth),
+            None => {}
+        }
         match self.path_function_of(at.m, f) {
             Some(made) => self.made(at, made, &args, depth),
             // the language's own conversions to a string
@@ -810,6 +823,88 @@ impl<'a> Eval<'a> {
         }
         let handed: HashMap<&str, Vec<Built>> = names.iter().zip(args).map(|(p, a)| (p.as_str(), self.of(at, *a, depth + 1))).collect();
         Some(gives.iter().flat_map(|b| substitute(b, |p| handed.get(p).cloned().unwrap_or_else(|| vec![hole(p)]))).collect())
+    }
+
+    /// The Node socket a function or a class `f` opens (`knowledge::NODE_DOORS`), by the package
+    /// its head is imported from: where its address is, or none where a later call names it.
+    fn door(&self, m: &Module, f: Option<TsNode>) -> Option<Option<&'static knowledge::NodeAddress>> {
+        let parts = member_parts(f?, &m.src);
+        let pkg = self.package(m, parts.first()?)?;
+        let last = parts.last()?;
+        knowledge::NODE_DOORS.iter().find(|(p, n, _)| *p == pkg && n == last).map(|(_, _, a)| a.as_ref())
+    }
+
+    /// A socket's address as a Node call is handed it (`knowledge::NodeAddress`): `host:port`, the
+    /// one form every language's is (`127.0.0.1:7878`), of the port and the host it is handed or of
+    /// the options object that names them. A function handed where the host would be is a listener,
+    /// and the host is Node's default.
+    pub fn address<'t>(&self, at: At<'_, 't>, args: &[TsNode<'t>], a: &knowledge::NodeAddress, depth: u32) -> Vec<Built> {
+        let src = &at.m.src;
+        let (port, host) = match args.first().map(|x| beneath(*x, WRAPPERS)) {
+            Some(o) if o.kind() == "object" => (field(o, "port", src), field(o, "host", src)),
+            _ => (args.get(a.port).copied(), args.get(a.host).copied()),
+        };
+        let given = |x: Option<TsNode<'t>>| {
+            x.filter(|x| !matches!(beneath(*x, WRAPPERS).kind(), "arrow_function" | "function_expression" | "function"))
+        };
+        let port = given(port).map(|p| self.of(at, p, depth + 1)).unwrap_or_else(|| vec![hole("port")]);
+        let host = given(host).map(|h| self.of(at, h, depth + 1)).unwrap_or_else(|| vec![lit(a.default)]);
+        cross(&host, &port, ":")
+    }
+
+    /// The place of a socket made without an address (`made`): the address the first call on it
+    /// that names one is handed (`knowledge::NODE_DOOR_PLACES`), on it as made
+    /// (`net.createServer(..).listen(port)`) or on the name the code keeps it by, later in the
+    /// function or the module.
+    fn placed_later<'s>(&self, at: At<'s, 's>, made: TsNode<'s>, depth: u32) -> Vec<Built> {
+        let src = &at.m.src;
+        let made = outermost(made, WRAPPERS);
+        // the address a call on the socket names, where `on` is the socket it is called on
+        let place = |call: TsNode<'s>, on: &dyn Fn(TsNode<'s>) -> bool| -> Option<&'static knowledge::NodeAddress> {
+            let f = call.child_by_field_name("function").filter(|f| f.kind() == "member_expression")?;
+            let method = text(f.child_by_field_name("property")?, src);
+            let object = outermost(beneath(f.child_by_field_name("object")?, WRAPPERS), WRAPPERS);
+            on(object).then(|| knowledge::NODE_DOOR_PLACES.iter().find(|(m, _)| *m == method).map(|(_, a)| a)).flatten()
+        };
+        let args = |call: TsNode<'s>| call.child_by_field_name("arguments").map(named_children).unwrap_or_default();
+        let chained = made.parent().filter(|p| p.kind() == "member_expression").and_then(|p| p.parent());
+        if let Some((call, a)) =
+            chained.filter(|c| c.kind() == "call_expression").and_then(|c| Some((c, place(c, &|o| o.id() == made.id())?)))
+        {
+            return self.address(at, &args(call), a, depth);
+        }
+        let kept = made.parent().filter(|v| v.kind() == "variable_declarator").and_then(|v| v.child_by_field_name("name"));
+        if let Some(name) = kept.filter(|n| n.kind() == "identifier").map(|n| text(n, src)) {
+            let within = at.scope.unwrap_or_else(|| at.m.tree.root_node());
+            let later = walk(within, &["call_expression"])
+                .into_iter()
+                .filter(|c| c.start_byte() > made.end_byte())
+                .find_map(|c| Some((c, place(c, &|o| o.kind() == "identifier" && text(o, src) == name)?)));
+            if let Some((call, a)) = later {
+                return self.address(at, &args(call), a, depth);
+            }
+        }
+        vec![hole("address")]
+    }
+
+    /// The Node server whose connections a function `f` is run on, where its parameter `slot` is the
+    /// one each connection fills (`knowledge::NODE_DOOR_KEEPERS`): the call that makes the server it
+    /// is handed to (`net.createServer((conn) => ..)`), or the server a listener for its connections
+    /// is registered on (`server.on("connection", (conn) => ..)`).
+    pub(super) fn served<'t>(&self, m: &Module, f: TsNode<'t>, slot: usize) -> Option<TsNode<'t>> {
+        let src = &m.src;
+        let args = outermost(f, WRAPPERS).parent().filter(|a| a.kind() == "arguments" && slot == 0)?;
+        let call = args.parent().filter(|c| c.kind() == "call_expression")?;
+        let callee = call.child_by_field_name("function")?;
+        let last = member_parts(callee, src).pop()?;
+        if self.door(m, Some(callee)).is_some() && knowledge::NODE_DOOR_KEEPERS.iter().any(|(maker, _)| *maker == last) {
+            return Some(call);
+        }
+        let event = named_children(args).into_iter().next().filter(|e| e.kind() == "string").map(|e| unquote(text(e, src)));
+        let connection = event.is_some_and(|e| knowledge::NODE_DOOR_KEEPERS.iter().any(|(_, ev)| *ev == e));
+        (callee.kind() == "member_expression" && knowledge::NODE_LISTENERS.contains(&last.as_str()) && connection)
+            .then(|| callee.child_by_field_name("object"))
+            .flatten()
     }
 }
 

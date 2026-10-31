@@ -84,6 +84,8 @@ impl<'a> Eval<'a> {
         let field = |f: &str| e.child_by_field_name(f).map(|x| self.of(at, x, depth + 1)).unwrap_or_else(|| vec![hole("value")]);
         match e.kind() {
             "string_literal" | "raw_string_literal" => vec![lit(&unquote(text(e, src)))],
+            // a number the code writes is what it says, as among a macro's tokens (`at(7878)`)
+            "integer_literal" => vec![lit(text(e, src))],
             "else_clause" => first(e),
             "identifier" => self.name(at, text(e, src), e.start_byte(), depth),
             "scoped_identifier" => {
@@ -92,6 +94,11 @@ impl<'a> Eval<'a> {
             }
             "field_expression" => {
                 let field = e.child_by_field_name("field").map(|f| text(f, src)).unwrap_or("value");
+                // an element of a pair taken by its place, as a pattern takes it: `listener.accept()?.0`
+                let pair = e.child_by_field_name("value").zip(field.parse::<usize>().ok());
+                if let Some(values) = pair.and_then(|(v, i)| self.element(at, v, i, depth)) {
+                    return values;
+                }
                 let held = match e.child_by_field_name("value") {
                     Some(v) if v.kind() == "self" => self.held(at, field, depth),
                     Some(v) => self
@@ -785,6 +792,11 @@ impl<'a> Eval<'a> {
                 // a door to the place of the socket it is called on: a clone, the connections a
                 // listener accepts
                 None if knowledge::RUST_DOOR_KEEPERS.contains(&(method, None)) => on(),
+                // a door its builder opens at the place it is handed: `OpenOptions::new().append(true).open(p)`
+                None if self.made_as(at, recv, depth).is_some_and(|ty| knowledge::rust_door(&ty, method).is_some()) => {
+                    let i = self.made_as(at, recv, depth).and_then(|ty| knowledge::rust_door(&ty, method)).unwrap_or(0);
+                    args.get(i).map(|a| self.address(at, *a, depth + 1)).unwrap_or_else(|| vec![hole("value")])
+                }
                 None => self.method_given(at, recv, method, &args, depth).unwrap_or_else(|| vec![hole("call")]),
             };
         }
@@ -809,9 +821,23 @@ impl<'a> Eval<'a> {
                 return path_made(k, self.of(at, *on, depth + 1), first);
             }
         }
-        // a socket opened at the address it is handed is a door to that place
-        if let Some((_, _, i)) = knowledge::RUST_DOORS.iter().find(|(on, name, _)| n >= 2 && parts[n - 2] == *on && parts[n - 1] == *name) {
-            return arg(*i);
+        // a door opened at the place it is handed is a door to that place: a socket at its address,
+        // a file at its path
+        if let Some(i) = (n >= 2).then(|| knowledge::rust_door(&parts[n - 2], &parts[n - 1])).flatten() {
+            return args.get(i).map(|a| self.address(at, *a, depth + 1)).unwrap_or_else(|| vec![hole("value")]);
+        }
+        // an address of a host and a port, or an IP address of its numbers
+        if n >= 2 && knowledge::RUST_ADDRESS_MAKERS.contains(&(parts[n - 2].as_str(), parts[n - 1].as_str())) {
+            return self.address_of(at, &args, depth);
+        }
+        // a closure a `let` keeps, called by its name: what its body gives, its parameters what the
+        // calls hand them (`let at = |p| SocketAddr::from(([127, 0, 0, 1], p))`, then `at(port)`)
+        if let ([name], Some(scope)) = (parts.as_slice(), at.scope) {
+            if let Some(Bound::Value(v)) = bound(scope, name, c.start_byte(), src) {
+                if beneath(v, super::module::WRAPPERS).kind() == "closure_expression" {
+                    return self.of(at, v, depth + 1);
+                }
+            }
         }
         match path_function(&parts) {
             Some(PathFn::Same) => arg(0),
@@ -1023,6 +1049,71 @@ impl<'a> Eval<'a> {
             }
             // an expression written as tokens that none of these is: no value the code names
             _ => vec![hole("value")],
+        }
+    }
+
+    /// The place a door is opened at, as the code hands it (`docs/reference/mathematics.md`, "A door
+    /// keeps its place"): a socket's address of a host and a port is `host:port` (`("127.0.0.1",
+    /// 7878)`), an IP address of its numbers joined by dots, a library's named address what it
+    /// names (`Ipv4Addr::LOCALHOST`), a port its number; any other value as it evaluates (a path, an
+    /// address written out).
+    pub fn address(&self, at: At<'a, '_>, e: TsNode<'a>, depth: u32) -> Vec<Built> {
+        if depth > DEPTH {
+            return vec![hole("…")];
+        }
+        let e = beneath(e, super::module::WRAPPERS);
+        let src = &at.m.src;
+        match e.kind() {
+            "tuple_expression" | "array_expression" => {
+                let parts: Vec<TsNode<'a>> = named_children(e).into_iter().filter(|x| !x.kind().ends_with("comment")).collect();
+                self.address_of(at, &parts, depth)
+            }
+            "integer_literal" => vec![lit(text(e, src))],
+            "scoped_identifier" => {
+                let parts = expand(at.m, &path_parts(Some(e), src));
+                let n = parts.len();
+                let named = (n >= 2)
+                    .then(|| knowledge::RUST_NAMED_ADDRESSES.iter().find(|(t, c, _)| parts[n - 2] == *t && parts[n - 1] == *c))
+                    .flatten();
+                named.map(|(_, _, a)| vec![lit(a)]).unwrap_or_else(|| self.of(at, e, depth + 1))
+            }
+            _ => self.of(at, e, depth + 1),
+        }
+    }
+
+    /// The address its parts make: a host and a port (`host:port`), the four numbers of an IP
+    /// address (`127.0.0.1`), or one part that is an address itself (`SocketAddr::from((ip, port))`).
+    fn address_of(&self, at: At<'a, '_>, parts: &[TsNode<'a>], depth: u32) -> Vec<Built> {
+        let each = |x: &TsNode<'a>| self.address(at, *x, depth + 1);
+        match parts {
+            [one] => each(one),
+            [host, port] => cross(&each(host), &each(port), ":"),
+            [_, _, _, _] => parts.iter().skip(1).fold(each(&parts[0]), |acc, x| cross(&acc, &each(x), ".")),
+            _ => vec![hole("value")],
+        }
+    }
+
+    /// The type a library's value is made as, where a chain of methods starts at one of its
+    /// functions: `OpenOptions` of `OpenOptions::new().append(true)`, through the `let`s that hold it.
+    fn made_as(&self, at: At<'a, '_>, e: TsNode<'a>, depth: u32) -> Option<String> {
+        if depth > DEPTH {
+            return None;
+        }
+        let e = beneath(e, super::module::WRAPPERS);
+        match e.kind() {
+            "call_expression" => {
+                let f = e.child_by_field_name("function")?;
+                if f.kind() == "field_expression" {
+                    return self.made_as(at, f.child_by_field_name("value")?, depth + 1);
+                }
+                let parts = expand(at.m, &path_parts(Some(f), &at.m.src));
+                (parts.len() >= 2).then(|| parts[parts.len() - 2].clone())
+            }
+            "identifier" => match bound(at.scope?, text(e, &at.m.src), e.start_byte(), &at.m.src)? {
+                Bound::Value(v) => self.made_as(at, v, depth + 1),
+                _ => None,
+            },
+            _ => None,
         }
     }
 }
