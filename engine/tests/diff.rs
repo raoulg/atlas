@@ -550,6 +550,110 @@ fn a_rename_carries_the_place_named_after_it() {
     done(&repo);
 }
 
+/// The places the touches of `id` rest at in reading `r`, its own and as read: the names its values
+/// go by in that reading.
+fn places_of(g: &Graph, d: &Diff, r: Reading, id: &str) -> Vec<String> {
+    let side = diff::reading(g, d, r);
+    let mut out: Vec<String> =
+        side.node(id).into_iter().flat_map(|n| n.touches.iter().chain(&n.instead)).map(|t| t.drawn().place.id).collect();
+    out.sort();
+    out
+}
+
+/// A method that reads the file it is handed, nobody calling it.
+const REPO: &str = r#"from pathlib import Path
+
+
+class Repo:
+    def read(self, dir: Path) -> str:
+        return dir.read_text()
+
+
+def main() -> None:
+    print(len("x"))
+"#;
+
+/// Law: a rename carries the places named after it, for a method as for a function
+/// (`a_rename_carries_the_place_named_after_it`). The file `Repo.read` reads is named by its
+/// parameter, `Repo.read.dir`; renamed to `fetch`, or its class to `Shelf`, the method keeps its
+/// arrow, so the place A names by its value is the place B's reader names it by. Both readings'
+/// places of the method are computed and compared.
+#[test]
+fn a_renamed_method_carries_the_place_named_after_it() {
+    for (name, b, renamed, gone, new) in [
+        ("method", REPO.replace("def read", "def fetch"), "spots.cli.Repo.fetch", "spots.cli.Repo.read", "spots.cli.Repo.fetch"),
+        ("class", REPO.replace("Repo", "Shelf"), "spots.cli.Shelf", "spots.cli.Repo", "spots.cli.Shelf.read"),
+    ] {
+        let repo = repository(&format!("own-{name}"), REPO);
+        commit(&repo, &b, "renamed");
+        let (g, d, c) = both(&repo);
+        let report = changes::report(&c);
+        assert_eq!(d.renamed.get(renamed).map(String::as_str), Some(gone), "{name}: {:?}\n{report}", d.nodes);
+        let (in_a, in_b) = (places_of(&g, &d, Reading::A, new), places_of(&g, &d, Reading::B, new));
+        assert!(!in_b.is_empty(), "{name}: the method reads a file");
+        assert_eq!(in_a, in_b, "{name}: A names the method's place as B's reader does\n{report}");
+        assert!(d.places.is_empty(), "{name}: {:?}\n{report}", d.places);
+        assert_eq!(c.elsewhere.changed.iter().map(|s| s.id.as_str()).collect::<Vec<_>>(), [renamed], "{name}\n{report}");
+        done(&repo);
+    }
+}
+
+/// A function, a constructor and a method that each hand the path they are handed to `load`.
+const HANDS: &str = r#"from pathlib import Path
+
+
+def load(path: Path) -> str:
+    return path.read_text()
+
+
+def first(dir: Path) -> str:
+    return load(dir)
+
+
+class Store:
+    def __init__(self, path: Path) -> None:
+        self.text = load(path)
+
+
+class Repo:
+    def read(self, dir: Path) -> str:
+        return load(dir)
+
+
+def main() -> None:
+    print(len("x"))
+"#;
+
+/// A function that hands each of `HANDS`'s one path, on no route.
+const GATHER: &str = r#"
+
+def gather() -> None:
+    raw = Path("data/raw.csv")
+    print(first(raw), Store(raw).text, Repo().read(raw))
+"#;
+
+/// Law: what a function is handed is no part of its own arrow, whatever function it is. Nobody
+/// calls `first`, `Store` or `Repo.read`, so the file `load` reads is named by the parameter of
+/// each (`first.dir`, `Store.path`, `Repo.read.dir`); then `gather` comes and hands each a path.
+/// The place is `gather`'s arrow; the three, written as they were, are not changed.
+#[test]
+fn what_a_function_is_handed_is_no_part_of_its_arrow() {
+    let repo = repository("handed", HANDS);
+    commit(&repo, &format!("{HANDS}{GATHER}"), "gather hands a path");
+    let (g, d, c) = both(&repo);
+    let report = changes::report(&c);
+    for (f, value) in
+        [("spots.cli.first", "first.dir"), ("spots.cli.Store.__init__", "Store.path"), ("spots.cli.Repo.read", "Repo.read.dir")]
+    {
+        assert!(made_whole(&g, &d, Reading::A, f).iter().any(|(p, _)| p.ends_with(value)), "{f} is handed {value} in A");
+        assert_eq!(d.nodes.get(f), None, "{f}: {:?}\n{report}", d.was.get(f));
+    }
+    let raw = ("w:File:data/raw.csv".to_string(), Side::In);
+    assert!(made_whole(&g, &d, Reading::B, "spots.cli.gather").contains(&raw), "gather makes the file whole in B\n{report}");
+    assert_eq!(d.nodes.get("spots.cli.gather"), Some(&Status::Added), "{report}");
+    done(&repo);
+}
+
 const CALLER: &str = r#"from pathlib import Path
 
 

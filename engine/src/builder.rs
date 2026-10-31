@@ -6,8 +6,8 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use indexmap::IndexMap;
 
 use crate::model::{
-    ext, name_of, type_name, Bucket, Dir, Edge, EdgeKind, Entry, EntryKind, Graph, Held, Lang, Node, NodeKind, Signature, Site, Slot,
-    Stats, Touch, Unresolved, World,
+    ext, type_name, Bucket, Dir, Edge, EdgeKind, Entry, EntryKind, Graph, Held, Lang, Node, NodeKind, Signature, Site, Slot, Stats, Touch,
+    Unresolved, World,
 };
 
 /// Per-class facts that only matter during resolution.
@@ -288,16 +288,9 @@ impl GraphBuilder {
         }
     }
 
-    /// The name a function goes by in the names of its values: a constructor's is its class's
-    /// (`Store`), a method's its class's and its own (`Repo.read`), any other function's its own.
+    /// The name the function `id` goes by in the names of its values (`model::owner`).
     pub fn owner(&self, id: &str) -> Option<String> {
-        let n = self.nodes.get(id)?;
-        let class = n.cls.as_deref().map(|c| name_of(self.nodes.get(c), c));
-        Some(match (n.ctor, class) {
-            (true, Some(c)) => c.to_string(),
-            (false, Some(c)) => format!("{c}.{}", n.name),
-            _ => n.name.clone(),
-        })
+        self.nodes.get(id).map(|f| crate::model::owner(f, |c| self.nodes.get(c)))
     }
 
     /// A function's own touch of a file the code names only by a name of the function's
