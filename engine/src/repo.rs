@@ -11,10 +11,11 @@
 //! from `node_modules`, from where Cargo keeps a crate.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
-use std::path::{Component, Path, PathBuf};
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
 use anyhow::Result;
+use path_clean::clean;
 
 use crate::model::Lang;
 
@@ -136,7 +137,7 @@ impl Repo {
             }
         }
         dirs.insert(PathBuf::new());
-        let root = normal(&std::path::absolute(dir)?);
+        let root = clean(std::path::absolute(dir)?);
         let listing = Listing { base: root.clone(), files, dirs, named: listed, texts: Mutex::new(HashMap::new()) };
         Ok(Repo {
             root,
@@ -196,11 +197,18 @@ impl Repo {
         Repo { root, at, listing: self.listing.clone(), asked: None, language: None, read_files: Arc::default(), questions: Arc::default() }
     }
 
-    /// Where a path the caller writes from the root stands in the listing: `root/x` and `x` alike.
+    /// Where a path the caller writes from the root stands in the listing: `root/x` and `x` alike,
+    /// each written once (`a/./b/../c` is `a/c`). The top of the listing is the empty path, as the
+    /// walk names it, which `clean` writes `.`.
     fn key(&self, p: &Path) -> PathBuf {
-        let p = normal(p);
+        let p = clean(p);
         let rel = p.strip_prefix(&self.root).unwrap_or(&p);
-        normal(&self.at.join(rel))
+        let key = clean(self.at.join(rel));
+        if key == Path::new(".") {
+            PathBuf::new()
+        } else {
+            key
+        }
     }
 
     /// Keep `question` among what this reading asked of the listing.
@@ -351,22 +359,6 @@ impl Repo {
     pub fn dirs_under(&self, dir: impl AsRef<Path>) -> Vec<PathBuf> {
         self.listed(Asked::DirsUnder(self.key(dir.as_ref())))
     }
-}
-
-/// A path with its `.` parts taken out and each `..` taken back over the part before it; a `..`
-/// with nothing before it stays: `../api/./src/../x` is `../api/x`.
-pub fn normal(p: &Path) -> PathBuf {
-    let mut out = PathBuf::new();
-    for c in p.components() {
-        match c {
-            Component::CurDir => {}
-            Component::ParentDir if out.file_name().is_some() => {
-                out.pop();
-            }
-            other => out.push(other),
-        }
-    }
-    out
 }
 
 /// A path as one key whatever way it is written: with `/` between its parts, without Windows's

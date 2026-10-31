@@ -252,7 +252,11 @@ pointer. Words are a label, never an identity: two places are one when their ter
 graph names a touched file by (`Touch.what`) is that term too, never a literal or an expression of
 the call that touches it: a term written out in full is the place itself, however the code spells
 it (`./.made/log.txt` is `.made/log.txt`), and a term with a hole keeps the names the code gives its
-holes (`~/data/{name}`). A database opened on a file is named by that file's term, as any file is,
+holes (`~/data/{name}`). So a library's function that writes a path another way without moving it is the
+identity on terms: made absolute (`std::path::absolute`, `pathlib`'s `absolute` and `resolve`) or with its `.` and
+`..` taken out (`path_clean::clean`), it is the place it was handed (`knowledge::RUST_PATH_FUNCTIONS`, the pair
+`spelled`). A loop of the program's own over a path's parts is code Atlas does not evaluate, and what it gives is not
+said. A database opened on a file is named by that file's term, as any file is,
 however the code builds its path (`Path("data") / kind / "counts.db"` and `f"data/{kind}/counts.db"`
 are one place). A variable of the environment is one place however its lookup names it
 (`os.environ["STORE"]`, `os.getenv(NAME)`, `process.env.STORE`, `process.env[NAME]` of a constant);

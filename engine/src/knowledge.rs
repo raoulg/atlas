@@ -2119,6 +2119,10 @@ pub const RUST_PATH_FUNCTIONS: &[(&str, &str, PathFn)] = &[
     ("OsStr", "new", PathFn::Same),
     ("OsString", "from", PathFn::Same),
     ("String", "from", PathFn::Same),
+    // a path made absolute, or written with its `.` and `..` taken out (`a/./b/../c` is `a/c`):
+    // the same place, written another way
+    ("path", "absolute", PathFn::Same),
+    ("path_clean", "clean", PathFn::Same),
     ("env", "current_dir", PathFn::Here),
     ("env", "home_dir", PathFn::Home),
     ("dirs", "home_dir", PathFn::Home),
