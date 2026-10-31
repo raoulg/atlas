@@ -505,15 +505,16 @@ def difference(before, after):
     }, (ids(before, only_b), lids(before, lines_b)), (ids(after, only_a), lids(after, lines_a))
 
 
-def user_card(br, builds, subject, route, facts, out, tag):
-    """Card A: the program drawn by both builds in the view that opens the frames holding the changed facts."""
+def user_card(br, builds, subject, route, facts, out, tag, was=None):
+    """Card A: the program drawn by both builds in the view that opens the frames holding the changed facts. `was`
+    names the route the before build starts the program at, where the change moves its start."""
     card = {'kind': 'A', 'subject': subject, 'route': route, 'facts': facts}
     program = ROOT / subject
     probes, views = {}, {}
     for side, atlas in builds.items():
         html = out / f'{tag}-{side}.html'
         view_of(atlas, program, html)
-        r = route if side == 'after' else route_in(page_data(html), route)
+        r = route if side == 'after' else was or route_in(page_data(html), route)
         if r is None:
             card.setdefault('notes', []).append(f'the {side} build reads no route {route}')
             continue
