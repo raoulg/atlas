@@ -13,7 +13,7 @@ use crate::pytypes::{FileArg, Param, Target, Types};
 use crate::tree::{beneath, named_children, path_str, text, unquote, walk};
 
 use crate::knowledge::{self, PathAttribute, PathFn, PathMethod};
-use crate::paths::{bound as named_by, cross, environment, hole, lit, or_else, parent, substitute, union};
+use crate::paths::{bound as named_by, cross, each, environment, held_by, hole, lit, or_else, parent, substitute, union};
 pub(super) use crate::paths::{Built, Seg};
 
 const DEPTH: u32 = 40;
@@ -610,7 +610,7 @@ impl<'a> Eval<'a> {
             "for_in_clause" | "for_statement" if p.child_by_field_name("left").map(|l| l.id()) == Some(n.id()) => {
                 let values = self.of(at.of_definition(m, offset), p.child_by_field_name("right")?, depth + 1);
                 // an iterable of nothing known leaves the name the code gives the element
-                (!values.iter().all(|b| matches!(b.as_slice(), [Seg::Hole(_)]))).then_some(values)
+                (!values.iter().all(|b| matches!(b.as_slice(), [Seg::Hole(_)]))).then(|| each(values))
             }
             // a field a value is built from (a dataclass's, a model's): what its builders hand it
             "assignment" if p.child_by_field_name("type").is_some() && field_of(p, &m.src).is_some() => {
@@ -627,11 +627,7 @@ impl<'a> Eval<'a> {
                     Some((d, id)) => {
                         let names: Vec<String> = parameters(d, &m.src, in_class(d)).into_iter().map(|(n, _)| n).collect();
                         let vals = self.of(At { m, scope: Some(d), params: &names }, right, depth + 1);
-                        Some(
-                            vals.into_iter()
-                                .map(|b| b.into_iter().map(|s| if let Seg::Param(x) = s { Seg::Held(id.clone(), x) } else { s }).collect())
-                                .collect(),
-                        )
+                        Some(vals.into_iter().map(|b| held_by(&id, b)).collect())
                     }
                     None => {
                         let mut values = self.of(here, right, depth + 1);
@@ -669,7 +665,10 @@ impl<'a> Eval<'a> {
                 let kept = || {
                     lambda.parent().filter(|a| a.kind() == "assignment")?.child_by_field_name("left").filter(|l| l.kind() == "identifier")
                 };
-                let values = self.on_each(here, lambda, slot, depth).or_else(|| self.called_with(here, kept()?, slot, &name, depth))?;
+                let values = match self.on_each(here, lambda, slot, depth) {
+                    Some(elements) => each(elements),
+                    None => self.called_with(here, kept()?, slot, &name, depth)?,
+                };
                 (!values.iter().all(|b| matches!(b.as_slice(), [Seg::Hole(_)]))).then_some(values)
             }
             "parameters"

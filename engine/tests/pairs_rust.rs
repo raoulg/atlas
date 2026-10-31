@@ -1765,3 +1765,16 @@ fn a_door_keeps_its_place() {
         assert_eq!(connected, client, "{side}: a connection handed on reaches the place its `connect` names");
     }
 }
+
+/// The twice pair: `kind` in `root.join(kind).join(format!("{kind}.csv"))` is one value, so the loop writes two places,
+/// never four (#324).
+#[test]
+fn places_a_name_bound_once_is_one_value() {
+    common::a_name_bound_once_is_one_value("rust", "export.export");
+}
+
+/// The trees pair: a recursion over `read_dir` is one place at every depth (#325).
+#[test]
+fn places_a_walk_of_a_tree_is_one_place_at_every_depth() {
+    common::a_walk_of_a_tree_is_one_place_at_every_depth("rust", "backup.copy_tree", "backup.main");
+}

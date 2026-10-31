@@ -172,7 +172,17 @@ parameter holds it by that type's name, as the type it takes is named (#216).
 input with a default, where the package's code lies) closed under `/`-join, `parent`, `with_suffix` and a pattern below a
 directory. A collection of paths is the set of terms its elements can be; iterating it yields
 one of them. Substituting a parameter by the term a caller hands it is the term's evaluation, and
-a part no code determines is a named hole. The parts of a term are what lies between the `/`s it
+a part no code determines is a named hole. A name is a variable of the term, and substitution replaces every
+occurrence of a variable by the same term: a parameter is one of the values its call hands it, and an element of a
+collection, once the code binds it (`for ext in ["js", "mts"]`), one of the collection's terms each time the binding
+takes one. So a term in which a variable of n values stands any number of times is at most n terms
+(`f"{d}-{ext}/index.{ext}"` over `ext ∈ {js, mts}` is two, never four), distinct variables choose apart (the product
+of their values), and a hole is a variable whose values no code says. A function that hands itself a path below its
+parameter (`copy_tree(src / name)` for each `name` of `read_dir(src)`) extends the parameter at each call: over the
+recursion it holds the least fixpoint of the extension, `X`, `X/*`, `X/*/*`, …, which is `X/**`, any number of parts
+below what the first call hands (`**` holds none as well). An extension by a part the code does not decide (a pattern,
+a hole) is held exactly; one written out (`sub`) is held by `**` too, the least pattern of the algebra that holds
+`sub/sub/…`; a recursive call that hands the parameter itself adds nothing. The parts of a term are what lies between the `/`s it
 writes, so a value between two of them is one part; `parent` drops exactly the last part
 (`~/data/{name}` is in `~/data`), and of a term that is one value not said yet it is that value's
 directory, `{p}/..`, taken once `p` is substituted: `parent` commutes with substitution (#284). A pattern below a directory (`D.glob("*/IO-*")`) is
@@ -198,7 +208,17 @@ a wildcard the code writes. The name a hole has is the name the code binds the v
 function that binds it (`let folder = notes_folder()?` in `main` is `{main.folder}`), the first one,
 which every later name of the value hands on, so one value is one hole however many names it passes
 through. A binding is a name a function gives a value, as a parameter is (`analyze.dir`): two
-functions that each bind a `file` hold two values, and two places. A call is no
+functions that each bind a `file` hold two values, and two places. The places of a term are its terms once each of its
+variables is chosen, each value where it is whole: one the function writes out in that function, one built from what
+the callers hand once that is written in, so one binding a call hands in two arguments (`save(root / kind, kind)`) is one value in the callee too, and an element of what a caller hands
+(`for p in ps`) ranges over every term the caller hands. Each binding is a variable of its own: two loops over one list
+pair every element with every other, as their runs do, and two values the code keeps in step only by an index it
+counts (`dirs[i]`, `names[i]`) are two variables, every combination a place. What a choice binds a name to
+(`d = a if c else b`) is kept as its alternatives where the name stands. A recursion is completed to its fixpoint: the
+recursive call that extends the parameter is written in once, as `{p}/**`, and the term goes on through the calls that
+are not the recursion, so a walk of a tree is one place at every depth (`data/**/*`, each file in any folder at any
+depth in `data/`), never one place per level down to a limit; a recursion through more than one function (`f` calls `g`
+calls `f`) is followed to the depth limit. A call is no
 name of what it gives: a callee names an operation (`trim`, `new`, `TemporaryDirectory`), so a
 call no name holds is `{}` in every language. A suffix a path is given (`with_suffix`,
 `with_extension`) is part of the term, applied to what a caller hands once the caller says it,
@@ -219,10 +239,10 @@ is one in the same way, by what it serves: a set of methods at a path. `methods=
 `["GET", "POST"]` and `{"GET", "POST"}` are one set, and a registration for every method
 (`app.all`) is the top of the set. Its label, `GET|POST /items`, writes the set in the order of
 `knowledge::REQUEST_WAYS`; a request meets a route whose set holds its method, at its path.
-**Where.** `paths.rs` (`Seg`, `join`, `place`, `folders`, `bound`, `with_suffix`, `Callers`,
-`served`, `serving`), `model.rs` (`Route`, `Methods`, `Request`),
+**Where.** `paths.rs` (`Seg`, `join`, `place`, `folders`, `bound`, `each`, `chosen`, `substitute`, `with_suffix`,
+`Callers`, `served`, `serving`), `model.rs` (`Route`, `Methods`, `Request`),
 the readers' `paths.rs` (`Eval::of`), `flow.rs` (`Touch::place`), `plan.js` (`pathWords`); the
-pairs `python/paths`, `places` and `kept`.
+pairs `python/paths`, `places`, `kept`, `twice` (#324) and `trees` (#325).
 
 ### Places by the type that holds them
 **What.** A quotient of the places by the program's type whose code builds each place's path: the

@@ -463,3 +463,80 @@ pub fn a_closures_parameter_is_what_its_calls_hand_it(language: &str, functions:
         assert_eq!(shortcut, clean, "{language}: {f} reads what a function of the module reads");
     }
 }
+
+/// The twice pair: a name bound once and used twice is one value (#324). The clean side writes each kind of its stock in a
+/// folder named by the kind, in a file named by it (`root / kind / f"{kind}.csv"`, `root.join(kind).join(format!(..))`,
+/// `join(root, kind, `${kind}.csv`)`); the shortcut keeps the folders and the files' names in two lists it walks by one index
+/// it counts (`FOLDERS[i]`, `NAMES[i]`). Substitution replaces every occurrence of a variable by the same term, so every
+/// place the clean side writes names one kind in its folder and in its file, and every kind is written; the shortcut's two
+/// lists are two variables, every combination a place, among them a file of one kind in the folder of another. So in every
+/// language.
+#[allow(dead_code)]
+pub fn a_name_bound_once_is_one_value(language: &str, id: &str) {
+    let p = pair(&format!("twice/{language}"));
+    for (side, g) in [("clean", &p.clean), ("shortcut", &p.shortcut)] {
+        let n = g.node(id).unwrap_or_else(|| panic!("{language}: no node {id}"));
+        let places: BTreeSet<&str> = n
+            .touches
+            .iter()
+            .filter(|t| t.kind_name() == "disk_write" && t.artifact.ends_with(".csv"))
+            .map(|t| t.artifact.as_str())
+            .collect();
+        // the kind the folder of a place names, and the kind its file names
+        let named: BTreeSet<(&str, &str)> = places
+            .iter()
+            .map(|place| match place.rsplit('/').collect::<Vec<_>>()[..] {
+                [file, folder, ..] => (folder, file.trim_end_matches(".csv")),
+                _ => panic!("{language} {side}: {place} is a file in a folder"),
+            })
+            .collect();
+        for kind in ["books", "games"] {
+            assert!(named.contains(&(kind, kind)), "{language} {side}: {kind} is written in its folder: {places:?}");
+        }
+        let mixed = named.iter().any(|(folder, file)| folder != file);
+        assert_eq!(mixed, side == "shortcut", "{language} {side}: a file of one kind in the folder of another: {places:?}");
+    }
+}
+
+/// Whether the path `p`, its parts written out, is held by the pattern `pattern`: `*` and a hole hold one part, `**` any
+/// number of parts, none as well, and a name itself.
+#[allow(dead_code)]
+fn holds(pattern: &[&str], p: &[&str]) -> bool {
+    match (pattern.first(), p.first()) {
+        (Some(&"**"), _) => holds(&pattern[1..], p) || (!p.is_empty() && holds(pattern, &p[1..])),
+        (Some(x), Some(y)) if *x == "*" || x.starts_with('{') || x == y => holds(&pattern[1..], &p[1..]),
+        (None, None) => true,
+        _ => false,
+    }
+}
+
+/// The trees pair: a recursion that lists a directory and hands itself each entry below it walks the tree, and over the
+/// recursion its parameter is the least fixpoint of the extension, `D/**` (#325). The clean side copies every file below
+/// `data` to the same place below `backup`, going into each folder it lists; the shortcut copies the files at the top alone.
+/// What `main` makes the clean copy read and write holds a file at every depth below `data` and below `backup`, and nothing
+/// outside them; the shortcut's holds the top alone. So in every language.
+#[allow(dead_code)]
+pub fn a_walk_of_a_tree_is_one_place_at_every_depth(language: &str, id: &str, main: &str) {
+    let p = pair(&format!("trees/{language}"));
+    for (side, g) in [("clean", &p.clean), ("shortcut", &p.shortcut)] {
+        let n = g.node(id).unwrap_or_else(|| panic!("{language}: no node {id}"));
+        // the files a copy reads or writes as `main` hands the copy its folders, each alternative a pattern
+        let patterns = |kind: &str| -> Vec<&str> {
+            n.touches
+                .iter()
+                .filter(|t| t.kind_name() == kind && t.by.contains(&Both::one(main)) && !t.what.ends_with('/'))
+                .flat_map(|t| t.what.split('|'))
+                .collect()
+        };
+        for (kind, root) in [("disk_read", "data"), ("disk_write", "backup")] {
+            let patterns = patterns(kind);
+            let held = |path: &[&str]| patterns.iter().any(|t| holds(&t.split('/').collect::<Vec<_>>(), path));
+            for depth in 1..=20 {
+                let file: Vec<&str> = std::iter::once(root).chain(std::iter::repeat_n("sub", depth - 1)).chain(["f.csv"]).collect();
+                assert_eq!(held(&file), side == "clean" || depth == 1, "{language} {side}: {kind} {file:?} by {patterns:?}");
+                let outside: Vec<&str> = ["elsewhere"].into_iter().chain(file[1..].iter().copied()).collect();
+                assert!(!held(&outside), "{language} {side}: {kind} {outside:?}, outside {root}, by {patterns:?}");
+            }
+        }
+    }
+}

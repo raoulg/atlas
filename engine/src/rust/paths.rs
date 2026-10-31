@@ -11,7 +11,7 @@ use tree_sitter::Node as TsNode;
 use super::module::{def_node, expand, path_parts, resolve, resolve_value, shadowed, Module};
 use crate::knowledge::{self, PathFn, PathMethod};
 use crate::model::{Node, NodeKind};
-use crate::paths::{bound as named_by, cross, environment_named, hole, lit, or_else, parent, substitute, union, Built, Seg};
+use crate::paths::{bound as named_by, cross, each, environment_named, held_by, hole, lit, or_else, parent, substitute, union, Built, Seg};
 use crate::tree::{beneath, named_children, text, unquote, walk};
 
 const DEPTH: u32 = 12;
@@ -153,7 +153,7 @@ impl<'a> Eval<'a> {
                 Some(Bound::Each(over)) => {
                     let values = self.of(at, over, depth + 1);
                     if !values.iter().all(|b| matches!(b.as_slice(), [Seg::Hole(_)])) {
-                        return named_by(&self.local(at.m, scope, name), values);
+                        return named_by(&self.local(at.m, scope, name), each(values));
                     }
                 }
                 None => {}
@@ -394,12 +394,7 @@ impl<'a> Eval<'a> {
             let Some(id) = self.fn_id(m, f) else { continue };
             let names = param_names(f, &m.src);
             let vals = self.of(At { m, scope: Some(f), params: &names }, value, depth + 1);
-            out = union(
-                out,
-                vals.into_iter()
-                    .map(|b| b.into_iter().map(|s| if let Seg::Param(x) = s { Seg::Held(id.clone(), x) } else { s }).collect())
-                    .collect(),
-            );
+            out = union(out, vals.into_iter().map(|b| held_by(&id, b)).collect());
         }
         (!out.is_empty()).then_some(out)
     }
