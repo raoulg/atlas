@@ -140,7 +140,14 @@ and a subclass, a variant of a sum left open). A constructor that reads the plac
 class. What a put takes is what reaches the place through its body's steps, by what each is
 handed and gives; a parameter handed only to reads, or only to a statement's key (`WHERE`), is a
 key. A view is the `get` of a lens with no `put`: it only reads.
-**Where.** Principle `lens`; `design.md` §1.
+An id is a value of the coproduct `Code ⊔ Beyond`: what the reading holds as code (the program, and a library read as
+code: `plotkit.data.load`), or a name past the fiber the graph keeps of a library, an `External` node with no body
+(`ext:plotkit.data.load` at `--libraries 0`). The tag of the second injection is a prism: `of` makes a name past the
+code an id, `path` takes it back, `path(of(p)) = Some(p)`, `of(p) = id` wherever `path(id) = Some(p)`, and an id of
+the code's has no path. What a reader resolves a name to is a value of the coproduct (`Resolved`); the graph keeps its
+id, the key its edges, its indexes and the page share.
+**Where.** Principle `lens`; `design.md` §1; `model::ext` and `model::Resolved`, held by `engine/tests/readers.rs`
+(the tag is spelled once).
 
 ### Pullback: a filter
 **What.** The pullback of `true` along a predicate `p: G → Bool` is the part of G where p holds.

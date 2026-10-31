@@ -27,7 +27,7 @@ use crate::cache::Check;
 use crate::effects;
 use crate::environment::Environment;
 use crate::knowledge::{self, Registry};
-use crate::model::{Node, NodeKind};
+use crate::model::{ext, Node, NodeKind};
 use crate::repo::Repo;
 use crate::tree::{named_children, span, text, unquote, walk};
 use path_clean::clean;
@@ -261,7 +261,7 @@ impl Libraries {
         for (i, seg) in path.iter().enumerate().skip(1) {
             let m = self.parsed(&cur, crate_ids)?;
             let onward = |to: &str, from: &[String]| -> Vec<String> {
-                to.trim_start_matches("ext:").split('.').map(String::from).chain(from.iter().cloned()).collect()
+                ext::name(to).split('.').map(String::from).chain(from.iter().cloned()).collect()
             };
             let (candidates, defines) = (children(m).remove(seg), m.symbols.contains_key(seg));
             let next: Vec<Vec<String>> = match m.bindings.get(seg) {

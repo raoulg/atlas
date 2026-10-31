@@ -6,7 +6,7 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use indexmap::IndexMap;
 
 use crate::model::{
-    Bucket, Dir, Edge, EdgeKind, Entry, EntryKind, Graph, Held, Lang, Node, NodeKind, Signature, Site, Slot, Stats, Touch, Unresolved,
+    ext, Bucket, Dir, Edge, EdgeKind, Entry, EntryKind, Graph, Held, Lang, Node, NodeKind, Signature, Site, Slot, Stats, Touch, Unresolved,
     World,
 };
 
@@ -197,7 +197,7 @@ impl GraphBuilder {
         });
         self.add_edge(&at.module, &id, EdgeKind::Contains, None);
         for v in &key {
-            if v.starts_with("ext:") {
+            if ext::is(v) {
                 self.ext_node(v);
             }
             self.add_edge(&id, v, EdgeKind::Variant, None);
@@ -421,7 +421,7 @@ impl GraphBuilder {
     /// The method resolution order of `cls` along the program's own classes.
     fn order<'a>(&'a self, cls: &'a str) -> Vec<&'a str> {
         let bases = |c: &'a str| -> Vec<&'a str> {
-            self.classes.get(c).into_iter().flat_map(|i| &i.resolved).map(String::as_str).filter(|b| !b.starts_with("ext:")).collect()
+            self.classes.get(c).into_iter().flat_map(|i| &i.resolved).map(String::as_str).filter(|b| !ext::is(b)).collect()
         };
         crate::model::linearization(cls, &bases, &mut HashMap::new())
     }
@@ -443,12 +443,13 @@ impl GraphBuilder {
         }
     }
 
+    /// The `External` node of an id past the code (`ext`); an id of the code's has its own node.
     pub fn ext_node(&mut self, eid: &str) {
+        let Some(full) = ext::path(eid) else { return };
         if self.nodes.contains_key(eid) {
             return;
         }
         // a shaped type keeps its shape in the name: `jaxtyping` / `Float[Tensor, batch dim]`
-        let full = &eid[4..];
         let cut = full.find('[').unwrap_or(full.len());
         let (module, name) = match full[..cut].rsplit_once('.') {
             Some((module, name)) => (module, format!("{name}{}", &full[cut..])),
@@ -700,7 +701,7 @@ fn parsed(nodes: &IndexMap<String, Node>, id: &str, seen: &mut HashSet<String>, 
 /// around it catches it. A handler catches the classes it names and those below them, and one that
 /// names none catches whatever is raised. A call that `?` hands on fails as its reader said (`Steps`).
 fn settle_fails(nodes: &mut IndexMap<String, Node>, edges: &[Edge]) {
-    let bare = |id: &str| id.trim_start_matches("ext:").rsplit(['.', ':']).next().unwrap_or("").to_string();
+    let bare = |id: &str| ext::name(id).rsplit(['.', ':']).next().unwrap_or("").to_string();
     let mut bases: HashMap<&str, Vec<&str>> = HashMap::new();
     for e in edges.iter().filter(|e| e.kind == EdgeKind::Inherits) {
         bases.entry(e.src.as_str()).or_default().push(e.dst.as_str());
@@ -770,7 +771,7 @@ fn settle_fails(nodes: &mut IndexMap<String, Node>, edges: &[Edge]) {
 /// A foreign type worth a place: a package's type that holds data. Not one of the language's
 /// own, and not one reached through a type parameter (`D::Error`, `T.Item`).
 pub fn foreign_type(id: &str, own: &crate::knowledge::OwnTypes) -> bool {
-    let Some(full) = id.strip_prefix("ext:") else { return false };
+    let Some(full) = ext::path(id) else { return false };
     let head = full.split('.').next().unwrap_or("");
     let name = full.rsplit('.').next().unwrap_or("");
     let parameter = head.len() == 1 && head.chars().all(|c| c.is_ascii_uppercase());

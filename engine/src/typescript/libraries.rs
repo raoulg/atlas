@@ -344,7 +344,7 @@ impl Libraries {
                     _ => continue,
                 },
             };
-            let ext = Bound::Ext(format!("ext:{t}"));
+            let ext = Bound::Ext(t);
             if m.dynamic.contains_key(&k) {
                 m.dynamic.insert(k.clone(), ext);
             } else {

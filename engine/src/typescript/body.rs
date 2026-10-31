@@ -16,7 +16,7 @@ use crate::builder::{foreign_type, GraphBuilder};
 use crate::effects::{self, Crossing};
 use crate::knowledge;
 use crate::knowledge::OwnTypes;
-use crate::model::{Bucket, EdgeKind, Held, Node, NodeKind, Slot, Touch, World};
+use crate::model::{ext, Bucket, EdgeKind, Held, Node, NodeKind, Resolved, Slot, Touch, World};
 use crate::tree::{
     beneath, evaluation_order, literals, named_children, nth_of_kind, outermost, text, unquote, walk, what_of, wrapped, ChoiceSyntax,
     CompareSyntax, Part,
@@ -160,7 +160,9 @@ fn value_type(m: &Module, name: &str, modules: &IndexMap<String, Module>, nodes:
             Bound::Ext(_) => return None,
         },
     };
-    resolve(home, home.values.get(&local)?, modules, nodes).filter(|r| nodes.get(r).map_or(false, |x| x.kind == NodeKind::Class))
+    resolve(home, home.values.get(&local)?, modules, nodes)
+        .map(Resolved::id)
+        .filter(|r| nodes.get(r).map_or(false, |x| x.kind == NodeKind::Class))
 }
 
 /// The classes a body's names hold, binding by binding (`body::Bindings`). A binding (a parameter,
@@ -399,7 +401,7 @@ pub(super) fn link_calls<'t>(
         // a qualifier is a type when it names an `enum` or a class of the program
         let is_type = |(a, b): (usize, usize)| {
             let parts: Vec<String> = String::from_utf8_lossy(&m.src[a..b]).split('.').map(str::to_string).collect();
-            resolve(m, &parts, modules, &store.nodes).and_then(|t| store.nodes.get(&t)).is_some_and(|t| t.kind == NodeKind::Class)
+            resolve(m, &parts, modules, &store.nodes).and_then(|t| store.nodes.get(&t.id())).is_some_and(|t| t.kind == NodeKind::Class)
         };
         // the value a method runs on is `this`, unless it is called on its class
         let receiver =
@@ -420,7 +422,7 @@ pub(super) fn link_calls<'t>(
         store.touch(id, t);
     }
     for (t, input) in read.mutates {
-        if t.starts_with("ext:") {
+        if ext::is(&t) {
             store.ext_node(&t);
         }
         store.add_edge(id, &t, EdgeKind::Mutates, Some(input));
@@ -605,8 +607,9 @@ impl<'a, 't> Body<'a, 't> {
         !self.is_module || module_level(x, self.root, &self.m.bodies)
     }
 
+    /// What a name path names, by the id the graph knows it by.
     fn resolve(&self, parts: &[String]) -> Option<String> {
-        resolve(self.m, parts, self.modules, &self.store.nodes)
+        resolve(self.m, parts, self.modules, &self.store.nodes).map(Resolved::id)
     }
 
     fn class(&self, r: Option<String>) -> Option<String> {
@@ -638,7 +641,7 @@ impl<'a, 't> Body<'a, 't> {
 
     /// Whether `r` is one of the program's own functions or classes.
     pub(super) fn own(&self, r: &str) -> bool {
-        !r.starts_with("ext:") && self.store.nodes.contains_key(r)
+        !ext::is(r) && self.store.nodes.contains_key(r)
     }
 
     /// What a change to each typed parameter changes, by name: the type the picture draws it as,
@@ -655,7 +658,7 @@ impl<'a, 't> Body<'a, 't> {
                 continue;
             };
             let drawn = type_names(Some(ty), src).into_iter().filter_map(|t| self.resolve(&t)).find(|r| {
-                if r.starts_with("ext:") {
+                if ext::is(r) {
                     foreign_type(r, &OWN)
                 } else {
                     self.class(Some(r.clone())).is_some()
@@ -664,7 +667,7 @@ impl<'a, 't> Body<'a, 't> {
             let written = text(ty, src).trim_start_matches(':').trim();
             let container = container_type(written, self.m).then(|| {
                 let head = written.split(|c: char| !(c.is_alphanumeric() || c == '_' || c == '$')).next().unwrap_or("");
-                format!("ext:javascript.{}", if knowledge::TYPESCRIPT_CHANGEABLE.contains(&head) { head } else { "Array" })
+                ext::of(&format!("javascript.{}", if knowledge::TYPESCRIPT_CHANGEABLE.contains(&head) { head } else { "Array" }))
             });
             if let Some(t) = drawn.or(container) {
                 out.insert(text(name, src).to_string(), t);
@@ -1215,7 +1218,7 @@ impl<'a, 't> Body<'a, 't> {
             }
             if gives.is_empty() && steps.raised(c) {
                 let class =
-                    self.resolve(&parts).filter(|r| r.starts_with("ext:")).unwrap_or_else(|| format!("ext:javascript.{}", parts.join(".")));
+                    self.resolve(&parts).filter(|r| ext::is(r)).unwrap_or_else(|| ext::of(&format!("javascript.{}", parts.join("."))));
                 gives.push(Held::new(class, ""));
             }
             steps.op(c, &format!("{}()", parts.last().cloned().unwrap_or_default()), hands, gives);
@@ -1291,7 +1294,7 @@ impl<'a, 't> Body<'a, 't> {
             return None;
         }
         let home = self.modules.get(&node.module)?;
-        self.class(resolve(home, &parts, self.modules, &self.store.nodes))
+        self.class(resolve(home, &parts, self.modules, &self.store.nodes).map(Resolved::id))
     }
 
     /// `<Kaart/>` renders a component, handed its attributes; a lowercase name is an element of

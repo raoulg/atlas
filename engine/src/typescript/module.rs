@@ -11,7 +11,7 @@ use tree_sitter::{Node as TsNode, Parser, Tree};
 
 use crate::builder::SigInfo;
 use crate::knowledge;
-use crate::model::{Node, Param, Returns};
+use crate::model::{ext, Node, Param, Resolved, Returns};
 use crate::tree::{named_children, text, walk, Wrappers};
 
 pub(crate) const EXTENSIONS: &[&str] = &["ts", "tsx", "mts", "cts", "js", "jsx", "mjs", "cjs"];
@@ -23,7 +23,7 @@ pub(super) const WRAPPERS: Wrappers =
 pub(super) enum Bound {
     /// A node id, a member of an own module (`module.name`), or an own module.
     Own(String),
-    /// A name from a package: `ext:pkg.name`.
+    /// A name from a package, past the code (`ext`): `pkg.name`.
     Ext(String),
 }
 
@@ -439,8 +439,13 @@ pub(crate) fn is_property(p: TsNode) -> bool {
     (0..p.child_count()).filter_map(|i| p.child(i)).any(|c| matches!(c.kind(), "accessibility_modifier" | "readonly" | "override_modifier"))
 }
 
-/// A name in a module's scope -> a node id or `ext:` id, following imports and re-exports.
-pub(super) fn resolve(m: &Module, parts: &[String], modules: &IndexMap<String, Module>, nodes: &IndexMap<String, Node>) -> Option<String> {
+/// A name in a module's scope -> one of the code's node ids or a name past the code, following imports and re-exports.
+pub(super) fn resolve(
+    m: &Module,
+    parts: &[String],
+    modules: &IndexMap<String, Module>,
+    nodes: &IndexMap<String, Node>,
+) -> Option<Resolved> {
     let head = parts.first()?;
     let bound = match m.symbols.get(head) {
         Some(id) => Bound::Own(id.clone()),
@@ -448,11 +453,11 @@ pub(super) fn resolve(m: &Module, parts: &[String], modules: &IndexMap<String, M
     };
     match bound {
         // a name of a library's code read as code is its definition there
-        Bound::Ext(_) if read_as_code(m, parts).is_some() => read_as_code(m, parts),
-        Bound::Ext(id) => Some(if parts.len() > 1 { format!("{id}.{}", parts[1..].join(".")) } else { id }),
+        Bound::Ext(_) if read_as_code(m, parts).is_some() => read_as_code(m, parts).map(Resolved::of_id),
+        Bound::Ext(path) => Some(Resolved::Beyond(if parts.len() > 1 { format!("{path}.{}", parts[1..].join(".")) } else { path })),
         Bound::Own(target) => {
             let full = if parts.len() > 1 { format!("{target}.{}", parts[1..].join(".")) } else { target };
-            defined(&full, modules, nodes, 0)
+            defined(&full, modules, nodes, 0).map(Resolved::of_id)
         }
     }
 }
@@ -473,7 +478,7 @@ pub(super) fn defined(target: &str, modules: &IndexMap<String, Module>, nodes: &
     let next = if name == "default" { m.default.clone() } else { m.bindings.get(name).cloned() };
     match next {
         Some(Bound::Own(t)) => return defined(&t, modules, nodes, depth + 1),
-        Some(Bound::Ext(id)) => return Some(m.read.get(name).cloned().unwrap_or(id)),
+        Some(Bound::Ext(path)) => return Some(m.read.get(name).cloned().unwrap_or_else(|| ext::of(&path))),
         None => {}
     }
     m.wildcards.iter().find_map(|w| defined(&format!("{w}.{name}"), modules, nodes, depth + 1))
@@ -516,8 +521,8 @@ pub(super) fn function_of(c: TsNode) -> Option<TsNode> {
     }
 }
 
-/// The package an `ext:` binding came from, as the module imported it.
-pub(super) fn package_from_ext(id: &str, pkgs: &HashSet<String>) -> String {
-    let path = id.trim_start_matches("ext:").replace('.', "/");
+/// The package a name past the code (`Bound::Ext`) came from, as the module imported it.
+pub(super) fn package_from_ext(path: &str, pkgs: &HashSet<String>) -> String {
+    let path = path.replace('.', "/");
     pkgs.iter().filter(|p| path.starts_with(p.as_str())).max_by_key(|p| p.len()).cloned().unwrap_or_else(|| package_of(&path))
 }
