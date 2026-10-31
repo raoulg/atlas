@@ -7,7 +7,8 @@ name: perf
 # commit that lay within it and measures the two interleaved on this runner. Only what that reproduces is
 # reported, graded by its size: a small slowdown comments on the tracking issue, a large one is bisected on
 # the spot and opens an urgent issue that names its landing. Every week the same comparison is made between
-# `next` and the last release. By hand, any range can be bisected for a measure. A run that cannot measure
+# `next` and the last release. By hand, any range can be bisected for a measure, and any two commits compared,
+# with where each reading's time went, also on commits of Atlas that both read. A run that cannot measure
 # fails; nothing here runs on a push or a pull request. `tools/perf.py` measures and judges;
 # `docs/reference/performance.md` says how.
 
@@ -18,18 +19,20 @@ on:
   workflow_dispatch:
     inputs:
       mode:
-        description: "nightly, weekly, or bisect"
+        description: "nightly, weekly, bisect, or compare"
         type: choice
-        options: [nightly, weekly, bisect]
+        options: [nightly, weekly, bisect, compare]
         default: nightly
       from:
-        description: "bisect: the commit it was fast at"
+        description: "bisect: the commit it was fast at; compare: A"
       to:
-        description: "bisect: the commit it is slow at (default: next)"
+        description: "bisect: the commit it is slow at (default: next); compare: B (default: the dispatched ref)"
       measure:
-        description: "bisect: the measure, as perf-data names it (read/atlas/cold/seconds)"
+        description: "bisect: the measure, as perf-data names it (read/atlas/cold/seconds); compare: the measures, separated by spaces"
+      subject:
+        description: "compare: commits of Atlas both read, each the subject atlas-<its short commit> (optional)"
       issue:
-        description: "bisect: the issue to comment the result on (optional)"
+        description: "bisect, compare: the issue to comment the result on (optional)"
 
 permissions:
   contents: write # the series, on perf-data
@@ -285,4 +288,70 @@ jobs:
         with:
           name: perf-bisect
           path: bisect.json
+          if-no-files-found: ignore
+
+  # two commits measured interleaved by hand, with where each reading's time went (`perf.py stages`); a commit of
+  # Atlas that both read tells a slower reader from a larger subject
+  compare:
+    if: github.event_name == 'workflow_dispatch' && inputs.mode == 'compare'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 240
+    env:
+      FROM: ${{ inputs.from }}
+      TO: ${{ inputs.to || github.sha }}
+      MEASURE: ${{ inputs.measure }}
+      SUBJECT: ${{ inputs.subject }}
+      ISSUE: ${{ inputs.issue }}
+    steps:
+      - name: what to compare
+        run: |
+          [ -n "$FROM" ] && [ -n "$MEASURE" ] || { echo "::error::compare needs from and measure"; exit 1; }
+      # the tool is the dispatched ref's, so that a measure is measured before it lands
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
+          path: atlas
+          fetch-depth: 0
+      - name: the programs, at the revisions laws.yml reads
+        run: |
+          get() { git init -q "programs/$1" && git -C "programs/$1" fetch -q --depth 1 "https://github.com/raoulg/$1" "$2" && git -C "programs/$1" checkout -q FETCH_HEAD; }
+          get goad_toolkit 929d37cc588b27f599b7fbe2e4f5d9733619f897
+          get vectormesh 201a85048dc872bfc3115d09542529302b45a3ec
+          get pluim a5b8c804da33c93b1e36344072adccc3479b5b24
+          get ordash 1b4942228b1b22a91c065e1093a14a106fab9f2b
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: astral-sh/setup-uv@v10.3.0
+      - name: compared
+        working-directory: atlas
+        run: |
+          read -ra subjects <<< "$SUBJECTS"
+          for commit in $SUBJECT; do
+            short=$(git rev-parse --short=7 "$commit")
+            git worktree add --detach "$GITHUB_WORKSPACE/subject-$short" "$commit"
+            # its libraries, where Cargo keeps them and Atlas reads them, as the night fetches Atlas's
+            (cd "$GITHUB_WORKSPACE/subject-$short" && cargo fetch --locked)
+            subjects+=(--subject "atlas-$short=$GITHUB_WORKSPACE/subject-$short")
+          done
+          measures=()
+          for m in $MEASURE; do measures+=(--measure "$m"); done
+          uv run tools/perf.py reproduce --repo . --a "$FROM" --b "$TO" "${subjects[@]}" "${measures[@]}" \
+            --timings "$GITHUB_WORKSPACE/timings.json" --out "$GITHUB_WORKSPACE/compare.json"
+          {
+            uv run tools/perf.py stages --timings "$GITHUB_WORKSPACE/timings.json" --reproduced "$GITHUB_WORKSPACE/compare.json"
+            echo "The run: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+          } > "$GITHUB_WORKSPACE/compare.md"
+          cat "$GITHUB_WORKSPACE/compare.md" >> "$GITHUB_STEP_SUMMARY"
+      - name: the result, on the issue
+        if: inputs.issue != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh issue comment "$ISSUE" --repo "$GITHUB_REPOSITORY" --body-file "$GITHUB_WORKSPACE/compare.md"
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: perf-compare
+          path: |
+            compare.json
+            timings.json
+            compare.md
           if-no-files-found: ignore

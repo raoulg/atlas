@@ -26,6 +26,30 @@ again. All readings use Atlas's defaults (`--libraries 1`).
 `--timings FILE` is a hidden option of `atlas-code view`: a JSON object of each phase's seconds, in the order
 they ran, and under `linked` the number of bodies the reading of the graph linked (`program`, `library`). The time before the first phase (parsing the command, cloning a URL) is in the wall time only.
 
+Under `stages` it says where the reading's time went (`engine/src/clock.rs`): one row per part, stage, and crate or
+package where the stage reads one (`of`, with `library` for a library's), with its seconds and how many times it ran.
+Each stage's seconds are its own: a stage within another is not counted in the outer one, so the stages add up to
+the time they cover, nearly all of the `read` phase.
+
+| Stage | What it is |
+| --- | --- |
+| `list`, `index` | the repository's listing and its parts; the index of a part's reading, looked up and kept |
+| `parse` | tree-sitter's parse of each file, the program's and the libraries' |
+| `items` | the items, `use`s, exports and implementations of the modules |
+| `types` | ty, for Python: the environment, and the types of the program and its libraries |
+| `reach` | how far into the libraries the program's calls go (`--libraries`): their modules found, followed and read |
+| `signatures` | the fields, arms and signatures of the types and functions |
+| `scope`, `calls`, `uses`, `close` | a Rust body read: its scope (`Body::new`), its calls in the order they run, what its own code uses, and its compares, edges and touches |
+| `body` | a body read, of Python and TypeScript; of Rust, what the four stages above leave of it |
+| `callers` | what callers hand a body: paths and statements completed and placed |
+| `globals` | the values a module keeps, and the functions that change them |
+| `finish`, `fiber` | the graph made from what was read, and the fiber over what the program reaches |
+
+`tools/perf.py` keeps the stages out of the series: `--timings FILE`, given to `read`, `reproduce` or `bisect`, keeps
+what Atlas reported of each reading in FILE, and `perf.py stages --timings FILE [--reproduced FILE]` writes it as
+tables, the phases, the stages, and the crates and packages by the time reading them took, each the median over
+the readings, A and B side by side.
+
 ## How a measure is judged
 
 GitHub's hosted runners are shared machines: the same build varies by some percent from night to night,
@@ -79,6 +103,15 @@ grew the most. Locally:
 ```sh
 uv run tools/perf.py bisect --repo . --from v0.69.3 --to next --measure read/atlas/cold/seconds --subject atlas=. --out bisect.json
 ```
+
+Atlas in each commit's own tree grows with the commits, so a bisection of its reading measures the code read
+together with the code that reads. To ask one of the two, run `perf` by hand with `mode: compare`: `from` (A),
+`to` (B, default the dispatched ref), the measures, separated by spaces, and in `subject` commits of Atlas that both
+read, each the subject `atlas-<its short commit>`, its libraries fetched as the night fetches Atlas's. Its measures
+name that subject (`read/atlas-4ef2ca0/cold/seconds`), and two commits of Atlas read by both builds are the four
+readings that tell a slower reader from a larger subject. The job takes the dispatched ref's `tools/perf.py`,
+measures A and B interleaved as `reproduce` does, and writes the comparison with where each reading's time went
+(`perf.py stages`) to its summary, to the artifact `perf-compare`, and to the `issue`, when one is given.
 
 ## In every release
 

@@ -4,10 +4,11 @@
 """How fast Atlas builds, reads and tests, kept as a series per measure, and a signal when one gets slower.
 
     uv run tools/perf.py time NAME --out RUN -- COMMAND...
-    uv run tools/perf.py read --atlas ATLAS --subject NAME=PATH ... [--rounds N] --out RUN
+    uv run tools/perf.py read --atlas ATLAS --subject NAME=PATH ... [--rounds N] [--timings FILE] --out RUN
     uv run tools/perf.py tests --workspace DIR --out RUN [-- CARGO_TEST_ARGS...]
     uv run tools/perf.py record --data DIR --run RUN --commit SHA [--url URL] [--summary FILE] [--suspects FILE]
-    uv run tools/perf.py reproduce --repo DIR --a SHA --b SHA (--suspects FILE | --measure M ...) [--subject NAME=PATH ...] --out FILE
+    uv run tools/perf.py reproduce --repo DIR --a SHA --b SHA (--suspects FILE | --measure M ...) [--subject NAME=PATH ...] [--timings FILE] --out FILE
+    uv run tools/perf.py stages --timings FILE [--reproduced FILE]
     uv run tools/perf.py conclude --data DIR --reproduced FILE [--summary FILE] [--alert FILE] [--standing FILE]
     uv run tools/perf.py bisect --repo DIR --from SHA --to SHA --measure M [--subject NAME=PATH ...] --out FILE
     uv run tools/perf.py release-bars (--data DIR --repo DIR | --reproduced FILE) --before REF --after REF [--measure M=LABEL ...]
@@ -39,6 +40,13 @@ reproduced), or the standing of `next` against a release (`--standing`). `bisect
 range that made a measure slower, or gives each landing's share where no single one did. `release-bars`
 gives a release's notes their `Bars:` line from the series, or from an interleaved run of the two releases
 where the series did not measure the one before. Any failure to measure ends with an error.
+
+`--timings FILE`, given to `read`, `reproduce` or `bisect`, keeps what Atlas reported of each reading it
+measured (`atlas-code view --timings`: the phases, the bodies linked, and the reading's stages per part and per
+crate or package), by subject and kind for `read`, by measure and commit for the others. It goes to FILE and
+never into a run: the series holds what a reading took, the file where its time went. `stages` writes such a
+file as tables, each value the median over the readings: the phases, the stages, and the crates and packages
+by the time reading them took, with the stages of each; of A and B side by side, given the reproduction.
 """
 
 from __future__ import annotations
@@ -159,8 +167,11 @@ def unasked(subject: Path):
             d.rmdir()
 
 
-def view(atlas: Path, name: str, subject: Path, libraries: int, scratch: Path, env: dict[str, str]) -> dict[str, float]:
-    """One `atlas-code view` of `subject`: its seconds, peak memory, phases and bodies linked."""
+def view(
+    atlas: Path, name: str, subject: Path, libraries: int, scratch: Path, env: dict[str, str], reports: list[dict] | None = None
+) -> dict[str, float]:
+    """One `atlas-code view` of `subject`: its seconds, peak memory, phases and bodies linked; what Atlas reported, its
+    stages among it, goes whole to `reports` where one is given."""
     timings = scratch / "timings.json"
     timings.unlink(missing_ok=True)
     command = [str(atlas), "--libraries", str(libraries), "view", "--no-open"]
@@ -169,7 +180,10 @@ def view(atlas: Path, name: str, subject: Path, libraries: int, scratch: Path, e
     if not timings.exists():
         raise SystemExit(f"{atlas} wrote no --timings for {name}")
     reported = json.loads(timings.read_text())
+    if reports is not None:
+        reports.append(dict(reported))
     linked = reported.pop("linked", {})
+    reported.pop("stages", None)
     return {
         "seconds": seconds,
         "peak_rss": peak,
@@ -261,11 +275,19 @@ def served(atlas: Path, name: str, subject: Path, libraries: int, scratch: Path,
 
 
 def read_round(
-    atlas: Path, name: str, subject: Path, libraries: int, scratch: Path, cache: Path, kinds: tuple[str, ...] = KINDS
+    atlas: Path,
+    name: str,
+    subject: Path,
+    libraries: int,
+    scratch: Path,
+    cache: Path,
+    kinds: tuple[str, ...] = KINDS,
+    reports: dict[str, list[dict]] | None = None,
 ) -> dict[str, dict[str, float]]:
     """A round of readings of `subject`, per kind its measures: `atlas-code view` cold (an empty cache and no index),
     warm (the same again), unasked (again, with a file no reader asks about added), and `atlas-code serve` from a
-    cold start. A view of `kinds` brings the views before it, which it stands on."""
+    cold start. A view of `kinds` brings the views before it, which it stands on. What Atlas reported of each view
+    goes to `reports`, by kind, where one is given."""
     index = worktree_top(subject) / ".atlas" / "index"
     env = {**os.environ, "XDG_CACHE_HOME": str(cache), "ATLAS_NO_UPDATE_CHECK": "1"}
 
@@ -279,7 +301,7 @@ def read_round(
         fresh()
     for kind in views:
         with unasked(subject) if kind == "unasked" else contextlib.nullcontext():
-            got[kind] = view(atlas, name, subject, libraries, scratch, env)
+            got[kind] = view(atlas, name, subject, libraries, scratch, env, None if reports is None else reports.setdefault(kind, []))
         if kind == "cold" and not any(index.rglob("*")):
             raise SystemExit(f"the cold reading of {name} made no index at {index}: a warm one would measure nothing")
     if "serve" in kinds:
@@ -301,13 +323,15 @@ def subjects(given: list[str]) -> list[tuple[str, Path]]:
 def command_read(args: argparse.Namespace) -> None:
     atlas = args.atlas.resolve(strict=True)
     readings: dict[str, dict] = {}
+    reports: dict[str, dict[str, list[dict]]] = {}
     with tempfile.TemporaryDirectory(prefix="atlas-perf-") as scratch:
         scratch = Path(scratch)
         for name, path in subjects(args.subject):
             subject = path.resolve(strict=True)
             samples: dict[str, dict[str, list[float]]] = {kind: {} for kind in KINDS}
             for round_ in range(args.rounds):
-                for kind, got in read_round(atlas, name, subject, args.libraries, scratch, scratch / f"cache-{name}").items():
+                got_round = read_round(atlas, name, subject, args.libraries, scratch, scratch / f"cache-{name}", KINDS, reports.setdefault(name, {}))
+                for kind, got in got_round.items():
                     for measure, value in got.items():
                         samples[kind].setdefault(measure, []).append(value)
                     more = f" (first drawing {got['first/seconds']:.2f} s, redraw {got['redraw/seconds']:.2f} s)" if kind == "serve" else ""
@@ -316,6 +340,8 @@ def command_read(args: argparse.Namespace) -> None:
                 for measure, values in got.items():
                     readings[f"read/{name}/{kind}/{measure}"] = metric(values, unit_of(measure))
     add(args.out, readings)
+    if args.timings:
+        args.timings.write_text(json.dumps(reports, indent=1))
 
 
 def test_binaries(workspace: Path, cargo: list[str], env: dict[str, str] | None = None) -> list[tuple[str, Path, Path]]:
@@ -633,6 +659,8 @@ class Bench:
         self.subjects = dict(subjects)
         self.sides: dict[str, Side] = {}
         self.tests: dict[str, dict[str, tuple[Path, Path]]] = {}
+        # what Atlas reported of each reading measured, by measure and commit
+        self.reports: dict[str, dict[str, list[dict]]] = {}
 
     def side(self, commit: str) -> Side:
         commit = git(self.repo, "rev-parse", commit)
@@ -682,7 +710,9 @@ class Bench:
                 _, name, kind, *rest = parts
                 if kind not in KINDS:
                     raise SystemExit(f"no reading {kind} to measure {measure}")
-                got = read_round(side.atlas, name, self.subject(side, name), self.libraries, scratch, scratch / "cache", (kind,))
+                reports: dict[str, list[dict]] = {}
+                got = read_round(side.atlas, name, self.subject(side, name), self.libraries, scratch, scratch / "cache", (kind,), reports)
+                self.reports.setdefault(measure, {}).setdefault(side.commit, []).extend(reports.get(kind, []))
                 return got[kind]["/".join(rest)]
             if parts[0] == "build":
                 seconds, peak = self.built(side.tree, scratch / "clean", scratch / "build.log")
@@ -818,6 +848,8 @@ def command_reproduce(args: argparse.Namespace) -> None:
         finally:
             bench.close()
     args.out.write_text(json.dumps(result, indent=1))
+    if args.timings:
+        args.timings.write_text(json.dumps(bench.reports, indent=1))
 
 
 def command_bisect(args: argparse.Namespace) -> None:
@@ -828,6 +860,8 @@ def command_bisect(args: argparse.Namespace) -> None:
         finally:
             bench.close()
     args.out.write_text(json.dumps(result, indent=1))
+    if args.timings:
+        args.timings.write_text(json.dumps(bench.reports, indent=1))
     print(bisect_text(result, None))
 
 
@@ -932,6 +966,102 @@ def command_conclude(args: argparse.Namespace) -> None:
     output(alert="true" if reproduced else "false", urgent="true" if large else "false")
 
 
+# where a reading's time went
+
+WHOLE = "(the whole part)"  # a stage of a part's reading that no one crate or package's code is read in
+SHOWN = 12  # crates and packages a table names; the rest are summed in one row
+
+
+def where(reported: dict) -> dict[str, dict]:
+    """One reading's seconds by phase, by stage, by crate or package, and by crate or package and stage, with the
+    bodies it linked of each crate or package: what `view --timings` reported, summed over the parts."""
+    out: dict[str, dict] = {"phase": {}, "stage": {}, "of": {}, "grid": {}, "bodies": {}}
+    out["phase"] = {k: float(v) for k, v in reported.items() if isinstance(v, (int, float))}
+    for s in reported.get("stages", []):
+        of = f"{s['of']} (library)" if s.get("library") else s.get("of") or WHOLE
+        for table, key in (("stage", s["stage"]), ("of", of), ("grid", (of, s["stage"]))):
+            out[table][key] = out[table].get(key, 0.0) + s["seconds"]
+        if s["stage"] == "body":
+            out["bodies"][of] = out["bodies"].get(of, 0.0) + s["count"]
+    return out
+
+
+def medians(readings: list[dict]) -> dict[str, dict]:
+    """`where` of each reading, each value the median over them; a value a reading lacks is 0 there."""
+    each = [where(r) for r in readings]
+    out: dict[str, dict] = {}
+    for table in ("phase", "stage", "of", "grid", "bodies"):
+        keys = {k for e in each for k in e[table]}
+        out[table] = {k: statistics.median(e[table].get(k, 0.0) for e in each) for k in keys}
+    return out
+
+
+def stage_tables(sides: dict[str, list[dict]]) -> list[str]:
+    """Markdown: where the readings of each side (a label and its readings) went, the sides side by side, and of
+    each side that read crates or packages, each of them by stage."""
+    got = {label: medians(readings) for label, readings in sides.items()}
+    labels = list(got)
+    two = len(labels) == 2
+    # the crates and packages by the most any side took reading them, its bodies as that side counted them
+    most = {k: max(got.values(), key=lambda g: g["of"].get(k, 0.0)) for g in got.values() for k in g["of"]}
+
+    def header(*first: str) -> list[str]:
+        columns = [*first, *labels, *(["B − A"] if two else [])]
+        return ["| " + " | ".join(columns) + " |", "| --- | " + " | ".join("---:" for _ in columns[1:]) + " |"]
+
+    def cells(table: str, key) -> str:
+        values = [g[table].get(key, 0.0) for g in got.values()]
+        return " | ".join([amount(v, "s") for v in values] + ([f"{values[1] - values[0]:+.2f} s"] if two else []))
+
+    phases = [p for p in ("read", "check", "flow", "page") if any(p in g["phase"] for g in got.values())]
+    lines = [*header("phase"), *(f"| {p} | {cells('phase', p)} |" for p in phases)]
+    if not any(g["stage"] for g in got.values()):
+        return [*lines, "", "These readings report no stages: the build is older than the stages of `view --timings`."]
+    stages = sorted({k for g in got.values() for k in g["stage"]}, key=lambda k: -max(g["stage"].get(k, 0.0) for g in got.values()))
+    lines += ["", *header("stage"), *(f"| {k} | {cells('stage', k)} |" for k in stages)]
+    order = sorted(most, key=lambda k: -most[k]["of"][k])
+    shown, rest = order[:SHOWN], order[SHOWN:]
+
+    def bodies(keys: list[str]) -> str:
+        counted = [most[k]["bodies"][k] for k in keys if k in most[k]["bodies"]]
+        return f"{sum(counted):.0f}" if counted else "–"
+
+    lines += ["", *header("crate or package", "bodies")]
+    lines += [f"| {k} | {bodies([k])} | {cells('of', k)} |" for k in shown]
+    if rest:
+        summed = [sum(g["of"].get(k, 0.0) for k in rest) for g in got.values()]
+        change = [f"{summed[1] - summed[0]:+.2f} s"] if two else []
+        lines.append(f"| {len(rest)} more | {bodies(rest)} | " + " | ".join([amount(v, "s") for v in summed] + change) + " |")
+    for label, g in got.items():
+        columns = [k for k in stages if any(g["grid"].get((o, k), 0.0) for o in shown if o != WHOLE)]
+        if not columns:
+            continue
+        lines += ["", f"{label}, each crate or package by stage, in seconds:", ""]
+        lines += ["| crate or package | " + " | ".join(columns) + " |", "| --- | " + " | ".join("---:" for _ in columns) + " |"]
+        lines += [f"| {k} | " + " | ".join(f"{g['grid'].get((k, c), 0.0):.2f}" for c in columns) + " |" for k in shown if k != WHOLE]
+    return lines
+
+
+def command_stages(args: argparse.Namespace) -> None:
+    kept = json.loads(args.timings.read_text())
+    result = json.loads(args.reproduced.read_text()) if args.reproduced else None
+    lines: list[str] = []
+    if result:
+        lines += [f"Measured interleaved on one runner: A {link(result['a'])}, B {link(result['b'])}.", "", *ab_table(result["measures"]), ""]
+    for key, by in kept.items():
+        if result:
+            sides = {f"A `{result['a'][:7]}`": by.get(result["a"], []), f"B `{result['b'][:7]}`": by.get(result["b"], [])}
+        else:
+            sides = {f"`{commit[:7]}`" if len(commit) == 40 else commit: readings for commit, readings in by.items()}
+        sides = {label: readings for label, readings in sides.items() if readings}
+        if not sides:
+            continue
+        rounds = sorted({len(r) for r in sides.values()})
+        lines += [f"#### `{key}`: where the reading went, the median of {' or '.join(map(str, rounds))} readings", ""]
+        lines += [*stage_tables(sides), ""]
+    print("\n".join(lines))
+
+
 # the release's notes
 
 RELEASE_BARS = [("read/atlas/cold/seconds", "Atlas reading itself, cold"), ("read/atlas/warm/seconds", "Atlas reading itself, warm")]
@@ -1007,6 +1137,7 @@ def main() -> None:
     p.add_argument("--subject", action="append", required=True, help="NAME=PATH")
     p.add_argument("--rounds", type=int, default=1)
     p.add_argument("--libraries", type=int, default=1)
+    p.add_argument("--timings", type=Path, help="keep what Atlas reported of each reading here, its stages among it")
     p.add_argument("--out", type=Path, required=True)
     p.set_defaults(func=command_read)
 
@@ -1040,6 +1171,7 @@ def main() -> None:
             default=build,
             help="how a commit is built, with {tree}, {target} and {package}; its binary is then in {target}/release",
         )
+        p.add_argument("--timings", type=Path, help="keep what Atlas reported of each reading measured here, its stages among it")
         p.add_argument("--out", type=Path, required=True)
         p.set_defaults(func=func)
         if name == "reproduce":
@@ -1063,6 +1195,11 @@ def main() -> None:
     p.add_argument("--standing", type=Path, help="write the standing of next against a release instead")
     p.add_argument("--release", help="the release's name in the standing")
     p.set_defaults(func=command_conclude)
+
+    p = commands.add_parser("stages", help="where the readings of a --timings file went: phases, stages, crates and packages")
+    p.add_argument("--timings", type=Path, required=True)
+    p.add_argument("--reproduced", type=Path, help="the reproduction the readings were measured in: A and B side by side")
+    p.set_defaults(func=command_stages)
 
     p = commands.add_parser("release-bars", help="the Bars: line of a release's notes, from the series or an interleaved run")
     p.add_argument("--data", type=Path, help="the series: its nights before each release")
