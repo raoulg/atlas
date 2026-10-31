@@ -396,7 +396,13 @@ stands before it and no choice holds the two in different arms (the arms each ca
 before every call of it, whichever stands first, since a later round runs after the round before.
 What ran is all that call may run, its overrides too. The engine's read-back of a function's arrow
 (`flow::orders`) and the page's plan read this one order, and say the same places under each
-occurrence of a route that starts at a function. A
+occurrence of a route that starts at a function. A function's arrow stands in the contexts it is
+called in: the chain that starts at it, with nothing above it and nothing before it, and each chain
+of calls that leads to it, with the callers on it and what ran before it there. A function it calls
+itself runs below it, where its body calls it, and is above it in no context: a set-up it runs counts
+for what runs after it in its body and for nothing before (#359). So the arrow of a function holds
+what its route, read occurrence by occurrence, does at places, and is exactly that for a function
+nothing calls. A
 caller that handed the rest hands it down the calls into the touch's function, so it holds only on
 them; a caller that set up the object a method on the calls runs on (its calls reach a constructor
 of that method's class) holds wherever it ran before, also in a step beside the calls (`main`
@@ -412,9 +418,10 @@ other. The graph's JSON writes each conjunction `a&b`, its conditions in order, 
 `users_of`. It reads them back once.
 **Where.** `model.rs` (`Atom`, `Both`, `absorb`, `Touch::by`, `Touch::in_route`), `paths.rs` (`Whole`,
 `Callers::of`, `place_calls`), `flow.rs` (`holds`, what ran before a call: `Ix::prior`, the memo's `Key`;
-`along`), `plan.js` (`inRoute`, `before`, `ranBefore`); the pairs `handing` and `setup`, the programs
-`plans/setup-in-a-loop` and `plans/setup-in-an-arm`, and `engine/tests/ran_before.rs`, which holds the
-engine's reading and the page's to one answer.
+`along`; the contexts of an arrow: `contexts`, `in_every_context`), `plan.js` (`inRoute`, `before`,
+`ranBefore`); the pairs `handing`, `setup` and `order`, the programs `plans/setup-in-a-loop` and
+`plans/setup-in-an-arm`, and `engine/tests/ran_before.rs`, which holds the engine's reading and the page's
+to one answer, and a function's arrow to what its route, written out occurrence by occurrence, does at places.
 
 ### Yoneda: what changed
 **What.** An object is determined up to isomorphism by the arrows into it, `Hom(−, A)`, and
@@ -522,7 +529,8 @@ line or a box that appears or disappears means:
    rows stands where its other end products stand. What it wrote is what it wrote at the places the route
    touches (rule 5): a helper that writes the path its caller makes whole writes that caller's file, not
    the file it names alone, so a read of the latter is no read back. A step's arrow stands in every context
-   of callers that make a path it reaches whole, and reads back what it reads back in any one of them (#217).
+   it is called in, and reads back what it reads back in any one of them (#217): the chain that starts at it,
+   and each chain of calls that leads to it, with what ran before it there ("Who makes a path whole").
 5. **Reach is computed on the fine graph.** Quotienting identifies vertices and can make a path that
    no fine path has (`a → b`, `c → d`, `b ≡ c` gives `[a] → [d]`). What a step reaches is the closure
    of its calls in the fine graph, drawn apart from its own arrow (sentence 6), and never read off a

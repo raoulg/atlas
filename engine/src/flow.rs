@@ -863,20 +863,37 @@ fn one_of(runs: &[Done]) -> Vec<(u32, Order)> {
     out.into_iter().map(|(p, (o, always))| (p, Order { always_writes: always == all, ..o })).collect()
 }
 
-/// What `id` does at places in each context its arrow stands in, together: with no caller above it that makes a path
-/// whole, and under each such caller a touch it reaches names (`Touch::by`). In one context every touch is at one place
-/// (`orders`); an arrow stands in all of them, so it reads back, or changes, what it does in any one: the places where
-/// what it reads is only what was written, and those where it writes on what it found. Without `done`, its own body
-/// alone.
-fn in_every_context(ix: &Ix, id: &str, on: &str, mut done: Option<&mut Memo>) -> Orders {
+/// The contexts each body stands in, by the body (`Key::body`): the keys `orders` worked it out under in `done`, each with
+/// what it does there. Every function starts a chain (`arrows_in`), so a body's contexts are the chain that starts at it,
+/// with nothing above it and nothing before it, and each chain of calls that leads to it from another function, with
+/// the callers on it and what ran before it there (`Key::of`, `Ix::prior`): the contexts it can be called in, as the
+/// route reads each. A function it calls itself runs below it, where its body calls it, and is in none of them above it.
+fn contexts(done: &Memo) -> FxHashMap<(u32, u32), Vec<(&Key, &Done)>> {
+    let mut out: FxHashMap<(u32, u32), Vec<(&Key, &Done)>> = FxHashMap::default();
+    for (k, d) in &done.done {
+        out.entry(k.body).or_default().push((k, d));
+    }
+    out
+}
+
+/// What `id` does at places in each context its arrow stands in (`contexts`), together. In one context every touch is at
+/// one place (`orders`); an arrow stands in all of them, so it reads back, or changes, what it does in any one: the
+/// places where what it reads is only what was written, and those where it writes on what it found. With `own`, its own
+/// body alone in each, its calls left out.
+fn in_every_context(ix: &Ix, id: &str, on: &str, contexts: &FxHashMap<(u32, u32), Vec<(&Key, &Done)>>, own: bool) -> Orders {
     let (mut reads_back, mut updates): (BTreeSet<u32>, BTreeSet<u32>) = Default::default();
-    for above in contexts(ix, id) {
-        let top = above.first().copied().unwrap_or(id);
-        // the callers above are on the chain, and so are the classes of those that are methods
-        let classes = above.iter().filter_map(|f| ix.nodes.get(f)).filter(|m| !m.ctor).filter_map(|m| m.cls.as_deref()).map(|c| ix.name(c));
-        let (calls, classes): (Vec<u32>, Vec<u32>) = (above.iter().map(|f| ix.name(f)).collect(), classes.collect());
-        let under = Under { calls: &calls, before: &[], classes: &classes, top: ix.name(top) };
-        for &(p, o) in orders(ix, id, on, top, &under, done.as_deref_mut()).iter() {
+    let none = ix.name("");
+    for &(k, done) in contexts.get(&(ix.name(id), ix.name(on))).into_iter().flatten() {
+        let alone;
+        let done = if own {
+            // the chain the key keeps of the context: what holds below it holds in the body alone as it does with its calls
+            let top = if k.entry == none { id.to_string() } else { ix.named(k.entry) };
+            alone = orders(ix, id, on, &top, &k.under(&k.before, k.entry), None);
+            &alone
+        } else {
+            done
+        };
+        for &(p, o) in done.iter() {
             if o.reads_back && !o.finds {
                 reads_back.insert(p);
             }
@@ -891,36 +908,6 @@ fn in_every_context(ix: &Ix, id: &str, on: &str, mut done: Option<&mut Memo>) ->
         out
     };
     Orders { reads_back: named(reads_back), updates: named(updates) }
-}
-
-/// The callers above `id` that may make a path it reaches whole: none, and each set a touch it reaches names in `by`.
-fn contexts<'g>(ix: &Ix<'g>, id: &str) -> Vec<Vec<&'g str>> {
-    let mut out: Vec<Vec<&'g str>> = vec![vec![]];
-    let mut seen: HashSet<&str> = HashSet::new();
-    let mut stack: Vec<&str> = vec![id];
-    while let Some(f) = stack.pop() {
-        if !seen.insert(f) {
-            continue;
-        }
-        let Some(&n) = ix.nodes.get(f) else { continue };
-        for t in &n.touches {
-            for by in &t.by {
-                let makers: Vec<&'g str> = by.members().filter_map(|m| ix.nodes.get_key_value(m).map(|(k, _)| *k)).collect();
-                if !makers.is_empty() && !out.contains(&makers) {
-                    out.push(makers);
-                }
-            }
-        }
-        stack.extend(
-            ix.out
-                .get(f)
-                .into_iter()
-                .flatten()
-                .filter(|e| matches!(e.kind, EdgeKind::Calls | EdgeKind::Instantiates))
-                .map(|e| e.dst.as_str()),
-        );
-    }
-    out
 }
 
 impl<'g> Ix<'g> {
@@ -1060,7 +1047,7 @@ enum Value<'s> {
     Unknown,
 }
 
-fn arrow_of(ix: &Ix, n: &Node, done: &mut Memo) -> Arrow {
+fn arrow_of(ix: &Ix, n: &Node, contexts: &FxHashMap<(u32, u32), Vec<(&Key, &Done)>>) -> Arrow {
     if n.kind == NodeKind::Class {
         return Arrow {
             takes: ix.built_from(&n.id),
@@ -1072,12 +1059,12 @@ fn arrow_of(ix: &Ix, n: &Node, done: &mut Memo) -> Arrow {
     // a module's own code runs where it is a program (`if __name__ == "__main__":`): what it
     // reads back of what it wrote
     if n.kind == NodeKind::Module {
-        let (at, own) = (in_every_context(ix, &n.id, "", Some(done)), in_every_context(ix, &n.id, "", None));
+        let (at, own) = (in_every_context(ix, &n.id, "", contexts, false), in_every_context(ix, &n.id, "", contexts, true));
         return Arrow { reads_back: at.reads_back, own_reads_back: own.reads_back, updates: at.updates, ..Default::default() };
     }
     let ctor = n.ctor;
     let gives = ix.targets(&n.id, EdgeKind::Returns);
-    let (at, own) = (in_every_context(ix, &n.id, "", Some(done)), in_every_context(ix, &n.id, "", None));
+    let (at, own) = (in_every_context(ix, &n.id, "", contexts, false), in_every_context(ix, &n.id, "", contexts, true));
     // a function whose signature does not say what it gives back gives back a value where its callers use one
     let returns_value = n.returns.as_ref().map_or(false, |r| !r.value.is_empty()) || (ix.unsaid(n) && ix.used(&n.id));
     Arrow {
@@ -1179,9 +1166,10 @@ fn arrows_in<'g>(g: &'g Graph, ix: &Ix<'g>, done: &mut Memo) -> BTreeMap<String,
         }
         done.before = std::mem::take(&mut done.done);
     }
-    let mut out: BTreeMap<String, Arrow> = g.nodes.iter().filter(kinds).map(|n| (n.id.clone(), arrow_of(ix, n, &mut *done))).collect();
+    let contexts = contexts(done);
+    let mut out: BTreeMap<String, Arrow> = g.nodes.iter().filter(kinds).map(|n| (n.id.clone(), arrow_of(ix, n, &contexts))).collect();
     for (f, c) in &on {
-        let at = in_every_context(ix, f, c, Some(&mut *done));
+        let at = in_every_context(ix, f, c, &contexts, false);
         if let Some(a) = out.get_mut(f).filter(|a| a.reads_back != at.reads_back || a.updates != at.updates) {
             a.on.insert(c.clone(), at);
         }
@@ -2140,8 +2128,10 @@ mod tests {
         assert_eq!((up.to.as_str(), up.instead.as_slice()), (source, [key(cached, feed)].as_slice()));
         assert!(b.contains_key(&key(cached, feed)) && b[&key(cached, feed)].alts.is_empty(), "on a feed, nothing runs in its place");
         // what a route does at a place is what its calls may run there: on a feed, `lines` reads the store in one arm
-        // and writes it in the other, the place as `lines` names it (the store from beyond, `self.root / key`)
-        assert_eq!(arrows(&g)["news.read.lines"].updates, ["w:Disk:self.root / key", "w:Disk:{cache}/{url}"]);
+        // and writes it in the other, the place as `lines` names it (the store from beyond, `self.root / key`), the one
+        // context it is called in; `headlines` builds the feed on the store it names, and changes `{cache}/{url}`
+        assert_eq!(arrows(&g)["news.read.lines"].updates, ["w:Disk:self.root / key"]);
+        assert_eq!(arrows(&g)["news.read.headlines"].updates, ["w:Disk:{cache}/{url}"]);
         let g = crate::analyze(&at("shortcut"), &crate::Options::default()).expect("reads the pair");
         assert!(arrows(&g)["news.read.lines"].updates.is_empty(), "the shortcut's lines never reads the store");
     }

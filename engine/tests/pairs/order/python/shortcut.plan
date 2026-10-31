@@ -1,0 +1,42 @@
+# `main` keeps its report on the shelf `open_shelf` sets up, then sets the drafts up and reads the report from them,
+# where it never kept one. A set-up counts for what runs after it (composition is call order, #359): the drafts are set
+# up after the report is kept, so the write under `keep_report` writes `out/report.txt` alone, and nothing the route
+# runs writes `drafts/report.txt`. The read under `report` runs on the drafts and reads `drafts/report.txt`, which the
+# route takes from beyond it: it stands in the domain. `out/report.txt` is only written.
+
+route shelf.cli.main
+step main/open_shelf
+step main/open_shelf/Shelf()
+step main/Shelf.keep_report
+step main/Shelf.keep_report/write
+step main/open_drafts
+step main/open_drafts/Shelf()
+step main/Shelf.report
+step main/Shelf.report/read
+
+line entry > main call
+line main/open_shelf/Shelf() > Shelf@main/open_shelf/Shelf() value
+line Shelf@main/open_shelf/Shelf() > main/open_shelf value               # the shelf built goes back
+line main/open_shelf > Shelf·shelf@main/open_shelf value
+line Shelf·shelf@main/open_shelf > main/Shelf.keep_report/write value     # `write(self.root / "report.txt", text)`
+line main/Shelf.keep_report/write > File(out/report.txt) own
+line main/open_drafts/Shelf() > Shelf@main/open_drafts/Shelf() value
+line Shelf@main/open_drafts/Shelf() > main/open_drafts value
+line main/open_drafts > Shelf·drafts@main/open_drafts value
+line Shelf·drafts@main/open_drafts > main/Shelf.report/read value         # `read(self.root / "report.txt")` on the drafts
+line File(drafts/report.txt) > main/Shelf.report/read own
+line main/Shelf.report/read > main/Shelf.report back                      # the text read goes back
+line main/Shelf.report > main back
+line main > Screen own                                                     # `print(..)`
+# the shelf `open_shelf` set up ran before the read too, and the read counts it, though it runs on the drafts
+known #368 extra line File(out/report.txt) > main/Shelf.report/read own
+
+home Shelf@main/open_shelf/Shelf() main/open_shelf
+home Shelf·shelf@main/open_shelf main
+home Shelf@main/open_drafts/Shelf() main/open_drafts
+home Shelf·drafts@main/open_drafts main
+
+side entry left
+side File(drafts/report.txt) left
+known #368 side File(out/report.txt) right
+side Screen right
