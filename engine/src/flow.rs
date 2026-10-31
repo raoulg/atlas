@@ -886,9 +886,12 @@ fn in_every_context(ix: &Ix, id: &str, on: &str, contexts: &FxHashMap<(u32, u32)
     for &(k, done) in contexts.get(&(ix.name(id), ix.name(on))).into_iter().flatten() {
         let alone;
         let done = if own {
-            // the chain the key keeps of the context: what holds below it holds in the body alone as it does with its calls
+            // the context as its key keeps it, which `Key::of` gives back as this key: the body alone runs the touches
+            // it runs with its calls
             let top = if k.entry == none { id.to_string() } else { ix.named(k.entry) };
-            alone = orders(ix, id, on, &top, &k.under(&k.before, k.entry), None);
+            let under = k.under(&k.before, k.entry);
+            debug_assert!(ix.nodes.get(id).is_some_and(|n| Key::of(ix, n, on, &under) == *k), "{id}: a context is its own key");
+            alone = orders(ix, id, on, &top, &under, None);
             &alone
         } else {
             done
