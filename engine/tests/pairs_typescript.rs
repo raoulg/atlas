@@ -2039,3 +2039,16 @@ fn places_a_parent_drops_the_last_part_of_a_path() {
 fn a_name_computed_of_names_stands_for_them() {
     common::a_name_computed_of_names_stands_for_them("typescript");
 }
+
+/// The twice pair: `kind` in `join(root, kind, `${kind}.csv`)` is one value, so the loop writes two places, never four
+/// (#324).
+#[test]
+fn places_a_name_bound_once_is_one_value() {
+    common::a_name_bound_once_is_one_value("typescript", "export.exportStock");
+}
+
+/// The trees pair: a recursion over `readdirSync` is one place at every depth (#325).
+#[test]
+fn places_a_walk_of_a_tree_is_one_place_at_every_depth() {
+    common::a_walk_of_a_tree_is_one_place_at_every_depth("typescript", "backup.copyTree", "backup.main");
+}

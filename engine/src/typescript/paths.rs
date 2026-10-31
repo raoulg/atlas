@@ -12,7 +12,9 @@ use super::module::{
     class_named, declarations, function_in, is_property, member_parts, package_from_ext, top_variables, Bound, Module, WRAPPERS,
 };
 use crate::knowledge::{self, PathFn};
-use crate::paths::{bound as named_by, cross, environment, environment_named, hole, lit, or_else, parent, substitute, union, Built, Seg};
+use crate::paths::{
+    bound as named_by, cross, each, environment, environment_named, held_by, hole, lit, or_else, parent, substitute, union, Built, Seg,
+};
 use crate::tree::{beneath, named_children, path_str, text, unquote, walk};
 
 const DEPTH: u32 = 12;
@@ -363,15 +365,7 @@ impl<'a> Eval<'a> {
             if let Some(right) = set.and_then(|a| a.child_by_field_name("right")) {
                 let names = param_names(*ctor, src);
                 let vals = self.of(At { m, scope: Some(*ctor), params: &names }, right, depth + 1);
-                return Some(
-                    vals.into_iter()
-                        .map(|b| {
-                            b.into_iter()
-                                .map(|s| if let Seg::Param(x) = s { Seg::Held(format!("{id}.constructor"), x) } else { s })
-                                .collect()
-                        })
-                        .collect(),
-                );
+                return Some(vals.into_iter().map(|b| held_by(&format!("{id}.constructor"), b)).collect());
             }
         }
         let field = members
@@ -390,7 +384,7 @@ impl<'a> Eval<'a> {
         }
         // the element a loop or a function handed to an array's method binds the name to
         if let Some(v) = self.element(at, e, &name, depth) {
-            return v;
+            return named_by(&at.scope.map_or_else(|| name.clone(), |s| local_name(s, &name, src)), each(v));
         }
         // a local of the function, then its parameters
         if let Some(scope) = at.scope {

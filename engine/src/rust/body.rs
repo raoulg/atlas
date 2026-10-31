@@ -2268,7 +2268,7 @@ impl<'a, 't> Body<'a, 't> {
         let lits = literals(c, self.src, STRINGS);
         let values: Vec<String> = match first.filter(|a| literals(*a, self.src, STRINGS).is_empty()) {
             Some(a) => {
-                let built = self.eval.of(self.at(), a, 0);
+                let built: Vec<crate::paths::Built> = self.eval.of(self.at(), a, 0).iter().flat_map(crate::paths::chosen).collect();
                 let whole = built.iter().all(crate::paths::known);
                 if whole {
                     built.iter().map(crate::paths::render).collect()

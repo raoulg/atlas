@@ -2949,3 +2949,23 @@ fn nothing_a_socket_is_a_place() {
 fn a_name_computed_of_names_stands_for_them() {
     common::a_name_computed_of_names_stands_for_them("python");
 }
+
+/// The twice pair: `kind` in `root / kind / f"{kind}.csv"` is one value, so the loop writes two places, never four (#324).
+#[test]
+fn places_a_name_bound_once_is_one_value() {
+    common::a_name_bound_once_is_one_value("python", "export.export");
+}
+
+/// The trees pair: a recursion over `iterdir` is one place at every depth (#325). It is the walk `rglob("*")` makes,
+/// so the clean copy reads what `size` reads ("Isomorphic is the same"); the shortcut's copy stops at the top.
+#[test]
+fn places_a_walk_of_a_tree_is_one_place_at_every_depth() {
+    common::a_walk_of_a_tree_is_one_place_at_every_depth("python", "backup.copy_tree", "backup.main");
+    let p = common::pair("trees/python");
+    let read = |g: &Graph, id: &str| -> BTreeSet<String> {
+        let n = g.node(id).unwrap_or_else(|| panic!("no node {id}"));
+        n.touches.iter().filter(|t| t.kind_name() == "disk_read").map(|t| t.artifact.clone()).collect()
+    };
+    assert_eq!(read(&p.clean, "backup.copy_tree"), read(&p.clean, "backup.size"), "the recursion walks what `rglob` walks");
+    assert_ne!(read(&p.shortcut, "backup.copy_tree"), read(&p.shortcut, "backup.size"), "the shortcut walks the top alone");
+}
