@@ -12,7 +12,7 @@ use crate::knowledge;
 use crate::model::{Edge, EdgeKind, Graph, Lang, Node, NodeKind, Part};
 use crate::options::Options;
 use crate::paths::{served, serving, Served};
-use crate::repo::Repo;
+use crate::repo::{Answers, Repo, Stamp};
 
 /// The directories whose manifests root a part: the repository itself, and every manifest
 /// below it, at any depth, that no part around it reads as its own (a workspace reads its
@@ -60,16 +60,23 @@ pub fn graph_of(repo: &Repo, opts: &Options) -> Result<Graph> {
 /// Each part's own graph, read in its language: what `atlas-code check` asks, part by part. Each
 /// repository is read once; a part is a view of its reading.
 pub fn analyze_parts(repos: &[PathBuf], opts: &Options) -> Result<Vec<Graph>> {
+    Ok(witnessed(repos, opts)?.0)
+}
+
+/// Each part's own graph, as `analyze_parts` reads them, with what the reading rests on: whether
+/// the repositories still give the same graphs is asked of the witnesses, not by reading again.
+pub fn witnessed(repos: &[PathBuf], opts: &Options) -> Result<(Vec<Graph>, Witnesses)> {
     for _ in 0..3 {
-        if let Some(graphs) = read_current_parts(repos, opts)? {
-            return Ok(graphs);
+        if let Some(read) = read_current_parts(repos, opts)? {
+            return Ok(read);
         }
     }
     anyhow::bail!("repository changed while Atlas was reading it")
 }
 
-/// A complete reading of the listed repository and the source files its parts consume.
-fn read_current_parts(repos: &[PathBuf], opts: &Options) -> Result<Option<Vec<Graph>>> {
+/// A complete reading of the listed repository, with what it rests on, when that still holds once
+/// the reading is done.
+fn read_current_parts(repos: &[PathBuf], opts: &Options) -> Result<Option<(Vec<Graph>, Witnesses)>> {
     let read: Vec<Repo> = repos.iter().map(|r| crate::language::read(r, opts)).collect::<Result<_>>()?;
     // each part with where it lies: its directory in its repository, behind the repository's name
     // when several are read
@@ -90,20 +97,24 @@ fn read_current_parts(repos: &[PathBuf], opts: &Options) -> Result<Option<Vec<Gr
             crate::language::looked_for()
         );
     }
+    let decisions: Vec<Option<(PathBuf, String)>> = read.iter().map(|r| r.hidden(crate::aside::FILE)).collect();
+    let mut witnesses = Witnesses {
+        repos: repos.to_vec(),
+        opts: opts.clone(),
+        roots: read.iter().map(|r| r.root().to_path_buf()).collect(),
+        found: found.iter().map(|(part, _)| Placed::of(part)).collect(),
+        parts: vec![],
+        decided: decisions.iter().map(|d| d.as_ref().map(|(_, text)| text.clone())).collect(),
+    };
     let opts = Options { package: None, ..opts.clone() };
     let mut graphs = vec![];
-    let mut witnesses = vec![];
     for (part, at) in &found {
-        match indexed_graph(part, &opts) {
+        let (graph, witness) = indexed_graph(part, &opts);
+        witnesses.parts.push(witness);
+        match graph {
             // a manifest without code of its own (tooling, a docs site, a workspace's root) is not a part
-            Ok((g, witness)) if g.nodes.is_empty() && found.len() > 1 => {
-                witnesses.push((part, witness));
-                eprintln!("skipped {}: no code of its own", part.root().display());
-            }
-            Ok((g, witness)) => {
-                witnesses.push((part, witness));
-                graphs.push((g, at.clone()));
-            }
+            Ok(g) if g.nodes.is_empty() && found.len() > 1 => eprintln!("skipped {}: no code of its own", part.root().display()),
+            Ok(g) => graphs.push((g, at.clone())),
             Err(e) if found.len() > 1 => eprintln!("skipped {}: {e}", part.root().display()),
             Err(e) => return Err(e),
         }
@@ -111,74 +122,138 @@ fn read_current_parts(repos: &[PathBuf], opts: &Options) -> Result<Option<Vec<Gr
     if graphs.is_empty() {
         anyhow::bail!("no code found in {}", repos.iter().map(|r| r.display().to_string()).collect::<Vec<_>>().join(", "));
     }
-    let current: Vec<Repo> = repos.iter().map(|r| crate::language::read(r, &opts)).collect::<Result<_>>()?;
-    let stable =
-        read.iter().zip(&current).all(|(before, after)| before.listed_files() == after.listed_files() && before.stamps() == after.stamps())
-            && witnesses.iter().all(|(part, witness)| witness.current(part));
-    Ok(stable.then(|| {
+    Ok(witnesses.current(true)?.then(|| {
         let mut graphs = apart(graphs);
-        decided(&read, &mut graphs);
-        graphs
+        decided(&decisions, &mut graphs);
+        (graphs, witnesses)
     }))
 }
 
 /// The `.atlasignore` at the top of each repository read, among the files of every part: the
 /// decisions it holds are the author's, whichever part the code they answer lies in.
-fn decided(read: &[Repo], graphs: &mut [Graph]) {
-    for r in read {
-        let Some((file, text)) = r.hidden(crate::aside::FILE) else { continue };
+fn decided(decisions: &[Option<(PathBuf, String)>], graphs: &mut [Graph]) {
+    for (file, text) in decisions.iter().flatten() {
         for g in graphs.iter_mut() {
-            g.files.insert(crate::tree::path_str(&file), text.clone());
+            g.files.insert(crate::tree::path_str(file), text.clone());
         }
     }
 }
 
-/// One part's complete analysis and the inputs that make it current.
+/// What a reading of repositories rests on: the parts found in each, what each part's reading asked
+/// and took (its witness), and the `.atlasignore` at the top of each. The repositories give the
+/// same graphs while all of it holds.
+pub struct Witnesses {
+    repos: Vec<PathBuf>,
+    opts: Options,
+    roots: Vec<PathBuf>,
+    found: Vec<Placed>,
+    parts: Vec<Witness>,
+    decided: Vec<Option<String>>,
+}
+
+/// Where a part was found and how it is read: its directory, its language, and the package it
+/// was asked for.
+#[derive(PartialEq)]
+struct Placed {
+    root: PathBuf,
+    language: Option<Lang>,
+    asked: Option<PathBuf>,
+}
+
+impl Placed {
+    fn of(part: &Repo) -> Placed {
+        Placed { root: part.root().to_path_buf(), language: part.language(), asked: part.asked().map(Path::to_path_buf) }
+    }
+}
+
+impl Witnesses {
+    /// Whether the repositories as they are now still give the reading's graphs, as far as the
+    /// repositories go: the same parts, each asked the same of its listing and holding the same
+    /// bytes where it read them, and the same decisions. What a part takes from its environment
+    /// (the libraries) is asked when a reading begins and ends, not here: a check of it walks
+    /// directories outside the repositories (`node_modules`).
+    pub fn hold(&mut self) -> bool {
+        self.current(false).unwrap_or(false)
+    }
+
+    /// The directory each repository was read at: the repository, or for a package named on its
+    /// own the project it is in.
+    pub fn roots(&self) -> &[PathBuf] {
+        &self.roots
+    }
+
+    /// Whether the reading still holds, with what each part takes from its environment when
+    /// `environment`.
+    fn current(&mut self, environment: bool) -> Result<bool> {
+        let read: Vec<Repo> = self.repos.iter().map(|r| crate::language::read(r, &self.opts)).collect::<Result<_>>()?;
+        let parts: Vec<Repo> = read.iter().flat_map(|r| found(r, &self.opts)).collect();
+        let placed: Vec<Placed> = parts.iter().map(Placed::of).collect();
+        let decided: Vec<Option<String>> = read.iter().map(|r| r.hidden(crate::aside::FILE).map(|(_, text)| text)).collect();
+        Ok(placed == self.found
+            && decided == self.decided
+            && parts.iter().zip(self.parts.iter_mut()).all(|(part, witness)| witness.current(part, environment)))
+    }
+}
+
+/// One part's complete analysis and the witness that keeps it current.
 #[derive(serde::Serialize, serde::Deserialize)]
 struct Snapshot {
-    listed: BTreeSet<PathBuf>,
-    read: BTreeMap<PathBuf, String>,
-    environment: Vec<(Check, String)>,
+    witness: Witness,
     written: Written,
     graph: Graph,
 }
 
+/// What a part's reading rests on: each question it asked of the listing with its answer, each
+/// file it read by its bytes' digest, and what it took from its environment. With each read file
+/// the stamp it had when its bytes were last found the same, so that a file whose stamp has not
+/// moved since is not read again to ask.
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
 struct Witness {
+    asked: Answers,
     read: BTreeMap<PathBuf, String>,
     environment: Vec<(Check, String)>,
+    #[serde(skip)]
+    stamps: BTreeMap<PathBuf, Stamp>,
 }
 
 impl Witness {
-    fn current(&self, part: &Repo) -> bool {
-        self.read.iter().all(|(path, was)| part.listed_bytes(path).is_some_and(|bytes| crate::cache::digest(&bytes) == *was))
-            && crate::cache::holds(&self.environment)
+    /// What the reading of `part` asked and read, with what it took from its environment.
+    fn of(part: &Repo, environment: Vec<(Check, String)>) -> Witness {
+        let read = part.read_contents().into_iter().map(|(path, bytes)| (path, crate::cache::digest(&bytes))).collect();
+        Witness { asked: part.answers(), read, environment, stamps: BTreeMap::new() }
+    }
+
+    /// Whether `part`, as listed now, answers each question as it did and holds the same bytes in
+    /// each file read, and, when `environment`, whether its environment stands as it did.
+    fn current(&mut self, part: &Repo, environment: bool) -> bool {
+        let Witness { asked, read, environment: checks, stamps } = self;
+        // a file's stamp is taken before its bytes: a write after it moves the stamp
+        let same = |path: &PathBuf, was: &String, stamps: &mut BTreeMap<PathBuf, Stamp>| {
+            let now = part.stamp(path);
+            if now.is_some() && stamps.get(path) == Some(&now) {
+                return true;
+            }
+            let held = part.listed_bytes(path).is_some_and(|bytes| crate::cache::digest(&bytes) == *was);
+            if held {
+                stamps.insert(path.clone(), now);
+            }
+            held
+        };
+        part.answers_alike(asked) && read.iter().all(|(path, was)| same(path, was, stamps)) && (!environment || crate::cache::holds(checks))
     }
 }
 
 impl Snapshot {
-    fn current(&self, part: &Repo) -> bool {
-        self.listed == part.listed_files() && self.witness().current(part)
-    }
-
-    fn witness(&self) -> Witness {
-        Witness { read: self.read.clone(), environment: self.environment.clone() }
-    }
-
     fn graph(mut self) -> Option<Graph> {
         self.written.apply(std::slice::from_mut(&mut self.graph)).then_some(self.graph)
     }
 }
 
-/// A part from the worktree index where its listed files, read contents and language environment
-/// stand as they did; otherwise a fresh reading kept as a complete entry.
-fn indexed_graph(part: &Repo, opts: &Options) -> Result<(Graph, Witness)> {
-    let Some(cache) = opts.cache.as_ref().and_then(|cache| cache.workspace(part.root())) else {
-        let language = crate::language::of(part, opts)?;
-        let environment = crate::cache::witness(language.environment(part, opts));
-        let graph = graph_of(part, opts)?;
-        let read = part.read_contents().into_iter().map(|(path, bytes)| (path, crate::cache::digest(&bytes))).collect();
-        return Ok((graph, Witness { read, environment }));
-    };
+/// A part from the worktree index where its witness holds; otherwise a fresh reading, kept as a
+/// complete entry. Beside it, its witness, also when the reading failed: what it asked and read
+/// before it failed is what it failed on.
+fn indexed_graph(part: &Repo, opts: &Options) -> (Result<Graph>, Witness) {
+    let cache = opts.cache.as_ref().and_then(|cache| cache.workspace(part.root()));
     let key = format!(
         "{}\n{}\n{}\n{}\n{:?}\n{:?}",
         crate::repo::Repo::real(&part.root()).display(),
@@ -188,31 +263,30 @@ fn indexed_graph(part: &Repo, opts: &Options) -> Result<(Graph, Witness)> {
         opts.named,
         opts.package
     );
-    if let Some((graph, environment)) =
-        cache.get("part", &key).and_then(|bytes| serde_json::from_slice::<Snapshot>(&bytes).ok()).and_then(|snapshot| {
-            snapshot.current(part).then(|| {
-                let witness = snapshot.witness();
-                snapshot.graph().map(|graph| (graph, witness))
-            })?
-        })
-    {
-        return Ok((graph, environment));
+    let kept = cache.as_ref().and_then(|cache| cache.get("part", &key)).and_then(|bytes| serde_json::from_slice::<Snapshot>(&bytes).ok());
+    if let Some(mut snapshot) = kept {
+        if snapshot.witness.current(part, true) {
+            let witness = snapshot.witness.clone();
+            if let Some(graph) = snapshot.graph() {
+                return (Ok(graph), witness);
+            }
+        }
     }
-    let language = crate::language::of(part, opts)?;
-    let environment = crate::cache::witness(language.environment(part, opts));
-    let graph = graph_of(part, opts)?;
-    let snapshot = Snapshot {
-        listed: part.listed_files(),
-        read: part.read_contents().into_iter().map(|(path, bytes)| (path, crate::cache::digest(&bytes))).collect(),
-        environment: environment.clone(),
-        written: Written::of(std::slice::from_ref(&graph)),
-        graph: graph.clone(),
+    let (graph, environment) = match crate::language::of(part, opts) {
+        Ok(language) => {
+            let environment = crate::cache::witness(language.environment(part, opts));
+            (graph_of(part, opts), environment)
+        }
+        Err(e) => (Err(e), vec![]),
     };
-    if let Ok(bytes) = serde_json::to_vec(&snapshot) {
-        cache.put("part", &key, &bytes);
+    let witness = Witness::of(part, environment);
+    if let (Some(cache), Ok(graph)) = (&cache, &graph) {
+        let snapshot = Snapshot { witness: witness.clone(), written: Written::of(std::slice::from_ref(graph)), graph: graph.clone() };
+        if let Ok(bytes) = serde_json::to_vec(&snapshot) {
+            cache.put("part", &key, &bytes);
+        }
     }
-    let witness = snapshot.witness();
-    Ok((graph, witness))
+    (graph, witness)
 }
 
 /// The parts of the repository as read: each root's, read in the language of its manifest, and for

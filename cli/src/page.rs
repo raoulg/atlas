@@ -133,7 +133,6 @@ pub(crate) struct Opens {
     pub(crate) route: Option<String>,
     pub(crate) sight: Option<Sight>,
     pub(crate) served: Option<String>,
-    pub(crate) preliminary: bool,
 }
 
 /// One project as the viewer is handed it: the graph, the flow its routes are read from, the
@@ -155,8 +154,6 @@ struct Project<'a> {
     served: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     drawn: Option<&'a str>,
-    #[serde(skip_serializing_if = "std::ops::Not::not")]
-    preliminary: bool,
 }
 
 /// What the viewer is handed: its projects by name, and the build of Atlas that drew them.
@@ -195,7 +192,6 @@ impl Html {
         let worker = serde_json::to_string(ELK_WORKER).expect("worker source is serializable").replace("</", "<\\/");
         VIEWER
             .replacen("/*__PLAN__*/", PLAN, 1)
-            .replacen("/*__PROGRESS__*/", PROGRESS, 1)
             .replacen("/*__PALETTE__*/", PALETTE, 1)
             .replacen("/*__FONTS__*/", FONTS, 1)
             .replacen("/*__D3__*/", D3, 1)
@@ -228,7 +224,6 @@ fn payload(graph: &Graph, flow: &Flow, findings: &Findings, compared: Option<&Co
         view: opens.sight.as_ref(),
         served: opens.served.is_some(),
         drawn: opens.served.as_deref(),
-        preliminary: opens.preliminary,
     };
     let payload = Payload { projects: BTreeMap::from([(graph.root.as_str(), project)]), atlas: crate::version::VERSION.as_str() };
     Ok(serde_json::to_string(&payload)?)

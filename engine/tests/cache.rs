@@ -258,3 +258,107 @@ fn what_ty_says_of_a_library_is_kept_by_its_code_and_its_environment() {
     assert_eq!(read(&opts), read(&Options::default()));
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+/// One small program in each language, its manifest at the top of its repository, with a folder of
+/// documentation: its files, and a file of its code that a reader of the language lists where it is
+/// added. (A new folder at the top of a Python project is a module an import may find, a namespace
+/// package; one inside `docs` is not.)
+type Program = (&'static str, &'static [(&'static str, &'static str)], (&'static str, &'static str));
+
+const PROGRAMS: &[Program] = &[
+    (
+        "rust",
+        &[
+            ("docs/index.md", "# tiny\n"),
+            ("Cargo.toml", "[package]\nname = \"tiny\"\nversion = \"0.1.0\"\nedition = \"2021\"\n"),
+            ("src/main.rs", "fn main() {\n    std::fs::write(\"out.txt\", \"1\").unwrap();\n}\n"),
+        ],
+        ("src/extra.rs", "pub fn extra() -> u32 {\n    1\n}\n"),
+    ),
+    (
+        "python",
+        &[
+            ("docs/index.md", "# tiny\n"),
+            ("pyproject.toml", "[project]\nname = \"tiny\"\nversion = \"0.1.0\"\n"),
+            ("src/tiny/__init__.py", "def save(path: str) -> None:\n    open(path, \"w\").write(\"1\")\n"),
+        ],
+        ("src/tiny/extra.py", "def extra() -> int:\n    return 1\n"),
+    ),
+    (
+        "typescript",
+        &[
+            ("docs/index.md", "# tiny\n"),
+            ("package.json", r#"{ "name": "tiny" }"#),
+            ("tsconfig.json", "{}"),
+            ("src/main.ts", "export function main(): string {\n  return \"1\";\n}\n"),
+        ],
+        ("src/extra.ts", "export function extra(): number {\n  return 1;\n}\n"),
+    ),
+];
+
+/// Files no reader of any language asks about: a picture in a new folder of the documentation, and
+/// a note.
+const UNREAD: &[(&str, &str)] = &[("docs/img/x.svg", "<svg xmlns=\"http://www.w3.org/2000/svg\"/>\n"), ("notes.txt", "a note\n")];
+
+/// A reading depends only on what its reader asked of the repository. A file no question covers
+/// leaves the part's entry kept, and the graph the one read before and the one a reading anew gives;
+/// a file of the language's code where its reader lists the code is read anew, and the graph is the
+/// one a reading anew gives. Each language's reader asks its questions of the listing alike.
+#[test]
+fn a_reading_rests_only_on_what_its_reader_asked() {
+    let dir = scratch("asked");
+    for (language, files, code) in PROGRAMS {
+        let repo = dir.join(language);
+        write(&repo, files);
+        let opts = cached(&dir.join(format!("cache-{language}")));
+        let cache = opts.cache.as_ref().unwrap();
+        let read = || parts::analyze_parts(&[repo.clone()], &opts).unwrap();
+        let anew = || parts::analyze_parts(&[repo.clone()], &Options::default()).unwrap();
+        let first = read();
+        let writes = cache.writes();
+        assert!(writes > 0, "{language}: the first reading is kept");
+
+        write(&repo, UNREAD);
+        let second = read();
+        assert_eq!(cache.writes(), writes, "{language}: a file no question covers keeps the entry");
+        assert_eq!(shown(&second), shown(&first), "{language}: and the graph");
+        assert_eq!(shown(&second), shown(&anew()), "{language}: which is what a reading anew gives");
+
+        write(&repo, &[*code]);
+        let third = read();
+        assert!(cache.writes() > writes, "{language}: a file of code where the reader lists it is read anew");
+        assert_eq!(shown(&third), shown(&anew()), "{language}: and gives what a reading anew gives");
+    }
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// What a reading rests on holds while the repository answers it alike: a file no question covers,
+/// or a file read written again with the same bytes, leaves it holding; a file of code where the
+/// reader lists it, other bytes in a file read, or another `.atlasignore`, does not.
+#[test]
+fn a_reading_holds_until_what_it_rests_on_changes() {
+    let dir = scratch("holds");
+    for (language, files, code) in PROGRAMS {
+        let repo = dir.join(language);
+        write(&repo, files);
+        let witnessed = || parts::witnessed(&[repo.clone()], &Options::default()).unwrap().1;
+        let mut held = witnessed();
+        assert!(held.hold(), "{language}: a reading holds of the repository it read");
+        write(&repo, UNREAD);
+        assert!(held.hold(), "{language}: a file no question covers leaves it holding");
+        write(&repo, files);
+        assert!(held.hold(), "{language}: so do the same bytes written again");
+        write(&repo, &[(".atlasignore", "notes.txt  # not code\n")]);
+        assert!(!held.hold(), "{language}: another .atlasignore does not");
+
+        let mut held = witnessed();
+        write(&repo, &[*code]);
+        assert!(!held.hold(), "{language}: a file of code where the reader lists it does not");
+
+        let mut held = witnessed();
+        let (file, text) = files[files.len() - 1];
+        write(&repo, &[(file, &format!("{text}\n"))]);
+        assert!(!held.hold(), "{language}: other bytes in a file read do not");
+    }
+    let _ = std::fs::remove_dir_all(&dir);
+}

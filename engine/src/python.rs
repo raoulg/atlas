@@ -55,11 +55,10 @@ fn scripts(repo: &Repo, root_dir: &Path, packages: &[PathBuf]) -> Vec<PathBuf> {
         let name = d.file_name().and_then(|n| n.to_str()).unwrap_or("");
         knowledge::made_dir(name) || knowledge::TEST_DIRS.contains(&name) || is_project(repo, d)
     };
-    let packaged: HashSet<PathBuf> = packages.iter().flat_map(|d| repo.files_under(d)).collect();
+    let packaged: HashSet<PathBuf> = packages.iter().flat_map(|d| repo.files_under(d, SCRIPTS)).collect();
     let mut out: Vec<PathBuf> = repo
-        .files_under(root_dir)
+        .files_under(root_dir, SCRIPTS)
         .into_iter()
-        .filter(|p| matches!(p.extension().and_then(|x| x.to_str()), Some("py" | "ipynb")))
         .filter(|p| !packaged.contains(p))
         .filter(|p| !p.ancestors().skip(1).take_while(|a| *a != root_dir).any(elsewhere))
         .filter(|p| !knowledge::python_test_file(p.file_name().and_then(|n| n.to_str()).unwrap_or("")))
@@ -77,6 +76,9 @@ fn scripts(repo: &Repo, root_dir: &Path, packages: &[PathBuf]) -> Vec<PathBuf> {
 /// How many directories, from a package up, are looked through for its project: the package,
 /// `src`, the project, and one more for a nested layout.
 pub const PROJECT_ABOVE: usize = 4;
+
+/// The extensions of the files a project runs on their own: scripts and notebooks.
+const SCRIPTS: &[&str] = &["py", "ipynb"];
 
 /// Whether a directory holds a Python project: one of the files the Python tools install or build
 /// a project from (knowledge::PYTHON_PROJECT_FILES), a `pyproject.toml` or a `requirements.txt`
@@ -115,11 +117,11 @@ pub fn packages(repo: &Repo) -> Vec<PathBuf> {
     let manifest = repo.text("pyproject.toml").and_then(|t| t.parse::<toml::Table>().ok()).unwrap_or_default();
     let mut out = named_packages(repo, &manifest);
     for base in package_bases(&manifest) {
-        for d in repo.dirs_in(&base) {
+        for d in repo.dirs_holding(&base, "__init__.py") {
             let name = d.file_name().and_then(|n| n.to_str()).unwrap_or("");
             let elsewhere = knowledge::made_dir(name) || knowledge::TEST_DIRS.contains(&name) || is_project(repo, &d);
             // a package inside another is read with it
-            if !elsewhere && repo.is_file(d.join("__init__.py")) && !out.iter().any(|p| d.starts_with(p) || p.starts_with(&d)) {
+            if !elsewhere && !out.iter().any(|p| d.starts_with(p) || p.starts_with(&d)) {
                 out.push(d);
             }
         }
@@ -250,8 +252,7 @@ pub fn parse(repo: &Repo, packages: &[PathBuf], project_root: Option<&Path>, opt
     // that module
     let mut files: Vec<(PathBuf, &Path, bool)> = vec![];
     for d in packages {
-        let mut found: Vec<PathBuf> =
-            repo.files_under(d).into_iter().filter(|p| p.extension().and_then(|x| x.to_str()) == Some("py")).collect();
+        let mut found: Vec<PathBuf> = repo.files_under(d, &["py"]);
         found.sort();
         let single = single_module(repo, d);
         files.extend(found.into_iter().map(|p| (p, d.parent().unwrap_or(Path::new("")), single)));

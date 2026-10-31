@@ -3,6 +3,10 @@
 //! a build), with the files named on the command line beside it; a file's text is read once,
 //! when a reader first asks for it. A part of the repository is a view of the same reading.
 //!
+//! A part keeps what its reading asked of it: each question of the listing (`Asked`) and each file
+//! whose bytes it took. A reading depends on nothing else of the repository, so it stands while
+//! each question gets the same answer and each file holds the same bytes.
+//!
 //! What a library's code and its types are is the environment's, not the repository's: read by ty,
 //! from `node_modules`, from where Cargo keeps a crate.
 
@@ -28,6 +32,23 @@ struct Listing {
 /// A listed file as it is now: its size and the time it was written; nothing when it is gone.
 pub type Stamp = Option<(u64, Option<std::time::SystemTime>)>;
 
+/// A question a reading asks of the listing, each path from the listing's root: whether a path is
+/// a file or a directory, which files of some kinds (their extensions) lie under a directory, which
+/// directories right in it hold a file of a name (a manifest), which directories lie under it, which
+/// files were named on the command line.
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, serde::Serialize, serde::Deserialize)]
+pub enum Asked {
+    File(PathBuf),
+    Dir(PathBuf),
+    Files(PathBuf, Vec<String>),
+    DirsHolding(PathBuf, String),
+    DirsUnder(PathBuf),
+    Named,
+}
+
+/// The questions a reading asked of the listing, in order, each with its answer: the paths it named.
+pub type Answers = Vec<(Asked, Vec<PathBuf>)>;
+
 /// A repository, or a part of one, as read.
 #[derive(Clone)]
 pub struct Repo {
@@ -42,6 +63,8 @@ pub struct Repo {
     language: Option<Lang>,
     /// Files whose contents this reading consumed, relative to the listing root.
     read_files: Arc<Mutex<BTreeSet<PathBuf>>>,
+    /// The questions this reading asked of the listing.
+    questions: Arc<Mutex<BTreeSet<Asked>>>,
 }
 
 impl Repo {
@@ -115,7 +138,15 @@ impl Repo {
         dirs.insert(PathBuf::new());
         let root = normal(&std::path::absolute(dir)?);
         let listing = Listing { base: root.clone(), files, dirs, named: listed, texts: Mutex::new(HashMap::new()) };
-        Ok(Repo { root, at: PathBuf::new(), listing: Arc::new(listing), asked: None, language: None, read_files: Arc::default() })
+        Ok(Repo {
+            root,
+            at: PathBuf::new(),
+            listing: Arc::new(listing),
+            asked: None,
+            language: None,
+            read_files: Arc::default(),
+            questions: Arc::default(),
+        })
     }
 
     /// The project read for a directory inside it, `asked`.
@@ -155,19 +186,14 @@ impl Repo {
         std::fs::canonicalize(&self.root).ok().and_then(|p| p.file_name().map(|n| n.to_string_lossy().to_string()))
     }
 
-    /// The part of the repository under `rel`, read in the same reading.
+    /// The part of the repository under `rel`, read in the same reading; what its reading asks and
+    /// reads is its own.
     pub fn under(&self, rel: &Path) -> Repo {
-        if rel.as_os_str().is_empty() {
-            return self.clone();
-        }
-        Repo {
-            root: self.root.join(rel),
-            at: self.at.join(rel),
-            listing: self.listing.clone(),
-            asked: None,
-            language: None,
-            read_files: Arc::default(),
-        }
+        let (root, at) = match rel.as_os_str().is_empty() {
+            true => (self.root.clone(), self.at.clone()),
+            false => (self.root.join(rel), self.at.join(rel)),
+        };
+        Repo { root, at, listing: self.listing.clone(), asked: None, language: None, read_files: Arc::default(), questions: Arc::default() }
     }
 
     /// Where a path the caller writes from the root stands in the listing: `root/x` and `x` alike.
@@ -177,12 +203,62 @@ impl Repo {
         normal(&self.at.join(rel))
     }
 
+    /// Keep `question` among what this reading asked of the listing.
+    fn ask(&self, question: &Asked) {
+        if let Ok(mut asked) = self.questions.lock() {
+            if !asked.contains(question) {
+                asked.insert(question.clone());
+            }
+        }
+    }
+
+    /// What the listing answers `question`: the paths, from the listing's root, in order.
+    fn answer(&self, question: &Asked) -> Vec<&PathBuf> {
+        let Listing { files, dirs, named, .. } = &*self.listing;
+        let kind = |f: &Path, kinds: &[String]| f.extension().and_then(|x| x.to_str()).is_some_and(|x| kinds.iter().any(|k| k == x));
+        match question {
+            Asked::File(p) => files.get(p).into_iter().collect(),
+            Asked::Dir(p) => dirs.get(p).into_iter().collect(),
+            Asked::Files(dir, kinds) => files.iter().filter(|f| f.starts_with(dir) && kind(f, kinds)).collect(),
+            Asked::DirsHolding(dir, name) => dirs
+                .iter()
+                .filter(|d| d.parent() == Some(dir.as_path()) && !d.as_os_str().is_empty() && files.contains(&d.join(name)))
+                .collect(),
+            Asked::DirsUnder(dir) => dirs.iter().filter(|d| d.starts_with(dir)).collect(),
+            Asked::Named => named.iter().collect(),
+        }
+    }
+
+    /// The answer to `question`, asked: each path as the root's path joined with it.
+    fn listed(&self, question: Asked) -> Vec<PathBuf> {
+        self.ask(&question);
+        self.answer(&question).into_iter().filter_map(|p| p.strip_prefix(&self.at).ok()).map(|p| self.root.join(p)).collect()
+    }
+
+    /// What this reading asked of the listing, each question with its answer.
+    pub fn answers(&self) -> Answers {
+        let asked = self.questions.lock().map(|a| a.clone()).unwrap_or_default();
+        asked
+            .into_iter()
+            .map(|question| {
+                let answer = self.answer(&question).into_iter().cloned().collect();
+                (question, answer)
+            })
+            .collect()
+    }
+
+    /// Whether this listing answers each question of `answers` as it was answered then; asking
+    /// them here keeps none.
+    pub fn answers_alike(&self, answers: &Answers) -> bool {
+        answers.iter().all(|(question, was)| self.answer(question).into_iter().eq(was.iter()))
+    }
+
     pub fn is_file(&self, p: impl AsRef<Path>) -> bool {
-        self.listing.files.contains(&self.key(p.as_ref()))
+        !self.listed(Asked::File(self.key(p.as_ref()))).is_empty()
     }
 
     pub fn is_dir(&self, p: impl AsRef<Path>) -> bool {
-        self.listing.dirs.contains(&self.key(p.as_ref()))
+        !self.listed(Asked::Dir(self.key(p.as_ref()))).is_empty()
     }
 
     pub fn exists(&self, p: impl AsRef<Path>) -> bool {
@@ -192,8 +268,13 @@ impl Repo {
     /// The files read as they are now: each listed file by its path, with its size and the time it
     /// was written. Two readings with the same stamps read the same files.
     pub fn stamps(&self) -> BTreeMap<PathBuf, Stamp> {
-        let stamp = |f: &PathBuf| std::fs::metadata(self.root.join(f.strip_prefix(&self.at).unwrap_or(f))).ok();
-        self.listing.files.iter().map(|f| (f.clone(), stamp(f).map(|m| (m.len(), m.modified().ok())))).collect()
+        self.listing.files.iter().map(|f| (f.clone(), self.stamp(f))).collect()
+    }
+
+    /// A path of the listing as it is now, from the listing's root: its size and the time it was
+    /// written.
+    pub fn stamp(&self, path: &Path) -> Stamp {
+        std::fs::metadata(self.listing.base.join(path)).ok().map(|m| (m.len(), m.modified().ok()))
     }
 
     /// Bytes of files this part has consumed, from the listing root.
@@ -213,10 +294,10 @@ impl Repo {
         self.listing.files.iter().filter(|f| f.starts_with(&self.at)).cloned().collect()
     }
 
-    /// A file's bytes, read once.
+    /// A file's bytes, read once. Whether it is there is asked of the listing.
     pub fn bytes(&self, p: impl AsRef<Path>) -> Option<Arc<Vec<u8>>> {
         let key = self.key(p.as_ref());
-        if !self.listing.files.contains(&key) {
+        if self.listed(Asked::File(key.clone())).is_empty() {
             return None;
         }
         self.read_files.lock().ok()?.insert(key.clone());
@@ -241,47 +322,34 @@ impl Repo {
         std::fs::read_to_string(&path).ok().map(|text| (path, text))
     }
 
-    /// Every file under `dir` (a path from the root), at any depth, as the root's path joined
-    /// with it, in order.
-    pub fn files_under(&self, dir: impl AsRef<Path>) -> Vec<PathBuf> {
-        let at = self.key(dir.as_ref());
-        self.listing
-            .files
-            .iter()
-            .filter(|f| f.starts_with(&at))
-            .filter_map(|f| f.strip_prefix(&self.at).ok())
-            .map(|f| self.root.join(f))
-            .collect()
+    /// The files under `dir` (a path from the root), at any depth, whose extension is one of
+    /// `kinds`, as the root's path joined with them, in order.
+    pub fn files_under(&self, dir: impl AsRef<Path>, kinds: &[&str]) -> Vec<PathBuf> {
+        self.listed(Asked::Files(self.key(dir.as_ref()), kinds.iter().map(|k| k.to_string()).collect()))
     }
 
-    /// The directories right under `dir`, as the root's path joined with them, in order.
-    pub fn dirs_in(&self, dir: impl AsRef<Path>) -> Vec<PathBuf> {
-        let at = self.key(dir.as_ref());
-        self.listing
-            .dirs
-            .iter()
-            .filter(|d| d.parent() == Some(at.as_path()) && !d.as_os_str().is_empty())
-            .filter_map(|d| d.strip_prefix(&self.at).ok())
-            .map(|d| self.root.join(d))
-            .collect()
+    /// That the reading rests on the files under `dir` whose extension is one of `kinds`, as though
+    /// it had listed them: the files a tool that looks on disk by itself may find (ty, the modules
+    /// of a project).
+    pub fn rests_on(&self, dir: impl AsRef<Path>, kinds: &[&str]) {
+        self.ask(&Asked::Files(self.key(dir.as_ref()), kinds.iter().map(|k| k.to_string()).collect()));
+    }
+
+    /// The directories right under `dir` that hold a file `name` (a manifest, `__init__.py`), as the
+    /// root's path joined with them, in order.
+    pub fn dirs_holding(&self, dir: impl AsRef<Path>, name: &str) -> Vec<PathBuf> {
+        self.listed(Asked::DirsHolding(self.key(dir.as_ref()), name.to_string()))
     }
 
     /// The files named on the command line under the repository, as the root's path joined with
     /// them.
     pub fn named(&self) -> Vec<PathBuf> {
-        self.listing.named.iter().filter_map(|f| f.strip_prefix(&self.at).ok()).map(|f| self.root.join(f)).collect()
+        self.listed(Asked::Named)
     }
 
     /// Every directory under `dir`, at any depth and the directory itself, in order.
     pub fn dirs_under(&self, dir: impl AsRef<Path>) -> Vec<PathBuf> {
-        let at = self.key(dir.as_ref());
-        self.listing
-            .dirs
-            .iter()
-            .filter(|d| d.starts_with(&at))
-            .filter_map(|d| d.strip_prefix(&self.at).ok())
-            .map(|d| self.root.join(d))
-            .collect()
+        self.listed(Asked::DirsUnder(self.key(dir.as_ref())))
     }
 }
 

@@ -135,6 +135,16 @@ const REVIEWED: &[(&str, &str, &str)] = &[
         "`progress` writes the server's shared Progress value through a Mutex; Atlas does not trace the lock's interior mutation",
     ),
     (
+        "nothing",
+        "atlas-engine.repo.Repo.ask",
+        "`ask` keeps a question among what a part's reading asked of the listing, a set the part holds through a Mutex, as `bytes` keeps the files it read; Atlas does not trace the lock's interior mutation",
+    ),
+    (
+        "nothing",
+        "atlas-engine.repo.Repo.rests_on",
+        "`rests_on` keeps, through `ask`, the question whose answer a tool that looks on disk by itself depends on (ty, a project's modules); what it changes is the part's record of questions, behind a Mutex",
+    ),
+    (
         "choices",
         "atlas-engine.builder.GraphBuilder.declare",
         "`Declared` is a type already: the first test asks whether a name's first declaration, which has no node yet, starts its overloads, the `match` what a later one does, in one function",

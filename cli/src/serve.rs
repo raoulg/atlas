@@ -2,8 +2,10 @@
 //! says what it shows, goes where an agent points it, and keeps the notes its reader writes on boxes
 //! and lines; all three are files of `.atlas/` (`shared`), which `atlas-code mcp` reads and writes too.
 //!
-//! The page is the working tree's, and follows it: when a file Atlas reads changes, the server publishes
-//! a complete snapshot and the open page draws it in the view it was in. Beside it, at `/history`, the
+//! The page is the working tree's, and follows it: when what a reading rests on changes (a file Atlas
+//! reads, the answer to a question it asked of the listing, `.atlasignore`, the vision), the server
+//! publishes a complete snapshot and the open page draws it in the view it was in; until then the page
+//! keeps the last complete one. Beside it, at `/history`, the
 //! history of `atlas-code history`, so that two commits are a click away. At `/api/files`, the files Atlas
 //! reads, each with what the graph defines in it: the tree a file browser shows beside the page.
 
@@ -16,6 +18,7 @@ use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result};
 use atlas_engine::changes::{self, Named};
+use atlas_engine::parts::Witnesses;
 use atlas_engine::repo::Stamp;
 use atlas_engine::sight::Sight;
 use atlas_engine::Options;
@@ -33,17 +36,29 @@ fn loading() -> String {
     LOADING.replacen("/*__PROGRESS__*/", page::PROGRESS, 1).replacen("/*__PALETTE__*/", page::PALETTE, 1)
 }
 
-/// The working tree as far as Atlas reads it: each file by its size and the time it was written.
+/// The working tree as far as Atlas lists it: each file by its size and the time it was written.
 type Stamps = BTreeMap<PathBuf, Stamp>;
 
-/// A page of the working tree, with the files it was drawn from, the name the page knows it by, and
-/// what its graph defines in each file.
+/// The one phase of a drawing: reading the code, with the libraries it calls as far as asked.
+const READING: &str = "reading";
+
+/// A page of the working tree, with the files it was drawn from, the name the page knows it by,
+/// what its graph defines in each file, and what its reading rests on: the witnesses of the
+/// working tree's reading and the vision beside it.
 struct Drawn {
     stamps: Stamps,
     id: String,
     data: String,
-    complete: bool,
     facts: Facts,
+    witnesses: Mutex<Witnesses>,
+    vision: Stamp,
+}
+
+impl Drawn {
+    /// Whether the working tree of `repo` and the vision beside it still give this page.
+    fn stands(&self, repo: &Path) -> bool {
+        vision(repo) == self.vision && self.witnesses.lock().unwrap_or_else(|e| e.into_inner()).hold()
+    }
 }
 
 /// What a graph defines in each file of the repository, by the file's path from the root: its
@@ -92,7 +107,7 @@ pub fn serve(repo: &Path, port: Option<u16>, opts: &Options, shown: bool) -> Res
         hosts: vec![at.to_string(), format!("localhost:{}", at.port())],
         log: Arc::clone(&log),
         kept: Mutex::new(None),
-        progress: Mutex::new(Progress { phase: "code", error: None, since: Instant::now() }),
+        progress: Mutex::new(Progress { phase: READING, error: None, since: Instant::now() }),
         drawing: Mutex::new(()),
         timings: Mutex::new(shared::timings(repo)),
         warm: opts.cache.as_ref().and_then(|c| c.workspace(repo)).is_some_and(|c| c.holds_any()),
@@ -174,66 +189,57 @@ impl Server {
         let findings = read.findings();
         let (graph, compared) = read.drawn();
         let flow = atlas_engine::flow::of(&graph);
-        let html = Html::of(&graph, &flow, &findings, compared.as_ref(), &Opens { route: None, sight, served: None, preliminary: false })?;
+        let html = Html::of(&graph, &flow, &findings, compared.as_ref(), &Opens { route: None, sight, served: None })?;
         self.log.say(Who::You, &format!("exported {}.html, in the view {said}", graph.root));
         Ok((graph.root, html.into()))
     }
 
-    /// Draw the repository's own code first, then the complete reading. Each page is available as
-    /// soon as it is drawn; the open browser follows the next one by its drawing id.
+    /// Draw the working tree, once, with the libraries asked for: the page keeps the last complete
+    /// picture until this one is drawn, and the open browser follows it by its drawing id.
     fn page(&self, now: Stamps) -> Result<()> {
         let _drawing = self.drawing.lock().unwrap_or_else(|e| e.into_inner());
         let kept = self.kept();
         match &kept {
-            Some(d) if d.stamps == now && d.complete => return Ok(()),
+            Some(d) if d.stands(&self.repo) => return Ok(()),
             Some(d) => self.log.say(Who::Atlas, &format!("changed {}", changed(&d.stamps, &now))),
             None => {}
         }
-        let id = name(&now);
-        self.progress("code", None);
-        let mut took = BTreeMap::new();
-        if self.opts.libraries > 0 {
-            let mut local = self.opts.clone();
-            local.libraries = 0;
-            match self.draw(&now, &format!("{id}-local"), &local, true) {
-                Ok(d) => *self.kept.lock().unwrap_or_else(|e| e.into_inner()) = Some(Arc::new(d)),
-                Err(e) => self.log.say(Who::Atlas, &format!("could not draw local code: {e:#}")),
-            }
-            took.insert("code", self.since());
-            self.progress("libraries", None);
-        }
-        let drawn = self.draw(&now, &id, &self.opts, false)?;
-        took.insert(if self.opts.libraries > 0 { "libraries" } else { "code" }, self.since());
+        self.progress(READING, None);
+        let drawn = self.draw(&now, &name(&now))?;
+        let took = self.since();
         *self.kept.lock().unwrap_or_else(|e| e.into_inner()) = Some(Arc::new(drawn));
         self.progress("ready", None);
-        // what a start takes is what the bars are shown for: a drawing after a change reads most of
+        // what a start takes is what the bar is shown for: a drawing after a change reads most of
         // it from the cache, and would make the next start look quick
         if kept.is_some() {
             return Ok(());
         }
         let mut timings = self.timings.lock().unwrap_or_else(|e| e.into_inner());
-        for (phase, secs) in took {
-            let times = timings.of_mut(self.warm).entry(phase.to_string()).or_default();
-            times.push(secs);
-            let gone = times.len().saturating_sub(STARTS);
-            times.drain(..gone);
-        }
+        let phases = timings.of_mut(self.warm);
+        // a phase no drawing has is no measure of one
+        phases.retain(|phase, _| phase == READING);
+        let times = phases.entry(READING.to_string()).or_default();
+        times.push(took);
+        let gone = times.len().saturating_sub(STARTS);
+        times.drain(..gone);
         if let Err(e) = shared::set_timings(&self.repo, &timings) {
             self.log.say(Who::Atlas, &format!("could not keep how long the drawing took: {e:#}"));
         }
         Ok(())
     }
 
-    fn draw(&self, stamps: &Stamps, id: &str, opts: &Options, preliminary: bool) -> Result<Drawn> {
-        let read = reading(&self.repo, opts)?;
+    fn draw(&self, stamps: &Stamps, id: &str) -> Result<Drawn> {
+        // the vision as it stands before it is read: a change while it is read draws again
+        let vision = vision(&self.repo);
+        let (read, witnesses) = reading(&self.repo, &self.opts)?;
         let findings = read.findings();
         let (graph, compared) = read.drawn();
         let flow = atlas_engine::flow::of(&graph);
-        let opens = Opens { route: None, sight: None, served: Some(id.to_string()), preliminary };
+        let opens = Opens { route: None, sight: None, served: Some(id.to_string()) };
         let data = Html::payload(&graph, &flow, &findings, compared.as_ref(), &opens)?;
-        self.log.say(Who::Atlas, &format!("drew {}{}", if preliminary { "local code · " } else { "" }, page::summary(&graph)));
-        let facts = facts(&atlas_engine::language::read(&self.repo, opts)?, &graph);
-        Ok(Drawn { stamps: stamps.clone(), id: id.to_string(), data, complete: !preliminary, facts })
+        self.log.say(Who::Atlas, &format!("drew {}", page::summary(&graph)));
+        let facts = witnesses.roots().first().map(|root| facts(root, &graph)).unwrap_or_default();
+        Ok(Drawn { stamps: stamps.clone(), id: id.to_string(), data, facts, witnesses: Mutex::new(witnesses), vision })
     }
 
     /// The files of the working tree as Atlas reads them, now, each with what the last page drawn
@@ -272,7 +278,7 @@ impl Server {
     /// how long it has been in it and how long each took the last time: how far the drawing is.
     fn drawn(&self) -> Value {
         let progress = self.progress.lock().unwrap_or_else(|e| e.into_inner());
-        let phases: &[&str] = if self.opts.libraries > 0 { &["code", "libraries"] } else { &["code"] };
+        let phases = [READING];
         let expected = expected(&self.timings.lock().unwrap_or_else(|e| e.into_inner()), self.warm);
         // a drawing that panicked leaves the lock poisoned, and is no longer drawing
         let drawing = matches!(self.drawing.try_lock(), Err(std::sync::TryLockError::WouldBlock));
@@ -281,15 +287,18 @@ impl Server {
             "elapsed": progress.since.elapsed().as_secs_f64(), "expected": expected})
     }
 
-    /// The working tree, looked at every second: when a file Atlas reads has changed and has stayed
-    /// so for a second, the page is drawn anew, for the open page to follow. A drawing that fails is
-    /// said once, and tried again when the files change again.
+    /// The working tree, looked at every second: when what the page's reading rests on no longer
+    /// holds (`Drawn::stands`) and the working tree has stayed as it is for a second, the page is
+    /// drawn anew, for the open page to follow. A file no reading asked about changes nothing. A
+    /// drawing that fails is said once, and tried again when the files change again.
     fn watch(&self) {
         let (mut last, mut failed): (Option<Stamps>, Option<Stamps>) = (None, None);
         loop {
-            if let Ok(now) = stamps(&self.repo, &self.opts) {
-                let kept = self.kept().map(|d| d.stamps == now && d.complete);
-                if kept != Some(true) && (kept.is_none() || last.as_ref() == Some(&now)) && failed.as_ref() != Some(&now) {
+            let kept = self.kept();
+            if kept.as_ref().is_some_and(|d| d.stands(&self.repo)) {
+                last = None;
+            } else if let Ok(now) = stamps(&self.repo, &self.opts) {
+                if (kept.is_none() || last.as_ref() == Some(&now)) && failed.as_ref() != Some(&now) {
                     self.tend(now.clone(), &mut failed, |now| self.page(now));
                 }
                 last = Some(now);
@@ -380,32 +389,43 @@ fn own_port(repo: &Path) -> u16 {
     8700 + (hash % 200) as u16
 }
 
-/// The working tree as the page draws it: beside what an agent has in view, as two readings are
-/// drawn (A the working tree, B the vision), and alone when no vision is kept.
-fn reading(repo: &Path, opts: &Options) -> Result<Reading> {
-    let Some(p) = shared::vision(repo) else { return page::reading(&[repo.to_path_buf()], opts, None, None) };
+/// The working tree as the page draws it, with what its reading rests on: beside what an agent has
+/// in view, as two readings are drawn (A the working tree, B the vision), and alone when no vision is
+/// kept.
+fn reading(repo: &Path, opts: &Options) -> Result<(Reading, Witnesses)> {
+    let (now, witnesses) = atlas_engine::parts::witnessed(&[repo.to_path_buf()], opts)?;
+    let Some(p) = shared::vision(repo) else { return Ok((Reading::of(&[repo.to_path_buf()], now), witnesses)) };
     let envisioned = Named { rev: "vision".into(), short: "vision".into(), subject: p.title.clone() };
-    let now = atlas_engine::parts::analyze_parts(&[repo.to_path_buf()], opts)?;
-    Ok(Reading::compared(repo, (changes::worktree(), now), (envisioned, changes::envisioned(repo, &p.files, opts)?.parts)))
+    let vision = changes::envisioned(repo, &p.files, opts)?.parts;
+    Ok((Reading::compared(repo, (changes::worktree(), now), (envisioned, vision)), witnesses))
 }
 
-/// The working tree as far as Atlas reads it, and what an agent has in view beside it: equal stamps
-/// are one page.
+/// The vision an agent keeps beside the working tree, as it is now: its size and when it was written.
+fn vision(repo: &Path) -> Stamp {
+    std::fs::metadata(shared::vision_file(repo)).ok().map(|m| (m.len(), m.modified().ok()))
+}
+
+/// The working tree as far as Atlas lists it, with its `.atlasignore` and what an agent has in view
+/// beside it: what a change is waited out on, and what a drawing that failed is kept by.
 fn stamps(repo: &Path, opts: &Options) -> Result<Stamps> {
-    let mut now = atlas_engine::language::read(repo, opts)?.stamps();
-    let vision = shared::vision_file(repo);
-    if let Ok(m) = std::fs::metadata(&vision) {
-        now.insert(vision, Some((m.len(), m.modified().ok())));
+    let read = atlas_engine::language::read(repo, opts)?;
+    let mut now = read.stamps();
+    // `.atlasignore` by its path from the root, as the listed files are
+    let decided = (PathBuf::from(atlas_engine::aside::FILE), read.root().join(atlas_engine::aside::FILE));
+    for (key, file) in [decided, (shared::vision_file(repo), shared::vision_file(repo))] {
+        if let Ok(m) = std::fs::metadata(&file) {
+            now.insert(key, Some((m.len(), m.modified().ok())));
+        }
     }
     Ok(now)
 }
 
-/// What `graph` defines in the files of `read`, by their paths from its root: a library's code is
-/// not the repository's, and has no file in it.
-fn facts(read: &atlas_engine::repo::Repo, graph: &atlas_engine::model::Graph) -> Facts {
+/// What `graph` defines in the files under `root`, by their paths from it: a library's code is not
+/// the repository's, and has no file in it.
+fn facts(root: &Path, graph: &atlas_engine::model::Graph) -> Facts {
     let mut facts = Facts::new();
     for n in graph.nodes.iter().filter(|n| n.kind != atlas_engine::model::NodeKind::External) {
-        let Ok(rel) = Path::new(&n.file).strip_prefix(read.root()) else { continue };
+        let Ok(rel) = Path::new(&n.file).strip_prefix(root) else { continue };
         let fact = json!({"id": n.id, "name": n.name, "kind": n.kind, "line": n.span.map(|s| s.0), "entry": n.entry.is_some()});
         facts.entry(slashed(rel)).or_default().push(fact);
     }
@@ -485,7 +505,7 @@ mod tests {
             hosts: vec!["localhost:8797".into()],
             log: Arc::new(Log::new()),
             kept: Mutex::new(None),
-            progress: Mutex::new(Progress { phase: "code", error: None, since: Instant::now() }),
+            progress: Mutex::new(Progress { phase: READING, error: None, since: Instant::now() }),
             drawing: Mutex::new(()),
             timings: Mutex::new(shared::Timings::default()),
             warm: false,

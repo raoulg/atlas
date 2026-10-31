@@ -134,7 +134,8 @@ pub fn parse(repo: &Repo, opts: &crate::Options) -> Result<(GraphBuilder, String
     let made = |p: &Path| {
         p.strip_prefix(&base).map_or(false, |r| r.components().any(|c| knowledge::made_dir(c.as_os_str().to_str().unwrap_or(""))))
     };
-    let mut paths: Vec<PathBuf> = repo.files_under(&base).into_iter().filter(|p| is_code(p) && !made(p)).map(|p| normal(&p)).collect();
+    let mut paths: Vec<PathBuf> =
+        repo.files_under(&base, EXTENSIONS).into_iter().filter(|p| is_code(p) && !made(p)).map(|p| normal(&p)).collect();
     paths.sort();
     let files: HashMap<PathBuf, String> = paths.iter().map(|p| (p.clone(), module_id(&root, &base, p))).collect();
     // every directory is a package module, so the module quotient follows the folders
