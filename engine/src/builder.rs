@@ -232,6 +232,12 @@ impl GraphBuilder {
         self.unresolved_by.count(bucket);
     }
 
+    /// Count the body of `id` as linked, the program's or a library's (`LINKED`).
+    pub fn linked(&self, id: &str) {
+        let library = self.nodes.get(id).is_some_and(|n| n.library);
+        LINKED[usize::from(library)].fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    }
+
     /// Record a boundary call on a node; the same call again counts up.
     /// A call as it was read, for the routes that reach none of the callers that make it whole.
     pub fn instead(&mut self, id: &str, t: Touch) {
@@ -455,6 +461,10 @@ impl GraphBuilder {
         });
     }
 }
+
+/// How many bodies the readers of this process linked, the program's and the libraries': the work
+/// a reading did (`atlas-code view --timings`).
+pub static LINKED: [std::sync::atomic::AtomicUsize; 2] = [std::sync::atomic::AtomicUsize::new(0), std::sync::atomic::AtomicUsize::new(0)];
 
 /// The parameters of no type of the code's that hold a value of the plan (`mathematics.md`, "One fine plan"): those a call
 /// fills with a value, a step's result, a projection of one or a parameter of its caller's that holds one, in each

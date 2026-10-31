@@ -13,6 +13,7 @@ branch [`perf-data`](https://github.com/raoulg/atlas/tree/perf-data), whose READ
 | `build/release/seconds`, `build/release/peak_rss` | `cargo build --release --locked -p atlas-code` in a target directory of its own that no cache restores, with no `RUSTC_WRAPPER`: every crate compiles. The dependencies are fetched in a step before it, so the network is not timed. Peak memory is that of the largest process of the build (a `rustc` or the linker). |
 | `read/<subject>/<cold\|warm>/seconds`, `…/peak_rss` | `atlas-code view --no-open` of a subject. Cold: an empty cache (`XDG_CACHE_HOME`) and no index (`.atlas/index` at the top of the subject's worktree); warm: the same command again. One reading a night: the rounds of one run lie within a percent of each other on the runner, and a reading that is off makes the measure suspect, which the reproduction then measures five times. |
 | `read/<subject>/<cold\|warm>/phase/<read\|check\|flow\|page>` | the phases `atlas-code view --timings FILE` reports of the same commands: reading the repository, `atlas-code check`'s principles, `flow::of`, and drawing and writing the page. |
+| `read/<subject>/<cold\|warm>/linked/<program\|library>` | how many bodies the same reading linked, the program's and those of the library code it read, as `--timings` reports them; a warm reading, from the index, links none. |
 | `tests/<package>/<binary>/seconds`, `tests/total/seconds` | each test binary of `cargo test --no-run`, run on its own in its package's directory, as `cargo test` runs it. libtest's own timings (`--format json`, `--report-time`) need nightly Rust, so a binary is timed from outside. Ignored tests and doc tests are not run. |
 
 The subjects are Atlas itself, at the commit measured, and the public programs `laws.yml` reads, at
@@ -20,7 +21,7 @@ the same fixed revisions; a new revision is a change to both workflows, and star
 again. All readings use Atlas's defaults (`--libraries 1`).
 
 `--timings FILE` is a hidden option of `atlas-code view`: a JSON object of each phase's seconds, in the order
-they ran. The time before the first phase (parsing the command, cloning a URL) is in the wall time only.
+they ran, and under `linked` the number of bodies the reading linked (`program`, `library`). The time before the first phase (parsing the command, cloning a URL) is in the wall time only.
 
 ## How a measure is judged
 

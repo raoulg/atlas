@@ -17,7 +17,7 @@
 - `time` runs a command once: its wall time and the peak resident memory of its largest process.
 - `read` draws each subject with `atlas-code view --timings`, cold (an empty cache and no index) and warm (the
   same again), once a night (`--rounds` more for a median): the wall time, peak memory and the phases Atlas reports (read,
-  check, flow, page).
+  check, flow, page), with how many bodies the reading linked, the program's and the libraries'.
 - `tests` builds the test binaries once (`cargo test --no-run`), then runs each on its own as `cargo test`
   would, and times it: libtest's own timings are not stable Rust.
 
@@ -129,7 +129,7 @@ def worktree_top(subject: Path) -> Path:
 
 
 def read_round(atlas: Path, name: str, subject: Path, libraries: int, scratch: Path, cache: Path) -> dict[str, dict[str, float]]:
-    """One cold and one warm `atlas-code view` of `subject`: per kind, its seconds, peak memory and phases."""
+    """One cold and one warm `atlas-code view` of `subject`: per kind, its seconds, peak memory, phases and bodies linked."""
     index = worktree_top(subject) / ".atlas" / "index"
     shutil.rmtree(index, ignore_errors=True)
     shutil.rmtree(cache, ignore_errors=True)
@@ -145,7 +145,14 @@ def read_round(atlas: Path, name: str, subject: Path, libraries: int, scratch: P
             raise SystemExit(f"{atlas} wrote no --timings for {name}")
         if kind == "cold" and not any(index.rglob("*")):
             raise SystemExit(f"the cold reading of {name} made no index at {index}: a warm one would measure nothing")
-        got[kind] = {"seconds": seconds, "peak_rss": peak, **{f"phase/{p}": t for p, t in json.loads(timings.read_text()).items()}}
+        reported = json.loads(timings.read_text())
+        linked = reported.pop("linked", {})
+        got[kind] = {
+            "seconds": seconds,
+            "peak_rss": peak,
+            **{f"phase/{p}": t for p, t in reported.items()},
+            **{f"linked/{side}": float(n) for side, n in linked.items()},
+        }
     return got
 
 
@@ -174,7 +181,7 @@ def command_read(args: argparse.Namespace) -> None:
                     print(f"{name} {kind} {round_ + 1}/{args.rounds}: {got['seconds']:.2f} s, peak {got['peak_rss']:.0f} MB")
             for kind, got in samples.items():
                 for measure, values in got.items():
-                    readings[f"read/{name}/{kind}/{measure}"] = metric(values, "MB" if measure == "peak_rss" else "s")
+                    readings[f"read/{name}/{kind}/{measure}"] = metric(values, unit_of(measure))
     add(args.out, readings)
 
 
@@ -570,7 +577,7 @@ class Bench:
 
 
 def unit_of(measure: str) -> str:
-    return "MB" if measure.endswith("peak_rss") else "s"
+    return "MB" if measure.endswith("peak_rss") else "bodies" if "/linked/" in f"/{measure}" else "s"
 
 
 def compared(measure: str, a: list[float], b: list[float]) -> dict:
