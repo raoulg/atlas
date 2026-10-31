@@ -1078,21 +1078,13 @@ impl<'a, 't> Body<'a, 't> {
             }
             return;
         }
-        if let Some(ty) = self.type_of(i) {
-            return out.push(Held::new(ty, name));
-        }
-        if kept.contains(name) {
-            return out.push(Held::new("", name));
-        }
         // a name bound to values without a step stands for what they are made of: what it is declared
         // with, and what each assignment to it sets (`let unit; if (..) unit = CELSIUS; else unit = KELVIN`)
-        if depth > 8 {
-            return;
-        }
-        let declared = match self.locals.from(i, self.src) {
+        let from = self.locals.from(i, self.src);
+        let element = matches!(from, Some((_, BoundFrom::Element)));
+        let declared = match from {
             Some((v, BoundFrom::Whole | BoundFrom::Part)) => Some(v),
-            Some((_, BoundFrom::Element)) => return,
-            None => None,
+            _ => None,
         };
         let binding = self.locals.which(i, self.src);
         let assigned = self
@@ -1103,6 +1095,28 @@ impl<'a, 't> Body<'a, 't> {
             .filter(|(left, _)| binding.is_some() && self.locals.which(*left, self.src) == binding)
             .map(|(_, right)| *right);
         let values: Vec<TsNode> = declared.into_iter().chain(assigned).collect();
+        // what TypeScript's own code computes of names stands for them, whatever type the name has (`const both: Level[] =
+        // [first, second]`, `body::stands_for`), where no step made it anew
+        let computed: Vec<Vec<TsNode>> = values.iter().map(|v| crate::body::stands_for(*v, &USES, self.src, &part)).collect();
+        if depth <= 8 && !element && !kept.contains(name) && !values.is_empty() && computed.iter().all(|c| !c.is_empty()) {
+            for n in computed.into_iter().flatten() {
+                let before = out.len();
+                self.held(n, kept, depth + 1, out);
+                for h in out[before..].iter_mut().filter(|h| h.bound == 0) {
+                    h.bound = n.start_byte() as u32;
+                }
+            }
+            return;
+        }
+        if let Some(ty) = self.type_of(i) {
+            return out.push(Held::new(ty, name));
+        }
+        if kept.contains(name) {
+            return out.push(Held::new("", name));
+        }
+        if depth > 8 || element {
+            return;
+        }
         let stepless = |v: &TsNode| {
             walk(*v, &["call_expression", "new_expression", "arrow_function", "function_expression", "await_expression"]).is_empty()
         };
@@ -2081,6 +2095,17 @@ pub(super) fn chain_root<'a>(n: TsNode, src: &'a [u8]) -> Option<&'a str> {
     root_of(n).map(|r| text(r, src))
 }
 
+/// What a part of a value TypeScript's own code computes is made of (`body::computed_of`): a literal, a piece of a string
+/// and a comment of none, any other part the name it is a part of (`root_of`).
+fn part(p: TsNode) -> Option<Vec<TsNode>> {
+    match p.kind() {
+        "number" | "string" | "string_fragment" | "escape_sequence" | "true" | "false" | "null" | "undefined" | "regex" | "comment" => {
+            Some(vec![])
+        }
+        _ => root_of(p).map(|r| vec![r]),
+    }
+}
+
 /// The name, or `this`, a chain like `this.items[0].x` starts from, as written.
 fn root_of(n: TsNode) -> Option<TsNode> {
     match n.kind() {
@@ -2242,6 +2267,13 @@ const USES: UseSyntax = UseSyntax {
             .flatten()
     },
     pairs: |targets, value| targets.kind() == "array_pattern" && value.kind() == "array",
+    // `??`, `||` and `&&` are choices; `void` and `delete` give no value of their operand
+    computes: |n, src| match n.kind() {
+        "binary_expression" => n.child_by_field_name("operator").is_some_and(|o| !matches!(text(o, src), "??" | "||" | "&&")),
+        "unary_expression" => n.child_by_field_name("operator").is_some_and(|o| !matches!(text(o, src), "void" | "delete")),
+        "array" | "template_string" | "template_substitution" => true,
+        _ => false,
+    },
     wrappers: WRAPPERS,
     drops: |n, child, src| match n.kind() {
         "expression_statement" => n.named_child(0).map(|c| c.id()) == Some(child.id()),

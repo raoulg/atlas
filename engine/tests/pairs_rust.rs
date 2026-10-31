@@ -1765,3 +1765,10 @@ fn a_door_keeps_its_place() {
         assert_eq!(connected, client, "{side}: a connection handed on reaches the place its `connect` names");
     }
 }
+
+/// The locals pair: a name bound to what an operator or an array computes of names stands for those names, so a step
+/// handed it is handed what the expression written in its place hands (#328), as in Python and TypeScript.
+#[test]
+fn a_name_computed_of_names_stands_for_them() {
+    common::a_name_computed_of_names_stands_for_them("rust");
+}

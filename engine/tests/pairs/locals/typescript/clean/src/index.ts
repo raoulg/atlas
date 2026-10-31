@@ -18,3 +18,21 @@ function pair(first: Level, second: Level): Level[] {
 export function paired(first: Level, second: Level): void {
   show(pair(first, second));
 }
+
+function draw(gap: number): void {
+  console.log(gap);
+}
+
+/** The gap between the two levels and the two levels side by side, each named before it is shown. */
+export function named(first: Level, second: Level): void {
+  const gap = first.db - second.db;
+  draw(gap);
+  const both: Level[] = [first, second];
+  show(both);
+}
+
+/** The gap between the two levels and the two levels side by side, each written where it is shown. */
+export function written(first: Level, second: Level): void {
+  draw(first.db - second.db);
+  show([first, second]);
+}

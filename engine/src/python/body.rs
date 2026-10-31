@@ -170,29 +170,22 @@ fn reaching<'t>(at: TsNode<'t>, name: &str, src: &[u8]) -> Vec<TsNode<'t>> {
 
 /// The names a value is made of without a step: what it is a projection of (`projections`), and the
 /// names an operator, a literal of several values or an f-string computes it from (`bottom = height -
-/// margin`, `pair = (a, b)`). A literal of its own is made of none; `None` for a part a call makes.
-fn sources(v: TsNode) -> Vec<Option<TsNode>> {
-    let v = beneath(v, WRAPPERS);
-    match v.kind() {
-        "integer" | "float" | "true" | "false" | "none" | "ellipsis" => vec![],
-        "binary_operator"
-        | "unary_operator"
-        | "not_operator"
-        | "comparison_operator"
-        | "tuple"
-        | "list"
-        | "set"
-        | "expression_list"
-        | "string"
-        | "concatenated_string"
-        | "interpolation" => named_children(v)
-            .into_iter()
-            .filter(|c| {
-                !matches!(c.kind(), "comment" | "string_start" | "string_content" | "string_end" | "escape_sequence" | "format_specifier")
-            })
-            .flat_map(sources)
-            .collect(),
-        _ => projections(v),
+/// margin`, `pair = (a, b)`, `body::computed_of`). A literal of its own is made of none; `None` for a
+/// part a call makes.
+fn sources<'t>(v: TsNode<'t>, src: &[u8]) -> Vec<Option<TsNode<'t>>> {
+    match crate::body::computed_of(v, &USES, src, &part) {
+        Some(names) => names.into_iter().map(Some).collect(),
+        None => vec![None],
+    }
+}
+
+/// What a part of a value Python's own code computes is made of (`body::computed_of`): a literal, a piece of a string
+/// and a comment of none, any other part what it is a projection of.
+fn part(p: TsNode) -> Option<Vec<TsNode>> {
+    match p.kind() {
+        "integer" | "float" | "true" | "false" | "none" | "ellipsis" | "comment" | "string_start" | "string_content" | "string_end"
+        | "escape_sequence" | "format_specifier" => Some(vec![]),
+        _ => projections(p).into_iter().collect(),
     }
 }
 
@@ -799,7 +792,8 @@ impl<'a> Seen<'a> {
                 bound if !bound.is_empty() => bound.into_iter().filter_map(|b| b.child_by_field_name("right")).collect(),
                 _ => matched_by(at, name, src).or_else(|| looped_by(at, name, src)).into_iter().collect(),
             };
-            let roots: Vec<Option<TsNode>> = rights.into_iter().flat_map(if computed { sources } else { projections }).collect();
+            let roots: Vec<Option<TsNode>> =
+                rights.into_iter().flat_map(|r| if computed { sources(r, src) } else { projections(r) }).collect();
             if roots.is_empty() || roots.iter().any(|r| r.is_none_or(|r| r.id() == at.id())) {
                 out.push(at);
                 continue;
@@ -2262,6 +2256,23 @@ const USES: UseSyntax = UseSyntax {
     pairs: |targets, value| {
         matches!(targets.kind(), "pattern_list" | "tuple_pattern" | "list_pattern")
             && matches!(value.kind(), "expression_list" | "tuple" | "list")
+    },
+    // `and` and `or` are choices
+    computes: |n, _| {
+        matches!(
+            n.kind(),
+            "binary_operator"
+                | "unary_operator"
+                | "not_operator"
+                | "comparison_operator"
+                | "tuple"
+                | "list"
+                | "set"
+                | "expression_list"
+                | "string"
+                | "concatenated_string"
+                | "interpolation"
+        )
     },
     wrappers: WRAPPERS,
     drops: |n, child, _| {
