@@ -409,6 +409,11 @@ impl<'a> Eval<'a> {
             let local = walk(scope, &["variable_declarator"])
                 .into_iter()
                 .find(|v| v.child_by_field_name("name").map(|n| text(n, src)) == Some(name.as_str()) && v.start_byte() < e.start_byte());
+            // a `for` statement's own variable is changed by the loop as many times as the code does not say, so
+            // where the loop reads it, its value is not said (`docs/reference/mathematics.md`, "Paths as terms")
+            if local.and_then(|v| v.parent()).and_then(|d| d.parent()).is_some_and(|f| f.kind() == "for_statement") {
+                return vec![hole(&name)];
+            }
             if let Some(v) = local.and_then(|v| v.child_by_field_name("value")) {
                 return named_by(&local_name(scope, &name, src), self.of(at, v, depth + 1));
             }

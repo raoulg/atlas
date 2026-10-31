@@ -274,6 +274,7 @@ fn a_socket_is_at_its_address_however_it_is_opened() {
 /// (`typescript.rs`). A name no code decides (`os.environ[name]` of a parameter) is no variable the code names.
 #[test]
 fn a_variable_is_one_place_however_its_lookup_names_it() {
+    use std::collections::BTreeSet;
     let g = written(
         "lookups",
         &[(
@@ -309,7 +310,8 @@ def undecided(name: str) -> str:
 "#,
         )],
     );
-    let places = |f: &str| -> Vec<String> { g.node(&format!("lookups.{f}")).unwrap().touches.iter().map(|t| t.place().id).collect() };
+    // the places each function touches: its file is opened and read there, two touches at one place (#323)
+    let places = |f: &str| -> BTreeSet<String> { g.node(&format!("lookups.{f}")).unwrap().touches.iter().map(|t| t.place().id).collect() };
     let store = places("keyed");
     assert_eq!(store.len(), 1, "{store:?}");
     assert_eq!(places("constant"), store, "`os.environ[NAME]`");

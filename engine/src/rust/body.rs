@@ -281,8 +281,20 @@ fn part(p: TsNode) -> Option<Vec<TsNode>> {
         "integer_literal" | "float_literal" | "boolean_literal" | "string_literal" | "raw_string_literal" | "char_literal"
         | "line_comment" | "block_comment" | "scoped_identifier" => Some(vec![]),
         k if k.ends_with("type") || k.ends_with("type_identifier") => Some(vec![]),
+        // a macro's name is no value
+        "identifier" if p.parent().and_then(|m| m.child_by_field_name("macro")).is_some_and(|m| m.id() == p.id()) => Some(vec![]),
         _ => root(p).map(|r| vec![r]),
     }
+}
+
+/// A macro that writes a list out by its elements, each a name or a literal (`vec![first, second]`,
+/// `knowledge::RUST_LIST_MACROS`): the array it holds, which Rust's own code computes of its elements
+/// as it does `[first, second]`.
+fn listed_of_names(m: TsNode, src: &[u8]) -> bool {
+    m.kind() == "macro_invocation"
+        && m.child_by_field_name("macro")
+            .is_some_and(|x| knowledge::RUST_LIST_MACROS.contains(&text(x, src).rsplit("::").next().unwrap_or("")))
+        && named_children(m).into_iter().find(|t| t.kind() == "token_tree").is_some_and(|t| positional(t).iter().all(Option::is_some))
 }
 
 /// The name a value is a part of, where the code writes it so: through what hands a value on
@@ -2650,6 +2662,8 @@ const USES: UseSyntax = UseSyntax {
         "binary_expression" => n.child_by_field_name("operator").is_some_and(|o| !matches!(text(o, src), "&&" | "||")),
         "unary_expression" => n.child(0).is_some_and(|o| o.kind() != "*"),
         "tuple_expression" | "array_expression" | "type_cast_expression" => true,
+        "macro_invocation" => listed_of_names(n, src),
+        "token_tree" => n.parent().is_some_and(|m| listed_of_names(m, src)),
         _ => false,
     },
     wrappers: WRAPPERS,
