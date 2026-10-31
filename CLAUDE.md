@@ -101,7 +101,8 @@ The rigorous half and the visual half are the same structure. Read `docs/referen
   epics, each numbered in its title, `E1 · Speed`) and carries one priority label, `P1` (the round in
   progress) to `P4` (later); a new theme becomes an epic under the roadmap, with the next number. Every
   issue but an epic stands on the board, the project "Atlas" (https://github.com/users/raoulg/projects/1):
-  a column per Status, a row per epic (`gh issue create --project Atlas`). Older commits name issues by an id of the form `PTT-…`; an open
+  a column per Status, a row per epic. The board adds a new issue itself (as Todo) and moves a closed
+  one to Done. Older commits name issues by an id of the form `PTT-…`; an open
   issue that has one names it on its first line.
 - **Two agents work in this repository: Claude Code and Codex.** Before starting, claim the
   issue on GitHub with `sh tools/claim.sh N`: it labels it `in progress`, assigns it to the account you
