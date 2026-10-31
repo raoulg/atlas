@@ -1438,6 +1438,12 @@ pub struct Stats {
     /// The same calls by what the name each starts from is bound to.
     #[serde(default)]
     pub unresolved_calls: Unresolved,
+    /// The bodies the reading linked: the program's and those of the libraries' code it read.
+    #[serde(default)]
+    pub linked_bodies: usize,
+    /// Of those, the bodies of the libraries' code.
+    #[serde(default)]
+    pub linked_library_bodies: usize,
 }
 
 impl Stats {

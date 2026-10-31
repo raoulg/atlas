@@ -111,6 +111,8 @@ pub struct GraphBuilder {
     pub mutating: HashSet<String>,
     /// Calls whose caller uses what they give back, as (caller, callee).
     pub used: HashSet<(String, String)>,
+    /// The bodies linked so far: the program's, and those of the libraries' code read.
+    pub linked: [usize; 2],
 }
 
 impl GraphBuilder {
@@ -232,10 +234,10 @@ impl GraphBuilder {
         self.unresolved_by.count(bucket);
     }
 
-    /// Count the body of `id` as linked, the program's or a library's (`LINKED`).
-    pub fn linked(&self, id: &str) {
+    /// Count the body of `id` as linked, the program's or a library's.
+    pub fn count_linked(&mut self, id: &str) {
         let library = self.nodes.get(id).is_some_and(|n| n.library);
-        LINKED[usize::from(library)].fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        self.linked[usize::from(library)] += 1;
     }
 
     /// Record a boundary call on a node; the same call again counts up.
@@ -393,6 +395,8 @@ impl GraphBuilder {
                 unresolved_calls_total: self.unresolved.values().sum(),
                 unresolved_calls_top: top,
                 unresolved_calls: self.unresolved_by,
+                linked_bodies: self.linked.iter().sum(),
+                linked_library_bodies: self.linked[1],
                 ..Default::default()
             },
             ..Default::default()
@@ -461,10 +465,6 @@ impl GraphBuilder {
         });
     }
 }
-
-/// How many bodies the readers of this process linked, the program's and the libraries': the work
-/// a reading did (`atlas-code view --timings`).
-pub static LINKED: [std::sync::atomic::AtomicUsize; 2] = [std::sync::atomic::AtomicUsize::new(0), std::sync::atomic::AtomicUsize::new(0)];
 
 /// The parameters of no type of the code's that hold a value of the plan (`mathematics.md`, "One fine plan"): those a call
 /// fills with a value, a step's result, a projection of one or a parameter of its caller's that holds one, in each

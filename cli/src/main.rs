@@ -349,7 +349,6 @@ fn view(
     let mut phases = Phases::new();
     let read = page::reading(repos, opts, since, until)?;
     phases.done("read");
-    let linked = atlas_engine::builder::LINKED.each_ref().map(|n| n.load(std::sync::atomic::Ordering::Relaxed));
     let findings = read.findings();
     phases.done("check");
     let (graph, compared) = read.drawn();
@@ -361,7 +360,9 @@ fn view(
     html.write(&out)?;
     phases.done("page");
     if let Some(timings) = timings {
-        phases.took.insert("linked".into(), serde_json::json!({ "program": linked[0], "library": linked[1] }));
+        let s = &graph.stats;
+        let linked = serde_json::json!({ "program": s.linked_bodies - s.linked_library_bodies, "library": s.linked_library_bodies });
+        phases.took.insert("linked".into(), linked);
         std::fs::write(timings, serde_json::to_string(&phases.took)?)?;
     }
     eprintln!("{} · wrote {}", page::summary(&graph), out.display());

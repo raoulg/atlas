@@ -340,8 +340,8 @@ pub fn assign(g: &mut Graph, language: Lang) {
     }
 }
 
-/// Graphs side by side: their nodes, edges, files and routes, their languages, and the calls they
-/// did not follow, counted by name over all of them. No graphs are the empty graph, which has no
+/// Graphs side by side: their nodes, edges, files and routes, their languages, the calls they did
+/// not follow, counted by name over all of them, and the bodies they linked. No graphs are the empty graph, which has no
 /// language and no project root.
 pub fn merge(name: &str, graphs: Vec<Graph>) -> Graph {
     let mut out = Graph {
@@ -370,6 +370,8 @@ pub fn merge(name: &str, graphs: Vec<Graph>) -> Graph {
         out.stats.modules += g.stats.modules;
         out.stats.unresolved_calls_total += g.stats.unresolved_calls_total;
         out.stats.unresolved_calls += g.stats.unresolved_calls;
+        out.stats.linked_bodies += g.stats.linked_bodies;
+        out.stats.linked_library_bodies += g.stats.linked_library_bodies;
         for (call, n) in g.stats.unresolved_calls_top {
             *unresolved.entry(call).or_default() += n;
         }

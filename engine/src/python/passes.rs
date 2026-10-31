@@ -553,7 +553,7 @@ pub(super) fn link(modules: &IndexMap<String, Module>, store: &mut GraphBuilder,
     for id in &ids {
         if matches!(store.nodes[id].kind, NodeKind::Function | NodeKind::Method | NodeKind::Module) {
             let linked = link_calls(modules, store, types, &sites, &ext, &eval, own, &changing, id);
-            store.linked(id);
+            store.count_linked(id);
             handed.extend(linked.handed);
             waiting.extend(linked.waiting.into_iter().map(|(t, b)| (id.clone(), t, b)));
             args.extend(linked.args);
