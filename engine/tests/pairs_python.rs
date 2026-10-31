@@ -2914,12 +2914,13 @@ fn setup_a_step_before_the_calls_sets_up_the_object_a_method_runs_on() {
 
 // ---------- order: a set-up counts for what runs after it ----------
 
-/// The order pair (#359): `main` keeps its report on the shelf `open_shelf` sets up, and sets the drafts up in
-/// `open_drafts`. On the clean side it reads the report back from the shelf before it sets the drafts up; on the shortcut
-/// it reads the report from the drafts, set up after it kept the report, where it never kept one. Composition is call
-/// order: a set-up counts for what runs after it, and one `main` runs itself never stands above it, so on both sides the
-/// report is written in `out` alone and `main` reads back no file but that one. The shortcut also reads the drafts'
-/// report, which nothing in the route writes: it takes it from beyond. The clean route takes nothing from beyond.
+/// The order pair (#359): `main` runs `review`, which keeps its report on the shelf `open_shelf` sets up, and sets the
+/// drafts up in `open_drafts`. On the clean side it reads the report back from the shelf before it sets the drafts up; on
+/// the shortcut it reads the report from the drafts, set up after it kept the report, where it never kept one.
+/// Composition is call order: a set-up counts for what runs after it, and one `review` runs itself never stands above
+/// it, so on both sides the report is written in `out` alone and neither `review` nor `main` reads back a file but that
+/// one. The shortcut also reads the drafts' report, which nothing in the route writes: it takes it from beyond, and the
+/// closed `review` draws the line from it. The clean route takes nothing from beyond.
 #[test]
 fn order_a_set_up_counts_for_what_runs_after_it() {
     let p = common::pair("order/python");
@@ -2929,7 +2930,10 @@ fn order_a_set_up_counts_for_what_runs_after_it() {
     let touched =
         |g: &Graph| -> BTreeSet<String> { flow::along(g, main).into_values().flatten().filter(|p| p.starts_with("w:File:")).collect() };
     for (side, g) in [("clean", &p.clean), ("shortcut", &p.shortcut)] {
-        assert_eq!(flow::arrows(g)[main].reads_back, [out.clone()], "{side}: `main` reads back the report it kept, and no other file");
+        let arrows = flow::arrows(g);
+        for f in ["shelf.cli.review", main] {
+            assert_eq!(arrows[f].reads_back, [out.clone()], "{side}: `{f}` reads back the report it kept, and no other file");
+        }
     }
     assert_eq!(touched(&p.clean), BTreeSet::from([out.clone()]), "clean: the route touches the report it kept alone");
     assert_eq!(touched(&p.shortcut), BTreeSet::from([out, drafts]), "shortcut: the route also reads the drafts' report");

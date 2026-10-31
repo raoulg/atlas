@@ -14,8 +14,12 @@ def open_drafts() -> Shelf:
     return Shelf(Path("drafts"))
 
 
-def main() -> None:
+def review() -> str:
     shelf = open_shelf()
     shelf.keep_report("all well")
     drafts = open_drafts()
-    print(drafts.report())
+    return drafts.report()
+
+
+def main() -> None:
+    print(review())
