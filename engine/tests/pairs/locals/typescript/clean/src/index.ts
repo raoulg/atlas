@@ -36,3 +36,9 @@ export function written(first: Level, second: Level): void {
   draw(first.db - second.db);
   show([first, second]);
 }
+
+/** The two levels, gathered in an array written out once and shown. */
+export function gathered(first: Level, second: Level): void {
+  const both: Level[] = [first, second];
+  show(both);
+}

@@ -1822,3 +1822,18 @@ fn places_a_name_bound_once_is_one_value() {
 fn places_a_walk_of_a_tree_is_one_place_at_every_depth() {
     common::a_walk_of_a_tree_is_one_place_at_every_depth("rust", "backup.copy_tree", "backup.main");
 }
+
+/// The locals pair: a vector a step changes in place (`both.push(second)`) holds a value of its own and stands for nothing,
+/// where the vector written out once stands for the levels it holds (#355), as in Python and TypeScript.
+#[test]
+fn a_name_changed_in_place_holds_a_value_of_its_own() {
+    common::a_name_changed_in_place_holds_a_value_of_its_own("rust");
+}
+
+/// The locals pair's shortcut: a call handed a name as `&mut` changes it in place as a method that changes what it runs on
+/// does (#355): `add(&mut both, second)` is `both.push(second)`, as a function that changes what it is handed is in Python
+/// and TypeScript.
+#[test]
+fn a_name_handed_as_mut_is_changed_in_place() {
+    common::a_name_a_function_changes_holds_a_value_of_its_own("rust", "add", "push");
+}

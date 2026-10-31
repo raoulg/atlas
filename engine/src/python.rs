@@ -211,6 +211,21 @@ fn package_bases(manifest: &toml::Table) -> Vec<PathBuf> {
     bases
 }
 
+/// The name Python imports a file of the project by (`rel`, from the project's root), from the
+/// first of the directories it keeps its packages in that holds it: a flat layout's `ask.py` is
+/// `ask`, as a src layout's `src/ask.py` is.
+fn imported_as(rel: &Path, bases: &[PathBuf]) -> Option<String> {
+    if rel.extension().and_then(|x| x.to_str()) != Some("py") {
+        return None;
+    }
+    let below = bases.iter().find_map(|b| rel.strip_prefix(b).ok())?.with_extension("");
+    let mut parts: Vec<String> = below.components().map(|c| c.as_os_str().to_string_lossy().to_string()).collect();
+    if parts.last().is_some_and(|l| l == "__init__") {
+        parts.pop();
+    }
+    (!parts.is_empty()).then(|| parts.join("."))
+}
+
 /// The value at a path of keys in a manifest.
 fn setting<'t>(manifest: &'t toml::Table, path: &[&str]) -> Option<&'t toml::Value> {
     let (first, rest) = path.split_first()?;
@@ -291,6 +306,9 @@ pub fn parse(repo: &Repo, packages: &[PathBuf], project_root: Option<&Path>, opt
     }
     // the project's scripts and notebooks are routes into its packages
     if let Some(root_dir) = project_root {
+        let manifest = repo.text(root_dir.join("pyproject.toml")).and_then(|t| t.parse::<toml::Table>().ok()).unwrap_or_default();
+        let bases = package_bases(&manifest);
+        let declared = crate::entries::declared_modules(repo, root_dir);
         for p in scripts(repo, root_dir, packages) {
             let rel = p.strip_prefix(root_dir).unwrap_or(&p).to_path_buf();
             let stem = p.file_stem().and_then(|s| s.to_str()).unwrap_or("script").to_string();
@@ -316,6 +334,20 @@ pub fn parse(repo: &Repo, packages: &[PathBuf], project_root: Option<&Path>, opt
                 }
             };
             store.files.insert(crate::tree::path_str(&p), String::from_utf8_lossy(&m.src).to_string());
+            // a file an entry point names by its import name is a module of the program, entered as
+            // a package's module is: through what the declaration names, and by `python -m` where
+            // it runs as a program
+            let entry = match imported_as(&rel, &bases).filter(|name| declared.contains(name)) {
+                Some(name) => {
+                    let main = runs_as_main(m.tree.root_node(), &m.src).then(|| Entry::new(EntryKind::Cli, format!("python -m {name}")));
+                    store.imported.entry(name).or_insert_with(|| mid.clone());
+                    main
+                }
+                None => Some(Entry::new(
+                    if p.extension().and_then(|x| x.to_str()) == Some("ipynb") { EntryKind::Notebook } else { EntryKind::Script },
+                    crate::tree::path_str(&rel),
+                )),
+            };
             store.add_node(Node {
                 id: mid.clone(),
                 kind: NodeKind::Module,
@@ -324,10 +356,7 @@ pub fn parse(repo: &Repo, packages: &[PathBuf], project_root: Option<&Path>, opt
                 span: Some((1, m.tree.root_node().end_position().row as u32 + 1)),
                 module: mid.clone(),
                 doc: first_docline(Some(m.tree.root_node()), &m.src),
-                entry: Some(Entry::new(
-                    if p.extension().and_then(|x| x.to_str()) == Some("ipynb") { EntryKind::Notebook } else { EntryKind::Script },
-                    crate::tree::path_str(&rel),
-                )),
+                entry,
                 ..Default::default()
             });
             modules.insert(mid, m);

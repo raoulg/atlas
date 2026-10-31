@@ -6,9 +6,15 @@ use atlas_engine::{analyze, EntryKind, Graph, Options};
 /// A project written to a directory of its own, with the libraries it imports as stubs, read, and
 /// removed.
 fn written(name: &str, files: &[(&str, &str)]) -> Graph {
+    declaring(name, "", files)
+}
+
+/// A project written as `written` writes one, with more tables in its `pyproject.toml`.
+fn declaring(name: &str, tables: &str, files: &[(&str, &str)]) -> Graph {
     let dir = std::env::temp_dir().join(format!("atlas-python-{name}-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
-    let manifest = format!("[project]\nname = \"{name}\"\nversion = \"0.1.0\"\n\n[tool.ty.environment]\nextra-paths = [\"typings\"]\n");
+    let manifest =
+        format!("[project]\nname = \"{name}\"\nversion = \"0.1.0\"\n\n[tool.ty.environment]\nextra-paths = [\"typings\"]\n{tables}");
     for (path, text) in std::iter::once(&("pyproject.toml", manifest.as_str())).chain(files) {
         let file = dir.join(path);
         std::fs::create_dir_all(file.parent().unwrap()).unwrap();
@@ -341,4 +347,60 @@ fn two_doors_opened_on_one_line_keep_their_places() {
     let at: BTreeSet<&str> = apart.iter().map(|t| t.2.as_str()).collect();
     assert_eq!(at, BTreeSet::from(["in.txt", "out.txt"]), "{apart:?}");
     assert_eq!(drawn("one_line"), apart);
+}
+
+/// `[project.scripts] name = "mod:attr"` names the function `attr` of the module Python imports as `mod`, whatever the
+/// reader calls that module inside (#364): a flat layout's top-level `ask.py` is `ask`, as a src layout's `src/ask.py`
+/// is and as a package's `greeter/ask.py` is `greeter.ask`. Isomorphic is the same, so the three forms are entered
+/// alike: each declared program is a CLI entry at the function it names, and the file it names is no second entry of
+/// its own (one start is one entry); a file that also runs as a program is entered as a package's module is, by
+/// `python -m` and the name it is imported by.
+#[test]
+fn a_console_script_is_the_function_of_the_module_python_imports() {
+    use std::collections::BTreeSet;
+    const SERVER: &str = "def main() -> None:\n    print(\"hello\")\n";
+    const ASK: &str = "def main() -> None:\n    print(\"ada\")\n";
+    const TELL: &str = "def main() -> None:\n    print(\"ada\")\n\n\nif __name__ == \"__main__\":\n    main()\n";
+    let scripts = |package: &str| {
+        format!("\n[project.scripts]\ngreeter = \"greeter:main\"\nask = \"{package}ask:main\"\ntell = \"{package}tell:main\"\n")
+    };
+    let forms = [
+        ("flat", "", [("greeter.py", SERVER), ("ask.py", ASK), ("tell.py", TELL)]),
+        ("src", "", [("src/greeter/__init__.py", SERVER), ("src/ask.py", ASK), ("src/tell.py", TELL)]),
+        ("package", "greeter.", [("src/greeter/__init__.py", SERVER), ("src/greeter/ask.py", ASK), ("src/greeter/tell.py", TELL)]),
+    ];
+    let mut entered: Vec<(&str, BTreeSet<(String, String, String)>)> = vec![];
+    for (form, package, files) in forms {
+        let g = declaring("greeter", &scripts(package), &files);
+        // each entry by its kind and its label, the module `python -m` runs written `<tell>`, with the kind and the
+        // name of the node it is on and the file of the three it is in; what a package exports is a door of the
+        // library, not a start
+        let file = |path: &str| ["greeter", "ask", "tell"][files.iter().position(|(f, _)| path.ends_with(f)).expect("a file written")];
+        let entries = g
+            .nodes
+            .iter()
+            .filter_map(|n| Some((n, n.entry.as_ref().filter(|e| e.kind != EntryKind::Export)?)))
+            .map(|(n, e)| {
+                let label = match e.label.strip_prefix("python -m ") {
+                    Some(m) if m == format!("{package}tell") => "python -m <tell>".to_string(),
+                    _ => e.label.clone(),
+                };
+                (format!("{:?}", e.kind), label, format!("{:?} {} in {}", n.kind, n.name, file(&n.file)))
+            })
+            .collect();
+        entered.push((form, entries));
+    }
+    let started = |(kind, label, node): (EntryKind, &str, &str)| (format!("{kind:?}"), label.to_string(), node.to_string());
+    let expected: BTreeSet<_> = [
+        (EntryKind::Cli, "greeter", "Function main in greeter"),
+        (EntryKind::Cli, "ask", "Function main in ask"),
+        (EntryKind::Cli, "tell", "Function main in tell"),
+        (EntryKind::Cli, "python -m <tell>", "Module tell in tell"),
+    ]
+    .into_iter()
+    .map(started)
+    .collect();
+    for (form, entries) in &entered {
+        assert_eq!(entries, &expected, "{form}");
+    }
 }

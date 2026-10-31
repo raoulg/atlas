@@ -1108,27 +1108,69 @@ pub fn arrows(g: &Graph) -> BTreeMap<String, Arrow> {
 /// body for what a call may run in place of the function it reaches (`key`). Each holds the places of the touches its
 /// own body runs there (`running`), each once. A call of a function already on the calls is not opened.
 pub fn along(g: &Graph, entry: &str) -> BTreeMap<String, BTreeSet<String>> {
-    let ix = Ix::new(g);
-    let mut out = BTreeMap::new();
-    occurrences(&ix, entry, "", entry.to_string(), entry, &Under::start(ix.name(entry)), &mut vec![], &mut out);
-    out
+    let mut a = Along::new(g, entry);
+    a.read(entry, entry, "", usize::MAX);
+    a.occurrences.into_iter().map(|(at, o)| (at, o.touches.iter().map(|t| t.place().id).collect())).collect()
+}
+
+/// One occurrence of a route as `along` reads it: the touches its own body runs there (`running`), and which reading of
+/// its body it is, numbered in the order the reader first reads it. Two occurrences with one `reading` run their bodies
+/// alike, and all those bodies run (`Key`): they differ at most in which call of a function already on the calls is not
+/// opened.
+pub struct Occurrence<'g> {
+    pub touches: Vec<&'g Touch>,
+    pub reading: usize,
+}
+
+/// The route that starts at `entry` as `along` reads it, read a part at a time: each occurrence by its name, with one
+/// numbering of readings for all of it.
+pub struct Along<'g> {
+    ix: Ix<'g>,
+    entry: String,
+    readings: FxHashMap<Key, usize>,
+    occurrences: BTreeMap<String, Occurrence<'g>>,
+}
+
+impl<'g> Along<'g> {
+    /// The route that starts at `entry`, none of it read yet.
+    pub fn new(g: &'g Graph, entry: &str) -> Self {
+        Along { ix: Ix::new(g), entry: entry.to_string(), readings: FxHashMap::default(), occurrences: BTreeMap::new() }
+    }
+
+    /// Reads the part of the route that starts at body `id` run on class `on` (none where that is not known), nothing
+    /// above it and nothing before it, down to `depth` calls below it, its occurrences named from `at`: the entry itself,
+    /// or a body the route runs that no call in a body's sites leads to (a door of a class the route starts at, what the
+    /// entry may run instead). A part read to a depth reads each occurrence above it as the whole route does.
+    pub fn read(&mut self, at: &str, id: &str, on: &str, depth: usize) {
+        let mut out = Out { depth, readings: &mut self.readings, occurrences: &mut self.occurrences };
+        let top = self.entry.as_str();
+        occurrences(&self.ix, id, on, at.to_string(), top, &Under::start(self.ix.name(top)), &mut vec![], &mut out);
+    }
+
+    /// The occurrence named `at`, where a route read so far has it.
+    pub fn occurrence(&self, at: &str) -> Option<&Occurrence<'g>> {
+        self.occurrences.get(at)
+    }
+}
+
+/// Where `occurrences` reads into: how deep, the readings of bodies by their keys, and the occurrences by their names.
+struct Out<'a, 'g> {
+    depth: usize,
+    readings: &'a mut FxHashMap<Key, usize>,
+    occurrences: &'a mut BTreeMap<String, Occurrence<'g>>,
 }
 
 /// The occurrences below the one named `at` of body `id` run on class `on` under `under` (`along`), into `out`.
 #[allow(clippy::too_many_arguments)]
-fn occurrences(
-    ix: &Ix,
-    id: &str,
-    on: &str,
-    at: String,
-    top: &str,
-    under: &Under,
-    path: &mut Vec<String>,
-    out: &mut BTreeMap<String, BTreeSet<String>>,
-) {
+fn occurrences<'g>(ix: &Ix<'g>, id: &str, on: &str, at: String, top: &str, under: &Under, path: &mut Vec<String>, out: &mut Out<'_, 'g>) {
     let Some(&n) = ix.nodes.get(id) else { return };
     let k = Key::of(ix, n, on, under);
-    out.insert(at.clone(), running(ix, n, top, &k).into_iter().map(|t| t.place().id).collect());
+    let next = out.readings.len();
+    let reading = *out.readings.entry(k.clone()).or_insert(next);
+    out.occurrences.insert(at.clone(), Occurrence { touches: running(ix, n, top, &k), reading });
+    if path.len() >= out.depth {
+        return;
+    }
     let calls = ix.calls(k.body, n, on);
     let prior = ix.prior(k.body, n, on, &calls);
     path.push(id.to_string());

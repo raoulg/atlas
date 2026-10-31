@@ -43,3 +43,22 @@ home Level·second written
 
 side entry left
 side Screen right
+
+# `gathered` writes the array of both levels out once (`[first, second]`): it stands for them, so the step that shows
+# it takes the two levels.
+
+route signal.gathered
+step gathered/show
+
+line entry > gathered call
+line Level·first > gathered value
+line Level·second > gathered value
+line Level·first > gathered/show value               # `show(both)`, `const both: Level[] = [first, second]`
+line Level·second > gathered/show value
+line gathered/show > Screen own
+
+home Level·first gathered
+home Level·second gathered
+
+side entry left
+side Screen right
