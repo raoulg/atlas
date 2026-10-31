@@ -973,3 +973,93 @@ export function undecided(name: string): string {
     assert_eq!(places("constant"), store, "`process.env[NAME]`");
     assert_ne!(places("undecided"), store, "`process.env[name]`");
 }
+
+/// Each door is at the place its own opening names (`docs/reference/mathematics.md`, "A door keeps its place"): the touch
+/// a `FileHandle`'s traffic goes to is the one the call that made it made, so two files opened in one declaration are
+/// each read or written where they are opened, and the body draws what it draws with each opening on a line of its own
+/// (#353).
+#[test]
+fn two_doors_opened_on_one_line_keep_their_places() {
+    let g = written(
+        "twodoors",
+        &[
+            ("package.json", r#"{ "name": "twodoors", "version": "0.1.0", "type": "module" }"#),
+            (
+                "src/index.ts",
+                r#"import { open } from "node:fs/promises";
+
+export async function oneLine(): Promise<void> {
+  const src = await open("in.txt"), dst = await open("out.txt", "w");
+  await dst.writeFile(await src.readFile("utf8"));
+}
+
+export async function twoLines(): Promise<void> {
+  const src = await open("in.txt");
+  const dst = await open("out.txt", "w");
+  await dst.writeFile(await src.readFile("utf8"));
+}
+"#,
+            ),
+        ],
+    );
+    let drawn = |f: &str| -> BTreeSet<(String, String, String)> {
+        let n = g.node(&format!("twodoors.{f}")).unwrap_or_else(|| panic!("no node {f}"));
+        n.touches.iter().map(|t| (t.kind_name().to_string(), t.op.clone(), t.artifact.clone())).collect()
+    };
+    let apart = drawn("twoLines");
+    let at: BTreeSet<&str> = apart.iter().map(|t| t.2.as_str()).collect();
+    assert_eq!(at, BTreeSet::from(["in.txt", "out.txt"]), "{apart:?}");
+    assert_eq!(drawn("oneLine"), apart);
+}
+
+/// Isomorphic is the same: a descriptor `fs.openSync` gives is a door to the file it is opened at, as a `FileHandle`
+/// `fs.promises.open` gives is (`docs/reference/mathematics.md`, "A door keeps its place"). `fs.readFileSync(fd)` and
+/// `fs.writeSync(fd, ..)` read and write that file, as `handle.readFile()` and `handle.writeFile(..)` do, each opening
+/// goes the way its flags say, and a descriptor handed to a parameter is the one its caller opens (#353).
+#[test]
+fn a_descriptor_is_a_door_as_a_file_handle_is() {
+    let g = written(
+        "descriptors",
+        &[
+            ("package.json", r#"{ "name": "descriptors", "version": "0.1.0", "type": "module" }"#),
+            (
+                "src/index.ts",
+                r#"import * as fs from "node:fs";
+import { open } from "node:fs/promises";
+
+export function described(): void {
+  const src = fs.openSync("in.txt", "r");
+  const dst = fs.openSync("out.txt", "w");
+  fs.writeSync(dst, fs.readFileSync(src, "utf8"));
+}
+
+export async function handled(): Promise<void> {
+  const src = await open("in.txt", "r");
+  const dst = await open("out.txt", "w");
+  await dst.writeFile(await src.readFile("utf8"));
+}
+
+function count(fd: number): number {
+  return fs.readFileSync(fd, "utf8").length;
+}
+
+export function opener(): number {
+  return count(fs.openSync("in.txt", "r"));
+}
+"#,
+            ),
+        ],
+    );
+    let drawn = |f: &str| -> Vec<(String, String)> {
+        let n = g.node(&format!("descriptors.{f}")).unwrap_or_else(|| panic!("no node {f}"));
+        let mut out: Vec<_> = n.touches.iter().map(|t| (t.kind_name().to_string(), t.artifact.clone())).collect();
+        out.sort();
+        out
+    };
+    let handled = drawn("handled");
+    let read = ("disk_read".to_string(), "in.txt".to_string());
+    assert_eq!(handled.iter().filter(|t| **t == read).count(), 2, "opened and read: {handled:?}");
+    assert_eq!(drawn("described"), handled);
+    let handed = g.node("descriptors.count").expect("count").touches.iter().filter(|t| t.by.contains(&Both::one("descriptors.opener")));
+    assert_eq!(handed.map(|t| (t.kind_name(), t.artifact.as_str())).collect::<Vec<_>>(), [("disk_read", "in.txt")]);
+}

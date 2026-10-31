@@ -688,6 +688,7 @@ pub(super) fn link_calls<'t>(
             }
             let (t, w) = (b.read.touches.len(), b.read.waiting.len());
             b.call(&mut steps, c);
+            b.read.made.record(c, t..b.read.touches.len(), w..b.read.waiting.len());
             steps.mark(c, b.read.touches[t..].iter_mut().chain(b.read.waiting[w..].iter_mut().map(|(t, _)| t)));
         }
         let kept = steps.kept.clone();
@@ -745,6 +746,7 @@ pub(super) fn link_calls<'t>(
 struct Read<'t> {
     touches: Vec<Touch>,
     waiting: Vec<(Touch, Vec<crate::paths::Built>)>,
+    made: crate::body::MadeBy,
     args: Vec<Arg<'t>>,
     unresolved: Vec<(String, Bucket)>,
     mutates: Vec<(String, String)>,
@@ -2225,7 +2227,7 @@ impl<'a, 't> Body<'a, 't> {
                 x.ty.last().is_some_and(|t| knowledge::RUST_DOORS.iter().any(|(d, _, _)| d == t) && knowledge::rust_door(t, &op).is_none());
             let traffic = door
                 && match kind.world {
-                    World::Net => knowledge::rust_socket_op(&op),
+                    World::Net => knowledge::rust_socket_op(&op).is_some(),
                     World::Disk => knowledge::RUST_DOOR_TRAFFIC.contains(&op.as_str()),
                     _ => false,
                 };
@@ -2318,11 +2320,15 @@ impl<'a, 't> Body<'a, 't> {
     }
 
     /// The touch the body made where it made the door a local holds (`origin`, the value of its
-    /// `let`), with the term its place waits for: the last touch of that line in `world`.
+    /// `let`), with the term its place waits for: the last touch in `world` the calls of that value
+    /// made.
     fn opening(&self, origin: TsNode<'t>, world: World) -> Option<(Touch, Vec<crate::paths::Built>)> {
-        let line = origin.start_position().row as u32 + 1;
-        let made = self.read.touches.iter().map(|t| (t, vec![])).chain(self.read.waiting.iter().map(|(t, b)| (t, b.clone())));
-        made.filter(|(t, _)| t.line == line && t.kind == world).last().map(|(t, b)| (t.clone(), b))
+        let (now, waiting) = self.read.made.within(origin);
+        let made = now.into_iter().map(|i| (&self.read.touches[i], vec![])).chain(waiting.into_iter().map(|i| {
+            let (t, b) = &self.read.waiting[i];
+            (t, b.clone())
+        }));
+        made.filter(|(t, _)| t.kind == world).last().map(|(t, b)| (t.clone(), b))
     }
 
     /// The touches of a call that names what it reaches by what it is handed first (the program
@@ -2647,16 +2653,20 @@ const USES: UseSyntax = UseSyntax {
         "macro_invocation" => child.kind() == "token_tree",
         _ => false,
     },
-    // `&mut s` handed to a call: the call writes into `s`
-    changes: |n| {
-        let mut out = vec![];
-        let Some(args) = n.child_by_field_name("arguments").filter(|_| n.kind() == "call_expression") else { return out };
-        for i in 0..args.named_child_count() {
-            let Some(a) = args.named_child(i).filter(|a| a.kind() == "reference_expression") else { continue };
-            let mutable = (0..a.child_count()).any(|j| a.child(j).is_some_and(|c| c.kind() == "mutable_specifier"));
-            if let Some(v) = a.child_by_field_name("value").filter(|v| mutable && v.kind() == "identifier") {
-                out.push(v);
+    // `&mut s` handed to a call: the call writes into `s`; `.unwrap()`, as `?`, hands on the value it is called on, so
+    // `f.read_to_string(&mut s).unwrap()` writes into `s` as `f.read_to_string(&mut s)?` does
+    changes: |n, src| {
+        let (mut out, mut call) = (vec![], Some(n));
+        while let Some(n) = call.filter(|n| n.kind() == "call_expression") {
+            let args = n.child_by_field_name("arguments");
+            for a in (0..args.map_or(0, |a| a.named_child_count())).filter_map(|i| args?.named_child(i)) {
+                let Some(a) = Some(a).filter(|a| a.kind() == "reference_expression") else { continue };
+                let mutable = (0..a.child_count()).any(|j| a.child(j).is_some_and(|c| c.kind() == "mutable_specifier"));
+                if let Some(v) = a.child_by_field_name("value").filter(|v| mutable && v.kind() == "identifier") {
+                    out.push(v);
+                }
             }
+            call = method_on(n, src).filter(|(m, _)| knowledge::hands_on(m)).map(|(_, on)| beneath(on, WRAPPERS));
         }
         out
     },

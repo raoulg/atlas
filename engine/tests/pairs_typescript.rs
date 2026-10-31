@@ -2086,3 +2086,24 @@ fn places_a_name_bound_once_is_one_value() {
 fn places_a_walk_of_a_tree_is_one_place_at_every_depth() {
     common::a_walk_of_a_tree_is_one_place_at_every_depth("typescript", "backup.copyTree", "backup.main");
 }
+
+/// The handles pair (#353): a `FileHandle` handed on (`count(f: FileHandle)`, made by `open` of `node:fs/promises`) is read
+/// and written at the file it was opened at, as Python's file object and Rust's `File` are
+/// (`common::a_file_handed_on_keeps_its_place`), and its opening goes the way its flags say, as Python's `open` goes by
+/// its mode. Isomorphic is the same: function by function, TypeScript's draws what Python's draws, the same ways to the
+/// same places.
+#[test]
+fn handles_a_file_handle_handed_on_keeps_its_place() {
+    common::a_file_handed_on_keeps_its_place_in("typescript", "tally.tally");
+    let (ts, py) = (common::pair("handles/typescript"), common::pair("handles/python"));
+    let ways = |g: &Graph, id: &str| -> Vec<(String, String)> {
+        let mut out: Vec<_> = common::disk(g, id).into_iter().map(|(kind, _, place, _)| (kind, place)).collect();
+        out.sort();
+        out
+    };
+    for (side, t, p) in [("clean", &ts.clean, &py.clean), ("shortcut", &ts.shortcut, &py.shortcut)] {
+        for f in ["main", "count", "emit"] {
+            assert_eq!(ways(t, &format!("tally.tally.{f}")), ways(p, &format!("tally.{f}")), "{side}: TypeScript's and Python's `{f}`");
+        }
+    }
+}
