@@ -237,8 +237,7 @@ fn follow(mut n: TsNode, mut open: bool, mut refers: bool, src: &[u8], depth: u3
         match p.kind() {
             "field_expression" if is("value") => {
                 let method = p.child_by_field_name("field").map_or("", |f| text(f, src));
-                let Some(call) = p
-                    .parent()
+                let Some(call) = parent(p)
                     .filter(|c| c.kind() == "call_expression" && c.child_by_field_name("function").map(|f| f.id()) == Some(p.id()))
                 else {
                     // a field of the value

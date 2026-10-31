@@ -1987,8 +1987,7 @@ impl<'a, 't> Body<'a, 't> {
         let mut end = c;
         loop {
             let value = crate::tree::outermost(end, WRAPPERS);
-            let on = value
-                .parent()
+            let on = parent(value)
                 .filter(|f| f.kind() == "field_expression" && f.child_by_field_name("value").map(|v| v.id()) == Some(value.id()));
             match on.and_then(|f| parent(f)).filter(|p| p.kind() == "call_expression") {
                 Some(call) => end = call,
@@ -2647,7 +2646,7 @@ const CHOICES: ChoiceSyntax = ChoiceSyntax {
         if n.kind() == "match_arm" {
             return parent(n);
         }
-        let up = parent(n).filter(|p| p.kind() == "else_clause")?.parent()?;
+        let up = parent(parent(n).filter(|p| p.kind() == "else_clause")?)?;
         (n.kind() == "if_expression" && up.kind() == "if_expression").then_some(up)
     },
     part: |c, child, src| {

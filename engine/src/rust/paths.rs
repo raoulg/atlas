@@ -1412,8 +1412,7 @@ fn handed<'a>(scope: TsNode<'a>, name: &str, pos: usize, src: &[u8]) -> Option<(
     while let Some(p) = crate::tree::parent(handed_to).filter(|p| crate::tree::wraps(super::module::WRAPPERS, *p)) {
         handed_to = p;
     }
-    if let Some(method) = handed_to
-        .parent()
+    if let Some(method) = crate::tree::parent(handed_to)
         .filter(|a| a.kind() == "arguments")
         .and_then(|a| crate::tree::parent(a))
         .filter(|c| c.kind() == "call_expression")
