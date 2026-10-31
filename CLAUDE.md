@@ -98,8 +98,8 @@ The rigorous half and the visual half are the same structure. Read `docs/referen
 - **Plan in GitHub issues first**, in `raoulg/atlas`: Atlas is developed in the open. Record
   decisions and their reasons on the issue that made them (label `decision`). Every issue is a
   sub-issue of the epic of its theme (label `epic`; the pinned issue "Roadmap: the epics" holds the
-  epics) and carries one priority label, `P1` (the round in progress) to `P4` (later); a new theme
-  becomes an epic under the roadmap. Older commits name issues by an id of the form `PTT-…`; an open
+  epics, each numbered in its title, `E1 · Speed`) and carries one priority label, `P1` (the round in
+  progress) to `P4` (later); a new theme becomes an epic under the roadmap, with the next number. Older commits name issues by an id of the form `PTT-…`; an open
   issue that has one names it on its first line.
 - **Two agents work in this repository: Claude Code and Codex.** Before starting, claim the
   issue on GitHub: label it `in progress` and comment a *Coordination* note that names the active
