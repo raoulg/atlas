@@ -12,7 +12,7 @@ use super::module::{
     written, Module, Own, WRAPPERS,
 };
 use super::paths::{self, At, Built, Eval};
-use crate::body::{changed_through, BindSyntax, Crosses, Range, Step, Steps, UseSyntax};
+use crate::body::{changed_through, BindSyntax, Crosses, Lookups, Range, Step, Steps, UseSyntax};
 use crate::builder::{foreign_type, GraphBuilder};
 use crate::effects::{self, Crossing};
 use crate::knowledge::{self, OwnTypes};
@@ -71,9 +71,9 @@ fn changed_types(
 /// How Python binds a name, as `changes` follows a change through it: `x = v` binds `x` to `v`,
 /// `for x in v` to each element of `v`.
 const BINDS: BindSyntax = BindSyntax {
-    binds: |n, src| {
+    binds: |n, src, looked| {
         let (l, v) = (n.child_by_field_name("left")?, n.child_by_field_name("right")?);
-        (n.kind() == "assignment" && l.kind() == "identifier").then(|| (text(l, src), held_by(v, src)))
+        (n.kind() == "assignment" && l.kind() == "identifier").then(|| (text(l, src), held_by(v, src, looked)))
     },
     loops: |n, src| {
         let (l, v, b) = (n.child_by_field_name("left")?, n.child_by_field_name("right")?, n.child_by_field_name("body")?);
@@ -82,10 +82,10 @@ const BINDS: BindSyntax = BindSyntax {
 };
 
 /// The names whose value a Python value may be or be a part of: `graph`, `self.items[0]`, either
-/// side of `a or b` and of `a if c else b` (`projections`). A call and a slice (`xs[:]`) make a
-/// value anew.
-fn held_by<'a>(v: TsNode, src: &'a [u8]) -> Vec<&'a str> {
-    projections(v).into_iter().flatten().map(|n| text(n, src)).collect()
+/// side of `a or b` and of `a if c else b`, the collection a lookup `looked` finds looks in
+/// (`projections_through`). Any other call and a slice (`xs[:]`) make a value anew.
+fn held_by<'a, 't>(v: TsNode<'t>, src: &'a [u8], looked: Lookups<'_, 't>) -> Vec<&'a str> {
+    projections_through(v, looked).into_iter().flatten().map(|n| text(n, src)).collect()
 }
 
 /// Whether the name `i` is one a `lambda` between it and `e` binds: a parameter of the function
@@ -168,12 +168,12 @@ fn reaching<'t>(at: TsNode<'t>, name: &str, src: &[u8]) -> Vec<TsNode<'t>> {
     vec![last]
 }
 
-/// The names a value is made of without a step: what it is a projection of (`projections`), and the
+/// The names a value is made of without a step: what it is a projection of (`projections_through`), and the
 /// names an operator, a literal of several values or an f-string computes it from (`bottom = height -
 /// margin`, `pair = (a, b)`, `body::computed_of`). A literal of its own is made of none; `None` for a
 /// part a call makes.
-fn sources<'t>(v: TsNode<'t>, src: &[u8]) -> Vec<Option<TsNode<'t>>> {
-    match crate::body::computed_of(v, &USES, src, &part) {
+fn sources<'t>(v: TsNode<'t>, src: &[u8], looked: Lookups<'_, 't>) -> Vec<Option<TsNode<'t>>> {
+    match crate::body::computed_of(v, &USES, src, &|p| part(p, looked)) {
         Some(names) => names.into_iter().map(Some).collect(),
         None => vec![None],
     }
@@ -181,35 +181,49 @@ fn sources<'t>(v: TsNode<'t>, src: &[u8]) -> Vec<Option<TsNode<'t>>> {
 
 /// What a part of a value Python's own code computes is made of (`body::computed_of`): a literal, a piece of a string
 /// and a comment of none, any other part what it is a projection of.
-fn part(p: TsNode) -> Option<Vec<TsNode>> {
+fn part<'t>(p: TsNode<'t>, looked: Lookups<'_, 't>) -> Option<Vec<TsNode<'t>>> {
     match p.kind() {
         "integer" | "float" | "true" | "false" | "none" | "ellipsis" | "comment" | "string_start" | "string_content" | "string_end"
         | "escape_sequence" | "format_specifier" => Some(vec![]),
-        _ => projections(p).into_iter().collect(),
+        _ => projections_through(p, looked).into_iter().collect(),
     }
 }
 
-/// The names a value is a projection of, by their roots: `a.x[k]` of `a`, `y` of itself, either part
-/// of `a.x if c else b.y` and of `a or b`. `None` for a part that is no projection (a call, a slice).
-fn projections(v: TsNode) -> Vec<Option<TsNode>> {
+/// The names a value is a projection of, by their roots: `a.x[k]` of `a`, `y` of itself, either part of `a.x if c else
+/// b.y` and of `a or b`, and through the lookups `looked` finds, each a projection of its collection as a subscript is:
+/// `levels` of `levels.get(name).db`, `levels` and `quiet` of `levels.get(name, quiet)`. `None` for a part that is no
+/// projection (any other call, a slice).
+fn projections_through<'t>(v: TsNode<'t>, looked: Lookups<'_, 't>) -> Vec<Option<TsNode<'t>>> {
     let v = beneath(v, WRAPPERS);
     match v.kind() {
         "conditional_expression" => {
             let parts = named_children(v);
-            [parts.first(), parts.get(2)].into_iter().flatten().flat_map(|p| projections(*p)).collect()
+            [parts.first(), parts.get(2)].into_iter().flatten().flat_map(|p| projections_through(*p, looked)).collect()
         }
-        "boolean_operator" => {
-            [v.child_by_field_name("left"), v.child_by_field_name("right")].into_iter().flatten().flat_map(projections).collect()
-        }
+        "boolean_operator" => [v.child_by_field_name("left"), v.child_by_field_name("right")]
+            .into_iter()
+            .flatten()
+            .flat_map(|p| projections_through(p, looked))
+            .collect(),
         "subscript" if field_children(v, "subscript").iter().any(|s| s.kind() == "slice") => vec![None],
-        "attribute" | "subscript" | "identifier" => {
+        "attribute" | "subscript" | "identifier" | "call" => {
             let mut root = v;
-            while let Some(inner) = match root.kind() {
-                "attribute" => root.child_by_field_name("object"),
-                "subscript" => root.child_by_field_name("value"),
-                _ => None,
-            } {
-                root = inner;
+            loop {
+                let inner = match root.kind() {
+                    "attribute" => root.child_by_field_name("object"),
+                    "subscript" => root.child_by_field_name("value"),
+                    "call" => {
+                        return match looked(root) {
+                            Some(parts) => parts.into_iter().flat_map(|p| projections_through(p, looked)).collect(),
+                            None => vec![None],
+                        }
+                    }
+                    _ => None,
+                };
+                match inner {
+                    Some(inner) => root = inner,
+                    None => break,
+                }
             }
             vec![(root.kind() == "identifier").then_some(root)]
         }
@@ -294,13 +308,18 @@ fn root_of(n: TsNode) -> Option<TsNode> {
 }
 
 /// The names whose objects a body changes in place: the root of everything it changes, followed
-/// through the names it is changed by (`changed_through`). Changing a part changes the whole.
+/// through the names it is changed by and the lookups `looked` finds (`changed_through`). Changing
+/// a part changes the whole.
 pub(super) fn changed_roots<'a, 't>(
     body: TsNode<'t>,
     src: &'a [u8],
     changes: &dyn Fn(TsNode<'t>) -> Vec<TsNode<'t>>,
+    looked: Lookups<'_, 't>,
 ) -> std::collections::BTreeSet<&'a str> {
-    changed(body, changes).into_iter().filter_map(|x| changed_through(body, src, &BINDS, root_name(x, src)?, x.start_byte())).collect()
+    changed(body, changes)
+        .into_iter()
+        .filter_map(|x| changed_through(body, src, &BINDS, looked, root_name(x, src)?, x.start_byte()))
+        .collect()
 }
 
 /// The parameters each function and method of the package changes in place, by name, each with
@@ -321,11 +340,12 @@ pub(super) fn changed_params<'t>(
 ) -> (bool, Vec<(String, String)>) {
     let src = &seen.m.src;
     let (types, changeable) = changed_types(seen.m, d, seen.modules, &seen.store.nodes, seen.own, seen.facts);
-    let mut roots = changed_roots(body, src, &|c| changed_by(seen, changing, c, cls));
+    let looked = |c: TsNode<'t>| seen.lookup(c).map(|l| l.parts());
+    let mut roots = changed_roots(body, src, &|c| changed_by(seen, changing, c, cls), &looked);
     for a in walk(body, &["augmented_assignment"]) {
         let Some(l) = a.child_by_field_name("left").filter(|l| l.kind() == "identifier") else { continue };
         if changeable.contains(text(l, src)) {
-            roots.extend(changed_through(body, src, &BINDS, text(l, src), a.start_byte()));
+            roots.extend(changed_through(body, src, &BINDS, &looked, text(l, src), a.start_byte()));
         }
     }
     let params = paths::parameters(d, src, method).into_iter().map(|(p, _)| p).filter(|p| roots.contains(p.as_str()));
@@ -445,6 +465,40 @@ fn positional_at(call: TsNode, i: usize) -> Option<TsNode> {
         .into_iter()
         .filter(|a| !matches!(a.kind(), "keyword_argument" | "comment" | "list_splat" | "dictionary_splat"))
         .nth(i)
+}
+
+/// The types a value is, as ty writes its type, each by its head: `dict` of `dict[str, Level]`, `list` and `None` of
+/// `list[Level] | None`.
+fn heads(shown: &str) -> Vec<&str> {
+    let (mut out, mut depth, mut start) = (vec![], 0, 0);
+    for (i, c) in shown.char_indices() {
+        match c {
+            '[' => depth += 1,
+            ']' => depth -= 1,
+            '|' if depth == 0 => {
+                out.push(&shown[start..i]);
+                start = i + 1;
+            }
+            _ => {}
+        }
+    }
+    out.push(&shown[start..]);
+    out.into_iter().map(|p| p.split('[').next().unwrap_or(p).trim()).filter(|h| !h.is_empty()).collect()
+}
+
+/// A lookup a call makes (`Seen::lookup`): the collection it picks a part of, the default it gives where the part is not
+/// there, and the calls it is written with: the lookup, and for `next(iter(xs))` what goes over the collection.
+pub(super) struct Looked<'t> {
+    pub(super) of: TsNode<'t>,
+    pub(super) default: Option<TsNode<'t>>,
+    pub(super) calls: Vec<TsNode<'t>>,
+}
+
+impl<'t> Looked<'t> {
+    /// What the value the lookup gives is a part of, or is: the collection, and the default.
+    fn parts(&self) -> Vec<TsNode<'t>> {
+        std::iter::once(self.of).chain(self.default).collect()
+    }
 }
 
 /// What a call reaches: a function, method or class of the package, or a library, by its
@@ -829,8 +883,11 @@ impl<'a> Seen<'a> {
                 bound if !bound.is_empty() => bound.into_iter().filter_map(|b| b.child_by_field_name("right")).collect(),
                 _ => matched_by(at, name, src).or_else(|| looped_by(at, name, src)).into_iter().collect(),
             };
-            let parts: Vec<(TsNode, Vec<Option<TsNode>>)> =
-                rights.into_iter().map(|r| (r, if computed { sources(r, src) } else { projections(r) })).collect();
+            let looked = |c: TsNode<'t>| self.lookup(c).map(|l| l.parts());
+            let parts: Vec<(TsNode, Vec<Option<TsNode>>)> = rights
+                .into_iter()
+                .map(|r| (r, if computed { sources(r, src, &looked) } else { projections_through(r, &looked) }))
+                .collect();
             let roots: Vec<Option<TsNode>> = parts.iter().flat_map(|(_, roots)| roots.iter().copied()).collect();
             if roots.is_empty() || roots.iter().any(|r| r.is_none_or(|r| r.id() == at.id())) {
                 out.push(at);
@@ -899,6 +956,43 @@ impl<'a> Seen<'a> {
     /// The type ty gives the expression `e`.
     pub(super) fn value(&self, e: TsNode) -> Option<&'a Value> {
         self.facts?.value(Self::range(e))
+    }
+
+    /// The lookup call `c` makes, where it is one of Python's (`knowledge::PYTHON_LOOKUPS`, `PYTHON_FIRST`) and ty finds
+    /// the collection it is made on to be one the lookup is of: `levels.get(name)` of a `dict`, `levels.get(name, quiet)`,
+    /// `next(iter(levels))` of a `list`.
+    pub(super) fn lookup<'t>(&self, c: TsNode<'t>) -> Option<Looked<'t>> {
+        let src = &self.m.src;
+        let f = c.child_by_field_name("function").filter(|_| c.kind() == "call")?;
+        let args: Vec<TsNode<'t>> = named_children(c.child_by_field_name("arguments")?)
+            .into_iter()
+            .filter(|a| !matches!(a.kind(), "comment" | "keyword_argument" | "list_splat" | "dictionary_splat"))
+            .collect();
+        // the types ty finds a value to be, outermost, each one of `table` and none a class of the program's of its name
+        let of = |e: TsNode, table: &[&str]| {
+            self.value(e).is_some_and(|v| {
+                let program = |h: &str| v.names.iter().zip(&v.classes).any(|(n, t)| n == h && matches!(t, Target::Here { .. }));
+                let heads: Vec<&str> = heads(&v.shown).into_iter().filter(|h| *h != "None").collect();
+                !heads.is_empty() && heads.iter().all(|h| table.contains(h) && !program(h))
+            })
+        };
+        let python_own = |f: TsNode| matches!(self.callee(f), Some(Callee::Lib(p)) if knowledge::PYTHON_OWN.contains(&p.as_str()));
+        let default = |l: &knowledge::Lookup| l.default.and_then(|d| args.get(d).copied());
+        if f.kind() == "attribute" {
+            let (on, method) = (f.child_by_field_name("object")?, text(f.child_by_field_name("attribute")?, src));
+            let l = knowledge::lookup(knowledge::PYTHON_LOOKUPS, method, args.len()).filter(|l| of(on, l.of))?;
+            return Some(Looked { of: on, default: default(l), calls: vec![c] });
+        }
+        let (first, iterates) = &knowledge::PYTHON_FIRST;
+        let over = args.first().copied().filter(|a| a.kind() == "call")?;
+        let goes = over.child_by_field_name("function").filter(|g| g.kind() == "identifier" && text(*g, src) == *iterates)?;
+        let on = over.child_by_field_name("arguments").map(named_children).and_then(|a| (a.len() == 1).then(|| a[0]))?;
+        let named = f.kind() == "identifier" && text(f, src) == first.method && first.takes(args.len());
+        (named && python_own(f) && python_own(goes) && of(on, first.of)).then(|| Looked {
+            of: on,
+            default: default(first),
+            calls: vec![c, over],
+        })
     }
 
     /// The classes of the package a type names: `list[Node]` -> `Node`.
@@ -1439,9 +1533,17 @@ impl<'a, 't> Body<'a, 't> {
         let receiver = (fnode.kind() == "attribute").then(|| fnode.child_by_field_name("object")).flatten();
         let hands = self.hands(c, receiver, &steps.kept);
         let assigned = kept_as(c, self.src).unwrap_or_default();
+        // a lookup is the projection of its collection a subscript is, and gives the body no value of a step's
+        let looked = self.seen.lookup(c);
+        if let Some(l) = &looked {
+            for call in &l.calls {
+                steps.looks_up(*call, l.of);
+            }
+        }
         // `a, b = f(..)` names each part of what the call gives
         let unpacked = unpacked_as(c, self.src);
         let gives = match unpacked.is_empty() {
+            _ if looked.is_some() => vec![],
             true => self.gives(c, &assigned, &hands),
             false => unpacked.iter().flat_map(|n| self.gives(*n, text(*n, self.src), &hands)).collect(),
         };
@@ -1811,12 +1913,13 @@ impl<'a, 't> Body<'a, 't> {
         }
         let (seen, changing, cls) = (&self.seen, self.changing, self.cls.as_deref());
         // a call of the package's that changes what it runs on or is handed, or a library call that changes a value
-        let mut roots = changed_roots(self.body, self.src, &|c| changed_by(seen, changing, c, cls));
+        let looked = |c: TsNode<'t>| seen.lookup(c).map(|l| l.parts());
+        let mut roots = changed_roots(self.body, self.src, &|c| changed_by(seen, changing, c, cls), &looked);
         // `xs += ys` on a parameter that holds a list, a dict or a set changes it in place
         for a in walk(self.body, &["augmented_assignment"]) {
             let Some(l) = a.child_by_field_name("left").filter(|l| l.kind() == "identifier") else { continue };
             if self.changeable.contains(text(l, self.src)) {
-                roots.extend(changed_through(self.body, self.src, &BINDS, text(l, self.src), a.start_byte()));
+                roots.extend(changed_through(self.body, self.src, &BINDS, &looked, text(l, self.src), a.start_byte()));
             }
         }
         for r in roots {

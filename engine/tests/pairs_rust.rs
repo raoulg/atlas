@@ -1844,3 +1844,24 @@ fn a_name_handed_as_mut_is_changed_in_place() {
 fn a_name_changed_in_one_arm_is_the_choices_value() {
     common::a_name_changed_in_one_arm_is_the_choices_value("rust");
 }
+
+/// The lookups pair: `levels.first()?` and `levels.get(0)?` are the projection `&levels[0]` is and `levels.get(name)?` the
+/// one `&levels[name]` is, no step, also of a vector changed in place first and of a map a `LazyLock` keeps (#346, #355),
+/// as in Python and TypeScript; a tuple a tuple pattern takes apart binds each name as a `let` of its element would, so
+/// `let (first, second) = (levels.first()?, levels.get(1)?)` is `(&levels[0], &levels[1])` (`paired`). The twins `added`
+/// and `added_looked_up` are not one route yet: a `push` to the row `rows.first_mut()?` picks changes the rows, one to the
+/// row `&mut rows[0]` borrows is no step (known #374).
+#[test]
+fn a_lookup_is_the_projection_its_subscript_is() {
+    common::a_lookup_is_the_projection_its_subscript_is(
+        "rust",
+        &[
+            ("indexed", "looked_up"),
+            ("indexed", "got_at"),
+            ("paired", "paired_looked_up"),
+            ("keyed", "got"),
+            ("pushed", "pushed_looked_up"),
+        ],
+        &[],
+    );
+}

@@ -752,7 +752,7 @@ impl<'a> Eval<'a> {
                 Some(l) if l.names => vec![lit("*")],
                 Some(_) => cross(&on(), &[lit("*")], "/"),
                 // the value a key picks of a collection the code writes out: `paths.get(key)`
-                None if knowledge::RUST_LOOKUPS.contains(&method) && args.len() == 1 && self.written_out(at, recv, depth).is_some() => {
+                None if knowledge::rust_map_lookup(method, args.len()) && self.written_out(at, recv, depth).is_some() => {
                     self.looked_up(at, recv, args[0], depth).unwrap_or_else(|| vec![hole("call")])
                 }
                 // the path a listing's element is at: `entry.path()` of `fs::read_dir(d)`'s `entry`
