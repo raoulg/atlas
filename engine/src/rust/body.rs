@@ -1610,13 +1610,13 @@ impl<'a, 't> Body<'a, 't> {
                 this(value).then(|| (value, text(field, self.src)))
             });
             let changes = |(value, method): (TsNode<'t>, &str)| {
-                let own = self.value_class(value).and_then(|cls| self.store.method_of(&cls, method)).filter(|t| !t.starts_with("ext:"));
+                let own = self.value_class(value).and_then(|cls| self.store.method_of(&cls, method)).filter(|t| !ext::is(t));
                 match own {
                     Some(t) => self.store.nodes.get(&t).is_some_and(|n| n.params.first().is_some_and(|p| p.receiver && p.changes)),
                     None => self.changes_library_value(value, method),
                 }
             };
-            on_this.is_some_and(changes) || (USES.changes)(c).into_iter().any(this)
+            on_this.is_some_and(changes) || (USES.changes)(c, self.src).into_iter().any(this)
         })
     }
 
