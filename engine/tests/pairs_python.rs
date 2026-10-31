@@ -2304,28 +2304,38 @@ fn gives_a_method_its_own_class_uses_says_what_it_gives() {
 }
 
 /// Where the program starts may name places, and a program `pyproject.toml` declares is where it
-/// starts, whatever layout holds it. `places/python/flat` is one module, `tally.py`, declared as
+/// starts, whatever layout holds it: a declaration names the function of the module Python imports
+/// by the name it writes (#364). `places/python/flat` is one module, `tally.py`, declared as
 /// `tally = "tally:main"`, so its package exports `main` with every other public name;
 /// `places/python/package` is the same code in `src/tally/cli.py`, declared as
-/// `tally = "tally.cli:main"`, its package exporting `count` and `keep`. Both draw one route: the
-/// command `tally --source --out`, whose parse of the command line is the entry's, with the same
-/// steps and places, and `places` asks neither. The flat `main` is a door as well.
+/// `tally = "tally.cli:main"`, its package exporting `count` and `keep`; `places/python/beside`
+/// keeps `count` and `keep` in `tally.py` and the command in a module of its own beside it,
+/// `cli.py`, declared as `tally = "cli:main"`. All three draw one route: the command
+/// `tally --source --out`, whose parse of the command line is the entry's, with the same steps and
+/// places, and `places` asks none. The file a declaration names is entered through it and is no
+/// script of its own. The flat `main` is a door as well.
 #[test]
-fn places_a_declared_program_is_a_command_flat_or_in_a_package() {
+fn places_a_declared_program_is_a_command_in_every_layout() {
     let read = |side: &str| {
         analyze(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/pairs/places/python").join(side), &Options::default()).unwrap()
     };
-    let (flat, package) = (read("flat"), read("package"));
-    let entries = |g: &Graph| -> Vec<(EntryKind, String, Vec<String>)> {
-        g.nodes.iter().filter_map(|n| n.entry.as_ref()).map(|e| (e.kind, e.label.clone(), e.options.clone())).collect()
+    let (flat, package, beside) = (read("flat"), read("package"), read("beside"));
+    let entries = |g: &Graph| -> BTreeSet<(String, String, Vec<String>)> {
+        g.nodes.iter().filter_map(|n| n.entry.as_ref()).map(|e| (format!("{:?}", e.kind), e.label.clone(), e.options.clone())).collect()
     };
     assert_eq!(entries(&flat), entries(&package));
-    assert!(entries(&flat).contains(&(EntryKind::Cli, "tally".into(), vec!["--source".into(), "--out".into()])), "{:?}", entries(&flat));
-    // the same route, its steps named alike once the module the code is in is left out
-    let steps = |g: &Graph, main: &str, module: &str| route(g, main).replace(module, "");
-    assert_eq!(steps(&flat, "tally.main", "tally."), steps(&package, "tally.cli.main", "tally.cli."));
+    assert_eq!(entries(&flat), entries(&beside));
+    let command = (format!("{:?}", EntryKind::Cli), "tally".to_string(), vec!["--source".to_string(), "--out".to_string()]);
+    assert!(entries(&flat).contains(&command), "{:?}", entries(&flat));
+    // the same route, its steps named alike once the modules the code is in are left out
+    let steps = |g: &Graph, main: &str, modules: &[&str]| modules.iter().fold(route(g, main), |r, m| r.replace(m, ""));
+    let flat_steps = steps(&flat, "tally.main", &["tally."]);
+    assert_eq!(flat_steps, steps(&package, "tally.cli.main", &["tally.cli."]));
+    assert_eq!(flat_steps, steps(&beside, "_root.cli.main", &["_root.cli.", "tally."]));
     assert!(!route(&flat, "tally.main").contains("parse_args"), "{}", route(&flat, "tally.main"));
-    assert!(found(&flat, "places").is_empty() && found(&package, "places").is_empty(), "{:?}", found(&flat, "places"));
+    for (form, g) in [("flat", &flat), ("package", &package), ("beside", &beside)] {
+        assert!(found(g, "places").is_empty(), "{form}: {:?}", found(g, "places"));
+    }
     assert!(flat.node("tally.main").is_some_and(|n| n.exported), "the flat package exports its command");
     assert!(package.node("tally.cli.main").is_some_and(|n| !n.exported), "{:?}", package.node("tally.cli.main").map(|n| &n.entry));
 }
@@ -3061,10 +3071,13 @@ fn doors_a_sockets_operation_goes_its_way_in_every_language() {
 /// language. A touch that receives through a socket stands where a file's read stands, in the domain of its step, and
 /// one that sends where a file's write stands. Whether what a read gives is used is a fact of the body, the same in every
 /// language (`docs/reference/mathematics.md`, "A door keeps its place"): Rust's `read_to_string(&mut s)` hands on what
-/// `s` is given, `let _ = f(x)` is `f(x);`, and a Node listener's function is handed what its event brings. So each
-/// route draws its places of the world on the same sides in the three languages: the server's connection both read and
-/// written, the client's address between the step that sends to it and the one that hears from it, and a file handed on
-/// read on the left and written on the right.
+/// `s` is given, `let _ = f(x)` is `f(x);`, and a Node listener's function is handed what its event brings. So the
+/// route each program starts, found by the name its user runs it by (#364), draws its places on the same sides in the
+/// three languages, how it is entered included: the server's connection both read and written, the client's address
+/// between the step that sends to it and the one that hears from it, and a file handed on read on the left and written
+/// on the right. A program starts where it is declared to: Python's at the function `[project.scripts]` names, also in
+/// a module of a flat layout (`ask = "ask:main"`); Rust's at a binary's `fn main`; TypeScript's at the top level of the
+/// file its `bin` names, which calls `main`.
 #[test]
 fn doors_a_sockets_read_is_drawn_as_a_files_read() {
     let languages = ["python", "rust", "typescript"];
@@ -3078,28 +3091,38 @@ fn doors_a_sockets_read_is_drawn_as_a_files_read() {
             assert_eq!(stands(s, "net"), stands(h, "disk"), "{language} {side}: a socket's traffic stands where a file's stands");
         }
     }
-    // a route by the function it starts at, in Python, in Rust and in TypeScript
-    let routes = [
-        ("sockets", ["greeter.main", "greeter.main", "greeter.greeter.main"]),
-        ("sockets", ["_root.ask.main", "greeter.bin.ask.main", "greeter.ask.main"]),
-        ("handles", ["tally.main", "tally.main", "tally.tally.main"]),
-    ];
-    for (pair, functions) in routes {
+    // the route a program starts, found by the name its user runs it by
+    let entered = |g: &Graph, program: &str| -> String {
+        let cli = |n: &&atlas_engine::Node| n.entry.as_ref().is_some_and(|e| e.kind == EntryKind::Cli && e.label == program);
+        let at: Vec<&str> = g.nodes.iter().filter(cli).map(|n| n.id.as_str()).collect();
+        assert_eq!(at.len(), 1, "one entry is the program `{program}`: {at:?}");
+        at[0].to_string()
+    };
+    for (pair, program) in [("sockets", "greeter"), ("sockets", "ask"), ("handles", "tally")] {
         for side in ["clean", "shortcut"] {
-            let drawn: Vec<BTreeSet<String>> = languages
+            let drawn: Vec<(String, BTreeSet<String>)> = languages
                 .iter()
-                .zip(functions)
-                .map(|(language, f)| {
+                .map(|language| {
                     let p = common::pair(&format!("{pair}/{language}"));
                     let g = if side == "clean" { &p.clean } else { &p.shortcut };
-                    let plans = common::planned_routes(g, &format!("doors-{pair}-{language}-{side}"), None, &[f]);
-                    // the places of the world; how a function is entered is no door's
-                    plans[f].iter().filter(|x| x.starts_with("side ") && !x.starts_with("side entry ")).cloned().collect()
+                    let route = entered(g, program);
+                    let plans = common::planned_routes(g, &format!("doors-{pair}-{program}-{language}-{side}"), None, &[&route]);
+                    let sides = plans[&route].iter().filter(|x| x.starts_with("side ")).cloned().collect();
+                    (route, sides)
                 })
                 .collect();
-            assert!(!drawn[0].is_empty(), "{pair} {side}: `{}` reaches a place of the world", functions[0]);
-            assert_eq!(drawn[0], drawn[1], "{pair} {side}: Python's `{}` and Rust's `{}`", functions[0], functions[1]);
-            assert_eq!(drawn[0], drawn[2], "{pair} {side}: Python's `{}` and TypeScript's `{}`", functions[0], functions[2]);
+            let [(python, py), (rust, rs), (typescript, ts)] = &drawn[..] else { unreachable!() };
+            assert!(py.iter().any(|x| !x.starts_with("side entry ")), "{pair} {side}: `{program}` reaches a place of the world");
+            assert_eq!(py, rs, "{pair} {side}: `{program}`, Python's `{python}` and Rust's `{rust}`");
+            if (pair, program) == ("sockets", "ask") {
+                // known #362: TypeScript's client is the top level of its `bin`, one closed step `main` that sends and then
+                // hears, and what a step hears of what it sent is read back, so it draws the address on the right alone
+                let read_back: BTreeSet<String> = py.iter().map(|x| x.replace(" between", " right")).collect();
+                assert_ne!(py, ts, "known #362: `{program}`, Python's `{python}` and TypeScript's `{typescript}`; the mark goes");
+                assert_eq!(&read_back, ts, "{pair} {side}: `{program}`, TypeScript's `{typescript}` differs by reading back alone");
+                continue;
+            }
+            assert_eq!(py, ts, "{pair} {side}: `{program}`, Python's `{python}` and TypeScript's `{typescript}`");
         }
     }
 }

@@ -374,7 +374,8 @@ declares (`[project.scripts]`, `[project.gui-scripts]`, `[project.entry-points]`
 `[tool.poetry.scripts]`), `package.json`
 `bin` and the scripts that run a file of the package, Makefile targets (a recipe's line resolved to the program the project installs that it runs, a Python script, a crate's binary or an npm `bin`, and to the subcommand it hands that program when the program has one by that name),
 the project's scripts and notebooks at any depth (every `.py` and `.ipynb` outside the package,
-its tests, what git ignores and another package or project inside it), and what
+its tests, what git ignores and another package or project inside it, and the files a declaration
+names, which are modules of the program), and what
 a package exports (`__all__` or the public names its root `__init__.py` binds, and the
 `__all__` of each public subpackage, as `components.Serial`; the `pub` items of a library
 crate's root and of the modules it makes public with `pub mod`, as `view::hide_private`, and
@@ -384,7 +385,12 @@ where it is defined. Each is the
 start of a route; an exported class is a route whose steps are its public methods. A program a
 manifest declares is a command also where its package exports the function (a flat module's
 public `main`): the declaration says what the function is to its user, and the function is a door
-as well (`Node::exported`). An entry is an
+as well (`Node::exported`). A declaration `name = "mod:attr"` names `attr` in the module Python
+imports as `mod`, whatever Atlas calls that module: a flat layout's `ask.py` beside the package is
+`ask`, as a src layout's `src/ask.py` is. The file it names is entered through the declaration,
+not also as a script of its own, and where it runs as a program it is entered as a package's
+module is, by `python -m`. A file a `bin` names, or one run as `__main__`, is the program's start:
+its top level is its route, and a call of `main` there is a step of it. An entry is an
 arrow whose domain is what the human hands it on the command line: a command or script carries
 its options (`Entry::options`, `--raw` named, `<name>` positional) and reads as its usage line,
 and the call that parses the command line (`Site::command_line`) is the entry's, not a step of

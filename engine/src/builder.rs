@@ -107,6 +107,10 @@ pub struct GraphBuilder {
     pub files: BTreeMap<String, String>,
     /// Module id -> local name -> fully qualified target, kept for re-export lookups.
     pub bindings: HashMap<String, HashMap<String, String>>,
+    /// The id of a module read outside the packages, by the name its language imports it by,
+    /// where an entry point names it so: a flat layout's `ask.py` is imported as `ask` and read as
+    /// `_root.ask`.
+    pub imported: HashMap<String, String>,
     /// Methods that change their receiver in place.
     pub mutating: HashSet<String>,
     /// Calls whose caller uses what they give back, as (caller, callee).
