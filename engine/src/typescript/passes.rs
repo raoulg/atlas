@@ -1029,6 +1029,7 @@ pub(super) fn link(modules: &IndexMap<String, Module>, store: &mut GraphBuilder,
     for id in own.into_iter().chain(library) {
         let Some(m) = store.nodes.get(id).and_then(|n| modules.get(&n.module)) else { continue };
         link_calls(m, modules, store, id, &returned, &eval, &changing, &mut linked);
+        store.count_linked(id);
     }
     let handing: Vec<paths::Evaluated> = linked.args.iter().map(|arg| paths::Evaluated { arg, eval: &eval }).collect();
     let entry = |f: &str| store.nodes.get(f).map_or(false, |n| n.entry.is_some());

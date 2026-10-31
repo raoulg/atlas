@@ -111,6 +111,8 @@ pub struct GraphBuilder {
     pub mutating: HashSet<String>,
     /// Calls whose caller uses what they give back, as (caller, callee).
     pub used: HashSet<(String, String)>,
+    /// The bodies linked so far: the program's, and those of the libraries' code read.
+    pub linked: [usize; 2],
 }
 
 impl GraphBuilder {
@@ -230,6 +232,12 @@ impl GraphBuilder {
     pub fn not_followed(&mut self, name: String, bucket: Bucket) {
         *self.unresolved.entry(name).or_insert(0) += 1;
         self.unresolved_by.count(bucket);
+    }
+
+    /// Count the body of `id` as linked, the program's or a library's.
+    pub fn count_linked(&mut self, id: &str) {
+        let library = self.nodes.get(id).is_some_and(|n| n.library);
+        self.linked[usize::from(library)] += 1;
     }
 
     /// Record a boundary call on a node; the same call again counts up.
@@ -387,6 +395,8 @@ impl GraphBuilder {
                 unresolved_calls_total: self.unresolved.values().sum(),
                 unresolved_calls_top: top,
                 unresolved_calls: self.unresolved_by,
+                linked_bodies: self.linked.iter().sum(),
+                linked_library_bodies: self.linked[1],
                 ..Default::default()
             },
             ..Default::default()
