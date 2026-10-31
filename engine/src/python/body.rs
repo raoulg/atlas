@@ -1708,7 +1708,9 @@ impl<'a, 't> Body<'a, 't> {
         // traffic through a file an `open` made is at the file it was opened at, wherever the file
         // object is handed (`docs/reference/mathematics.md`, "A door keeps its place")
         let traffic = knowledge::PYTHON_FILE_TRAFFIC.iter().find(|(o, _)| *o == op).map(|(_, d)| *d);
-        let file = called_on(fnode).filter(|o| self.seen.value(*o).is_some_and(|v| v.open_file()));
+        let file = called_on(fnode)
+            .filter(|_| !effects::on_stream(lib.as_deref(), &parts))
+            .filter(|o| self.seen.value(*o).is_some_and(|v| v.open_file()));
         if let (Some(dir), Some(on)) = (traffic, file) {
             let what = text(beneath(on, WRAPPERS), self.src).to_string();
             let payload = payload_of(c, self.src, &what, "arguments", &self.seen.handed(c));
