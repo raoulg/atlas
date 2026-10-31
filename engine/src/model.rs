@@ -568,6 +568,13 @@ pub fn type_name(id: &str) -> &str {
     &s[head.rfind('.').map_or(0, |i| i + 1)..]
 }
 
+/// The name Atlas says a node by, wherever it says it: the name its reader gave it, which the view draws (`bare` in
+/// `viewer/plan.js`), or for an id the reading holds no node of, the type's own name the id says (`type_name`). A sum
+/// is named as the code writes it (`Fit | Failed`), a shaped array with its shape (`Float[Tensor, ... dim]`).
+pub fn name_of<'a>(node: Option<&'a Node>, id: &'a str) -> &'a str {
+    node.map_or_else(|| type_name(id), |n| n.name.as_str())
+}
+
 /// The names of `held`, each as the last part of the type it resolves to: a type written through an
 /// alias (`Order as Parcel`, `use tree_sitter::Node as TsNode`) is the type it stands for, held by that
 /// type's name, as the `takes` it resolves to names it. A name that resolves to nothing stays as written.
