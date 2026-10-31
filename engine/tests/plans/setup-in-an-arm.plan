@@ -1,8 +1,9 @@
 # What ran before a step in an arm is what ran before its choice and what ran before it in its own arm (#329): the
-# shelf is set up in the arm that keeps anything, and the report is kept in an arm of a choice inside that arm. A choice
-# inside an arm is a branch of the arm's choice that runs when every arm on its path holds (`KEEP · REPORT`), so both
-# calls stand in `main/?1`, on two branches that are not apart: the set-up stands before the report in the arm both are
-# in. It ran before `keep_report`, and `write` under it writes the report in `out`, the folder the set-up decides.
+# shelf is set up in the arm that keeps anything, and the report is kept in an arm of a choice inside that arm. The
+# body groups a choice inside an arm as a branch of the arm's choice that runs when every arm on its path holds
+# (`KEEP · REPORT`), so both calls stand in `main/?1` (how that choice is drawn is #357). The two are not apart: the
+# set-up stands before the report in the arm both are in. It ran before `keep_report`, and `write` under it writes the
+# report in `out`, the folder the set-up decides.
 
 route arms.main
 choice main/?1
