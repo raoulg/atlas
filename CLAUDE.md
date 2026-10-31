@@ -182,7 +182,7 @@ else is a short-lived topic branch.
 | Channel | Source | Install |
 | --- | --- | --- |
 | stable | tags `v*` on `main` | `brew install raoulg/tap/atlas-code`, `install.sh` |
-| nightly | `next`, built daily when it changed | `brew install raoulg/tap/atlas-code-nightly`, `ATLAS_CHANNEL=nightly install.sh` |
+| nightly | `next`, built at 03:30 when it changed and its tests pass on three platforms, or by hand | `brew install raoulg/tap/atlas-code-nightly`, `ATLAS_CHANNEL=nightly install.sh` |
 
 ## Practical
 
@@ -209,7 +209,8 @@ else is a short-lived topic branch.
   the seed in its summary. A broken site is a question, about
   the law, the code or the sampler, and gets an issue before anything is changed.
 - Tests: `cargo test`. The Rust workspace itself is a test subject. CI runs them on Linux, macOS
-  and Windows: a test that writes files builds them as the platform lays them out (a virtual
+  and Windows on every push to `main` and in the nightly, for the commit it builds; a push to `next`
+  runs no CI, so a fault on one platform shows as a red nightly the next morning, and is fixed then: a test that writes files builds them as the platform lays them out (a virtual
   environment keeps its packages in `Lib\site-packages` on Windows) and compares paths as `Path`s,
   never as strings with `/`.
 - The viewer's model, `viewer/plan.js` (the routes, the finest plan of a route, its quotient and the oracle), is a
