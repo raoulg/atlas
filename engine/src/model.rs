@@ -337,9 +337,10 @@ pub struct Node {
     /// What the body's own code uses outside the calls that are its steps: each name it reads in a
     /// condition, an operator, a format, a return or an argument of a call that is no step
     /// (`print(store.path)`, `if done:`, `Ok(path)`), once in each arm it is read in. A projection of a
-    /// name uses that name; a name bound to a part of another (`width = settings.width`) uses it where
-    /// the body reads that name. The instance a method runs on is used by no name, as a call is handed
-    /// it.
+    /// name uses that name; a name bound to a part of another (`width = settings.width`), or to what
+    /// the language's own code computes of names (`gap = first.db - second.db`, `body::stands_for`),
+    /// uses them where the body reads that name. The instance a method runs on is used by no name, as a
+    /// call is handed it.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub uses: Vec<Use>,
     /// The names the arms of its body's choices bind by the body's own code, no step of it: what an

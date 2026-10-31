@@ -700,7 +700,16 @@ pub(super) fn link_calls<'t>(
             "self" => b.cls.iter().map(|k| Held::new(k.clone(), "")).collect(),
             _ => b.hands(&[Some(n)], &kept),
         };
-        steps.uses(&held);
+        // the names a name stands for, as `held_through` follows it, also each one a format string writes
+        let stands = |n: TsNode<'t>| match n.kind() {
+            _ if stepped(n) => vec![],
+            "identifier" if names_value(n, &m.src) => b.stands(text(n, &m.src), n.start_byte(), &kept),
+            "string_literal" | "raw_string_literal" if formats(n, &m.src) => {
+                inline_names(text(n, &m.src)).into_iter().flat_map(|(name, off)| b.stands(name, n.start_byte() + off, &kept)).collect()
+            }
+            _ => vec![],
+        };
+        steps.uses(&held, &stands);
         steps.fills(&held);
         b.read
     };
@@ -1539,15 +1548,11 @@ impl<'a, 't> Body<'a, 't> {
         out
     }
 
-    /// The values the name `name` written at byte `at` holds, as a call is handed them: the value `held_by` says, or, where
-    /// a `let` binds the name to what Rust's own code computes of names and nothing has made it anew since, no step and no
-    /// assignment (`let gap = first.db - second.db`, `let both = [first, second]`), the values those names hold there, as the
-    /// value written in the name's place hands them (`body::stands_for`). Each is handed where the name is written, from
-    /// where the name it holds it by is (`Held::bound`).
+    /// The values the name `name` written at byte `at` holds, as a call is handed them: the value `held_by` says, or the
+    /// values the names it stands for hold there (`stands`), as the value written in the name's place hands them. Each is
+    /// handed where the name is written, from where the name it holds it by is (`Held::bound`).
     fn held_through(&self, name: &str, at: usize, kept: &HashSet<String>, depth: usize) -> Vec<(Held, Option<usize>)> {
-        let (holder, from) = self.holder(name, at);
-        let made = self.made_by.get(&holder, from).filter(|_| depth <= 8 && !kept.contains(&holder) && !self.reassigned(&holder, from));
-        let names = made.map(|v| crate::body::stands_for(*v, &USES, self.src, &part)).unwrap_or_default();
+        let names = if depth <= 8 { self.stands(name, at, kept) } else { vec![] };
         if names.is_empty() {
             return self.held_by(name, at, kept).into_iter().collect();
         }
@@ -1563,6 +1568,15 @@ impl<'a, 't> Body<'a, 't> {
                 })
             })
             .collect()
+    }
+
+    /// The names the name `name` written at byte `at` stands for: where a `let` binds it to what Rust's own code computes of
+    /// names and nothing has made it anew since, no step and no assignment (`let gap = first.db - second.db`, `let both =
+    /// [first, second]`), the names that value is computed of (`body::stands_for`); none for any other name.
+    fn stands(&self, name: &str, at: usize, kept: &HashSet<String>) -> Vec<TsNode<'t>> {
+        let (holder, from) = self.holder(name, at);
+        let made = self.made_by.get(&holder, from).filter(|_| !kept.contains(&holder) && !self.reassigned(&holder, from));
+        made.map(|v| crate::body::stands_for(*v, &USES, self.src, &part)).unwrap_or_default()
     }
 
     /// Whether the body assigns the name again where the `let` visible at `at` binds it (`x = ..`, `x += ..`): what the

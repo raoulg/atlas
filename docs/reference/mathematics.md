@@ -732,7 +732,11 @@ open:
   has no moment of its own: an operator is the language's operation handed its parts (`a - b` is `a.__sub__(b)`,
   `Sub::sub(a, b)`), no occurrence, and binding its result to a name adds no arrow. So the name stands for the
   names it is computed of: `gap = first.db - second.db; draw(gap)` is `draw(first.db - second.db)`, and a step
-  handed `gap` is handed `first` and `second`, whatever the type of `gap`. A choice among them is the body's
+  handed `gap` is handed `first` and `second`, whatever the type of `gap`. The body's own code reads them where it
+  reads the name, as it reads a projection's root, never where it binds it: the binding is no use, so the route
+  that binds `gap` and hands it to `draw` takes no line of its own from `first` and `second`, as the route that
+  writes the expression in `draw`'s call takes none (#343). Where the name holds a value of its own instead (a step
+  made it anew), the code that computes the value reads its operands where it is written. A choice among them is the body's
   choice, and a part a call makes (`samples.abs()`) is that call's value, which the name keeps (#328). What an
   opened step changes of a value it was handed goes out at its border as what its steps made of it;
 - a step that can fail has the codomain `T + E`: the error is a value its constructor makes in the arm
@@ -847,7 +851,8 @@ which parameters of no type of the code's hold a value, `builder::settle_paramet
 `Steps::tests` (`body.rs`), and whether a figure is made sure of, `guarded` in `viewer/plan.js`; the names a body binds
 by its own code, `Steps::binds` and `Steps::literals` (`body.rs`), and those a function declares, `declaredIn` and
 `bodyMade` in `viewer/plan.js`; the names a name computed of names stands for, `body::computed_of` and
-`body::stands_for` with each language's `UseSyntax::computes`; the values of one kind from beyond that keep their names,
+`body::stands_for` with each language's `UseSyntax::computes`, and where the body's own code reads them, `Steps::reading`
+and `Steps::stood` with each reader's `stands`; the values of one kind from beyond that keep their names,
 `split` and `splitBy` in `viewer/plan.js`; `tools/pictures.py`; `engine/tests/plans.rs`; the recursion, literals and
 locals pairs (`common::a_recursive_call_takes_what_its_call_hands_it`, `common::a_list_made_by_a_literal_is_made_by_the_body`,
 `common::a_local_is_bound_by_the_bodys_own_code`, `common::a_name_computed_of_names_stands_for_them`).
