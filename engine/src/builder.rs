@@ -111,6 +111,8 @@ pub struct GraphBuilder {
     pub mutating: HashSet<String>,
     /// Calls whose caller uses what they give back, as (caller, callee).
     pub used: HashSet<(String, String)>,
+    /// The bodies linked so far: the program's, and those of the libraries' code read.
+    pub linked: [usize; 2],
 }
 
 impl GraphBuilder {
@@ -230,6 +232,12 @@ impl GraphBuilder {
     pub fn not_followed(&mut self, name: String, bucket: Bucket) {
         *self.unresolved.entry(name).or_insert(0) += 1;
         self.unresolved_by.count(bucket);
+    }
+
+    /// Count the body of `id` as linked, the program's or a library's.
+    pub fn count_linked(&mut self, id: &str) {
+        let library = self.nodes.get(id).is_some_and(|n| n.library);
+        self.linked[usize::from(library)] += 1;
     }
 
     /// Record a boundary call on a node; the same call again counts up.
@@ -387,6 +395,8 @@ impl GraphBuilder {
                 unresolved_calls_total: self.unresolved.values().sum(),
                 unresolved_calls_top: top,
                 unresolved_calls: self.unresolved_by,
+                linked_bodies: self.linked.iter().sum(),
+                linked_library_bodies: self.linked[1],
                 ..Default::default()
             },
             ..Default::default()
@@ -803,11 +813,17 @@ fn prepares(t: &Touch, all: &[Touch]) -> bool {
     match t.kind {
         World::Disk => {
             let within = |file: &str| file == t.artifact || (t.artifact.ends_with('/') && file.starts_with(&t.artifact));
+            // a path built below the directory's own lies in it, however coarse the place its
+            // unknown parts leave it: `D/{x}/kind/{id}.json` rests in `D/` and is in `D/{}/kind/`
+            let below = |d: &Touch| {
+                let terms = |w: &str| w.split('|').map(|x| format!("{}/", x.trim_end_matches('/'))).collect::<Vec<_>>();
+                !t.what.is_empty() && terms(&t.what).iter().all(|w| d.what.split('|').any(|x| x.starts_with(w.as_str())))
+            };
             // a database's file is made for as a file is
             let opens = |d: &&Touch| matches!(d.kind, World::Db(_)) && !d.file.is_empty() && along(d);
             t.shape()
                 && !t.artifact.is_empty()
-                && (all.iter().filter(data).filter(|d| !d.artifact.is_empty()).any(|d| within(&d.artifact))
+                && (all.iter().filter(data).filter(|d| !d.artifact.is_empty()).any(|d| within(&d.artifact) || below(d))
                     || all.iter().filter(opens).any(|d| within(&d.file)))
         }
         World::Db(_) | World::Global if t.shape() => {

@@ -2,7 +2,7 @@
 
 from dataclasses import dataclass
 
-__all__ = ["paired"]
+__all__ = ["paired", "named", "written"]
 
 
 @dataclass
@@ -24,3 +24,21 @@ def _pair(first: Level, second: Level) -> list[Level]:
 def paired(first: Level, second: Level) -> None:
     """The two levels, shown side by side."""
     _show(_pair(first, second))
+
+
+def _draw(gap: float) -> None:
+    print(gap)
+
+
+def named(first: Level, second: Level) -> None:
+    """The gap between the two levels and the two levels side by side, each named before it is shown."""
+    gap = first.db - second.db
+    _draw(gap)
+    both: list[Level] = [first, second]
+    _show(both)
+
+
+def written(first: Level, second: Level) -> None:
+    """The gap between the two levels and the two levels side by side, each written where it is shown."""
+    _draw(first.db - second.db)
+    _show([first, second])

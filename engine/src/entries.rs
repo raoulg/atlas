@@ -234,12 +234,7 @@ fn programs(repo: &Repo, root: &Path) -> Vec<String> {
     let mut out: Vec<String> = declared(repo, root).into_iter().filter(|d| d.group.is_none()).map(|d| d.name).collect();
     if let Some(doc) = repo.text(root.join("Cargo.toml")).and_then(|t| t.parse::<toml::Table>().ok()) {
         out.extend(doc.get("package").and_then(|p| p.get("name")).and_then(|n| n.as_str()).map(str::to_string));
-        out.extend(
-            repo.files_under(root.join("src/bin"))
-                .iter()
-                .filter(|p| p.extension().map_or(false, |e| e == "rs"))
-                .filter_map(|p| p.file_stem()?.to_str().map(str::to_string)),
-        );
+        out.extend(repo.files_under(root.join("src/bin"), &["rs"]).iter().filter_map(|p| p.file_stem()?.to_str().map(str::to_string)));
     }
     if let Some(json) = repo.text(root.join("package.json")).and_then(|t| serde_json::from_str::<serde_json::Value>(&t).ok()) {
         match &json["bin"] {

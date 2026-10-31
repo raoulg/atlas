@@ -25,8 +25,9 @@ use crate::effects;
 use crate::environment::Environment;
 use crate::knowledge::{self, Registry};
 use crate::model::{Node, NodeKind};
-use crate::repo::{normal, Repo};
+use crate::repo::Repo;
 use crate::tree::{span, text, walk};
+use path_clean::clean;
 
 /// How many re-exports a name is followed through.
 const DEPTH: u32 = 12;
@@ -64,7 +65,7 @@ impl Environment {
                 return None;
             }
             if e.file_type().is_file() && is_code(e.path()) {
-                paths.push(normal(e.path()));
+                paths.push(clean(e.path()));
             }
         }
         paths.sort();
@@ -111,7 +112,7 @@ impl Package {
     /// The code file a path in the package names, with or without its extension, or the index
     /// of the directory it names.
     fn file_at(&self, target: &str) -> Option<PathBuf> {
-        let base = normal(&self.dir.join(target));
+        let base = clean(&self.dir.join(target));
         let stripped = base.with_extension("");
         let mut candidates = vec![base.clone()];
         for b in [&base, &stripped] {
@@ -183,7 +184,7 @@ impl Libraries {
                 .map_or(false, |abs| abs.starts_with(&self.here) && !abs.components().any(|c| c.as_os_str() == knowledge::NODE_PACKAGES))
         };
         // a package below the repository is named from it, like its own files
-        let found = found.filter(|d| !own(d)).map(|d| d.strip_prefix(&self.here).map(|r| normal(&self.root.join(r))).unwrap_or(d));
+        let found = found.filter(|d| !own(d)).map(|d| d.strip_prefix(&self.here).map(|r| clean(&self.root.join(r))).unwrap_or(d));
         self.found.insert(key, found.clone());
         found
     }

@@ -568,6 +568,7 @@ pub(super) fn link(modules: &IndexMap<String, Module>, store: &mut GraphBuilder,
         .partition(|id| !store.nodes[*id].library);
     for id in own.into_iter().chain(library) {
         let l = link_calls(modules, store, crate_ids, &eval, &returned, id);
+        store.count_linked(id);
         waiting.extend(l.waiting.into_iter().map(|(t, b)| (id.clone(), t, b)));
         args.extend(l.args);
     }

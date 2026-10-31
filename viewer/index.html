@@ -119,8 +119,6 @@ svg#canvas:active{cursor:grabbing}
 #readstate{position:absolute;left:50%;top:52px;transform:translateX(-50%);max-width:min(660px,calc(100% - 28px));background:var(--panel);border:1px solid var(--focus);border-radius:4px;padding:6px 12px;font-size:12px;color:var(--ink);z-index:6;text-align:center}
 #readstate:not([hidden]) ~ #laying{top:100px}
 #readstate.error{border-color:var(--alert);color:var(--alert)}
-#readstate.working{padding-bottom:12px}
-#readstate.working::after{content:"";position:absolute;left:0;bottom:0;height:3px;width:var(--done,0%);background:var(--focus);transition:width .1s linear}
 #fault b{display:block;color:var(--ink);font-weight:600;margin-bottom:2px}
 #fault pre{font-family:var(--mono);font-size:11px;color:var(--ink);white-space:pre-wrap;word-break:break-word;margin:8px 0;max-height:180px;overflow:auto}
 #fault button{font:inherit;font-size:11px;color:var(--ink-2);background:var(--panel-2);border:1px solid var(--line);border-radius:3px;padding:2px 8px;cursor:pointer}
@@ -2407,33 +2405,16 @@ if (D.served) {
   // note or a symbol to jump to, when the header says that the code changed instead
   const fresh = html("a", "histlink"), readState = document.getElementById("readstate"); fresh.id = "fresh"; fresh.hidden = true;
   fresh.onclick = redraw;
-/*__PROGRESS__*/
-  // the library round still under way once the project's own code is drawn: a bar of its own, which
-  // only rises
-  let working = D.preliminary ? "Showing project code · Following library calls…" : "";
-  const bar = progressBar("libraries", done => {
-    readState.style.setProperty("--done", `${done * 100}%`);
-    if (working) readState.textContent = `${working} ${Math.floor(done * 100)}%`;
-  });
-  controller.signal.addEventListener("abort", () => bar.stop());
-  if (D.preliminary) {
-    readState.hidden = false;
-    readState.classList.add("working");
-    readState.textContent = working;
-  }
   every(async () => {
     try {
       const s = await (await fetch("/api/drawn")).json();
       const ready = s.drawn && s.drawn !== D.drawn, busy = !noteEl.hidden || document.activeElement?.id === "search";
       if (ready && !busy) return redraw();
-      readState.hidden = !D.preliminary && !s.error;
+      readState.hidden = !s.error;
       readState.classList.toggle("error", !!s.error);
-      readState.classList.toggle("working", !!D.preliminary && !ready && !s.error && s.drawing);
-      if (s.error) { working = ""; readState.textContent = `Atlas could not complete the picture: ${s.error}`; }
-      else if (D.preliminary && ready) { working = ""; readState.textContent = "The complete picture is ready · Open it when you finish here."; }
-      else if (D.preliminary) bar.seen(s);
-      fresh.hidden = !ready && (!s.drawing || D.preliminary);
-      fresh.textContent = ready ? (D.preliminary ? "complete picture ↻" : "the code changed ↻") : "the code changed · drawing…";
+      if (s.error) readState.textContent = `Atlas could not complete the picture: ${s.error}`;
+      fresh.hidden = !ready && !s.drawing;
+      fresh.textContent = ready ? "the code changed ↻" : "the code changed · drawing…";
       fresh.title = ready ? "open the latest picture in this view" : "atlas-code serve is drawing the changed code; the page follows when it is done";
     } catch {}
   }, 1000);

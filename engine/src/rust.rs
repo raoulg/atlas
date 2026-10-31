@@ -44,7 +44,7 @@ pub(crate) fn crates(repo: &Repo) -> Result<Vec<Crate>> {
     if let Some(members) = doc.get("workspace").and_then(|w| w.get("members")).and_then(|m| m.as_array()) {
         for m in members.iter().filter_map(|m| m.as_str()) {
             match m.strip_suffix("/*") {
-                Some(prefix) => dirs.extend(repo.dirs_in(prefix).into_iter().filter(|d| repo.is_file(d.join("Cargo.toml")))),
+                Some(prefix) => dirs.extend(repo.dirs_holding(prefix, "Cargo.toml")),
                 None => dirs.push(repo.root().join(m)),
             }
         }
@@ -122,9 +122,9 @@ pub fn parse(repo: &Repo, opts: &crate::Options) -> Result<(GraphBuilder, String
             p.ancestors().skip(1).take_while(|a| *a != c.dir.as_path() && a.starts_with(&c.dir)).any(|a| repo.is_file(a.join("Cargo.toml")))
         };
         let mut files: Vec<PathBuf> = repo
-            .files_under(&c.dir)
+            .files_under(&c.dir, &["rs"])
             .into_iter()
-            .filter(|p| p.extension().and_then(|x| x.to_str()) == Some("rs") && !other(p))
+            .filter(|p| !other(p))
             .filter(|p| {
                 let rel = p.strip_prefix(&c.dir).unwrap_or(p);
                 matches!(

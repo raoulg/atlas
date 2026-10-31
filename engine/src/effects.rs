@@ -47,7 +47,7 @@ pub fn boundary_rust(parts: &[String]) -> Option<Crossing> {
     let has = |p: &str| parts.iter().any(|x| x == p);
     // building moves nothing: `Client::new()`, `Client::builder()..build()`, `OpenOptions::new()`
     let builds = k::BUILDS.contains(&last);
-    if has(k::RUST_FS_MODULE) {
+    if k::fs_path(parts) {
         if builds {
             return None;
         }
@@ -195,7 +195,8 @@ fn ml(pkg: &str, parts: &[String], last: &str) -> Option<Crossing> {
 
 /// The boundary a TypeScript or JavaScript call crosses: `fetch` and HTTP clients go to the
 /// web, `console` to the screen, `node:fs` reads and writes files, `child_process` runs a
-/// program. `pkg` is the package the call's head was imported from, if any.
+/// program, a socket of `node:net` or `node:dgram` receives and sends. `pkg` is the package the
+/// call's head was imported from, if any.
 pub fn boundary_ts(pkg: Option<&str>, parts: &[String]) -> Option<Crossing> {
     let last = parts.last().map(String::as_str).unwrap_or("");
     let Some(pkg) = pkg else { return platform(parts) };
@@ -222,6 +223,10 @@ pub fn boundary_ts(pkg: Option<&str>, parts: &[String]) -> Option<Crossing> {
         } else {
             None
         };
+    }
+    // a socket's traffic, by its operation (`SOCKET_OPS`)
+    if k::node_socket_package(pkg) {
+        return k::node_socket_op(last).then_some(Crossing::to(World::Net));
     }
     None
 }
@@ -393,8 +398,15 @@ fn host(s: &str) -> Option<String> {
 }
 
 /// Whether a text is a socket's address, a host and a port: `127.0.0.1:7878`, `localhost:80`,
-/// `[::1]:8080`.
+/// `[::1]:8080`; also a host the code names with a port it does not (`127.0.0.1:{port}`), a place
+/// named by its hole as a path is.
 pub fn socket_address(s: &str) -> bool {
+    if let Some((h, port)) = s.rsplit_once(':') {
+        let hole = port.len() > 2 && port.starts_with('{') && port.ends_with('}') && !port[1..port.len() - 1].contains(['{', '}', ':']);
+        if hole && !h.contains(['{', '}']) {
+            return socket_address(&format!("{h}:0"));
+        }
+    }
     let Some((h, port)) = s.rsplit_once(':') else { return false };
     let host = match h.strip_prefix('[').and_then(|h| h.strip_suffix(']')) {
         Some(v6) => !v6.is_empty() && v6.chars().all(|c| c.is_ascii_hexdigit() || c == ':'),
@@ -880,16 +892,24 @@ mod tests {
         assert!(requests(&["url", "params"], "get") && !requests(&["key", "default"], "get"), "a request is handed a URL");
     }
 
-    /// Isomorphic is the same: a socket is the network in Python and in Rust, and the operations
-    /// that say the same thing cross alike. Each operation that moves data is named in both
-    /// languages, and every name of it reaches the network, in every module of sockets; binding an
-    /// address, accepting a connection, shutting a half and setting a timeout move no data.
+    /// Isomorphic is the same: a socket is the network in Python, in Rust and in TypeScript, and
+    /// the operations that say the same thing cross alike. Each operation that moves data is named
+    /// in every language, and every name of it reaches the network, in every module of sockets;
+    /// binding an address, listening, accepting a connection, shutting a half and setting a timeout
+    /// move no data.
     #[test]
-    fn a_socket_moves_data_alike_in_python_and_rust() {
+    fn a_socket_moves_data_alike_in_every_language() {
         let rs = |xs: &[&str]| name(boundary_rust(&parts(xs)));
         let py = |op: &str| name(boundary(Some("socket"), &parts(&["sock", op])));
+        let node = |pkg: &str, op: &str| name(boundary_ts(Some(pkg), &parts(&["sock", op])));
         for op in k::SOCKET_OPS {
-            assert!(!op.python.is_empty() && !op.rust.is_empty(), "{:?} and {:?}: named in both", op.python, op.rust);
+            assert!(
+                !op.python.is_empty() && !op.rust.is_empty() && !op.typescript.is_empty(),
+                "{:?}, {:?} and {:?}: named in every language",
+                op.python,
+                op.rust,
+                op.typescript
+            );
             for (p, r) in op.python.iter().flat_map(|p| op.rust.iter().map(move |r| (p, r))) {
                 for module in k::RUST_SOCKET_MODULES {
                     let path: Vec<&str> = module.iter().copied().chain(["TcpStream", r]).collect();
@@ -897,30 +917,47 @@ mod tests {
                 }
                 assert_eq!(py(p), Some("net"), "a socket's traffic reaches the network");
             }
+            for t in op.typescript {
+                for pkg in ["net", "dgram"] {
+                    assert_eq!(node(pkg, t), Some("net"), "Node's `{pkg}` socket's `{t}` reaches the network");
+                }
+            }
         }
         let still = [
-            ("shutdown", "TcpStream", "shutdown"),
-            ("settimeout", "TcpStream", "set_read_timeout"),
-            ("bind", "TcpListener", "bind"),
-            ("listen", "TcpListener", "listen"),
-            ("accept", "TcpListener", "accept"),
+            ("shutdown", "TcpStream", "shutdown", "end"),
+            ("settimeout", "TcpStream", "set_read_timeout", "setTimeout"),
+            ("bind", "TcpListener", "bind", "bind"),
+            ("listen", "TcpListener", "listen", "listen"),
+            ("accept", "TcpListener", "accept", "createServer"),
         ];
-        for (p, ty, r) in still {
+        for (p, ty, r, t) in still {
+            assert_eq!(node("net", t), None, "Node's `{t}` moves no data");
             assert_eq!((py(p), rs(&["std", "net", ty, r])), (None, None), "Python's `socket.{p}` and Rust's `{ty}::{r}` move no data");
         }
         assert_eq!(rs(&["std", "net", "IpAddr", "from_str"]), None, "an address parsed moves nothing");
     }
 
-    /// A library is judged by its own row, whatever module its path runs through (#302): a network
-    /// library's call in its `net` module crosses as its calls elsewhere do (`hyper::net`), and a
-    /// crate no table names reaches nothing through a module of that name. Only the modules of
-    /// sockets are judged by the socket table.
+    /// A library is judged by its own row, whatever module its path runs through (#302, #327): a
+    /// network library's call in a `net` or an `fs` module crosses as its calls elsewhere do
+    /// (`hyper::net`, `hyper::fs`), and a crate no table names reaches nothing through a module of
+    /// either name. Only the modules of sockets are judged by the socket table, and only the
+    /// modules of files by the file table, each the same in std and in the async runtimes.
     #[test]
     fn a_library_is_judged_by_its_own_row_whatever_module_its_path_runs_through() {
         let rs = |xs: &[&str]| name(boundary_rust(&parts(xs)));
-        for op in ["get", "read", "send", "new", "shutdown"] {
-            assert_eq!(rs(&["hyper", "net", "HttpConnector", op]), rs(&["hyper", "client", "HttpConnector", op]), "hyper's `{op}`");
-            assert_eq!(rs(&["netcode", "net", "TcpStream", op]), None, "a crate no table names: `{op}`");
+        for module in ["net", "fs"] {
+            for op in ["get", "read", "send", "new", "shutdown", "read_to_string", "write"] {
+                assert_eq!(rs(&["hyper", module, "HttpConnector", op]), rs(&["hyper", "client", "HttpConnector", op]), "hyper's `{op}`");
+                assert_eq!(rs(&["netcode", module, "TcpStream", op]), None, "a crate no table names: `{module}::{op}`");
+            }
+        }
+        for op in ["read_to_string", "read_dir", "write", "remove_file", "create_dir_all"] {
+            let std = rs(&["std", "fs", op]);
+            assert!(std.is_some(), "std's `fs::{op}` reaches the disk");
+            for module in k::RUST_FS_MODULES {
+                let path: Vec<&str> = module.iter().copied().chain([op]).collect();
+                assert_eq!(rs(&path), std, "`{}` crosses as std's `fs::{op}`", path.join("::"));
+            }
         }
     }
 

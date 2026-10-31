@@ -79,12 +79,17 @@ ignores, no dependency or build directory) and the files named on the command li
 → Repo** is the one place the engine touches a repository: the listing is read once, a file's
 text once, when a reader first asks, and a part of the repository is a view of the same reading.
 A package named on its own (`atlas-code view src/pkg`) is read as the project it is in, asked for that
-package: finding the project is part of reading, and nothing after it looks at the disk. A
-worktree's `.atlas/index/` keeps each part's graph between readings, with the listed files, the
-contents the part read and its language environment as the conditions for reuse. CLI, serve and
-MCP read through the same index; `--no-cache` reads anew. A reading checks its complete input
-witness before it is published, including the repository listing and external environment.
-`atlas-code serve` keeps the last complete reading available while the next is drawn. Its viewer loads
+package: finding the project is part of reading, and nothing after it looks at the disk. A part's
+reading depends on nothing of the repository but what its reader asked of the `Repo`: each
+question put to the listing (is this a file, which files of these kinds lie under that directory,
+which directories in it hold this manifest) with its answer, and each file read with its bytes. A
+worktree's `.atlas/index/` keeps each part's graph between readings with that witness and the
+part's language environment as the conditions for reuse, so a file no question covers (a picture,
+a note) leaves the kept graph in use. CLI, serve and MCP read through the same index; `--no-cache`
+reads anew. A reading checks its complete witness before it is published, the parts found and the
+environment with it. `atlas-code serve` draws a page once, at the libraries asked for, draws it
+again only when its reading's witness no longer holds (or `.atlasignore` or the vision changed),
+and keeps the last complete page available while the next is drawn. Its viewer loads
 one HTML shell and receives each complete graph, flow and set of findings at `/api/snapshot`;
 the selected route, filters and opened boxes belong to the view across those readings.
 What a library's code and types are is the environment's, not the repository's: read by ty, from `node_modules`, from where Cargo keeps a crate. **Graph** is the one central type: typed nodes

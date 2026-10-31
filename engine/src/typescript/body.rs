@@ -18,8 +18,8 @@ use crate::knowledge;
 use crate::knowledge::OwnTypes;
 use crate::model::{Bucket, EdgeKind, Held, Node, NodeKind, Slot, Touch, World};
 use crate::tree::{
-    beneath, evaluation_order, literals, named_children, nth_of_kind, outermost, path_maker_named, text, unquote, walk, what_of, wrapped,
-    ChoiceSyntax, CompareSyntax, Part,
+    beneath, evaluation_order, literals, named_children, nth_of_kind, outermost, text, unquote, walk, what_of, wrapped, ChoiceSyntax,
+    CompareSyntax, Part,
 };
 
 pub(super) const OWN: OwnTypes = knowledge::TYPESCRIPT_OWN_TYPES;
@@ -896,6 +896,18 @@ impl<'a, 't> Body<'a, 't> {
                 }
             }
         }
+        // so does the parameter of a function a package's server runs on each connection it accepts
+        // (`net.createServer((conn) => ..)`), as a parameter declared with the type would
+        for f in walk(if self.is_module { root } else { self.body }, &["arrow_function", "function_expression"]) {
+            let Some(server) = self.eval.served(m, f, 0) else { continue };
+            let pkg = match server.kind() {
+                "call_expression" => made_by_package(server, m, src),
+                _ => self.made.get(text(server, src)).cloned(),
+            };
+            if let (Some(name), Some(pkg)) = (paths::param_names(f, src).into_iter().next().filter(|n| !n.is_empty()), pkg) {
+                self.made.insert(name, pkg);
+            }
+        }
         // a parameter declared with a library's type holds a value its package made
         for p in self.scope.and_then(|f| f.child_by_field_name("parameters")).map(named_children).unwrap_or_default() {
             if let (Some(name), Some(pkg)) = (
@@ -1078,21 +1090,13 @@ impl<'a, 't> Body<'a, 't> {
             }
             return;
         }
-        if let Some(ty) = self.type_of(i) {
-            return out.push(Held::new(ty, name));
-        }
-        if kept.contains(name) {
-            return out.push(Held::new("", name));
-        }
         // a name bound to values without a step stands for what they are made of: what it is declared
         // with, and what each assignment to it sets (`let unit; if (..) unit = CELSIUS; else unit = KELVIN`)
-        if depth > 8 {
-            return;
-        }
-        let declared = match self.locals.from(i, self.src) {
+        let from = self.locals.from(i, self.src);
+        let element = matches!(from, Some((_, BoundFrom::Element)));
+        let declared = match from {
             Some((v, BoundFrom::Whole | BoundFrom::Part)) => Some(v),
-            Some((_, BoundFrom::Element)) => return,
-            None => None,
+            _ => None,
         };
         let binding = self.locals.which(i, self.src);
         let assigned = self
@@ -1103,6 +1107,28 @@ impl<'a, 't> Body<'a, 't> {
             .filter(|(left, _)| binding.is_some() && self.locals.which(*left, self.src) == binding)
             .map(|(_, right)| *right);
         let values: Vec<TsNode> = declared.into_iter().chain(assigned).collect();
+        // what TypeScript's own code computes of names stands for them, whatever type the name has (`const both: Level[] =
+        // [first, second]`, `body::stands_for`), where no step made it anew
+        let computed: Vec<Vec<TsNode>> = values.iter().map(|v| crate::body::stands_for(*v, &USES, self.src, &part)).collect();
+        if depth <= 8 && !element && !kept.contains(name) && !values.is_empty() && computed.iter().all(|c| !c.is_empty()) {
+            for n in computed.into_iter().flatten() {
+                let before = out.len();
+                self.held(n, kept, depth + 1, out);
+                for h in out[before..].iter_mut().filter(|h| h.bound == 0) {
+                    h.bound = n.start_byte() as u32;
+                }
+            }
+            return;
+        }
+        if let Some(ty) = self.type_of(i) {
+            return out.push(Held::new(ty, name));
+        }
+        if kept.contains(name) {
+            return out.push(Held::new("", name));
+        }
+        if depth > 8 || element {
+            return;
+        }
         let stepless = |v: &TsNode| {
             walk(*v, &["call_expression", "new_expression", "arrow_function", "function_expression", "await_expression"]).is_empty()
         };
@@ -1817,6 +1843,16 @@ impl<'a, 't> Body<'a, 't> {
         names.into_iter().map(|n| text(n, self.src).to_string()).collect()
     }
 
+    /// The touch the body made where it made the door the name `on` holds (`const conn =
+    /// net.createConnection(..)`), with the term its place waits for: the last touch in `world` on
+    /// the line of the value the name is declared with.
+    fn opening(&self, on: TsNode<'t>, world: World) -> Option<(Touch, Vec<crate::paths::Built>)> {
+        let (value, BoundFrom::Whole) = self.locals.from(on, self.src)? else { return None };
+        let line = value.start_position().row as u32 + 1;
+        let made = self.read.touches.iter().map(|t| (t, vec![])).chain(self.read.calls.iter().map(|(t, b)| (t, b.clone())));
+        made.filter(|(t, _)| t.line == line && t.kind == world).last().map(|(t, b)| (t.clone(), b))
+    }
+
     /// What a library's call crosses into: a file call, a request or a database statement waits
     /// for the path, URL or statement it is handed, placed once every call is known; any other
     /// touches what its facts name.
@@ -1830,6 +1866,24 @@ impl<'a, 't> Body<'a, 't> {
             Some(Bound::Ext(e)) => Some(package_from_ext(e, &m.ext_pkgs)),
             _ => self.made.get(&head).cloned(),
         };
+        let args = c.child_by_field_name("arguments").map(named_children).unwrap_or_default();
+        // a Node socket receives by the event a listener waits for, which names the operation
+        // (`socket.on("data", ..)`)
+        let socket = pkg.as_deref().is_some_and(knowledge::node_socket_package);
+        let event = parts
+            .last()
+            .filter(|l| socket && knowledge::NODE_LISTENERS.contains(&l.as_str()))
+            .and(args.first())
+            .filter(|a| a.kind() == "string")
+            .map(|a| unquote(text(*a, src)));
+        let listened: Vec<String>;
+        let parts = match event {
+            Some(e) => {
+                listened = parts[..parts.len() - 1].iter().cloned().chain([e]).collect();
+                &listened[..]
+            }
+            None => parts,
+        };
         // some parts of the world are reached only through a client the package made, not its helpers
         let Some(kind) = effects::boundary_ts(pkg.as_deref(), parts)
             .filter(|k| !knowledge::THROUGH_A_CLIENT.contains(&k.world) || self.made.contains_key(&head))
@@ -1837,10 +1891,44 @@ impl<'a, 't> Body<'a, 't> {
             return;
         };
         let op = parts.last().cloned().unwrap_or_default();
-        let cr =
-            Crosses::read(c, src, kind, pkg.as_deref(), &op, &literals(c, src, STRINGS), STRINGS, &HashMap::new(), &path_maker_named(src));
+        let path_function = |f: TsNode| self.eval.path_function_of(m, f);
+        let cr = Crosses::read(c, src, kind, pkg.as_deref(), &op, &literals(c, src, STRINGS), STRINGS, &HashMap::new(), &path_function);
         let args = c.child_by_field_name("arguments").map(named_children).unwrap_or_default();
         let at = At { m, scope: self.scope, params: &self.params };
+        // a socket's traffic is at the door's place, which the callers hand as they hand a path
+        // (`docs/reference/mathematics.md`, "A door keeps its place"): the address the call that
+        // opens the door is handed, the one the operation is handed (`send(msg, port, host)`), else
+        // the address of the socket it runs on
+        if socket && kind.world == World::Net {
+            let object = function_of(c).filter(|f| f.kind() == "member_expression").and_then(|f| f.child_by_field_name("object"));
+            // the package's own function that opens a door (`net.connect(..)`), not a method of one it made
+            let imported = matches!(m.bindings.get(&head), Some(Bound::Ext(_)));
+            let opens = imported && knowledge::NODE_DOORS.iter().any(|(p, f, _)| pkg.as_deref() == Some(*p) && *f == op);
+            let handed = knowledge::NODE_SOCKET_ADDRESSES.iter().chain(knowledge::NODE_DOOR_PLACES).find(|(o, _)| *o == op);
+            let door = match (opens, handed, object) {
+                (true, _, _) | (false, None, None) => self.eval.of(at, c, 0),
+                (false, Some((_, a)), _) => self.eval.address(at, &args, a, 0),
+                (false, None, Some(o)) => self.eval.of(at, o, 0),
+            };
+            let t = Touch {
+                what: text(object.filter(|_| !opens).unwrap_or(c), src).to_string(),
+                payload: cr.payload.clone(),
+                op: op.clone(),
+                line: cr.line,
+                ..Touch::new(World::Net, None)
+            };
+            // a door the body opened is at the place its opening touches, named as the opening names it
+            let opened = object.filter(|_| !opens && handed.is_none()).and_then(|o| self.opening(o, World::Net));
+            let (t, built) = match opened {
+                Some((o, built)) => (Touch { what: o.what, artifact: o.artifact, fixed: o.fixed, ..t }, built),
+                None => (t, crate::paths::request_of(&op, door)),
+            };
+            match built {
+                built if built.is_empty() => self.read.touches.push(t),
+                built => self.read.calls.push((t, built)),
+            }
+            return;
+        }
         // a statement is read where it is whole: from a constant, a template, or what the callers
         // hand the parameters it is built from
         let statement = match (cr.facts.kind, args.first()) {
@@ -2081,6 +2169,17 @@ pub(super) fn chain_root<'a>(n: TsNode, src: &'a [u8]) -> Option<&'a str> {
     root_of(n).map(|r| text(r, src))
 }
 
+/// What a part of a value TypeScript's own code computes is made of (`body::computed_of`): a literal, a piece of a string
+/// and a comment of none, any other part the name it is a part of (`root_of`).
+fn part(p: TsNode) -> Option<Vec<TsNode>> {
+    match p.kind() {
+        "number" | "string" | "string_fragment" | "escape_sequence" | "true" | "false" | "null" | "undefined" | "regex" | "comment" => {
+            Some(vec![])
+        }
+        _ => root_of(p).map(|r| vec![r]),
+    }
+}
+
 /// The name, or `this`, a chain like `this.items[0].x` starts from, as written.
 fn root_of(n: TsNode) -> Option<TsNode> {
     match n.kind() {
@@ -2242,6 +2341,13 @@ const USES: UseSyntax = UseSyntax {
             .flatten()
     },
     pairs: |targets, value| targets.kind() == "array_pattern" && value.kind() == "array",
+    // `??`, `||` and `&&` are choices; `void` and `delete` give no value of their operand
+    computes: |n, src| match n.kind() {
+        "binary_expression" => n.child_by_field_name("operator").is_some_and(|o| !matches!(text(o, src), "??" | "||" | "&&")),
+        "unary_expression" => n.child_by_field_name("operator").is_some_and(|o| !matches!(text(o, src), "void" | "delete")),
+        "array" | "template_string" | "template_substitution" => true,
+        _ => false,
+    },
     wrappers: WRAPPERS,
     drops: |n, child, src| match n.kind() {
         "expression_statement" => n.named_child(0).map(|c| c.id()) == Some(child.id()),

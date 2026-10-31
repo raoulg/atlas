@@ -1,8 +1,7 @@
 // How far one phase of a drawing of `atlas-code serve` is, from 0 to 1, as `/api/drawn` says: none before
 // the phase begins, whole once it is past, and while it runs the share its time so far fills of the
-// time it took the last time. `extra` is the time, in seconds, since the server said so. Each phase
-// has a bar of its own: the loading page shows reading the project's code, the picture the library
-// round that follows it.
+// time it took the last time. `extra` is the time, in seconds, since the server said so. The loading
+// page shows it while the first picture is drawn.
 function progressOf(state, phase, extra = 0) {
   const phases = state.phases || ["code"], at = phases.indexOf(phase), now = phases.indexOf(state.phase);
   if (state.phase === "ready" || now > at) return 1;

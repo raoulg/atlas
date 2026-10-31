@@ -411,16 +411,19 @@ pub fn a_local_is_bound_by_the_bodys_own_code(language: &str, pair_fn: &str) {
 #[allow(dead_code)]
 pub fn a_parent_drops_the_last_part_of_a_path(language: &str, read: &str, log: &str) {
     let p = pair(&format!("parents/{language}"));
+    // the places a function's touches of a kind reach, each once however many operations reach it (the opening of a
+    // file, and what goes through the file)
     let places = |g: &Graph, id: &str, kind: &str| -> Vec<String> {
         let n = g.node(id).unwrap_or_else(|| panic!("{language}: no node {id}"));
-        n.touches.iter().filter(|t| t.kind_name() == kind).map(|t| t.artifact.clone()).collect()
+        let at: BTreeSet<String> = n.touches.iter().filter(|t| t.kind_name() == kind).map(|t| t.artifact.clone()).collect();
+        at.into_iter().collect()
     };
     for (side, g) in [("clean", &p.clean), ("shortcut", &p.shortcut)] {
         let read = places(g, read, "disk_read");
         let [dir] = &read[..] else { panic!("{language} {side}: one directory the data file is read from: {read:?}") };
         assert!(dir.ends_with('/') && dir.len() > 1, "{language} {side}: the data file's name is not said, its directory is: {dir}");
         let written = places(g, log, "disk_write");
-        assert_eq!(written.len(), 1, "{language} {side}: the log is written once: {written:?}");
+        assert_eq!(written.len(), 1, "{language} {side}: the log is one place: {written:?}");
         let beside = written[0].strip_prefix(dir.as_str()).is_some_and(|name| !name.contains('/'));
         assert_eq!(beside, side == "clean", "{language} {side}: the log {written:?} in the data files' directory {dir}");
         let node = g.node(log).unwrap_or_else(|| panic!("{language}: no node {log}"));
@@ -436,6 +439,11 @@ pub fn a_parent_drops_the_last_part_of_a_path(language: &str, read: &str, log: &
                 t.what
             );
         }
+        // a route that reaches no caller of the log sees its calls as read: the opening and what goes through the file are
+        // one place there too, never one named by what is written (`docs/reference/mathematics.md`, "A door keeps its place")
+        let read: BTreeSet<(String, String)> =
+            node.instead.iter().filter(|t| t.kind_name() == "disk_write").map(|t| (t.what.clone(), t.artifact.clone())).collect();
+        assert!(read.len() <= 1, "{language} {side}: the log as read is one place: {read:?}");
     }
 }
 
@@ -461,5 +469,227 @@ pub fn a_closures_parameter_is_what_its_calls_hand_it(language: &str, functions:
         let (clean, shortcut) = (read(&p.clean, f), read(&p.shortcut, f));
         assert!(!clean.is_empty() && clean.iter().all(|a| !a.contains("{name}")), "{language}: {f} reads named files: {clean:?}");
         assert_eq!(shortcut, clean, "{language}: {f} reads what a function of the module reads");
+    }
+}
+
+/// The sockets pair (#302, #323): a connection is a door to the place it is opened at, and keeps that place wherever it
+/// is handed (`docs/reference/mathematics.md`, "A door keeps its place"). The client's `main` (in the module `ask`)
+/// connects to the greeter's address and hands the connection to `hear`; the server's `served` listens at the address
+/// and hands each connection it accepts to the functions of `server`. A client that writes to an address and a server
+/// that reads at it meet at one place: every place the server's connections reach is the one the client's do, a place
+/// the code names, made whole where each door is opened. Gives that place.
+#[allow(dead_code)]
+pub fn a_connection_keeps_its_place(language: &str, server: [&str; 2], served: &str, ask: &str) -> BTreeSet<String> {
+    let p = pair(&format!("sockets/{language}"));
+    let mut places = BTreeSet::new();
+    for (side, g) in [("clean", &p.clean), ("shortcut", &p.shortcut)] {
+        let net = |f: &str| -> Vec<atlas_engine::Touch> {
+            let n = g.node(f).unwrap_or_else(|| panic!("{language}: no node {f}"));
+            n.touches.iter().filter(|t| t.kind_name() == "net").cloned().collect()
+        };
+        let reached = |fs: &[String], opened: &str| -> BTreeSet<String> {
+            let at: Vec<atlas_engine::Touch> = fs.iter().flat_map(|f| net(f)).collect();
+            assert!(at.iter().all(|t| t.by == by([opened])), "{language} {side}: made whole where the door is opened: {at:#?}");
+            at.iter().map(|t| t.artifact.clone()).collect()
+        };
+        let (main, hear) = (format!("{ask}.main"), format!("{ask}.hear"));
+        let server = reached(&server.map(String::from), served);
+        let client = reached(&[hear], &main);
+        assert_eq!(server, client, "{language} {side}: the two ends of a connection meet at one place");
+        assert!(client.len() == 1 && !client.contains(""), "{language} {side}: the place is one the code names: {client:?}");
+        let connected: BTreeSet<String> = net(&main).iter().map(|t| t.artifact.clone()).collect();
+        assert_eq!(connected, client, "{language} {side}: a connection handed on reaches the place it is opened at");
+        places.extend(client);
+    }
+    places
+}
+
+/// The ways each of a function's touches of the disk goes and the places they reach, with the functions that make each
+/// whole: `(kind, operation, place, by)`, in no order.
+#[allow(dead_code)]
+pub fn disk(g: &Graph, id: &str) -> Vec<(String, String, String, BTreeSet<Both>)> {
+    let n = g.node(id).unwrap_or_else(|| panic!("no node {id}"));
+    let mut out: Vec<_> = n
+        .touches
+        .iter()
+        .filter(|t| t.kind_name().starts_with("disk"))
+        .map(|t| (t.kind_name().to_string(), t.op.clone(), t.artifact.clone(), t.by.clone()))
+        .collect();
+    out.sort();
+    out
+}
+
+/// The handles pair (#323): a file is a door to the place it is opened at, and keeps that place wherever it is handed
+/// (`docs/reference/mathematics.md`, "A door keeps its place"), as a socket does. The clean `main` opens the data file
+/// and the report and hands each to the function that reads it or writes it; the shortcut's `count` and `emit` open
+/// their own. An operation through a file is a touch of its own at the file it was opened at, never folded into the
+/// opening: the shortcut's `count` is the clean `main`'s opening and the clean `count`'s read, one place, the same
+/// operations. The place is made whole where the file is opened: by `main` on the clean side, which names the files, so
+/// `places` asks nothing, and by each function itself on the shortcut, which `places` asks.
+#[allow(dead_code)]
+pub fn a_file_handed_on_keeps_its_place(language: &str) {
+    let p = pair(&format!("handles/{language}"));
+    let (c, s) = (&p.clean, &p.shortcut);
+    let places = |g: &Graph| -> Vec<String> {
+        atlas_engine::principles::check(g).into_iter().filter(|f| f.principle == "places").map(|f| f.node).collect()
+    };
+    assert!(places(c).is_empty(), "{language} clean: main names the files: {:?}", places(c));
+    assert_eq!(places(s), ["tally.count", "tally.emit"], "{language} shortcut: each function decides its own file");
+    let opened = disk(c, "tally.main");
+    for (f, kind) in [("tally.count", "disk_read"), ("tally.emit", "disk_write")] {
+        let through = disk(c, f);
+        let opening: Vec<_> = opened.iter().filter(|t| t.0 == kind).cloned().collect();
+        let [(_, _, file, _)] = &opening[..] else { panic!("{language}: main opens one file to {kind}: {opened:?}") };
+        assert!(!file.is_empty(), "{language}: the file main opens is one the code names");
+        assert!(!through.is_empty(), "{language} clean: {f} reaches the file it is handed");
+        for (k, op, place, made) in &through {
+            assert_eq!((k.as_str(), place), (kind, file), "{language} clean: `{op}` in {f} is at the file main opened");
+            assert_eq!(made, &by(["tally.main"]), "{language} clean: `{op}` in {f} is made whole where the file is opened");
+        }
+        // the shortcut opens the file where it goes through it: the same operations at the same place
+        let unmade = |ts: Vec<(String, String, String, BTreeSet<Both>)>| -> Vec<(String, String, String)> {
+            let mut out: Vec<_> = ts.into_iter().map(|(k, op, place, _)| (k, op, place)).collect();
+            out.sort();
+            out
+        };
+        assert_eq!(unmade(disk(s, f)), unmade(opening.into_iter().chain(through).collect()), "{language}: {f} opens what main opened");
+    }
+}
+
+/// The locals pair of `language` (`tests/pairs/locals`), its routes `named` and `written`: `named` binds the gap between two
+/// levels and the two side by side to names before it hands each to a step (`gap = first.db - second.db; draw(gap)`, `both =
+/// [first, second]; show(both)`), and `written` writes each where its step is handed it. What the language's own code
+/// computes of names with no call has no moment of its own, and binding it to a name adds no arrow: the name stands for the
+/// names it is computed of (#328, `mathematics.md`, "One fine plan"), and is still the body's own (`Node::binds`). So each
+/// step of `named` is handed what the same step of `written` is handed, by the same parameters and through the same fields;
+/// and in the plan, uncut and at every budget, each step of one route takes what the same step of the other takes. The
+/// shortcut computes both of the module's quiet level in place of the second level it is handed: that level alone comes
+/// from beyond, and every step of either route takes it. So in every language. What a route's own arrow takes where its
+/// code computes the value (`Steps::read_here`) is no step's, and not held here.
+#[allow(dead_code)]
+pub fn a_name_computed_of_names_stands_for_them(language: &str) {
+    let p = pair(&format!("locals/{language}"));
+    // a fact of a route with the route's name written as `R`, so that the facts of two routes can be compared
+    let renamed = |fact: &str, route: &str| -> String {
+        let moment = |m: &str| match m.strip_prefix(route) {
+            Some("") => "R".to_string(),
+            Some(rest) if rest.starts_with('/') => format!("R{rest}"),
+            _ => m.to_string(),
+        };
+        let token = |t: &str| match t.split_once('@') {
+            Some((value, m)) => format!("{value}@{}", moment(m)),
+            None => moment(t),
+        };
+        fact.split(' ').map(token).collect::<Vec<_>>().join(" ")
+    };
+    for (side, g, beyond) in [("clean", &p.clean, vec![]), ("shortcut", &p.shortcut, vec!["Level·QUIET".to_string()])] {
+        let at = format!("{language} {side}");
+        let node = |f: &str| g.node(&format!("signal.{f}")).unwrap_or_else(|| panic!("{at}: no node signal.{f}"));
+        let binds: BTreeSet<(&str, usize)> = node("named").binds.iter().map(|b| (b.name.as_str(), b.arms.len())).collect();
+        assert_eq!(binds, BTreeSet::from([("both", 0), ("gap", 0)]), "{at}: the body binds both names by its own code");
+        let handed = |f: &str| -> Vec<(String, BTreeSet<String>)> {
+            let hand = |h: &atlas_engine::Held| format!("{}·{} {:?} {:?} {}", h.ty, h.name, h.fills, h.through, h.param);
+            node(f).sites.iter().map(|s| (s.to.clone(), s.hands.iter().map(hand).collect())).collect()
+        };
+        let named = handed("named");
+        assert!(named.len() == 2 && named.iter().all(|(_, h)| !h.is_empty()), "{at}: each step of named is handed values: {named:?}");
+        assert_eq!(named, handed("written"), "{at}: a step handed a name is handed what the value written in its place hands");
+        let want: BTreeSet<String> = beyond.into_iter().collect();
+        for budget in BUDGETS {
+            let at = format!("{at}, budget {budget:?}");
+            let plans = planned(g, &format!("computed-{language}-{side}"), budget);
+            let route = |r: &str| &plans[&format!("signal.{r}")];
+            // what the steps take, and what the route draws but its own arrow
+            let of_steps = |r: &str| -> BTreeSet<String> {
+                route(r).iter().filter(|f| !f.ends_with(&format!(" > {r} value"))).map(|f| renamed(f, r)).collect()
+            };
+            assert_eq!(of_steps("named"), of_steps("written"), "{at}: each step takes what the value written in its place hands");
+            for r in ["named", "written"] {
+                let params = parameters(g, &format!("signal.{r}"));
+                assert_eq!(from_beyond(route(r), &params), want, "{at}: {r} from beyond");
+                let steps: Vec<String> = route(r).iter().filter_map(|f| f.strip_prefix("step ")).map(String::from).collect();
+                let taken: BTreeSet<(String, String)> = taken_from_beyond(route(r), &params).into_iter().filter(|(_, s)| s != r).collect();
+                let every: BTreeSet<(String, String)> =
+                    want.iter().flat_map(|v| steps.iter().map(move |s| (v.clone(), s.clone()))).collect();
+                assert_eq!(taken, every, "{at}: {r}'s steps take from beyond");
+            }
+        }
+    }
+}
+
+/// The twice pair: a name bound once and used twice is one value (#324). The clean side writes each kind of its stock in a
+/// folder named by the kind, in a file named by it (`root / kind / f"{kind}.csv"`, `root.join(kind).join(format!(..))`,
+/// `join(root, kind, `${kind}.csv`)`); the shortcut keeps the folders and the files' names in two lists it walks by one index
+/// it counts (`FOLDERS[i]`, `NAMES[i]`). Substitution replaces every occurrence of a variable by the same term, so every
+/// place the clean side writes names one kind in its folder and in its file, and every kind is written; the shortcut's two
+/// lists are two variables, every combination a place, among them a file of one kind in the folder of another. So in every
+/// language.
+#[allow(dead_code)]
+pub fn a_name_bound_once_is_one_value(language: &str, id: &str) {
+    let p = pair(&format!("twice/{language}"));
+    for (side, g) in [("clean", &p.clean), ("shortcut", &p.shortcut)] {
+        let n = g.node(id).unwrap_or_else(|| panic!("{language}: no node {id}"));
+        let places: BTreeSet<&str> = n
+            .touches
+            .iter()
+            .filter(|t| t.kind_name() == "disk_write" && t.artifact.ends_with(".csv"))
+            .map(|t| t.artifact.as_str())
+            .collect();
+        // the kind the folder of a place names, and the kind its file names
+        let named: BTreeSet<(&str, &str)> = places
+            .iter()
+            .map(|place| match place.rsplit('/').collect::<Vec<_>>()[..] {
+                [file, folder, ..] => (folder, file.trim_end_matches(".csv")),
+                _ => panic!("{language} {side}: {place} is a file in a folder"),
+            })
+            .collect();
+        for kind in ["books", "games"] {
+            assert!(named.contains(&(kind, kind)), "{language} {side}: {kind} is written in its folder: {places:?}");
+        }
+        let mixed = named.iter().any(|(folder, file)| folder != file);
+        assert_eq!(mixed, side == "shortcut", "{language} {side}: a file of one kind in the folder of another: {places:?}");
+    }
+}
+
+/// Whether the path `p`, its parts written out, is held by the pattern `pattern`: `*` and a hole hold one part, `**` any
+/// number of parts, none as well, and a name itself.
+#[allow(dead_code)]
+fn holds(pattern: &[&str], p: &[&str]) -> bool {
+    match (pattern.first(), p.first()) {
+        (Some(&"**"), _) => holds(&pattern[1..], p) || (!p.is_empty() && holds(pattern, &p[1..])),
+        (Some(x), Some(y)) if *x == "*" || x.starts_with('{') || x == y => holds(&pattern[1..], &p[1..]),
+        (None, None) => true,
+        _ => false,
+    }
+}
+
+/// The trees pair: a recursion that lists a directory and hands itself each entry below it walks the tree, and over the
+/// recursion its parameter is the least fixpoint of the extension, `D/**` (#325). The clean side copies every file below
+/// `data` to the same place below `backup`, going into each folder it lists; the shortcut copies the files at the top alone.
+/// What `main` makes the clean copy read and write holds a file at every depth below `data` and below `backup`, and nothing
+/// outside them; the shortcut's holds the top alone. So in every language.
+#[allow(dead_code)]
+pub fn a_walk_of_a_tree_is_one_place_at_every_depth(language: &str, id: &str, main: &str) {
+    let p = pair(&format!("trees/{language}"));
+    for (side, g) in [("clean", &p.clean), ("shortcut", &p.shortcut)] {
+        let n = g.node(id).unwrap_or_else(|| panic!("{language}: no node {id}"));
+        // the files a copy reads or writes as `main` hands the copy its folders, each alternative a pattern
+        let patterns = |kind: &str| -> Vec<&str> {
+            n.touches
+                .iter()
+                .filter(|t| t.kind_name() == kind && t.by.contains(&Both::one(main)) && !t.what.ends_with('/'))
+                .flat_map(|t| t.what.split('|'))
+                .collect()
+        };
+        for (kind, root) in [("disk_read", "data"), ("disk_write", "backup")] {
+            let patterns = patterns(kind);
+            let held = |path: &[&str]| patterns.iter().any(|t| holds(&t.split('/').collect::<Vec<_>>(), path));
+            for depth in 1..=20 {
+                let file: Vec<&str> = std::iter::once(root).chain(std::iter::repeat_n("sub", depth - 1)).chain(["f.csv"]).collect();
+                assert_eq!(held(&file), side == "clean" || depth == 1, "{language} {side}: {kind} {file:?} by {patterns:?}");
+                let outside: Vec<&str> = ["elsewhere"].into_iter().chain(file[1..].iter().copied()).collect();
+                assert!(!held(&outside), "{language} {side}: {kind} {outside:?}, outside {root}, by {patterns:?}");
+            }
+        }
     }
 }

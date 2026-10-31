@@ -1306,6 +1306,28 @@ fn places_a_path_a_type_builds_is_the_path_written_out() {
     assert!(c.iter().any(|(f, a, _)| f == "bench.clear" && a == ".made/"), "{c:?}");
 }
 
+/// The spelled pair, `spelled/rust`: a note kept in a folder the caller names however it likes
+/// (`./data/../notes`), and shown again from `notes/note.txt`. The clean side writes the folder once
+/// with the libraries that say what they do to a path (`std::path::absolute`, `path_clean::clean`);
+/// the shortcut takes its `.` and `..` out in a loop of its own.
+fn spelled(side: &str) -> Graph {
+    analyze(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/pairs/spelled/rust").join(side), &Options::default()).unwrap()
+}
+
+/// A term written out in full is the place itself, however the code spells it (`docs/reference/mathematics.md`,
+/// "Paths as terms"): a path a library makes absolute or writes without its `.` and `..` is the place its term names,
+/// so the note `save` writes is the note `show` reads, one place. A loop of the program's own is not evaluated: what
+/// it gives is not said, the gap the code leaves, and no place `save` writes is the one `show` reads.
+#[test]
+fn places_a_path_written_another_way_is_the_same_place() {
+    let places = |g: &Graph, f: &str, kind: &str| -> Vec<String> { touches(g, f, kind).iter().map(|t| t.place().id).collect() };
+    let (c, s) = (spelled("clean"), spelled("shortcut"));
+    assert!(!places(&c, "notes.save", "disk_write").is_empty());
+    assert_eq!(places(&c, "notes.save", "disk_write"), places(&c, "notes.show", "disk_read"));
+    let (saved, shown) = (places(&s, "notes.save", "disk_write"), places(&s, "notes.show", "disk_read"));
+    assert!(!saved.is_empty() && saved.iter().all(|p| !shown.contains(p)), "{saved:?} {shown:?}");
+}
+
 /// The kept pair, `kept/rust`: a note kept in a file in the folder `where.txt` names, read, and
 /// taken once. The clean side writes it whole beside its file and renames it in, and names the
 /// folder (`let folder = kept::notes_folder()?`); the shortcut writes it straight in and names
@@ -1674,6 +1696,27 @@ fn a_local_is_bound_by_the_bodys_own_code() {
     common::a_local_is_bound_by_the_bodys_own_code("rust", "pair");
 }
 
+/// The locals pair: a `vec![..]` is the array it holds, so `listed` binds its vector by its own code as `pair` binds its
+/// array, and what the macro is written of is read as the array's elements are: the module's constant in the shortcut's
+/// `vec![first, QUIET]` comes from beyond, as it does in `[first, QUIET]` (#327).
+#[test]
+fn a_vec_is_the_array_it_holds() {
+    let p = common::pair("locals/rust");
+    for (side, g) in [("clean", &p.clean), ("shortcut", &p.shortcut)] {
+        let read = |f: &str| {
+            let n = g.node(f).unwrap_or_else(|| panic!("{side}: no node {f}"));
+            let names = |xs: &[atlas_engine::Use]| xs.iter().map(|u| u.name.clone()).collect::<Vec<_>>();
+            (names(&n.uses), names(&n.binds))
+        };
+        assert_eq!(read("signal.listed"), read("signal.pair"), "{side}: what the body reads and binds");
+        for budget in common::BUDGETS {
+            let plans = common::planned(g, &format!("vec-{side}"), budget);
+            let beyond = |route: &str| common::from_beyond(&plans[route], &common::parameters(g, route));
+            assert_eq!(beyond("signal.shown"), beyond("signal.paired"), "{side}, budget {budget:?}: from beyond");
+        }
+    }
+}
+
 /// One side of the sockets pair (`tests/pairs/sockets/rust`): a server that greets each client by
 /// the name it sends and lets the client read the greeting before the connection closes.
 fn greeter(side: &str) -> Graph {
@@ -1743,25 +1786,38 @@ fn built_a_unit_struct_named_in_a_macro_is_built_where_it_is_named() {
     }
 }
 
-/// The sockets pair (#302): a connection is a door to the place it is opened at, and keeps that place wherever it is handed
-/// (`docs/reference/mathematics.md`, "A door keeps its place"). The client `ask` connects to the greeter's address and hands
-/// the connection to `hear`; the server binds the address and hands each connection it accepts to `answer`, which hands it
-/// to `linger`. A client that writes to an address and a server that reads at it meet at one place: every place the
-/// server's connections reach is the one the client's do, a place the code names, made whole where each door is opened.
+/// The sockets pair (#302): the client `ask` connects to the greeter's address and hands the connection to `hear`; the
+/// server binds the address and hands each connection it accepts to `answer`, which hands it to `linger`. Each keeps the
+/// place it is opened at (`common::a_connection_keeps_its_place`).
 #[test]
 fn a_door_keeps_its_place() {
-    for side in ["clean", "shortcut"] {
-        let g = greeter(side);
-        let reached = |fs: &[&str], opened: &str| -> BTreeSet<String> {
-            let at: Vec<&Touch> = fs.iter().flat_map(|f| touches(&g, f, "net")).collect();
-            assert!(at.iter().all(|t| t.by == by([opened])), "{side}: made whole where the door is opened: {at:#?}");
-            at.iter().map(|t| t.artifact.clone()).collect()
-        };
-        let server = reached(&["greeter.answer", "greeter.linger"], "greeter.main");
-        let client = reached(&["greeter.bin.ask.hear"], "greeter.bin.ask.main");
-        assert_eq!(server, client, "{side}: the two ends of a connection meet at one place");
-        assert!(client.len() == 1 && !client.contains(""), "{side}: the place is one the code names: {client:?}");
-        let connected: BTreeSet<String> = touches(&g, "greeter.bin.ask.main", "net").iter().map(|t| t.artifact.clone()).collect();
-        assert_eq!(connected, client, "{side}: a connection handed on reaches the place its `connect` names");
-    }
+    common::a_connection_keeps_its_place("rust", ["greeter.answer", "greeter.linger"], "greeter.main", "greeter.bin.ask");
+}
+
+/// The handles pair (#323): a `File` handed on is read and written at the path it was opened at, never at the buffer
+/// an operation is handed (`f.read_to_string(&mut text)` reads the file `f` is), as a `TcpStream` handed on is at its
+/// address (`common::a_file_handed_on_keeps_its_place`).
+#[test]
+fn handles_a_file_handed_on_keeps_its_place() {
+    common::a_file_handed_on_keeps_its_place("rust");
+}
+
+/// The locals pair: a name bound to what an operator or an array computes of names stands for those names, so a step
+/// handed it is handed what the expression written in its place hands (#328), as in Python and TypeScript.
+#[test]
+fn a_name_computed_of_names_stands_for_them() {
+    common::a_name_computed_of_names_stands_for_them("rust");
+}
+
+/// The twice pair: `kind` in `root.join(kind).join(format!("{kind}.csv"))` is one value, so the loop writes two places,
+/// never four (#324).
+#[test]
+fn places_a_name_bound_once_is_one_value() {
+    common::a_name_bound_once_is_one_value("rust", "export.export");
+}
+
+/// The trees pair: a recursion over `read_dir` is one place at every depth (#325).
+#[test]
+fn places_a_walk_of_a_tree_is_one_place_at_every_depth() {
+    common::a_walk_of_a_tree_is_one_place_at_every_depth("rust", "backup.copy_tree", "backup.main");
 }

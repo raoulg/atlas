@@ -14,8 +14,10 @@ use crate::knowledge;
 use crate::model::{Node, NodeKind, Param, Returns};
 use crate::tree::{named_children, text, walk, Wrappers};
 
-/// What hands on the value inside it: parentheses, a reference `&x`, `x?` and `x.await`.
-pub(super) const WRAPPERS: Wrappers = &["parenthesized_expression", "reference_expression", "try_expression", "await_expression"];
+/// What hands on the value inside it: parentheses, a reference `&x`, a dereference `*x`, `x?` and
+/// `x.await`.
+pub(super) const WRAPPERS: Wrappers =
+    &["parenthesized_expression", "reference_expression", "unary_expression *", "try_expression", "await_expression"];
 
 pub(crate) struct Crate {
     pub(super) name: String,
@@ -534,16 +536,19 @@ pub(super) fn def_node<'t>(m: &'t Module, n: &Node) -> Option<TsNode<'t>> {
     Some(d)
 }
 
-/// Expand the head of a call path through its binding, so `fs::read` becomes `std.fs.read`.
+/// Expand the head of a call path through its binding, so `fs::read` becomes `std.fs.read`, and a
+/// library's call that is another by a second name to that one (`knowledge::RUST_SAME_CALLS`).
 pub(super) fn expand(m: &Module, parts: &[String]) -> Vec<String> {
-    match parts.first().and_then(|h| m.bindings.get(h)) {
+    let out = match parts.first().and_then(|h| m.bindings.get(h)) {
         Some(b) if b.starts_with("ext:") => {
             let mut out: Vec<String> = b[4..].split('.').map(String::from).collect();
             out.extend(parts[1..].iter().cloned());
             out
         }
         _ => parts.to_vec(),
-    }
+    };
+    // a library's call that is another by a second name is that one: `File::options()`
+    knowledge::rust_same_call(out)
 }
 
 /// The names a pattern binds: `x` of `Some(x)`, `a` and `b` of `(a, mut b)`; the type a pattern

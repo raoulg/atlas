@@ -6,7 +6,7 @@
 use std::path::PathBuf;
 
 use atlas_engine::parts::analyze_repo;
-use atlas_engine::{EdgeKind, Graph, Options, World};
+use atlas_engine::{Atom, EdgeKind, Graph, Options, World};
 
 fn pair(name: &str) -> Graph {
     analyze_repo(&[PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/pairs").join(name)], &Options::default()).unwrap()
@@ -197,6 +197,26 @@ fn a_request_goes_the_way_its_method_says() {
     }
 }
 
+/// A package's doors are what its root names, in every language: a crate's `pub fn` in `lib.rs`, what the module
+/// `package.json` points to exports, the names the root `__init__.py` binds. The six clients of the requests pair are
+/// one client written three ways, clean and with the shortcut, so each has the same doors, the functions `item` and
+/// `order`, and a part reaches what its doors reach alike: isomorphic is the same.
+#[test]
+fn one_client_has_the_same_doors_in_every_language() {
+    use atlas_engine::{EntryKind, NodeKind};
+    let g = pair("requests");
+    for side in ["clean", "shortcut", "pyclean", "pyshortcut", "rsclean", "rsshortcut"] {
+        let doors: Vec<&str> = g
+            .nodes
+            .iter()
+            .filter(|n| n.id.starts_with(&format!("{side}.")) && n.kind == NodeKind::Function)
+            .filter(|n| n.entry.as_ref().is_some_and(|e| e.kind == EntryKind::Export))
+            .map(|n| n.name.as_str())
+            .collect();
+        assert_eq!(doors, ["item", "order"], "{side}: the functions its root names");
+    }
+}
+
 /// A shaped array is a type of its own and stands in its rank family (`docs/reference/mathematics.md`, "Shapes and their
 /// rank"). The clean components say the shape of what they take and give (`Float[Tensor, "batch dim"]`); the shortcut
 /// says `Tensor`. Each shape of the clean side stays its own type, and stands in a family shared by exactly the shapes of
@@ -296,8 +316,11 @@ fn a_key_no_code_decides_is_one_of_a_tables_values_in_every_language() {
 /// "Paths as terms"), in every language: Python's `D.glob("*")` and `os.listdir(D)`, TypeScript's
 /// `readdirSync(D)`, whose names the code joins back below the directory, looped over or mapped, and
 /// Rust's `fs::read_dir(D)`, whose entries are at their `path()`, looped over, mapped or handed to a
-/// closure for each. The file read in each folder is one place, and the directory listed is one
-/// place, whichever form and language the code takes.
+/// closure for each, as the path's own method `D.read_dir()`, which std documents as `fs::read_dir(D)`, and
+/// tokio's `read_dir(D)`, whose entries `next_entry` gives one by one. An entry's name joined back below the
+/// directory is the entry's path: Python's `e.name` of `os.scandir(D)` as its `e.path`, TypeScript's `e.name`
+/// of `readdirSync(D, { withFileTypes: true })` and Rust's `e.file_name()`. The file read in each folder is one
+/// place, and the directory listed is one place, whichever form and language the code takes.
 #[test]
 fn a_listing_is_a_pattern_below_its_directory_in_every_language() {
     let glob = run_places("python", "listing-glob", "    for p in DATA.glob(\"*\"):\n        print((p / \"x.txt\").read_text())");
@@ -321,14 +344,82 @@ fn a_listing_is_a_pattern_below_its_directory_in_every_language() {
             "listing-each",
             "    fs::read_dir(DATA)?.flatten().for_each(|e| {\n        let _ = fs::read_to_string(e.path().join(\"x.txt\"));\n    });",
         ),
+        ("rust", "listing-method", "    for e in Path::new(DATA).read_dir()? {\n        fs::read_to_string(e?.path().join(\"x.txt\"))?;\n    }"),
+        (
+            "rust",
+            "listing-tokio",
+            "    let mut entries = tokio::fs::read_dir(DATA).await?;\n    while let Some(e) = entries.next_entry().await? {\n        tokio::fs::read_to_string(e.path().join(\"x.txt\")).await?;\n    }",
+        ),
+        ("python", "listing-entry-path", "    for e in os.scandir(DATA):\n        print(open(os.path.join(e.path, \"x.txt\")).read())"),
+        (
+            "python",
+            "listing-entry-name",
+            "    for e in os.scandir(DATA):\n        print(open(os.path.join(DATA, e.name, \"x.txt\")).read())",
+        ),
+        (
+            "typescript",
+            "listing-entry-name",
+            "  for (const e of readdirSync(DATA, { withFileTypes: true })) {\n    readFileSync(path.join(DATA, e.name, \"x.txt\"));\n  }",
+        ),
+        (
+            "rust",
+            "listing-entry-name",
+            "    for e in fs::read_dir(DATA)? {\n        fs::read_to_string(Path::new(DATA).join(e?.file_name()).join(\"x.txt\"))?;\n    }",
+        ),
     ] {
         assert_eq!(run_places(language, name, body), glob, "{language} {name}");
     }
 }
 
+/// A path is one term whichever form builds it (`docs/reference/mathematics.md`, "Paths as terms"): a join is the join
+/// whether the code writes it as a method or as the function it is (`Path::join(p, x)` is `p.join(x)`), and a path the
+/// code changes in place is what it holds after each change, as a name bound anew is (`p.push(x)` is `p = p.join(x)`,
+/// `p.pop()` is `p = p.parent()`, `p.set_extension(e)` and `p.set_file_name(n)` are the path with another extension or
+/// name). So Python's `DATA / kind / "x.txt"`, TypeScript's `path.join(DATA, kind, "x.txt")` and each Rust form read
+/// one place. A change the body may skip (in an `if`) leaves the path as it was or changed: the union of both; a join it
+/// repeats (in a loop) as often as the code does not say leaves it where it was or below it, however the join is written.
+#[test]
+fn a_path_is_one_term_whichever_form_builds_it() {
+    let one = run_places("python", "term-slash", "    print((DATA / kind / \"x.txt\").read_text())");
+    assert_eq!(one.len(), 1, "{one:?}");
+    assert_eq!(run_places("typescript", "term-join", "  readFileSync(path.join(DATA, kind, \"x.txt\"));"), one, "typescript");
+    for (name, body) in [
+        ("term-method", "    fs::read_to_string(Path::new(DATA).join(kind).join(\"x.txt\"))?;"),
+        ("term-function", "    fs::read_to_string(Path::join(&Path::join(Path::new(DATA), kind), \"x.txt\"))?;"),
+        ("term-push", "    let mut p = std::path::PathBuf::from(DATA);\n    p.push(kind);\n    p.push(\"x.txt\");\n    fs::read_to_string(&p)?;"),
+        (
+            "term-push-new",
+            "    let mut p = std::path::PathBuf::new();\n    p.push(DATA);\n    p.push(kind);\n    p.push(\"x.txt\");\n    fs::read_to_string(p)?;",
+        ),
+        ("term-push-function", "    let mut p = Path::new(DATA).join(kind);\n    std::path::PathBuf::push(&mut p, \"x.txt\");\n    fs::read_to_string(p)?;"),
+        ("term-rebound", "    let mut p = Path::new(DATA).to_path_buf();\n    p = p.join(kind).join(\"x.txt\");\n    fs::read_to_string(p)?;"),
+        ("term-pop", "    let mut p = Path::new(DATA).join(kind).join(\"y\");\n    p.pop();\n    p.push(\"x.txt\");\n    fs::read_to_string(p)?;"),
+        ("term-extension", "    let mut p = Path::new(DATA).join(kind).join(\"x\");\n    p.set_extension(\"txt\");\n    fs::read_to_string(p)?;"),
+        ("term-file-name", "    let mut p = Path::new(DATA).join(kind).join(\"y.txt\");\n    p.set_file_name(\"x.txt\");\n    fs::read_to_string(p)?;"),
+    ] {
+        assert_eq!(run_places("rust", name, body), one, "rust {name}");
+    }
+    let kept = run_places("rust", "term-kept", "    fs::read_to_string(Path::new(DATA).join(kind))?;");
+    let both: std::collections::BTreeSet<_> = kept.union(&one).cloned().collect();
+    assert_eq!(both.len(), 2, "{both:?}");
+    let skipped = "    let mut p = Path::new(DATA).join(kind);\n    if kind.len() > 1 {\n        p.push(\"x.txt\");\n    }\n    fs::read_to_string(p)?;";
+    assert_eq!(run_places("rust", "term-skipped", skipped), both, "a change the body may skip");
+    // a join the body repeats as often as the code does not say leaves the path where it was or below it
+    let before = run_places("rust", "term-before", "    fs::read_to_string(Path::new(DATA).join(\"x\"))?;");
+    let loop_over = |change: &str| {
+        format!("    let mut p = Path::new(DATA).join(\"x\");\n    for part in kind.split('/') {{\n        {change}\n    }}\n    fs::read_to_string(p)?;")
+    };
+    let repeated = run_places("rust", "term-repeated", &loop_over("p.push(part);"));
+    assert_eq!(run_places("rust", "term-repeated-rebound", &loop_over("p = p.join(part);")), repeated, "`p = p.join(x)` is `p.push(x)`");
+    let below = |(kind, place): &(String, String)| before.iter().any(|(k, q)| k == kind && place.starts_with(&format!("{q}/")));
+    assert!(before.is_subset(&repeated) && repeated.len() > before.len(), "{repeated:?} holds {before:?}");
+    assert!(repeated.difference(&before).all(below), "{repeated:?} where it was or below {before:?}");
+}
+
 /// The places `run` of a one-module program touches, each with its kind: a program in `language`
 /// that keeps a directory `DATA` (`data`) and a table `KINDS` from a key to a folder below it
-/// (`a` to `regelingen`, `b` to `ontwerp`), and runs `body` with a `kind` its caller hands.
+/// (`a` to `regelingen`, `b` to `ontwerp`), and runs `body` with a `kind` its caller hands. A Rust `run` whose body
+/// awaits is an `async fn`.
 fn run_places(language: &str, name: &str, body: &str) -> std::collections::BTreeSet<(String, String)> {
     let root = std::env::temp_dir().join(format!("atlas-{language}-{name}-{}", std::process::id()));
     let write = |file: &str, text: &str| {
@@ -363,7 +454,8 @@ fn run_places(language: &str, name: &str, body: &str) -> std::collections::BTree
             write(
                 "src/lib.rs",
                 &format!(
-                    "use std::collections::HashMap;\nuse std::fs;\nuse std::path::Path;\n\nconst DATA: &str = \"data\";\n\npub fn run(kind: &str) -> std::io::Result<()> {{\n    let kinds: HashMap<&str, &str> = HashMap::from([(\"a\", \"regelingen\"), (\"b\", \"ontwerp\")]);\n{body}\n    Ok(())\n}}\n"
+                    "use std::collections::HashMap;\nuse std::fs;\nuse std::path::Path;\n\nconst DATA: &str = \"data\";\n\npub {}fn run(kind: &str) -> std::io::Result<()> {{\n    let kinds: HashMap<&str, &str> = HashMap::from([(\"a\", \"regelingen\"), (\"b\", \"ontwerp\")]);\n{body}\n    Ok(())\n}}\n",
+                    if body.contains(".await") { "async " } else { "" }
                 ),
             );
             "demo.run"
@@ -373,4 +465,147 @@ fn run_places(language: &str, name: &str, body: &str) -> std::collections::BTree
     let _ = std::fs::remove_dir_all(&root);
     let run = g.node(id).unwrap_or_else(|| panic!("{language} {name}: run is in the graph"));
     run.touches.iter().filter(|t| t.kind_name() != "screen").map(|t| (t.kind_name().to_string(), t.artifact.clone())).collect()
+}
+
+/// A loop over a table the code writes out goes over its keys (`docs/reference/mathematics.md`,
+/// "Paths as terms"), in every language that reads one: Python's `for k in KINDS` and
+/// `KINDS.keys()` of a dict, TypeScript's `for (const k in KINDS)` of an object literal. The test
+/// computes the places a loop over the table reads, and those a loop over its keys written out
+/// reads, and compares them; the values the table holds are no part of either.
+#[test]
+fn a_loop_over_a_table_goes_over_its_keys_in_every_language() {
+    let python = "    for k in [\"a\", \"b\"]:\n        print((DATA / k).read_text())";
+    let typescript = "  for (const k of [\"a\", \"b\"]) {\n    readFileSync(path.join(DATA, k));\n  }";
+    let mut read = vec![];
+    for (language, name, table, written) in [
+        ("python", "keys-in", "    for k in KINDS:\n        print((DATA / k).read_text())", python),
+        ("python", "keys-of", "    for k in KINDS.keys():\n        print((DATA / k).read_text())", python),
+        ("typescript", "keys-in", "  for (const k in KINDS) {\n    readFileSync(path.join(DATA, k));\n  }", typescript),
+    ] {
+        let keys = run_places(language, &format!("{name}-written"), written);
+        assert_eq!(keys.len(), 2, "{language}: {keys:?}");
+        assert_eq!(run_places(language, name, table), keys, "{language}: {table}");
+        read.push(keys);
+    }
+    assert!(read.windows(2).all(|w| w[0] == w[1]), "one table's keys read the same places in every language: {read:?}");
+}
+
+/// A folder is placed as the files in it are (`docs/reference/mathematics.md`, "Paths as terms"):
+/// in the workbench pair (`workbench/{python,rust,typescript}`) the folder `clear` removes, the one
+/// `report.txt` is in, is the folder of the file `save_report` writes, under the same callers, on
+/// both sides and in every language, also where no caller says the project (`{project}/.made/`):
+/// there each is the place the users of the library's entries hand it.
+#[test]
+fn a_folder_is_placed_as_the_files_in_it_are() {
+    for language in ["python", "rust", "typescript"] {
+        for side in ["clean", "shortcut"] {
+            let g = pair(&format!("workbench/{language}/{side}"));
+            // a touch's place and the callers that make it whole, the users of whichever entry as
+            // one condition
+            let disk = |names: &[&str]| -> Vec<(String, std::collections::BTreeSet<Vec<String>>)> {
+                let users = |a: &Atom| match a {
+                    Atom::Starts(_) => "the users of an entry".to_string(),
+                    a => format!("{a:?}"),
+                };
+                g.nodes
+                    .iter()
+                    .filter(|n| !n.library && names.contains(&n.name.as_str()))
+                    .flat_map(|n| &n.touches)
+                    .filter(|t| t.kind == World::Disk)
+                    .map(|t| (t.artifact.clone(), t.by.iter().map(|b| b.0.iter().map(users).collect()).collect()))
+                    .collect()
+            };
+            let (cleared, written) = (disk(&["clear"]), disk(&["save_report", "saveReport"]));
+            assert!(!cleared.is_empty(), "{language} {side}");
+            let folder = |file: &str| file.rsplit_once('/').map(|(d, _)| format!("{d}/"));
+            for (dir, by) in &cleared {
+                assert!(
+                    written.iter().any(|(file, callers)| callers == by && folder(file).as_deref() == Some(dir.as_str())),
+                    "{language} {side}: {:?} is no folder of {written:?}",
+                    (dir, by)
+                );
+            }
+        }
+    }
+}
+
+/// An empty default decides no place (`docs/reference/mathematics.md`, "Paths as terms"): the empty
+/// path names nothing, so an input that falls back to it is named as the input alone. The unset
+/// pair (`unset/{python,rust,typescript}`) keeps a report and a log in the files the environment
+/// names; the clean side asks for each variable, the shortcut falls back to the empty path
+/// (`os.environ.get("REPORT", "")`, `unwrap_or_default()`, `?? ""`). Each side draws two places,
+/// one per function, the same on both sides and in every language: the shortcut's two empty
+/// defaults are not one file.
+#[test]
+fn an_empty_default_decides_no_place() {
+    use std::collections::BTreeSet;
+    let mut drawn = vec![];
+    for language in ["python", "rust", "typescript"] {
+        for side in ["clean", "shortcut"] {
+            let g = pair(&format!("unset/{language}/{side}"));
+            let places: BTreeSet<String> = g
+                .nodes
+                .iter()
+                .filter(|n| !n.library)
+                .flat_map(|n| &n.touches)
+                .filter(|t| t.kind == World::Disk)
+                .map(|t| t.place().id)
+                .collect();
+            assert_eq!(places.len(), 2, "{language} {side}: {places:?}");
+            drawn.push(places);
+        }
+    }
+    assert!(drawn.windows(2).all(|w| w[0] == w[1]), "{drawn:?}");
+}
+
+/// The file a database is opened on is named as a file is, however the code builds its path
+/// (`docs/reference/mathematics.md`, "Paths as terms"): the opened pair (`opened/{python,rust}`)
+/// keeps counts per kind, each in a database file of its own; the clean side joins the path part by
+/// part, the shortcut glues it together as text. Isomorphic is the same: both sides and both
+/// languages open the same files by the same names, and two files a function opens are two.
+#[test]
+fn a_database_is_named_by_its_file_however_its_path_is_built() {
+    let mut drawn = vec![];
+    for language in ["python", "rust"] {
+        for side in ["clean", "shortcut"] {
+            let g = pair(&format!("opened/{language}/{side}"));
+            let mut opened: Vec<(String, String, String)> = g
+                .nodes
+                .iter()
+                .filter(|n| !n.library)
+                .flat_map(|n| n.touches.iter().map(move |t| (n.name.clone(), t)))
+                .filter(|(_, t)| matches!(t.kind, World::Db(_)))
+                .map(|(f, t)| (f, t.what.clone(), t.file.clone()))
+                .collect();
+            opened.sort();
+            assert_eq!(opened.iter().filter(|(f, _, _)| f == "both").count(), 2, "{language} {side}: {opened:?}");
+            drawn.push(opened);
+        }
+    }
+    assert!(drawn.windows(2).all(|w| w[0] == w[1]), "{drawn:?}");
+}
+
+/// A directory made for a file the same function writes is part of what is done at that file,
+/// however coarse a place the file's own unknown parts leave it: the folder `data/{kind}/cache/` is
+/// made for `data/{kind}/cache/{kind}.json`, which rests in `data/`. The test computes the places a
+/// function that makes the folder and writes the file touches, and those of one that only writes
+/// the file, and compares them, in each language.
+#[test]
+fn a_folder_made_for_a_file_is_that_files_in_every_language() {
+    for (language, made, written) in [
+        (
+            "python",
+            "    folder = DATA / kind / \"cache\"\n    folder.mkdir(parents=True, exist_ok=True)\n    (folder / (kind + \".json\")).write_text(\"{}\")",
+            "    folder = DATA / kind / \"cache\"\n    (folder / (kind + \".json\")).write_text(\"{}\")",
+        ),
+        (
+            "rust",
+            "    let folder = Path::new(DATA).join(kind).join(\"cache\");\n    fs::create_dir_all(&folder)?;\n    fs::write(folder.join(format!(\"{kind}.json\")), \"{}\")?;",
+            "    let folder = Path::new(DATA).join(kind).join(\"cache\");\n    fs::write(folder.join(format!(\"{kind}.json\")), \"{}\")?;",
+        ),
+    ] {
+        let file = run_places(language, "folder-written", written);
+        assert_eq!(file.len(), 1, "{language}: {file:?}");
+        assert_eq!(run_places(language, "folder-made", made), file, "{language}");
+    }
 }
