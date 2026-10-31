@@ -309,3 +309,39 @@ fn every_picture_of_a_cut_plan_is_its_image() {
     let fails = fails.into_inner().unwrap();
     assert!(fails.is_empty(), "{} faults of the cut plans:\n{}", fails.len(), fails.join("\n"));
 }
+
+/// How many levels the route of `a_step_beyond_the_cut_is_made_without_unfolding_its_body` calls down, each twice.
+const LEVELS: usize = 40;
+
+/// A step beyond the cut is the image of its body unfolded to its leaves, made without unfolding it: once for each function,
+/// call and set of callers that make its paths whole (mathematics.md, "One fine plan, every picture its image"). Its subject
+/// is a program whose route calls each of `LEVELS` levels twice, handing one value down by its name: unfolded, its body has
+/// 2^40 occurrences. A model that kept anything of the body as it unfolds (an occurrence, a line, a group of values a step
+/// takes) could not plan it; one that makes each step's arrow once for each call does, at every budget that cuts it, and
+/// every picture of the cut plan is its image (#379).
+#[test]
+fn a_step_beyond_the_cut_is_made_without_unfolding_its_body() {
+    let program = std::env::temp_dir().join(format!("atlas-plans-fanout-{}", std::process::id()));
+    std::fs::create_dir_all(program.join("src")).expect("makes the program's directory");
+    std::fs::write(program.join("Cargo.toml"), "[package]\nname = \"fanout\"\nversion = \"0.1.0\"\nedition = \"2021\"\n\n[workspace]\n")
+        .expect("writes the manifest");
+    let mut code = String::from(
+        "struct Config {\n    out: String,\n}\n\nfn main() {\n    let config = Config { out: String::from(\"out.txt\") };\n    level0(&config);\n}\n",
+    );
+    for i in 0..LEVELS {
+        code += &format!("\nfn level{i}(config: &Config) {{\n    level{0}(config);\n    level{0}(config);\n}}\n", i + 1);
+    }
+    code += &format!("\nfn level{LEVELS}(config: &Config) {{\n    std::fs::write(&config.out, \"done\").unwrap();\n}}\n");
+    std::fs::write(program.join("src").join("main.rs"), code).expect("writes the program");
+    let data = data(&program);
+    let mut fails = vec![];
+    for budget in BUDGETS {
+        let built = modelled(&program, &data, Some(budget));
+        assert!(built.contains_key("fanout.main"), "the model plans the route at budget {budget}");
+        fails.extend(
+            built.into_iter().flat_map(|(route, (_, faults))| faults.into_iter().map(move |f| format!("budget {budget}, {route}: {f}"))),
+        );
+    }
+    let _ = std::fs::remove_dir_all(&program);
+    assert!(fails.is_empty(), "{} faults of the cut plans:\n{}", fails.len(), fails.join("\n"));
+}
