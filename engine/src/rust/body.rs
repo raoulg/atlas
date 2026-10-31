@@ -178,6 +178,15 @@ fn bound_name<'s>(pat: TsNode, src: &'s [u8]) -> &'s str {
     text(pat, src).trim_start_matches('&').trim_start_matches("ref ").trim_start_matches("mut ").trim()
 }
 
+/// Each part of a tuple pattern a `let` binds a tuple written out to, with the element at its place, where the two have as
+/// many parts: `let (a, b) = (x, y)` binds as `let a = x; let b = y` does.
+fn tuple_elements(n: TsNode) -> Option<Vec<(TsNode, TsNode)>> {
+    let (p, v) = (n.child_by_field_name("pattern")?, beneath(n.child_by_field_name("value")?, WRAPPERS));
+    let (parts, elements) = (named_children(p), named_children(v));
+    (p.kind() == "tuple_pattern" && v.kind() == "tuple_expression" && parts.len() == elements.len())
+        .then(|| parts.into_iter().zip(elements).collect())
+}
+
 /// The names a call's value is kept by, each with the byte where it holds the value. A name a
 /// binding gives it (`let x = f(..)?`, `x = f(..)`, a pattern: `let (a, b) = g(..)`, `if let
 /// Some(line) = f(..)`, the patterns of a `match` on it), through what an arm of a choice gives
@@ -309,6 +318,27 @@ fn root(v: TsNode) -> Option<TsNode> {
             "index_expression" => beneath(v.named_child(0)?, WRAPPERS),
             _ => return None,
         };
+    }
+}
+
+/// The collection a written type is, as `knowledge::Lookup` names it: `knowledge::LISTED` of a slice or an array
+/// (`&[Level]`, `[Level; 3]`), else the last segment of its path (`Vec` of `Vec<Level>`, `HashMap` of
+/// `collections::HashMap<String, Level>`), through references and the pointers a method call goes through to what they
+/// hold (`knowledge::RUST_DEREFS`: `LazyLock<HashMap<&str, Level>>` is a `HashMap`).
+fn collection_of(t: TsNode, src: &[u8]) -> Option<String> {
+    match t.kind() {
+        "reference_type" => collection_of(t.child_by_field_name("type")?, src),
+        "array_type" => Some(knowledge::LISTED.to_string()),
+        "generic_type" => {
+            let head = path_parts(t.child_by_field_name("type"), src).pop()?;
+            if !knowledge::RUST_DEREFS.contains(&head.as_str()) {
+                return Some(head);
+            }
+            let held = named_children(t.child_by_field_name("type_arguments")?).into_iter().find(|a| a.kind() != "lifetime")?;
+            collection_of(held, src)
+        }
+        "type_identifier" | "scoped_type_identifier" => path_parts(Some(t), src).pop(),
+        _ => None,
     }
 }
 
@@ -783,6 +813,9 @@ pub(super) struct Body<'a, 't> {
     /// The locals bound to the value another name holds, through what hands it on unchanged (`let
     /// record: Record = result?`): that name, where it is used.
     aliases: Bindings<(String, usize)>,
+    /// The collection each name is declared or built as, as `knowledge::Lookup` names it (`collection_of`, `built_as`):
+    /// `[]` of `levels: &[Level]`, `Vec` of `let levels = vec![..]`.
+    listed: Bindings<String>,
     /// The classes the fields of the body's own class hold.
     attr_types: std::collections::BTreeMap<String, String>,
     /// The library types its parameters are declared with: `conn` is `ext:rusqlite.Connection`.
@@ -843,6 +876,7 @@ impl<'a, 't> Body<'a, 't> {
             parameter: Bindings::default(),
             closures: Bindings::default(),
             aliases: Bindings::default(),
+            listed: Bindings::default(),
             attr_types,
             foreign: Bindings::default(),
             taken: Bindings::default(),
@@ -871,6 +905,7 @@ impl<'a, 't> Body<'a, 't> {
         );
         b.patterns(body);
         b.held(body);
+        b.collections(d, body);
         b.projections(body);
         b.handed_to(body, untyped);
         // a macro that prints shows the human something
@@ -1035,11 +1070,8 @@ impl<'a, 't> Body<'a, 't> {
                 _ => n.child_by_field_name("pattern").into_iter().map(|p| (p, value)).collect(),
             };
             // a tuple bound to a tuple pattern, element by element: `let (Some(first), Some(last)) = (xs.first(), xs.last())`
-            if let [(p, v)] = pairs.as_slice() {
-                let (p, v) = (*p, beneath(*v, WRAPPERS));
-                if p.kind() == "tuple_pattern" && v.kind() == "tuple_expression" && named_children(p).len() == named_children(v).len() {
-                    pairs = named_children(p).into_iter().zip(named_children(v)).collect();
-                }
+            if let Some(elements) = tuple_elements(n) {
+                pairs = elements;
             }
             for (p, value) in pairs {
                 let one = match p.kind() {
@@ -1069,13 +1101,27 @@ impl<'a, 't> Body<'a, 't> {
 
     /// A name a binding gives a part of another name's value holds that value (a projection bound
     /// to a name is still the projection): `let months = settings.months`, `let base =
-    /// &config["base"]`, `let record: Record = result?`, `let (date, rate) = row?`, the fields a
-    /// `match` on `cli.command` takes apart (`Command::Import { file }`), `Ok(body)` of a `match
-    /// fetched`. A value a call makes is the call's, and is not followed.
+    /// &config["base"]`, `let first = levels.first()?` (`Body::held_root`), `let record: Record = result?`, `let (date,
+    /// rate) = row?`, each element of a tuple a tuple pattern takes apart (`tuple_elements`), the fields a `match` on
+    /// `cli.command` takes apart (`Command::Import { file }`), `Ok(body)` of a `match fetched`. A value a call makes is the
+    /// call's, and is not followed.
     fn projections(&mut self, body: TsNode<'t>) {
         let src = self.src;
         for n in walk(body, &["let_declaration", "let_condition", "match_expression"]) {
-            let Some(held) = n.child_by_field_name("value").and_then(root) else { continue };
+            // a tuple bound to a tuple pattern, element by element, as a `let` of each would bind it: `if let (World::Db(db),
+            // Some(a)) = (tag.world, args.first())` binds `a` to a part of `args`
+            if let Some(pairs) = tuple_elements(n) {
+                for (p, v) in pairs {
+                    let Some(held) = self.held_root(v) else { continue };
+                    for name in bound_names(p, src) {
+                        if let Some((from, to)) = scope(name) {
+                            self.aliases.bind(text(name, src), from, to, (text(held, src).to_string(), held.start_byte()));
+                        }
+                    }
+                }
+                continue;
+            }
+            let Some(held) = n.child_by_field_name("value").and_then(|v| self.held_root(v)) else { continue };
             let patterns: Vec<TsNode> = match n.kind() {
                 "match_expression" => n
                     .child_by_field_name("body")
@@ -1103,6 +1149,124 @@ impl<'a, 't> Body<'a, 't> {
                     self.aliases.bind(text(name, src), from, to, (text(held, src).to_string(), held.start_byte()));
                 }
             }
+        }
+    }
+
+    /// The collections the body's names are declared as, by the types its parameters and its `let`s write (`collection_of`),
+    /// and the collection each name a tuple pattern binds is by the element it takes (`tuple_elements`, `Body::collection`).
+    fn collections(&mut self, d: TsNode<'t>, body: TsNode<'t>) {
+        let src = self.src;
+        let params = d.child_by_field_name("parameters").map(named_children).unwrap_or_default().into_iter().filter_map(|p| {
+            let pat = p.child_by_field_name("pattern").filter(|_| p.kind() == "parameter")?;
+            Some((pat, p.child_by_field_name("type")?, (d.start_byte(), d.end_byte())))
+        });
+        let lets = walk(body, &["let_declaration"]).into_iter().filter_map(|l| {
+            let pat = l.child_by_field_name("pattern").filter(|p| matches!(p.kind(), "identifier" | "mut_pattern"))?;
+            Some((pat, l.child_by_field_name("type")?, scope(pat)?))
+        });
+        let written: Vec<_> = params.chain(lets).collect();
+        for (pat, t, (from, to)) in written {
+            if let Some(kind) = collection_of(t, src) {
+                self.listed.bind(bound_name(pat, src), from, to, kind);
+            }
+        }
+        let elements = walk(body, &["let_declaration", "let_condition"]).into_iter().filter_map(tuple_elements).flatten();
+        let named: Vec<_> = elements.filter(|(p, _)| matches!(p.kind(), "identifier" | "mut_pattern")).collect();
+        for (pat, v) in named {
+            if let (Some(kind), Some((from, to))) = (self.collection(v, 0), scope(pat)) {
+                self.listed.bind(bound_name(pat, src), from, to, kind);
+            }
+        }
+    }
+
+    /// The collection a value is, as `knowledge::Lookup` names it, where the code says: a name by the type it is declared
+    /// with or else by what its `let` binds it to, a field by the type its struct declares, an array (`[a, b]`), a list
+    /// macro (`vec![..]`), a function of the collection's type (`HashMap::new()`), through what hands a value on.
+    fn collection(&self, v: TsNode<'t>, depth: usize) -> Option<String> {
+        let src = self.src;
+        let v = beneath(v, WRAPPERS);
+        match v.kind() {
+            "identifier" => {
+                let (name, at) = (text(v, src), v.start_byte());
+                let made = || self.made_by.get(name, at).filter(|_| depth < 8).and_then(|m| self.collection(*m, depth + 1));
+                // a name the body binds nowhere, of a constant or a static its module declares, by the type it declares
+                let declared = || {
+                    let item = named_children(self.m.tree.root_node())
+                        .into_iter()
+                        .filter(|i| matches!(i.kind(), "const_item" | "static_item"))
+                        .find(|i| i.child_by_field_name("name").is_some_and(|n| text(n, src) == name))?;
+                    collection_of(item.child_by_field_name("type")?, src)
+                };
+                match self.parameter.get(name, at) {
+                    Some(_) => self.listed.get(name, at).cloned().or_else(made),
+                    None => declared(),
+                }
+            }
+            "field_expression" => {
+                let field = text(v.child_by_field_name("field")?, src);
+                let owner = opened(v.child_by_field_name("value")?, src);
+                let cls = match owner.kind() {
+                    "self" => self.cls.clone(),
+                    "identifier" => self.locals.get(text(owner, src), owner.start_byte()).cloned(),
+                    _ => None,
+                }?;
+                let n = self.store.nodes.get(&cls)?;
+                let home = self.modules.get(&n.module)?;
+                let item = def_node(home, n)?;
+                let declared = walk(item, &["field_declaration"])
+                    .into_iter()
+                    .find(|f| f.child_by_field_name("name").is_some_and(|x| text(x, &home.src) == field))?;
+                collection_of(declared.child_by_field_name("type")?, &home.src)
+            }
+            "array_expression" => Some(knowledge::LISTED.to_string()),
+            "macro_invocation" => {
+                knowledge::rust_list_macro(text(v.child_by_field_name("macro")?, src).rsplit("::").next()?).map(String::from)
+            }
+            "call_expression" => {
+                let parts = path_parts(function(v), src);
+                parts.len().checked_sub(2).map(|i| parts[i].clone())
+            }
+            _ => None,
+        }
+    }
+
+    /// The collection a lookup written as a method looks a part up in (`knowledge::RUST_LOOKUPS`): the value it is called
+    /// on, where that is a collection the lookup is a method of, or one the body does not say the collection of whose
+    /// class of the program has no method of that name, so that the method is the collection's that holds it (`levels.first()`
+    /// of `let levels = loud(..)`, as `value_class` reads it).
+    fn lookup(&self, c: TsNode<'t>) -> Option<TsNode<'t>> {
+        let f = function(c).filter(|f| f.kind() == "field_expression")?;
+        let (on, method) = (f.child_by_field_name("value")?, text(f.child_by_field_name("field")?, self.src));
+        let l = knowledge::lookup(knowledge::RUST_LOOKUPS, method, positional(c).len())?;
+        let holds = || on.kind() == "identifier" && self.value_class(on).is_some_and(|cls| self.store.method_of(&cls, method).is_none());
+        match self.collection(on, 0) {
+            Some(kind) => l.of.contains(&kind.as_str()),
+            None => holds(),
+        }
+        .then_some(on)
+    }
+
+    /// The name a value is a part of, as `root` reads it, and through a lookup the collection it looks a part up in
+    /// (`Body::lookup`): `levels` of `levels.first()?`, as of `&levels[0]`.
+    fn held_root(&self, v: TsNode<'t>) -> Option<TsNode<'t>> {
+        let mut v = beneath(v, WRAPPERS);
+        loop {
+            v = match v.kind() {
+                "call_expression" => self.lookup(v)?,
+                "field_expression" => v.child_by_field_name("value")?,
+                "index_expression" => v.named_child(0)?,
+                _ => return root(v),
+            };
+            v = beneath(v, WRAPPERS);
+        }
+    }
+
+    /// What a part of a value Rust's own code computes is made of, as `part` reads it, a lookup being a part of the
+    /// collection it looks in (`held_root`).
+    fn part_of(&self, p: TsNode<'t>) -> Option<Vec<TsNode<'t>>> {
+        match part(p) {
+            Some(parts) if parts.is_empty() => Some(parts),
+            _ => self.held_root(p).map(|r| vec![r]),
         }
     }
 
@@ -1592,7 +1756,7 @@ impl<'a, 't> Body<'a, 't> {
         let (holder, from) = self.holder(name, at);
         let anew = |h: &String| kept.contains(h) || self.reassigned(h, from) || self.is_changed_in_place(h, from);
         let made = self.made_by.get(&holder, from).filter(|_| !anew(&holder));
-        made.map(|v| crate::body::stands_for(*v, &USES, self.src, &part)).unwrap_or_default()
+        made.map(|v| crate::body::stands_for(*v, &USES, self.src, &|p| self.part_of(p))).unwrap_or_default()
     }
 
     /// Whether a step changes in place the value the `let` visible at `at` binds the name to, anywhere that binding is
@@ -2123,6 +2287,11 @@ impl<'a, 't> Body<'a, 't> {
             _ => self.value_class(value),
         };
         let own = receiver.as_deref().and_then(|r| self.store.method_of(r, &method)).filter(|t| !ext::is(t));
+        // a lookup is the projection of the collection it looks in, as its subscript is: no step
+        if let Some(on) = self.lookup(c).filter(|_| own.is_none()) {
+            steps.looks_up(c, on);
+            return;
+        }
         if own.is_none() && self.changes_library_value(value, &method) {
             let hands = self.call_hands(c, Some(value), &steps.kept);
             let mut changed = self.hands(&[Some(value)], &steps.kept);

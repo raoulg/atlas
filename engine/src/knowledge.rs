@@ -2760,9 +2760,113 @@ pub const RUST_MAPS_FROM_PAIRS: &[(&str, &str)] =
 /// The macros that write a list out by its elements: `vec![a, b]`.
 pub const RUST_LIST_MACROS: &[&str] = &["vec"];
 
-/// The methods of a map, a slice or a `Vec` that give the value a key or an index picks, as `d[k]`
-/// does: `paths.get(key)`.
-pub const RUST_LOOKUPS: &[&str] = &["get"];
+/// The collection a macro of `RUST_LIST_MACROS` builds, as `RUST_LOOKUPS` names it: `vec![..]` is a `Vec`.
+pub fn rust_list_macro(name: &str) -> Option<&'static str> {
+    RUST_LIST_MACROS.contains(&name).then_some("Vec")
+}
+
+/// A lookup a language's library writes as a call: the part of a collection a place or a key picks, which the subscript
+/// picks as well (`xs[0]`, `d[k]`; Rust's `xs[0]` is `*Index::index(&xs, 0)`), made partial (`xs.first()` is
+/// `xs.get(0)`, `m.get(k)`, `xs.at(0)`) or total by a default (`d.get(k, default)`). Each is the projection a subscript
+/// is (`mathematics.md`, "A projection bound to a name first is still the projection"), no step: a name bound to it
+/// stands for the part of the collection, and the default is what it holds where the part is not there.
+pub struct Lookup {
+    /// The method, as the code calls it.
+    pub method: &'static str,
+    /// The collections it is a method of, as the reader names the type a value holds (`LISTED` for one the language
+    /// writes by brackets around the type of its elements).
+    pub of: &'static [&'static str],
+    /// How many arguments the call writes before its default: none for `first`, the key for `get`, what goes over the
+    /// collection for Python's `next`.
+    pub keys: usize,
+    /// Where the call is handed its default, where it takes one: `d.get(k, default)`.
+    pub default: Option<usize>,
+}
+
+/// The collection a language writes by brackets around the type of its elements: Rust's slice and array (`[T]`, `[T;
+/// N]`), TypeScript's array (`T[]`).
+pub const LISTED: &str = "[]";
+
+impl Lookup {
+    /// Whether a call written with `args` arguments makes the lookup: as many as come before its default, and the default
+    /// where it takes one.
+    pub fn takes(&self, args: usize) -> bool {
+        args == self.keys || self.default.is_some_and(|d| args == d + 1)
+    }
+}
+
+/// The lookup among `table` that a call of `method` written with `args` arguments makes (`Lookup::takes`).
+pub fn lookup(table: &'static [Lookup], method: &str, args: usize) -> Option<&'static Lookup> {
+    table.iter().find(|l| l.method == method && l.takes(args))
+}
+
+/// Python's lookups written as a method (`Lookup`): a map's `get`, by the classes ty finds a map to be (`PYTHON_MAPS`).
+pub const PYTHON_LOOKUPS: &[Lookup] = &[Lookup { method: "get", of: PYTHON_MAPS, keys: 1, default: Some(1) }];
+
+/// Python's lookup of a collection's first element by the function that gives the next element of what goes over it,
+/// handed what goes over the collection afresh: `next(iter(xs))` is `xs[0]`, `next(iter(xs), default)` the element or
+/// the default (`Lookup`). The second is the function that goes over the collection, the third the collections whose
+/// elements it goes over in their order, as ty names them: a sequence or a set, not a map, whose first is a key.
+pub const PYTHON_FIRST: (Lookup, &str) = (
+    Lookup {
+        method: "next",
+        of: &[
+            "list",
+            "tuple",
+            "set",
+            "frozenset",
+            "deque",
+            "Sequence",
+            "MutableSequence",
+            "AbstractSet",
+            "MutableSet",
+            "List",
+            "Tuple",
+            "Set",
+            "FrozenSet",
+            "Deque",
+        ],
+        keys: 1,
+        default: Some(1),
+    },
+    "iter",
+);
+
+/// Rust's pointers a method call goes through to the value they hold, by `Deref`: `levels.first()` on an `Rc<Vec<Level>>`
+/// is the `Vec`'s, and so on a `LazyLock<Vec<Level>>` a module keeps.
+pub const RUST_DEREFS: &[&str] = &["Box", "Rc", "Arc", "Cow", "Pin", "LazyLock", "LazyCell", "Lazy"];
+
+/// Rust's lists: a slice, an array, a `Vec` and what holds its elements in a row as one does.
+const RUST_LISTS: &[&str] = &[LISTED, "Vec", "SmallVec", "ArrayVec"];
+
+/// Rust's collections whose part an index or a key picks: the lists, a `VecDeque` and the maps.
+const RUST_INDEXED: &[&str] = &[LISTED, "Vec", "SmallVec", "ArrayVec", "VecDeque", "HashMap", "BTreeMap", "IndexMap"];
+
+/// Rust's lookups written as a method (`Lookup`), by the collections std and the common crates give them: `get` of an
+/// index or a key, the first and the last element of a sequence, the front and the back of a queue, each also as the
+/// part to change (`get_mut`).
+pub const RUST_LOOKUPS: &[Lookup] = &[
+    Lookup { method: "get", of: RUST_INDEXED, keys: 1, default: None },
+    Lookup { method: "get_mut", of: RUST_INDEXED, keys: 1, default: None },
+    Lookup { method: "first", of: RUST_LISTS, keys: 0, default: None },
+    Lookup { method: "last", of: RUST_LISTS, keys: 0, default: None },
+    Lookup { method: "first_mut", of: RUST_LISTS, keys: 0, default: None },
+    Lookup { method: "last_mut", of: RUST_LISTS, keys: 0, default: None },
+    Lookup { method: "front", of: &["VecDeque", "LinkedList"], keys: 0, default: None },
+    Lookup { method: "back", of: &["VecDeque", "LinkedList"], keys: 0, default: None },
+];
+
+/// TypeScript's lookups written as a method (`Lookup`): an array's `at` of a place, a map's `get` of a key.
+pub const TYPESCRIPT_LOOKUPS: &[Lookup] = &[
+    Lookup { method: "at", of: &[LISTED, "Array", "ReadonlyArray"], keys: 1, default: None },
+    Lookup { method: "get", of: &["Map", "ReadonlyMap"], keys: 1, default: None },
+];
+
+/// Whether a call of `method` with `args` arguments is a lookup of Rust's maps (`RUST_LOOKUPS`): the value a key picks,
+/// as `d[k]` does (`paths.get(key)`).
+pub fn rust_map_lookup(method: &str, args: usize) -> bool {
+    lookup(RUST_LOOKUPS, method, args).is_some_and(|l| l.keys == 1 && l.of.iter().any(|k| RUST_MAPS.contains(k)))
+}
 
 /// The methods of an iterator, or of what can be iterated, that give back elements of what they are
 /// called on: `fs::read_dir(d)?.flatten()` holds the entries `read_dir` lists.

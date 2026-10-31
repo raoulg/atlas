@@ -731,7 +731,11 @@ open:
   `f = self.fig; other.fig = f` sets the field to `fig` of the instance; names bound in turn compose, `a = self.size; w =
   a.width` is `size.width`, and a binding written as as many parts as its value binds each name to its part, `fig, ax =
   self.fig, self.ax`), a lookup by a key among them (`row = table[k]`
-  hands `table`, the lens the key chooses), and so is any value a body binds without a step: a
+  hands `table`, the lens the key chooses), and so is that lookup where the language's library writes it as a call,
+  isomorphic to the subscript and made partial or total by a default (`xs.first()` and `xs.get(0)` in Rust, `xs.at(0)`
+  and a `Map`'s `m.get(k)` in TypeScript, `d.get(k)`, `d.get(k, default)` and `next(iter(xs))` in Python, by the
+  collections `knowledge::Lookup` names: the prism the lens is where the part may be missing, with the default the
+  other part it hands), and so is any value a body binds without a step: a
   pattern that takes a value apart (`const [year, month] = fields` hands `fields`), a name a
   `case` pattern binds (a part of what the `match` takes apart, through the variant the case matches, a
   prism), an element of a loop that is no step (`for s, t in rows`), an element a method hands the

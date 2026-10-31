@@ -3117,3 +3117,15 @@ fn a_name_changed_in_place_holds_a_value_of_its_own() {
 fn a_name_a_function_changes_holds_a_value_of_its_own() {
     common::a_name_a_function_changes_holds_a_value_of_its_own("python", "_add", "append");
 }
+
+/// The lookups pair: `next(iter(levels))` is the projection `levels[0]` is and `levels.get(name)` the one `levels[name]`
+/// is, no step, also of a list changed in place first (#346, #355), and an `append` to the row `next(iter(rows))` picks
+/// changes the rows as one to `rows[0]` does, as in Rust and TypeScript.
+#[test]
+fn a_lookup_is_the_projection_its_subscript_is() {
+    common::a_lookup_is_the_projection_its_subscript_is(
+        "python",
+        &[("indexed", "looked_up"), ("keyed", "got"), ("pushed", "pushed_looked_up"), ("added", "added_looked_up")],
+        &[],
+    );
+}

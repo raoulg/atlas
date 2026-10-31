@@ -23,7 +23,6 @@ step cli.ts/main/smooth
 step cli.ts/main/smooth/floor                                     # `const before = Math.floor(months / 2)`
 step cli.ts/main/smooth/average
 step cli.ts/main/trend
-step cli.ts/main/trend/at                                  # `const last = series.at(-1)`
 choice cli.ts/main/trend/?1                                       # `if (first === undefined || ..) throw ..`
 step cli.ts/main/trend/?1/range                                      # `const x = scaleUtc()..range(..)`
 step cli.ts/main/trend/?1/range#2                                    # `const y = scaleLinear()..range(..)`
@@ -81,15 +80,12 @@ line Month·series@cli.ts/main/load > cli.ts/main/smooth/average value # handed 
 line cli.ts/main/smooth/average > cli.ts/main/smooth back # the mean goes into the Smoothed `smooth` makes; `map`, no step, takes it
 line cli.ts/main/smooth > Smoothed·smoothed@cli.ts/main/smooth value
 
-line Month·series@cli.ts/main/load > cli.ts/main/trend value   # `series[0]`, `path(series)`; the body uses it itself, and a step inside takes it too
+line Month·series@cli.ts/main/load > cli.ts/main/trend value   # `series[0]`, `series.at(-1)`, `path(series)`; the body uses it itself, and a step inside takes it too
 line Smoothed·smoothed@cli.ts/main/smooth > cli.ts/main/trend value
 line Settings·settings@cli.ts/main/Settings() > cli.ts/main/trend value   # the body uses it itself, and a step inside takes it too
 line Settings·settings@cli.ts/main/Settings() > cli.ts/main/trend/?1/escape value   # `escape(settings.title)`
 line cli.ts/main/trend/?1/escape > cli.ts/main/trend back
-line Month·series@cli.ts/main/load > cli.ts/main/trend/at value
-line cli.ts/main/trend/at > _·last@cli.ts/main/trend/at value
-line Month·series@cli.ts/main/load > cli.ts/main/trend/?1/range value      # `series[0].date`
-line _·last@cli.ts/main/trend/at > cli.ts/main/trend/?1/range value
+line Month·series@cli.ts/main/load > cli.ts/main/trend/?1/range value      # `first.date`, `last.date`: `series[0]`, `series.at(-1)`
 line Settings·settings@cli.ts/main/Settings() > cli.ts/main/trend/?1/range value   # `width`
 line cli.ts/main/trend/?1/range > _·x@cli.ts/main/trend/?1/range value
 line Month·series@cli.ts/main/load > cli.ts/main/trend/?1/range#2 value    # `series.map(..)` in its domain
@@ -124,7 +120,6 @@ home Month@cli.ts/main/load/parse cli.ts/main/load
 home Month·series@cli.ts/main/load cli.ts/main
 home _·before@cli.ts/main/smooth/floor cli.ts/main/smooth
 home Smoothed·smoothed@cli.ts/main/smooth cli.ts/main
-home _·last@cli.ts/main/trend/at cli.ts/main/trend
 home _·x@cli.ts/main/trend/?1/range cli.ts/main/trend/?1
 home _·y@cli.ts/main/trend/?1/range#2 cli.ts/main/trend/?1
 home _·path@cli.ts/main/trend/?1/line cli.ts/main/trend   # the own arrow, at trend's border, uses it
@@ -134,7 +129,6 @@ home _@cli.ts/main/trend cli.ts/main
 
 # What each body's own code uses outside its steps (#101)
 line _·values@cli.ts/main/parseArgs > cli.ts/main value                  # `existsSync(values.raw)`, the body's own test
-line _·last@cli.ts/main/trend/at > cli.ts/main/trend value               # `last === undefined`
 line _·fields@cli.ts/main/load/parse/parseLine/map > cli.ts/main/load/parse/parseLine value   # `fields.length`, `fields.some(..)`
 
 # An error is a value (#138): `throw new Error(..)` builds one in the arm that throws it, the error an arm hands on is one
