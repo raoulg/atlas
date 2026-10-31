@@ -1246,6 +1246,11 @@ pub const NODE_SOCKET_ADDRESSES: &[(&str, NodeAddress)] = &[("send", NodeAddress
 /// listener receives (`socket.on("data", ..)` receives what the peer sends, `SOCKET_OPS`).
 pub const NODE_LISTENERS: &[&str] = &["on", "once", "addListener", "prependListener", "prependOnceListener"];
 
+/// A Node socket's method that sends what it is handed before it does its own work, with the
+/// operation of `SOCKET_OPS` that sends it: `socket.end(data)` is `socket.write(data)` and then
+/// `socket.end()`, as Node says. Handed no data (nothing, or only a callback), it moves none.
+pub const NODE_SENDS_FIRST: &[(&str, &str)] = &[("end", "write")];
+
 /// What gives a door to the place of a Node server (`RUST_DOOR_KEEPERS`): the connections it
 /// accepts, with which the function handed to the call that makes it is called
 /// (`net.createServer((conn) => ..)`), as is a listener for the event of the name
@@ -1638,6 +1643,7 @@ pub const RUST_FS_READS: &[&str] = &[
     "read_to_string",
     "read_to_end",
     "read_exact",
+    "read_vectored",
     "read_line",
     "read_dir",
     "metadata",
@@ -1649,6 +1655,7 @@ pub const RUST_FS_READS: &[&str] = &[
 pub const RUST_FS_WRITES: &[&str] = &[
     "write",
     "write_all",
+    "write_vectored",
     "write_fmt",
     "set_len",
     "sync_all",
@@ -1823,13 +1830,26 @@ pub fn rust_guards(method: &str) -> bool {
 /// object that prints, the browser's key-value stores and their operations, and the names a
 /// package's client is made by.
 pub const NODE_FS: &[&str] = &["fs", "fs/promises"];
-pub const NODE_FS_READS: &[&str] =
-    &["readFile", "readFileSync", "readdir", "readdirSync", "createReadStream", "existsSync", "stat", "statSync", "access"];
+pub const NODE_FS_READS: &[&str] = &[
+    "readFile",
+    "readFileSync",
+    "readdir",
+    "readdirSync",
+    "createReadStream",
+    "existsSync",
+    "stat",
+    "statSync",
+    "access",
+    "readSync",
+    "read",
+];
 pub const NODE_FS_WRITES: &[&str] = &[
     "writeFile",
     "writeFileSync",
     "appendFile",
     "appendFileSync",
+    "writeSync",
+    "write",
     "mkdir",
     "mkdirSync",
     "rm",
@@ -1842,6 +1862,36 @@ pub const NODE_FS_WRITES: &[&str] = &[
     "copyFileSync",
     "createWriteStream",
 ];
+
+/// How a Node value is a door to a file (`RUST_DOORS`): a function of `node:fs` or
+/// `node:fs/promises` that opens the file it is handed first, the way its flags say, as Python's
+/// `open` goes by its mode (`fs.openSync(p, "w")`, `open(p)`), and gives a descriptor or a
+/// `FileHandle`. The functions of `node:fs` handed a descriptor where a path goes (`readFileSync`,
+/// `writeSync`) are at the file it was opened at, and so is a `FileHandle`'s traffic
+/// (`NODE_FILE_TRAFFIC`).
+pub const NODE_FILE_DOORS: &[(&str, &str)] = &[("fs", "openSync"), ("fs", "open"), ("fs/promises", "open")];
+
+/// Whether a function of a Node package opens a file (`NODE_FILE_DOORS`).
+pub fn node_file_door(pkg: &str, name: &str) -> bool {
+    NODE_FILE_DOORS.iter().any(|(p, n)| *p == pkg && *n == name)
+}
+
+/// The operations of a Node `FileHandle`, the traffic through the door `open` of `node:fs/promises`
+/// made, and which way each goes (`PYTHON_FILE_TRAFFIC`): an operation of one is at the file the
+/// handle was opened at, never at what it is handed.
+pub const NODE_FILE_TRAFFIC: &[(&str, Dir)] = &[
+    ("read", Dir::Read),
+    ("readFile", Dir::Read),
+    ("readLines", Dir::Read),
+    ("readv", Dir::Read),
+    ("createReadStream", Dir::Read),
+    ("write", Dir::Write),
+    ("writeFile", Dir::Write),
+    ("writev", Dir::Write),
+    ("appendFile", Dir::Write),
+    ("createWriteStream", Dir::Write),
+];
+
 pub const GLOBAL_OBJECTS: &[&str] = &["window", "globalThis"];
 pub const WEB_GLOBALS: &[&str] = &["fetch", "WebSocket", "EventSource"];
 pub const CONSOLE: &str = "console";

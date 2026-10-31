@@ -319,3 +319,26 @@ def undecided(name: str) -> str:
     assert_eq!(places("got"), store, "`os.environ.get(NAME)`");
     assert_ne!(places("undecided"), store, "`os.environ[name]`");
 }
+
+/// Each door is at the place its own opening names (`docs/reference/mathematics.md`, "A door keeps its place"): the touch
+/// a file object's traffic goes to is the one the call that made it made, so two files opened by one `with` are each read
+/// or written where they are opened, and the body draws what it draws with each opening on a line of its own (#353).
+#[test]
+fn two_doors_opened_on_one_line_keep_their_places() {
+    use std::collections::BTreeSet;
+    let g = written(
+        "twodoors",
+        &[(
+            "twodoors.py",
+            "def one_line() -> None:\n    with open(\"in.txt\") as src, open(\"out.txt\", \"w\") as dst:\n        dst.write(src.read())\n\n\ndef two_lines() -> None:\n    with open(\"in.txt\") as src:\n        with open(\"out.txt\", \"w\") as dst:\n            dst.write(src.read())\n",
+        )],
+    );
+    let drawn = |f: &str| -> BTreeSet<(String, String, String)> {
+        let n = g.node(&format!("twodoors.{f}")).unwrap_or_else(|| panic!("no node {f}"));
+        n.touches.iter().map(|t| (t.kind_name().to_string(), t.op.clone(), t.artifact.clone())).collect()
+    };
+    let apart = drawn("two_lines");
+    let at: BTreeSet<&str> = apart.iter().map(|t| t.2.as_str()).collect();
+    assert_eq!(at, BTreeSet::from(["in.txt", "out.txt"]), "{apart:?}");
+    assert_eq!(drawn("one_line"), apart);
+}

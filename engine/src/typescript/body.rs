@@ -376,7 +376,13 @@ pub(super) fn link_calls<'t>(
             }
             let (t, w) = (b.read.touches.len(), b.read.calls.len());
             b.call(&mut steps, c);
-            steps.mark(c, b.read.touches[t..].iter_mut().chain(b.read.calls[w..].iter_mut().map(|(t, _)| t)));
+            b.read.made.record(c, t..b.read.touches.len(), w..b.read.calls.len());
+            let received = b.received(c);
+            let made = b.read.touches[t..].iter_mut().chain(b.read.calls[w..].iter_mut().map(|(t, _)| t));
+            match received {
+                Some(names) => steps.mark_received(&names, made),
+                None => steps.mark(c, made),
+            }
         }
         let kept = steps.kept.clone();
         let held = |n| {
@@ -452,6 +458,7 @@ pub(super) struct Read<'t> {
     mutates: Vec<(String, String)>,
     args: Vec<Arg<'t>>,
     calls: Vec<(Touch, Vec<crate::paths::Built>)>,
+    made: crate::body::MadeBy,
     exits: bool,
 }
 
@@ -1864,14 +1871,45 @@ impl<'a, 't> Body<'a, 't> {
         names.into_iter().map(|n| text(n, self.src).to_string()).collect()
     }
 
+    /// The names a listener's function binds what the event brings to, where `c` registers one for an
+    /// event it names (`socket.on("data", (chunk) => ..)`, `knowledge::NODE_LISTENERS`): its
+    /// parameters, none where it takes none.
+    fn received(&self, c: TsNode<'t>) -> Option<Vec<TsNode<'t>>> {
+        let f = function_of(c).filter(|f| f.kind() == "member_expression")?;
+        if !knowledge::NODE_LISTENERS.contains(&text(f.child_by_field_name("property")?, self.src)) {
+            return None;
+        }
+        let args = c.child_by_field_name("arguments").map(named_children).unwrap_or_default();
+        if args.first()?.kind() != "string" {
+            return None;
+        }
+        let listener = args[1..]
+            .iter()
+            .map(|a| beneath(*a, WRAPPERS))
+            .find(|a| matches!(a.kind(), "arrow_function" | "function_expression" | "function"))?;
+        let mut names = vec![];
+        if let Some(p) = listener.child_by_field_name("parameter") {
+            pattern_names(p, &mut names);
+        }
+        for p in listener.child_by_field_name("parameters").map(named_children).unwrap_or_default() {
+            if let Some(pattern) = p.child_by_field_name("pattern") {
+                pattern_names(pattern, &mut names);
+            }
+        }
+        Some(names)
+    }
+
     /// The touch the body made where it made the door the name `on` holds (`const conn =
-    /// net.createConnection(..)`), with the term its place waits for: the last touch in `world` on
-    /// the line of the value the name is declared with.
+    /// net.createConnection(..)`), with the term its place waits for: the last touch in `world` the
+    /// calls of the value the name is declared with made.
     fn opening(&self, on: TsNode<'t>, world: World) -> Option<(Touch, Vec<crate::paths::Built>)> {
         let (value, BoundFrom::Whole) = self.locals.from(on, self.src)? else { return None };
-        let line = value.start_position().row as u32 + 1;
-        let made = self.read.touches.iter().map(|t| (t, vec![])).chain(self.read.calls.iter().map(|(t, b)| (t, b.clone())));
-        made.filter(|(t, _)| t.line == line && t.kind == world).last().map(|(t, b)| (t.clone(), b))
+        let (now, waiting) = self.read.made.within(value);
+        let made = now.into_iter().map(|i| (&self.read.touches[i], vec![])).chain(waiting.into_iter().map(|i| {
+            let (t, b) = &self.read.calls[i];
+            (t, b.clone())
+        }));
+        made.filter(|(t, _)| t.kind == world).last().map(|(t, b)| (t.clone(), b))
     }
 
     /// What a library's call crosses into: a file call, a request or a database statement waits
@@ -1889,7 +1927,8 @@ impl<'a, 't> Body<'a, 't> {
         };
         let args = c.child_by_field_name("arguments").map(named_children).unwrap_or_default();
         // a Node socket receives by the event a listener waits for, which names the operation
-        // (`socket.on("data", ..)`)
+        // (`socket.on("data", ..)`); a method that sends what it is handed first is that sending
+        // where it is handed data (`socket.end(data)` is `socket.write(data)`, then `socket.end()`)
         let socket = pkg.as_deref().is_some_and(knowledge::node_socket_package);
         let event = parts
             .last()
@@ -1897,14 +1936,49 @@ impl<'a, 't> Body<'a, 't> {
             .and(args.first())
             .filter(|a| a.kind() == "string")
             .map(|a| unquote(text(*a, src)));
+        let handed = |a: &TsNode| !matches!(beneath(*a, WRAPPERS).kind(), "arrow_function" | "function_expression" | "function");
+        let sent = parts
+            .last()
+            .filter(|_| socket && args.first().is_some_and(handed))
+            .and_then(|l| knowledge::NODE_SENDS_FIRST.iter().find(|(m, _)| *m == l.as_str()))
+            .map(|(_, op)| op.to_string());
         let listened: Vec<String>;
-        let parts = match event {
+        let parts = match event.or(sent) {
             Some(e) => {
                 listened = parts[..parts.len() - 1].iter().cloned().chain([e]).collect();
                 &listened[..]
             }
             None => parts,
         };
+        // traffic through a `FileHandle` is at the file it was opened at, wherever the handle is handed
+        // (`docs/reference/mathematics.md`, "A door keeps its place"), never at what it is handed
+        let imported = matches!(m.bindings.get(&head), Some(Bound::Ext(_)));
+        let handle = pkg.as_deref().is_some_and(|p| knowledge::NODE_FS.contains(&p)) && !imported;
+        let traffic = parts.last().filter(|_| handle).and_then(|l| knowledge::NODE_FILE_TRAFFIC.iter().find(|(o, _)| *o == l.as_str()));
+        let object = function_of(c).filter(|f| f.kind() == "member_expression").and_then(|f| f.child_by_field_name("object"));
+        if let (Some((op, dir)), Some(o)) = (traffic, object) {
+            let path_function = |f: TsNode| self.eval.path_function_of(m, f);
+            let kind = Crossing { world: World::Disk, dir: Some(*dir) };
+            let cr = Crosses::read(c, src, kind, pkg.as_deref(), op, &literals(c, src, STRINGS), STRINGS, &HashMap::new(), &path_function);
+            let t = Touch {
+                what: text(o, src).to_string(),
+                payload: cr.payload.clone(),
+                op: op.to_string(),
+                line: cr.line,
+                ..Touch::new(World::Disk, Some(*dir))
+            };
+            // a handle the body opened is at the place its opening touches, named as the opening names it
+            let at = At { m, scope: self.scope, params: &self.params };
+            let (t, built) = match self.opening(o, World::Disk) {
+                Some((o, built)) => (Touch { what: o.what, artifact: o.artifact, fixed: o.fixed, ..t }, built),
+                None => (t, self.eval.of(at, o, 0)),
+            };
+            match built {
+                built if built.is_empty() => self.read.touches.push(t),
+                built => self.read.calls.push((t, built)),
+            }
+            return;
+        }
         // some parts of the world are reached only through a client the package made, not its helpers
         let Some(kind) = effects::boundary_ts(pkg.as_deref(), parts)
             .filter(|k| !knowledge::THROUGH_A_CLIENT.contains(&k.world) || self.made.contains_key(&head))
@@ -2352,7 +2426,7 @@ const USES: UseSyntax = UseSyntax {
     hands: |n, child| {
         matches!(n.kind(), "call_expression" | "new_expression") && n.child_by_field_name("arguments").map(|a| a.id()) == Some(child.id())
     },
-    changes: |_| vec![],
+    changes: |_, _| vec![],
     splits: |n, child| n.kind() == "switch_statement" && n.child_by_field_name("value").map(|v| v.id()) == Some(child.id()),
     names: &["identifier", "shorthand_property_identifier"],
     keeps: &["member_expression", "subscript_expression"],

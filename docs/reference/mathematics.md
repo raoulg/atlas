@@ -36,8 +36,10 @@ codomain, when the route leaves something in it. What the route reads back of wh
 reads only to check or count, it does not use: that place stays in the codomain. Whether a read is
 used is a fact of the step's body: what the call gives reaches the step's codomain (it is returned,
 handed to a call, kept in a field) through the names it is bound to and the values a call on it
-changes (`f.read_to_string(&mut s)` makes `s` from `f`), or it only decides a choice,
-goes to an error or is dropped, and is a check. A place one step
+changes (`f.read_to_string(&mut s)` makes `s` from `f`, through `?` and `.unwrap()` alike), and what a
+listener's function is handed is what its event brings (`conn.on("data", (chunk) => ..)` uses the read
+where `chunk` goes on); or it only decides a choice, goes to an error or is dropped (`let _ = f(x)` drops
+it as `f(x);` does), and is a check. A place one step
 writes and a later step reads and uses is the object between them, and stands between them. A
 place the route reads and then writes on is in both: two projections of one place, `from X` on
 the left and `into X` on the right. A place it writes only before it reads there, and only in an
@@ -318,6 +320,22 @@ writing a call out in its caller's body would change what the route does, agains
 functor. How finely they are drawn is the view's quotient: one place on one side of a step is one
 line, whatever operations reach it (#323, `decision`).
 
+Each operation goes one way, a socket's as a file's: a receive reads and stands in the domain of its
+step, a send writes and stands in its codomain, in every language, as its row of `SOCKET_OPS` says. So
+a socket's read and a file's read are drawn alike, from the place. An opening goes the way its mode
+says, and a door opened both ways (`open(p, "r+")`, `OpenOptions` that read and write) is drawn as
+written: the place holds what it did not hold before. A connected stream is opened both ways, so
+connecting writes. Node's `socket.end(data)` writes `data` and then ends the stream, a write as
+`write(data)` is (#353, `decision`).
+
+Node's descriptors and file handles are doors as Python's file objects and Rust's `File` are:
+`fs.openSync(p, flags)` gives a descriptor and `fs.promises.open(p, flags)` a `FileHandle`, each at
+`p` and opened the way its flags say. A descriptor handed to `fs.readFileSync(fd)` or `fs.writeSync(fd,
+..)`, and a handle's `readFile`, `read`, `writeFile` and `write`, read and write that file. The touch
+a door's operations go to is the one the call that opened it made, found by where that call is
+written, never by its line: two doors opened on one line (`with open(a) as x, open(b, "w") as y`)
+are two.
+
 The place of a stream socket is the address of its listening end, the one address the code names
 for it: the client names it in `connect`, the server in `bind` or `listen`, and each connection a
 listener accepts is a door to it. So a client that writes to an address and a server that reads
@@ -328,16 +346,19 @@ the code writes it in: a string, Python's pair `("127.0.0.1", 7878)`, Rust's
 `SocketAddr::from(([127, 0, 0, 1], 7878))`, the port and the host Node is handed apart
 (`net.createConnection(7878, "127.0.0.1")`). Where the code does not say the address (only the
 environment holds it), the place stays a hole, as a path's does: the gap is the code's.
-**Where.** `knowledge::SOCKET_OPS` names each operation of a socket in the three languages; the
-doors and what keeps them are tables per language: `RUST_DOORS`, `RUST_DOOR_KEEPERS`,
+**Where.** `knowledge::SOCKET_OPS` names each operation of a socket in the three languages and the
+way it goes; the doors and what keeps them are tables per language: `RUST_DOORS`, `RUST_DOOR_KEEPERS`,
 `RUST_SOCKET_ADDRESSES`, `RUST_DOOR_TRAFFIC`, `RUST_ADDRESS_MAKERS`, `RUST_NAMED_ADDRESSES`,
 `RUST_SAME_CALLS`; `PYTHON_DOORS`, `PYTHON_DOOR_PLACES`, `PYTHON_DOOR_KEEPERS`,
 `PYTHON_FILE_TRAFFIC`; `NODE_DOORS`, `NODE_DOOR_PLACES`, `NODE_DOOR_KEEPERS`,
-`NODE_SOCKET_ADDRESSES`, `NODE_LISTENERS`. The readers' `paths.rs` (Rust's `Eval::call`,
-`Eval::address`, `Eval::element`, `bound`; Python's `Eval::follow`, `Eval::placed_later`,
-`Eval::element`; TypeScript's `Eval::address`, `Eval::placed_later`, `Eval::served`) and `body.rs`
-(Rust's `chain_touches`, Python's `library` and `crossed`, TypeScript's `crossed`);
-`effects::socket_address`; the pairs `sockets` (in the three languages) and `handles`.
+`NODE_SOCKET_ADDRESSES`, `NODE_LISTENERS`, `NODE_SENDS_FIRST`, `NODE_FILE_DOORS`, `NODE_FILE_TRAFFIC`.
+`effects::boundary_rust`, `boundary` and `boundary_ts` give each operation its way. The readers'
+`paths.rs` (Rust's `Eval::call`, `Eval::address`, `Eval::element`, `bound`; Python's `Eval::follow`,
+`Eval::placed_later`, `Eval::element`; TypeScript's `Eval::call`, `Eval::address`,
+`Eval::placed_later`, `Eval::served`) and `body.rs` (Rust's `chain_touches`, Python's `library` and
+`crossed`, TypeScript's `crossed`; each reader's `opening`, through `body::MadeBy`; `Steps::goes_on`
+and `Steps::mark_received` for whether a read is used); `effects::socket_address`; the pairs `sockets`
+and `handles`, each in the three languages.
 
 ### Who makes a path whole: a monotone formula
 **What.** A monotone Boolean formula over a set of atoms, in disjunctive normal form: a disjunction

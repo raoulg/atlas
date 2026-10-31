@@ -3016,3 +3016,90 @@ fn places_a_walk_of_a_tree_is_one_place_at_every_depth() {
     assert_eq!(read(&p.clean, "backup.copy_tree"), read(&p.clean, "backup.size"), "the recursion walks what `rglob` walks");
     assert_ne!(read(&p.shortcut, "backup.copy_tree"), read(&p.shortcut, "backup.size"), "the shortcut walks the top alone");
 }
+
+// ---------- doors: a socket's traffic goes the way a file's goes, in every language ----------
+
+/// The way each of a function's touches of the network goes, in the order the code writes them.
+fn net_ways(g: &Graph, id: &str) -> Vec<Option<atlas_engine::Dir>> {
+    let mut net = touches(g, id, "net");
+    net.sort_by_key(|t| t.line);
+    net.into_iter().map(|t| t.dir).collect()
+}
+
+/// The sockets pair (#353): isomorphic is the same, so a socket's operation goes one way, the way its row of
+/// `knowledge::SOCKET_OPS` says, as a file's read or write does: function by function, the touches of the network go the
+/// same ways in Python, Rust and TypeScript, in the order the code writes them, each the way of its row, and none is open.
+/// Node's `end(data)` is `write(data)` and then `end()`: the clean TypeScript client sends its name by `end("ada")`, and
+/// it is the same write Python's `sendall` and Rust's `write_all` are.
+#[test]
+fn doors_a_sockets_operation_goes_its_way_in_every_language() {
+    let (py, rs, ts) = (common::pair("sockets/python"), common::pair("sockets/rust"), common::pair("sockets/typescript"));
+    let python: SocketNames = |o| o.python;
+    // a function by its id in Python, in Rust and in TypeScript
+    let functions = [
+        ("greeter.main", "greeter.main", "greeter.greeter.main"),
+        ("greeter.answer", "greeter.answer", "greeter.greeter.answer"),
+        ("greeter.linger", "greeter.linger", "greeter.greeter.linger"),
+        ("_root.ask.main", "greeter.bin.ask.main", "greeter.ask.main"),
+        ("_root.ask.hear", "greeter.bin.ask.hear", "greeter.ask.hear"),
+    ];
+    let sides = [("clean", &py.clean, &rs.clean, &ts.clean), ("shortcut", &py.shortcut, &rs.shortcut, &ts.shortcut)];
+    for (side, p, r, t) in sides {
+        for (f, g, h) in functions {
+            let way = net_ways(p, f);
+            let rows: Vec<_> = socket_rows(p, f, python).into_iter().map(|i| Some(atlas_engine::knowledge::SOCKET_OPS[i].dir)).collect();
+            assert_eq!(way, rows, "{side}: each touch of Python's `{f}` goes the way of its row");
+            assert_eq!(way, net_ways(r, g), "{side}: Python's `{f}` and Rust's `{g}`");
+            assert_eq!(way, net_ways(t, h), "{side}: Python's `{f}` and TypeScript's `{h}`");
+        }
+    }
+    let ends = |g: &Graph| touches(g, "greeter.ask.main", "net").iter().filter(|t| t.op == "end").count();
+    assert_eq!((ends(&ts.clean), ends(&ts.shortcut)), (0, 0), "`end` itself sends nothing; `end(data)` is a write");
+}
+
+/// The sockets and handles pairs (#353): a socket's read and a file's read are drawn alike, from the place, in every
+/// language. A touch that receives through a socket stands where a file's read stands, in the domain of its step, and
+/// one that sends where a file's write stands. Whether what a read gives is used is a fact of the body, the same in every
+/// language (`docs/reference/mathematics.md`, "A door keeps its place"): Rust's `read_to_string(&mut s)` hands on what
+/// `s` is given, `let _ = f(x)` is `f(x);`, and a Node listener's function is handed what its event brings. So each
+/// route draws its places of the world on the same sides in the three languages: the server's connection both read and
+/// written, the client's address between the step that sends to it and the one that hears from it, and a file handed on
+/// read on the left and written on the right.
+#[test]
+fn doors_a_sockets_read_is_drawn_as_a_files_read() {
+    let languages = ["python", "rust", "typescript"];
+    for language in languages {
+        let (sockets, handles) = (common::pair(&format!("sockets/{language}")), common::pair(&format!("handles/{language}")));
+        for (side, s, h) in [("clean", &sockets.clean, &handles.clean), ("shortcut", &sockets.shortcut, &handles.shortcut)] {
+            let stands = |g: &Graph, kind: &str| -> BTreeSet<(Option<atlas_engine::Dir>, String)> {
+                let all = g.nodes.iter().flat_map(|n| &n.touches);
+                all.filter(|t| t.kind_name().starts_with(kind)).map(|t| (t.dir, format!("{:?}", t.side()))).collect()
+            };
+            assert_eq!(stands(s, "net"), stands(h, "disk"), "{language} {side}: a socket's traffic stands where a file's stands");
+        }
+    }
+    // a route by the function it starts at, in Python, in Rust and in TypeScript
+    let routes = [
+        ("sockets", ["greeter.main", "greeter.main", "greeter.greeter.main"]),
+        ("sockets", ["_root.ask.main", "greeter.bin.ask.main", "greeter.ask.main"]),
+        ("handles", ["tally.main", "tally.main", "tally.tally.main"]),
+    ];
+    for (pair, functions) in routes {
+        for side in ["clean", "shortcut"] {
+            let drawn: Vec<BTreeSet<String>> = languages
+                .iter()
+                .zip(functions)
+                .map(|(language, f)| {
+                    let p = common::pair(&format!("{pair}/{language}"));
+                    let g = if side == "clean" { &p.clean } else { &p.shortcut };
+                    let plans = common::planned_routes(g, &format!("doors-{pair}-{language}-{side}"), None, &[f]);
+                    // the places of the world; how a function is entered is no door's
+                    plans[f].iter().filter(|x| x.starts_with("side ") && !x.starts_with("side entry ")).cloned().collect()
+                })
+                .collect();
+            assert!(!drawn[0].is_empty(), "{pair} {side}: `{}` reaches a place of the world", functions[0]);
+            assert_eq!(drawn[0], drawn[1], "{pair} {side}: Python's `{}` and Rust's `{}`", functions[0], functions[1]);
+            assert_eq!(drawn[0], drawn[2], "{pair} {side}: Python's `{}` and TypeScript's `{}`", functions[0], functions[2]);
+        }
+    }
+}

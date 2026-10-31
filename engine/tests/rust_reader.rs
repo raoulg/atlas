@@ -635,3 +635,46 @@ fn a_dereference_is_the_value_it_is_written_on() {
         assert_eq!(read(f), straight, "{f}");
     }
 }
+
+/// Each door is at the place its own opening names (`docs/reference/mathematics.md`, "A door keeps its place"): the touch
+/// a door's traffic goes to is the one the call that made the door made, so two files opened on one line are each read or
+/// written where they are opened, and the body draws what it draws with each opening on a line of its own (#353).
+#[test]
+fn two_doors_opened_on_one_line_keep_their_places() {
+    let g = written(
+        "twodoors",
+        &[(
+            "src/lib.rs",
+            "use std::fs::File;\nuse std::io::{Read, Write};\n\npub fn one_line() {\n    let mut src = File::open(\"in.txt\").unwrap(); let mut dst = File::create(\"out.txt\").unwrap();\n    let mut s = String::new();\n    src.read_to_string(&mut s).unwrap();\n    dst.write_all(s.as_bytes()).unwrap();\n}\n\npub fn two_lines() {\n    let mut src = File::open(\"in.txt\").unwrap();\n    let mut dst = File::create(\"out.txt\").unwrap();\n    let mut s = String::new();\n    src.read_to_string(&mut s).unwrap();\n    dst.write_all(s.as_bytes()).unwrap();\n}\n",
+        )],
+    );
+    let drawn = |f: &str| -> BTreeSet<(String, String, String)> {
+        places(&g, &format!("twodoors.{f}")).into_iter().map(|(kind, op, place, _)| (kind, op, place)).collect()
+    };
+    let apart = drawn("two_lines");
+    let at: BTreeSet<&str> = apart.iter().map(|t| t.2.as_str()).collect();
+    assert_eq!(at, BTreeSet::from(["in.txt", "out.txt"]), "{apart:?}");
+    assert_eq!(drawn("one_line"), apart);
+}
+
+/// `.unwrap()` hands on the value it is called on, as `?` does, so a read into a buffer is used or only a check alike
+/// under both (`docs/reference/mathematics.md`, "A door keeps its place"): `f.read_to_string(&mut s).unwrap()` makes `s`
+/// from the file as `f.read_to_string(&mut s)?` does, used where `s` goes on, a check where it goes nowhere (#353).
+#[test]
+fn a_read_into_a_buffer_is_used_alike_through_unwrap_and_try() {
+    let g = written(
+        "readinto",
+        &[(
+            "src/lib.rs",
+            "use std::fs::File;\nuse std::io::{self, Read};\n\npub fn tried() -> io::Result<String> {\n    let mut f = File::open(\"in.txt\")?;\n    let mut s = String::new();\n    f.read_to_string(&mut s)?;\n    Ok(s)\n}\n\npub fn unwrapped() -> io::Result<String> {\n    let mut f = File::open(\"in.txt\")?;\n    let mut s = String::new();\n    f.read_to_string(&mut s).unwrap();\n    Ok(s)\n}\n\npub fn tried_dropped() -> io::Result<()> {\n    let mut f = File::open(\"in.txt\")?;\n    let mut s = String::new();\n    f.read_to_string(&mut s)?;\n    Ok(())\n}\n\npub fn unwrapped_dropped() -> io::Result<()> {\n    let mut f = File::open(\"in.txt\")?;\n    let mut s = String::new();\n    f.read_to_string(&mut s).unwrap();\n    Ok(())\n}\n",
+        )],
+    );
+    let checks = |f: &str| -> Vec<bool> {
+        let n = g.node(&format!("readinto.{f}")).unwrap_or_else(|| panic!("no node {f}"));
+        n.touches.iter().filter(|t| t.op == "read_to_string").map(|t| t.checks).collect()
+    };
+    assert_eq!(checks("tried"), [false], "`s` is returned: the read is used");
+    assert_eq!(checks("unwrapped"), checks("tried"), "`.unwrap()` is `?`");
+    assert_eq!(checks("tried_dropped"), [true], "`s` goes nowhere: the read only checks");
+    assert_eq!(checks("unwrapped_dropped"), checks("tried_dropped"), "`.unwrap()` is `?`");
+}

@@ -225,6 +225,9 @@ pub fn boundary_ts(pkg: Option<&str>, parts: &[String]) -> Option<Crossing> {
             Some(DISK_READ)
         } else if k::NODE_FS_WRITES.contains(&last) {
             Some(DISK_WRITE)
+        } else if k::node_file_door(pkg, last) {
+            // a file opened goes the way its flags say (`facts`)
+            Some(Crossing::to(World::Disk))
         } else {
             None
         };
@@ -1088,5 +1091,42 @@ mod tests {
             facts(c("db_graph"), Some("neo4j"), "run", &lits(&["MATCH (n:Regeling) RETURN n"])),
             Facts::of(c("db_graph"), String::new())
         );
+    }
+
+    /// Isomorphic is the same (#353): a socket's operation goes one way, the way its row of
+    /// `SOCKET_OPS` says, by every name it has in every language and every module of sockets, and
+    /// the facts of the call keep it. An operation a socket and a file name alike goes the same way
+    /// through either door: what a stream's `read_to_string` receives is read from the network as
+    /// what a file's is read from the disk, and what `write_all` sends is written as a file's is.
+    #[test]
+    fn a_socket_goes_the_way_a_file_goes() {
+        let way = |c: Option<Crossing>| c.and_then(|c| c.dir);
+        for op in k::SOCKET_OPS {
+            let mut ways = vec![];
+            for r in op.rust {
+                for module in k::RUST_SOCKET_MODULES {
+                    let path: Vec<&str> = module.iter().copied().chain(["TcpStream", r]).collect();
+                    ways.push((path.join("::"), way(boundary_rust(&parts(&path)))));
+                }
+            }
+            ways.extend(op.python.iter().map(|p| (format!("socket.{p}"), way(boundary(Some("socket"), &parts(&["sock", p]))))));
+            for t in op.typescript {
+                for pkg in ["net", "dgram"] {
+                    ways.push((format!("{pkg}.{t}"), way(boundary_ts(Some(pkg), &parts(&["sock", t])))));
+                }
+            }
+            for (name, w) in ways {
+                assert_eq!(w, Some(op.dir), "`{name}` goes its row's way");
+                let kept = facts(Crossing { world: World::Net, dir: w }, None, name.rsplit(['.', ':']).next().unwrap_or(""), &[]);
+                assert_eq!(kept.dir, Some(op.dir), "`{name}`: the facts of the call keep its way");
+            }
+        }
+        let shared = k::RUST_DOOR_TRAFFIC.iter().filter(|op| k::rust_socket_op(op).is_some()).collect::<Vec<_>>();
+        assert!(!shared.is_empty(), "a socket and a file share their operations");
+        for op in shared {
+            let socket = way(boundary_rust(&parts(&["std", "net", "TcpStream", op])));
+            let file = way(boundary_rust(&parts(&["std", "fs", "File", op])));
+            assert_eq!(socket, file, "`{op}` goes the same way through a socket as through a file");
+        }
     }
 }

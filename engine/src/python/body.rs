@@ -1043,6 +1043,7 @@ pub(super) fn link_calls<'t>(
             };
             let (t, w) = (b.read.touches.len(), b.read.waiting.len());
             b.call(&mut steps, c);
+            b.read.made.record(c, t..b.read.touches.len(), w..b.read.waiting.len());
             steps.mark(c, b.read.touches[t..].iter_mut().chain(b.read.waiting[w..].iter_mut().map(|(t, _)| t)));
         }
         let kept = steps.kept.clone();
@@ -1107,6 +1108,7 @@ pub(super) fn link_calls<'t>(
 struct Read<'t> {
     touches: Vec<Touch>,
     waiting: Vec<(Touch, Vec<Built>)>,
+    made: crate::body::MadeBy,
     args: Vec<Arg<'t>>,
     handed: Vec<(String, World, Dir)>,
     declared: Vec<(World, Dir)>,
@@ -1713,7 +1715,7 @@ impl<'a, 't> Body<'a, 't> {
 
     /// The touch of the call that opened the file `on`, with the term its place waits for, where the
     /// body binds `on` to that call before this use (`with open(p) as f`, `f = open(p)`): the last
-    /// such binding's touch on a disk.
+    /// touch on a disk the calls of the last such binding's value made.
     fn opening(&self, on: TsNode) -> Option<(&Touch, Vec<Built>)> {
         let on = beneath(on, WRAPPERS);
         let name = (on.kind() == "identifier").then(|| text(on, self.src))?;
@@ -1726,9 +1728,12 @@ impl<'a, 't> Body<'a, 't> {
                 _ => named(n.child_by_field_name("left")).then(|| n.child_by_field_name("right")).flatten(),
             })
             .last()?;
-        let line = beneath(opened, WRAPPERS).start_position().row as u32 + 1;
-        let made = self.read.touches.iter().map(|t| (t, vec![])).chain(self.read.waiting.iter().map(|(t, b)| (t, b.clone())));
-        made.filter(|(t, _)| t.line == line && t.kind == World::Disk).last()
+        let (now, waiting) = self.read.made.within(opened);
+        let made = now.into_iter().map(|i| (&self.read.touches[i], vec![])).chain(waiting.into_iter().map(|i| {
+            let (t, b) = &self.read.waiting[i];
+            (t, b.clone())
+        }));
+        made.filter(|(t, _)| t.kind == World::Disk).last()
     }
 
     /// What the name a call not followed starts from is bound to, as ty finds where it is
@@ -2308,7 +2313,7 @@ const USES: UseSyntax = UseSyntax {
     leaves: |n, _| matches!(n.kind(), "return_statement" | "yield"),
     fails: |n, _| matches!(n.kind(), "raise_statement" | "assert_statement"),
     hands: |n, child| n.kind() == "call" && n.child_by_field_name("arguments").map(|a| a.id()) == Some(child.id()),
-    changes: |_| vec![],
+    changes: |_, _| vec![],
     splits: |n, child| n.kind() == "match_statement" && n.child_by_field_name("subject").map(|v| v.id()) == Some(child.id()),
     names: &["identifier"],
     keeps: &["attribute", "subscript"],

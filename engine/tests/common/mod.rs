@@ -205,6 +205,13 @@ pub fn a_projection_bound_to_a_name_is_still_the_projection(language: &str, modu
 /// (`tests/plans.mjs`, run in node): with a `budget`, of the plan cut as a large program's is (`ATLAS_FINE_BUDGET`).
 #[allow(dead_code)]
 pub fn planned(g: &Graph, name: &str, budget: Option<usize>) -> BTreeMap<String, BTreeSet<String>> {
+    planned_routes(g, name, budget, &[])
+}
+
+/// The facts of the finest plan of each of `routes` (`planned`), any function drawn as a route; every entry of `g` where
+/// none is named.
+#[allow(dead_code)]
+pub fn planned_routes(g: &Graph, name: &str, budget: Option<usize>, routes: &[&str]) -> BTreeMap<String, BTreeSet<String>> {
     let mut data = serde_json::to_value(g).expect("the graph is data");
     data["flow"] = serde_json::to_value(flow::of(g)).expect("the flow is data");
     let file = std::env::temp_dir().join(format!("atlas-planned-{}-{name}-{budget:?}.json", std::process::id()));
@@ -218,6 +225,7 @@ pub fn planned(g: &Graph, name: &str, budget: Option<usize>) -> BTreeMap<String,
         .arg(here.join("tests/plans.mjs"))
         .arg(here.join("../viewer/plan.js"))
         .arg(&file)
+        .args(routes)
         .output()
         .expect("node runs the viewer's model: the test needs node on the PATH");
     let _ = std::fs::remove_file(&file);
@@ -528,15 +536,23 @@ pub fn disk(g: &Graph, id: &str) -> Vec<(String, String, String, BTreeSet<Both>)
 /// `places` asks nothing, and by each function itself on the shortcut, which `places` asks.
 #[allow(dead_code)]
 pub fn a_file_handed_on_keeps_its_place(language: &str) {
+    a_file_handed_on_keeps_its_place_in(language, "tally");
+}
+
+/// The handles pair of `language` (`a_file_handed_on_keeps_its_place`), its functions in `module`.
+#[allow(dead_code)]
+pub fn a_file_handed_on_keeps_its_place_in(language: &str, module: &str) {
     let p = pair(&format!("handles/{language}"));
     let (c, s) = (&p.clean, &p.shortcut);
+    let at = |f: &str| format!("{module}.{}", f.trim_start_matches("tally."));
     let places = |g: &Graph| -> Vec<String> {
         atlas_engine::principles::check(g).into_iter().filter(|f| f.principle == "places").map(|f| f.node).collect()
     };
     assert!(places(c).is_empty(), "{language} clean: main names the files: {:?}", places(c));
-    assert_eq!(places(s), ["tally.count", "tally.emit"], "{language} shortcut: each function decides its own file");
-    let opened = disk(c, "tally.main");
+    assert_eq!(places(s), [at("tally.count"), at("tally.emit")], "{language} shortcut: each function decides its own file");
+    let opened = disk(c, &at("tally.main"));
     for (f, kind) in [("tally.count", "disk_read"), ("tally.emit", "disk_write")] {
+        let f = &at(f);
         let through = disk(c, f);
         let opening: Vec<_> = opened.iter().filter(|t| t.0 == kind).cloned().collect();
         let [(_, _, file, _)] = &opening[..] else { panic!("{language}: main opens one file to {kind}: {opened:?}") };
@@ -544,7 +560,11 @@ pub fn a_file_handed_on_keeps_its_place(language: &str) {
         assert!(!through.is_empty(), "{language} clean: {f} reaches the file it is handed");
         for (k, op, place, made) in &through {
             assert_eq!((k.as_str(), place), (kind, file), "{language} clean: `{op}` in {f} is at the file main opened");
-            assert_eq!(made, &by(["tally.main"]), "{language} clean: `{op}` in {f} is made whole where the file is opened");
+            assert_eq!(
+                made,
+                &BTreeSet::from([Both::one(&at("tally.main"))]),
+                "{language} clean: `{op}` in {f} is made whole where the file is opened"
+            );
         }
         // the shortcut opens the file where it goes through it: the same operations at the same place
         let unmade = |ts: Vec<(String, String, String, BTreeSet<Both>)>| -> Vec<(String, String, String)> {
