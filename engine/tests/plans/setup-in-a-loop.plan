@@ -1,0 +1,34 @@
+# What ran before a step in a loop is every call of the loop, whichever stands first (#329): a later round runs after
+# every call of the one before. `main` sets the drafts up, and each round keeps its report on the shelf and then opens
+# the shelf on `out`. The first round keeps it on the drafts; every later round keeps it on the shelf the round before
+# opened. So `write` under `keep_report` writes the report in both folders: the drafts' set-up ran before the loop, and
+# `open_shelf` ran before it in the round before, although it stands after it in the body.
+
+route rounds.main
+step main/open_drafts
+step main/open_drafts/Shelf()
+step main/Shelf.keep_report
+step main/Shelf.keep_report/write
+step main/open_shelf
+step main/open_shelf/Shelf()
+
+line entry > main call
+line main/open_drafts/Shelf() > Shelf@main/open_drafts/Shelf() value
+line Shelf@main/open_drafts/Shelf() > main/open_drafts value
+line main/open_drafts > Shelf·shelf@main/open_drafts value
+line main/open_shelf/Shelf() > Shelf@main/open_shelf/Shelf() value
+line Shelf@main/open_shelf/Shelf() > main/open_shelf value
+line main/open_shelf > Shelf·shelf@main/open_shelf value
+line Shelf·shelf@main/open_drafts > main/Shelf.keep_report/write value     # the first round: `write(self.root / ..)`
+known #354 line Shelf·shelf@main/open_shelf > main/Shelf.keep_report/write value     # every later round, on the shelf opened
+line main/Shelf.keep_report/write > File(drafts/report.txt) own
+line main/Shelf.keep_report/write > File(out/report.txt) own
+
+home Shelf@main/open_drafts/Shelf() main/open_drafts
+home Shelf·shelf@main/open_drafts main
+home Shelf@main/open_shelf/Shelf() main/open_shelf
+home Shelf·shelf@main/open_shelf main
+
+side entry left
+side File(drafts/report.txt) right
+side File(out/report.txt) right

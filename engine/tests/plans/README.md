@@ -133,3 +133,5 @@ smallest that showed one law:
 | `folds-two-levels` | files folded into directories nested in one another that hold the same files (`data/`, `data/*/`) are one box: opening it shows the files in one step (#227) |
 | `leaf-binds-a-local` | a name a body binds by an expression no step makes is the body's own value, whatever the expression reads: a leaf that makes its mask from the samples takes nothing from beyond, one that reads the module's floor takes it from beyond (#318) |
 | `door-tensor-pad` | a value a step planned by itself takes by a name its caller holds is the caller's: a cut door names the one value of its kind from beyond as its opened picture does, by its type alone (#319) |
+| `setup-in-a-loop` | what ran before a step in a loop is every call of the loop: a shelf a later call opens is the one an earlier call keeps its report on in the next round (#329) |
+| `setup-in-an-arm` | what ran before a step in an arm is what ran before its choice and before it in its arm: a set-up in an arm counts for a call in a choice inside that arm (#329) |

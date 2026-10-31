@@ -1,0 +1,25 @@
+# What ran before a step in an arm is what ran before its choice and what ran before it in its own arm (#329): the
+# shelf is set up in the arm that keeps anything, and the report is kept in an arm of a choice inside that arm. A choice
+# inside an arm is a branch of the arm's choice that runs when every arm on its path holds (`KEEP · REPORT`), so both
+# calls stand in `main/?1`, on two branches that are not apart: the set-up stands before the report in the arm both are
+# in. It ran before `keep_report`, and `write` under it writes the report in `out`, the folder the set-up decides.
+
+route arms.main
+choice main/?1
+step main/?1/open_shelf
+step main/?1/open_shelf/Shelf()
+step main/?1/Shelf.keep_report
+step main/?1/Shelf.keep_report/write
+
+line entry > main call
+line main/?1/open_shelf/Shelf() > Shelf@main/?1/open_shelf/Shelf() value
+line Shelf@main/?1/open_shelf/Shelf() > main/?1/open_shelf value
+line main/?1/open_shelf > Shelf·shelf@main/?1/open_shelf value
+line Shelf·shelf@main/?1/open_shelf > main/?1/Shelf.keep_report/write value     # `write(self.root / "report.txt", text)`
+line main/?1/Shelf.keep_report/write > File(out/report.txt) own
+
+home Shelf@main/?1/open_shelf/Shelf() main/?1/open_shelf
+home Shelf·shelf@main/?1/open_shelf main/?1
+
+side entry left
+side File(out/report.txt) right
