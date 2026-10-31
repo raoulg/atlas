@@ -170,29 +170,22 @@ fn reaching<'t>(at: TsNode<'t>, name: &str, src: &[u8]) -> Vec<TsNode<'t>> {
 
 /// The names a value is made of without a step: what it is a projection of (`projections`), and the
 /// names an operator, a literal of several values or an f-string computes it from (`bottom = height -
-/// margin`, `pair = (a, b)`). A literal of its own is made of none; `None` for a part a call makes.
-fn sources(v: TsNode) -> Vec<Option<TsNode>> {
-    let v = beneath(v, WRAPPERS);
-    match v.kind() {
-        "integer" | "float" | "true" | "false" | "none" | "ellipsis" => vec![],
-        "binary_operator"
-        | "unary_operator"
-        | "not_operator"
-        | "comparison_operator"
-        | "tuple"
-        | "list"
-        | "set"
-        | "expression_list"
-        | "string"
-        | "concatenated_string"
-        | "interpolation" => named_children(v)
-            .into_iter()
-            .filter(|c| {
-                !matches!(c.kind(), "comment" | "string_start" | "string_content" | "string_end" | "escape_sequence" | "format_specifier")
-            })
-            .flat_map(sources)
-            .collect(),
-        _ => projections(v),
+/// margin`, `pair = (a, b)`, `body::computed_of`). A literal of its own is made of none; `None` for a
+/// part a call makes.
+fn sources<'t>(v: TsNode<'t>, src: &[u8]) -> Vec<Option<TsNode<'t>>> {
+    match crate::body::computed_of(v, &USES, src, &part) {
+        Some(names) => names.into_iter().map(Some).collect(),
+        None => vec![None],
+    }
+}
+
+/// What a part of a value Python's own code computes is made of (`body::computed_of`): a literal, a piece of a string
+/// and a comment of none, any other part what it is a projection of.
+fn part(p: TsNode) -> Option<Vec<TsNode>> {
+    match p.kind() {
+        "integer" | "float" | "true" | "false" | "none" | "ellipsis" | "comment" | "string_start" | "string_content" | "string_end"
+        | "escape_sequence" | "format_specifier" => Some(vec![]),
+        _ => projections(p).into_iter().collect(),
     }
 }
 
@@ -552,13 +545,11 @@ impl<'a> Seen<'a> {
     /// the value the chain starts from is (`table[cols].assign(..)` on a pandas `DataFrame` is
     /// pandas'), where that value is of a library's class alone.
     fn on_library_value(&self, f: TsNode) -> Option<String> {
-        let mut root = f.child_by_field_name("object").filter(|_| f.kind() == "attribute")?;
+        let mut root = called_on(f)?;
         while let Some(inner) = match root.kind() {
             "attribute" => root.child_by_field_name("object"),
             "subscript" => root.child_by_field_name("value"),
-            "call" => {
-                root.child_by_field_name("function").filter(|g| g.kind() == "attribute").and_then(|g| g.child_by_field_name("object"))
-            }
+            "call" => root.child_by_field_name("function").and_then(called_on),
             _ => None,
         } {
             root = inner;
@@ -787,8 +778,21 @@ impl<'a> Seen<'a> {
     /// Where `computed`, a name holds what an operator computes it from as well (`sources`); a change
     /// made through a name changes only what the name is or is a part of.
     fn projected<'t>(&self, i: TsNode<'t>, made: &HashSet<String>, computed: bool) -> Vec<TsNode<'t>> {
+        self.followed(i, made, computed).0
+    }
+
+    /// The names the name `i` stands for where it stands, as `projected` follows it with `computed`: those a binding it
+    /// follows binds a name to by what Python's own code computes of them (`gap = first.db - second.db`,
+    /// `body::stands_for`).
+    fn stands<'t>(&self, i: TsNode<'t>, made: &HashSet<String>) -> Vec<TsNode<'t>> {
+        self.followed(i, made, true).1
+    }
+
+    /// The names `i` is followed to (`projected`), and the names it is followed through that stand where a binding binds a
+    /// name to what Python's own code computes of them (`stands`).
+    fn followed<'t>(&self, i: TsNode<'t>, made: &HashSet<String>, computed: bool) -> (Vec<TsNode<'t>>, Vec<TsNode<'t>>) {
         let src = &self.m.src;
-        let (mut out, mut todo, mut seen) = (vec![], vec![(i, 0)], HashSet::new());
+        let (mut out, mut stood, mut todo, mut seen) = (vec![], vec![], vec![(i, 0)], HashSet::new());
         while let Some((at, depth)) = todo.pop() {
             let name = text(at, src);
             if !seen.insert(at.id()) || depth > 8 || made.contains(name) || name == "self" {
@@ -799,14 +803,19 @@ impl<'a> Seen<'a> {
                 bound if !bound.is_empty() => bound.into_iter().filter_map(|b| b.child_by_field_name("right")).collect(),
                 _ => matched_by(at, name, src).or_else(|| looped_by(at, name, src)).into_iter().collect(),
             };
-            let roots: Vec<Option<TsNode>> = rights.into_iter().flat_map(if computed { sources } else { projections }).collect();
+            let parts: Vec<(TsNode, Vec<Option<TsNode>>)> =
+                rights.into_iter().map(|r| (r, if computed { sources(r, src) } else { projections(r) })).collect();
+            let roots: Vec<Option<TsNode>> = parts.iter().flat_map(|(_, roots)| roots.iter().copied()).collect();
             if roots.is_empty() || roots.iter().any(|r| r.is_none_or(|r| r.id() == at.id())) {
                 out.push(at);
                 continue;
             }
+            for (_, roots) in parts.iter().filter(|(r, _)| computed && (USES.computes)(beneath(*r, WRAPPERS), src)) {
+                stood.extend(roots.iter().flatten());
+            }
             todo.extend(roots.into_iter().flatten().map(|r| (r, depth + 1)));
         }
-        out
+        (out, stood)
     }
 
     /// Whether class `c` is `b` or descends from it.
@@ -1038,7 +1047,8 @@ pub(super) fn link_calls<'t>(
         }
         let kept = steps.kept.clone();
         let held = |n| if b.holds(n) { b.seen.held_in(n, b.ext, &kept) } else { vec![] };
-        steps.uses(&held);
+        let stands = |n| if b.holds(n) { b.seen.stands(n, &kept) } else { vec![] };
+        steps.uses(&held, &stands);
         steps.fills(&held);
         b.class_state(&mut steps);
         b.ends();
@@ -1664,6 +1674,26 @@ impl<'a, 't> Body<'a, 't> {
             steps.edge(c, &cls, EdgeKind::Instantiates);
         }
         let op = parts.last().map_or("", String::as_str);
+        // traffic through a file an `open` made is at the file it was opened at, wherever the file
+        // object is handed (`docs/reference/mathematics.md`, "A door keeps its place")
+        let traffic = knowledge::PYTHON_FILE_TRAFFIC.iter().find(|(o, _)| *o == op).map(|(_, d)| *d);
+        let file = called_on(fnode).filter(|o| self.seen.value(*o).is_some_and(|v| v.open_file()));
+        if let (Some(dir), Some(on)) = (traffic, file) {
+            let what = text(beneath(on, WRAPPERS), self.src).to_string();
+            let payload = payload_of(c, self.src, &what, "arguments", &self.seen.handed(c));
+            let t =
+                Touch { what, payload, op: op.to_string(), line: c.start_position().row as u32 + 1, ..Touch::new(World::Disk, Some(dir)) };
+            // a file the body opened is at the place its opening touches, named as the opening names
+            // it; one handed in is at the term it is opened at, which the callers make whole
+            let opened = self
+                .opening(on)
+                .map(|(o, built)| (Touch { what: o.what.clone(), artifact: o.artifact.clone(), fixed: o.fixed, ..t.clone() }, built));
+            match opened.unwrap_or_else(|| (t, self.eval.of(self.at(), on, 0))) {
+                (t, built) if built.is_empty() => self.read.touches.push(t),
+                waiting => self.read.waiting.push(waiting),
+            }
+            return;
+        }
         let Some(tag) = effects::boundary(lib.as_deref(), &parts).filter(|t| self.seen.moves(fnode, t, lib.as_deref(), op)) else { return };
         // a print handed a file writes that file (where it was opened), not the screen; one handed
         // a stream the human sees (`file=sys.stderr`) still shows it
@@ -1679,6 +1709,26 @@ impl<'a, 't> Body<'a, 't> {
         self.read.waiting.extend(crossed.waiting);
         self.read.declared.extend(crossed.said);
         self.read.handed.extend(crossed.handed);
+    }
+
+    /// The touch of the call that opened the file `on`, with the term its place waits for, where the
+    /// body binds `on` to that call before this use (`with open(p) as f`, `f = open(p)`): the last
+    /// such binding's touch on a disk.
+    fn opening(&self, on: TsNode) -> Option<(&Touch, Vec<Built>)> {
+        let on = beneath(on, WRAPPERS);
+        let name = (on.kind() == "identifier").then(|| text(on, self.src))?;
+        let named = |n: Option<TsNode>| n.is_some_and(|n| text(n, self.src) == name);
+        let opened = walk(self.body, &["as_pattern", "assignment"])
+            .into_iter()
+            .filter(|n| n.end_byte() <= on.start_byte())
+            .filter_map(|n| match n.kind() {
+                "as_pattern" => named(n.child_by_field_name("alias")).then(|| n.named_child(0)).flatten(),
+                _ => named(n.child_by_field_name("left")).then(|| n.child_by_field_name("right")).flatten(),
+            })
+            .last()?;
+        let line = beneath(opened, WRAPPERS).start_position().row as u32 + 1;
+        let made = self.read.touches.iter().map(|t| (t, vec![])).chain(self.read.waiting.iter().map(|(t, b)| (t, b.clone())));
+        made.filter(|(t, _)| t.line == line && t.kind == World::Disk).last()
     }
 
     /// What the name a call not followed starts from is bound to, as ty finds where it is
@@ -1784,14 +1834,14 @@ fn crossed<'t>(
             Crossed { touches: touches.into_iter().map(|(t, _)| t).collect(), waiting, ..Default::default() }
         }
         _ => {
-            let makes_path = |f: TsNode| eval.makes_path(at.m, f);
-            let mut cr = Crosses::read(c, src, tag, lib, op, &literals(c, src, &["string"]), &["string"], &seen.handed(c), &makes_path);
+            let path_function = |f: TsNode| eval.path_function_of(at.m, f);
+            let mut cr = Crosses::read(c, src, tag, lib, op, &literals(c, src, &["string"]), &["string"], &seen.handed(c), &path_function);
             // on the web, what a call asks for is the argument its library names so
             let url = asked(seen, c, fnode).filter(|_| cr.facts.kind == World::Net);
             if let Some(a) = url {
                 cr.what = literals(a, src, &["string"]).first().map(|l| l.trim().to_string()).unwrap_or_else(|| text(a, src).to_string());
                 cr.payload = payload_of(c, src, &cr.what, "arguments", &seen.handed(c));
-                cr.fixed = crate::tree::head_literal(a, src, &["string"], &makes_path);
+                cr.fixed = crate::tree::head_literal(a, src, &["string"], &path_function);
             }
             let said = match cr.facts.kind {
                 World::Db(db) => effects::access(db, op, keyword(c, src, knowledge::DRIVER_ACCESS).as_deref()),
@@ -1828,6 +1878,15 @@ fn crossed<'t>(
             let request = url.filter(|_| lib.map_or(false, effects::network)).map(|a| {
                 let (way, a) = sent(seen, c, a, op);
                 crate::paths::request_of(&way, eval.of(at, a, 0))
+            });
+            // a socket's traffic handed no address is at the door's place, the address of the socket it
+            // runs on, which the callers hand as they hand a path (`docs/reference/mathematics.md`, "A
+            // door keeps its place")
+            let request = request.or_else(|| {
+                let socket =
+                    lib.is_some_and(|l| knowledge::PYTHON_DOORS.iter().any(|(d, _, _)| *d == l)) && knowledge::python_socket_op(op);
+                let on = called_on(fnode).filter(|_| socket)?;
+                Some(crate::paths::request_of(op, eval.of(at, on, 0)))
             });
             if let (Some(built), Some(t)) = (request, cr.touches(said).into_iter().next()) {
                 return Crossed { waiting: vec![(t, built)], said: said.map(|d| (cr.facts.kind, d)), handed, ..Default::default() };
@@ -1891,7 +1950,7 @@ fn file_calls<'t>(
     op: &str,
 ) -> Vec<(Touch, Vec<Built>)> {
     let src = &at.m.src;
-    let makes_path = |f: TsNode| eval.makes_path(at.m, f);
+    let path_function = |f: TsNode| eval.path_function_of(at.m, f);
     let touch = |kind: Crossing, what: String, artifact: String, fixed: bool| {
         let payload = payload_of(c, src, &what, "arguments", &seen.handed(c));
         Touch {
@@ -1958,7 +2017,7 @@ fn file_calls<'t>(
             // a pattern below a directory is the path the call gives, not the directory alone
             let patterned = name == "self" && knowledge::PATH_PATTERNS.iter().any(|(p, _, _)| *p == op);
             (
-                touch(kind, what, artifact, crate::tree::head_literal(a, src, &["string"], &makes_path)),
+                touch(kind, what, artifact, crate::tree::head_literal(a, src, &["string"], &path_function)),
                 eval.of(at, if patterned { c } else { a }, 0),
             )
         })
@@ -2263,6 +2322,23 @@ const USES: UseSyntax = UseSyntax {
         matches!(targets.kind(), "pattern_list" | "tuple_pattern" | "list_pattern")
             && matches!(value.kind(), "expression_list" | "tuple" | "list")
     },
+    // `and` and `or` are choices
+    computes: |n, _| {
+        matches!(
+            n.kind(),
+            "binary_operator"
+                | "unary_operator"
+                | "not_operator"
+                | "comparison_operator"
+                | "tuple"
+                | "list"
+                | "set"
+                | "expression_list"
+                | "string"
+                | "concatenated_string"
+                | "interpolation"
+        )
+    },
     wrappers: WRAPPERS,
     drops: |n, child, _| {
         n.kind() == "expression_statement" && n.named_child_count() == 1 && n.named_child(0).map(|c| c.id()) == Some(child.id())
@@ -2430,3 +2506,8 @@ fn matched<'t>(n: TsNode<'t>, src: &[u8]) -> Option<(String, Vec<TsNode<'t>>, Op
 
 /// Python's own types: the standard library's modules that describe code, not data.
 pub(super) const OWN: OwnTypes = knowledge::PYTHON_OWN_TYPES;
+
+/// The value a method is called on, where the callee `f` is a method of one: `conn` of `conn.recv`.
+fn called_on(f: TsNode) -> Option<TsNode> {
+    f.child_by_field_name("object").filter(|_| f.kind() == "attribute")
+}

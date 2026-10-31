@@ -2902,43 +2902,117 @@ fn setup_a_step_before_the_calls_sets_up_the_object_a_method_runs_on() {
     }
 }
 
-// ---------- sockets: a socket is a place, in Python as in Rust ----------
+// ---------- sockets: a socket is a place, in Python as in Rust and TypeScript ----------
 
-/// The sockets pair (#291, #302), the same greeter and client as Rust's: a call leaves something behind, and a socket is
-/// a place. Isomorphic is the same: each function's traffic is the same operations of `knowledge::SOCKET_OPS` in Python
-/// as in Rust (`recv` and `read`, `sendall` and `write_all`, `create_connection` and `connect`), so the two languages
-/// draw one server and one client. The clean server lingers as TCP asks, so `linger` reaches the network and nothing is
-/// asked; the shortcut sleeps, its `linger` reaches no place, and Atlas asks what the wait leaves behind. Binding,
-/// accepting, shutting a half and setting a timeout move no data.
+/// The names one language gives the operation of a row of `knowledge::SOCKET_OPS`.
+type SocketNames = fn(&atlas_engine::knowledge::SocketOp) -> &'static [&'static str];
+
+/// The operation of `knowledge::SOCKET_OPS` each of a function's touches of the network is, in the order the code writes
+/// them, in the language whose names `names` picks of a row.
+fn socket_rows(g: &Graph, id: &str, names: SocketNames) -> Vec<usize> {
+    let row = |op: &str| {
+        atlas_engine::knowledge::SOCKET_OPS
+            .iter()
+            .position(|o| names(o).contains(&op))
+            .unwrap_or_else(|| panic!("{id}: `{op}` is a socket's operation"))
+    };
+    let mut net = touches(g, id, "net");
+    net.sort_by_key(|t| t.line);
+    net.into_iter().map(|t| row(&t.op)).collect()
+}
+
+/// The sockets pair (#291, #302, #323), the same greeter and client in Python, Rust and TypeScript: a call leaves
+/// something behind, and a socket is a place. Isomorphic is the same: each function's traffic is the same operations of
+/// `knowledge::SOCKET_OPS` in every language (`recv`, `read` and a listener for Node's `data`; `sendall`, `write_all`
+/// and `write`; `create_connection`, `connect` and `createConnection`), each operation a touch of its own, so the three
+/// languages draw one server and one client. The clean server lingers as TCP asks, so `linger` reaches the network and
+/// nothing is asked; the shortcut waits, its `linger` reaches no place, and Atlas asks what the wait leaves behind.
+/// Binding, listening, accepting, shutting a half and setting a timeout move no data.
 #[test]
 fn nothing_a_socket_is_a_place() {
-    let (py, rs) = (common::pair("sockets/python"), common::pair("sockets/rust"));
-    assert_eq!(found(&py.clean, "nothing"), Vec::<String>::new());
-    assert_eq!(found(&py.shortcut, "nothing"), ["greeter.linger"]);
-    // the operation of `SOCKET_OPS` each of a function's touches of the network is
-    let rows = |g: &Graph, id: &str, python: bool| -> Vec<usize> {
-        let row = |op: &str| {
-            atlas_engine::knowledge::SOCKET_OPS
-                .iter()
-                .position(|o| if python { o.python.contains(&op) } else { o.rust.contains(&op) })
-                .unwrap_or_else(|| panic!("{id}: `{op}` is a socket's operation"))
-        };
-        g.node(id)
-            .unwrap_or_else(|| panic!("{id} is in the graph"))
-            .touches
-            .iter()
-            .filter(|t| t.kind_name() == "net")
-            .map(|t| row(&t.op))
-            .collect()
-    };
-    let functions = [("greeter.main", "greeter.main"), ("greeter.answer", "greeter.answer"), ("greeter.linger", "greeter.linger")];
-    let client = [("_root.ask.hear", "greeter.bin.ask.hear")];
-    for (side, p, r) in [("clean", &py.clean, &rs.clean), ("shortcut", &py.shortcut, &rs.shortcut)] {
-        for (f, g) in functions.iter().chain(&client) {
-            assert_eq!(rows(p, f, true), rows(r, g, false), "{side}: Python's `{f}` and Rust's `{g}`");
-        }
-        let connects = |g: &Graph, id: &str, python: bool| rows(g, id, python).first().copied();
-        assert_eq!(connects(p, "_root.ask.main", true), connects(r, "greeter.bin.ask.main", false), "{side}: the client connects");
+    let (py, rs, ts) = (common::pair("sockets/python"), common::pair("sockets/rust"), common::pair("sockets/typescript"));
+    for (language, p, linger) in [("python", &py, "greeter.linger"), ("typescript", &ts, "greeter.greeter.linger")] {
+        assert_eq!(found(&p.clean, "nothing"), Vec::<String>::new(), "{language}");
+        assert_eq!(found(&p.shortcut, "nothing"), [linger], "{language}");
     }
-    assert!(rows(&py.clean, "greeter.linger", true).len() == 1 && rows(&py.shortcut, "greeter.linger", true).is_empty());
+    let (python, rust, typescript): (SocketNames, SocketNames, SocketNames) = (|o| o.python, |o| o.rust, |o| o.typescript);
+    // a function by its id in Python, in Rust and in TypeScript
+    let functions = [
+        ("greeter.main", "greeter.main", "greeter.greeter.main"),
+        ("greeter.answer", "greeter.answer", "greeter.greeter.answer"),
+        ("greeter.linger", "greeter.linger", "greeter.greeter.linger"),
+        ("_root.ask.main", "greeter.bin.ask.main", "greeter.ask.main"),
+        ("_root.ask.hear", "greeter.bin.ask.hear", "greeter.ask.hear"),
+    ];
+    let sides = [("clean", &py.clean, &rs.clean, &ts.clean), ("shortcut", &py.shortcut, &rs.shortcut, &ts.shortcut)];
+    for (side, p, r, t) in sides {
+        for (f, g, h) in functions {
+            let a = socket_rows(p, f, python);
+            assert_eq!(a, socket_rows(r, g, rust), "{side}: Python's `{f}` and Rust's `{g}`");
+            assert_eq!(a, socket_rows(t, h, typescript), "{side}: Python's `{f}` and TypeScript's `{h}`");
+        }
+    }
+    assert!(socket_rows(&py.clean, "greeter.linger", python).len() == 1 && socket_rows(&py.shortcut, "greeter.linger", python).is_empty());
+}
+
+/// The sockets pair (#323): a connection keeps the place it is opened at wherever it is handed
+/// (`common::a_connection_keeps_its_place`). Python writes the address as a tuple, `("127.0.0.1", 7878)`, which is the
+/// address Rust writes as `"127.0.0.1:7878"` and Node is handed as a port and a host: the three languages name one place.
+#[test]
+fn sockets_a_connection_keeps_its_place() {
+    let python = common::a_connection_keeps_its_place("python", ["greeter.answer", "greeter.linger"], "greeter.main", "_root.ask");
+    let rust = common::a_connection_keeps_its_place("rust", ["greeter.answer", "greeter.linger"], "greeter.main", "greeter.bin.ask");
+    let server = ["greeter.greeter.answer", "greeter.greeter.linger"];
+    let typescript = common::a_connection_keeps_its_place("typescript", server, "greeter.greeter.main", "greeter.ask");
+    assert_eq!(python, rust, "Python's address and Rust's are one place");
+    assert_eq!(python, typescript, "Python's address and Node's are one place");
+}
+
+// ---------- handles: a file handed on keeps the place it is opened at ----------
+
+/// The handles pair (#323): a file object handed on (`count(f: TextIO)`) is read and written at the file it was opened at,
+/// as a socket handed on is at its address (`common::a_file_handed_on_keeps_its_place`). Isomorphic is the same: Python's
+/// `open` and file object draw what Rust's `File` does, function by function, the same ways to the same places.
+#[test]
+fn handles_a_file_handed_on_keeps_its_place() {
+    common::a_file_handed_on_keeps_its_place("python");
+    let (py, rs) = (common::pair("handles/python"), common::pair("handles/rust"));
+    let ways = |g: &Graph, id: &str| -> Vec<(String, String)> {
+        let mut out: Vec<_> = common::disk(g, id).into_iter().map(|(kind, _, place, _)| (kind, place)).collect();
+        out.sort();
+        out
+    };
+    for (side, p, r) in [("clean", &py.clean, &rs.clean), ("shortcut", &py.shortcut, &rs.shortcut)] {
+        for f in ["tally.main", "tally.count", "tally.emit"] {
+            assert_eq!(ways(p, f), ways(r, f), "{side}: Python's and Rust's `{f}`");
+        }
+    }
+}
+
+/// The locals pair: a name bound to what an operator or a list computes of names stands for those names, so a step
+/// handed it is handed what the expression written in its place hands (#328), and the route's own arrow takes what it
+/// takes with the expression written in place (#343), as in Rust and TypeScript.
+#[test]
+fn a_name_computed_of_names_stands_for_them() {
+    common::a_name_computed_of_names_stands_for_them("python");
+}
+
+/// The twice pair: `kind` in `root / kind / f"{kind}.csv"` is one value, so the loop writes two places, never four (#324).
+#[test]
+fn places_a_name_bound_once_is_one_value() {
+    common::a_name_bound_once_is_one_value("python", "export.export");
+}
+
+/// The trees pair: a recursion over `iterdir` is one place at every depth (#325). It is the walk `rglob("*")` makes,
+/// so the clean copy reads what `size` reads ("Isomorphic is the same"); the shortcut's copy stops at the top.
+#[test]
+fn places_a_walk_of_a_tree_is_one_place_at_every_depth() {
+    common::a_walk_of_a_tree_is_one_place_at_every_depth("python", "backup.copy_tree", "backup.main");
+    let p = common::pair("trees/python");
+    let read = |g: &Graph, id: &str| -> BTreeSet<String> {
+        let n = g.node(id).unwrap_or_else(|| panic!("no node {id}"));
+        n.touches.iter().filter(|t| t.kind_name() == "disk_read").map(|t| t.artifact.clone()).collect()
+    };
+    assert_eq!(read(&p.clean, "backup.copy_tree"), read(&p.clean, "backup.size"), "the recursion walks what `rglob` walks");
+    assert_ne!(read(&p.shortcut, "backup.copy_tree"), read(&p.shortcut, "backup.size"), "the shortcut walks the top alone");
 }

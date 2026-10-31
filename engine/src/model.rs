@@ -337,9 +337,10 @@ pub struct Node {
     /// What the body's own code uses outside the calls that are its steps: each name it reads in a
     /// condition, an operator, a format, a return or an argument of a call that is no step
     /// (`print(store.path)`, `if done:`, `Ok(path)`), once in each arm it is read in. A projection of a
-    /// name uses that name; a name bound to a part of another (`width = settings.width`) uses it where
-    /// the body reads that name. The instance a method runs on is used by no name, as a call is handed
-    /// it.
+    /// name uses that name; a name bound to a part of another (`width = settings.width`), or to what
+    /// the language's own code computes of names (`gap = first.db - second.db`, `body::stands_for`),
+    /// uses them where the body reads that name. The instance a method runs on is used by no name, as a
+    /// call is handed it.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub uses: Vec<Use>,
     /// The names the arms of its body's choices bind by the body's own code, no step of it: what an
@@ -350,10 +351,13 @@ pub struct Node {
     /// does. Outside the choices, with no arms, the names it binds to a value no step makes: a literal
     /// (`let mut held = vec![]`, `items = []`), which the body makes as a call handed nothing makes it
     /// (`Vec::new()`, `list()`), or any other expression (`mask = samples.abs() > 0`, `let total = a +
-    /// b`, `const shown = n > 0`), whatever it reads. Each is the body's own value, never a module's
-    /// (#318). A name bound to another, to what a step gives or to a part of either (`width =
-    /// settings.width`, `g = &figures().clean`) holds that value, and a function written in place is a
-    /// function: none of these.
+    /// b`, `const shown = n > 0`), whatever it reads. Each is the body's own name, never a module's
+    /// (#318). What the language's own code computes of names with no call (`let total = a + b`, `both
+    /// = [first, second]`) is no value of its own: the name stands for those names (`body::stands_for`),
+    /// so a step handed it is handed what they hold, as one handed `a + b` written in place is (#328).
+    /// A name bound to another, to what a step gives or to a part of either (`width = settings.width`,
+    /// `g = &figures().clean`) holds that value, and a function written in place is a function: none of
+    /// these.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub binds: Vec<Use>,
     /// What its body's own code sets a part of a value to, by assignment through the name that holds
@@ -1438,6 +1442,12 @@ pub struct Stats {
     /// The same calls by what the name each starts from is bound to.
     #[serde(default)]
     pub unresolved_calls: Unresolved,
+    /// The bodies the reading linked: the program's and those of the libraries' code it read.
+    #[serde(default)]
+    pub linked_bodies: usize,
+    /// Of those, the bodies of the libraries' code.
+    #[serde(default)]
+    pub linked_library_bodies: usize,
 }
 
 impl Stats {

@@ -4,6 +4,8 @@ use std::path::Path;
 
 use tree_sitter::Node as TsNode;
 
+use crate::knowledge::PathFn;
+
 /// A path as the graph writes it: `/` between its parts on every system, so a graph reads the
 /// same wherever it was made.
 pub fn path_str(p: &Path) -> String {
@@ -30,10 +32,20 @@ pub fn field_children<'t>(n: TsNode<'t>, field: &str) -> Vec<TsNode<'t>> {
 }
 
 /// The expressions of a language that hand on the value inside them: parentheses, and the
-/// language's casts, assertions and unwrappings (`(x as T)!`, `&x`, `x?`, `await x`). Atlas reads a
-/// value through them as through an identity, as it reads an `Option`, a `Result` or a promise as
-/// what it holds. Each reader names its language's.
+/// language's casts, assertions, references and unwrappings (`(x as T)!`, `&x`, `*x`, `x?`, `await
+/// x`). Atlas reads a value through them as through an identity, as it reads an `Option`, a `Result`
+/// or a promise as what it holds. Each reader names its language's, each by its kind of node, or by
+/// its kind and the operator it is written with where that kind writes other operators too
+/// (`unary_expression *`: a dereference, not a negation).
 pub type Wrappers = &'static [&'static str];
+
+/// Whether `n` is one of the wrappers (`Wrappers`).
+pub fn wraps(wrappers: Wrappers, n: TsNode) -> bool {
+    wrappers.iter().any(|w| match w.split_once(' ') {
+        Some((kind, op)) => n.kind() == kind && n.child(0).is_some_and(|c| c.kind() == op),
+        None => n.kind() == *w,
+    })
+}
 
 /// The value a wrapper hands on: its `value` (`&mut x`), else its first named child.
 pub fn wrapped<'t>(n: TsNode<'t>) -> Option<TsNode<'t>> {
@@ -43,7 +55,7 @@ pub fn wrapped<'t>(n: TsNode<'t>) -> Option<TsNode<'t>> {
 /// The expression a value is, beneath its wrappers: `x` of `(x as T)!`.
 pub fn beneath<'t>(n: TsNode<'t>, wrappers: Wrappers) -> TsNode<'t> {
     let mut n = n;
-    while wrappers.contains(&n.kind()) {
+    while wraps(wrappers, n) {
         match wrapped(n) {
             Some(x) => n = x,
             None => break,
@@ -55,7 +67,7 @@ pub fn beneath<'t>(n: TsNode<'t>, wrappers: Wrappers) -> TsNode<'t> {
 /// The outermost wrapper an expression stands in, or the expression itself: `(x as T)!` of `x`.
 pub fn outermost<'t>(n: TsNode<'t>, wrappers: Wrappers) -> TsNode<'t> {
     let mut n = n;
-    while let Some(p) = n.parent().filter(|p| wrappers.contains(&p.kind()) && wrapped(*p).map(|x| x.id()) == Some(n.id())) {
+    while let Some(p) = n.parent().filter(|p| wraps(wrappers, *p) && wrapped(*p).map(|x| x.id()) == Some(n.id())) {
         n = p;
     }
     n
@@ -564,8 +576,8 @@ pub fn unquote(raw: &str) -> String {
 /// first argument, or the receiver it is called on) is built up from a literal:
 /// `open("out.csv")`, `Path("data") / name`, `f"out/{x}.png"`, `Path::new("a.toml")`. False
 /// when it starts at a value from elsewhere: `root / "x.csv"`, `root.join("Cargo.toml")`,
-/// `f"{root}/x"`. Which calls make a path or a URL of their first argument is the reader's to
-/// say (`makes_path`).
+/// `f"{root}/x"`. Which path function a call's function is, if any, is the reader's to say
+/// (`path_function`), as its evaluator of paths finds it.
 ///
 /// When the operation works on the path it is called on (`dir.glob("*")`), only that path
 /// counts: the argument is a pattern below it, or what is written.
@@ -575,18 +587,11 @@ pub fn starts_at_literal(
     string_kinds: &[&str],
     arg_field: &str,
     on_receiver: bool,
-    makes_path: &dyn Fn(TsNode) -> bool,
+    path_function: &dyn Fn(TsNode) -> Option<PathFn>,
 ) -> bool {
     let receiver = call.child_by_field_name("function").and_then(receiver_of);
     let first = if on_receiver { None } else { call.child_by_field_name(arg_field).and_then(first_arg) };
-    [receiver, first].into_iter().flatten().any(|e| head_literal(e, src, string_kinds, makes_path))
-}
-
-/// Whether a call's function makes a path or a URL of its first argument, by the name the code
-/// calls it by (`knowledge::PATH_MAKERS`): for a language whose makers are its own words
-/// (`Path::new`, `new URL`).
-pub fn path_maker_named(src: &[u8]) -> impl Fn(TsNode) -> bool + '_ {
-    move |f: TsNode| crate::knowledge::PATH_MAKERS.contains(&text(f, src))
+    [receiver, first].into_iter().flatten().any(|e| head_literal(e, src, string_kinds, path_function))
 }
 
 /// `x` in `x.method`, for Python attributes and Rust field expressions.
@@ -603,11 +608,12 @@ fn first_arg(args: TsNode) -> Option<TsNode> {
 }
 
 /// Whether an expression's value starts at a literal: the leftmost operand of a `/` or a
-/// `+`, the receiver of a method, the first argument of a call that makes a path or a URL of it
-/// (`Path("data")`, where `makes_path`, the reader's, says `Path` is such a maker).
-pub fn head_literal(e: TsNode, src: &[u8], string_kinds: &[&str], makes_path: &dyn Fn(TsNode) -> bool) -> bool {
+/// `+`, the receiver of a method, the argument a path function's path starts at
+/// (`PathFn::starts_at`): `"data"` of `Path("data")` and of `os.path.join("data", name)`, where
+/// `path_function`, the reader's, says which path function the call's function is.
+pub fn head_literal(e: TsNode, src: &[u8], string_kinds: &[&str], path_function: &dyn Fn(TsNode) -> Option<PathFn>) -> bool {
     let child = |f: &str| e.child_by_field_name(f);
-    let head = |n: TsNode| head_literal(n, src, string_kinds, makes_path);
+    let head = |n: TsNode| head_literal(n, src, string_kinds, path_function);
     match e.kind() {
         k if string_kinds.contains(&k) => {
             let lit = unquote(text(e, src));
@@ -619,10 +625,12 @@ pub fn head_literal(e: TsNode, src: &[u8], string_kinds: &[&str], makes_path: &d
         "parenthesized_expression" | "reference_expression" => child("value").or_else(|| first_arg(e)).map_or(false, head),
         "call" | "call_expression" | "new_expression" => {
             let Some(f) = child("function").or_else(|| child("constructor")) else { return false };
-            // only a path or URL maker starts the place at its argument; what any other function
-            // makes of a string (a key, a name) is not known here
-            if makes_path(f) {
-                return child("arguments").and_then(first_arg).map_or(false, head);
+            // only a path function starts the place at one of its arguments; what any other
+            // function makes of a string (a key, a name) is not known here
+            if let Some(made) = path_function(f) {
+                let args: Vec<TsNode> = child("arguments").map(named_children).unwrap_or_default();
+                let args: Vec<TsNode> = args.into_iter().filter(|a| !a.kind().ends_with("comment")).collect();
+                return made.starts_at(args.len()).and_then(|i| args.get(i).copied()).map_or(false, head);
             }
             receiver_of(f).map_or(false, head)
         }
@@ -671,8 +679,14 @@ pub(crate) mod tests {
     use super::*;
 
     /// Whether the first call in `code` is handed a place that starts at a literal, where `maker`
-    /// names the calls that make a path of their first argument.
-    fn fixed(lang: tree_sitter::Language, code: &str, call: &str, strings: &[&str], maker: &dyn Fn(TsNode, &[u8]) -> bool) -> bool {
+    /// says which path function a call's function is.
+    fn fixed(
+        lang: tree_sitter::Language,
+        code: &str,
+        call: &str,
+        strings: &[&str],
+        maker: &dyn Fn(TsNode, &[u8]) -> Option<PathFn>,
+    ) -> bool {
         let mut p = tree_sitter::Parser::new();
         p.set_language(&lang).unwrap();
         let tree = p.parse(code, None).unwrap();
@@ -687,7 +701,11 @@ pub(crate) mod tests {
     #[test]
     fn a_place_is_fixed_when_it_starts_at_a_literal() {
         // what the Python reader asks ty, here a name that stands for a path class
-        let py = |code: &str| fixed(tree_sitter_python::LANGUAGE.into(), code, "call", &["string"], &|f, src| text(f, src) == "Path");
+        let py = |code: &str| {
+            fixed(tree_sitter_python::LANGUAGE.into(), code, "call", &["string"], &|f, src| {
+                (text(f, src) == "Path").then_some(PathFn::Join)
+            })
+        };
         assert!(py("open('out.csv', 'w')"));
         assert!(py("pd.read_csv(Path('data') / name)"));
         assert!(py("Path('data/x.csv').read_text()"));
@@ -700,15 +718,30 @@ pub(crate) mod tests {
         assert!(!py("cache_dir.glob(f'*_{tag}')"), "a pattern below a directory handed in");
         assert!(!py("p.write_text('done')"), "what is written is not where");
         assert!(!py("open(Key('data').name)"), "what a call that makes no path makes of a literal is not known");
+        // what a Rust reader's table says, here of `Path::new` and `env::home_dir`
         let rs = |code: &str| {
             fixed(tree_sitter_rust::LANGUAGE.into(), code, "call_expression", &["string_literal", "raw_string_literal"], &|f, src| {
-                path_maker_named(src)(f)
+                match text(f, src) {
+                    "Path::new" => Some(PathFn::Same),
+                    "env::home_dir" => Some(PathFn::Home),
+                    _ => None,
+                }
             })
         };
         assert!(rs("fn f() { std::fs::read_to_string(\"Cargo.toml\"); }"));
         assert!(rs("fn f() { Path::new(\"a.toml\").exists(); }"));
         assert!(!rs("fn f() { std::fs::read_to_string(root.join(\"Cargo.toml\")); }"));
         assert!(!rs("fn f() { std::fs::write(&out, html); }"));
+        assert!(!rs("fn f() { std::fs::read(env::home_dir(\"x\").join(\"a.toml\")); }"), "a place of its own starts at no argument");
+        // a URL resolved against a base starts where the base does
+        let ts = |code: &str| {
+            fixed(tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into(), code, "call_expression", &["string", "template_string"], &|f, src| {
+                (text(f, src) == "URL").then_some(PathFn::Relative)
+            })
+        };
+        assert!(ts("readFileSync(new URL(\"data/x.json\"));"));
+        assert!(!ts("readFileSync(new URL(\"./x.json\", import.meta.url));"));
+        assert!(ts("readFileSync(new URL(\"x.json\", \"file:///srv/\"));"));
     }
 
     /// Programs in each language, one of them written wrong, with the trees tree-sitter reads of them.

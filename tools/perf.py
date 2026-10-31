@@ -18,8 +18,9 @@
 - `read` draws each subject with `atlas-code view --timings`, cold (an empty cache and no index), warm (the
   same again) and unasked (again, with a file no reader asks about added), and serves it with `atlas-code serve`
   from a cold start, once a night (`--rounds` more for a median): the wall time, peak memory and the phases Atlas
-  reports (read, check, flow, page); of serve, the time to its first drawing, to its complete one, and what it
-  spends drawing again after the same file.
+  reports (read, check, flow, page), with how many bodies the reading linked, the program's and the libraries';
+  of serve, the time to its first drawing, to its complete one, and what it spends drawing again after the same
+  file.
 - `tests` builds the test binaries once (`cargo test --no-run`), then runs each on its own as `cargo test`
   would, and times it: libtest's own timings are not stable Rust.
 
@@ -159,7 +160,7 @@ def unasked(subject: Path):
 
 
 def view(atlas: Path, name: str, subject: Path, libraries: int, scratch: Path, env: dict[str, str]) -> dict[str, float]:
-    """One `atlas-code view` of `subject`: its seconds, peak memory and phases."""
+    """One `atlas-code view` of `subject`: its seconds, peak memory, phases and bodies linked."""
     timings = scratch / "timings.json"
     timings.unlink(missing_ok=True)
     command = [str(atlas), "--libraries", str(libraries), "view", "--no-open"]
@@ -167,7 +168,14 @@ def view(atlas: Path, name: str, subject: Path, libraries: int, scratch: Path, e
     seconds, peak = measured(command, env=env, log=scratch / "log.txt")
     if not timings.exists():
         raise SystemExit(f"{atlas} wrote no --timings for {name}")
-    return {"seconds": seconds, "peak_rss": peak, **{f"phase/{p}": t for p, t in json.loads(timings.read_text()).items()}}
+    reported = json.loads(timings.read_text())
+    linked = reported.pop("linked", {})
+    return {
+        "seconds": seconds,
+        "peak_rss": peak,
+        **{f"phase/{p}": t for p, t in reported.items()},
+        **{f"linked/{side}": float(n) for side, n in linked.items()},
+    }
 
 
 def served(atlas: Path, name: str, subject: Path, libraries: int, scratch: Path, env: dict[str, str]) -> dict[str, float]:
@@ -306,7 +314,7 @@ def command_read(args: argparse.Namespace) -> None:
                     print(f"{name} {kind} {round_ + 1}/{args.rounds}: {got['seconds']:.2f} s{more}, peak {got['peak_rss']:.0f} MB")
             for kind, got in samples.items():
                 for measure, values in got.items():
-                    readings[f"read/{name}/{kind}/{measure}"] = metric(values, "MB" if measure == "peak_rss" else "s")
+                    readings[f"read/{name}/{kind}/{measure}"] = metric(values, unit_of(measure))
     add(args.out, readings)
 
 
@@ -704,7 +712,7 @@ class Bench:
 
 
 def unit_of(measure: str) -> str:
-    return "MB" if measure.endswith("peak_rss") else "s"
+    return "MB" if measure.endswith("peak_rss") else "bodies" if "/linked/" in f"/{measure}" else "s"
 
 
 def compared(measure: str, a: list[float], b: list[float]) -> dict:

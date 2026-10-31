@@ -248,7 +248,8 @@ enum Cmd {
         /// `parts`, `units`, `steps`, `families`, `places`, `dirs`, as the page's address writes them.
         #[arg(long, value_name = "JSON")]
         view: Option<Sight>,
-        /// Write how long each phase took (read, check, flow, page), in seconds, as JSON to this file
+        /// Write how long each phase took (read, check, flow, page), in seconds, and how many bodies the
+        /// reading linked, as JSON to this file
         #[arg(long, value_name = "FILE", hide = true)]
         timings: Option<PathBuf>,
     },
@@ -359,6 +360,9 @@ fn view(
     html.write(&out)?;
     phases.done("page");
     if let Some(timings) = timings {
+        let s = &graph.stats;
+        let linked = serde_json::json!({ "program": s.linked_bodies - s.linked_library_bodies, "library": s.linked_library_bodies });
+        phases.took.insert("linked".into(), linked);
         std::fs::write(timings, serde_json::to_string(&phases.took)?)?;
     }
     eprintln!("{} · wrote {}", page::summary(&graph), out.display());
@@ -368,8 +372,9 @@ fn view(
     Ok(())
 }
 
-/// How long each phase of a command took, in seconds, in the order they ran: what `--timings` writes,
-/// for a benchmark to read (`tools/perf.py`).
+/// How long each phase of a command took, in seconds, in the order they ran, and how many bodies the
+/// reading linked, the program's and the libraries' (`linked`): what `--timings` writes, for a
+/// benchmark to read (`tools/perf.py`).
 struct Phases {
     last: std::time::Instant,
     took: serde_json::Map<String, serde_json::Value>,

@@ -28,8 +28,9 @@ use crate::effects;
 use crate::environment::Environment;
 use crate::knowledge::{self, Registry};
 use crate::model::{Node, NodeKind};
-use crate::repo::{normal, Repo};
+use crate::repo::Repo;
 use crate::tree::{named_children, span, text, unquote, walk};
+use path_clean::clean;
 
 /// How many re-exports a path is followed through.
 const DEPTH: u32 = 8;
@@ -60,7 +61,7 @@ impl Environment {
         }
         let holds = self.compiled(package_dir, Registry::Crates);
         let lib = manifest.get("lib").and_then(|l| l.get("path")).and_then(|p| p.as_str()).unwrap_or("src/lib.rs");
-        let file = normal(&package_dir.join(lib));
+        let file = clean(&package_dir.join(lib));
         (!holds && file.is_file()).then_some(file)
     }
 }
@@ -126,7 +127,7 @@ fn dependencies(repo: &Repo, crates: &[Crate]) -> (HashMap<String, PathBuf>, Env
                 let package = spec.get("package").and_then(|p| p.as_str()).unwrap_or(key);
                 let dir = match spec.get("path").and_then(|p| p.as_str()) {
                     Some(p) => {
-                        let d = normal(&base.join(p));
+                        let d = clean(&base.join(p));
                         let inside = Repo::resolved(&d).map(|abs| abs.starts_with(&here));
                         if inside != Some(true) {
                             env.checks.push(Check::Tree(d.clone()));
@@ -349,7 +350,7 @@ fn children(m: &Module) -> HashMap<String, Vec<PathBuf>> {
             Some(p) => vec![dir.join(p)],
             None => vec![base.join(format!("{name}.rs")), base.join(&name).join("mod.rs")],
         };
-        out.insert(name, candidates.into_iter().map(|c| normal(&c)).collect());
+        out.insert(name, candidates.into_iter().map(|c| clean(&c)).collect());
     }
     out
 }

@@ -1,8 +1,8 @@
 // What the program makes is kept in a folder of the project's own, the workbench: a class that
 // holds the folder, whose method names each file in it.
 
-import { writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { rmSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 
 export class Workbench {
   constructor(private readonly root: string) {}
@@ -23,4 +23,8 @@ export function saveReport(project: string, text: string): void {
 export function saveLog(project: string, text: string): void {
   const bench = Workbench.of(project);
   writeFileSync(bench.file("log.txt"), text);
+}
+
+export function clear(project: string): void {
+  rmSync(dirname(Workbench.of(project).file("report.txt")), { recursive: true, force: true });
 }

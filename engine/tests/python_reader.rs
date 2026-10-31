@@ -225,11 +225,97 @@ async def awaited() -> str:
 "#,
         )],
     );
+    // the places read: the file `open` opens, and what is read through the file object it gives
     let read = |f: &str| -> Vec<String> {
-        g.node(&format!("wrappers.{f}")).unwrap().touches.iter().filter(|t| t.kind_name() == "disk_read").map(|t| t.what.clone()).collect()
+        let mut out: Vec<String> = g
+            .node(&format!("wrappers.{f}"))
+            .unwrap()
+            .touches
+            .iter()
+            .filter(|t| t.kind_name() == "disk_read")
+            .map(|t| t.what.clone())
+            .collect();
+        out.dedup();
+        out
     };
     let plain = read("plain");
     assert_eq!(plain, ["data/notes.txt"], "the file is the place the call `where` returns");
     assert_eq!(read("parenthesized"), plain, "parentheses are the value inside");
     assert_eq!(read("awaited"), plain, "`await place()` is the place `place()` returns");
+}
+
+/// Isomorphic is the same: a socket is at its address however the code opens it (#323): made and then bound or connected
+/// (`s = socket.socket(); s.bind(ADDRESS)`), or made at the address (`socket.create_server(ADDRESS)`); a connection the
+/// pair `accept()` gives is at the listener's. A tuple address `("127.0.0.1", 7878)` is the address `127.0.0.1:7878`, the
+/// place a request to `http://127.0.0.1:7878/` reaches.
+#[test]
+fn a_socket_is_at_its_address_however_it_is_opened() {
+    let g = written(
+        "sockets",
+        &[(
+            "sockets.py",
+            "import socket\nimport urllib.request\n\nADDRESS = (\"127.0.0.1\", 7878)\n\n\ndef bound() -> None:\n    s = socket.socket()\n    s.bind(ADDRESS)\n    s.listen()\n    conn, _ = s.accept()\n    conn.recv(16)\n\n\ndef served() -> None:\n    with socket.create_server(ADDRESS) as listener:\n        conn, _ = listener.accept()\n        conn.recv(16)\n\n\ndef connected() -> None:\n    s = socket.socket()\n    s.connect(ADDRESS)\n    s.sendall(b\"hi\")\n\n\ndef asked() -> None:\n    urllib.request.urlopen(\"http://127.0.0.1:7878/\")\n",
+        )],
+    );
+    let reached = |f: &str| -> std::collections::BTreeSet<String> {
+        let n = g.node(f).unwrap_or_else(|| panic!("no node {f}"));
+        n.touches.iter().filter(|t| t.kind_name() == "net").map(|t| t.artifact.clone()).collect()
+    };
+    let asked = reached("sockets.asked");
+    assert!(asked.len() == 1 && !asked.contains(""), "{asked:?}");
+    for f in ["sockets.bound", "sockets.served", "sockets.connected"] {
+        assert_eq!(reached(f), asked, "{f}");
+    }
+}
+
+/// A variable of the environment is one place however the lookup names it (`docs/reference/mathematics.md`,
+/// "Paths as terms"): `os.environ["STORE"]`, `os.environ[NAME]`, `NAME` a constant the code gives `"STORE"`,
+/// `os.getenv("STORE")` and `os.environ.get(NAME)` are the variable `STORE`, as TypeScript's lookups are
+/// (`typescript.rs`). A name no code decides (`os.environ[name]` of a parameter) is no variable the code names.
+#[test]
+fn a_variable_is_one_place_however_its_lookup_names_it() {
+    use std::collections::BTreeSet;
+    let g = written(
+        "lookups",
+        &[(
+            "lookups/__init__.py",
+            r#"import os
+
+NAME = "STORE"
+
+
+def keyed() -> str:
+    with open(os.environ["STORE"]) as f:
+        return f.read()
+
+
+def constant() -> str:
+    with open(os.environ[NAME]) as f:
+        return f.read()
+
+
+def asked() -> str:
+    with open(os.getenv("STORE")) as f:
+        return f.read()
+
+
+def got() -> str:
+    with open(os.environ.get(NAME)) as f:
+        return f.read()
+
+
+def undecided(name: str) -> str:
+    with open(os.environ[name]) as f:
+        return f.read()
+"#,
+        )],
+    );
+    // the places each function touches: its file is opened and read there, two touches at one place (#323)
+    let places = |f: &str| -> BTreeSet<String> { g.node(&format!("lookups.{f}")).unwrap().touches.iter().map(|t| t.place().id).collect() };
+    let store = places("keyed");
+    assert_eq!(store.len(), 1, "{store:?}");
+    assert_eq!(places("constant"), store, "`os.environ[NAME]`");
+    assert_eq!(places("asked"), store, "`os.getenv(\"STORE\")`");
+    assert_eq!(places("got"), store, "`os.environ.get(NAME)`");
+    assert_ne!(places("undecided"), store, "`os.environ[name]`");
 }

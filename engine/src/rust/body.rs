@@ -17,8 +17,8 @@ use crate::effects::{self, Crossing};
 use crate::knowledge::{self, OwnTypes};
 use crate::model::{Bucket, EdgeKind, Held, Node, NodeKind, Slot, Touch, World};
 use crate::tree::{
-    beneath, evaluation_order, literals, named_children, nth_of_kind, path_maker_named, text, unquote, walk, wrapped, ChoiceSyntax,
-    CompareSyntax, Part,
+    beneath, evaluation_order, literals, named_children, nth_of_kind, text, unquote, walk, wrapped, wraps, ChoiceSyntax, CompareSyntax,
+    Part,
 };
 
 /// The macros that end a body by panicking.
@@ -191,7 +191,7 @@ fn kept_as(c: TsNode, src: &[u8]) -> Vec<(String, usize)> {
         let Some(p) = n.parent() else { return vec![] };
         let is = |field: &str| p.child_by_field_name(field).map(|x| x.id()) == Some(n.id());
         match p.kind() {
-            k if WRAPPERS.contains(&k) || k == "else_clause" => n = p,
+            k if wraps(WRAPPERS, p) || k == "else_clause" => n = p,
             "match_expression" if is("body") => n = p,
             "block"
                 if p.named_child(p.named_child_count().saturating_sub(1)).map(|x| x.id()) == Some(n.id())
@@ -271,6 +271,30 @@ fn bound_names<'t>(pat: TsNode<'t>, src: &[u8]) -> Vec<TsNode<'t>> {
         .filter(|i| guard.as_ref().map_or(true, |g| !g.contains(&i.start_byte())))
         .filter(|i| !variant(*i) && !names_type(text(*i, src)))
         .collect()
+}
+
+/// What a part of a value Rust's own code computes is made of (`body::computed_of`): a literal, a type and a path of none (a
+/// constant by its path, `f32::EPSILON`, names no value of the body's, as it is handed none written in place), any other
+/// part the name it is a part of (`root`).
+fn part(p: TsNode) -> Option<Vec<TsNode>> {
+    match p.kind() {
+        "integer_literal" | "float_literal" | "boolean_literal" | "string_literal" | "raw_string_literal" | "char_literal"
+        | "line_comment" | "block_comment" | "scoped_identifier" => Some(vec![]),
+        k if k.ends_with("type") || k.ends_with("type_identifier") => Some(vec![]),
+        // a macro's name is no value
+        "identifier" if p.parent().and_then(|m| m.child_by_field_name("macro")).is_some_and(|m| m.id() == p.id()) => Some(vec![]),
+        _ => root(p).map(|r| vec![r]),
+    }
+}
+
+/// A macro that writes a list out by its elements, each a name or a literal (`vec![first, second]`,
+/// `knowledge::RUST_LIST_MACROS`): the array it holds, which Rust's own code computes of its elements
+/// as it does `[first, second]`.
+fn listed_of_names(m: TsNode, src: &[u8]) -> bool {
+    m.kind() == "macro_invocation"
+        && m.child_by_field_name("macro")
+            .is_some_and(|x| knowledge::RUST_LIST_MACROS.contains(&text(x, src).rsplit("::").next().unwrap_or("")))
+        && named_children(m).into_iter().find(|t| t.kind() == "token_tree").is_some_and(|t| positional(t).iter().all(Option::is_some))
 }
 
 /// The name a value is a part of, where the code writes it so: through what hands a value on
@@ -374,9 +398,8 @@ fn library_chain<'t>(
     let mut locals = 0;
     loop {
         match v.kind() {
-            k if WRAPPERS.contains(&k) => v = wrapped(v)?,
             // a dereference is the value it refers to: `conn` of `(&*conn).read(..)`
-            "unary_expression" if v.child(0).map_or(false, |o| o.kind() == "*") => v = named_children(v).into_iter().next()?,
+            _ if wraps(WRAPPERS, v) => v = wrapped(v)?,
             "identifier" | "field_expression" if !made_by.holds(text(v, src), v.start_byte()) => {
                 let ty = declared(v)?;
                 before.reverse();
@@ -571,7 +594,7 @@ fn names_value(i: TsNode, src: &[u8]) -> bool {
         Some(p) if p.kind() == "token_tree" => {
             !matches!(i.prev_sibling().map(|p| p.kind()), Some("." | "::"))
                 && !matches!(i.next_sibling().map(|n| n.kind()), Some("::" | "!"))
-                && !names_type(text(i, src))
+                && (!names_type(text(i, src)) || names_constant(text(i, src)))
         }
         _ => true,
     }
@@ -677,7 +700,16 @@ pub(super) fn link_calls<'t>(
             "self" => b.cls.iter().map(|k| Held::new(k.clone(), "")).collect(),
             _ => b.hands(&[Some(n)], &kept),
         };
-        steps.uses(&held);
+        // the names a name stands for, as `held_through` follows it, also each one a format string writes
+        let stands = |n: TsNode<'t>| match n.kind() {
+            _ if stepped(n) => vec![],
+            "identifier" if names_value(n, &m.src) => b.stands(text(n, &m.src), n.start_byte(), &kept),
+            "string_literal" | "raw_string_literal" if formats(n, &m.src) => {
+                inline_names(text(n, &m.src)).into_iter().flat_map(|(name, off)| b.stands(name, n.start_byte() + off, &kept)).collect()
+            }
+            _ => vec![],
+        };
+        steps.uses(&held, &stands);
         steps.fills(&held);
         b.read
     };
@@ -1128,7 +1160,7 @@ impl<'a, 't> Body<'a, 't> {
             let mut value = l.child_by_field_name("value");
             while let Some(v) = value {
                 value = match v.kind() {
-                    k if WRAPPERS.contains(&k) => wrapped(v),
+                    _ if wraps(WRAPPERS, v) => wrapped(v),
                     "unary_expression" => named_children(v).into_iter().next(),
                     "call_expression" => match function(v) {
                         Some(f)
@@ -1244,7 +1276,7 @@ impl<'a, 't> Body<'a, 't> {
         let mut over = Some(value);
         while let Some(v) = over {
             over = match v.kind() {
-                k if WRAPPERS.contains(&k) => wrapped(v),
+                _ if wraps(WRAPPERS, v) => wrapped(v),
                 "call_expression" => function(v).filter(|f| {
                     f.kind() == "field_expression"
                         && f.child_by_field_name("field").map_or(false, |x| {
@@ -1371,7 +1403,7 @@ impl<'a, 't> Body<'a, 't> {
     fn value_class(&self, v: TsNode) -> Option<String> {
         let src = self.src;
         match v.kind() {
-            k if WRAPPERS.contains(&k) => self.value_class(wrapped(v)?),
+            _ if wraps(WRAPPERS, v) => self.value_class(wrapped(v)?),
             "self" => self.cls.clone(),
             "identifier" => self.locals.get(text(v, src), v.start_byte()).cloned().or_else(|| self.unit_struct(v)),
             "scoped_identifier" => self.unit_struct(v),
@@ -1488,7 +1520,7 @@ impl<'a, 't> Body<'a, 't> {
                 })
             };
             for i in walk(*p, &["identifier"]).into_iter().filter(|i| names_value(*i, self.src) && !bound_inside(*i)) {
-                if let Some(h) = self.held_by(text(i, self.src), i.start_byte(), kept) {
+                for h in self.held_through(text(i, self.src), i.start_byte(), kept, 0) {
                     add(h);
                 }
             }
@@ -1502,7 +1534,7 @@ impl<'a, 't> Body<'a, 't> {
             // a name a format string writes (`format!("{key} {low}")`) is an argument as one after it is
             for lit in walk(*p, &["string_literal", "raw_string_literal"]).into_iter().filter(|l| formats(*l, self.src)) {
                 for (name, off) in inline_names(text(lit, self.src)) {
-                    if let Some(h) = self.held_by(name, lit.start_byte() + off, kept) {
+                    for h in self.held_through(name, lit.start_byte() + off, kept, 0) {
                         add(h);
                     }
                 }
@@ -1514,6 +1546,48 @@ impl<'a, 't> Body<'a, 't> {
             }
         }
         out
+    }
+
+    /// The values the name `name` written at byte `at` holds, as a call is handed them: the value `held_by` says, or the
+    /// values the names it stands for hold there (`stands`), as the value written in the name's place hands them. Each is
+    /// handed where the name is written, from where the name it holds it by is (`Held::bound`).
+    fn held_through(&self, name: &str, at: usize, kept: &HashSet<String>, depth: usize) -> Vec<(Held, Option<usize>)> {
+        let names = if depth <= 8 { self.stands(name, at, kept) } else { vec![] };
+        if names.is_empty() {
+            return self.held_by(name, at, kept).into_iter().collect();
+        }
+        names
+            .into_iter()
+            .flat_map(|n| {
+                let held = match n.kind() {
+                    "self" => self.cls.clone().map(|ty| (Held::at(ty, String::new(), n.start_byte(), false), None)).into_iter().collect(),
+                    _ => self.held_through(text(n, self.src), n.start_byte(), kept, depth + 1),
+                };
+                held.into_iter().map(move |(h, param)| {
+                    (Held { at: at as u32, bound: if h.bound != 0 { h.bound } else { n.start_byte() as u32 }, ..h }, param)
+                })
+            })
+            .collect()
+    }
+
+    /// The names the name `name` written at byte `at` stands for: where a `let` binds it to what Rust's own code computes of
+    /// names and nothing has made it anew since, no step and no assignment (`let gap = first.db - second.db`, `let both =
+    /// [first, second]`), the names that value is computed of (`body::stands_for`); none for any other name.
+    fn stands(&self, name: &str, at: usize, kept: &HashSet<String>) -> Vec<TsNode<'t>> {
+        let (holder, from) = self.holder(name, at);
+        let made = self.made_by.get(&holder, from).filter(|_| !kept.contains(&holder) && !self.reassigned(&holder, from));
+        made.map(|v| crate::body::stands_for(*v, &USES, self.src, &part)).unwrap_or_default()
+    }
+
+    /// Whether the body assigns the name again where the `let` visible at `at` binds it (`x = ..`, `x += ..`): what the
+    /// `let` bound it to is then not all it holds.
+    fn reassigned(&self, name: &str, at: usize) -> bool {
+        let Some(binding) = self.made_by.which(name, at).filter(|_| self.mutable.holds(name, at)) else { return false };
+        walk(self.def, &["assignment_expression", "compound_assignment_expr"]).into_iter().any(|a| {
+            a.child_by_field_name("left").is_some_and(|l| {
+                l.kind() == "identifier" && text(l, self.src) == name && self.made_by.which(name, l.start_byte()) == Some(binding)
+            })
+        })
     }
 
     /// The value the name `name` written at byte `at` holds, as a call is handed it: the instance
@@ -1647,9 +1721,14 @@ impl<'a, 't> Body<'a, 't> {
         }
     }
 
+    /// The path function a call's function is, as the evaluator of paths reads the call.
+    fn path_function(&self, f: TsNode) -> Option<knowledge::PathFn> {
+        paths::path_function_of(self.m, f)
+    }
+
     /// A boundary call's touches, refined by the literals that name its place.
     fn touch(&self, c: TsNode, kind: Crossing, op: &str, lits: &[String]) -> Vec<Touch> {
-        Crosses::read(c, self.src, kind, None, op, lits, STRINGS, &self.locals.visible(c.start_byte()), &path_maker_named(self.src))
+        Crosses::read(c, self.src, kind, None, op, lits, STRINGS, &self.locals.visible(c.start_byte()), &|f| self.path_function(f))
             .touches(None)
     }
 
@@ -2095,11 +2174,13 @@ impl<'a, 't> Body<'a, 't> {
         Some(ext.strip_prefix("ext:")?.split('.').map(String::from).collect())
     }
 
-    /// What a library's method call touches, through the value its chain made: a value made by a
-    /// touch is at that touch's place (`File::open(p)`, `Command::new("git")`), and a call on it
-    /// adds a place only when it names its own (`conn.execute("INSERT INTO log ..")`); a value
-    /// built without touching anything touches where it is used, at the place its building
-    /// named (`OpenOptions::new().append(true).open("log")`).
+    /// What a library's method call touches, through the value its chain made. Traffic through a
+    /// door (a file, a socket) is a touch at the door's place, each operation its own, whether the
+    /// body opened the door or was handed it (`f.read_to_string(&mut s)` reads the file `f` was
+    /// opened at). Any other value made by a touch is at that touch's place (`Command::new("git")`),
+    /// and a call on it adds a place only when it names its own (`conn.execute("INSERT INTO log
+    /// ..")`); a value built without touching anything touches where it is used, at the place its
+    /// building named (`OpenOptions::new().append(true).open("log")`).
     /// The path a file is at is the one the call that names it is handed, as built, and a statement
     /// is what the call that runs it is handed.
     fn chain_touches(&self, c: TsNode<'t>, value: TsNode<'t>, method: &str) -> Vec<(Touch, Vec<crate::paths::Built>)> {
@@ -2141,6 +2222,16 @@ impl<'a, 't> Body<'a, 't> {
                 .enumerate()
                 .filter_map(|(i, (op, node))| moves(n + i, op).map(|k| (k, op.clone(), *node)))
                 .min_by_key(|(k, _, _)| *k == Crossing::to(World::Disk))?;
+            // traffic through a door (a value of a door's type, made by its opening or handed in),
+            // never the call that opens it: each operation is a touch at the door's place
+            let door =
+                x.ty.last().is_some_and(|t| knowledge::RUST_DOORS.iter().any(|(d, _, _)| d == t) && knowledge::rust_door(t, &op).is_none());
+            let traffic = door
+                && match kind.world {
+                    World::Net => knowledge::rust_socket_op(&op),
+                    World::Disk => knowledge::RUST_DOOR_TRAFFIC.contains(&op.as_str()),
+                    _ => false,
+                };
             let touched =
                 effects::boundary_rust(&x.ctor).is_some() || x.before.iter().enumerate().any(|(i, (op, _))| moves(i, op).is_some());
             let writes = x.before.iter().chain(&here).any(|(o, _)| knowledge::OPENS_TO_WRITE.contains(&o.as_str()));
@@ -2148,7 +2239,9 @@ impl<'a, 't> Body<'a, 't> {
                 .iter()
                 .flat_map(|(_, n)| n.child_by_field_name("arguments").map(|a| place_literals(a, src)).unwrap_or_default())
                 .collect();
-            Some((if writes && kind.world == World::Disk { Crossing::write(World::Disk) } else { kind }, op, call, touched, own))
+            // an operation goes its own way; an opening the way its options say
+            let kind = if writes && !traffic && kind.world == World::Disk { Crossing::write(World::Disk) } else { kind };
+            Some((kind, op, call, touched, own, traffic))
         });
         let first = |call: TsNode<'t>| {
             call.child_by_field_name("arguments").and_then(|a| named_children(a).into_iter().find(|x| !x.kind().ends_with("comment")))
@@ -2156,7 +2249,7 @@ impl<'a, 't> Body<'a, 't> {
         let now = |ts: Vec<Touch>| ts.into_iter().map(|t| (t, vec![])).collect::<Vec<_>>();
         match moved {
             // a statement run on a connection
-            Some((kind, op, call, _, _)) if matches!(kind.world, World::Db(_)) && self.statement(kind, first(call)).is_some() => {
+            Some((kind, op, call, _, _, _)) if matches!(kind.world, World::Db(_)) && self.statement(kind, first(call)).is_some() => {
                 let built = self.statement(kind, first(call)).unwrap_or_default();
                 self.touch(c, kind, &op, &[])
                     .into_iter()
@@ -2164,30 +2257,46 @@ impl<'a, 't> Body<'a, 't> {
                     .map(|t| (Touch { artifact: String::new(), dir: None, ..t }, built.clone()))
                     .collect()
             }
-            Some((kind, op, _, true, own)) => now(self.touch(c, kind, &op, &own).into_iter().filter(|t| !t.artifact.is_empty()).collect()),
-            // a file opened where a builder's value is used, at the path its `open` is handed
-            Some((kind, op, call, false, _)) if kind.world == World::Disk && first(call).is_some() => {
-                let built = first(call).map(|a| self.eval.of(self.at(), a, 0)).unwrap_or_default();
-                self.touch(c, kind, &op, &subtree()).into_iter().map(|t| (t, built.clone())).collect()
-            }
-            // a socket's traffic, at the address its operation is handed (`send_to(buf, addr)`), else
-            // at the place of the connection it runs on, which the callers hand as they hand a path
-            Some((kind, op, call, false, _))
-                if kind.world == World::Net
-                    && made.as_ref().map_or(false, |x| knowledge::socket_path(&x.ty))
-                    && knowledge::rust_socket_op(&op) =>
-            {
-                let address = knowledge::RUST_SOCKET_ADDRESSES
-                    .iter()
-                    .find(|(o, _)| *o == op)
+            // traffic through a door, at the door's place (`docs/reference/mathematics.md`, "A door keeps
+            // its place"), which the callers hand as they hand a path: a file's at the path it was opened
+            // at, never the buffer the operation is handed; a socket's at the address its operation is
+            // handed (`send_to(buf, addr)`), else at the address of the connection it runs on
+            Some((kind, op, call, _, _, true)) => {
+                let address = (kind.world == World::Net)
+                    .then(|| knowledge::RUST_SOCKET_ADDRESSES.iter().find(|(o, _)| *o == op))
+                    .flatten()
                     .and_then(|(_, i)| positional(call).get(*i).copied().flatten());
                 let on = function(call).filter(|f| f.kind() == "field_expression").and_then(|f| f.child_by_field_name("value"));
-                let built = crate::paths::request_of(&op, address.or(on).map(|a| self.eval.of(self.at(), a, 0)).unwrap_or_default());
+                let built = match address {
+                    Some(a) => self.eval.address(self.at(), a, 0),
+                    None => on.map(|v| self.eval.of(self.at(), v, 0)).unwrap_or_default(),
+                };
+                let built = if kind.world == World::Net { crate::paths::request_of(&op, built) } else { built };
+                // a door the body opened is at the place its opening touches, named as the opening
+                // names it; one handed in is named by the name it is handed by, never by what the
+                // operation moves (`buf`), where no caller makes its place whole
+                let opened = made.as_ref().and_then(|x| x.origin).filter(|_| address.is_none()).and_then(|o| self.opening(o, kind.world));
+                let named = on.filter(|v| address.is_none() && matches!(v.kind(), "identifier" | "field_expression" | "self"));
+                self.touch(c, kind, &op, &[])
+                    .into_iter()
+                    .map(|t| match (&opened, named) {
+                        (Some((o, b)), _) => (Touch { what: o.what.clone(), artifact: o.artifact.clone(), fixed: o.fixed, ..t }, b.clone()),
+                        (None, Some(v)) => (Touch { what: text(v, src).to_string(), artifact: String::new(), ..t }, built.clone()),
+                        (None, None) => (t, built.clone()),
+                    })
+                    .collect()
+            }
+            Some((kind, op, _, true, own, _)) => {
+                now(self.touch(c, kind, &op, &own).into_iter().filter(|t| !t.artifact.is_empty()).collect())
+            }
+            // a file opened where a builder's value is used, at the path its `open` is handed
+            Some((kind, op, call, false, _, _)) if kind.world == World::Disk && first(call).is_some() => {
+                let built = first(call).map(|a| self.eval.of(self.at(), a, 0)).unwrap_or_default();
                 self.touch(c, kind, &op, &subtree()).into_iter().map(|t| (t, built.clone())).collect()
             }
             // a request on a client, at the URL its method is handed, first unless the crate says
             // otherwise (knowledge::REQUEST_URL_AT)
-            Some((kind, op, call, false, _)) if kind.world == World::Net && first(call).is_some() => {
+            Some((kind, op, call, false, _, _)) if kind.world == World::Net && first(call).is_some() => {
                 let krate = made.as_ref().and_then(|x| x.ty.first()).map(String::as_str);
                 let at = knowledge::REQUEST_URL_AT.iter().find(|(k, m, _)| Some(*k) == krate && *m == op).map_or(0, |(_, _, i)| *i);
                 let url = call
@@ -2197,11 +2306,11 @@ impl<'a, 't> Body<'a, 't> {
                 self.touch(c, kind, &op, &subtree()).into_iter().map(|t| (t, built.clone())).collect()
             }
             // a method of a path, at the path it is called on: `cli.raw.exists()`
-            Some((kind, op, _, false, _)) if kind.world == World::Disk && knowledge::RUST_PATH_READS.contains(&op.as_str()) => {
+            Some((kind, op, _, false, _, _)) if kind.world == World::Disk && knowledge::RUST_PATH_READS.contains(&op.as_str()) => {
                 let built = self.eval.of(self.at(), value, 0);
                 self.touch(c, kind, &op, &subtree()).into_iter().map(|t| (t, built.clone())).collect()
             }
-            Some((kind, op, _, false, _)) => now(self.touch(c, kind, &op, &subtree())),
+            Some((kind, op, _, false, _, _)) => now(self.touch(c, kind, &op, &subtree())),
             // a method of a path reads the file the path is
             None if knowledge::RUST_PATH_READS.contains(&method) => {
                 let built = self.eval.of(self.at(), value, 0);
@@ -2209,6 +2318,14 @@ impl<'a, 't> Body<'a, 't> {
             }
             None => vec![],
         }
+    }
+
+    /// The touch the body made where it made the door a local holds (`origin`, the value of its
+    /// `let`), with the term its place waits for: the last touch of that line in `world`.
+    fn opening(&self, origin: TsNode<'t>, world: World) -> Option<(Touch, Vec<crate::paths::Built>)> {
+        let line = origin.start_position().row as u32 + 1;
+        let made = self.read.touches.iter().map(|t| (t, vec![])).chain(self.read.waiting.iter().map(|(t, b)| (t, b.clone())));
+        made.filter(|(t, _)| t.line == line && t.kind == world).last().map(|(t, b)| (t.clone(), b))
     }
 
     /// The touches of a call that names what it reaches by what it is handed first (the program
@@ -2219,7 +2336,7 @@ impl<'a, 't> Body<'a, 't> {
         let lits = literals(c, self.src, STRINGS);
         let values: Vec<String> = match first.filter(|a| literals(*a, self.src, STRINGS).is_empty()) {
             Some(a) => {
-                let built = self.eval.of(self.at(), a, 0);
+                let built: Vec<crate::paths::Built> = self.eval.of(self.at(), a, 0).iter().flat_map(crate::paths::chosen).collect();
                 let whole = built.iter().all(crate::paths::known);
                 if whole {
                     built.iter().map(crate::paths::render).collect()
@@ -2235,17 +2352,9 @@ impl<'a, 't> Body<'a, 't> {
         let mut out = vec![];
         for v in values {
             let held = self.locals.visible(c.start_byte());
-            let mut cr = Crosses::read(
-                c,
-                self.src,
-                tag,
-                None,
-                op,
-                &[vec![v.clone()], lits.clone()].concat(),
-                STRINGS,
-                &held,
-                &path_maker_named(self.src),
-            );
+            let mut cr = Crosses::read(c, self.src, tag, None, op, &[vec![v.clone()], lits.clone()].concat(), STRINGS, &held, &|f| {
+                self.path_function(f)
+            });
             cr.what = v;
             out.extend(cr.touches(None));
         }
@@ -2390,7 +2499,13 @@ impl<'a, 't> Body<'a, 't> {
             _ if tag.world == World::Disk && !args.is_empty() => vec![(tag, args[0])],
             // a request is its method and its URL, whole where the callers make it, as a path is
             _ if tag.world == World::Net && !args.is_empty() => {
-                let built = crate::paths::request_of(op, self.eval.of(self.at(), args[0], 0));
+                // a socket's address, in each form the code writes one (`(Ipv4Addr::LOCALHOST, 7878)`)
+                let address = knowledge::RUST_SOCKET_ADDRESSES.iter().find(|(o, _)| *o == op).and_then(|(_, i)| args.get(*i));
+                let built = match address {
+                    Some(a) => self.eval.address(self.at(), *a, 0),
+                    None => self.eval.of(self.at(), args[0], 0),
+                };
+                let built = crate::paths::request_of(op, built);
                 return self.touch(c, tag, op, &literals(c, self.src, STRINGS)).into_iter().map(|t| (t, built.clone())).collect();
             }
             _ => return now(self.touch_handed(c, tag, op, args.first().copied())),
@@ -2398,17 +2513,9 @@ impl<'a, 't> Body<'a, 't> {
         let (mut out, two) = (vec![], files.len() > 1);
         for (kind, a) in files {
             let lits = literals(a, self.src, STRINGS);
-            let mut cr = Crosses::read(
-                c,
-                self.src,
-                kind,
-                None,
-                op,
-                &lits,
-                STRINGS,
-                &self.locals.visible(c.start_byte()),
-                &path_maker_named(self.src),
-            );
+            let mut cr = Crosses::read(c, self.src, kind, None, op, &lits, STRINGS, &self.locals.visible(c.start_byte()), &|f| {
+                self.path_function(f)
+            });
             // a file is named by the argument that is its path, not by what is written into it; a
             // call handed two paths names each by its own
             cr.what = if two {
@@ -2416,7 +2523,7 @@ impl<'a, 't> Body<'a, 't> {
             } else {
                 crate::tree::what_in(a, self.src, STRINGS)
             };
-            cr.fixed = crate::tree::head_literal(a, self.src, STRINGS, &path_maker_named(self.src));
+            cr.fixed = crate::tree::head_literal(a, self.src, STRINGS, &|f| self.path_function(f));
             let built = self.eval.of(self.at(), a, 0);
             out.extend(cr.touches(None).into_iter().map(|t| (t, built.clone())));
         }
@@ -2564,6 +2671,15 @@ const USES: UseSyntax = UseSyntax {
             .flatten()
     },
     pairs: |targets, value| targets.kind() == "tuple_expression" && value.kind() == "tuple_expression",
+    // `&&` and `||` are choices; `*x` is the value `x` refers to
+    computes: |n, src| match n.kind() {
+        "binary_expression" => n.child_by_field_name("operator").is_some_and(|o| !matches!(text(o, src), "&&" | "||")),
+        "unary_expression" => n.child(0).is_some_and(|o| o.kind() != "*"),
+        "tuple_expression" | "array_expression" | "type_cast_expression" => true,
+        "macro_invocation" => listed_of_names(n, src),
+        "token_tree" => n.parent().is_some_and(|m| listed_of_names(m, src)),
+        _ => false,
+    },
     wrappers: WRAPPERS,
     // a statement ends in `;`: a block's last expression without one is the block's value
     drops: |n, child, src| match n.kind() {
@@ -2699,6 +2815,16 @@ fn place(n: TsNode) -> Option<TsNode> {
 /// lints hold every type to.
 fn names_type(q: &str) -> bool {
     q.rsplit("::").next().and_then(|s| s.chars().next()).is_some_and(|c| c.is_uppercase())
+}
+
+/// Whether a name is written as Rust writes a constant's or a static's, in screaming snake case
+/// (`QUIET`, `MAX_LEN`), which the compiler's naming lints hold every one to: among a macro's
+/// tokens it names that value, as it does written outside them (`vec![first, QUIET]` as
+/// `[first, QUIET]`). A single capital is a type's (`T`).
+fn names_constant(name: &str) -> bool {
+    name.chars().count() > 1
+        && name.starts_with(|c: char| c.is_uppercase())
+        && name.chars().all(|c| c.is_uppercase() || c.is_ascii_digit() || c == '_')
 }
 
 /// The two operands of a test of equality.
