@@ -22,6 +22,80 @@ pub enum NodeKind {
     External,
 }
 
+/// An id is in the coproduct `Code ⊔ Beyond` (`mathematics.md`, "Lenses"): what the reading holds as code (the program,
+/// and a library read as code: `plotkit.data.load`), or a name past the fiber the graph keeps of a library, an
+/// `External` node with no body. The second injection is tagged, and the tag with its partial inverse is a prism:
+/// `path(&of(p)) == Some(p)`, `path(id) == None` for an id of the code's. Its spelling stands here and nowhere else.
+pub mod ext {
+    const TAG: &str = "ext:";
+
+    /// The id of a name past the code: `plotkit.data.load` is `ext:plotkit.data.load`.
+    pub fn of(path: &str) -> String {
+        format!("{TAG}{path}")
+    }
+
+    /// The name past the code an id is; None for an id of the code's.
+    pub fn path(id: &str) -> Option<&str> {
+        id.strip_prefix(TAG)
+    }
+
+    /// Whether an id is a name past the code.
+    pub fn is(id: &str) -> bool {
+        path(id).is_some()
+    }
+
+    /// The dotted name an id says, whichever side it is on: its path past the code, or the id itself.
+    pub fn name(id: &str) -> &str {
+        path(id).unwrap_or(id)
+    }
+}
+
+/// What a reader resolves a name to, a value of `Code ⊔ Beyond` (`ext`): one of the code's ids, which carries no tag, or a
+/// name past the code.
+#[derive(Clone, PartialEq, Eq, Hash, Debug)]
+pub enum Resolved {
+    Code(String),
+    Beyond(String),
+}
+
+impl Resolved {
+    /// What an id is, by its injection.
+    pub fn of_id(id: String) -> Resolved {
+        match ext::path(&id) {
+            Some(p) => Resolved::Beyond(p.to_string()),
+            None => Resolved::Code(id),
+        }
+    }
+
+    /// The id the graph knows it by.
+    pub fn id(self) -> String {
+        match self {
+            Resolved::Code(id) => id,
+            Resolved::Beyond(p) => ext::of(&p),
+        }
+    }
+
+    /// The code's id, where it names the code.
+    pub fn code(self) -> Option<String> {
+        match self {
+            Resolved::Code(id) => Some(id),
+            Resolved::Beyond(_) => None,
+        }
+    }
+
+    /// The name past the code, where it names one.
+    pub fn beyond(self) -> Option<String> {
+        match self {
+            Resolved::Code(_) => None,
+            Resolved::Beyond(p) => Some(p),
+        }
+    }
+
+    pub fn is_beyond(&self) -> bool {
+        matches!(self, Resolved::Beyond(_))
+    }
+}
+
 #[derive(Serialize, Deserialize, TS, Clone, Copy, PartialEq, Eq, Hash, Debug, PartialOrd, Ord)]
 #[serde(rename_all = "snake_case")]
 #[ts(export)]
@@ -489,7 +563,7 @@ impl Param {
 /// shaped array keeps its shape, a dot in it too: `ext:jaxtyping.Float[Tensor, batch {self.size}]` is
 /// `Float[Tensor, batch {self.size}]`.
 pub fn type_name(id: &str) -> &str {
-    let s = id.strip_prefix("ext:").unwrap_or(id);
+    let s = ext::name(id);
     let head = &s[..s.find('[').unwrap_or(s.len())];
     &s[head.rfind('.').map_or(0, |i| i + 1)..]
 }
@@ -2008,6 +2082,40 @@ mod tests {
             proptest::prop_assert_eq!(Request::of(&r.to_string()), r.clone());
             let json = serde_json::to_string(&r).unwrap();
             proptest::prop_assert_eq!(serde_json::from_str::<Request>(&json).unwrap(), r);
+        }
+    }
+
+    proptest::proptest! {
+        /// Law: the tag of a name past the code is a prism (`ext`). Previewing what was reviewed
+        /// gives the name back (`path(of(p)) = Some(p)`), reviewing what a preview gives is the id it
+        /// was taken from, and an id of the code's previews to nothing. `name` is the copairing: the
+        /// name either side says.
+        #[test]
+        fn the_tag_of_a_name_past_the_code_is_a_prism(p in "(ext:)?[a-z.:\\[\\] ]{0,10}", id in "(ext:|ex|e)?[a-z.:]{0,10}") {
+            let reviewed = ext::of(&p);
+            proptest::prop_assert_eq!(ext::path(&reviewed), Some(p.as_str()));
+            proptest::prop_assert_eq!(ext::name(&reviewed), p.as_str());
+            match ext::path(&id) {
+                Some(q) => proptest::prop_assert_eq!(ext::of(q), id.clone()),
+                None => {
+                    proptest::prop_assert!(!ext::is(&id));
+                    proptest::prop_assert_eq!(ext::name(&id), id.as_str());
+                }
+            }
+        }
+
+        /// Law: what a reader resolves a name to is a value of `Code ⊔ Beyond`, written as an id and
+        /// read back as the same value; one side is the code's, the other past it, never both.
+        #[test]
+        fn a_resolved_name_reads_back_from_its_id(beyond in proptest::bool::ANY, p in "[a-z.:]{0,10}") {
+            proptest::prop_assume!(beyond || !ext::is(&p));
+            let r = if beyond { Resolved::Beyond(p.clone()) } else { Resolved::Code(p.clone()) };
+            let id = r.clone().id();
+            proptest::prop_assert_eq!(Resolved::of_id(id.clone()), r.clone());
+            proptest::prop_assert_eq!(ext::is(&id), beyond);
+            proptest::prop_assert_eq!(r.is_beyond(), beyond);
+            proptest::prop_assert_eq!(r.clone().code().is_some(), !beyond);
+            proptest::prop_assert_eq!(r.beyond(), beyond.then_some(p));
         }
     }
 }

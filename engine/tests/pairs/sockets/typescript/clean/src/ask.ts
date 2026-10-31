@@ -7,8 +7,7 @@ const HOST = "127.0.0.1";
 
 function main(): void {
   const conn = net.createConnection(PORT, HOST);
-  conn.write("ada");
-  conn.end();
+  conn.end("ada");
   hear(conn);
 }
 

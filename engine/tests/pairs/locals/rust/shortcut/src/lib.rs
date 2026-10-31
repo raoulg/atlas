@@ -54,3 +54,21 @@ fn listed(first: Level) -> Vec<Level> {
 pub fn shown(first: Level) {
     show(&listed(first));
 }
+
+/// The two levels, gathered by pushing the second onto a vector of the first, and listed.
+pub fn gathered(first: &Level, second: &Level) {
+    let mut both = vec![first];
+    both.push(second);
+    list(&both);
+}
+
+fn add<'a>(levels: &mut Vec<&'a Level>, level: &'a Level) {
+    levels.push(level);
+}
+
+/// The two levels, gathered by lending a vector of the first to a function that adds the second, and listed.
+pub fn lent(first: &Level, second: &Level) {
+    let mut both = vec![first];
+    add(&mut both, second);
+    list(&both);
+}

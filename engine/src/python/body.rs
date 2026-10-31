@@ -16,7 +16,7 @@ use crate::body::{changed_through, BindSyntax, Crosses, Range, Step, Steps, UseS
 use crate::builder::{foreign_type, GraphBuilder};
 use crate::effects::{self, Crossing};
 use crate::knowledge::{self, OwnTypes};
-use crate::model::{Bucket, Dir, EdgeKind, Held, Node, NodeKind, Slot, Touch, World};
+use crate::model::{ext, Bucket, Dir, EdgeKind, Held, Node, NodeKind, Resolved, Slot, Touch, World};
 use crate::pytypes::{By, Facts, FileArg, Target, Types, Value};
 use crate::tree::{
     beneath, evaluation_order, field_children, literals, named_children, nth_of_kind, outermost, payload_of, text, unquote, walk, what_of,
@@ -45,8 +45,8 @@ fn changed_types(
         let name = text(name, &m.src).to_string();
         let mut drawn = None;
         for tn in type_names(Some(t), &m.src) {
-            match resolve(m, &tn, modules, nodes, own) {
-                Some(r) if !r.starts_with("ext:") && nodes.get(&r).map_or(false, |x| x.kind == NodeKind::Class) => drawn = Some(r),
+            match resolve(m, &tn, modules, nodes, own).map(Resolved::id) {
+                Some(r) if !ext::is(&r) && nodes.get(&r).map_or(false, |x| x.kind == NodeKind::Class) => drawn = Some(r),
                 Some(r) if drawn.is_none() && foreign_type(&r, &OWN) => drawn = Some(r),
                 _ => {}
             }
@@ -61,7 +61,7 @@ fn changed_types(
                 changeable.insert(name.clone());
             }
         }
-        if let Some(r) = drawn.or_else(|| outer.map(|(package, class)| format!("ext:{package}.{class}"))) {
+        if let Some(r) = drawn.or_else(|| outer.map(|(package, class)| ext::of(&format!("{package}.{class}")))) {
             out.insert(name, r);
         }
     }
@@ -369,6 +369,21 @@ pub(super) fn changed_by<'t>(seen: &Seen, changing: &Changing, c: TsNode<'t>, cl
     library_change(seen.facts, c, src).into_iter().collect()
 }
 
+/// The bindings whose value a step of the body changes in place, by their nodes: of each name a call changes
+/// (`changed_by`: `both.append(second)` as `knowledge::MUTATORS` says, `random.shuffle(both)`, a function of the package
+/// that changes what it is handed), the assignments that reach the name there. Such a binding holds a value of its own
+/// wherever it reaches, which each change makes anew (`mathematics.md`, "One fine plan").
+pub(super) fn changed_bindings(seen: &Seen, changing: &Changing, body: TsNode, cls: Option<&str>) -> HashSet<usize> {
+    let src = &seen.m.src;
+    walk(body, &["call"])
+        .into_iter()
+        .flat_map(|c| changed_by(seen, changing, c, cls))
+        .filter(|n| n.kind() == "identifier")
+        .flat_map(|n| reaching(n, text(n, src), src))
+        .map(|b| b.id())
+        .collect()
+}
+
 /// What a body changes in place: every attribute or item it assigns (`self.x = ..`,
 /// `p.items[k] = ..`, each of `a.x, b.y = ..`) or deletes, and what a call changes (`changed_by`).
 pub(super) fn changed<'t>(body: TsNode<'t>, changes: &dyn Fn(TsNode<'t>) -> Vec<TsNode<'t>>) -> Vec<TsNode<'t>> {
@@ -465,6 +480,8 @@ pub(super) struct Seen<'a> {
     pub(super) receiver: Option<String>,
     /// The class `cls` holds, in a method that runs on its class (`@classmethod`).
     pub(super) class: Option<String>,
+    /// The bindings whose value a step of the body changes in place, by their nodes (`changed_bindings`).
+    pub(super) changed: HashSet<usize>,
 }
 
 impl<'a> Seen<'a> {
@@ -476,7 +493,8 @@ impl<'a> Seen<'a> {
         store: &'a GraphBuilder,
         own: &'a Own,
     ) -> Self {
-        Seen { m, facts: types.of(&crate::tree::path_str(&m.path)), sites, modules, store, own, receiver: None, class: None }
+        let facts = types.of(&crate::tree::path_str(&m.path));
+        Seen { m, facts, sites, modules, store, own, receiver: None, class: None, changed: HashSet::new() }
     }
 
     fn range(n: TsNode) -> (usize, usize) {
@@ -615,7 +633,7 @@ impl<'a> Seen<'a> {
                 Target::Here { .. } => self.node(t).filter(|id| self.is_class(id)).cloned(),
                 Target::Lib(module) => {
                     let pkg = package_of(module);
-                    let id = ext.get(&(pkg.clone(), name.clone())).cloned().unwrap_or_else(|| format!("ext:{pkg}.{name}"));
+                    let id = ext.get(&(pkg.clone(), name.clone())).cloned().unwrap_or_else(|| ext::of(&format!("{pkg}.{name}")));
                     foreign_type(&id, &OWN).then_some(id)
                 }
             };
@@ -799,7 +817,15 @@ impl<'a> Seen<'a> {
                 out.push(at);
                 continue;
             }
-            let rights: Vec<TsNode> = match reaching(at, name, src) {
+            let bound = reaching(at, name, src);
+            // a value Python's own code computes that a step changes in place is a value of its own, which each change makes
+            // anew: the name stands for nothing
+            let computes = |b: &TsNode| b.child_by_field_name("right").is_some_and(|r| (USES.computes)(beneath(r, WRAPPERS), src));
+            if bound.iter().any(|b| self.changed.contains(&b.id()) && computes(b)) {
+                out.push(at);
+                continue;
+            }
+            let rights: Vec<TsNode> = match bound {
                 bound if !bound.is_empty() => bound.into_iter().filter_map(|b| b.child_by_field_name("right")).collect(),
                 _ => matched_by(at, name, src).or_else(|| looped_by(at, name, src)).into_iter().collect(),
             };
@@ -863,7 +889,7 @@ impl<'a> Seen<'a> {
         if !self.m.bindings.contains_key(head) && !self.m.symbols.contains_key(head) {
             return None;
         }
-        let r = resolve(self.m, &parts, self.modules, &self.store.nodes, self.own)?;
+        let r = resolve(self.m, &parts, self.modules, &self.store.nodes, self.own)?.id();
         Some(match lib_of(&r) {
             Some(lib) => Callee::Lib(lib),
             None => Callee::Def(r),
@@ -1028,6 +1054,7 @@ pub(super) fn link_calls<'t>(
         let mut seen = Seen::new(m, types, sites, modules, store, own);
         seen.receiver = n.cls.clone().filter(|_| n.kind == NodeKind::Method && !n.on_class && n.params.iter().any(|p| p.receiver));
         seen.class = n.cls.clone().filter(|_| n.kind == NodeKind::Method && n.on_class);
+        seen.changed = changed_bindings(&seen, changing, body, n.cls.as_deref());
         let mut b = Body::new(seen, modules, ext, eval, changing, &n, d, body);
         for r in b.steps() {
             let c = match r {
@@ -1043,6 +1070,7 @@ pub(super) fn link_calls<'t>(
             };
             let (t, w) = (b.read.touches.len(), b.read.waiting.len());
             b.call(&mut steps, c);
+            b.read.made.record(c, t..b.read.touches.len(), w..b.read.waiting.len());
             steps.mark(c, b.read.touches[t..].iter_mut().chain(b.read.waiting[w..].iter_mut().map(|(t, _)| t)));
         }
         let kept = steps.kept.clone();
@@ -1060,7 +1088,9 @@ pub(super) fn link_calls<'t>(
         let is_type = |(a, b): (usize, usize)| {
             facts.and_then(|f| f.value((a, b))).is_some_and(|v| v.is_class) || {
                 let parts: Vec<String> = String::from_utf8_lossy(&m.src[a..b]).split('.').map(str::to_string).collect();
-                resolve(m, &parts, modules, &store.nodes, own).and_then(|t| store.nodes.get(&t)).is_some_and(|t| t.kind == NodeKind::Class)
+                resolve(m, &parts, modules, &store.nodes, own)
+                    .and_then(|t| store.nodes.get(&t.id()))
+                    .is_some_and(|t| t.kind == NodeKind::Class)
             }
         };
         let receiver = n.params.iter().find(|p| p.receiver && !n.on_class).map(|p| p.name.as_str());
@@ -1107,6 +1137,7 @@ pub(super) fn link_calls<'t>(
 struct Read<'t> {
     touches: Vec<Touch>,
     waiting: Vec<(Touch, Vec<Built>)>,
+    made: crate::body::MadeBy,
     args: Vec<Arg<'t>>,
     handed: Vec<(String, World, Dir)>,
     declared: Vec<(World, Dir)>,
@@ -1256,7 +1287,7 @@ impl<'a, 't> Body<'a, 't> {
             let parts = dotted(Some(*n), src);
             let Some((head, rest)) = parts.split_first() else { return false };
             let Some(bound) = self.m.bindings.get(head) else { return false };
-            let full: Vec<&str> = bound.trim_start_matches("ext:").split('.').chain(rest.iter().map(String::as_str)).collect();
+            let full: Vec<&str> = ext::name(bound).split('.').chain(rest.iter().map(String::as_str)).collect();
             knowledge::PYTHON_COMMAND_LINE.contains(&full.as_slice())
         };
         let mut out = vec![];
@@ -1301,7 +1332,7 @@ impl<'a, 't> Body<'a, 't> {
     fn each(&mut self, steps: &mut Steps<'t, '_>, l: TsNode<'t>) {
         let (Some(left), Some(right)) = (l.child_by_field_name("left"), l.child_by_field_name("right")) else { return };
         let (hands, mut gives) = self.seen.each(l, self.ext, &steps.kept);
-        self.read.new_ext.extend(hands.iter().chain(&gives).map(|h| h.ty.clone()).filter(|t| t.starts_with("ext:")));
+        self.read.new_ext.extend(hands.iter().chain(&gives).map(|h| h.ty.clone()).filter(|t| ext::is(t)));
         // the step stands where what it goes over is written: a call there hands it what it gives, the loop's body does not
         let label = format!("for {} in {}", text(left, self.src), text(right, self.src));
         // a loop over the command line keeps each word under the name it binds: it parses the command line
@@ -1371,7 +1402,7 @@ impl<'a, 't> Body<'a, 't> {
         v.classes.iter().zip(&v.names).find_map(|(t, name)| match t {
             Target::Lib(module) => {
                 let pkg = package_of(module);
-                Some(self.ext.get(&(pkg.clone(), name.clone())).cloned().unwrap_or_else(|| format!("ext:{pkg}.{name}")))
+                Some(self.ext.get(&(pkg.clone(), name.clone())).cloned().unwrap_or_else(|| ext::of(&format!("{pkg}.{name}"))))
             }
             Target::Here { .. } => None,
         })
@@ -1416,7 +1447,7 @@ impl<'a, 't> Body<'a, 't> {
         };
         let assigned =
             if unpacked.is_empty() { assigned } else { unpacked.iter().map(|n| text(*n, self.src)).collect::<Vec<_>>().join(", ") };
-        self.read.new_ext.extend(hands.iter().chain(&gives).map(|h| h.ty.clone()).filter(|t| t.starts_with("ext:")));
+        self.read.new_ext.extend(hands.iter().chain(&gives).map(|h| h.ty.clone()).filter(|t| ext::is(t)));
         steps.keep(&gives);
         // a function of the package handed on as a value (`executor.submit(self.run, x)`,
         // `Thread(target=work)`) is called by whoever receives it; a class handed to code Atlas
@@ -1575,7 +1606,7 @@ impl<'a, 't> Body<'a, 't> {
             }
         }
         for r in changed.into_iter().filter(|h| !h.name.is_empty()) {
-            if r.ty.starts_with("ext:") {
+            if ext::is(&r.ty) {
                 self.read.new_ext.push(r.ty.clone());
             }
             if !gives.contains(&r) {
@@ -1713,7 +1744,7 @@ impl<'a, 't> Body<'a, 't> {
 
     /// The touch of the call that opened the file `on`, with the term its place waits for, where the
     /// body binds `on` to that call before this use (`with open(p) as f`, `f = open(p)`): the last
-    /// such binding's touch on a disk.
+    /// touch on a disk the calls of the last such binding's value made.
     fn opening(&self, on: TsNode) -> Option<(&Touch, Vec<Built>)> {
         let on = beneath(on, WRAPPERS);
         let name = (on.kind() == "identifier").then(|| text(on, self.src))?;
@@ -1726,9 +1757,12 @@ impl<'a, 't> Body<'a, 't> {
                 _ => named(n.child_by_field_name("left")).then(|| n.child_by_field_name("right")).flatten(),
             })
             .last()?;
-        let line = beneath(opened, WRAPPERS).start_position().row as u32 + 1;
-        let made = self.read.touches.iter().map(|t| (t, vec![])).chain(self.read.waiting.iter().map(|(t, b)| (t, b.clone())));
-        made.filter(|(t, _)| t.line == line && t.kind == World::Disk).last()
+        let (now, waiting) = self.read.made.within(opened);
+        let made = now.into_iter().map(|i| (&self.read.touches[i], vec![])).chain(waiting.into_iter().map(|i| {
+            let (t, b) = &self.read.waiting[i];
+            (t, b.clone())
+        }));
+        made.filter(|(t, _)| t.kind == World::Disk).last()
     }
 
     /// What the name a call not followed starts from is bound to, as ty finds where it is
@@ -1786,7 +1820,7 @@ impl<'a, 't> Body<'a, 't> {
         for r in roots {
             let ty = if r == "self" { self.cls.clone().filter(|_| !self.initializer) } else { self.params.get(r).cloned() };
             if let Some(t) = ty {
-                if t.starts_with("ext:") {
+                if ext::is(&t) {
                     self.read.new_ext.push(t.clone());
                 }
                 self.read.changes.push((t, r.to_string()));
@@ -1883,8 +1917,7 @@ fn crossed<'t>(
             // runs on, which the callers hand as they hand a path (`docs/reference/mathematics.md`, "A
             // door keeps its place")
             let request = request.or_else(|| {
-                let socket =
-                    lib.is_some_and(|l| knowledge::PYTHON_DOORS.iter().any(|(d, _, _)| *d == l)) && knowledge::python_socket_op(op);
+                let socket = lib.is_some_and(knowledge::python_socket_package) && knowledge::python_socket_op(op).is_some();
                 let on = called_on(fnode).filter(|_| socket)?;
                 Some(crate::paths::request_of(op, eval.of(at, on, 0)))
             });
@@ -2309,7 +2342,7 @@ const USES: UseSyntax = UseSyntax {
     leaves: |n, _| matches!(n.kind(), "return_statement" | "yield"),
     fails: |n, _| matches!(n.kind(), "raise_statement" | "assert_statement"),
     hands: |n, child| n.kind() == "call" && n.child_by_field_name("arguments").map(|a| a.id()) == Some(child.id()),
-    changes: |_| vec![],
+    changes: |_, _| vec![],
     splits: |n, child| n.kind() == "match_statement" && n.child_by_field_name("subject").map(|v| v.id()) == Some(child.id()),
     names: &["identifier"],
     keeps: &["attribute", "subscript"],

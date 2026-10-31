@@ -36,8 +36,10 @@ codomain, when the route leaves something in it. What the route reads back of wh
 reads only to check or count, it does not use: that place stays in the codomain. Whether a read is
 used is a fact of the step's body: what the call gives reaches the step's codomain (it is returned,
 handed to a call, kept in a field) through the names it is bound to and the values a call on it
-changes (`f.read_to_string(&mut s)` makes `s` from `f`), or it only decides a choice,
-goes to an error or is dropped, and is a check. A place one step
+changes (`f.read_to_string(&mut s)` makes `s` from `f`, through `?` and `.unwrap()` alike), and what a
+listener's function is handed is what its event brings (`conn.on("data", (chunk) => ..)` uses the read
+where `chunk` goes on); or it only decides a choice, goes to an error or is dropped (`let _ = f(x)` drops
+it as `f(x);` does), and is a check. A place one step
 writes and a later step reads and uses is the object between them, and stands between them. A
 place the route reads and then writes on is in both: two projections of one place, `from X` on
 the left and `into X` on the right. A place it writes only before it reads there, and only in an
@@ -140,7 +142,14 @@ and a subclass, a variant of a sum left open). A constructor that reads the plac
 class. What a put takes is what reaches the place through its body's steps, by what each is
 handed and gives; a parameter handed only to reads, or only to a statement's key (`WHERE`), is a
 key. A view is the `get` of a lens with no `put`: it only reads.
-**Where.** Principle `lens`; `design.md` §1.
+An id is a value of the coproduct `Code ⊔ Beyond`: what the reading holds as code (the program, and a library read as
+code: `plotkit.data.load`), or a name past the fiber the graph keeps of a library, an `External` node with no body
+(`ext:plotkit.data.load` at `--libraries 0`). The tag of the second injection is a prism: `of` makes a name past the
+code an id, `path` takes it back, `path(of(p)) = Some(p)`, `of(p) = id` wherever `path(id) = Some(p)`, and an id of
+the code's has no path. What a reader resolves a name to is a value of the coproduct (`Resolved`); the graph keeps its
+id, the key its edges, its indexes and the page share.
+**Where.** Principle `lens`; `design.md` §1; `model::ext` and `model::Resolved`, held by `engine/tests/readers.rs`
+(the tag is spelled once).
 
 ### Pullback: a filter
 **What.** The pullback of `true` along a predicate `p: G → Bool` is the part of G where p holds.
@@ -318,6 +327,22 @@ writing a call out in its caller's body would change what the route does, agains
 functor. How finely they are drawn is the view's quotient: one place on one side of a step is one
 line, whatever operations reach it (#323, `decision`).
 
+Each operation goes one way, a socket's as a file's: a receive reads and stands in the domain of its
+step, a send writes and stands in its codomain, in every language, as its row of `SOCKET_OPS` says. So
+a socket's read and a file's read are drawn alike, from the place. An opening goes the way its mode
+says, and a door opened both ways (`open(p, "r+")`, `OpenOptions` that read and write) is drawn as
+written: the place holds what it did not hold before. A connected stream is opened both ways, so
+connecting writes. Node's `socket.end(data)` writes `data` and then ends the stream, a write as
+`write(data)` is (#353, `decision`).
+
+Node's descriptors and file handles are doors as Python's file objects and Rust's `File` are:
+`fs.openSync(p, flags)` gives a descriptor and `fs.promises.open(p, flags)` a `FileHandle`, each at
+`p` and opened the way its flags say. A descriptor handed to `fs.readFileSync(fd)` or `fs.writeSync(fd,
+..)`, and a handle's `readFile`, `read`, `writeFile` and `write`, read and write that file. The touch
+a door's operations go to is the one the call that opened it made, found by where that call is
+written, never by its line: two doors opened on one line (`with open(a) as x, open(b, "w") as y`)
+are two.
+
 The place of a stream socket is the address of its listening end, the one address the code names
 for it: the client names it in `connect`, the server in `bind` or `listen`, and each connection a
 listener accepts is a door to it. So a client that writes to an address and a server that reads
@@ -328,16 +353,19 @@ the code writes it in: a string, Python's pair `("127.0.0.1", 7878)`, Rust's
 `SocketAddr::from(([127, 0, 0, 1], 7878))`, the port and the host Node is handed apart
 (`net.createConnection(7878, "127.0.0.1")`). Where the code does not say the address (only the
 environment holds it), the place stays a hole, as a path's does: the gap is the code's.
-**Where.** `knowledge::SOCKET_OPS` names each operation of a socket in the three languages; the
-doors and what keeps them are tables per language: `RUST_DOORS`, `RUST_DOOR_KEEPERS`,
+**Where.** `knowledge::SOCKET_OPS` names each operation of a socket in the three languages and the
+way it goes; the doors and what keeps them are tables per language: `RUST_DOORS`, `RUST_DOOR_KEEPERS`,
 `RUST_SOCKET_ADDRESSES`, `RUST_DOOR_TRAFFIC`, `RUST_ADDRESS_MAKERS`, `RUST_NAMED_ADDRESSES`,
 `RUST_SAME_CALLS`; `PYTHON_DOORS`, `PYTHON_DOOR_PLACES`, `PYTHON_DOOR_KEEPERS`,
 `PYTHON_FILE_TRAFFIC`; `NODE_DOORS`, `NODE_DOOR_PLACES`, `NODE_DOOR_KEEPERS`,
-`NODE_SOCKET_ADDRESSES`, `NODE_LISTENERS`. The readers' `paths.rs` (Rust's `Eval::call`,
-`Eval::address`, `Eval::element`, `bound`; Python's `Eval::follow`, `Eval::placed_later`,
-`Eval::element`; TypeScript's `Eval::address`, `Eval::placed_later`, `Eval::served`) and `body.rs`
-(Rust's `chain_touches`, Python's `library` and `crossed`, TypeScript's `crossed`);
-`effects::socket_address`; the pairs `sockets` (in the three languages) and `handles`.
+`NODE_SOCKET_ADDRESSES`, `NODE_LISTENERS`, `NODE_SENDS_FIRST`, `NODE_FILE_DOORS`, `NODE_FILE_TRAFFIC`.
+`effects::boundary_rust`, `boundary` and `boundary_ts` give each operation its way. The readers'
+`paths.rs` (Rust's `Eval::call`, `Eval::address`, `Eval::element`, `bound`; Python's `Eval::follow`,
+`Eval::placed_later`, `Eval::element`; TypeScript's `Eval::call`, `Eval::address`,
+`Eval::placed_later`, `Eval::served`) and `body.rs` (Rust's `chain_touches`, Python's `library` and
+`crossed`, TypeScript's `crossed`; each reader's `opening`, through `body::MadeBy`; `Steps::goes_on`
+and `Steps::mark_received` for whether a read is used); `effects::socket_address`; the pairs `sockets`
+and `handles`, each in the three languages.
 
 ### Who makes a path whole: a monotone formula
 **What.** A monotone Boolean formula over a set of atoms, in disjunctive normal form: a disjunction
@@ -361,7 +389,14 @@ conjunction, and two alternatives in either order one formula. Nor does how the 
 built) is not written, and the callers the arrow of a step depends on are those of the minimal
 conjunctions. Under a step of a route a condition holds where what ran before the step meets it,
 and a route is its steps in call order (composition): what ran before a step is the calls that lead
-there and, in each of their bodies, the steps before the one that leads there, with all they run. A
+there and, in each of their bodies, the steps before the one that leads there, with all they run.
+Before is call order in a body, met with its choices and loops: a call ran before another when it
+stands before it and no choice holds the two in different arms (the arms each call's site names,
+`Site::arms`, so a choice inside an arm stands in that arm), and in a loop every call of the loop ran
+before every call of it, whichever stands first, since a later round runs after the round before.
+What ran is all that call may run, its overrides too. The engine's read-back of a function's arrow
+(`flow::orders`) and the page's plan read this one order, and say the same places under each
+occurrence of a route that starts at a function. A
 caller that handed the rest hands it down the calls into the touch's function, so it holds only on
 them; a caller that set up the object a method on the calls runs on (its calls reach a constructor
 of that method's class) holds wherever it ran before, also in a step beside the calls (`main`
@@ -376,7 +411,10 @@ other. The graph's JSON writes each conjunction `a&b`, its conditions in order, 
 `users_of:e`, and the alternatives in order; a conjunction of one entry's users alone is written in
 `users_of`. It reads them back once.
 **Where.** `model.rs` (`Atom`, `Both`, `absorb`, `Touch::by`, `Touch::in_route`), `paths.rs` (`Whole`,
-`Callers::of`, `place_calls`), `plan.js` (`inRoute`, `before`); the pairs `handing` and `setup`.
+`Callers::of`, `place_calls`), `flow.rs` (`holds`, what ran before a call: `Ix::prior`, the memo's `Key`;
+`along`), `plan.js` (`inRoute`, `before`, `ranBefore`); the pairs `handing` and `setup`, the programs
+`plans/setup-in-a-loop` and `plans/setup-in-an-arm`, and `engine/tests/ran_before.rs`, which holds the
+engine's reading and the page's to one answer.
 
 ### Yoneda: what changed
 **What.** An object is determined up to isomorphism by the arrows into it, `Hom(−, A)`, and
@@ -736,7 +774,16 @@ open:
   reads the name, as it reads a projection's root, never where it binds it: the binding is no use, so the route
   that binds `gap` and hands it to `draw` takes no line of its own from `first` and `second`, as the route that
   writes the expression in `draw`'s call takes none (#343). Where the name holds a value of its own instead (a step
-  made it anew), the code that computes the value reads its operands where it is written. A choice among them is the body's
+  made it anew), the code that computes the value reads its operands where it is written. A name a step changes in
+  place holds such a value from its binding on, and stands for nothing: the step calls a method that changes what it
+  runs on (`both.append(second)`, `both.push(second)`) or a function that changes what it is handed (`add(both,
+  second)`, in Rust lent as `&mut`: `add(&mut both, second)`). A
+  change in place is the name bound anew, as it is of a path (`p.push(x)` is `p = p.join(x)`), so the binding is a
+  value: `both = [first]; both.append(second); show(both)` makes the list where it binds it, reading `first` there,
+  the change is handed that list and `second` and makes the list anew, and `show` takes what the change made, never
+  `first`. Where the change runs in one arm or in a loop, the name stands for nothing either, as a path changed there
+  is no longer the term before alone (#327): the binding is a value, the change makes it anew, and what the arms make
+  of it is one value at the choice's moment, as it is of a value a step made (#355). A choice among them is the body's
   choice, and a part a call makes (`samples.abs()`) is that call's value, which the name keeps (#328). What an
   opened step changes of a value it was handed goes out at its border as what its steps made of it;
 - a step that can fail has the codomain `T + E`: the error is a value its constructor makes in the arm
@@ -852,10 +899,13 @@ which parameters of no type of the code's hold a value, `builder::settle_paramet
 by its own code, `Steps::binds` and `Steps::literals` (`body.rs`), and those a function declares, `declaredIn` and
 `bodyMade` in `viewer/plan.js`; the names a name computed of names stands for, `body::computed_of` and
 `body::stands_for` with each language's `UseSyntax::computes`, and where the body's own code reads them, `Steps::reading`
-and `Steps::stood` with each reader's `stands`; the values of one kind from beyond that keep their names,
+and `Steps::stood` with each reader's `stands`, and the names a step changes in place, which stand for nothing,
+`knowledge::MUTATORS` with Rust's `Body::is_changed_in_place`, Python's `changed_bindings` (`Seen::changed`) and
+TypeScript's `Body::changed_in_place`; the values of one kind from beyond that keep their names,
 `split` and `splitBy` in `viewer/plan.js`; `tools/pictures.py`; `engine/tests/plans.rs`; the recursion, literals and
 locals pairs (`common::a_recursive_call_takes_what_its_call_hands_it`, `common::a_list_made_by_a_literal_is_made_by_the_body`,
-`common::a_local_is_bound_by_the_bodys_own_code`, `common::a_name_computed_of_names_stands_for_them`).
+`common::a_local_is_bound_by_the_bodys_own_code`, `common::a_name_computed_of_names_stands_for_them`,
+`common::a_name_changed_in_place_holds_a_value_of_its_own`, `common::a_name_a_function_changes_holds_a_value_of_its_own`).
 
 ### Saturation: when the order of a view does not matter
 **What.** A set is saturated by an equivalence when it never cuts a class in two.

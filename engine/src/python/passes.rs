@@ -19,7 +19,7 @@ use super::module::{
 use super::paths::{self, At, Built, Eval};
 use crate::builder::{foreign_type, ClassInfo, GraphBuilder};
 use crate::knowledge;
-use crate::model::{Dir, EdgeKind, Entry, EntryKind, Methods, Node, NodeKind, Route, Touch, World};
+use crate::model::{ext, Dir, EdgeKind, Entry, EntryKind, Methods, Node, NodeKind, Resolved, Route, Touch, World};
 use crate::pytypes::{Target, Types};
 use crate::tree::{field_children, literals, named_children, span, text, unquote, walk};
 
@@ -415,8 +415,8 @@ pub(super) fn link(modules: &IndexMap<String, Module>, store: &mut GraphBuilder,
         let info = store.classes.get(id).cloned().unwrap_or_default();
         let mut resolved = vec![];
         for b in &info.bases {
-            let r = resolve(m, b, modules, &store.nodes, own).unwrap_or_else(|| format!("ext:{}", b.join(".")));
-            if r.starts_with("ext:") {
+            let r = resolve(m, b, modules, &store.nodes, own).unwrap_or_else(|| Resolved::Beyond(b.join("."))).id();
+            if ext::is(&r) {
                 store.ext_node(&r);
             }
             store.add_edge(id, &r, EdgeKind::Inherits, None);
@@ -426,7 +426,7 @@ pub(super) fn link(modules: &IndexMap<String, Module>, store: &mut GraphBuilder,
         // a field's type is read as a signature's: a name the module aliases is the sum it names
         for (fname, types) in &info.fields {
             for t in types {
-                for r in type_targets(m, t, modules, &aliases, &store.nodes, own).into_iter().filter(|r| !r.starts_with("ext:")) {
+                for r in type_targets(m, t, modules, &aliases, &store.nodes, own).into_iter().filter(|r| !ext::is(r)) {
                     store.classes.entry(id.clone()).or_default().attr_types.insert(fname.clone(), r.clone());
                     store.add_edge(id, &r, EdgeKind::Has, Some(fname.clone()));
                 }
@@ -434,7 +434,7 @@ pub(super) fn link(modules: &IndexMap<String, Module>, store: &mut GraphBuilder,
         }
     }
     // a method only declared: abstract, or of a protocol, which what has its methods implements
-    let protocols: HashSet<String> = knowledge::PYTHON_PROTOCOLS.iter().map(|(p, n)| format!("ext:{p}.{n}")).collect();
+    let protocols: HashSet<String> = knowledge::PYTHON_PROTOCOLS.iter().map(|(p, n)| ext::of(&format!("{p}.{n}"))).collect();
     for id in &ids {
         let n = &store.nodes[id];
         let Some(cls) = n.cls.as_deref().filter(|_| n.kind == NodeKind::Method) else { continue };
@@ -458,7 +458,7 @@ pub(super) fn link(modules: &IndexMap<String, Module>, store: &mut GraphBuilder,
             for u in unions {
                 let mut variants: Vec<String> = vec![];
                 for r in u.names.iter().flat_map(|t| type_targets(m, t, modules, &aliases, &store.nodes, own)) {
-                    if (!r.starts_with("ext:") || foreign_type(&r, &OWN)) && !variants.contains(&r) {
+                    if (!ext::is(&r) || foreign_type(&r, &OWN)) && !variants.contains(&r) {
                         variants.push(r);
                     }
                 }
@@ -470,7 +470,7 @@ pub(super) fn link(modules: &IndexMap<String, Module>, store: &mut GraphBuilder,
                 }
             }
             for r in targets {
-                if r.starts_with("ext:") {
+                if ext::is(&r) {
                     if !foreign_type(&r, &OWN) {
                         continue;
                     }
@@ -480,7 +480,8 @@ pub(super) fn link(modules: &IndexMap<String, Module>, store: &mut GraphBuilder,
             }
         }
         // a type written through an alias is held by the name of the type it stands for
-        let held = crate::model::holds_resolved(&store.nodes[id], |h| resolve(m, &[h.to_string()], modules, &store.nodes, own));
+        let held =
+            crate::model::holds_resolved(&store.nodes[id], |h| resolve(m, &[h.to_string()], modules, &store.nodes, own).map(Resolved::id));
         crate::model::set_holds(store.nodes.get_mut(id).expect("a node of the graph"), held);
     }
     let sites = sites(modules, store);
@@ -546,8 +547,7 @@ pub(super) fn link(modules: &IndexMap<String, Module>, store: &mut GraphBuilder,
     let ext: HashMap<(String, String), String> = store
         .nodes
         .keys()
-        .filter(|k| k.starts_with("ext:") && !k.contains('['))
-        .filter_map(|k| Some(((package_of(&k[4..]), k.rsplit('.').next()?.to_string()), k.clone())))
+        .filter_map(|k| Some(((package_of(ext::path(k).filter(|p| !p.contains('['))?), k.rsplit('.').next()?.to_string()), k.clone())))
         .collect();
     let mut handed = vec![];
     let mut waiting: Vec<(String, Touch, Vec<Built>)> = vec![];
@@ -1065,8 +1065,8 @@ fn add_sums(modules: &IndexMap<String, Module>, store: &mut GraphBuilder, aliase
     for (id, a) in sums {
         let m = &modules[&a.module];
         let mut variants: Vec<String> = vec![];
-        for r in a.names.iter().filter_map(|n| resolve(m, n, modules, &store.nodes, own)) {
-            if (!r.starts_with("ext:") || foreign_type(&r, &OWN)) && !variants.contains(&r) {
+        for r in a.names.iter().filter_map(|n| resolve(m, n, modules, &store.nodes, own).map(Resolved::id)) {
+            if (!ext::is(&r) || foreign_type(&r, &OWN)) && !variants.contains(&r) {
                 variants.push(r);
             }
         }
@@ -1085,7 +1085,7 @@ fn add_sums(modules: &IndexMap<String, Module>, store: &mut GraphBuilder, aliase
         });
         store.add_edge(&a.module, id, EdgeKind::Contains, None);
         for v in variants {
-            if v.starts_with("ext:") {
+            if ext::is(&v) {
                 store.ext_node(&v);
             }
             store.add_edge(id, &v, EdgeKind::Variant, None);
@@ -1126,7 +1126,7 @@ fn type_targets(
     own: &Own,
 ) -> Vec<String> {
     match resolve(m, t, modules, nodes, own) {
-        Some(r) => vec![r],
+        Some(r) => vec![r.id()],
         None => alias_targets(m, t, modules, aliases, nodes, own),
     }
 }
@@ -1147,5 +1147,5 @@ fn alias_targets(
         return vec![full];
     }
     let Some(a) = aliases.get(&full) else { return vec![] };
-    a.names.iter().filter_map(|n| resolve(&modules[&a.module], n, modules, nodes, own)).collect()
+    a.names.iter().filter_map(|n| resolve(&modules[&a.module], n, modules, nodes, own).map(Resolved::id)).collect()
 }

@@ -9,11 +9,33 @@ use tree_sitter::Node as TsNode;
 
 use crate::builder::GraphBuilder;
 use crate::effects::{self, Facts};
-use crate::model::{Crossing, Dir, EdgeKind, Held, NodeKind, Set, Site, Slot, Test, Touch, Use, World};
+use crate::model::{ext, Crossing, Dir, EdgeKind, Held, NodeKind, Set, Site, Slot, Test, Touch, Use, World};
 use crate::tree::{
     beneath, guarded_by, guards, named_children, number_choices, parent, payload_of, starts_at_literal, text, walk, walk_all, what_of,
     wrapped, wraps, ChoiceSyntax, Part, Wrappers,
 };
+
+/// The touches each call of a body made, by where the call is written: the touches made now, and
+/// those that wait for what callers hand, each by its place in the reader's list. The touch that
+/// opened a door is found by the call that opened it, so two doors opened on one line are two.
+#[derive(Default)]
+pub struct MadeBy(Vec<(Range, std::ops::Range<usize>, std::ops::Range<usize>)>);
+
+impl MadeBy {
+    /// Call `c` made the touches from `touches` and the waiting ones from `waiting` on, up to the
+    /// ends of both lists.
+    pub fn record(&mut self, c: TsNode, touches: std::ops::Range<usize>, waiting: std::ops::Range<usize>) {
+        self.0.push(((c.start_byte(), c.end_byte()), touches, waiting));
+    }
+
+    /// The touches and the waiting touches the calls written within `n` made, each by its place in
+    /// its list, in the order they were made.
+    pub fn within(&self, n: TsNode) -> (Vec<usize>, Vec<usize>) {
+        let inside = |(s, e): Range| n.start_byte() <= s && e <= n.end_byte();
+        let made = self.0.iter().filter(|(r, _, _)| inside(*r));
+        (made.clone().flat_map(|(_, t, _)| t.clone()).collect(), made.flat_map(|(_, _, w)| w.clone()).collect())
+    }
+}
 
 /// A call that crosses into the world, as the code writes it.
 pub struct Crosses {
@@ -98,8 +120,9 @@ pub struct UseSyntax {
     /// Is `child` what the call `node` is handed: its arguments.
     pub hands: fn(TsNode, TsNode) -> bool,
     /// The names a call `node` changes among what it is handed, where the language writes it
-    /// (Rust's `&mut s`): the call makes them anew from what it runs on.
-    pub changes: fn(TsNode) -> Vec<TsNode>,
+    /// (Rust's `&mut s`): the call makes them anew from what it runs on. A call that hands on the
+    /// value it is called on (`f.read_to_string(&mut s).unwrap()`) changes what that value's call changes.
+    pub changes: for<'t> fn(TsNode<'t>, &[u8]) -> Vec<TsNode<'t>>,
     /// Is `child` what `node` takes apart into the names its arms bind: a `match`'s subject.
     /// Where those names go is not followed, so the value is taken as going on.
     pub splits: fn(TsNode, TsNode) -> bool,
@@ -624,11 +647,11 @@ impl<'t, 's> Steps<'t, 's> {
         }
         // a name a step gave holds what the step gave, where the reader knows no type for it where it is read, or one of a
         // library's: the value is the step's, of no type of the code's where the step gives none (`fig, ax = plt.subplots()`)
-        for u in out.iter_mut().filter(|u| (u.ty.is_empty() || u.ty.starts_with("ext:")) && !u.name.is_empty()) {
+        for u in out.iter_mut().filter(|u| (u.ty.is_empty() || ext::is(&u.ty)) && !u.name.is_empty()) {
             let types: HashSet<&String> = self.sites.iter().flat_map(|s| &s.gives).filter(|g| g.name == u.name).map(|g| &g.ty).collect();
             let types: Vec<&String> = types.into_iter().collect();
             match types[..] {
-                [t] if !t.is_empty() || u.ty.starts_with("ext:") => u.ty = t.clone(),
+                [t] if !t.is_empty() || ext::is(&u.ty) => u.ty = t.clone(),
                 _ => {
                     if let [t] = types.iter().filter(|t| !t.is_empty()).collect::<Vec<_>>()[..] {
                         if u.ty.is_empty() {
@@ -1174,11 +1197,26 @@ impl<'t, 's> Steps<'t, 's> {
         }
     }
 
+    /// Mark the touches a call made as checks when what it hands a function it is given goes to
+    /// nothing the body hands on: a listener's function is handed what the event brings, as the names
+    /// `received` bind it (`socket.on("data", (chunk) => ..)`), and what the call itself gives back
+    /// is no part of that. Where no name receives it, nothing it brings is used.
+    pub fn mark_received<'a>(&self, received: &[TsNode<'t>], touches: impl IntoIterator<Item = &'a mut Touch>) {
+        let mut bound = HashSet::new();
+        let checks = !received.iter().any(|r| self.bound_goes_on(text(*r, self.src), r.end_byte(), &mut bound));
+        for t in touches {
+            t.checks = checks;
+        }
+    }
+
     /// Whether what `v` gives reaches what the function hands on: it is returned, handed to a
     /// call, kept in a field or an element, or taken apart by a `match`, or a name it is bound to is. What only decides a
     /// choice, goes to an error or is dropped goes no further. `bound` are the names followed.
     fn goes_on(&self, v: TsNode<'t>, bound: &mut HashSet<String>) -> bool {
         let (u, mut child, mut handed) = (self.uses, v, false);
+        if self.changed_goes_on(v, bound) {
+            return true;
+        }
         while let Some(p) = self.up(child) {
             if (u.leaves)(child, self.body) {
                 return true;
@@ -1190,19 +1228,12 @@ impl<'t, 's> Steps<'t, 's> {
                 return true;
             }
             handed |= (u.hands)(p, child);
-            // a call that changes a value it is handed (`f.read_to_string(&mut s)`) makes it anew from
-            // what it runs on: what the call is made of goes on where that value goes
-            let after = p.end_byte();
-            for changed in (u.changes)(p) {
-                let name = text(changed, self.src).to_string();
-                if !bound.insert(name.clone()) {
-                    continue;
-                }
-                if self.written_after(&name, after).filter(|n| !self.rebinds(*n)).any(|n| self.goes_on(n, bound)) {
-                    return true;
-                }
+            if self.changed_goes_on(p, bound) {
+                return true;
             }
-            if let Some((targets, value)) = (u.binds)(p).filter(|(_, value)| value.id() == child.id()) {
+            // a binding that binds no name throws the value away as a statement does: `let _ = f(x)` is `f(x);`
+            let binding = (u.binds)(p).filter(|(_, value)| value.id() == child.id()).filter(|_| !(u.drops)(p, child, self.src));
+            if let Some((targets, value)) = binding {
                 if walk(targets, u.keeps).first().is_some() {
                     return true;
                 }
@@ -1219,6 +1250,17 @@ impl<'t, 's> Steps<'t, 's> {
             child = p;
         }
         handed
+    }
+
+    /// Whether a call that changes a value it is handed (`f.read_to_string(&mut s)`) makes what goes on: it makes the
+    /// value anew from what it runs on, so what the call gives, and what it is made of, goes on where that value goes.
+    fn changed_goes_on(&self, call: TsNode<'t>, bound: &mut HashSet<String>) -> bool {
+        (self.uses.changes)(call, self.src).into_iter().any(|changed| self.bound_goes_on(text(changed, self.src), call.end_byte(), bound))
+    }
+
+    /// Whether what the name `name` holds from `after` on goes on (`goes_on`), where it is not followed yet.
+    fn bound_goes_on(&self, name: &str, after: usize, bound: &mut HashSet<String>) -> bool {
+        bound.insert(name.to_string()) && self.written_after(name, after).filter(|n| !self.rebinds(*n)).any(|n| self.goes_on(n, bound))
     }
 
     /// Whether the name `n` is what a binding binds, not a value it reads.

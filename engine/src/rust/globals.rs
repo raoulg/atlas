@@ -36,7 +36,7 @@ pub(super) fn read(modules: &IndexMap<String, Module>, store: &mut GraphBuilder,
         // a library's type that changes in place, not one of the program's of the same name
         let in_place = |m: &Module, ty: &[String]| {
             ty.last().map_or(false, |t| knowledge::rust_interior(t))
-                && !resolve(m, ty, modules, nodes, crate_ids).and_then(|r| nodes.get(&r)).map_or(false, |n| n.kind == NodeKind::Class)
+                && !resolve(m, ty, modules, nodes, crate_ids).and_then(|r| nodes.get(&r.id())).map_or(false, |n| n.kind == NodeKind::Class)
         };
         let mut kept: HashMap<String, bool> = HashMap::new();
         for m in modules.values() {

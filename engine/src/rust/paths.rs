@@ -10,7 +10,7 @@ use tree_sitter::Node as TsNode;
 
 use super::module::{def_node, expand, path_parts, resolve, resolve_value, shadowed, Module};
 use crate::knowledge::{self, PathFn, PathMethod};
-use crate::model::{Node, NodeKind};
+use crate::model::{ext, Node, NodeKind, Resolved};
 use crate::paths::{bound as named_by, cross, each, environment_named, held_by, hole, lit, or_else, parent, substitute, union, Built, Seg};
 use crate::tree::{beneath, named_children, text, unquote, walk};
 
@@ -318,12 +318,12 @@ impl<'a> Eval<'a> {
     /// declared with.
     fn constant_value(&self, m: &'a Module, parts: &[String]) -> Option<(&'a Module, String, TsNode<'a>)> {
         let (home, name): (&'a Module, &str) = match parts {
-            [name] => match m.bindings.get(name).filter(|b| !b.starts_with("ext:")).and_then(|b| b.rsplit_once('.')) {
+            [name] => match m.bindings.get(name).filter(|b| !ext::is(b)).and_then(|b| b.rsplit_once('.')) {
                 Some((mid, n)) => (self.modules.get(mid)?, n),
                 None => (m, name.as_str()),
             },
             [path @ .., name] => {
-                let mid = resolve(m, path, self.modules, &self.nodes, self.crate_ids).filter(|r| !r.starts_with("ext:"))?;
+                let mid = resolve(m, path, self.modules, &self.nodes, self.crate_ids).and_then(Resolved::code)?;
                 (self.modules.get(&mid)?, name.as_str())
             }
             [] => return None,
@@ -533,7 +533,7 @@ impl<'a> Eval<'a> {
                     let name = path_parts(lit.child_by_field_name("name"), &m.src);
                     let built = match name.as_slice() {
                         [s] if s == "Self" => self.impl_type(m, lit),
-                        _ => resolve(m, &name, self.modules, &self.nodes, self.crate_ids),
+                        _ => resolve(m, &name, self.modules, &self.nodes, self.crate_ids).map(Resolved::id),
                     };
                     if let Some(ty) = built {
                         out.entry(ty).or_default().push((m, lit));
@@ -584,7 +584,7 @@ impl<'a> Eval<'a> {
                 }
                 let parts = path_parts(Some(f), src);
                 let own = resolve_value(at.m, &parts, self.modules, &self.nodes, self.crate_ids)
-                    .and_then(|id| self.nodes.get(&id))
+                    .and_then(|id| self.nodes.get(&id.id()))
                     .map_or(false, |n| matches!(n.kind, NodeKind::Function | NodeKind::Method));
                 if own {
                     return None;
@@ -597,7 +597,7 @@ impl<'a> Eval<'a> {
 
     /// The program's type a path names, when a command-line parser derives it.
     fn deriving(&self, m: &Module, parts: &[String]) -> Option<String> {
-        let ty = resolve(m, parts, self.modules, &self.nodes, self.crate_ids)?;
+        let ty = resolve(m, parts, self.modules, &self.nodes, self.crate_ids)?.id();
         let n = self.nodes.get(&ty).filter(|n| n.kind == NodeKind::Class)?;
         let home = self.modules.get(&n.module)?;
         derived_parser(home, def_node(home, n)?).map(|_| ty)
@@ -719,8 +719,7 @@ impl<'a> Eval<'a> {
         while let Some(x) = p.filter(|x| x.kind() != "impl_item") {
             p = crate::tree::parent(x);
         }
-        resolve(m, &path_parts(p?.child_by_field_name("type"), &m.src), self.modules, &self.nodes, self.crate_ids)
-            .filter(|r| !r.starts_with("ext:"))
+        resolve(m, &path_parts(p?.child_by_field_name("type"), &m.src), self.modules, &self.nodes, self.crate_ids).and_then(Resolved::code)
     }
 
     /// The id the graph knows a function by: its type's and its name for a method, its module's
@@ -876,7 +875,7 @@ impl<'a> Eval<'a> {
         if shadowed(at.scope, f, parts, &at.m.src) {
             return None;
         }
-        let id = resolve_value(at.m, parts, self.modules, &self.nodes, self.crate_ids).filter(|id| !id.starts_with("ext:"))?;
+        let id = resolve_value(at.m, parts, self.modules, &self.nodes, self.crate_ids).and_then(Resolved::code)?;
         let n = self.nodes.get(&id).filter(|n| matches!(n.kind, NodeKind::Function | NodeKind::Method))?;
         let home = self.modules.get(&n.module)?;
         let def = def_node(home, n)?;
@@ -927,7 +926,7 @@ impl<'a> Eval<'a> {
             }
             let home = self.modules.get(&n.module)?;
             let parts: Vec<String> = r.value.split("::").map(str::to_string).collect();
-            resolve(home, &parts, self.modules, &self.nodes, self.crate_ids).and_then(|id| own(&id))
+            resolve(home, &parts, self.modules, &self.nodes, self.crate_ids).and_then(|id| own(&id.id()))
         };
         match e.kind() {
             // the value a method runs on
@@ -938,7 +937,7 @@ impl<'a> Eval<'a> {
                     let ty = self.type_of(at, f.child_by_field_name("value")?, depth + 1)?;
                     self.nodes.get(&format!("{ty}.{}", text(f.child_by_field_name("field")?, src)))?
                 } else {
-                    let id = resolve_value(at.m, &path_parts(Some(f), src), self.modules, &self.nodes, self.crate_ids)?;
+                    let id = resolve_value(at.m, &path_parts(Some(f), src), self.modules, &self.nodes, self.crate_ids)?.id();
                     self.nodes.get(&id)?
                 };
                 gives(n)
@@ -958,7 +957,7 @@ impl<'a> Eval<'a> {
                 while t.kind() == "reference_type" {
                     t = t.child_by_field_name("type")?;
                 }
-                resolve(at.m, &path_parts(Some(t), src), self.modules, &self.nodes, self.crate_ids).and_then(|id| own(&id))
+                resolve(at.m, &path_parts(Some(t), src), self.modules, &self.nodes, self.crate_ids).and_then(|id| own(&id.id()))
             }
             _ => None,
         }

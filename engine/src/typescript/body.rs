@@ -16,7 +16,7 @@ use crate::builder::{foreign_type, GraphBuilder};
 use crate::effects::{self, Crossing};
 use crate::knowledge;
 use crate::knowledge::OwnTypes;
-use crate::model::{Bucket, EdgeKind, Held, Node, NodeKind, Slot, Touch, World};
+use crate::model::{ext, Bucket, EdgeKind, Held, Node, NodeKind, Resolved, Slot, Touch, World};
 use crate::tree::{
     beneath, evaluation_order, literals, named_children, nth_of_kind, outermost, text, unquote, walk, what_of, wrapped, ChoiceSyntax,
     CompareSyntax, Part,
@@ -160,7 +160,9 @@ fn value_type(m: &Module, name: &str, modules: &IndexMap<String, Module>, nodes:
             Bound::Ext(_) => return None,
         },
     };
-    resolve(home, home.values.get(&local)?, modules, nodes).filter(|r| nodes.get(r).map_or(false, |x| x.kind == NodeKind::Class))
+    resolve(home, home.values.get(&local)?, modules, nodes)
+        .map(Resolved::id)
+        .filter(|r| nodes.get(r).map_or(false, |x| x.kind == NodeKind::Class))
 }
 
 /// The classes a body's names hold, binding by binding (`body::Bindings`). A binding (a parameter,
@@ -376,7 +378,13 @@ pub(super) fn link_calls<'t>(
             }
             let (t, w) = (b.read.touches.len(), b.read.calls.len());
             b.call(&mut steps, c);
-            steps.mark(c, b.read.touches[t..].iter_mut().chain(b.read.calls[w..].iter_mut().map(|(t, _)| t)));
+            b.read.made.record(c, t..b.read.touches.len(), w..b.read.calls.len());
+            let received = b.received(c);
+            let made = b.read.touches[t..].iter_mut().chain(b.read.calls[w..].iter_mut().map(|(t, _)| t));
+            match received {
+                Some(names) => steps.mark_received(&names, made),
+                None => steps.mark(c, made),
+            }
         }
         let kept = steps.kept.clone();
         let held = |n| {
@@ -400,7 +408,7 @@ pub(super) fn link_calls<'t>(
         // a qualifier is a type when it names an `enum` or a class of the program
         let is_type = |(a, b): (usize, usize)| {
             let parts: Vec<String> = String::from_utf8_lossy(&m.src[a..b]).split('.').map(str::to_string).collect();
-            resolve(m, &parts, modules, &store.nodes).and_then(|t| store.nodes.get(&t)).is_some_and(|t| t.kind == NodeKind::Class)
+            resolve(m, &parts, modules, &store.nodes).and_then(|t| store.nodes.get(&t.id())).is_some_and(|t| t.kind == NodeKind::Class)
         };
         // the value a method runs on is `this`, unless it is called on its class
         let receiver =
@@ -421,7 +429,7 @@ pub(super) fn link_calls<'t>(
         store.touch(id, t);
     }
     for (t, input) in read.mutates {
-        if t.starts_with("ext:") {
+        if ext::is(&t) {
             store.ext_node(&t);
         }
         store.add_edge(id, &t, EdgeKind::Mutates, Some(input));
@@ -452,6 +460,7 @@ pub(super) struct Read<'t> {
     mutates: Vec<(String, String)>,
     args: Vec<Arg<'t>>,
     calls: Vec<(Touch, Vec<crate::paths::Built>)>,
+    made: crate::body::MadeBy,
     exits: bool,
 }
 
@@ -606,8 +615,9 @@ impl<'a, 't> Body<'a, 't> {
         !self.is_module || module_level(x, self.root, &self.m.bodies)
     }
 
+    /// What a name path names, by the id the graph knows it by.
     fn resolve(&self, parts: &[String]) -> Option<String> {
-        resolve(self.m, parts, self.modules, &self.store.nodes)
+        resolve(self.m, parts, self.modules, &self.store.nodes).map(Resolved::id)
     }
 
     fn class(&self, r: Option<String>) -> Option<String> {
@@ -639,7 +649,7 @@ impl<'a, 't> Body<'a, 't> {
 
     /// Whether `r` is one of the program's own functions or classes.
     pub(super) fn own(&self, r: &str) -> bool {
-        !r.starts_with("ext:") && self.store.nodes.contains_key(r)
+        !ext::is(r) && self.store.nodes.contains_key(r)
     }
 
     /// What a change to each typed parameter changes, by name: the type the picture draws it as,
@@ -656,7 +666,7 @@ impl<'a, 't> Body<'a, 't> {
                 continue;
             };
             let drawn = type_names(Some(ty), src).into_iter().filter_map(|t| self.resolve(&t)).find(|r| {
-                if r.starts_with("ext:") {
+                if ext::is(r) {
                     foreign_type(r, &OWN)
                 } else {
                     self.class(Some(r.clone())).is_some()
@@ -665,7 +675,7 @@ impl<'a, 't> Body<'a, 't> {
             let written = text(ty, src).trim_start_matches(':').trim();
             let container = container_type(written, self.m).then(|| {
                 let head = written.split(|c: char| !(c.is_alphanumeric() || c == '_' || c == '$')).next().unwrap_or("");
-                format!("ext:javascript.{}", if knowledge::TYPESCRIPT_CHANGEABLE.contains(&head) { head } else { "Array" })
+                ext::of(&format!("javascript.{}", if knowledge::TYPESCRIPT_CHANGEABLE.contains(&head) { head } else { "Array" }))
             });
             if let Some(t) = drawn.or(container) {
                 out.insert(text(name, src).to_string(), t);
@@ -1161,7 +1171,7 @@ impl<'a, 't> Body<'a, 't> {
     /// other name.
     fn stands(&self, i: TsNode, kept: &HashSet<String>) -> Vec<TsNode<'t>> {
         let (values, element) = self.bound_to(i);
-        if element || values.is_empty() || kept.contains(text(i, self.src)) {
+        if element || values.is_empty() || kept.contains(text(i, self.src)) || self.changed_in_place(i) {
             return vec![];
         }
         let computed: Vec<Vec<TsNode<'t>>> = values.iter().map(|v| crate::body::stands_for(*v, &USES, self.src, &part)).collect();
@@ -1169,6 +1179,20 @@ impl<'a, 't> Body<'a, 't> {
             return vec![];
         }
         computed.into_iter().flatten().collect()
+    }
+
+    /// Whether a step changes in place the value the binding of the name `i` visible where it stands holds, anywhere that
+    /// binding is visible: a call that changes the name or a part of it (`changed_by`): a method that changes what it runs
+    /// on (`both.push(second)`, as `knowledge::MUTATORS` says, or the program's own), or a function of the program's handed
+    /// it whose parameter it changes (`add(both, second)`). Such a name holds a value of its own, which each change makes
+    /// anew (`mathematics.md`, "One fine plan").
+    fn changed_in_place(&self, i: TsNode) -> bool {
+        let (name, binding) = (text(i, self.src), self.locals.which(i, self.src));
+        let this = |o: TsNode| o.kind() == "identifier" && text(o, self.src) == name && self.locals.which(o, self.src) == binding;
+        binding.is_some()
+            && walk(self.body, &["call_expression"])
+                .into_iter()
+                .any(|c| self.changed_by(c).into_iter().any(|x| root_of(beneath(x, WRAPPERS)).is_some_and(this)))
     }
 
     /// What a call gives back, by the name the body keeps it by. Its type is one a step gives: what
@@ -1236,7 +1260,7 @@ impl<'a, 't> Body<'a, 't> {
             }
             if gives.is_empty() && steps.raised(c) {
                 let class =
-                    self.resolve(&parts).filter(|r| r.starts_with("ext:")).unwrap_or_else(|| format!("ext:javascript.{}", parts.join(".")));
+                    self.resolve(&parts).filter(|r| ext::is(r)).unwrap_or_else(|| ext::of(&format!("javascript.{}", parts.join("."))));
                 gives.push(Held::new(class, ""));
             }
             steps.op(c, &format!("{}()", parts.last().cloned().unwrap_or_default()), hands, gives);
@@ -1312,7 +1336,7 @@ impl<'a, 't> Body<'a, 't> {
             return None;
         }
         let home = self.modules.get(&node.module)?;
-        self.class(resolve(home, &parts, self.modules, &self.store.nodes))
+        self.class(resolve(home, &parts, self.modules, &self.store.nodes).map(Resolved::id))
     }
 
     /// `<Kaart/>` renders a component, handed its attributes; a lowercase name is an element of
@@ -1864,14 +1888,45 @@ impl<'a, 't> Body<'a, 't> {
         names.into_iter().map(|n| text(n, self.src).to_string()).collect()
     }
 
+    /// The names a listener's function binds what the event brings to, where `c` registers one for an
+    /// event it names (`socket.on("data", (chunk) => ..)`, `knowledge::NODE_LISTENERS`): its
+    /// parameters, none where it takes none.
+    fn received(&self, c: TsNode<'t>) -> Option<Vec<TsNode<'t>>> {
+        let f = function_of(c).filter(|f| f.kind() == "member_expression")?;
+        if !knowledge::NODE_LISTENERS.contains(&text(f.child_by_field_name("property")?, self.src)) {
+            return None;
+        }
+        let args = c.child_by_field_name("arguments").map(named_children).unwrap_or_default();
+        if args.first()?.kind() != "string" {
+            return None;
+        }
+        let listener = args[1..]
+            .iter()
+            .map(|a| beneath(*a, WRAPPERS))
+            .find(|a| matches!(a.kind(), "arrow_function" | "function_expression" | "function"))?;
+        let mut names = vec![];
+        if let Some(p) = listener.child_by_field_name("parameter") {
+            pattern_names(p, &mut names);
+        }
+        for p in listener.child_by_field_name("parameters").map(named_children).unwrap_or_default() {
+            if let Some(pattern) = p.child_by_field_name("pattern") {
+                pattern_names(pattern, &mut names);
+            }
+        }
+        Some(names)
+    }
+
     /// The touch the body made where it made the door the name `on` holds (`const conn =
-    /// net.createConnection(..)`), with the term its place waits for: the last touch in `world` on
-    /// the line of the value the name is declared with.
+    /// net.createConnection(..)`), with the term its place waits for: the last touch in `world` the
+    /// calls of the value the name is declared with made.
     fn opening(&self, on: TsNode<'t>, world: World) -> Option<(Touch, Vec<crate::paths::Built>)> {
         let (value, BoundFrom::Whole) = self.locals.from(on, self.src)? else { return None };
-        let line = value.start_position().row as u32 + 1;
-        let made = self.read.touches.iter().map(|t| (t, vec![])).chain(self.read.calls.iter().map(|(t, b)| (t, b.clone())));
-        made.filter(|(t, _)| t.line == line && t.kind == world).last().map(|(t, b)| (t.clone(), b))
+        let (now, waiting) = self.read.made.within(value);
+        let made = now.into_iter().map(|i| (&self.read.touches[i], vec![])).chain(waiting.into_iter().map(|i| {
+            let (t, b) = &self.read.calls[i];
+            (t, b.clone())
+        }));
+        made.filter(|(t, _)| t.kind == world).last().map(|(t, b)| (t.clone(), b))
     }
 
     /// What a library's call crosses into: a file call, a request or a database statement waits
@@ -1889,7 +1944,8 @@ impl<'a, 't> Body<'a, 't> {
         };
         let args = c.child_by_field_name("arguments").map(named_children).unwrap_or_default();
         // a Node socket receives by the event a listener waits for, which names the operation
-        // (`socket.on("data", ..)`)
+        // (`socket.on("data", ..)`); a method that sends what it is handed first is that sending
+        // where it is handed data (`socket.end(data)` is `socket.write(data)`, then `socket.end()`)
         let socket = pkg.as_deref().is_some_and(knowledge::node_socket_package);
         let event = parts
             .last()
@@ -1897,14 +1953,49 @@ impl<'a, 't> Body<'a, 't> {
             .and(args.first())
             .filter(|a| a.kind() == "string")
             .map(|a| unquote(text(*a, src)));
+        let handed = |a: &TsNode| !matches!(beneath(*a, WRAPPERS).kind(), "arrow_function" | "function_expression" | "function");
+        let sent = parts
+            .last()
+            .filter(|_| socket && args.first().is_some_and(handed))
+            .and_then(|l| knowledge::NODE_SENDS_FIRST.iter().find(|(m, _)| *m == l.as_str()))
+            .map(|(_, op)| op.to_string());
         let listened: Vec<String>;
-        let parts = match event {
+        let parts = match event.or(sent) {
             Some(e) => {
                 listened = parts[..parts.len() - 1].iter().cloned().chain([e]).collect();
                 &listened[..]
             }
             None => parts,
         };
+        // traffic through a `FileHandle` is at the file it was opened at, wherever the handle is handed
+        // (`docs/reference/mathematics.md`, "A door keeps its place"), never at what it is handed
+        let imported = matches!(m.bindings.get(&head), Some(Bound::Ext(_)));
+        let handle = pkg.as_deref().is_some_and(|p| knowledge::NODE_FS.contains(&p)) && !imported;
+        let traffic = parts.last().filter(|_| handle).and_then(|l| knowledge::NODE_FILE_TRAFFIC.iter().find(|(o, _)| *o == l.as_str()));
+        let object = function_of(c).filter(|f| f.kind() == "member_expression").and_then(|f| f.child_by_field_name("object"));
+        if let (Some((op, dir)), Some(o)) = (traffic, object) {
+            let path_function = |f: TsNode| self.eval.path_function_of(m, f);
+            let kind = Crossing { world: World::Disk, dir: Some(*dir) };
+            let cr = Crosses::read(c, src, kind, pkg.as_deref(), op, &literals(c, src, STRINGS), STRINGS, &HashMap::new(), &path_function);
+            let t = Touch {
+                what: text(o, src).to_string(),
+                payload: cr.payload.clone(),
+                op: op.to_string(),
+                line: cr.line,
+                ..Touch::new(World::Disk, Some(*dir))
+            };
+            // a handle the body opened is at the place its opening touches, named as the opening names it
+            let at = At { m, scope: self.scope, params: &self.params };
+            let (t, built) = match self.opening(o, World::Disk) {
+                Some((o, built)) => (Touch { what: o.what, artifact: o.artifact, fixed: o.fixed, ..t }, built),
+                None => (t, self.eval.of(at, o, 0)),
+            };
+            match built {
+                built if built.is_empty() => self.read.touches.push(t),
+                built => self.read.calls.push((t, built)),
+            }
+            return;
+        }
         // some parts of the world are reached only through a client the package made, not its helpers
         let Some(kind) = effects::boundary_ts(pkg.as_deref(), parts)
             .filter(|k| !knowledge::THROUGH_A_CLIENT.contains(&k.world) || self.made.contains_key(&head))
@@ -1936,7 +2027,7 @@ impl<'a, 't> Body<'a, 't> {
                 payload: cr.payload.clone(),
                 op: op.clone(),
                 line: cr.line,
-                ..Touch::new(World::Net, None)
+                ..Touch::new(World::Net, kind.dir)
             };
             // a door the body opened is at the place its opening touches, named as the opening names it
             let opened = object.filter(|_| !opens && handed.is_none()).and_then(|o| self.opening(o, World::Net));
@@ -2004,24 +2095,28 @@ impl<'a, 't> Body<'a, 't> {
     /// changes nothing (`http.delete(..)` on a library's client). A call of the program's own also
     /// changes each argument whose parameter its body changes (`addLine(lines, ..)`).
     pub(super) fn changed(&self) -> std::collections::BTreeSet<&'t str> {
-        let changes = |c: TsNode<'t>| -> Vec<TsNode<'t>> {
-            let Some(f) = function_of(c) else { return vec![] };
-            let on = (f.kind() == "member_expression").then(|| f.child_by_field_name("object")).flatten();
-            match self.callee(c).filter(|t| self.own(t)) {
-                Some(t) => self.changed_parts(&t, on, c).into_iter().map(|(x, _)| x).collect(),
-                None => {
-                    let language = f
-                        .child_by_field_name("property")
-                        .filter(|_| f.kind() == "member_expression")
-                        .map_or(false, |p| knowledge::mutates(knowledge::Registry::Npm, "javascript", text(p, self.src)));
-                    on.filter(|o| language && self.holds_container(*o)).into_iter().collect()
-                }
-            }
-        };
-        changes_in(self.body, self.src, &changes)
+        changes_in(self.body, self.src, &|c| self.changed_by(c))
             .into_iter()
             .filter_map(|(x, root)| changed_through(self.body, self.src, &BINDS, root, x.start_byte()))
             .collect()
+    }
+
+    /// The parts of what it is handed that call `c` changes in place (`changed`): the value it is made on, where the
+    /// program's own method changes its receiver or the language's table changes the container it holds, and each
+    /// argument whose parameter the program's own function changes.
+    fn changed_by(&self, c: TsNode<'t>) -> Vec<TsNode<'t>> {
+        let Some(f) = function_of(c) else { return vec![] };
+        let on = (f.kind() == "member_expression").then(|| f.child_by_field_name("object")).flatten();
+        match self.callee(c).filter(|t| self.own(t)) {
+            Some(t) => self.changed_parts(&t, on, c).into_iter().map(|(x, _)| x).collect(),
+            None => {
+                let language = f
+                    .child_by_field_name("property")
+                    .filter(|_| f.kind() == "member_expression")
+                    .map_or(false, |p| knowledge::mutates(knowledge::Registry::Npm, "javascript", text(p, self.src)));
+                on.filter(|o| language && self.holds_container(*o)).into_iter().collect()
+            }
+        }
     }
 
     /// What the body changes among what it is handed, each by its name with the type its change is
@@ -2352,7 +2447,7 @@ const USES: UseSyntax = UseSyntax {
     hands: |n, child| {
         matches!(n.kind(), "call_expression" | "new_expression") && n.child_by_field_name("arguments").map(|a| a.id()) == Some(child.id())
     },
-    changes: |_| vec![],
+    changes: |_, _| vec![],
     splits: |n, child| n.kind() == "switch_statement" && n.child_by_field_name("value").map(|v| v.id()) == Some(child.id()),
     names: &["identifier", "shorthand_property_identifier"],
     keeps: &["member_expression", "subscript_expression"],

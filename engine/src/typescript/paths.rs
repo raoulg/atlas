@@ -688,6 +688,10 @@ impl<'a> Eval<'a> {
             Some(None) => return self.placed_later(at, c, depth),
             None => {}
         }
+        // a file, a descriptor or a `FileHandle`, is at the path it is opened at
+        if knowledge::node_file_door(&pkg, last) {
+            return arg(0);
+        }
         match self.path_function_of(at.m, f) {
             Some(made) => self.made(at, made, &args, depth),
             // the language's own conversions to a string

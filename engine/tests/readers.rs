@@ -30,6 +30,36 @@ fn only_the_readers_know_a_language() {
     assert!(found.is_empty(), "a language's own names outside its reader:\n{}", found.join("\n"));
 }
 
+/// An id is one of the code's or a name past it (`Code ⊔ Beyond`), and the tag of the second
+/// injection is reached through one prism, `model::ext`: it is spelled once, where the prism is
+/// defined. No reader, and nothing on the graph side, writes the tag, tests for it or takes it off
+/// by hand.
+#[test]
+fn a_name_past_the_code_goes_through_one_prism() {
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let mut files: Vec<PathBuf> = vec![];
+    for dir in [root.join("src"), root.join("src/python"), root.join("src/typescript"), root.join("src/rust"), root.join("../cli/src")] {
+        files.extend(std::fs::read_dir(dir).unwrap().flatten().map(|e| e.path()).filter(|p| p.extension().map_or(false, |e| e == "rs")));
+    }
+    files.sort();
+    let mut found = vec![];
+    for f in &files {
+        let text = std::fs::read_to_string(f).unwrap();
+        // the code, without its tests, which write ids as the page's JSON has them
+        for (i, line) in text.lines().take_while(|l| l.trim() != "#[cfg(test)]").enumerate() {
+            let line = line.split("// ").next().unwrap_or("");
+            if !line.trim_start().starts_with("//") && line.contains("\"ext:") {
+                found.push(format!("{}:{}: {}", f.file_name().unwrap().to_string_lossy(), i + 1, line.trim()));
+            }
+        }
+    }
+    assert!(
+        found.len() == 1 && found[0].starts_with("model.rs:") && found[0].contains("const TAG"),
+        "the tag of a name past the code spelled outside `model::ext`:\n{}",
+        found.join("\n")
+    );
+}
+
 /// Library knowledge is data: a library's or a framework's name stands in knowledge.rs and
 /// nowhere else, and no project's name or idiom stands anywhere in the engine or the viewer.
 #[test]

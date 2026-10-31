@@ -39,3 +39,21 @@ export function written(first: Level): void {
   draw(first.db - QUIET.db);
   show([first, QUIET]);
 }
+
+/** The two levels, gathered by pushing the second onto an array of the first, and shown. */
+export function gathered(first: Level, second: Level): void {
+  const both: Level[] = [first];
+  both.push(second);
+  show(both);
+}
+
+function add(levels: Level[], level: Level): void {
+  levels.push(level);
+}
+
+/** The two levels, gathered by handing an array of the first to a function that adds the second, and shown. */
+export function lent(first: Level, second: Level): void {
+  const both: Level[] = [first];
+  add(both, second);
+  show(both);
+}

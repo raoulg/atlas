@@ -18,7 +18,7 @@ use super::module::{
 use super::paths::{self, Eval};
 use crate::builder::{foreign_type, ClassInfo, Declared, GraphBuilder};
 use crate::knowledge;
-use crate::model::{Dir, EdgeKind, Entry, EntryKind, Node, NodeKind, Route, Touch, World};
+use crate::model::{ext, Dir, EdgeKind, Entry, EntryKind, Node, NodeKind, Resolved, Route, Touch, World};
 use crate::repo::Repo;
 use crate::tree::{beneath, named_children, span, text, unquote, walk};
 use path_clean::clean;
@@ -43,16 +43,16 @@ fn resolve_spec(spec: &str, from: &Path, aliases: &[(String, PathBuf)], files: &
     candidates.into_iter().find_map(|c| files.get(&c).cloned())
 }
 
-/// A name from a package as an id: `ol/Map.js` default -> `ext:ol.Map`, `react` useState ->
-/// `ext:react.useState`.
-fn ext_id(spec: &str, name: Option<&str>) -> String {
+/// A name from a package as the name past the code it is (`ext`): `ol/Map.js` default -> `ol.Map`, `react` useState ->
+/// `react.useState`.
+fn ext_path(spec: &str, name: Option<&str>) -> String {
     let path = spec.strip_prefix("node:").unwrap_or(spec);
     let path = path.rsplit_once('.').filter(|(_, e)| EXTENSIONS.contains(e)).map(|(p, _)| p).unwrap_or(path);
     match name {
-        Some(n) => format!("ext:{}.{n}", path.replace('/', ".")),
+        Some(n) => format!("{}.{n}", path.replace('/', ".")),
         None => {
             let (pkg, last) = path.rsplit_once('/').unwrap_or((path, path));
-            format!("ext:{}.{last}", pkg.replace('/', "."))
+            format!("{}.{last}", pkg.replace('/', "."))
         }
     }
 }
@@ -449,7 +449,7 @@ pub(super) fn collect_imports(m: &mut Module, aliases: &[(String, PathBuf)], fil
             let name = text(name, &src).to_string();
             let bound = match &own {
                 Some(id) => Bound::Own(format!("{id}.{name}")),
-                None => Bound::Ext(ext_id(&spec, Some(&name))),
+                None => Bound::Ext(ext_path(&spec, Some(&name))),
             };
             if own.is_none() {
                 m.imported.push(Imported { local: name.clone(), spec: spec.clone(), name: Some(name.clone()) });
@@ -482,7 +482,7 @@ pub(super) fn collect_imports(m: &mut Module, aliases: &[(String, PathBuf)], fil
                 Some(n) => format!("{id}.{n}"),
                 None => id.clone(),
             }),
-            None => Bound::Ext(ext_id(&spec, name)),
+            None => Bound::Ext(ext_path(&spec, name)),
         };
         let imported = |into: &mut Vec<Imported>, local: &str, name: Option<&str>| {
             if own.is_none() {
@@ -851,8 +851,8 @@ pub(super) fn link(modules: &IndexMap<String, Module>, store: &mut GraphBuilder,
                 continue;
             }
             let mut variants: Vec<String> = vec![];
-            for r in types.iter().filter_map(|t| resolve(m, t, modules, &store.nodes)) {
-                if (!r.starts_with("ext:") || foreign_type(&r, &OWN)) && !variants.contains(&r) {
+            for r in types.iter().filter_map(|t| resolve(m, t, modules, &store.nodes).map(Resolved::id)) {
+                if (!ext::is(&r) || foreign_type(&r, &OWN)) && !variants.contains(&r) {
                     variants.push(r);
                 }
             }
@@ -870,7 +870,7 @@ pub(super) fn link(modules: &IndexMap<String, Module>, store: &mut GraphBuilder,
             });
             store.add_edge(&m.id, &id, EdgeKind::Contains, None);
             for v in variants {
-                if v.starts_with("ext:") {
+                if ext::is(&v) {
                     store.ext_node(&v);
                 }
                 store.add_edge(&id, &v, EdgeKind::Variant, None);
@@ -879,7 +879,7 @@ pub(super) fn link(modules: &IndexMap<String, Module>, store: &mut GraphBuilder,
     }
     let type_of = |m: &Module, t: &[String], nodes: &IndexMap<String, Node>| -> Vec<String> {
         if let Some(r) = resolve(m, t, modules, nodes) {
-            return vec![r];
+            return vec![r.id()];
         }
         // an alias declared here or imported: what it stands for
         let [name] = t else { return vec![] };
@@ -900,7 +900,10 @@ pub(super) fn link(modules: &IndexMap<String, Module>, store: &mut GraphBuilder,
         if nodes.contains_key(&sum) {
             return vec![sum];
         }
-        home.aliases.get(&alias).map(|(ts, _)| ts.iter().filter_map(|x| resolve(home, x, modules, nodes)).collect()).unwrap_or_default()
+        home.aliases
+            .get(&alias)
+            .map(|(ts, _)| ts.iter().filter_map(|x| resolve(home, x, modules, nodes).map(Resolved::id)).collect())
+            .unwrap_or_default()
     };
     let ids: Vec<String> = store.nodes.keys().cloned().collect();
     // bases and typed fields
@@ -913,8 +916,8 @@ pub(super) fn link(modules: &IndexMap<String, Module>, store: &mut GraphBuilder,
         let info = store.classes.get(id).cloned().unwrap_or_default();
         let mut resolved = vec![];
         for b in &info.bases {
-            if let Some(r) = resolve(m, b, modules, &store.nodes) {
-                if r.starts_with("ext:") {
+            if let Some(r) = resolve(m, b, modules, &store.nodes).map(Resolved::id) {
+                if ext::is(&r) {
                     store.ext_node(&r);
                 }
                 store.add_edge(id, &r, EdgeKind::Inherits, None);
@@ -924,8 +927,8 @@ pub(super) fn link(modules: &IndexMap<String, Module>, store: &mut GraphBuilder,
         store.classes.entry(id.clone()).or_default().resolved = resolved;
         for (fname, types) in &info.fields {
             for t in types {
-                for r in type_of(m, t, &store.nodes).into_iter().filter(|r| !r.starts_with("ext:") || foreign_type(r, &OWN)) {
-                    if r.starts_with("ext:") {
+                for r in type_of(m, t, &store.nodes).into_iter().filter(|r| !ext::is(r) || foreign_type(r, &OWN)) {
+                    if ext::is(&r) {
                         store.ext_node(&r);
                     } else {
                         store.classes.entry(id.clone()).or_default().attr_types.insert(fname.clone(), r.clone());
@@ -947,7 +950,7 @@ pub(super) fn link(modules: &IndexMap<String, Module>, store: &mut GraphBuilder,
                 for u in unions {
                     let mut variants: Vec<String> = vec![];
                     for r in u.names.iter().flat_map(|t| type_of(m, t, &store.nodes)) {
-                        if (!r.starts_with("ext:") || foreign_type(&r, &OWN)) && !variants.contains(&r) {
+                        if (!ext::is(&r) || foreign_type(&r, &OWN)) && !variants.contains(&r) {
                             variants.push(r);
                         }
                     }
@@ -958,7 +961,7 @@ pub(super) fn link(modules: &IndexMap<String, Module>, store: &mut GraphBuilder,
                     }
                 }
                 for r in targets {
-                    if r.starts_with("ext:") {
+                    if ext::is(&r) {
                         if !foreign_type(&r, &OWN) {
                             continue;
                         }
@@ -968,7 +971,8 @@ pub(super) fn link(modules: &IndexMap<String, Module>, store: &mut GraphBuilder,
                 }
             }
             // a type written through an alias is held by the name of the type it stands for
-            let held = crate::model::holds_resolved(&store.nodes[id], |h| resolve(m, &[h.to_string()], modules, &store.nodes));
+            let held =
+                crate::model::holds_resolved(&store.nodes[id], |h| resolve(m, &[h.to_string()], modules, &store.nodes).map(Resolved::id));
             crate::model::set_holds(store.nodes.get_mut(id).expect("a node of the graph"), held);
         }
     }
