@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Atlas 0.71.0</title>
+<meta name="description" content="What changed in Atlas 0.71.0">
+<link rel="icon" href="../../logo.svg">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#F4F1EC;--panel:#FFFFFF;--ink:#111111;--ink-2:#5A544D;--ink-3:#857D73;--line:#E2DCD3;--accent:#C43A14;
+  --sans:"Outfit","Helvetica Neue",Helvetica,system-ui,sans-serif;--mono:"JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,monospace}
+@media(prefers-color-scheme:dark){:root{--bg:#141210;--panel:#1B1815;--ink:#F4F1EC;--ink-2:#B8B0A5;--ink-3:#8A8178;--line:#2B2621}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);font-size:17px;line-height:1.55}
+a{color:inherit}
+main{max-width:1040px;margin:0 auto;padding:48px 16px 96px}
+header{display:flex;align-items:center;gap:16px;margin-bottom:48px}
+header img{width:44px;height:44px}
+header .name{font-size:22px;font-weight:600;letter-spacing:-.01em}
+header nav{margin-left:auto;display:flex;gap:20px;font-family:var(--mono);font-size:13px}
+header nav a{text-decoration:none;color:var(--ink-2)}
+header nav a:hover{color:var(--ink)}
+.eyebrow{font-family:var(--mono);font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--accent);margin:0}
+h1{font-size:44px;font-weight:500;letter-spacing:-.02em;line-height:1.1;margin:10px 0 18px}
+.lede{font-size:19px;color:var(--ink-2);max-width:66ch;margin:0 0 56px}
+section{border-top:1px solid var(--line);padding:40px 0 8px}
+section h2{font-size:28px;font-weight:500;letter-spacing:-.01em;margin:0 0 14px;line-height:1.2}
+section p,section li{max-width:70ch;color:var(--ink-2)}
+section p{margin:0 0 14px}
+code{font-family:var(--mono);font-size:.86em;background:var(--panel);border:1px solid var(--line);padding:0 4px}
+.issues{font-family:var(--mono);font-size:12.5px;color:var(--ink-3);margin-top:6px}
+.issues a{color:var(--ink-3);text-decoration:none}
+.issues a:hover{color:var(--accent)}
+.pictures{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,420px),1fr));gap:16px;margin:22px 0 10px}
+.pictures a{display:block;background:var(--panel);border:1px solid var(--line);padding:6px}
+.pictures img{display:block;width:100%;height:auto}
+.list a{display:flex;gap:18px;align-items:baseline;padding:14px 0;border-top:1px solid var(--line);text-decoration:none}
+.list .v{font-family:var(--mono);font-size:15px;min-width:90px}
+.list .t{color:var(--ink-2)}
+footer{margin-top:64px;font-family:var(--mono);font-size:12px;color:var(--ink-3)}
+:root{--add:#2E8B57;--del:#C0361C;--edit:#B26A00;--key:#1D5A73}
+@media(prefers-color-scheme:dark){:root{--add:#6CC08C;--del:#F2643C;--edit:#E0A24A;--key:#86B9C9}}
+.legend{display:flex;flex-wrap:wrap;gap:8px 18px;font-size:14px;color:var(--ink-2);margin:-30px 0 48px}
+.legend span{display:inline-flex;align-items:center;gap:7px}
+.swatch{width:18px;height:12px;border:3px solid;border-radius:2px}
+.card{background:var(--panel);border:1px solid var(--line);padding:16px 18px;margin:20px 0}
+.card h3{font-size:16px;font-weight:500;margin:0 0 12px}
+.card h3 a{text-decoration:none;color:var(--ink-3);font-family:var(--mono);font-size:13px;margin-right:6px}
+.pair{display:grid;gap:12px}
+.pair figure{margin:0}
+.pair .shot{overflow-x:auto;border:1px solid var(--line);background:var(--bg);padding:6px}
+.pair .shot pre{border:0;background:none;margin:0;padding:4px;font-size:12px;max-width:none;max-height:340px}
+@media(min-width:900px){.pair:has(pre){grid-template-columns:1fr 1fr}}
+.pair img{display:block;max-width:100%;height:auto}
+figcaption{font-size:13.5px;color:var(--ink-2);margin-top:6px}
+.tag{font-family:var(--mono);font-size:11.5px;padding:1px 6px;border:1.5px solid;margin-right:6px}
+.tag.before{color:var(--del)}.tag.after{color:var(--add)}
+.where{font-family:var(--mono);font-size:12px;color:var(--ink-3);margin:0 0 8px}
+details{margin-top:12px}
+summary{cursor:pointer;font-size:13.5px;color:var(--ink-2)}
+pre{font-family:var(--mono);font-size:13px;background:var(--panel);border:1px solid var(--line);padding:12px 14px;overflow:auto;max-width:70ch}
+pre code{background:none;border:0;padding:0}
+.hero{margin:6px 0 24px;border:1px solid var(--line);background:var(--panel);padding:8px}
+.hero img{display:block;width:100%;height:auto}
+.example{margin:18px 0 6px}
+.example pre{margin:0 0 14px}
+@media(min-width:900px){.pair{grid-template-columns:1fr 1fr;align-items:start}}
+.pair.stack{grid-template-columns:1fr}
+section ul{padding-left:20px;margin:0 0 16px}
+section li{margin:4px 0}
+.diagram{margin:22px 0;background:var(--panel);border:1px solid var(--line);padding:14px}
+.diagram svg{display:block;width:100%;height:auto;max-height:340px}
+.diagram figcaption{font-size:14px;color:var(--ink-3);margin-top:10px}
+.d-frame{fill:none;stroke:var(--ink-3);stroke-width:1.5}
+.d-box{fill:var(--bg);stroke:var(--line);stroke-width:1.5}
+.d-key{stroke:var(--key);stroke-width:2}
+.d-engine{fill:var(--panel);stroke:var(--ink-3)}
+.d-ground{fill:var(--line);stroke:none}
+.d-title{font:600 15px var(--sans);fill:var(--ink)}
+.d-name{font:500 14px var(--mono);fill:var(--ink)}
+.d-note{font:13px var(--sans);fill:var(--ink-2)}
+.d-label{font:13px var(--sans);fill:var(--ink-2)}
+.d-arrow{fill:none;stroke:var(--ink-3);stroke-width:1.6;marker-end:url(#d-head)}
+.d-before{stroke:var(--del)}.d-after{stroke:var(--add)}
+.d-law{font:28px var(--sans);fill:var(--key)}
+.d-broken{fill:var(--del)}
+.d-axis{stroke:var(--ink-3);stroke-width:1.4;fill:none}.d-grid{stroke:var(--line);stroke-dasharray:4 4}
+.d-curve{fill:none;stroke:var(--key);stroke-width:3}.d-dot{fill:var(--key)}
+.bars{margin:22px 0;background:var(--panel);border:1px solid var(--line);padding:16px 18px;max-width:760px}
+.bar{display:grid;grid-template-columns:minmax(120px,30%) 1fr;gap:12px;align-items:center;margin:8px 0}
+.bar .l{font-size:14px;color:var(--ink-2)}
+.bar .v{height:22px;background:var(--key);min-width:2px;position:relative}
+.bar .v span{position:absolute;left:calc(100% + 8px);top:1px;font-family:var(--mono);font-size:13px;color:var(--ink);white-space:nowrap}
+.bars .cap{font-size:13.5px;color:var(--ink-2);margin-top:10px}
+.pager{display:flex;justify-content:space-between;gap:16px;border-top:1px solid var(--line);margin-top:48px;padding-top:20px;font-family:var(--mono);font-size:14px}
+.pager a{text-decoration:none;color:var(--ink-2)}
+.pager a:hover{color:var(--accent)}
+.pager .newer{margin-left:auto}
+</style>
+</head>
+<body>
+<main>
+<header><img src="../../logo.svg" alt=""><span class="name">Atlas</span>
+<nav><a href="../">Releases</a><a href="../../">Atlas</a><a href="https://github.com/raoulg/atlas/releases/tag/v0.71.0">Download</a></nav></header>
+<p class="eyebrow">Release 0.71.0</p>
+<h1>What changed in Atlas 0.71.0</h1>
+<div class="lede"><p>Atlas 0.71.0 follows more of what your code says, where it says it: a path looked up in a table the code writes out, a folder it lists, a connection it hands on, a file it opens through options, a value a macro names. Python, Rust and TypeScript read each of these alike. On the page, a step counts the step that set its object up earlier in the route, and a value a function makes itself is its own, not a value from beyond. And a reading links only the library code whose facts reach the picture.</p></div>
+<div class="legend"><span><i class="swatch" style="border-color:var(--del)"></i>only in the release before</span><span><i class="swatch" style="border-color:var(--add)"></i>only in 0.71.0</span><span><i class="swatch" style="border-color:var(--edit)"></i>its text changed, its arrow not</span></div>
+<section><h2>A path looked up in a table, a file listed in a folder</h2><p>A client that looks its paths up in a table it writes out (<code>PATHS[env]</code>, <code>paths.get(key)</code> of a <code>HashMap::from([..])</code>, an object literal in TypeScript) asked an address the code does not say in TypeScript and Rust, and met no route. Now a key no code decides is one of the values the table holds, and a key the code writes picks its own, as Python already read it: the client meets the routes at the paths its table holds, in all three languages. A folder&#x27;s listing is <code>D/*</code> everywhere (<code>fs::read_dir</code>, <code>readdirSync</code>, <code>os.listdir</code>), and a <code>for</code> loop or a closure run on each element takes one of the elements. In Python, <code>os.path.join</code>, <code>+</code> and pathlib&#x27;s <code>/</code> are the same path to every rule that asks.</p><div class="pair stack"><figure><div class="shot"><img src="../../changes/236-before.png" alt="" loading="lazy"></div><figcaption><span class="tag after">0.70: the TypeScript and Rust clients reach no route</span></figcaption></figure><figure><div class="shot"><img src="../../changes/236-after.png" alt="" loading="lazy"></div><figcaption><span class="tag after">0.71: all three reach <code>HTTP(shop)</code> at the paths their tables hold</span></figcaption></figure></div><p class="issues"><a href="https://github.com/raoulg/atlas/issues/236">#236</a>, <a href="https://github.com/raoulg/atlas/issues/304">#304</a></p></section><section><h2>A connection keeps the address it was opened at</h2><p>A Rust server that binds its address in <code>main</code> and hands each connection to a function drew the web it talks to as <code>Web</code>, with no address. A connection is a door to the place it was opened at, and keeps that place wherever it is handed, as a path does: the greeter&#x27;s <code>answer</code> and <code>linger</code> reach <code>Web(127.0.0.1:7878)</code>, and a client that connects there reaches the same box, so the two ends of a connection meet. Python&#x27;s sockets move data by the same operations as Rust&#x27;s.</p><div class="pair stack"><figure><div class="shot"><img src="../../changes/302-before.png" alt="" loading="lazy"></div><figcaption><span class="tag after">0.70: the greeter&#x27;s route ends at a bare <code>Web</code></span></figcaption></figure><figure><div class="shot"><img src="../../changes/302-after.png" alt="" loading="lazy"></div><figcaption><span class="tag after">0.71: it ends at <code>Web(127.0.0.1:7878)</code>, where its client arrives too</span></figcaption></figure></div><p class="issues"><a href="https://github.com/raoulg/atlas/issues/302">#302</a></p></section><section><h2>A file is where its open says</h2><p><code>OpenOptions::new().append(true).open(folder.join(&quot;shelf.log&quot;))</code> was read as a call to <code>create</code>, the option, so the file was the literal <code>shelf.log</code>, wherever the folder was. Now the options say how the file opens and the file is the path <code>open</code> is handed, followed through the callers: the log rests beside the data files, as Python&#x27;s <code>open(.., &quot;a&quot;)</code> and TypeScript&#x27;s <code>appendFileSync</code> put it. What the graph calls a file (<code>atlas-code analyze</code>, the MCP) is now its place, however the code spells it.</p><div class="pair stack"><figure><div class="shot"><img src="../../changes/300-before.png" alt="" loading="lazy"></div><figcaption><span class="tag after">0.70: the log is a file named by a literal</span></figcaption></figure><figure><div class="shot"><img src="../../changes/300-after.png" alt="" loading="lazy"></div><figcaption><span class="tag after">0.71: <code>File(~/data/shelf.log)</code>, beside the data it counts</span></figcaption></figure></div><p class="issues"><a href="https://github.com/raoulg/atlas/issues/300">#300</a>, <a href="https://github.com/raoulg/atlas/issues/301">#301</a></p></section><section><h2>A value a macro names is built</h2><p>Outside a macro, <code>Plain.show(&amp;heading)</code> builds a <code>Plain</code> and runs <code>show</code> on it. Inside one, <code>println!(&quot;{}&quot;, Plain.name())</code> ran <code>Plain.name</code> on a <code>Plain</code> no step made. Now the two forms read alike: a <code>Plain()</code> step builds the value, and <code>name</code> runs on it.</p><div class="pair stack"><figure><div class="shot"><img src="../../changes/299-before.png" alt="" loading="lazy"></div><figcaption><span class="tag after">0.70: <code>Plain.name</code> runs on a value no step makes</span></figcaption></figure><figure><div class="shot"><img src="../../changes/299-after.png" alt="" loading="lazy"></div><figcaption><span class="tag after">0.71: <code>Plain()</code> makes it first</span></figcaption></figure></div><p class="issues"><a href="https://github.com/raoulg/atlas/issues/299">#299</a>, <a href="https://github.com/raoulg/atlas/issues/303">#303</a></p></section><section><h2>A step counts what ran before it</h2><p>A shelf is handed its folder when it is built, and each of its methods writes its own file there. When <code>main</code> set the shelf up in a step of its own, the page counted only callers above a step, not the step beside it, so both methods drew the path as it was read, <code>Disk(write.path)</code>, and folded into one box. Now a caller that set the object up counts wherever it ran earlier in the route, and each method writes its own file. Who makes a path whole is also written in its shortest form: an alternative that contains another says nothing more.</p><div class="pair stack"><figure><div class="shot"><img src="../../changes/309-before.png" alt="" loading="lazy"></div><figcaption><span class="tag after">0.70: the two methods fold into one box that writes <code>Disk(write.path)</code> twice</span></figcaption></figure><figure><div class="shot"><img src="../../changes/309-after.png" alt="" loading="lazy"></div><figcaption><span class="tag after">0.71: each method writes its own file in the shelf&#x27;s folder</span></figcaption></figure></div><p class="issues"><a href="https://github.com/raoulg/atlas/issues/309">#309</a>, <a href="https://github.com/raoulg/atlas/issues/308">#308</a></p></section><section><h2>A function&#x27;s own values are its own</h2><p>A name a function binds to an expression, <code>loud = samples.abs() &gt; 0</code>, was taken for a module&#x27;s name, so the step that called it drew a value from beyond beside the samples it is made of. Now a local is the body&#x27;s own value in every language, and only what a function really reads from outside comes from beyond. A step drawn closed beyond the cut names its values from beyond as its opened picture does, so opening it keeps every line.</p><div class="pair stack"><figure><div class="shot"><img src="../../changes/318-before.jpg" alt="" loading="lazy"></div><figcaption><span class="tag after">0.70: <code>Tensor · loud → _loud</code> beside <code>Tensor · samples</code></span></figcaption></figure><figure><div class="shot"><img src="../../changes/318-after.jpg" alt="" loading="lazy"></div><figcaption><span class="tag after">0.71: one <code>Tensor → _loud</code></span></figcaption></figure><figure><div class="shot"><img src="../../changes/319-before.jpg" alt="" loading="lazy"></div><figcaption><span class="tag after">0.70: closed, the door takes <code>Tensor · PAD</code>, opened only <code>Tensor</code></span></figcaption></figure><figure><div class="shot"><img src="../../changes/319-after.jpg" alt="" loading="lazy"></div><figcaption><span class="tag after">0.71: closed and opened alike</span></figcaption></figure></div><p class="issues"><a href="https://github.com/raoulg/atlas/issues/318">#318</a>, <a href="https://github.com/raoulg/atlas/issues/319">#319</a></p></section><section><h2>Atlas links only what reaches the picture</h2><p>To read your program, Atlas reads the library code it calls. The picture keeps only the part your program reaches, and glues what that part runs further into its border functions. A cold reading of Atlas still linked 3,700 library bodies to keep 93, and counted the calls it could not follow in all of them. Now it links the closure whose facts reach the graph and nothing beyond, and the count of calls not followed is over the code the graph reads, since a number about a reading describes what Atlas shows, not how much it happened to link.</p><figure class="diagram"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 470" role="img" aria-label="The library code Atlas links when it reads Atlas, drawn to scale: the fiber the picture keeps, inside the closure glued into it, inside everything 0.70 linked; the calls not followed are counted over the program and the closure only"><defs><marker id="d-head" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 L10 5 L0 10 z" style="fill:var(--ink-3)"/></marker></defs>
+<rect x="270" y="40" width="650" height="300" rx="14" style="fill:var(--panel);stroke:var(--ink-3);stroke-width:1.2;stroke-dasharray:6 5"/>
+<text x="290" y="68" style="font-family:var(--sans);font-size:14px;fill:var(--ink-2);font-weight:600">library code 0.70 links</text>
+<text x="290" y="88" style="font-family:var(--mono);font-size:13px;fill:var(--ink-3)">3,700 bodies</text>
+<text x="900" y="68" style="font-family:var(--sans);font-size:14px;fill:var(--ink-3);text-anchor:end;font-weight:600">in no fact of the graph</text>
+<text x="900" y="88" style="font-family:var(--sans);font-size:13px;fill:var(--ink-3);text-anchor:end">0.71 no longer links it</text>
+<rect x="290" y="185" width="310" height="135" rx="10" style="fill:var(--key);fill-opacity:0.08;stroke:var(--key);stroke-width:1.5"/>
+<text x="588" y="208" style="font-family:var(--mono);font-size:13px;fill:var(--key);text-anchor:end;font-weight:600">reach(∞) · 795</text>
+<text x="588" y="226" style="font-family:var(--sans);font-size:13px;fill:var(--ink-2);text-anchor:end">glued into the border</text>
+<rect x="306" y="255" width="98" height="50" rx="8" style="fill:var(--key);fill-opacity:0.22;stroke:var(--key);stroke-width:2"/>
+<text x="355" y="276" style="font-family:var(--mono);font-size:12px;fill:var(--ink);text-anchor:middle;font-weight:600">fiber · 93</text>
+<text x="355" y="294" style="font-family:var(--sans);font-size:12px;fill:var(--ink-2);text-anchor:middle">drawn</text>
+<rect x="40" y="170" width="170" height="80" rx="10" style="fill:var(--key);fill-opacity:0.16;stroke:var(--key);stroke-width:2"/>
+<text x="125" y="205" style="font-family:var(--sans);font-size:15px;fill:var(--ink);text-anchor:middle;font-weight:600">your program</text>
+<text x="125" y="227" style="font-family:var(--sans);font-size:13px;fill:var(--ink-2);text-anchor:middle">read whole</text>
+<line x1="210" y1="215" x2="298" y2="269" style="stroke:var(--key);stroke-width:2;fill:none"/>
+<polygon points="306,274 292,272 299,261" style="fill:var(--key)"/>
+<text x="262" y="264" style="font-family:var(--sans);font-size:13px;fill:var(--ink-2);text-anchor:end">reaches</text>
+<polyline points="40,362 40,372 600,372 600,362" style="stroke:var(--key);stroke-width:2;fill:none"/>
+<text x="320" y="398" style="font-family:var(--sans);font-size:14px;fill:var(--key);text-anchor:middle;font-weight:600">calls not followed are counted here</text>
+<text x="320" y="418" style="font-family:var(--mono);font-size:12px;fill:var(--ink-2);text-anchor:middle">the program and reach(∞), nothing beyond</text>
+<polyline points="612,362 612,372 920,372 920,362" style="stroke:var(--ink-3);stroke-width:1.2;stroke-dasharray:6 5;fill:none"/>
+<text x="766" y="398" style="font-family:var(--sans);font-size:13px;fill:var(--ink-3);text-anchor:middle">counted in 0.70, not in 0.71</text>
+<text x="40" y="455" style="font-family:var(--sans);font-size:12px;fill:var(--ink-3)">teal: its facts reach the graph · gray: in no fact · areas to scale: Atlas's engine read at --libraries 1</text>
+</svg>
+<figcaption>Atlas reading itself: the library code drawn, the code glued into it, and what 0.70 linked as well, areas to scale.</figcaption></figure><p class="issues"><a href="https://github.com/raoulg/atlas/issues/288">#288</a></p></section>
+<nav class="pager"><a class="older" href="../0.70.0/">← Atlas 0.70.0</a></nav>
+<footer>Made by tools/release_page.py from docs/releases/0.71.0.md and the notes in docs/changes.</footer>
+</main>
+</body>
+</html>

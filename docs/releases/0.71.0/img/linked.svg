@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 470" role="img" aria-label="The library code Atlas links when it reads Atlas, drawn to scale: the fiber the picture keeps, inside the closure glued into it, inside everything 0.70 linked; the calls not followed are counted over the program and the closure only">
+<rect x="270" y="40" width="650" height="300" rx="14" style="fill:var(--panel);stroke:var(--ink-3);stroke-width:1.2;stroke-dasharray:6 5"/>
+<text x="290" y="68" style="font-family:var(--sans);font-size:14px;fill:var(--ink-2);font-weight:600">library code 0.70 links</text>
+<text x="290" y="88" style="font-family:var(--mono);font-size:13px;fill:var(--ink-3)">3,700 bodies</text>
+<text x="900" y="68" style="font-family:var(--sans);font-size:14px;fill:var(--ink-3);text-anchor:end;font-weight:600">in no fact of the graph</text>
+<text x="900" y="88" style="font-family:var(--sans);font-size:13px;fill:var(--ink-3);text-anchor:end">0.71 no longer links it</text>
+<rect x="290" y="185" width="310" height="135" rx="10" style="fill:var(--key);fill-opacity:0.08;stroke:var(--key);stroke-width:1.5"/>
+<text x="588" y="208" style="font-family:var(--mono);font-size:13px;fill:var(--key);text-anchor:end;font-weight:600">reach(∞) · 795</text>
+<text x="588" y="226" style="font-family:var(--sans);font-size:13px;fill:var(--ink-2);text-anchor:end">glued into the border</text>
+<rect x="306" y="255" width="98" height="50" rx="8" style="fill:var(--key);fill-opacity:0.22;stroke:var(--key);stroke-width:2"/>
+<text x="355" y="276" style="font-family:var(--mono);font-size:12px;fill:var(--ink);text-anchor:middle;font-weight:600">fiber · 93</text>
+<text x="355" y="294" style="font-family:var(--sans);font-size:12px;fill:var(--ink-2);text-anchor:middle">drawn</text>
+<rect x="40" y="170" width="170" height="80" rx="10" style="fill:var(--key);fill-opacity:0.16;stroke:var(--key);stroke-width:2"/>
+<text x="125" y="205" style="font-family:var(--sans);font-size:15px;fill:var(--ink);text-anchor:middle;font-weight:600">your program</text>
+<text x="125" y="227" style="font-family:var(--sans);font-size:13px;fill:var(--ink-2);text-anchor:middle">read whole</text>
+<line x1="210" y1="215" x2="298" y2="269" style="stroke:var(--key);stroke-width:2;fill:none"/>
+<polygon points="306,274 292,272 299,261" style="fill:var(--key)"/>
+<text x="262" y="264" style="font-family:var(--sans);font-size:13px;fill:var(--ink-2);text-anchor:end">reaches</text>
+<polyline points="40,362 40,372 600,372 600,362" style="stroke:var(--key);stroke-width:2;fill:none"/>
+<text x="320" y="398" style="font-family:var(--sans);font-size:14px;fill:var(--key);text-anchor:middle;font-weight:600">calls not followed are counted here</text>
+<text x="320" y="418" style="font-family:var(--mono);font-size:12px;fill:var(--ink-2);text-anchor:middle">the program and reach(∞), nothing beyond</text>
+<polyline points="612,362 612,372 920,372 920,362" style="stroke:var(--ink-3);stroke-width:1.2;stroke-dasharray:6 5;fill:none"/>
+<text x="766" y="398" style="font-family:var(--sans);font-size:13px;fill:var(--ink-3);text-anchor:middle">counted in 0.70, not in 0.71</text>
+<text x="40" y="455" style="font-family:var(--sans);font-size:12px;fill:var(--ink-3)">teal: its facts reach the graph · gray: in no fact · areas to scale: Atlas's engine read at --libraries 1</text>
+</svg>
