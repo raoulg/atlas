@@ -575,6 +575,18 @@ pub fn name_of<'a>(node: Option<&'a Node>, id: &'a str) -> &'a str {
     node.map_or_else(|| type_name(id), |n| n.name.as_str())
 }
 
+/// The name a function goes by in the names of its values (`Store.path`, `Repo.read.dir`, `main.out`): a constructor's
+/// is its class's (`Store`), a method's its class's and its own (`Repo.read`), any other function's its own, each name
+/// as `name_of` says it. `node` gives the nodes of the function's reading by id.
+pub fn owner<'n>(f: &Node, node: impl Fn(&str) -> Option<&'n Node>) -> String {
+    let class = f.cls.as_deref().map(|c| name_of(node(c), c));
+    match (f.ctor, class) {
+        (true, Some(c)) => c.to_string(),
+        (false, Some(c)) => format!("{c}.{}", f.name),
+        _ => f.name.clone(),
+    }
+}
+
 /// The names of `held`, each as the last part of the type it resolves to: a type written through an
 /// alias (`Order as Parcel`, `use tree_sitter::Node as TsNode`) is the type it stands for, held by that
 /// type's name, as the `takes` it resolves to names it. A name that resolves to nothing stays as written.

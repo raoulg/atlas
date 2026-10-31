@@ -246,8 +246,9 @@ Three things make `F` honest, and each is an engine task:
    A path built from a function's parameters is a parameter of its arrow: `Repo::read(dir)`
    is `Disk(dir) → Repo`, and a route fixes it by composition. A path no literal makes is
    named by the value it holds where it is whole: the parameter of the function there
-   (`analyze.dir`), or of the class whose constructor takes it (`Store.path`). A helper's
-   `path` and a method's `self.path` handed the same value are one place, and two parameters
+   (`analyze.dir`, and a method's with its class, `Repo.read.dir`), or of the class whose
+   constructor takes it (`Store.path`). A helper's `path` and a method's `self.path` handed
+   the same value are one place, and two parameters
    that only share a name are two. Each place keeps the
    function whose call made it whole, and a route shows it only when it reaches that
    function: `analyze` reads the folder its user names, and `changes` also reads the
@@ -599,17 +600,18 @@ takes and gives, what its own calls read and write, and for an entry its usage l
 gains or loses is marked itself, as added or removed. Only direct arrows count (sentence 6): a
 change upstream marks the step that changed, never what runs before or after it, and a place a
 caller makes whole is the caller's arrow. A file named by a function's own parameter (`load.path`,
-`Store.path` for what a constructor takes) waits for what the function is handed: it is named so
-whoever calls the function, and is no arrow of the function that hands the parameter on.
+`Store.path` for what a constructor takes, `Repo.read.dir` for what a method takes) waits for what the
+function is handed: it is named so whoever calls the function, and is no arrow of the function that
+hands the parameter on.
 
 *Renames.* A node B no longer has and a node B adds whose direct relations are isomorphic (the same
 typed arrows in and out, the node itself and what is named under it counting as the same) are one
 node, renamed: it is changed, and reads `old → new`. A function's typed arrow is among its
 relations (`list[float] → float` is no `str → str`, and a parameter more is another arrow), and a
-place named by its value (`plot.out`) is named under it. A node named under a renamed one (a method
-of a renamed class) keeps its own name, and is changed only when its own arrow is. Only a match that
-is the only one either way counts; two that could match either way are removed and added, since
-Atlas never guesses.
+place named by its value (`plot.out`, `Repo.read.dir`) is named under it. A node named under a
+renamed one (a method of a renamed class) keeps its own name, and is changed only when its own arrow
+is. Only a match that is the only one either way counts; two that could match either way are removed
+and added, since Atlas never guesses.
 
 The engine marks the nodes, the edges, the steps and touches of a node both readings hold (by
 index), and the places, by the calls that touch them. In a picture a value stands at its moments,
