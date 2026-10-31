@@ -2,7 +2,8 @@
 <text x="48" y="14" text-anchor="end" fill="#888">0.05 s</text>
 <text x="48" y="86" text-anchor="end" fill="#888">0.00 s</text>
 <line x1="54" y1="10" x2="54" y2="86" stroke="#888" stroke-width="0.5"/>
-<polyline points="54.0,15.6 350.0,40.3" fill="none" stroke="#1b8a9a" stroke-width="1.5"/>
+<polyline points="54.0,15.6 202.0,40.3 350.0,25.5" fill="none" stroke="#1b8a9a" stroke-width="1.5"/>
 <circle cx="54.0" cy="15.6" r="1.5" fill="#1b8a9a"><title>1c02314: 0.05 s</title></circle>
-<circle cx="350.0" cy="40.3" r="3" fill="#1b8a9a"><title>f5bb2b2: 0.03 s</title></circle>
+<circle cx="202.0" cy="40.3" r="1.5" fill="#1b8a9a"><title>f5bb2b2: 0.03 s</title></circle>
+<circle cx="350.0" cy="25.5" r="3" fill="#1b8a9a"><title>842b999: 0.04 s</title></circle>
 </svg>
