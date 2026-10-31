@@ -840,6 +840,7 @@ fn express_segment(s: &str) -> String {
 /// Types, signatures and bodies into edges: the program's, and the functions of the library's code
 /// read.
 pub(super) fn link(modules: &IndexMap<String, Module>, store: &mut GraphBuilder, repo: &Path) {
+    let signatures = crate::clock::stage("signatures");
     // a union of two or more known types is a sum; any other alias stands for what it names
     for m in modules.values() {
         let mut names: Vec<&String> = m.aliases.keys().collect();
@@ -1027,17 +1028,22 @@ pub(super) fn link(modules: &IndexMap<String, Module>, store: &mut GraphBuilder,
                 || (n.kind == NodeKind::Module && !n.library && modules.contains_key(*id))
         })
         .partition(|id| !store.nodes[*id].library);
+    drop(signatures);
     for id in own.into_iter().chain(library) {
         let Some(m) = store.nodes.get(id).and_then(|n| modules.get(&n.module)) else { continue };
+        let _body = crate::clock::of("body", m.id.split('.').next().unwrap_or(&m.id), store.nodes[id].library);
         link_calls(m, modules, store, id, &returned, &eval, &changing, &mut linked);
         store.count_linked(id);
     }
+    let callers = crate::clock::stage("callers");
     let handing: Vec<paths::Evaluated> = linked.args.iter().map(|arg| paths::Evaluated { arg, eval: &eval }).collect();
     let entry = |f: &str| store.nodes.get(f).map_or(false, |n| n.entry.is_some());
     let family = store.family();
     let completed = crate::paths::complete(linked.calls, &handing, &family, &|_, _| vec![], &entry);
     // a page's request without a host goes to the page's own origin
     crate::paths::place_calls(store, completed, true);
+    drop(callers);
+    let _globals = crate::clock::stage("globals");
     globals(modules, store, &returned, &eval, &changing);
 }
 

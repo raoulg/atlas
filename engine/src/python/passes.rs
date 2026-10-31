@@ -401,6 +401,7 @@ fn declared_all(m: &Module) -> Option<Vec<String>> {
 }
 
 pub(super) fn link(modules: &IndexMap<String, Module>, store: &mut GraphBuilder, own: &Own, types: &Types, root_dir: &Path) {
+    let signatures = crate::clock::stage("signatures");
     let aliases = type_aliases(modules);
     add_sums(modules, store, &aliases, own);
     let ids: Vec<String> = store.nodes.keys().cloned().collect();
@@ -538,6 +539,7 @@ pub(super) fn link(modules: &IndexMap<String, Module>, store: &mut GraphBuilder,
             break;
         }
     }
+    drop(signatures);
     // bodies -> calls / instantiates / boundaries
     let eval = Eval::new(modules, types, root_dir);
     // a library's class by its package and its name, as the signatures name it
@@ -552,6 +554,8 @@ pub(super) fn link(modules: &IndexMap<String, Module>, store: &mut GraphBuilder,
     let mut args: Vec<Arg> = vec![];
     for id in &ids {
         if matches!(store.nodes[id].kind, NodeKind::Function | NodeKind::Method | NodeKind::Module) {
+            let n = &store.nodes[id];
+            let _body = crate::clock::of("body", &package_of(&n.module), n.library);
             let linked = link_calls(modules, store, types, &sites, &ext, &eval, own, &changing, id);
             store.count_linked(id);
             handed.extend(linked.handed);
@@ -559,6 +563,7 @@ pub(super) fn link(modules: &IndexMap<String, Module>, store: &mut GraphBuilder,
             args.extend(linked.args);
         }
     }
+    let callers = crate::clock::stage("callers");
     // a parameter a call leaves out holds its declared default, and an entry's what it is run with
     let completed = {
         let store = &*store;
@@ -582,6 +587,8 @@ pub(super) fn link(modules: &IndexMap<String, Module>, store: &mut GraphBuilder,
         crate::paths::complete(waiting, &handing, &family, &default, &entry)
     };
     crate::paths::place_calls(store, completed, false);
+    drop(callers);
+    let _globals = crate::clock::stage("globals");
     globals(modules, store, types);
     // the work handed to a managed transaction (`session.execute_read(work)`) goes its way
     for (work, kind, dir) in handed {

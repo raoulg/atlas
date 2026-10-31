@@ -99,6 +99,7 @@ impl Language for Python {
             );
         }
         let (mut b, root) = python::parse(repo, &packages, project_root.as_deref(), opts)?;
+        let _finish = crate::clock::stage("finish");
         entries::mark_scripts(repo, &mut b, project_root.as_deref());
         Ok(b.finish(root, project_root.as_deref(), self.lang()))
     }
@@ -170,6 +171,7 @@ impl Language for Rust {
     }
     fn parse(&self, repo: &Repo, opts: &Options) -> Result<Graph> {
         let (b, root) = rust::parse(repo, opts)?;
+        let _finish = crate::clock::stage("finish");
         Ok(b.finish(root, Some(repo.root()), self.lang()))
     }
     /// The compiler asks for every type, `pub` is the export, and a trait's implementation has the
@@ -213,6 +215,7 @@ impl Language for TypeScript {
     }
     fn parse(&self, repo: &Repo, opts: &Options) -> Result<Graph> {
         let (b, root) = typescript::parse(repo, opts)?;
+        let _finish = crate::clock::stage("finish");
         Ok(b.finish(root, Some(repo.root()), self.lang()))
     }
     /// The compiler works out what a function gives, which a reader of its declaration does not

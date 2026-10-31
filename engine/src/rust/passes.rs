@@ -467,6 +467,7 @@ pub(super) fn link(modules: &IndexMap<String, Module>, store: &mut GraphBuilder,
             continue;
         }
         let m = &modules[&module];
+        let _signatures = crate::clock::of("signatures", &m.krate, m.library);
         let (fields, arms) = store.classes.get(id).map(|c| (c.fields.clone(), c.arms.clone())).unwrap_or_default();
         for (fname, types) in fields {
             for t in types {
@@ -522,13 +523,16 @@ pub(super) fn link(modules: &IndexMap<String, Module>, store: &mut GraphBuilder,
             }
         }
     }
+    let fixing = crate::clock::stage("signatures");
     let fixed = fixed_by_implementations(modules, store, crate_ids);
+    drop(fixing);
     for id in &ids {
         let (kind, module) = (store.nodes[id].kind, store.nodes[id].module.clone());
         if !matches!(kind, NodeKind::Function | NodeKind::Method) {
             continue;
         }
         let m = &modules[&module];
+        let _signatures = crate::clock::of("signatures", &m.krate, m.library);
         let sig = store.sigs.get(id).cloned().unwrap_or_default();
         let own = store.nodes[id].cls.clone();
         let def = def_node(m, &store.nodes[id]);
@@ -558,8 +562,10 @@ pub(super) fn link(modules: &IndexMap<String, Module>, store: &mut GraphBuilder,
     }
     // every signature before any body: a body's locals take their types from what the functions
     // it calls give back, wherever those are defined
+    let copied = crate::clock::stage("signatures");
     let eval = Eval::new(modules, &store.nodes, crate_ids);
     let returned = returned_classes(store);
+    drop(copied);
     let (mut waiting, mut args) = (vec![], vec![]);
     // the program's bodies, then those of the library's code read
     let (own, library): (Vec<&String>, Vec<&String>) = ids
@@ -567,17 +573,22 @@ pub(super) fn link(modules: &IndexMap<String, Module>, store: &mut GraphBuilder,
         .filter(|id| matches!(store.nodes[*id].kind, NodeKind::Function | NodeKind::Method))
         .partition(|id| !store.nodes[*id].library);
     for id in own.into_iter().chain(library) {
+        let n = &store.nodes[id];
+        let _body = crate::clock::of("body", &modules[&n.module].krate, n.library);
         let l = link_calls(modules, store, crate_ids, &eval, &returned, id);
         store.count_linked(id);
         waiting.extend(l.waiting.into_iter().map(|(t, b)| (id.clone(), t, b)));
         args.extend(l.args);
     }
+    let callers = crate::clock::stage("callers");
     let family = store.family();
     // a path or a statement built from a function's parameters is whole where its callers hand them
     let handing: Vec<Evaluated> = args.iter().map(|arg| Evaluated { arg, eval: &eval }).collect();
     let entry = |f: &str| store.nodes.get(f).map_or(false, |n| n.entry.is_some());
     let completed = crate::paths::complete(waiting, &handing, &family, &|_, _| vec![], &entry);
     crate::paths::place_calls(store, completed, false);
+    drop(callers);
+    let _globals = crate::clock::stage("globals");
     globals::read(modules, store, crate_ids);
 }
 

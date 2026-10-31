@@ -52,8 +52,11 @@ pub fn roots(repo: &Repo, opts: &Options) -> Vec<(PathBuf, Lang)> {
 pub fn graph_of(repo: &Repo, opts: &Options) -> Result<Graph> {
     let lang = crate::language::of(repo, opts)?;
     let mut g = lang.parse(repo, opts)?;
+    let finish = crate::clock::stage("finish");
     crate::entries::read_makefile(repo, &mut g);
     assign(&mut g, lang.lang());
+    drop(finish);
+    let _fiber = crate::clock::stage("fiber");
     Ok(crate::view::View::apply(&crate::view::reached(&g, opts.libraries), &g))
 }
 
@@ -77,6 +80,7 @@ pub fn witnessed(repos: &[PathBuf], opts: &Options) -> Result<(Vec<Graph>, Witne
 /// A complete reading of the listed repository, with what it rests on, when that still holds once
 /// the reading is done.
 fn read_current_parts(repos: &[PathBuf], opts: &Options) -> Result<Option<(Vec<Graph>, Witnesses)>> {
+    let listing = crate::clock::stage("list");
     let read: Vec<Repo> = repos.iter().map(|r| crate::language::read(r, opts)).collect::<Result<_>>()?;
     // each part with where it lies: its directory in its repository, behind the repository's name
     // when several are read
@@ -106,9 +110,11 @@ fn read_current_parts(repos: &[PathBuf], opts: &Options) -> Result<Option<(Vec<G
         parts: vec![],
         decided: decisions.iter().map(|d| d.as_ref().map(|(_, text)| text.clone())).collect(),
     };
+    drop(listing);
     let opts = Options { package: None, ..opts.clone() };
     let mut graphs = vec![];
     for (part, at) in &found {
+        let _part = crate::clock::part(&crate::tree::path_str(at));
         let (graph, witness) = indexed_graph(part, &opts);
         witnesses.parts.push(witness);
         match graph {
@@ -122,6 +128,7 @@ fn read_current_parts(repos: &[PathBuf], opts: &Options) -> Result<Option<(Vec<G
     if graphs.is_empty() {
         anyhow::bail!("no code found in {}", repos.iter().map(|r| r.display().to_string()).collect::<Vec<_>>().join(", "));
     }
+    let _index = crate::clock::stage("index");
     Ok(witnesses.current(true)?.then(|| {
         let mut graphs = apart(graphs);
         decided(&decisions, &mut graphs);
@@ -263,6 +270,7 @@ fn indexed_graph(part: &Repo, opts: &Options) -> (Result<Graph>, Witness) {
         opts.named,
         opts.package
     );
+    let index = crate::clock::stage("index");
     let kept = cache.as_ref().and_then(|cache| cache.get("part", &key)).and_then(|bytes| serde_json::from_slice::<Snapshot>(&bytes).ok());
     if let Some(mut snapshot) = kept {
         if snapshot.witness.current(part, true) {
@@ -272,13 +280,17 @@ fn indexed_graph(part: &Repo, opts: &Options) -> (Result<Graph>, Witness) {
             }
         }
     }
+    drop(index);
     let (graph, environment) = match crate::language::of(part, opts) {
         Ok(language) => {
+            let index = crate::clock::stage("index");
             let environment = crate::cache::witness(language.environment(part, opts));
+            drop(index);
             (graph_of(part, opts), environment)
         }
         Err(e) => (Err(e), vec![]),
     };
+    let _index = crate::clock::stage("index");
     let witness = Witness::of(part, environment);
     if let (Some(cache), Ok(graph)) = (&cache, &graph) {
         let snapshot = Snapshot { witness: witness.clone(), written: Written::of(std::slice::from_ref(graph)), graph: graph.clone() };

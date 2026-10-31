@@ -271,6 +271,7 @@ pub fn parse(repo: &Repo, packages: &[PathBuf], project_root: Option<&Path>, opt
         if modules.contains_key(&mid) {
             continue;
         }
+        let _parse = crate::clock::of("parse", &package_of(&mid), false);
         let m = load_module(&mut parser, &mid, &p, is_pkg, &repo.bytes(&p).with_context(|| format!("reading {}", p.display()))?)?;
         store.files.insert(crate::tree::path_str(&p), String::from_utf8_lossy(&m.src).to_string());
         store.add_node(Node {
@@ -303,6 +304,7 @@ pub fn parse(repo: &Repo, packages: &[PathBuf], project_root: Option<&Path>, opt
                 false => format!("{}.{}", dirs.join("."), stem.replace('.', "_")),
                 true => format!("_root.{}", stem.replace('.', "_")),
             };
+            let _parse = crate::clock::of("parse", &package_of(&mid), false);
             // a script or notebook that does not load is left out, and the rest is read
             let loaded = repo
                 .bytes(&p)
@@ -335,6 +337,7 @@ pub fn parse(repo: &Repo, packages: &[PathBuf], project_root: Option<&Path>, opt
     }
 
     let types = read_libraries(repo, &mut parser, &mut modules, &mut store, &types_root, opts)?;
+    let items = crate::clock::stage("items");
     for m in modules.values_mut() {
         collect_symbols(m, &mut store);
     }
@@ -346,7 +349,9 @@ pub fn parse(repo: &Repo, packages: &[PathBuf], project_root: Option<&Path>, opt
     for m in modules.values() {
         store.bindings.insert(m.id.clone(), m.bindings.clone());
     }
+    drop(items);
     link(&modules, &mut store, &own, &types, &types_root);
+    let _items = crate::clock::stage("items");
     mark_exports(&modules, &mut store, &own);
     route_prefixes(&modules, &mut store, &types, &own);
     store.mark_library();
@@ -371,8 +376,11 @@ fn read_libraries(
 ) -> Result<Types> {
     let entry = |m: &Module| (crate::tree::path_str(&m.path), m.path.clone());
     let mut files: Vec<(String, PathBuf)> = modules.values().map(entry).collect();
+    let typing = crate::clock::stage("types");
     let Some(ty) = Ty::new(repo, root_dir, &files, opts.cache.as_ref()) else { return Ok(Types::default()) };
     let mut types = ty.read(&files, &files);
+    drop(typing);
+    let _reach = crate::clock::stage("reach");
     let mut reached = types.libs.clone();
     let used: HashSet<String> = reached.iter().map(|(m, _)| package_of(m)).collect();
     let mut readable = Readable::default();
@@ -390,7 +398,9 @@ fn read_libraries(
             let is_pkg = path.file_stem().and_then(|s| s.to_str()) == Some("__init__");
             // a library's code is the environment's, not the repository's
             let Some(text) = ty.env.source(&path) else { continue };
+            let parse = crate::clock::of("parse", &package_of(&mid), true);
             let Ok(m) = load_module(parser, &mid, &shown, is_pkg, &text) else { continue };
+            drop(parse);
             store.files.insert(crate::tree::path_str(&shown), String::from_utf8_lossy(&m.src).to_string());
             store.add_node(Node {
                 id: mid.clone(),
@@ -411,12 +421,14 @@ fn read_libraries(
             break;
         }
         if round < depth {
+            let _types = crate::clock::stage("types");
             reached = ty.libs(&fresh, &fresh);
         }
         files.extend(fresh);
     }
     // read together, a call into a library module read as code goes to its definition
     if files.len() > project {
+        let _types = crate::clock::stage("types");
         types = ty.read(&files, &files);
     }
     Ok(types)

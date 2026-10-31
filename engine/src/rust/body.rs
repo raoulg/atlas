@@ -662,8 +662,10 @@ pub(super) fn link_calls<'t>(
     let m = &modules[&n.module];
     let Some(d) = def_node(m, &n) else { return Linked::default() };
     let Some(body) = d.child_by_field_name("body") else { return Linked::default() };
+    let stage = |name: &'static str| crate::clock::of(name, &m.krate, n.library);
     let mut steps = Steps::new(body, &m.src, &CHOICES, &USES);
     let read = {
+        let scope = stage("scope");
         let mut b = Body::new(modules, store, crate_ids, eval, returned, m, &n, d, body);
         // the error type `?` converts to: the program's type the signature's `Result` names, else none of the code's
         let error = n.returns.as_ref().filter(|r| r.fails).map(|r| {
@@ -672,6 +674,8 @@ pub(super) fn link_calls<'t>(
             parts.and_then(|p| b.resolve(&p)).and_then(|t| b.class_of(&t)).unwrap_or_default()
         });
         steps.converts(error);
+        drop(scope);
+        let calls_stage = stage("calls");
         // a loop binds its element once what it goes over is made, and before its body runs
         let calls =
             evaluation_order(walk(body, &["call_expression", "struct_expression", "identifier", "scoped_identifier", "token_tree"]));
@@ -690,6 +694,8 @@ pub(super) fn link_calls<'t>(
             b.call(&mut steps, c);
             steps.mark(c, b.read.touches[t..].iter_mut().chain(b.read.waiting[w..].iter_mut().map(|(t, _)| t)));
         }
+        drop(calls_stage);
+        let _uses = stage("uses");
         let kept = steps.kept.clone();
         // among a macro's tokens, the value a call that is a step is made on is that step's
         let stepped = |n: TsNode| {
@@ -713,6 +719,7 @@ pub(super) fn link_calls<'t>(
         steps.fills(&held);
         b.read
     };
+    let _close = stage("close");
     let receiver = n.params.iter().find(|p| p.receiver).map(|p| p.name.as_str());
     let is_type = |(a, b): (usize, usize)| names_type(&String::from_utf8_lossy(&m.src[a..b]));
     let compares =

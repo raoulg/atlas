@@ -188,6 +188,7 @@ impl Libraries {
 
     /// A library's module from its file, before its symbols and imports are collected.
     fn module(&mut self, id: &str, file: &Path) -> Option<Module> {
+        let _parse = crate::clock::of("parse", id.split('.').next().unwrap_or(id), true);
         if !self.trees.contains_key(file) {
             let src = self.env.source(file)?;
             let tree = self.parser.as_mut()?.parse(&src, None)?;
@@ -228,6 +229,7 @@ impl Libraries {
     /// A module parsed to follow a path through.
     fn parsed(&mut self, id: &str, crate_ids: &HashMap<String, String>) -> Option<&Module> {
         if !self.parsed.contains_key(id) {
+            let _reach = crate::clock::of("reach", id.split('.').next().unwrap_or(id), true);
             let file = self.files.get(id).cloned();
             let m = file.and_then(|f| self.module(id, &f)).map(|mut m| {
                 Self::collect(&mut m, &mut GraphBuilder::default(), crate_ids);
@@ -308,6 +310,7 @@ impl Libraries {
         if modules.contains_key(id) {
             return None;
         }
+        let _items = crate::clock::of("items", id.split('.').next().unwrap_or(id), true);
         let mut m = self.module(id, file)?;
         let root = m.tree.root_node();
         store.files.insert(crate::tree::path_str(file), String::from_utf8_lossy(&m.src).to_string());
@@ -362,11 +365,14 @@ fn library_calls(
     crate_ids: &HashMap<String, String>,
     probe: &HashSet<String>,
 ) -> Vec<Vec<String>> {
+    let copied = crate::clock::stage("reach");
     let eval = Eval::new(modules, &store.nodes, crate_ids);
     let returned = returned_classes(store);
+    drop(copied);
     let mut out = vec![];
     for n in store.nodes.values().filter(|n| matches!(n.kind, NodeKind::Function | NodeKind::Method) && probe.contains(&n.module)) {
         let Some(m) = modules.get(&n.module) else { continue };
+        let _reach = crate::clock::of("reach", &m.krate, n.library);
         let Some(d) = def_node(m, n) else { continue };
         let Some(body) = d.child_by_field_name("body") else { continue };
         let b = Body::new(modules, store, crate_ids, &eval, &returned, m, n, d, body);
@@ -423,12 +429,15 @@ pub(super) fn read(
             }
             defining.insert(def);
         }
+        let items = crate::clock::stage("items");
         collect_impls(modules, store, crate_ids, &fresh);
+        drop(items);
         used.get_or_insert(reached);
         probe = defining.into_iter().filter(|d| fresh.contains(d)).collect();
         if probe.is_empty() {
             break;
         }
     }
+    let _items = crate::clock::stage("items");
     store.mark_library();
 }
