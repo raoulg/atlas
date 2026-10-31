@@ -25,7 +25,7 @@ mod paths;
 pub use crate::builder::{foreign_type, ClassInfo, Declared, GraphBuilder, SigInfo};
 use crate::environment::Environment;
 use crate::knowledge;
-use crate::model::{Entry, EntryKind, Node, NodeKind};
+use crate::model::{Dependency, Entry, EntryKind, Node, NodeKind};
 use crate::pytypes::{Ty, Types};
 use crate::repo::Repo;
 use crate::tree::named_children;
@@ -392,6 +392,14 @@ fn read_libraries(
             let Some(text) = ty.env.source(&path) else { continue };
             let Ok(m) = load_module(parser, &mid, &shown, is_pkg, &text) else { continue };
             store.files.insert(crate::tree::path_str(&shown), String::from_utf8_lossy(&m.src).to_string());
+            // the library as the dependency it is: the directory of its top-level package, or its one module
+            let (root, depth) = (mid.split('.').next().unwrap_or(&mid), mid.split('.').count() - 1 + usize::from(is_pkg));
+            if let Some(top) = shown.ancestors().nth(depth) {
+                store
+                    .libraries
+                    .entry(root.to_string())
+                    .or_insert_with(|| Dependency { dir: crate::tree::path_str(top), ..Default::default() });
+            }
             store.add_node(Node {
                 id: mid.clone(),
                 kind: NodeKind::Module,

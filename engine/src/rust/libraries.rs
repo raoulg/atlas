@@ -27,7 +27,7 @@ use crate::cache::Check;
 use crate::effects;
 use crate::environment::Environment;
 use crate::knowledge::{self, Registry};
-use crate::model::{ext, Node, NodeKind};
+use crate::model::{ext, Dependency, Node, NodeKind};
 use crate::repo::Repo;
 use crate::tree::{named_children, span, text, unquote, walk};
 use path_clean::clean;
@@ -63,6 +63,13 @@ impl Environment {
         let lib = manifest.get("lib").and_then(|l| l.get("path")).and_then(|p| p.as_str()).unwrap_or("src/lib.rs");
         let file = clean(&package_dir.join(lib));
         (!holds && file.is_file()).then_some(file)
+    }
+
+    /// A fetched crate as the dependency it is: its directory, and the version its manifest names.
+    fn dependency(&self, package_dir: &Path) -> Dependency {
+        let manifest: Option<toml::Table> = self.manifest(package_dir, "Cargo.toml").and_then(|t| t.parse().ok());
+        let version = manifest.as_ref().and_then(|m| m.get("package")?.get("version")?.as_str()).unwrap_or_default();
+        Dependency { dir: crate::tree::path_str(package_dir), version: version.to_string() }
     }
 }
 
@@ -428,6 +435,12 @@ pub(super) fn read(
         probe = defining.into_iter().filter(|d| fresh.contains(d)).collect();
         if probe.is_empty() {
             break;
+        }
+    }
+    // each crate read, as the dependency it is
+    for (ident, root) in &lib.roots {
+        if let (Some(_), Some(dir)) = (root, lib.deps.get(ident)) {
+            store.libraries.insert(ident.clone(), lib.env.dependency(dir));
         }
     }
     store.mark_library();

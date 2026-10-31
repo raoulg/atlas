@@ -9,7 +9,7 @@ use anyhow::Result;
 
 use crate::cache::{Check, Written};
 use crate::knowledge;
-use crate::model::{Edge, EdgeKind, Graph, Lang, Node, NodeKind, Part};
+use crate::model::{ext, Dependency, Edge, EdgeKind, Graph, Lang, Node, NodeKind, Part};
 use crate::options::Options;
 use crate::paths::{served, serving, Served};
 use crate::repo::{Answers, Repo, Stamp};
@@ -303,7 +303,8 @@ fn found(r: &Repo, opts: &Options) -> Vec<Repo> {
 /// no two parts share an id: the part's directory, behind the repository's name when several are
 /// read, and before the part's language when another part lies in the same directory. A name one
 /// part holds keeps it, and so does the part at the root of the repository, which lies nowhere below
-/// it. A Makefile two parts in one directory read is one Makefile, held once.
+/// it. A Makefile two parts in one directory read is one Makefile, held once. A library the parts
+/// read from several directories is one library per directory (`versions`).
 fn apart(parts: Vec<(Graph, PathBuf)>) -> Vec<Graph> {
     let head = |id: &str| id.split('.').next().unwrap_or("").to_string();
     // the top-level names of a part's own code, no library's (which the parts share), and of its
@@ -326,29 +327,101 @@ fn apart(parts: Vec<(Graph, PathBuf)>) -> Vec<Graph> {
         }
     }
     let dirs: Vec<PathBuf> = parts.iter().map(|(_, at)| at.clone()).collect();
-    parts
-        .into_iter()
-        .zip(&held)
-        .map(|((mut g, at), (code, make))| {
-            let shared: HashSet<&str> = code.iter().chain(make).map(String::as_str).filter(|h| holders[h].len() > 1).collect();
-            // a dot in a directory's name is no package boundary
+    // where each part lies, and where its code does: a dot in a directory's name is no package boundary,
+    // and the code of two parts in one directory is told apart by its language
+    let lies: Vec<(String, String)> = parts
+        .iter()
+        .map(|(g, at)| {
             let dir: Vec<String> = at.components().map(|c| c.as_os_str().to_string_lossy().replace('.', "_")).collect();
-            // the code of two parts in one directory is told apart by its language; their Makefile is the directory's
-            let place: Vec<String> = if dirs.iter().filter(|d| **d == at).count() > 1 {
+            let place: Vec<String> = if dirs.iter().filter(|d| *d == at).count() > 1 {
                 dir.iter().cloned().chain(g.language.iter().map(|l| l.name().into())).collect()
             } else {
                 dir.clone()
             };
-            let (dir, place) = (dir.join("/"), place.join("/"));
-            let under = |p: &str, id: &str| if p.is_empty() { id.to_string() } else { format!("{p}/{id}") };
-            g.rename(&|id| match head(id) {
-                h if !shared.contains(h.as_str()) => id.to_string(),
-                h if make.contains(&h) => under(&dir, id),
-                _ => under(&place, id),
+            (dir.join("/"), place.join("/"))
+        })
+        .collect();
+    let places: Vec<&str> = lies.iter().map(|(_, place)| place.as_str()).collect();
+    let versions = versions(&parts, &held, &places);
+    parts
+        .into_iter()
+        .zip(held.iter().zip(&lies).zip(&versions))
+        .map(|((mut g, _), (((code, make), (dir, place)), versions))| {
+            let shared: HashSet<&str> = code.iter().chain(make).map(String::as_str).filter(|h| holders[h].len() > 1).collect();
+            let libraries = g.libraries.clone();
+            g.rename(&|id| {
+                if let Some(name) = root_of(&libraries, id).and_then(|root| Some((root, versions.get(root)?))) {
+                    return renamed(id, name);
+                }
+                match head(id) {
+                    h if !shared.contains(h.as_str()) => id.to_string(),
+                    h if make.contains(&h) => under(dir, id),
+                    _ => under(place, id),
+                }
             });
             g
         })
         .collect()
+}
+
+/// `id` under the place `p`: `orders/app.main`; the id itself at the root.
+fn under(p: &str, id: &str) -> String {
+    if p.is_empty() {
+        id.to_string()
+    } else {
+        format!("{p}/{id}")
+    }
+}
+
+/// The root of the library `id` is of, among `libraries`: the longest root that the id, or the name past
+/// the code it is, begins with.
+fn root_of<'l>(libraries: &'l BTreeMap<String, Dependency>, id: &str) -> Option<&'l str> {
+    let name = ext::name(id);
+    let under = |root: &str| name.strip_prefix(root).is_some_and(|rest| rest.is_empty() || rest.starts_with('.'));
+    libraries.keys().map(String::as_str).filter(|root| under(root)).max_by_key(|root| root.len())
+}
+
+/// `id`, of the library whose root is `root`, under the name `to` that root takes: the code's ids and the
+/// names past its fiber alike (`ext:serde_json.Error` is `ext:serde_json-1_0_151.Error`).
+fn renamed(id: &str, (root, to): (&str, &String)) -> String {
+    match ext::path(id) {
+        Some(name) => ext::of(&format!("{to}{}", &name[root.len()..])),
+        None => format!("{to}{}", &id[root.len()..]),
+    }
+}
+
+/// A library the parts read from several directories is one library per directory, since a directory
+/// is one code (`Dependency`): for each part, the root of each such library it holds with the name it
+/// takes there. A library the parts read from one directory keeps its name. Each directory's library is
+/// named after its version (`serde_json-1_0_151`; a dot in a name is no package boundary) where the
+/// versions tell the directories apart, and otherwise under where the first part that reads it from that
+/// directory lies (`places`), as that part's own code is. A part's own code keeps its names.
+fn versions(parts: &[(Graph, PathBuf)], held: &[(BTreeSet<String>, BTreeSet<String>)], places: &[&str]) -> Vec<HashMap<String, String>> {
+    // for each library, the directories it is read from in order, each with its version and the parts reading it there
+    let mut read: BTreeMap<&str, Vec<(&Dependency, Vec<usize>)>> = BTreeMap::new();
+    for (i, (g, _)) in parts.iter().enumerate() {
+        let roots: BTreeSet<&str> =
+            g.nodes.iter().filter_map(|n| root_of(&g.libraries, &n.id)).filter(|r| !held[i].0.contains(*r)).collect();
+        for root in roots {
+            let at = read.entry(root).or_default();
+            match at.iter_mut().find(|(d, _)| d.dir == g.libraries[root].dir) {
+                Some((_, readers)) => readers.push(i),
+                None => at.push((&g.libraries[root], vec![i])),
+            }
+        }
+    }
+    let mut out = vec![HashMap::new(); parts.len()];
+    for (root, at) in read.into_iter().filter(|(_, at)| at.len() > 1) {
+        let versions: BTreeSet<&str> = at.iter().map(|(d, _)| d.version.as_str()).filter(|v| !v.is_empty()).collect();
+        let by_version = versions.len() == at.len();
+        for (d, readers) in &at {
+            let name = if by_version { format!("{root}-{}", d.version.replace('.', "_")) } else { under(places[readers[0]], root) };
+            for &i in readers {
+                out[i].insert(root.to_string(), name.clone());
+            }
+        }
+    }
+    out
 }
 
 /// What reading the repository at `dir` takes from outside it, part by part: where the code of
@@ -417,6 +490,11 @@ pub fn assign(g: &mut Graph, language: Lang) {
 /// Graphs side by side: their nodes, edges, files and routes, their languages, the calls they did
 /// not follow, counted by name over all of them, and the bodies they linked. No graphs are the empty graph, which has no
 /// language and no project root.
+///
+/// The graphs are glued along what they share (`mathematics.md`, Coproducts): an id two of them hold
+/// names one node, a library both read from one directory or a name past the code both name, and the
+/// merge holds it once, as the first graph that holds it reads it, with the lines out of it that graph
+/// draws.
 pub fn merge(name: &str, graphs: Vec<Graph>) -> Graph {
     let mut out = Graph {
         root: name.to_string(),
@@ -426,10 +504,15 @@ pub fn merge(name: &str, graphs: Vec<Graph>) -> Graph {
     };
     let mut made = HashSet::new();
     let mut unresolved: HashMap<String, u32> = HashMap::new();
-    for g in graphs {
+    // the graph each node is held from
+    let mut from: HashMap<String, usize> = HashMap::new();
+    for (i, g) in graphs.into_iter().enumerate() {
         out.parts.extend(g.parts);
-        out.nodes.extend(g.nodes);
-        out.edges.extend(g.edges);
+        out.nodes.extend(g.nodes.into_iter().filter(|n| *from.entry(n.id.clone()).or_insert(i) == i));
+        out.edges.extend(g.edges.into_iter().filter(|e| from.get(&e.src).map_or(true, |&j| j == i)));
+        for (root, d) in g.libraries {
+            out.libraries.entry(root).or_insert(d);
+        }
         for (file, text) in g.files {
             // a library's file two parts read keeps the lines either shows
             match out.files.get_mut(&file) {

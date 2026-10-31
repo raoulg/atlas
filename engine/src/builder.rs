@@ -113,6 +113,8 @@ pub struct GraphBuilder {
     pub used: HashSet<(String, String)>,
     /// The bodies linked so far: the program's, and those of the libraries' code read.
     pub linked: [usize; 2],
+    /// The libraries read as code, by the id of each one's root.
+    pub libraries: BTreeMap<String, crate::model::Dependency>,
 }
 
 impl GraphBuilder {
@@ -390,6 +392,7 @@ impl GraphBuilder {
             project_root: project_root.map(crate::tree::path_str).unwrap_or_default(),
             nodes: nodes.into_values().collect(),
             edges,
+            libraries: self.libraries,
             files: self.files,
             stats: Stats {
                 unresolved_calls_total: self.unresolved.values().sum(),

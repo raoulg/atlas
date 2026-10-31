@@ -1650,6 +1650,17 @@ pub struct Part {
     pub structural: bool,
 }
 
+/// A library read as code, as the dependency it is: the directory its code is read from, which
+/// names that code (Cargo's registry keeps one directory per version, an environment its own
+/// copy), and the version its manifest names, `""` where it names none.
+#[derive(Serialize, Deserialize, TS, Clone, Debug, Default, PartialEq, Eq)]
+#[ts(export)]
+pub struct Dependency {
+    pub dir: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub version: String,
+}
+
 /// What a language leaves its author to write: what its compiler neither asks for nor works out,
 /// so that code may leave it out and a reader then does not know it.
 #[derive(Serialize, Deserialize, TS, Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -1685,6 +1696,10 @@ pub struct Graph {
     pub parts: Vec<Part>,
     pub nodes: Vec<Node>,
     pub edges: Vec<Edge>,
+    /// The libraries it reads as code, by the id of each one's root, which its ids begin with
+    /// (`serde_json`, `plotkit`).
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub libraries: BTreeMap<String, Dependency>,
     /// Absolute path -> file text, for `inspect`.
     #[serde(default)]
     pub files: BTreeMap<String, String>,
@@ -1763,7 +1778,7 @@ impl Graph {
     /// replace, what its calls reach and the types they hand and give, the values its own code uses,
     /// binds and sets and the error it hands on, a value named by its step, whose calls make its touches
     /// whole and whose code decides where they go), an edge's ends, a make target's own with its
-    /// Makefile, its part and what it runs, the parts and the root.
+    /// Makefile, its part and what it runs, the root of each library, the parts and the root.
     pub fn rename(&mut self, to: &dyn Fn(&str) -> String) {
         let m = |s: &mut String| {
             if !s.is_empty() {
@@ -1828,6 +1843,7 @@ impl Graph {
             m(&mut t.part);
             t.calls.iter_mut().for_each(&m);
         }
+        self.libraries = std::mem::take(&mut self.libraries).into_iter().map(|(root, d)| (to(&root), d)).collect();
     }
 
     pub fn recount(&mut self) {
