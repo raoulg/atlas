@@ -1749,6 +1749,14 @@ fn places_a_parent_drops_the_last_part_of_a_path() {
     common::a_parent_drops_the_last_part_of_a_path("rust", "shelf.summarise", "shelf.log");
 }
 
+/// The unset pair: `env::var(name)` of the name a caller hands is the variable that caller names, as
+/// `env::var("REPORT")` is, and `unwrap_or(String::new())` falls back to the empty path as `unwrap_or_default()` does
+/// (#348).
+#[test]
+fn places_a_variable_a_caller_names_is_that_variable() {
+    common::a_variable_a_caller_names_is_that_variable("rust", "notes.keep", "notes.save_report", "notes.save_log", "notes.show_report");
+}
+
 /// The closures pair: a closure a `let` keeps and the body calls takes what each call hands it (#239), as a function of
 /// the module does, and as a lambda or a `def` inside a `def` does in Python.
 #[test]

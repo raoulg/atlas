@@ -2033,6 +2033,19 @@ fn places_a_parent_drops_the_last_part_of_a_path() {
     common::a_parent_drops_the_last_part_of_a_path("typescript", "shelf.summarise", "shelf.log");
 }
 
+/// The unset pair: `process.env[name]` and `process.env[name] ?? ""` of the name a caller hands are the variable that
+/// caller names, as `process.env.REPORT` is (#348).
+#[test]
+fn places_a_variable_a_caller_names_is_that_variable() {
+    common::a_variable_a_caller_names_is_that_variable(
+        "typescript",
+        "notes.keep.keep",
+        "notes.keep.saveReport",
+        "notes.keep.saveLog",
+        "notes.keep.showReport",
+    );
+}
+
 // ---------- sockets: a socket of `node:net` is a place ----------
 
 /// The sockets pair (#323), the greeter and client Python and Rust write, on Node's `net`: a call leaves something

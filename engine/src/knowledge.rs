@@ -2209,8 +2209,11 @@ pub const RUST_PATH_FUNCTIONS: &[(&str, &str, PathFn)] = &[
     ("env", "temp_dir", PathFn::Temp),
     ("env", "var", PathFn::Environment),
     ("env", "var_os", PathFn::Environment),
-    // the join of no parts: the empty path, the unit of a join (`PathBuf::new().join("x")` is `x`)
+    // the join of no parts: the empty path, the unit of a join (`PathBuf::new().join("x")` is `x`),
+    // and the empty text a path is made of (`env::var("X").unwrap_or(String::new())`)
     ("PathBuf", "new", PathFn::Join),
+    ("String", "new", PathFn::Join),
+    ("OsString", "new", PathFn::Join),
 ];
 
 /// Python's classes whose values are paths, by the library module ty finds the class in (or one

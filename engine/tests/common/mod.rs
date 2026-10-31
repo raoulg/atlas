@@ -923,3 +923,36 @@ pub fn a_name_changed_in_one_arm_is_the_choices_value(language: &str) {
         assert!(shortcut.contains(&format!("home {chosen} {route}")), "{at} shortcut: the choice's value stands in the route's frame");
     }
 }
+
+/// The unset pair: the name of a variable of the environment is a term like any other (`docs/reference/mathematics.md`,
+/// "Paths as terms"), so a lookup whose name a caller hands is completed through the callers by the substitution that
+/// completes a path built from a parameter, never by one of its own. `keep(name, text)` writes to the file the variable
+/// `name` names, which it asks `setting(name)` for; `save_report` hands it `"REPORT"` and `save_log` `"LOG"`, and
+/// `show_report` reads the report from the file its own lookup names, the name written in it. The lookup commutes with
+/// what is handed: what `keep` writes for `save_report` and what `show_report` reads are one place, and what it writes
+/// for `save_log` is another; every place `keep` writes is one a caller names. So on both sides, the clean one asking
+/// for the variable and the shortcut falling back to the empty path, which names nothing (#248), and in every language.
+#[allow(dead_code)]
+pub fn a_variable_a_caller_names_is_that_variable(language: &str, keep: &str, save_report: &str, save_log: &str, show_report: &str) {
+    let p = pair(&format!("unset/{language}"));
+    for (side, g) in [("clean", &p.clean), ("shortcut", &p.shortcut)] {
+        // the places a function's touches of one kind reach, with the callers that make each whole
+        let touches = |id: &str, kind: &str| -> Vec<(String, BTreeSet<Both>)> {
+            let n = g.node(id).unwrap_or_else(|| panic!("{language} {side}: no node {id}"));
+            n.touches.iter().filter(|t| t.kind_name() == kind).map(|t| (t.place().id, t.by.clone())).collect()
+        };
+        let written = touches(keep, "disk_write");
+        assert!(
+            written.iter().all(|(_, b)| !b.is_empty()),
+            "{language} {side}: `{keep}` writes only where a caller names the variable: {written:?}"
+        );
+        let for_caller =
+            |caller: &str| -> BTreeSet<String> { written.iter().filter(|(_, b)| *b == by([caller])).map(|(p, _)| p.clone()).collect() };
+        let (report, log) = (for_caller(save_report), for_caller(save_log));
+        let read: BTreeSet<String> = touches(show_report, "disk_read").into_iter().map(|(p, _)| p).collect();
+        assert_eq!(read.len(), 1, "{language} {side}: `{show_report}` reads one file: {read:?}");
+        assert_eq!(report, read, "{language} {side}: what `{keep}` writes for `{save_report}` is what `{show_report}` reads");
+        assert_eq!(log.len(), 1, "{language} {side}: `{keep}` writes one file for `{save_log}`: {log:?}");
+        assert!(report.is_disjoint(&log), "{language} {side}: two variables are two places: {report:?}, {log:?}");
+    }
+}
