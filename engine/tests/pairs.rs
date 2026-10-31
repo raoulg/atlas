@@ -562,10 +562,12 @@ fn a_folder_is_placed_as_the_files_in_it_are() {
 /// An empty default decides no place (`docs/reference/mathematics.md`, "Paths as terms"): the empty
 /// path names nothing, so an input that falls back to it is named as the input alone. The unset
 /// pair (`unset/{python,rust,typescript}`) keeps a report and a log in the files the environment
-/// names; the clean side asks for each variable, the shortcut falls back to the empty path
-/// (`os.environ.get("REPORT", "")`, `unwrap_or_default()`, `?? ""`). Each side draws two places,
-/// one per function, the same on both sides and in every language: the shortcut's two empty
-/// defaults are not one file.
+/// names, and reads the report back; the clean side asks for each variable, the shortcut falls back
+/// to the empty path, for the name a caller hands (`os.environ.get(name, "")`,
+/// `unwrap_or(String::new())`, `?? ""`) and for the one its lookup writes
+/// (`os.environ.get("REPORT", "")`, `unwrap_or_default()`). Each side draws two places, one per
+/// variable, the same on both sides and in every language: the shortcut's two empty defaults are
+/// not one file.
 #[test]
 fn an_empty_default_decides_no_place() {
     use std::collections::BTreeSet;
