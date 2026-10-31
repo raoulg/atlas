@@ -50,7 +50,8 @@ pub mod ext {
     }
 }
 
-/// What a reader resolves a name to, a value of `Code ⊔ Beyond` (`ext`): one of the code's ids, or a name past the code.
+/// What a reader resolves a name to, a value of `Code ⊔ Beyond` (`ext`): one of the code's ids, which carries no tag, or a
+/// name past the code.
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub enum Resolved {
     Code(String),
