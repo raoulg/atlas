@@ -68,3 +68,30 @@ home Level·both@gathered/append gathered
 
 side entry left
 side Screen right
+
+# A choice's value is what its arms make of it (#366): `chosen` binds a list of the first level and changes it in one
+# arm. The change takes the list the body made where it binds the name, which stands in the route's frame and not in
+# the arm's, and makes it anew; the arm that does not run keeps it, so what the change makes is one value at the choice's
+# moment, and the step after the choice takes that value, as it would of a list a step made.
+
+route signal.chosen
+choice chosen/?1                                       # `if loud`
+step chosen/?1/append
+step chosen/_show
+
+line entry > chosen call
+line Level·first > chosen value                        # `both: list[Level] = [first]`, read where it is bound
+line Level·second > chosen value
+line Level·both@chosen/~both > chosen/?1/append value  # `both.append(second)`
+line Level·second > chosen/?1/append value
+line chosen/?1/append > Level·both@chosen/?1 value     # made anew in one arm, kept in the other
+line Level·both@chosen/?1 > chosen/_show value         # `_show(both)`
+line chosen/_show > Screen own
+
+home Level·first chosen
+home Level·second chosen
+home Level·both@chosen/~both chosen
+home Level·both@chosen/?1 chosen
+
+side entry left
+side Screen right

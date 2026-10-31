@@ -833,7 +833,8 @@ parse the command line to the entry. The closed picture is `F/q`:
   and each of its lines stands for the lines of all of them. The merge is decided on `F`, not on the
   picture, so opening a family, a group or a directory never splits a pill it did not open;
 - where a box stands is decided on `F`: a value stands in the smallest frame that holds all its users
-  and its maker (a choice or the route frame when no step makes it), a place of the world stands
+  and its maker (a choice; for a value the body binds by its own code, the body's frame, or the choice whose arm binds
+  it; the route frame when nothing in the plan makes it), a place of the world stands
   outside the steps that show it. The block is its image, so no box moves into or out of a frame by
   being opened;
 - which side a place of the world stands on is decided on the coarsest picture, `F/q₀` with only the

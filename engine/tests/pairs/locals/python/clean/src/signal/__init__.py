@@ -2,7 +2,7 @@
 
 from dataclasses import dataclass
 
-__all__ = ["paired", "named", "written", "gathered"]
+__all__ = ["paired", "named", "written", "gathered", "chosen"]
 
 
 @dataclass
@@ -47,4 +47,11 @@ def written(first: Level, second: Level) -> None:
 def gathered(first: Level, second: Level) -> None:
     """The two levels, gathered in a list written out once and shown."""
     both: list[Level] = [first, second]
+    _show(both)
+
+
+def chosen(first: Level, second: Level, loud: bool) -> None:
+    """The first level, and the second beside it where it is loud: the list the choice gives, written out in each arm, and
+    shown."""
+    both: list[Level] = [first, second] if loud else [first]
     _show(both)
