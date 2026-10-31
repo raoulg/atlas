@@ -2067,7 +2067,8 @@ fn sockets_a_connection_keeps_its_place() {
 }
 
 /// The locals pair: a name bound to what an operator or an array computes of names stands for those names, so a step
-/// handed it is handed what the expression written in its place hands (#328), as in Python and Rust.
+/// handed it is handed what the expression written in its place hands (#328), and the route's own arrow takes what it
+/// takes with the expression written in place (#343), as in Python and Rust.
 #[test]
 fn a_name_computed_of_names_stands_for_them() {
     common::a_name_computed_of_names_stands_for_them("typescript");

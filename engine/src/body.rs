@@ -273,6 +273,17 @@ fn changed_values(mut gives: Vec<Held>, changed: Vec<Held>) -> Vec<Held> {
     gives
 }
 
+/// Where a name the body writes is read (`Steps::reading`).
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Read {
+    /// Where it stands.
+    Here,
+    /// Where a name bound to it is read: the name stands for it, or for a part of what it holds.
+    There,
+    /// Nowhere: a label, or a name bound where it stands.
+    Not,
+}
+
 /// The steps of a body in the order they run, the names they keep, and the edges they make: read
 /// the same way for every language. The reader says what each call is; where it sits among the
 /// body's choices is read here.
@@ -301,6 +312,9 @@ pub struct Steps<'t, 's> {
     pub kept: HashSet<String>,
     /// The values the body binds a name to by a literal (`Steps::literal`), by where each is written.
     literals: HashSet<Range>,
+    /// The names the language's own code computes a value bound to a name of, where the reader follows that name to them
+    /// (`stands_for`), by their nodes: they are read where the name is (`Steps::reading`).
+    stood: HashSet<usize>,
     /// The body read once, when a question first climbs it or follows a name through it.
     index: OnceCell<Index<'t, 's>>,
 }
@@ -364,6 +378,7 @@ impl<'t, 's> Steps<'t, 's> {
             converts: None,
             kept: HashSet::new(),
             literals: HashSet::new(),
+            stood: HashSet::new(),
             index: OnceCell::new(),
         }
     }
@@ -581,8 +596,12 @@ impl<'t, 's> Steps<'t, 's> {
     /// is handed is the step's. `held` is the reader's: the values a name, or a string that writes
     /// names, holds where it stands, as a call written there would be handed them; none for one that
     /// holds no value (a function, a module, a class). Each value once in each arm it is used in.
-    pub fn uses(&mut self, held: &dyn Fn(TsNode<'t>) -> Vec<Held>) {
+    /// `stands` is the reader's too: the names a name, or a string that writes names, stands for where it stands, those it
+    /// follows it to through a binding to what the language's own code computes of them (`stands_for`), none where it
+    /// follows none. The body's own code reads those where it reads the name, never where it binds it.
+    pub fn uses(&mut self, held: &dyn Fn(TsNode<'t>) -> Vec<Held>, stands: &dyn Fn(TsNode<'t>) -> Vec<TsNode<'t>>) {
         let u = self.uses;
+        self.stood = self.stood(stands);
         let steps: Vec<(usize, usize)> =
             self.sites.iter().filter(|s| s.span != (0, 0)).map(|s| (s.span.0 as usize, s.span.1 as usize)).collect();
         let in_step = |n: TsNode| steps.iter().any(|(a, b)| *a <= n.start_byte() && n.end_byte() <= *b);
@@ -1039,41 +1058,51 @@ impl<'t, 's> Steps<'t, 's> {
         None
     }
 
-    /// Whether the name `n` is read where it stands: no label (the `f` of `x.f`), not what a binding
-    /// or a pattern binds (`x` of `x = v`, the names of `Some(x) =>`), and not a name a function written
-    /// in place binds for itself. A binding that reads what it binds reads it (`x += v`), and a change
-    /// made through a name reads the name (`x.f = v`, `rows[i] = v`). A name a binding binds to a part
-    /// of what it holds (`width = settings.width`, `row = rows[k]`, `for r in rows`) is read where the
-    /// bound name is: that name stands for the part, and a step it is handed takes it, the projection
-    /// glued into the step (`mathematics.md`, "One fine plan"). An operator, a format or a call the
-    /// body computes a value with reads what it is computed from.
+    /// Whether the name `n` is read where it stands (`Steps::reading`).
     fn read_here(&self, n: TsNode<'t>) -> bool {
+        self.reading(n) == Read::Here
+    }
+
+    /// Where the name `n` is read. Nowhere for a label (the `f` of `x.f`), what a binding or a pattern
+    /// binds (`x` of `x = v`, the names of `Some(x) =>`) and a name a function written in place binds for
+    /// itself. A binding that reads what it binds reads it (`x += v`), and a change made through a name
+    /// reads the name (`x.f = v`, `rows[i] = v`). A name a binding binds to a part of what it holds
+    /// (`width = settings.width`, `row = rows[k]`, `for r in rows`) is read where the bound name is: that
+    /// name stands for the part, and a step it is handed takes it, the projection glued into the step
+    /// (`mathematics.md`, "One fine plan"). So is a name the language's own code computes a bound value of
+    /// (`gap = first.db - second.db`), where the reader follows the bound name to it (`Steps::stood`): an
+    /// operator is no occurrence, and binding what it computes adds no arrow. Any other operator, format
+    /// or call the body computes a value with reads what it is computed from where it is written.
+    fn reading(&self, n: TsNode<'t>) -> Read {
         let u = self.uses;
         if (u.label)(n, self.src) {
-            return false;
+            return Read::Not;
+        }
+        if self.stood.contains(&n.id()) {
+            return Read::There;
         }
         let name = text(n, self.src);
         // `chain`: what lies between `n` and `child` takes a part of what `n` holds, or hands it on
         let (mut child, mut through, mut chain) = (n, false, true);
         while let Some(p) = self.up(child).filter(|_| child.id() != self.body.id()) {
             if (u.binders)(p, child).is_some() {
-                return false;
+                return Read::Not;
             }
             let own = |c: &TsNode| c.id() != child.id() && (u.binders)(p, *c) == Some(true);
             if named_children(p).into_iter().filter(own).any(|c| walk(c, u.names).iter().any(|x| text(*x, self.src) == name)) {
-                return false;
+                return Read::Not;
             }
             if let Some((targets, value)) = (u.binds)(p) {
                 if targets.id() == child.id() {
-                    return through || u.updates.contains(&p.kind());
+                    return if through || u.updates.contains(&p.kind()) { Read::Here } else { Read::Not };
                 }
                 let kept = !walk(targets, u.keeps).is_empty();
                 if value.id() == child.id() && chain && !kept && !u.updates.contains(&p.kind()) && !self.decides(p) {
-                    return false;
+                    return Read::There;
                 }
             }
             if (u.parts)(p, child) && chain {
-                return false;
+                return Read::There;
             }
             // a binding written as as many parts as its value binds each name to the part at its place, two bindings
             // (`fig, ax = self.fig, self.ax`)
@@ -1082,7 +1111,27 @@ impl<'t, 's> Steps<'t, 's> {
             chain &= u.keeps.contains(&p.kind()) || wraps(u.wrappers, p) || paired;
             child = p;
         }
-        true
+        Read::Here
+    }
+
+    /// The names the body reads where a name bound to what its own code computes of them is read (`Steps::stood`): of each
+    /// name, or string that writes names, that the body reads where it stands or where a name bound to it is, the names
+    /// `stands` says it stands for, the reader's. Nothing else is asked: a label and a name bound where it stands are read
+    /// nowhere.
+    fn stood(&self, stands: &dyn Fn(TsNode<'t>) -> Vec<TsNode<'t>>) -> HashSet<usize> {
+        let u = self.uses;
+        let mut out = HashSet::new();
+        let mut stack = vec![self.body];
+        while let Some(n) = stack.pop() {
+            if n.id() != self.body.id() && u.nested.contains(&n.kind()) {
+                continue;
+            }
+            if (u.names.contains(&n.kind()) || u.reads.contains(&n.kind())) && self.reading(n) != Read::Not {
+                out.extend(stands(n).into_iter().map(|x| x.id()));
+            }
+            stack.extend(named_children(n).into_iter().rev());
+        }
+        out
     }
 
     /// A call `c`, `name`d as the code writes it, of which the graph holds no more than what it

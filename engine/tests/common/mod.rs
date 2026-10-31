@@ -563,9 +563,10 @@ pub fn a_file_handed_on_keeps_its_place(language: &str) {
 /// names it is computed of (#328, `mathematics.md`, "One fine plan"), and is still the body's own (`Node::binds`). So each
 /// step of `named` is handed what the same step of `written` is handed, by the same parameters and through the same fields;
 /// and in the plan, uncut and at every budget, each step of one route takes what the same step of the other takes. The
-/// shortcut computes both of the module's quiet level in place of the second level it is handed: that level alone comes
-/// from beyond, and every step of either route takes it. So in every language. What a route's own arrow takes where its
-/// code computes the value (`Steps::read_here`) is no step's, and not held here.
+/// body's own code reads those names where it reads the name, never where it binds it (#343, `Steps::read_here`): in the
+/// plan, uncut and at every budget, the own arrow of one route takes what the other's takes. The shortcut computes both of
+/// the module's quiet level in place of the second level it is handed: that level alone comes from beyond, and every step
+/// of either route takes it. So in every language.
 #[allow(dead_code)]
 pub fn a_name_computed_of_names_stands_for_them(language: &str) {
     let p = pair(&format!("locals/{language}"));
@@ -604,6 +605,12 @@ pub fn a_name_computed_of_names_stands_for_them(language: &str) {
                 route(r).iter().filter(|f| !f.ends_with(&format!(" > {r} value"))).map(|f| renamed(f, r)).collect()
             };
             assert_eq!(of_steps("named"), of_steps("written"), "{at}: each step takes what the value written in its place hands");
+            // the route's own arrow: what goes into the point on its border
+            let own = |r: &str| -> BTreeSet<String> {
+                route(r).iter().filter(|f| f.starts_with("line ") && f.ends_with(&format!(" > {r} value"))).map(|f| renamed(f, r)).collect()
+            };
+            assert!(!own("written").is_empty(), "{at}: written's own arrow takes its parameters");
+            assert_eq!(own("named"), own("written"), "{at}: the route's own arrow takes what the value written in its place hands");
             for r in ["named", "written"] {
                 let params = parameters(g, &format!("signal.{r}"));
                 assert_eq!(from_beyond(route(r), &params), want, "{at}: {r} from beyond");

@@ -1,0 +1,44 @@
+# A name bound to what the language's own code computes of names, with no call, stands for those names (#328), and
+# the body's own code reads those names where it reads the name, never where it binds it (#343): `named` binds the gap
+# between the level and the module's quiet level (`first.db - QUIET.db`) and the list of both (`[first, QUIET]`) to names
+# before it hands each to a step, and `written` writes each where its step is handed it. An operator is no occurrence and
+# a name adds no arrow, so the two routes are one plan: each step takes the level and the quiet level, which alone comes
+# from beyond, and the route's own arrow reads neither where the body binds a name to them.
+
+route signal.named
+step named/_draw
+step named/_show
+
+line entry > named call
+line Level·first > named value
+line Level·first > named/_draw value                 # `_draw(gap)`, `gap = first.db - QUIET.db`
+line Level·QUIET > named/_draw value                 # the module's quiet level, from beyond
+line Level·first > named/_show value                 # `_show(both)`, `both = [first, QUIET]`
+line Level·QUIET > named/_show value
+line named/_draw > Screen own
+line named/_show > Screen own
+
+home Level·first named
+home Level·QUIET named
+
+side entry left
+side Screen right
+
+route signal.written
+step written/_draw
+step written/_show
+
+line entry > written call
+line Level·first > written value
+line Level·first > written/_draw value               # `_draw(first.db - QUIET.db)`
+line Level·QUIET > written/_draw value
+line Level·first > written/_show value               # `_show([first, QUIET])`
+line Level·QUIET > written/_show value
+line written/_draw > Screen own
+line written/_show > Screen own
+
+home Level·first written
+home Level·QUIET written
+
+side entry left
+side Screen right
