@@ -14,6 +14,9 @@ branch [`perf-data`](https://github.com/raoulg/atlas/tree/perf-data), whose READ
 | `read/<subject>/<cold\|warm>/seconds`, `…/peak_rss` | `atlas-code view --no-open` of a subject. Cold: an empty cache (`XDG_CACHE_HOME`) and no index (`.atlas/index` at the top of the subject's worktree); warm: the same command again. One reading a night: the rounds of one run lie within a percent of each other on the runner, and a reading that is off makes the measure suspect, which the reproduction then measures five times. |
 | `read/<subject>/<cold\|warm>/phase/<read\|check\|flow\|page>` | the phases `atlas-code view --timings FILE` reports of the same commands: reading the repository, `atlas-code check`'s principles, `flow::of`, and drawing and writing the page. |
 | `read/<subject>/<cold\|warm>/linked/<program\|library>` | how many bodies the reading of the graph linked, the program's and those of the library code it read (its `stats.linked_bodies` and `stats.linked_library_bodies`), as `--timings` reports them; a warm reading takes the graph from the index, and with it the count it was read with. |
+| `read/<subject>/unasked/seconds`, `…/peak_rss`, `…/phase/…`, `…/linked/…` | the same command once more, right after the warm one, with a file no reader asks about added to the subject (`docs/x.svg`, taken away after): a reading that rests on what its readers asked of the repository keeps its index; one that rests on the whole listing reads again. |
+| `read/<subject>/serve/seconds`, `…/serve/first/seconds`, `…/serve/peak_rss` | `atlas-code serve --no-open` from a cold start (an empty cache and no index), asked `/api/drawn` every 20 ms: the seconds until it names a drawing and draws no more, the complete one, and until it first names one. A build that draws a preliminary picture first names two drawings, and its first comes before its complete one; a build that draws once names one, and the two are the same. Peak memory is the whole session's, the redraw below in it. |
+| `read/<subject>/serve/redraw/seconds` | then, in the same session, `docs/x.svg` added: the seconds serve spends drawing again, from the first answer that says it draws to the first that says it is done (at least the 20 ms between two answers); 0 when it starts no drawing within 5 s, which its watch, looking every second, would have. |
 | `tests/<package>/<binary>/seconds`, `tests/total/seconds` | each test binary of `cargo test --no-run`, run on its own in its package's directory, as `cargo test` runs it. libtest's own timings (`--format json`, `--report-time`) need nightly Rust, so a binary is timed from outside. Ignored tests and doc tests are not run. |
 
 The subjects are Atlas itself, at the commit measured, and the public programs `laws.yml` reads, at
@@ -58,8 +61,11 @@ about the runner, or about the measure.
 
 A slowdown of a few percent per landing never makes one night suspect. Every Monday the job `weekly`
 measures `next` against the last release tag the same way, interleaved on one runner: Atlas reading itself
-cold and warm, its peak memory, two of the programs cold, and the clean release build. The standing goes,
-one line per measure, to the issue *Atlas's performance against the last release*.
+cold, warm and after a file no reader asks about, its peak memory, serve's cold start on Atlas (to its first
+drawing, to its complete one, and its redraw after the file), two of the programs cold, and the clean release
+build. The standing goes, one line per measure, to the issue *Atlas's performance against the last release*.
+Run by hand (`mode: weekly`) from a branch, the job takes that branch's `tools/perf.py` and still measures
+`next`: a new measure is measured on the runner before it lands.
 
 ## Looking back
 
@@ -83,7 +89,14 @@ cannot get slower without its page saying so:
 uv run tools/perf.py release-bars --data <a checkout of perf-data> --repo . --before v0.69.3 --after next
 ```
 
-prints the `Bars:` line for the release's point on performance (`tools/release_page.py` draws it).
+prints the `Bars:` line for the release's point on performance (`tools/release_page.py` draws it). A measure
+the series did not have yet on the night of the release before is taken from an interleaved run of the two
+instead, the `weekly.json` of the job `weekly`, with a bar per measure named:
+
+```sh
+uv run tools/perf.py release-bars --reproduced weekly.json --before v0.70.0 --after 0.71.0 \
+  --measure "read/atlas/serve/seconds=Cold serve start to the complete picture"
+```
 
 ## The series
 
@@ -95,11 +108,11 @@ GitHub shows that README at the branch; the documentation site is not touched.
 
 ## Cost
 
-One `ubuntu-24.04` runner a night, about 25 minutes when nothing is suspect: the clean build, one cold and
-one warm reading of each of five subjects, the tests' build (from the cache of this job) and one run of
-every test binary. A suspect night adds the reproduction (two builds and five interleaved rounds of what is
-suspect) and, for a large slowdown, the bisection; the job's timeout is 150 minutes. The weekly job builds
-two commits and measures six things interleaved, within the same timeout.
+One `ubuntu-24.04` runner a night, about 25 minutes when nothing is suspect: the clean build, a cold, a warm
+and an unasked reading and a cold serve start of each of five subjects, the tests' build (from the cache of
+this job) and one run of every test binary. A suspect night adds the reproduction (two builds and five
+interleaved rounds of what is suspect) and, for a large slowdown, the bisection; the job's timeout is 150
+minutes. The weekly job builds two commits and measures ten things interleaved, within the same timeout.
 
 ## Running it by hand
 

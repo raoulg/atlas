@@ -10,14 +10,17 @@
     uv run tools/perf.py reproduce --repo DIR --a SHA --b SHA (--suspects FILE | --measure M ...) [--subject NAME=PATH ...] --out FILE
     uv run tools/perf.py conclude --data DIR --reproduced FILE [--summary FILE] [--alert FILE] [--standing FILE]
     uv run tools/perf.py bisect --repo DIR --from SHA --to SHA --measure M [--subject NAME=PATH ...] --out FILE
-    uv run tools/perf.py release-bars --data DIR --repo DIR --before REF --after REF
+    uv run tools/perf.py release-bars (--data DIR --repo DIR | --reproduced FILE) --before REF --after REF [--measure M=LABEL ...]
 
 `time`, `read` and `tests` measure and add their measures to the run file RUN (JSON):
 
 - `time` runs a command once: its wall time and the peak resident memory of its largest process.
-- `read` draws each subject with `atlas-code view --timings`, cold (an empty cache and no index) and warm (the
-  same again), once a night (`--rounds` more for a median): the wall time, peak memory and the phases Atlas reports (read,
-  check, flow, page), with how many bodies the reading linked, the program's and the libraries'.
+- `read` draws each subject with `atlas-code view --timings`, cold (an empty cache and no index), warm (the
+  same again) and unasked (again, with a file no reader asks about added), and serves it with `atlas-code serve`
+  from a cold start, once a night (`--rounds` more for a median): the wall time, peak memory and the phases Atlas
+  reports (read, check, flow, page), with how many bodies the reading linked, the program's and the libraries';
+  of serve, the time to its first drawing, to its complete one, and what it spends drawing again after the same
+  file.
 - `tests` builds the test binaries once (`cargo test --no-run`), then runs each on its own as `cargo test`
   would, and times it: libtest's own timings are not stable Rust.
 
@@ -34,7 +37,8 @@ there; a large one is bisected on the spot, so that it names its commit. `conclu
 into the history's last run, the summary and the text of the tracking issue (`--alert`, only for what was
 reproduced), or the standing of `next` against a release (`--standing`). `bisect` finds the landing in a
 range that made a measure slower, or gives each landing's share where no single one did. `release-bars`
-gives a release's notes their `Bars:` line from the series. Any failure to measure ends with an error.
+gives a release's notes their `Bars:` line from the series, or from an interleaved run of the two releases
+where the series did not measure the one before. Any failure to measure ends with an error.
 """
 
 from __future__ import annotations
@@ -47,12 +51,14 @@ import json
 import os
 import platform
 import shutil
+import socket
 import statistics
 import subprocess
 import sys
 import tempfile
 import tomllib
 import time
+import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -128,31 +134,157 @@ def worktree_top(subject: Path) -> Path:
     return next((a for a in [subject, *subject.parents] if (a / ".git").exists()), subject)
 
 
-def read_round(atlas: Path, name: str, subject: Path, libraries: int, scratch: Path, cache: Path) -> dict[str, dict[str, float]]:
-    """One cold and one warm `atlas-code view` of `subject`: per kind, its seconds, peak memory, phases and bodies linked."""
+VIEWS = ("cold", "warm", "unasked")  # the views of a round, each run right after the one before it
+KINDS = (*VIEWS, "serve")  # serve starts cold on its own
+UNASKED = Path("docs") / "x.svg"  # a file no reader asks about: a picture
+POLL = 0.02  # how often serve is asked what it has drawn, in seconds
+QUIET = 5.0  # how long serve may take to start drawing after a file is added: its watch looks every second
+STARTED = 1800.0  # how long a cold start of serve may take before the measure gives up, in seconds
+
+
+@contextlib.contextmanager
+def unasked(subject: Path):
+    """`subject` with a file no reader asks about (UNASKED) while the context lasts, and as it was after."""
+    file = subject / UNASKED
+    if file.exists():
+        raise SystemExit(f"{file} is there already: the measure adds it, and would take it away")
+    made = [d for d in reversed(file.parents) if not d.exists()]
+    file.parent.mkdir(parents=True, exist_ok=True)
+    file.write_text('<svg xmlns="http://www.w3.org/2000/svg" width="1" height="1"/>\n')
+    try:
+        yield file
+    finally:
+        file.unlink(missing_ok=True)
+        for d in reversed(made):
+            d.rmdir()
+
+
+def view(atlas: Path, name: str, subject: Path, libraries: int, scratch: Path, env: dict[str, str]) -> dict[str, float]:
+    """One `atlas-code view` of `subject`: its seconds, peak memory, phases and bodies linked."""
+    timings = scratch / "timings.json"
+    timings.unlink(missing_ok=True)
+    command = [str(atlas), "--libraries", str(libraries), "view", "--no-open"]
+    command += ["--out", str(scratch / "page.html"), "--timings", str(timings), str(subject)]
+    seconds, peak = measured(command, env=env, log=scratch / "log.txt")
+    if not timings.exists():
+        raise SystemExit(f"{atlas} wrote no --timings for {name}")
+    reported = json.loads(timings.read_text())
+    linked = reported.pop("linked", {})
+    return {
+        "seconds": seconds,
+        "peak_rss": peak,
+        **{f"phase/{p}": t for p, t in reported.items()},
+        **{f"linked/{side}": float(n) for side, n in linked.items()},
+    }
+
+
+def served(atlas: Path, name: str, subject: Path, libraries: int, scratch: Path, env: dict[str, str]) -> dict[str, float]:
+    """One `atlas-code serve --no-open` of `subject`, asked `/api/drawn` every POLL seconds: the seconds until it
+    first names a drawing (`first/seconds`) and until it names one and draws no more, the complete one
+    (`seconds`); then, a file no reader asks about added, the seconds it spends drawing again, from the first
+    answer that says it draws to the first that says it is done (`redraw/seconds`, 0 when it starts no
+    drawing within QUIET); and the peak memory of the whole session."""
+    with socket.socket() as s:
+        s.bind(("127.0.0.1", 0))
+        port = s.getsockname()[1]
+    command = [str(atlas), "--libraries", str(libraries), "serve", "--no-open", "--exit-on-stdin-close", "--port", str(port), str(subject)]
+    log = scratch / "serve.txt"
+    url = f"http://127.0.0.1:{port}/api/drawn"
+    direct = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+    ended: list = []  # the server's resource use, once it has ended
+
+    def gone() -> bool:
+        if not ended:
+            pid, _, usage = os.wait4(process.pid, os.WNOHANG)
+            if pid:
+                ended.append(usage)
+        return bool(ended)
+
+    def said() -> dict | None:
+        """What the server says it has drawn; None while it does not listen yet."""
+        if gone():
+            raise SystemExit(f"atlas-code serve of {name} ended on its own\n{log.read_text(errors='replace')[-4000:]}")
+        try:
+            with direct.open(url, timeout=30) as answer:
+                state = json.loads(answer.read())
+        except (OSError, ValueError):
+            return None
+        if state.get("error"):
+            raise SystemExit(f"atlas-code serve of {name} could not draw: {state['error']}")
+        return state
+
+    def stop() -> None:
+        """Close the server's standard input, which ends it (`--exit-on-stdin-close`), and wait for it."""
+        if process.stdin and not process.stdin.closed:
+            process.stdin.close()
+        until = time.perf_counter() + 10
+        while not gone() and time.perf_counter() < until:
+            time.sleep(POLL)
+        if not ended:
+            process.kill()
+            ended.append(os.wait4(process.pid, 0)[2])
+
+    with open(log, "w") as out:
+        start = time.perf_counter()
+        process = subprocess.Popen(command, env=env, stdin=subprocess.PIPE, stdout=out, stderr=subprocess.STDOUT)
+        try:
+            first = complete = None
+            while complete is None:
+                state, now = said(), time.perf_counter() - start
+                if state and state.get("drawn"):
+                    first = now if first is None else first
+                    if not state.get("drawing"):
+                        complete, drawn = now, state["drawn"]
+                elif now > STARTED:
+                    raise SystemExit(f"atlas-code serve of {name} drew nothing in {STARTED:.0f} s")
+                time.sleep(POLL)
+            # the server ends before the file is taken away again, which would be a change of its own
+            with unasked(subject):
+                added, began, redraw = time.perf_counter(), None, None
+                while redraw is None:
+                    state, now = said(), time.perf_counter()
+                    if state is None:
+                        raise SystemExit(f"atlas-code serve of {name} stopped answering")
+                    if began is None and (state.get("drawing") or state.get("drawn") != drawn):
+                        began = now
+                    if began is not None and not state.get("drawing"):
+                        redraw = max(now - began, POLL)
+                    elif began is None and now - added > QUIET:
+                        redraw = 0.0
+                    time.sleep(POLL)
+                stop()
+        finally:
+            stop()
+    # Linux counts the peak in KiB, macOS in bytes
+    peak = ended[0].ru_maxrss / (1024 if sys.platform.startswith("linux") else 1024 * 1024)
+    return {"seconds": complete, "first/seconds": first, "redraw/seconds": redraw, "peak_rss": peak}
+
+
+def read_round(
+    atlas: Path, name: str, subject: Path, libraries: int, scratch: Path, cache: Path, kinds: tuple[str, ...] = KINDS
+) -> dict[str, dict[str, float]]:
+    """A round of readings of `subject`, per kind its measures: `atlas-code view` cold (an empty cache and no index),
+    warm (the same again), unasked (again, with a file no reader asks about added), and `atlas-code serve` from a
+    cold start. A view of `kinds` brings the views before it, which it stands on."""
     index = worktree_top(subject) / ".atlas" / "index"
-    shutil.rmtree(index, ignore_errors=True)
-    shutil.rmtree(cache, ignore_errors=True)
+    env = {**os.environ, "XDG_CACHE_HOME": str(cache), "ATLAS_NO_UPDATE_CHECK": "1"}
+
+    def fresh() -> None:
+        shutil.rmtree(index, ignore_errors=True)
+        shutil.rmtree(cache, ignore_errors=True)
+
     got: dict[str, dict[str, float]] = {}
-    for kind in ("cold", "warm"):
-        timings = scratch / "timings.json"
-        timings.unlink(missing_ok=True)
-        env = {**os.environ, "XDG_CACHE_HOME": str(cache), "ATLAS_NO_UPDATE_CHECK": "1"}
-        command = [str(atlas), "--libraries", str(libraries), "view", "--no-open"]
-        command += ["--out", str(scratch / "page.html"), "--timings", str(timings), str(subject)]
-        seconds, peak = measured(command, env=env, log=scratch / "log.txt")
-        if not timings.exists():
-            raise SystemExit(f"{atlas} wrote no --timings for {name}")
+    views = VIEWS[: max((VIEWS.index(k) + 1 for k in kinds if k in VIEWS), default=0)]
+    if views:
+        fresh()
+    for kind in views:
+        with unasked(subject) if kind == "unasked" else contextlib.nullcontext():
+            got[kind] = view(atlas, name, subject, libraries, scratch, env)
         if kind == "cold" and not any(index.rglob("*")):
             raise SystemExit(f"the cold reading of {name} made no index at {index}: a warm one would measure nothing")
-        reported = json.loads(timings.read_text())
-        linked = reported.pop("linked", {})
-        got[kind] = {
-            "seconds": seconds,
-            "peak_rss": peak,
-            **{f"phase/{p}": t for p, t in reported.items()},
-            **{f"linked/{side}": float(n) for side, n in linked.items()},
-        }
+    if "serve" in kinds:
+        fresh()
+        got["serve"] = served(atlas, name, subject, libraries, scratch, env)
     return got
 
 
@@ -173,12 +305,13 @@ def command_read(args: argparse.Namespace) -> None:
         scratch = Path(scratch)
         for name, path in subjects(args.subject):
             subject = path.resolve(strict=True)
-            samples: dict[str, dict[str, list[float]]] = {"cold": {}, "warm": {}}
+            samples: dict[str, dict[str, list[float]]] = {kind: {} for kind in KINDS}
             for round_ in range(args.rounds):
                 for kind, got in read_round(atlas, name, subject, args.libraries, scratch, scratch / f"cache-{name}").items():
                     for measure, value in got.items():
                         samples[kind].setdefault(measure, []).append(value)
-                    print(f"{name} {kind} {round_ + 1}/{args.rounds}: {got['seconds']:.2f} s, peak {got['peak_rss']:.0f} MB")
+                    more = f" (first drawing {got['first/seconds']:.2f} s, redraw {got['redraw/seconds']:.2f} s)" if kind == "serve" else ""
+                    print(f"{name} {kind} {round_ + 1}/{args.rounds}: {got['seconds']:.2f} s{more}, peak {got['peak_rss']:.0f} MB")
             for kind, got in samples.items():
                 for measure, values in got.items():
                     readings[f"read/{name}/{kind}/{measure}"] = metric(values, unit_of(measure))
@@ -374,7 +507,7 @@ def charted(measure: str) -> bool:
     return (
         measure.startswith("build/")
         or measure == "tests/total/seconds"
-        or (measure.startswith("read/") and measure.endswith(("/seconds", "/peak_rss")))
+        or (measure.startswith("read/") and measure.count("/") == 3 and measure.endswith(("/seconds", "/peak_rss")))
     )
 
 
@@ -547,7 +680,9 @@ class Bench:
             scratch = Path(scratch)
             if parts[0] == "read":
                 _, name, kind, *rest = parts
-                got = read_round(side.atlas, name, self.subject(side, name), self.libraries, scratch, scratch / "cache")
+                if kind not in KINDS:
+                    raise SystemExit(f"no reading {kind} to measure {measure}")
+                got = read_round(side.atlas, name, self.subject(side, name), self.libraries, scratch, scratch / "cache", (kind,))
                 return got[kind]["/".join(rest)]
             if parts[0] == "build":
                 seconds, peak = self.built(side.tree, scratch / "clean", scratch / "build.log")
@@ -810,18 +945,48 @@ def night_of(runs: list[dict], repo: Path, ref: str) -> dict | None:
     return None
 
 
+def bar(label: str, ref: str, value: float, unit: str) -> str:
+    said = f"{value:.0f} MB" if unit == "MB" else f"{value:.1f} s" if value >= 1 or value == 0 else f"{value:.2f} s"
+    return f"{label}, {ref.removeprefix('v')} = {said}"
+
+
+def release_measures(given: list[str] | None) -> list[tuple[str, str]]:
+    out = []
+    for g in given or []:
+        measure, _, label = g.partition("=")
+        if not label:
+            raise SystemExit(f"--measure {g}: write MEASURE=LABEL")
+        out.append((measure, label))
+    return out or RELEASE_BARS
+
+
 def command_release_bars(args: argparse.Namespace) -> None:
+    measures = release_measures(args.measure)
+    if args.reproduced:
+        # an interleaved run of the two releases (`reproduce`, as the weekly job makes it): A is before, B after
+        result = json.loads(args.reproduced.read_text())
+        if missing := [m for m, _ in measures if m not in result["measures"]]:
+            raise SystemExit(f"{args.reproduced} did not measure {', '.join(missing)}")
+        bars = []
+        for measure, label in measures:
+            got = result["measures"][measure]
+            bars += [bar(label, args.before, got["median_a"], got["unit"]), bar(label, args.after, got["median_b"], got["unit"])]
+        rounds = sorted({len(result["measures"][m]["a"]) for m, _ in measures})
+        print(
+            f"Bars: {'; '.join(bars)} | `{result['a'][:7]}` and `{result['b'][:7]}` built and measured interleaved on one runner, the median of {' or '.join(map(str, rounds))} rounds each (`docs/reference/performance.md`)."
+        )
+        return
     runs = history(args.data)
     repo = args.repo.resolve(strict=True)
     nights = {ref: night_of(runs, repo, ref) for ref in (args.before, args.after)}
     if missing := [ref for ref, n in nights.items() if not n]:
         raise SystemExit(f"no night measured {', '.join(missing)} or a commit before it")
     bars = []
-    for measure, label in RELEASE_BARS:
+    for measure, label in measures:
         for ref in (args.before, args.after):
             got = nights[ref]["metrics"].get(measure)
             if got:
-                bars.append(f"{label}, {ref.removeprefix('v')} = {got['value']:.1f} s")
+                bars.append(bar(label, ref, got["value"], got["unit"]))
     nb, na = nights[args.before], nights[args.after]
     print(
         f"Bars: {'; '.join(bars)} | The nightly measure of `next` on the night before each release (`{nb['commit'][:7]}`, `{na['commit'][:7]}`), one reading a night (`docs/reference/performance.md`)."
@@ -837,7 +1002,7 @@ def main() -> None:
     p.add_argument("--out", type=Path, required=True)
     p.set_defaults(func=command_time)
 
-    p = commands.add_parser("read", help="time atlas-code view, cold and warm, on subjects")
+    p = commands.add_parser("read", help="time atlas-code view (cold, warm, unasked) and serve's cold start on subjects")
     p.add_argument("--atlas", type=Path, required=True)
     p.add_argument("--subject", action="append", required=True, help="NAME=PATH")
     p.add_argument("--rounds", type=int, default=1)
@@ -899,11 +1064,13 @@ def main() -> None:
     p.add_argument("--release", help="the release's name in the standing")
     p.set_defaults(func=command_conclude)
 
-    p = commands.add_parser("release-bars", help="the Bars: line of a release's notes, from the series")
-    p.add_argument("--data", type=Path, required=True)
+    p = commands.add_parser("release-bars", help="the Bars: line of a release's notes, from the series or an interleaved run")
+    p.add_argument("--data", type=Path, help="the series: its nights before each release")
+    p.add_argument("--reproduced", type=Path, help="an interleaved run of the two instead, before as A and after as B")
     p.add_argument("--repo", type=Path, default=Path("."))
     p.add_argument("--before", required=True)
     p.add_argument("--after", required=True)
+    p.add_argument("--measure", action="append", help="MEASURE=LABEL, a bar for each release; default: Atlas reading itself, cold and warm")
     p.set_defaults(func=command_release_bars)
 
     # what follows `--` is the command `time` runs, or the arguments `tests` gives cargo
@@ -915,6 +1082,8 @@ def main() -> None:
         parser.error("--rounds must be positive")
     if args.command_name == "conclude" and not args.standing and not args.data:
         parser.error("conclude: --data, or --standing")
+    if args.command_name == "release-bars" and not (args.data or args.reproduced):
+        parser.error("release-bars: --data, or --reproduced")
     args.func(args)
 
 
