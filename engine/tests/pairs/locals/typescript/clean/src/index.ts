@@ -42,3 +42,9 @@ export function gathered(first: Level, second: Level): void {
   const both: Level[] = [first, second];
   show(both);
 }
+
+/** The first level, and the second beside it where it is loud: the array the choice gives, written out in each arm. */
+export function chosen(first: Level, second: Level, loud: boolean): void {
+  const both: Level[] = loud ? [first, second] : [first];
+  show(both);
+}

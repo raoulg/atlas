@@ -816,3 +816,56 @@ pub fn a_name_a_function_changes_holds_a_value_of_its_own(language: &str, add: &
         );
     }
 }
+
+/// The locals pair in `language`: a choice's value is what its arms make of it (#366). `chosen` gives the first level, and
+/// the second beside it where it is loud. The clean side binds the list the choice gives (`if loud { vec![first, second] }
+/// else { vec![first] }`), a choice whose arms run no step: the body's own list, in the route's frame, which the step after
+/// it takes. The shortcut binds a list of the first and pushes the second onto it in one arm: the change takes the body's
+/// own list, which stands in the route's frame and not in the arm's, and makes it anew at the choice's moment, which the
+/// step after the choice takes, never the list the change was handed. So in the finest plan and at every budget.
+#[allow(dead_code)]
+pub fn a_name_changed_in_one_arm_is_the_choices_value(language: &str) {
+    let p = pair(&format!("locals/{language}"));
+    let (route, at) = ("chosen", language.to_string());
+    let node = |g: &'_ Graph| g.node(&format!("signal.{route}")).unwrap_or_else(|| panic!("{at}: no node signal.{route}")).clone();
+    let (clean, shortcut) = (node(&p.clean), node(&p.shortcut));
+    let [shown] = &clean.sites[..] else { panic!("{at} clean: one step: {:?}", clean.sites) };
+    let [change, after] = &shortcut.sites[..] else { panic!("{at} shortcut: the change and the step after it: {:?}", shortcut.sites) };
+    assert!(change.changes && !change.arms.is_empty(), "{at} shortcut: `{}` changes the list in one arm", change.op);
+    assert!(after.arms.is_empty(), "{at} shortcut: the step after the choice is in no arm");
+    let label = |s: &atlas_engine::Site| if s.op.is_empty() { s.to.rsplit('.').next().unwrap_or("").to_string() } else { s.op.clone() };
+    let (shows, changing, showing) =
+        (format!("{route}/{}", label(shown)), format!("{route}/?1/{}", label(change)), format!("{route}/{}", label(after)));
+    let (own, chosen) = (format!("Level·both@{route}/~both"), format!("Level·both@{route}/?1"));
+    for budget in BUDGETS {
+        let at = format!("{at}, budget {budget:?}");
+        let clean = &planned(&p.clean, &format!("arm-{language}-clean"), budget)[&format!("signal.{route}")];
+        let shortcut = &planned(&p.shortcut, &format!("arm-{language}-shortcut"), budget)[&format!("signal.{route}")];
+        let into = |facts: &BTreeSet<String>, to: &str| -> BTreeSet<String> {
+            let end = format!(" > {to} value");
+            facts.iter().filter_map(|f| f.strip_prefix("line ")?.strip_suffix(&end)).map(String::from).collect()
+        };
+        let names = |xs: &[&str]| -> BTreeSet<String> { xs.iter().map(|x| x.to_string()).collect() };
+        // the clean side: the body's own choice, no frame, and the list it binds
+        assert!(!clean.iter().any(|f| f.starts_with("choice ")), "{at} clean: a choice whose arms run no step has no frame: {clean:#?}");
+        assert_eq!(into(clean, &shows), names(&[&own]), "{at} clean: {shows} takes the list the body binds");
+        assert!(clean.contains(&format!("home {own} {route}")), "{at} clean: the body's list stands in the route's frame");
+        // the shortcut: the change in the arm takes the body's own list and makes it anew at the choice's moment
+        assert!(shortcut.contains(&format!("choice {route}/?1")), "{at} shortcut: the choice is a frame of its own: {shortcut:#?}");
+        assert_eq!(
+            into(shortcut, &changing),
+            names(&[&own, "Level·second"]),
+            "{at} shortcut: {changing} takes the body's list and the level"
+        );
+        assert!(
+            shortcut.contains(&format!("line {changing} > {chosen} value")),
+            "{at} shortcut: {changing} makes the choice's value: {shortcut:#?}"
+        );
+        assert_eq!(into(shortcut, &showing), names(&[&chosen]), "{at} shortcut: {showing} takes the choice's value");
+        assert!(
+            shortcut.contains(&format!("home {own} {route}")),
+            "{at} shortcut: the body's list stands in the route's frame, not the arm's"
+        );
+        assert!(shortcut.contains(&format!("home {chosen} {route}")), "{at} shortcut: the choice's value stands in the route's frame");
+    }
+}

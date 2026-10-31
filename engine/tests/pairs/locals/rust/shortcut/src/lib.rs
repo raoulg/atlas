@@ -72,3 +72,13 @@ pub fn lent(first: &Level, second: &Level) {
     add(&mut both, second);
     list(&both);
 }
+
+/// The first level, and the second beside it where it is loud: a vector of the first, the second pushed onto it in one
+/// arm, and listed.
+pub fn chosen(first: &Level, second: &Level, loud: bool) {
+    let mut both = vec![first];
+    if loud {
+        both.push(second);
+    }
+    list(&both);
+}

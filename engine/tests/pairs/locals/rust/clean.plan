@@ -62,3 +62,24 @@ home Level·second gathered
 
 side entry left
 side Screen right
+
+# The vector the choice gives, written out in each arm (`let both = if loud { vec![first, second] } else { vec![first] }`): a choice among values the body's own code makes is
+# the body's choice, and its arms run no step, so it has no frame of its own. The name holds the vector the body made by
+# that choice, in its frame, which reads the two levels where it binds the name, and the step after it takes that vector
+# (#366).
+
+route signal.chosen
+step chosen/list
+
+line entry > chosen call
+line Level·first > chosen value                   # read where the body binds the vector
+line Level·second > chosen value
+line Level·both@chosen/~both > chosen/list value  # `list(&both)`
+line chosen/list > Screen own
+
+home Level·first chosen
+home Level·second chosen
+home Level·both@chosen/~both chosen
+
+side entry left
+side Screen right

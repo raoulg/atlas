@@ -3,7 +3,7 @@ level it is handed and the module's quiet level."""
 
 from dataclasses import dataclass
 
-__all__ = ["paired", "named", "written", "gathered", "lent"]
+__all__ = ["paired", "named", "written", "gathered", "lent", "chosen"]
 
 
 @dataclass
@@ -63,4 +63,13 @@ def lent(first: Level, second: Level) -> None:
     """The two levels, gathered by handing a list of the first to a function that adds the second, and shown."""
     both: list[Level] = [first]
     _add(both, second)
+    _show(both)
+
+
+def chosen(first: Level, second: Level, loud: bool) -> None:
+    """The first level, and the second beside it where it is loud: a list of the first, the second appended to it in one
+    arm, and shown."""
+    both: list[Level] = [first]
+    if loud:
+        both.append(second)
     _show(both)

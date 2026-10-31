@@ -2121,3 +2121,10 @@ fn a_name_changed_in_place_holds_a_value_of_its_own() {
 fn a_name_a_function_changes_holds_a_value_of_its_own() {
     common::a_name_a_function_changes_holds_a_value_of_its_own("typescript", "add", "push");
 }
+
+/// The locals pair: an array pushed onto in one arm is the choice's value, which the step after the choice takes, where
+/// the array the choice gives, written out in each arm, is the body's own (#366), as in Python and Rust.
+#[test]
+fn a_name_changed_in_one_arm_is_the_choices_value() {
+    common::a_name_changed_in_one_arm_is_the_choices_value("typescript");
+}

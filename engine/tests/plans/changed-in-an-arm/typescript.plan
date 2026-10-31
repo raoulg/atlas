@@ -1,0 +1,78 @@
+# A name the body binds by its own code holds the value the body made there, in its frame, from the binding on (#237,
+# #355), and a change in place makes it anew. A choice's value is what its arms make of it: what one arm makes anew of a
+# value named before the choice, which the other arm keeps, is one value at the choice's moment, as it is of a value a step
+# made (#366). `picked` binds an empty array and pushes the level onto it where it is loud; `gathered` binds an array of
+# the first level, reading it there, and pushes the second where it is loud. In both the push takes the body's own array,
+# which stands in the route's frame, and the step after the choice takes the choice's value. `loud` is of no type of the
+# code's, and the route's own parameters of no type hold none. The plan is the Rust program's (`rust.plan`); an array bound
+# with `const` is changed in place as much as one bound with `let`.
+
+route levels.picked
+choice picked/?1                                     # `if (loud) { .. }`
+step picked/?1/push
+step picked/show
+
+line entry > picked call
+line Level·level > picked value                      # the route's own parameter, from its start
+line Level·both@picked/~both > picked/?1/push value  # `const both: Level[] = []`, the body's own
+line Level·level > picked/?1/push value              # `both.push(level)`
+line picked/?1/push > Level·both@picked/?1 value     # made anew in one arm, kept in the other
+line Level·both@picked/?1 > picked/show value        # `show(both)`
+line picked/show > Screen own
+
+home Level·level picked
+home Level·both@picked/~both picked
+home Level·both@picked/?1 picked
+
+side entry left
+side Screen right
+
+route levels.gathered
+choice gathered/?1
+step gathered/?1/push
+step gathered/show
+
+line entry > gathered call
+line Level·first > gathered value                    # `const both: Level[] = [first]`, read where it is bound
+line Level·second > gathered value
+line Level·both@gathered/~both > gathered/?1/push value
+line Level·second > gathered/?1/push value           # `both.push(second)`
+line gathered/?1/push > Level·both@gathered/?1 value
+line Level·both@gathered/?1 > gathered/show value
+line gathered/show > Screen own
+
+home Level·first gathered
+home Level·second gathered
+home Level·both@gathered/~both gathered
+home Level·both@gathered/?1 gathered
+
+side entry left
+side Screen right
+
+# The same rule in a loop: the array the body binds is the name's value for every step after the binding, in the loop as
+# much as straight on, never the latest level the loop gives. A loop is a step: it takes what it goes over and gives each
+# element under the name it binds. The push takes the body's array and the element and makes the array anew; the step
+# after the loop takes what the push made.
+
+route levels.looped
+step looped/for level of levels
+step looped/push
+step looped/show
+
+line entry > looped call
+line Level·levels > looped value
+line Level·levels > looped/for level of levels value
+line looped/for level of levels > Level·level@looped/for level of levels value
+line Level·every@looped/~every > looped/push value   # `const every: Level[] = []`
+line Level·level@looped/for level of levels > looped/push value
+line looped/push > Level·every@looped/push value
+line Level·every@looped/push > looped/show value
+line looped/show > Screen own
+
+home Level·levels looped
+home Level·level@looped/for level of levels looped
+home Level·every@looped/~every looped
+home Level·every@looped/push looped
+
+side entry left
+side Screen right
