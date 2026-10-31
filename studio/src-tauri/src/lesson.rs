@@ -150,15 +150,10 @@ fn pictures(workspace: &Workspace, folder: &Path, depth: usize, found: &mut BTre
     }
 }
 
+/// The `uv` a lesson runs with: `ATLAS_UV` where it is set, else `uv` as the `PATH` finds it, the login shell's `PATH`
+/// that Studio takes when it starts (`take_login_path`).
 fn uv_command() -> PathBuf {
-    if let Some(command) = std::env::var_os("ATLAS_UV") {
-        return PathBuf::from(command);
-    }
-    let mut candidates = vec![PathBuf::from("/opt/homebrew/bin/uv"), PathBuf::from("/usr/local/bin/uv")];
-    if let Some(home) = std::env::var_os("HOME") {
-        candidates.push(PathBuf::from(home).join(".local/bin/uv"));
-    }
-    candidates.into_iter().find(|path| path.is_file()).unwrap_or_else(|| PathBuf::from("uv"))
+    std::env::var_os("ATLAS_UV").map(PathBuf::from).unwrap_or_else(|| PathBuf::from("uv"))
 }
 
 pub fn run_python(folder: &Path, filename: &Path) -> Result<Run, String> {
