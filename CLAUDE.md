@@ -120,7 +120,7 @@ else is a short-lived topic branch.
 
 | Branch | Holds | Version | Built as | Who moves it |
 | --- | --- | --- | --- | --- |
-| `next` | integration: everything finished | the next minor, `X.Y.0` | nightly, `X.Y.0-nightly.<timestamp>` | the integrating agent, by merging the topic branches of a round and testing them once |
+| `next` | integration: everything finished | the next minor, `X.Y.0` | nightly, `X.Y.0-nightly.<timestamp>` | the integrating agent, by merging the topic branches of a round and testing what they touched |
 | `release-X.Y` | the release being finished, cut from `next` | `X.Y.0` | nothing; `ci` runs on it | the agent that prepares the promotion |
 | `main` | what is released | the released `X.Y.Z` | stable, tag `vX.Y.Z` | Raoul only |
 | `<topic>` | one piece of work | none | nothing | its owner |
@@ -136,17 +136,21 @@ else is a short-lived topic branch.
    the issue's note, `docs/changes/<issue>.md`, with its picture (`docs/changes/README.md`): what a
    user sees differently, drawn with Atlas where Atlas draws it. A release report is put together
    from these notes, never written afresh.
-   **The whole suite runs once per landing, never once per branch or per commit.** One agent
+   **A landing tests what its round touched; the whole suite runs once a day.** One agent
    integrates: the session that started the others, or the agent that works alone. A topic's owner
    (a subagent, or a session the integrator started) runs only the test files of what it changes
    (`cargo test -p atlas-engine --test pairs_python`, `--lib` for the unit tests), never the whole
    `cargo test`, never before a commit and never as a last check; it pushes its branch, lands
    nothing, and reports the branch and the tests it ran. The integrator writes this into every brief.
    It waits until every topic of the round has reported, merges the branches into one branch from
-   `origin/next`, runs `cargo fmt --check`, `cargo test` (and for a viewer change `walk` and
-   `topology`) once on the whole, fixes there what fails, and lands that. A failure there is found by
-   testing the branches in it, not by running the suite again for each. When `next` moves before the push, merge
-   it again and run again only the suites its new commits touch: documentation and CI touch none.
+   `origin/next`, and runs on the whole, once: `cargo fmt --check`, `cargo test --workspace --no-run`
+   (everything builds) and the test files the round's topics ran. It fixes there what fails, and lands
+   that. The whole `cargo test` runs in the nightly, on three platforms, once a day; `walk` and `topology`
+   run before a promotion (rule 3). The integrator runs more on a landing only where it is plausible that
+   the round breaks what its own test files do not ask, and says why. A red nightly is fixed the next
+   morning, found by testing the branches it landed, not by running the suite again for each. When `next`
+   moves before the push, merge it again and run again only the test files its new commits touch:
+   documentation and CI touch none.
 3. **Cut, then promote**: once what a release carries is on `next`, the agent that prepares it cuts
    `release-X.Y` from `next` (`git push origin <commit>:refs/heads/release-X.Y`), and new work keeps
    landing on `next`. Only the release's own finishing lands on `release-X.Y`: its notes and pictures, and
@@ -155,7 +159,8 @@ else is a short-lived topic branch.
    `release-X.Y` is merged into `main` (a merge commit), `main` is tagged `vX.Y.0` and pushed, and the
    release branch is removed; the tag builds the stable release and, with the secret `TAP_TOKEN`, updates
    the tap. `main` then holds nothing `next` lacks. An agent prepares the promotion (conflicts
-   resolved, docs pictures drawn, checks green, the release's notes `docs/releases/<version>.md`
+   resolved, docs pictures drawn, `cargo test`, `walk` and `topology` run once on the release branch and
+   green, the release's notes `docs/releases/<version>.md`
    gathered from `docs/changes/` and made a page by `uv run tools/release_page.py`, which must name no
    point without a picture) and stops before the push. That a point has a picture is the floor: each is
    as visual as 0.68.0's, an `Example:` that both releases draw, a `Compare:` of Atlas's pictures, `Bars:`
@@ -257,10 +262,10 @@ else is a short-lived topic branch.
   and the dark theme, as `docs_pictures.py` does, and the tour shows the one of its theme. No hook runs them; run them
   with a version raise that changes what those pages draw, and reread the text beside a picture they name.
   `docs/img/interaction/drawn.json` keeps what the history draws.
-- A viewer change is walked on the subjects before it is committed: `uv run tools/pictures.py
+- `walk` is the viewer's gate before a promotion, run once on the release branch: `uv run tools/pictures.py
   walk <atlas> <repo> <dir>` opens every package, every route and every family in a route, and
   must report no view that throws, draws nothing, or opens a family into other moments.
-- A viewer change also keeps the topology of zoom: `uv run tools/pictures.py topology <atlas> <repo> <dir>` opens one
+- `topology` is the same gate for the topology of zoom: `uv run tools/pictures.py topology <atlas> <repo> <dir>` opens one
   box at a time in each route and must report no box that takes a line away, draws a line the closed box did not
   (`more`: by rule 1 a fault of the closed picture), moves a box into or out of a frame that is not the one opened, or
   does not close to the picture it was (`docs/reference/mathematics.md`, "Refinement keeps what it does not refine").
