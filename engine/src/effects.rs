@@ -18,7 +18,7 @@ const DISK_WRITE: Crossing = Crossing::write(World::Disk);
 /// socket's address), or it sends or receives on a socket. Building a client, or reading a
 /// response that has arrived (`resp.headers.get(..)`), is handed none.
 pub fn requests(params: &[&str], op: &str) -> bool {
-    params.iter().any(|p| matches!(*p, "url" | "uri" | "address")) || k::python_socket_op(op)
+    params.iter().any(|p| matches!(*p, "url" | "uri" | "address")) || k::python_socket_op(op).is_some()
 }
 
 /// Whether a Python package is a network library, whose calls `requests` decides.
@@ -74,9 +74,10 @@ pub fn boundary_rust(parts: &[String]) -> Option<Crossing> {
             return Some(Crossing::to(World::Screen));
         }
     }
-    // a socket's traffic: `TcpStream::connect(addr)`, `conn.read(..)`; binding or a timeout moves none
+    // a socket's traffic, the way its operation goes: `TcpStream::connect(addr)`, `conn.read(..)`;
+    // binding or a timeout moves none
     if k::socket_path(parts) {
-        return k::rust_socket_op(last).then_some(Crossing::to(World::Net));
+        return k::rust_socket_op(last).map(socket_traffic);
     }
     // a program is run by a `Command`; `process::exit` ends this one and runs none
     if has(k::RUST_COMMAND) {
@@ -147,6 +148,10 @@ pub fn boundary(pkg: Option<&str>, parts: &[String]) -> Option<Crossing> {
     }
     if let Some(c) = k::operation(pkg, last).filter(|c| matches!(c.world, World::Screen | World::Figure)) {
         return Some(c);
+    }
+    // a socket's traffic, the way its operation goes (`SOCKET_OPS`)
+    if k::python_socket_package(pkg) {
+        return k::python_socket_op(last).map(socket_traffic);
     }
     match k::reaches(pkg, Some(Registry::PyPi)) {
         Some(World::Net) => return k::moves_on_the_web(last).then_some(Crossing::to(World::Net)),
@@ -224,11 +229,17 @@ pub fn boundary_ts(pkg: Option<&str>, parts: &[String]) -> Option<Crossing> {
             None
         };
     }
-    // a socket's traffic, by its operation (`SOCKET_OPS`)
+    // a socket's traffic, the way its operation goes (`SOCKET_OPS`)
     if k::node_socket_package(pkg) {
-        return k::node_socket_op(last).then_some(Crossing::to(World::Net));
+        return k::node_socket_op(last).map(socket_traffic);
     }
     None
+}
+
+/// A socket's traffic that goes `dir` (`knowledge::SOCKET_OPS`), in every language: what is received
+/// is read from the network, what is sent is written to it.
+fn socket_traffic(dir: Dir) -> Crossing {
+    Crossing { world: World::Net, dir: Some(dir) }
 }
 
 /// What the platform's own names cross to, where no import binds them: `fetch` and a socket or
@@ -353,8 +364,9 @@ pub fn facts(kind: Crossing, pkg: Option<&str>, op: &str, literals: &[String]) -
                 return Facts::of(DISK_READ, local.clone());
             }
         }
-        // a web place is named by its host; the Hub's operations say which way the files go, and a
-        // request named for its method goes that method's way
+        // a web place is named by its host; the Hub's operations say which way the files go, a
+        // request named for its method goes that method's way, and a socket's traffic its
+        // operation's way
         let hub = k::HUB_READ.contains(&op) || k::HUB_WRITE.contains(&op) || k::HUB_MODELS.contains(&op);
         let artifact = if hub { k::HUB_HOST.to_string() } else { literals.iter().find_map(|l| host(l)).unwrap_or_default() };
         let dir = if k::HUB_WRITE.contains(&op) {
@@ -362,7 +374,7 @@ pub fn facts(kind: Crossing, pkg: Option<&str>, op: &str, literals: &[String]) -
         } else if hub {
             Some(Dir::Read)
         } else {
-            k::request_way(op)
+            k::request_way(op).or(kind.dir)
         };
         return Facts::of(Crossing { world: World::Net, dir }, artifact);
     }

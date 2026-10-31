@@ -2214,7 +2214,7 @@ impl<'a, 't> Body<'a, 't> {
                 x.ty.last().is_some_and(|t| knowledge::RUST_DOORS.iter().any(|(d, _, _)| d == t) && knowledge::rust_door(t, &op).is_none());
             let traffic = door
                 && match kind.world {
-                    World::Net => knowledge::rust_socket_op(&op),
+                    World::Net => knowledge::rust_socket_op(&op).is_some(),
                     World::Disk => knowledge::RUST_DOOR_TRAFFIC.contains(&op.as_str()),
                     _ => false,
                 };

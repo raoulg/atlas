@@ -1915,7 +1915,7 @@ impl<'a, 't> Body<'a, 't> {
                 payload: cr.payload.clone(),
                 op: op.clone(),
                 line: cr.line,
-                ..Touch::new(World::Net, None)
+                ..Touch::new(World::Net, kind.dir)
             };
             // a door the body opened is at the place its opening touches, named as the opening names it
             let opened = object.filter(|_| !opens && handed.is_none()).and_then(|o| self.opening(o, World::Net));

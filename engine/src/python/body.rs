@@ -1865,8 +1865,7 @@ fn crossed<'t>(
             // runs on, which the callers hand as they hand a path (`docs/reference/mathematics.md`, "A
             // door keeps its place")
             let request = request.or_else(|| {
-                let socket =
-                    lib.is_some_and(|l| knowledge::PYTHON_DOORS.iter().any(|(d, _, _)| *d == l)) && knowledge::python_socket_op(op);
+                let socket = lib.is_some_and(knowledge::python_socket_package) && knowledge::python_socket_op(op).is_some();
                 let on = called_on(fnode).filter(|_| socket)?;
                 Some(crate::paths::request_of(op, eval.of(at, on, 0)))
             });
