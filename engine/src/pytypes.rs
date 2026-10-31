@@ -1139,6 +1139,9 @@ impl TyDb {
     /// The database for the project at `at`, a directory of the reading `repo`, and how it reads
     /// the project; `root` is `at` as the file system resolves it.
     fn new(repo: &Repo, at: &Path, root: &SystemPath) -> (TyDb, Setup) {
+        // ty finds the project's modules on disk by itself: what it may find there are the files
+        // Python imports under the project
+        repo.rests_on(at, SOURCES);
         let system = OsSystem::new(root);
         let vendored = ty_vendored::file_system().clone();
         let mut db = TyDb {

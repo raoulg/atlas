@@ -759,10 +759,9 @@ pub fn envisioned(repo: &Path, files: &BTreeMap<PathBuf, Option<String>>, opts: 
     let name = top.file_name().map(|n| n.to_os_string()).unwrap_or_else(|| "repo".into());
     let tmp = Tmp::new("vision")?;
     let laid = PathBuf::from(name);
-    for f in listing.files_under("") {
-        let rel = f.strip_prefix(listing.root()).unwrap_or(&f).to_path_buf();
+    for rel in listing.listed_files() {
         if !rel.strip_prefix(&inner).map_or(false, |r| files.contains_key(r)) {
-            tmp.copy_in(&f, &laid.join(&rel))?;
+            tmp.copy_in(&listing.root().join(&rel), &laid.join(&rel))?;
         }
     }
     for (rel, text) in files {

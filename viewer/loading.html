@@ -26,7 +26,7 @@
 <main><div class="card">
   <div class="eyebrow">Your repository</div>
   <h1>The first picture is taking shape</h1>
-  <p id="status" role="status">Reading the repository's own code. The page opens as soon as that picture is ready.</p>
+  <p id="status" role="status">Reading the repository's code. The page opens when the picture is complete.</p>
   <div class="track" aria-hidden="true"></div><div class="step" id="step" role="progressbar" aria-valuemin="0" aria-valuemax="100">0%</div>
   <p id="error" role="alert" hidden></p>
 </div></main>
@@ -35,9 +35,8 @@
   // in Atlas Studio the bar above is Studio's own
   if (new URLSearchParams(location.search).has("host") && window.parent !== window) document.documentElement.classList.add("hosted");
   const status = document.getElementById("status"), error = document.getElementById("error"), track = document.querySelector(".track"), step = document.getElementById("step");
-  // the first phase, reading the project's own code: the picture opens when it is full; what follows
-  // has a bar of its own in the picture
-  const bar = progressBar("code", done => {
+  // reading the code, with the libraries it calls: the picture opens when it is complete
+  const bar = progressBar("reading", done => {
     const percent = Math.floor(done * 100);
     track.style.setProperty("--done", `${done * 100}%`);
     step.textContent = `${percent}%`;
@@ -55,7 +54,7 @@
         error.textContent = state.error; error.hidden = false;
       } else {
         bar.seen(state);
-        status.textContent = state.phase === "libraries" ? "Following library calls for the complete picture." : "Reading the repository's own code. The page opens as soon as that picture is ready.";
+        status.textContent = "Reading the repository's code. The page opens when the picture is complete.";
         error.hidden = true;
       }
     } catch { status.textContent = "Waiting for the Atlas server…"; }
