@@ -8,15 +8,10 @@ name: studio
 # opens through System Settings › Privacy & Security › Open Anyway; a setup program downloaded in a
 # browser meets SmartScreen's "More info › Run anyway". `install-studio.sh` and `install-studio.ps1`
 # download without the mark of the internet, so neither step is needed. `release.yml` and
-# `nightly.yml` call this workflow and publish what it makes; on a push to `next` that changes Studio
-# or this workflow, or run by hand, it only keeps them as the run's artifacts (scheduled and dispatched
-# runs take the workflow from `main`, so this push is what builds Studio on `next` before a promotion
-# carries the nightly's call to it).
+# `nightly.yml` call this workflow and publish what it makes; run by hand, it only keeps them as the
+# run's artifacts.
 
 on:
-  push:
-    branches: [next]
-    paths: ["studio/**", ".github/workflows/studio.yml"]
   workflow_call:
     inputs:
       ref:
@@ -38,7 +33,7 @@ permissions:
   contents: read
 
 # The channel a build is of, which its atlas names (`0.68.0-nightly (sha)`) and by which Studio looks
-# for its updates: a release's, or the nightly's, which a build of `next` pushed or run by hand is too.
+# for its updates: a release's, or the nightly's, which a build of `next` run by hand is too.
 # Each channel is an app of its own, so that the two install side by side: a release is Atlas Studio
 # (`io.github.raoulg.atlas-studio`), a nightly Atlas Studio Nightly, with its own identifier and so
 # its own settings and data.
@@ -65,9 +60,9 @@ jobs:
           node-version: 22
       - name: the atlas CLI, as Studio's sidecar
         run: |
-          cargo build --release --locked --target ${{ matrix.target }} -p atlas
+          cargo build --release --locked --target ${{ matrix.target }} -p atlas-code
           mkdir -p studio/src-tauri/binaries
-          cp target/${{ matrix.target }}/release/atlas studio/src-tauri/binaries/atlas-${{ matrix.target }}
+          cp target/${{ matrix.target }}/release/atlas-code studio/src-tauri/binaries/atlas-code-${{ matrix.target }}
       - name: the disk image
         working-directory: studio
         run: |
@@ -82,7 +77,7 @@ jobs:
           codesign --verify --deep --strict "$app"
           plutil -p "$app/Contents/Info.plist" | grep CFBundleShortVersionString
           test "$(plutil -extract CFBundleIdentifier raw "$app/Contents/Info.plist")" = "$STUDIO_ID"
-          if [ "${{ matrix.target }}" = aarch64-apple-darwin ]; then "$app/Contents/MacOS/atlas" --version; fi
+          if [ "${{ matrix.target }}" = aarch64-apple-darwin ]; then "$app/Contents/MacOS/atlas-code" --version; fi
           hdiutil detach "$mount"
       - uses: actions/upload-artifact@v7
         with:
@@ -104,9 +99,9 @@ jobs:
       - name: the atlas CLI, as Studio's sidecar
         shell: bash
         run: |
-          cargo build --release --locked --target $TARGET -p atlas
+          cargo build --release --locked --target $TARGET -p atlas-code
           mkdir -p studio/src-tauri/binaries
-          cp target/$TARGET/release/atlas.exe studio/src-tauri/binaries/atlas-$TARGET.exe
+          cp target/$TARGET/release/atlas-code.exe studio/src-tauri/binaries/atlas-code-$TARGET.exe
       - name: the setup program
         shell: bash
         working-directory: studio
@@ -121,7 +116,7 @@ jobs:
           Start-Process -Wait -FilePath ".\atlas-studio-$env:TARGET-setup.exe" -ArgumentList '/S'
           $dir = Join-Path $env:LOCALAPPDATA $env:STUDIO_APP
           Get-ChildItem $dir | Select-Object Name, Length | Format-Table | Out-String | Write-Host
-          & (Join-Path $dir 'atlas.exe') --version
+          & (Join-Path $dir 'atlas-code.exe') --version
           if ($LASTEXITCODE -ne 0) { exit 1 }
       - uses: actions/upload-artifact@v7
         with:

@@ -4,12 +4,12 @@ exclude = ["studio/src-tauri"]
 resolver = "2"
 
 [workspace.package]
-version = "0.69.4"
+version = "0.70.0"
 edition = "2021"
 rust-version = "1.97"
 license = "AGPL-3.0-only"
 repository = "https://github.com/raoulg/atlas"
-homepage = "https://github.com/raoulg/atlas"
+homepage = "https://atlas.pttrn.io"
 
 [workspace.dependencies]
 anyhow = "1"

@@ -1,0 +1,633 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Atlas 0.70.0</title>
+<meta name="description" content="What changed in Atlas 0.70.0">
+<link rel="icon" href="../../logo.svg">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#F4F1EC;--panel:#FFFFFF;--ink:#111111;--ink-2:#5A544D;--ink-3:#857D73;--line:#E2DCD3;--accent:#C43A14;
+  --sans:"Outfit","Helvetica Neue",Helvetica,system-ui,sans-serif;--mono:"JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,monospace}
+@media(prefers-color-scheme:dark){:root{--bg:#141210;--panel:#1B1815;--ink:#F4F1EC;--ink-2:#B8B0A5;--ink-3:#8A8178;--line:#2B2621}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);font-size:17px;line-height:1.55}
+a{color:inherit}
+main{max-width:1040px;margin:0 auto;padding:48px 16px 96px}
+header{display:flex;align-items:center;gap:16px;margin-bottom:48px}
+header img{width:44px;height:44px}
+header .name{font-size:22px;font-weight:600;letter-spacing:-.01em}
+header nav{margin-left:auto;display:flex;gap:20px;font-family:var(--mono);font-size:13px}
+header nav a{text-decoration:none;color:var(--ink-2)}
+header nav a:hover{color:var(--ink)}
+.eyebrow{font-family:var(--mono);font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--accent);margin:0}
+h1{font-size:44px;font-weight:500;letter-spacing:-.02em;line-height:1.1;margin:10px 0 18px}
+.lede{font-size:19px;color:var(--ink-2);max-width:66ch;margin:0 0 56px}
+section{border-top:1px solid var(--line);padding:40px 0 8px}
+section h2{font-size:28px;font-weight:500;letter-spacing:-.01em;margin:0 0 14px;line-height:1.2}
+section p,section li{max-width:70ch;color:var(--ink-2)}
+section p{margin:0 0 14px}
+code{font-family:var(--mono);font-size:.86em;background:var(--panel);border:1px solid var(--line);padding:0 4px}
+.issues{font-family:var(--mono);font-size:12.5px;color:var(--ink-3);margin-top:6px}
+.issues a{color:var(--ink-3);text-decoration:none}
+.issues a:hover{color:var(--accent)}
+.pictures{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,420px),1fr));gap:16px;margin:22px 0 10px}
+.pictures a{display:block;background:var(--panel);border:1px solid var(--line);padding:6px}
+.pictures img{display:block;width:100%;height:auto}
+.list a{display:flex;gap:18px;align-items:baseline;padding:14px 0;border-top:1px solid var(--line);text-decoration:none}
+.list .v{font-family:var(--mono);font-size:15px;min-width:90px}
+.list .t{color:var(--ink-2)}
+footer{margin-top:64px;font-family:var(--mono);font-size:12px;color:var(--ink-3)}
+:root{--add:#2E8B57;--del:#C0361C;--edit:#B26A00;--key:#1D5A73}
+@media(prefers-color-scheme:dark){:root{--add:#6CC08C;--del:#F2643C;--edit:#E0A24A;--key:#86B9C9}}
+.legend{display:flex;flex-wrap:wrap;gap:8px 18px;font-size:14px;color:var(--ink-2);margin:-30px 0 48px}
+.legend span{display:inline-flex;align-items:center;gap:7px}
+.swatch{width:18px;height:12px;border:3px solid;border-radius:2px}
+.card{background:var(--panel);border:1px solid var(--line);padding:16px 18px;margin:20px 0}
+.card h3{font-size:16px;font-weight:500;margin:0 0 12px}
+.card h3 a{text-decoration:none;color:var(--ink-3);font-family:var(--mono);font-size:13px;margin-right:6px}
+.pair{display:grid;gap:12px}
+.pair figure{margin:0}
+.pair .shot{overflow-x:auto;border:1px solid var(--line);background:var(--bg);padding:6px}
+.pair .shot pre{border:0;background:none;margin:0;padding:4px;font-size:12px;max-width:none;max-height:340px}
+@media(min-width:900px){.pair:has(pre){grid-template-columns:1fr 1fr}}
+.pair img{display:block;max-width:100%;height:auto}
+figcaption{font-size:13.5px;color:var(--ink-2);margin-top:6px}
+.tag{font-family:var(--mono);font-size:11.5px;padding:1px 6px;border:1.5px solid;margin-right:6px}
+.tag.before{color:var(--del)}.tag.after{color:var(--add)}
+.where{font-family:var(--mono);font-size:12px;color:var(--ink-3);margin:0 0 8px}
+details{margin-top:12px}
+summary{cursor:pointer;font-size:13.5px;color:var(--ink-2)}
+pre{font-family:var(--mono);font-size:13px;background:var(--panel);border:1px solid var(--line);padding:12px 14px;overflow:auto;max-width:70ch}
+pre code{background:none;border:0;padding:0}
+.hero{margin:6px 0 24px;border:1px solid var(--line);background:var(--panel);padding:8px}
+.hero img{display:block;width:100%;height:auto}
+.example{margin:18px 0 6px}
+.example pre{margin:0 0 14px}
+@media(min-width:900px){.pair{grid-template-columns:1fr 1fr;align-items:start}}
+.pair.stack{grid-template-columns:1fr}
+section ul{padding-left:20px;margin:0 0 16px}
+section li{margin:4px 0}
+.diagram{margin:22px 0;background:var(--panel);border:1px solid var(--line);padding:14px}
+.diagram svg{display:block;width:100%;height:auto;max-height:340px}
+.diagram figcaption{font-size:14px;color:var(--ink-3);margin-top:10px}
+.d-frame{fill:none;stroke:var(--ink-3);stroke-width:1.5}
+.d-box{fill:var(--bg);stroke:var(--line);stroke-width:1.5}
+.d-key{stroke:var(--key);stroke-width:2}
+.d-engine{fill:var(--panel);stroke:var(--ink-3)}
+.d-ground{fill:var(--line);stroke:none}
+.d-title{font:600 15px var(--sans);fill:var(--ink)}
+.d-name{font:500 14px var(--mono);fill:var(--ink)}
+.d-note{font:13px var(--sans);fill:var(--ink-2)}
+.d-label{font:13px var(--sans);fill:var(--ink-2)}
+.d-arrow{fill:none;stroke:var(--ink-3);stroke-width:1.6;marker-end:url(#d-head)}
+.d-before{stroke:var(--del)}.d-after{stroke:var(--add)}
+.d-law{font:28px var(--sans);fill:var(--key)}
+.d-broken{fill:var(--del)}
+.d-axis{stroke:var(--ink-3);stroke-width:1.4;fill:none}.d-grid{stroke:var(--line);stroke-dasharray:4 4}
+.d-curve{fill:none;stroke:var(--key);stroke-width:3}.d-dot{fill:var(--key)}
+.bars{margin:22px 0;background:var(--panel);border:1px solid var(--line);padding:16px 18px;max-width:760px}
+.bar{display:grid;grid-template-columns:minmax(120px,30%) 1fr;gap:12px;align-items:center;margin:8px 0}
+.bar .l{font-size:14px;color:var(--ink-2)}
+.bar .v{height:22px;background:var(--key);min-width:2px;position:relative}
+.bar .v span{position:absolute;left:calc(100% + 8px);top:1px;font-family:var(--mono);font-size:13px;color:var(--ink);white-space:nowrap}
+.bars .cap{font-size:13.5px;color:var(--ink-2);margin-top:10px}
+.pager{display:flex;justify-content:space-between;gap:16px;border-top:1px solid var(--line);margin-top:48px;padding-top:20px;font-family:var(--mono);font-size:14px}
+.pager a{text-decoration:none;color:var(--ink-2)}
+.pager a:hover{color:var(--accent)}
+.pager .newer{margin-left:auto}
+</style>
+</head>
+<body>
+<main>
+<header><img src="../../logo.svg" alt=""><span class="name">Atlas</span>
+<nav><a href="../">Releases</a><a href="../../">Atlas</a><a href="https://github.com/raoulg/atlas/releases/tag/v0.70.0">Download</a></nav></header>
+<p class="eyebrow">Release 0.70.0</p>
+<h1>What changed in Atlas 0.70.0</h1>
+<div class="lede"><p>Atlas 0.70.0 is the command <code>atlas-code</code>. It stops guessing where your code says nothing, works out what a call runs once for every question that asks, and writes into your tree exactly what it is asked to. A fault in one file or one call no longer ends the run, and Atlas now measures itself every night. Tensors that jaxtyping annotates now stand together by rank, a socket and an <code>app.all</code> route are the network the code says they are, and a view of Atlas itself draws in about a second once it is read. The Type lattice lights what you pick in the Flowchart, the history shows one commit on its own, and Studio&#x27;s preview docks, folds and fills the window.</p></div>
+<div class="legend"><span><i class="swatch" style="border-color:var(--del)"></i>only in the release before</span><span><i class="swatch" style="border-color:var(--add)"></i>only in 0.70.0</span><span><i class="swatch" style="border-color:var(--edit)"></i>its text changed, its arrow not</span></div>
+<section><h2>The command is atlas-code</h2><p>Other tools install a command <code>atlas</code> too (ariga&#x27;s database toolkit, MongoDB&#x27;s Atlas CLI), so Atlas could not be installed beside them. Atlas&#x27;s command is now <code>atlas-code</code>, as its Homebrew package already was, and the nightly&#x27;s <code>atlas-code-nightly</code>; <code>alias atlas=atlas-code</code> keeps the short name. <code>brew upgrade</code>, <code>atlas update</code> and the install scripts move an earlier <code>atlas</code> over and remove it. The MCP server keeps its name, <code>atlas</code>, so its tools are named as before; an agent registered with <code>atlas mcp</code> is registered again with <code>atlas-code mcp</code>. And an update is now announced only once all of its files are there: Studio offered 0.69.3 while its installers were still being built.</p><figure class="diagram"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 920 210" role="img" aria-label="A terminal: the command is atlas-code; brew upgrade or atlas update moves an earlier atlas over and names the alias that keeps the short name"><defs><marker id="d-head" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 L10 5 L0 10 z" style="fill:var(--ink-3)"/></marker></defs>
+  <rect x="1" y="1" width="918" height="208" rx="6" style="fill:var(--panel);stroke:var(--line)"/>
+  <g style="font-family:var(--mono);font-size:13.5px">
+    <text x="22" y="36" style="fill:var(--ink-3)">$ <tspan style="fill:var(--ink)">curl -fsSL https://raw.githubusercontent.com/raoulg/atlas/main/install.sh | sh</tspan></text>
+    <text x="22" y="62" style="fill:var(--ink)">atlas-code installed in ~/.local/bin/atlas-code</text>
+    <text x="22" y="84" style="fill:var(--accent)">removed the earlier ~/.local/bin/atlas; to keep the short name: alias atlas=atlas-code</text>
+    <text x="22" y="122" style="fill:var(--ink-3)">$ <tspan style="fill:var(--ink)">atlas-code view .</tspan></text>
+    <text x="22" y="160" style="fill:var(--ink-3)">$ <tspan style="fill:var(--ink)">claude mcp add --scope user atlas -- atlas-code mcp</tspan></text>
+    <text x="22" y="190" style="fill:var(--ink-3)">… the MCP server keeps its name, atlas; only the command it runs is atlas-code</text>
+  </g>
+</svg>
+<figcaption>Installing 0.70.0 over an earlier Atlas, and the new command.</figcaption></figure><p class="issues"><a href="https://github.com/raoulg/atlas/issues/281">#281</a>, <a href="https://github.com/raoulg/atlas/issues/282">#282</a>, <a href="https://github.com/raoulg/atlas/issues/293">#293</a></p></section><section><h2>Where the code says nothing, Atlas no longer guesses</h2><p>A method called <code>home()</code> was your home directory to Atlas, whatever object it was called on, and so were <code>joinpath</code>, <code>with_suffix</code>, <code>parent</code> and <code>Path(..)</code>: Atlas went by the name. Now a library&#x27;s fact holds only where ty finds that library. Your own <code>Archive.home()</code> is followed into its own code, and where ty cannot say what a value is, the place keeps the name the code gives it instead of a guess. A class of your own named <code>Path</code> is yours too, and Atlas reads a project&#x27;s <code>pyproject.toml</code> and <code>ty.toml</code> through the same one reading as the rest of its files.</p><div class="example"><pre><code>with open(archive.home() / &quot;log.txt&quot;, &quot;a&quot;) as f:</code></pre><div class="pair"><figure><div class="shot"><img src="img/home-before.png" alt="" loading="lazy"></div><figcaption><span class="tag before">0.69.4</span></figcaption></figure><figure><div class="shot"><img src="img/home-after.png" alt="" loading="lazy"></div><figcaption><span class="tag after">0.70.0</span></figcaption></figure></div></div><p class="issues"><a href="https://github.com/raoulg/atlas/issues/264">#264</a>, <a href="https://github.com/raoulg/atlas/issues/266">#266</a>, <a href="https://github.com/raoulg/atlas/issues/261">#261</a>, <a href="https://github.com/raoulg/atlas/issues/283">#283</a>, <a href="https://github.com/raoulg/atlas/issues/239">#239</a></p></section><section><h2>Paths shown right in a few more cases</h2><p><code>~/data/{name}/../shelf.log</code> is now <code>~/data/shelf.log</code>.</p><div class="example"><div class="pair"><figure><div class="shot"><img src="img/shelf-before.png" alt="" loading="lazy"></div><figcaption><span class="tag before">0.69.4</span></figcaption></figure><figure><div class="shot"><img src="img/shelf-after.png" alt="" loading="lazy"></div><figcaption><span class="tag after">0.70.0</span></figcaption></figure></div></div><p class="issues"><a href="https://github.com/raoulg/atlas/issues/284">#284</a></p></section><section><h2>Tensors of one rank stand together</h2><p>A program that annotates its tensors with jaxtyping (<code>Float[Tensor, &quot;batch dim&quot;]</code>) drew every shape as a place of its own, so a model&#x27;s components read as many short, separate flows. Now each shape stands in its rank family, the way a subclass stands in its base class: <code>Float Tensor · 2D</code> stands for the rank-2 float tensors in the picture, and a click opens it into the exact shapes. Names still count (<code>batch dim</code> and <code>batch ndim</code> are two types of one family), and so does the dtype: an <code>Int</code> tensor never joins a <code>Float</code> family.</p><div class="pair stack"><figure><div class="shot"><img src="../../changes/298-concat-before.png" alt="" loading="lazy"></div><figcaption><span class="tag after">0.69: <code>Concatenate2D</code> takes a <code>batch _</code> and gives a <code>batch ndim</code></span></figcaption></figure><figure><div class="shot"><img src="../../changes/298-concat-after.png" alt="" loading="lazy"></div><figcaption><span class="tag after">0.70: both are rank 2, <code>Float Tensor · 2D</code></span></figcaption></figure><figure><div class="shot"><img src="../../changes/298-concat-open.png" alt="" loading="lazy"></div><figcaption><span class="tag after">0.70, the family opened: each value in its frame</span></figcaption></figure></div><p class="issues"><a href="https://github.com/raoulg/atlas/issues/298">#298</a></p></section><section><h2>What a call runs is one answer</h2><p>Which functions may this call run? The route, what a parameter holds and which errors a call hands on now all ask that one question, and get one answer. A value built at the call runs its own class&#x27;s method; a value of a declared class may run every override below it; a call through a class runs that method and no override. The step says so too: a call that may run two functions reads <code>Section.show · one of 2</code>, named by the class it runs on. Rust is read by the same law: a unit struct&#x27;s method (<code>Plain.show()</code>), a supertrait&#x27;s method called on a <code>&amp;dyn Block</code>, and a function named like its crate are followed into the code they run.</p><figure class="diagram"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 450" role="img" aria-label="Three ways to call show over Block, Section and Boxed, and what each may run in 0.70.0; below, one question that the route, the parameters and the errors all ask"><defs><marker id="d-head" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 L10 5 L0 10 z" style="fill:var(--ink-3)"/></marker></defs>
+<text x="170" y="32" style="font-family:var(--mono);font-size:15px;fill:var(--ink);text-anchor:middle;font-weight:600">Block().show(h)</text>
+<text x="170" y="52" style="font-family:var(--sans);font-size:13px;fill:var(--ink-2);text-anchor:middle;font-weight:400">built at the call</text>
+<line x1="170" y1="112" x2="170" y2="132" style="stroke:var(--line);stroke-width:2;fill:none"/>
+<line x1="170" y1="162" x2="170" y2="182" style="stroke:var(--line);stroke-width:2;fill:none"/>
+<rect x="90" y="80" width="160" height="32" rx="8" style="fill:var(--key);fill-opacity:0.16;stroke:var(--key);stroke-width:2"/>
+<text x="170" y="101" style="font-family:var(--mono);font-size:13px;fill:var(--ink);text-anchor:middle;font-weight:600">Block.show</text>
+<rect x="90" y="130" width="160" height="32" rx="8" style="fill:var(--panel);fill-opacity:1;stroke:var(--line);stroke-width:1.2"/>
+<text x="170" y="151" style="font-family:var(--mono);font-size:13px;fill:var(--ink);text-anchor:middle;font-weight:400">Section</text>
+<rect x="90" y="180" width="160" height="32" rx="8" style="fill:var(--panel);fill-opacity:1;stroke:var(--line);stroke-width:1.2"/>
+<text x="170" y="201" style="font-family:var(--mono);font-size:13px;fill:var(--ink-3);text-anchor:middle;font-weight:400">Boxed.show</text>
+<text x="170" y="246" style="font-family:var(--mono);font-size:13px;fill:var(--key);text-anchor:middle;font-weight:600">runs Block.show</text>
+<text x="480" y="32" style="font-family:var(--mono);font-size:15px;fill:var(--ink);text-anchor:middle;font-weight:600">section.show(h)</text>
+<text x="480" y="52" style="font-family:var(--sans);font-size:13px;fill:var(--ink-2);text-anchor:middle;font-weight:400">section: Section, declared</text>
+<line x1="480" y1="112" x2="480" y2="132" style="stroke:var(--line);stroke-width:2;fill:none"/>
+<line x1="480" y1="162" x2="480" y2="182" style="stroke:var(--line);stroke-width:2;fill:none"/>
+<rect x="400" y="80" width="160" height="32" rx="8" style="fill:var(--key);fill-opacity:0.16;stroke:var(--key);stroke-width:2"/>
+<text x="480" y="101" style="font-family:var(--mono);font-size:13px;fill:var(--ink);text-anchor:middle;font-weight:600">Block.show</text>
+<rect x="400" y="130" width="160" height="32" rx="8" style="fill:var(--panel);fill-opacity:1;stroke:var(--line);stroke-width:1.2"/>
+<text x="480" y="151" style="font-family:var(--mono);font-size:13px;fill:var(--ink);text-anchor:middle;font-weight:400">Section</text>
+<rect x="400" y="180" width="160" height="32" rx="8" style="fill:var(--key);fill-opacity:0.16;stroke:var(--key);stroke-width:2"/>
+<text x="480" y="201" style="font-family:var(--mono);font-size:13px;fill:var(--ink);text-anchor:middle;font-weight:600">Boxed.show</text>
+<text x="480" y="246" style="font-family:var(--mono);font-size:13px;fill:var(--key);text-anchor:middle;font-weight:600">may run Section.show or Boxed.show</text>
+<text x="790" y="32" style="font-family:var(--mono);font-size:15px;fill:var(--ink);text-anchor:middle;font-weight:600">Section.show(s, h)</text>
+<text x="790" y="52" style="font-family:var(--sans);font-size:13px;fill:var(--ink-2);text-anchor:middle;font-weight:400">through the class</text>
+<line x1="790" y1="112" x2="790" y2="132" style="stroke:var(--line);stroke-width:2;fill:none"/>
+<line x1="790" y1="162" x2="790" y2="182" style="stroke:var(--line);stroke-width:2;fill:none"/>
+<rect x="710" y="80" width="160" height="32" rx="8" style="fill:var(--key);fill-opacity:0.16;stroke:var(--key);stroke-width:2"/>
+<text x="790" y="101" style="font-family:var(--mono);font-size:13px;fill:var(--ink);text-anchor:middle;font-weight:600">Block.show</text>
+<rect x="710" y="130" width="160" height="32" rx="8" style="fill:var(--panel);fill-opacity:1;stroke:var(--line);stroke-width:1.2"/>
+<text x="790" y="151" style="font-family:var(--mono);font-size:13px;fill:var(--ink);text-anchor:middle;font-weight:400">Section</text>
+<rect x="710" y="180" width="160" height="32" rx="8" style="fill:var(--panel);fill-opacity:1;stroke:var(--line);stroke-width:1.2"/>
+<text x="790" y="201" style="font-family:var(--mono);font-size:13px;fill:var(--ink-3);text-anchor:middle;font-weight:400">Boxed.show</text>
+<text x="790" y="246" style="font-family:var(--mono);font-size:13px;fill:var(--key);text-anchor:middle;font-weight:600">runs Block.show, no override</text>
+<line x1="20" y1="272" x2="940" y2="272" style="stroke:var(--line);stroke-width:1;fill:none"/>
+<rect x="380" y="292" width="200" height="40" rx="8" style="fill:var(--panel);fill-opacity:1;stroke:var(--ink);stroke-width:1.6"/>
+<text x="480" y="317" style="font-family:var(--sans);font-size:14px;fill:var(--ink);text-anchor:middle;font-weight:600">what may this call run?</text>
+<path d="M480 332 C 480 352, 170 352, 170 372" style="stroke:var(--key);stroke-width:1.6;fill:none" marker-end="url(#d-head)"/>
+<rect x="60" y="376" width="220" height="34" rx="8" style="fill:var(--panel);fill-opacity:1;stroke:var(--line);stroke-width:1.2"/>
+<text x="170" y="398" style="font-family:var(--sans);font-size:13px;fill:var(--ink-2);text-anchor:middle;font-weight:400">the route&#x27;s steps</text>
+<path d="M480 332 C 480 352, 480 352, 480 372" style="stroke:var(--key);stroke-width:1.6;fill:none" marker-end="url(#d-head)"/>
+<rect x="370" y="376" width="220" height="34" rx="8" style="fill:var(--panel);fill-opacity:1;stroke:var(--line);stroke-width:1.2"/>
+<text x="480" y="398" style="font-family:var(--sans);font-size:13px;fill:var(--ink-2);text-anchor:middle;font-weight:400">what a parameter holds</text>
+<path d="M480 332 C 480 352, 790 352, 790 372" style="stroke:var(--key);stroke-width:1.6;fill:none" marker-end="url(#d-head)"/>
+<rect x="680" y="376" width="220" height="34" rx="8" style="fill:var(--panel);fill-opacity:1;stroke:var(--line);stroke-width:1.2"/>
+<text x="790" y="398" style="font-family:var(--sans);font-size:13px;fill:var(--ink-2);text-anchor:middle;font-weight:400">which errors it hands on</text>
+<text x="20" y="312" style="font-family:var(--sans);font-size:13px;fill:var(--key);text-anchor:start;font-weight:600">0.70.0: one answer</text>
+<text x="20" y="330" style="font-family:var(--sans);font-size:13px;fill:var(--del);text-anchor:start;font-weight:400">0.69.3: three, which disagreed</text>
+<text x="20" y="438" style="font-family:var(--sans);font-size:12.5px;fill:var(--ink-3);text-anchor:start;font-weight:400">teal: what the call may run. Boxed overrides show below Section, which inherits it from Block.</text>
+</svg>
+</figure><p class="issues"><a href="https://github.com/raoulg/atlas/issues/263">#263</a>, <a href="https://github.com/raoulg/atlas/issues/268">#268</a>, <a href="https://github.com/raoulg/atlas/issues/292">#292</a>, <a href="https://github.com/raoulg/atlas/issues/285">#285</a>, <a href="https://github.com/raoulg/atlas/issues/207">#207</a>, <a href="https://github.com/raoulg/atlas/issues/220">#220</a></p></section><section><h2>Each caller keeps the file it names</h2><p>A shelf whose folder <code>main</code> sets up, and whose methods each name a file in it and hand the path to one <code>write</code>, drew both methods writing both files: where the path was handed more than one level up, Atlas dropped the method that names the file, so the two steps folded into one box that wrote the shelf four times. Now each method writes its own file, as the shortcut that writes each file in its method always drew it. Atlas&#x27;s own workbench reads the same way: each of its seven <code>.atlas</code> files is written under the step that names it. And who makes a path whole is a set of callers, so the order Atlas happened to read them in no longer makes two answers of one.</p><div class="pair stack"><figure><div class="shot"><img src="../../changes/276-handing-before.png" alt="" loading="lazy"></div><figcaption><span class="tag after">0.69.3: the two methods fold into one step that writes the shelf four times</span></figcaption></figure><figure><div class="shot"><img src="../../changes/276-handing-after.png" alt="" loading="lazy"></div><figcaption><span class="tag after">0.70.0: each method writes its own file, through the helper</span></figcaption></figure></div><p class="issues"><a href="https://github.com/raoulg/atlas/issues/279">#279</a>, <a href="https://github.com/raoulg/atlas/issues/276">#276</a></p></section><section><h2>The network, as the code says it</h2><p>A Rust server that reads from and writes to a <code>TcpStream</code> drew no place at all, and <code>atlas-code check</code> asked whether it did anything. What moves data on one of std&#x27;s sockets (connecting, reading, writing, sending, receiving) now reaches the web, as it does through Python&#x27;s <code>socket</code>; binding an address, accepting a connection and shutting a half move none. And an Express <code>app.all(path, ..)</code> route serves every method: a <code>POST</code> to its path met no route and left for the web, and now meets the handler in its own program. A route&#x27;s methods are a set: <code>methods=[&quot;POST&quot;, &quot;GET&quot;]</code> and <code>[&quot;GET&quot;, &quot;POST&quot;]</code> are the one route <code>GET|POST /items</code>, and <code>atlas-code changes</code> after swapping the two says nothing changed, where 0.69 reported a route removed and another added.</p><div class="pair stack"><figure><div class="shot"><img src="../../changes/291-before.png" alt="" loading="lazy"></div><figcaption><span class="tag after">0.69.3: a server that greets its clients touches nothing</span></figcaption></figure><figure><div class="shot"><img src="../../changes/291-after.png" alt="" loading="lazy"></div><figcaption><span class="tag after">0.70.0: <code>answer</code> and <code>linger</code> reach the web</span></figcaption></figure><figure><div class="shot"><img src="../../changes/280-before.png" alt="" loading="lazy"></div><figcaption><span class="tag after">0.69.3: the page&#x27;s POST meets no route and leaves for the web</span></figcaption></figure><figure><div class="shot"><img src="../../changes/280-after.png" alt="" loading="lazy"></div><figcaption><span class="tag after">0.70.0: the <code>app.all</code> route serves every method, the POST among them</span></figcaption></figure></div><p class="issues"><a href="https://github.com/raoulg/atlas/issues/291">#291</a>, <a href="https://github.com/raoulg/atlas/issues/280">#280</a>, <a href="https://github.com/raoulg/atlas/issues/277">#277</a></p></section><section><h2>The wheel zooms wherever the pointer is</h2><p>The mouse wheel sometimes did nothing until <code>+</code> was clicked. Five strips over the picture took the wheel without using it: the empty part of the state bar, the zoom&#x27;s buttons, the legend, the hint and the status bar. A drag let go outside the page (over Studio&#x27;s bar) kept panning with every move after it; a wheel made while <code>atlas-code serve</code> hands the page a new reading was lost; and opening a box far larger than the window sank the scale below the zoom&#x27;s floor, from where a wheel out jumped in. Now the wheel zooms wherever the pointer is and whatever the page is doing. And in Studio, scrolling and the trackpad over the view work from the first gesture, where they did nothing until <code>+</code> had been clicked.</p><figure class="diagram"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 400" role="img" aria-label="Where the mouse wheel zoomed the picture in 0.69.3 and in 0.70.0: in 0.69.3 the state bar, the zoom buttons, the legend, the hint and the status bar swallowed it, and three moments left it dead until a click; in 0.70.0 it zooms everywhere"><defs><marker id="d-head" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 L10 5 L0 10 z" style="fill:var(--ink-3)"/></marker></defs>
+<text x="20" y="30" style="font-family:var(--sans);font-size:13px;fill:var(--del);text-anchor:start;font-weight:600">0.69.3</text>
+<text x="500" y="30" style="font-family:var(--sans);font-size:13px;fill:var(--key);text-anchor:start;font-weight:600">0.70.0</text>
+<rect x="20" y="44" width="440" height="230" rx="6" style="fill:var(--panel);fill-opacity:1;stroke:var(--line);stroke-width:1.2"/>
+<rect x="20" y="44" width="440" height="26" rx="6" style="fill:var(--del);fill-opacity:0.14;stroke:var(--del);stroke-width:1.2"/>
+<text x="32" y="62" style="font-family:var(--mono);font-size:11.5px;fill:var(--ink-2);text-anchor:start;font-weight:400">ROUTE  report ×</text>
+<rect x="372" y="78" width="80" height="22" rx="4" style="fill:var(--del);fill-opacity:0.14;stroke:var(--del);stroke-width:1.2"/>
+<text x="412" y="93" style="font-family:var(--mono);font-size:11px;fill:var(--ink-2);text-anchor:middle;font-weight:400">− fit 1:1 +</text>
+<rect x="28" y="244" width="150" height="22" rx="4" style="fill:var(--del);fill-opacity:0.14;stroke:var(--del);stroke-width:1.2"/>
+<text x="103" y="259" style="font-family:var(--sans);font-size:11px;fill:var(--ink-2);text-anchor:middle;font-weight:400">legend</text>
+<rect x="300" y="244" width="152" height="22" rx="4" style="fill:var(--del);fill-opacity:0.14;stroke:var(--del);stroke-width:1.2"/>
+<text x="376" y="259" style="font-family:var(--sans);font-size:11px;fill:var(--ink-2);text-anchor:middle;font-weight:400">hint · status bar</text>
+<rect x="150" y="140" width="120" height="30" rx="15" style="fill:var(--panel);fill-opacity:1;stroke:var(--ink-3);stroke-width:1.2"/>
+<text x="210" y="160" style="font-family:var(--mono);font-size:12px;fill:var(--ink);text-anchor:middle;font-weight:400">▸ Section.show</text>
+<text x="240" y="215" style="font-family:var(--sans);font-size:12.5px;fill:var(--ink-2);text-anchor:middle;font-weight:400">the wheel zooms only on the bare canvas</text>
+<rect x="500" y="44" width="440" height="230" rx="6" style="fill:var(--key);fill-opacity:0.10;stroke:var(--key);stroke-width:1.6"/>
+<rect x="500" y="44" width="440" height="26" rx="6" style="fill:var(--panel);fill-opacity:0.6;stroke:var(--line);stroke-width:1"/>
+<text x="512" y="62" style="font-family:var(--mono);font-size:11.5px;fill:var(--ink-2);text-anchor:start;font-weight:400">ROUTE  report ×</text>
+<rect x="852" y="78" width="80" height="22" rx="4" style="fill:var(--panel);fill-opacity:0.6;stroke:var(--line);stroke-width:1"/>
+<text x="892" y="93" style="font-family:var(--mono);font-size:11px;fill:var(--ink-2);text-anchor:middle;font-weight:400">− fit 1:1 +</text>
+<rect x="508" y="244" width="150" height="22" rx="4" style="fill:var(--panel);fill-opacity:0.6;stroke:var(--line);stroke-width:1"/>
+<text x="583" y="259" style="font-family:var(--sans);font-size:11px;fill:var(--ink-2);text-anchor:middle;font-weight:400">legend</text>
+<rect x="780" y="244" width="152" height="22" rx="4" style="fill:var(--panel);fill-opacity:0.6;stroke:var(--line);stroke-width:1"/>
+<text x="856" y="259" style="font-family:var(--sans);font-size:11px;fill:var(--ink-2);text-anchor:middle;font-weight:400">hint · status bar</text>
+<rect x="630" y="140" width="120" height="30" rx="15" style="fill:var(--panel);fill-opacity:1;stroke:var(--ink-3);stroke-width:1.2"/>
+<text x="690" y="160" style="font-family:var(--mono);font-size:12px;fill:var(--ink);text-anchor:middle;font-weight:400">▸ Section.show</text>
+<text x="720" y="215" style="font-family:var(--sans);font-size:12.5px;fill:var(--key);text-anchor:middle;font-weight:600">the wheel zooms wherever the pointer is</text>
+<line x1="20" y1="296" x2="940" y2="296" style="stroke:var(--line);stroke-width:1;fill:none"/>
+<text x="20" y="322" style="font-family:var(--sans);font-size:13px;fill:var(--ink);text-anchor:start;font-weight:600">and whatever the page is doing</text>
+<text x="20" y="346" style="font-family:var(--sans);font-size:12.5px;fill:var(--ink-2);text-anchor:start;font-weight:400">a drag let go outside the page (over Studio's bar): 0.69.3 panned with every move after it; 0.70.0 ends the drag</text>
+<text x="20" y="366" style="font-family:var(--sans);font-size:12.5px;fill:var(--ink-2);text-anchor:start;font-weight:400">a wheel while atlas-code serve hands the page a new reading: 0.69.3 lost it; 0.70.0 keeps it</text>
+<text x="20" y="386" style="font-family:var(--sans);font-size:12.5px;fill:var(--ink-2);text-anchor:start;font-weight:400">a box far larger than the window opened: 0.69.3 sank below the zoom's floor, a wheel out jumped in; 0.70.0 stops at the floor</text>
+</svg>
+</figure><p class="issues"><a href="https://github.com/raoulg/atlas/issues/230">#230</a>, <a href="https://github.com/raoulg/atlas/issues/315">#315</a></p></section><section><h2>The Type lattice lights what you pick</h2><p>In the Type lattice, space over a class shows its details and code, as it does over a box in the Flowchart. A double click on a class opens the Flowchart on a route that holds a value of that class or of one below it, and lights every box of those types; the rest of the route stays, dimmed. A box that holds such a value inside (a closed step, a family holding it as a part) is lit dashed, and opening it shows the lit box. The rank families of jaxtyping shapes stand in the lattice too, above their shapes as a base stands above its subclasses: picking <code>Float Tensor · 2D</code> lights its closed boxes whole, picking one shape opens the family and lights that shape alone.</p><div class="pair stack"><figure><div class="shot"><img src="../../changes/296-lattice.jpg" alt="" loading="lazy"></div><figcaption><span class="tag after">The Type lattice: space over a class shows it with its code</span></figcaption></figure><figure><div class="shot"><img src="../../changes/296-flowchart.jpg" alt="" loading="lazy"></div><figcaption><span class="tag after">A double click lights its values in the Flowchart: <code>language.Language</code> and the boxes that hold it, the rest dimmed</span></figcaption></figure><figure><div class="shot"><img src="../../changes/306-family.jpg" alt="" loading="lazy"></div><figcaption><span class="tag after">A rank family picked: every <code>Float Tensor · 2D</code> in <code>Concatenate</code> lit</span></figcaption></figure></div><p class="issues"><a href="https://github.com/raoulg/atlas/issues/296">#296</a>, <a href="https://github.com/raoulg/atlas/issues/306">#306</a></p></section><section><h2>A box that stands for several opens into them</h2><p>Siblings that draw the same lines are one box: in vectormesh&#x27;s <code>gating</code>, <code>MoE</code>, <code>Skip</code> and <code>SparseMoE</code> all take a <code>Module</code> and a <code>Float Tensor · ≥1D</code> and give one back, and the package shows <code>MoE, Skip +1</code>. Before a route was chosen, a click on such a box only selected it, though its <code>▸</code> said it would open. Now it opens into its members, each drawing the lines the box drew, and a click on one opens it as a route. Closing them under <strong>opened</strong> draws the one box again.</p><div class="pair stack"><figure><div class="shot"><img src="../../changes/321-before.jpg" alt="" loading="lazy"></div><figcaption><span class="tag after">0.69: <code>MoE</code>, <code>Skip</code> and <code>SparseMoE</code> as one box, which a click does not open</span></figcaption></figure><figure><div class="shot"><img src="../../changes/321-after.jpg" alt="" loading="lazy"></div><figcaption><span class="tag after">0.70: the box opened, each class with its own lines</span></figcaption></figure></div><p class="issues"><a href="https://github.com/raoulg/atlas/issues/321">#321</a></p></section><section><h2>History shows one commit on its own</h2><p>The history&#x27;s top row is HEAD, a hollow dot, and the working tree gets a row of its own, <strong>Uncommitted changes</strong>, only while it holds changes. A click shows that commit on its own, read from the commit; a ⇧ click compares it with the one shown. <strong>files</strong> shows the commit&#x27;s files instead of its picture, markdown rendered with its pictures. Right-click a commit to copy its hash or subject, add a tag, check it out, or pull and push the branch HEAD is on; each asks first and names the git command it runs.</p><div class="pair stack"><figure><div class="shot"><img src="../../changes/307-menu.jpg" alt="" loading="lazy"></div><figcaption><span class="tag after">A commit&#x27;s menu: show it, compare it, copy, tag, check out, pull and push</span></figcaption></figure><figure><div class="shot"><img src="../../changes/307-files.jpg" alt="" loading="lazy"></div><figcaption><span class="tag after"><strong>files</strong>: the README as that commit holds it</span></figcaption></figure></div><p class="issues"><a href="https://github.com/raoulg/atlas/issues/307">#307</a></p></section><section><h2>Studio&#x27;s preview stands where you put it</h2><p>The preview of a file in Studio (Markdown, HTML, source, a PDF, an image) stands where the terminal can: its inner edge drags, the buttons in its head dock it left or right, fold it to a narrow bar that names the open file, or let it fill the stage while the Atlas view keeps its size underneath. The version at the right of Studio&#x27;s status bar is a button that shows What&#x27;s New for the build that runs. And the README now says, step by step, what to do when macOS or Windows blocks Studio&#x27;s first start: System Settings › Privacy &amp; Security › Open Anyway, or More info › Run anyway.</p><div class="pair stack"><figure><div class="shot"><img src="../../changes/310-wide.jpg" alt="" loading="lazy"></div><figcaption><span class="tag after">The preview docked right and dragged wider</span></figcaption></figure><figure><div class="shot"><img src="../../changes/310-full.jpg" alt="" loading="lazy"></div><figcaption><span class="tag after">The preview filling the stage</span></figcaption></figure><figure><div class="shot"><img src="../../changes/310-folded.jpg" alt="" loading="lazy"></div><figcaption><span class="tag after">Folded to a bar that names the open file</span></figcaption></figure></div><p class="issues"><a href="https://github.com/raoulg/atlas/issues/310">#310</a>, <a href="https://github.com/raoulg/atlas/issues/256">#256</a>, <a href="https://github.com/raoulg/atlas/issues/312">#312</a></p></section><section><h2>Atlas writes into your tree what it is asked to</h2><p>Breaking a seal cuts out <code>sealed=..</code> and nothing else, in every language&#x27;s marker. A vision lands on the path it names, even where another file has the same name.</p><figure class="diagram"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 290" role="img" aria-label="Breaking a seal cuts out sealed=#7 alone in 0.70.0, where 0.69.3 also took a space; a vision of sink.py lands on src/archive/sink.py in 0.70.0, where 0.69.3 could take src/archive/store/sink.py"><defs><marker id="d-head" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 L10 5 L0 10 z" style="fill:var(--ink-3)"/></marker></defs>
+<text x="20" y="30" style="font-family:var(--sans);font-size:15px;fill:var(--ink);text-anchor:start;font-weight:600">unseal #7: a cut, not a rewrite</text>
+<text x="20" y="66" style="font-family:var(--sans);font-size:12.5px;fill:var(--ink-3);text-anchor:start;font-weight:400">the marker</text>
+<text x="110" y="66" style="font-family:var(--mono);font-size:14px;fill:var(--ink);white-space:pre"><tspan style="fill:var(--ink)">#[doc = &quot;prophecy: supersedes=Sink</tspan><tspan style="fill:var(--edit);text-decoration:line-through;font-weight:700"> sealed=#7</tspan><tspan style="fill:var(--ink)">&quot;]</tspan></text>
+<text x="20" y="112" style="font-family:var(--sans);font-size:12.5px;fill:var(--del);text-anchor:start;font-weight:600">0.69.3</text>
+<text x="110" y="112" style="font-family:var(--mono);font-size:14px;fill:var(--ink);white-space:pre"><tspan style="fill:var(--ink)">#[doc = &quot;prophecy:</tspan><tspan style="fill:var(--del);font-weight:700">‸</tspan><tspan style="fill:var(--ink)">supersedes=Sink&quot;]</tspan></text>
+<text x="110" y="134" style="font-family:var(--sans);font-size:12.5px;fill:var(--del);text-anchor:start;font-weight:400">the seal went, and the author&#x27;s space with it</text>
+<text x="20" y="176" style="font-family:var(--sans);font-size:12.5px;fill:var(--key);text-anchor:start;font-weight:600">0.70.0</text>
+<text x="110" y="176" style="font-family:var(--mono);font-size:14px;fill:var(--ink);white-space:pre"><tspan style="fill:var(--ink)">#[doc = &quot;prophecy: supersedes=Sink&quot;]</tspan></text>
+<text x="110" y="198" style="font-family:var(--sans);font-size:12.5px;fill:var(--key);text-anchor:start;font-weight:400">the seal went, every other byte as it was,</text>
+<text x="110" y="216" style="font-family:var(--sans);font-size:12.5px;fill:var(--key);text-anchor:start;font-weight:400">in Python, Rust and TypeScript</text>
+<line x1="560" y1="20" x2="560" y2="280" style="stroke:var(--line);stroke-width:1"/>
+<text x="590" y="30" style="font-family:var(--sans);font-size:15px;fill:var(--ink);text-anchor:start;font-weight:600">a vision of sink.py, asked for src/archive</text>
+<rect x="590" y="50" width="130" height="38" rx="8" style="fill:var(--panel);stroke:var(--ink);stroke-width:1.5"/>
+<text x="655" y="74" style="font-family:var(--mono);font-size:13px;fill:var(--ink);text-anchor:middle;font-weight:400">vision: sink.py</text>
+<text x="700" y="128" style="font-family:var(--mono);font-size:14px;fill:var(--ink);text-anchor:start;font-weight:400">src/archive/</text>
+<text x="722" y="160" style="font-family:var(--mono);font-size:14px;fill:var(--ink);text-anchor:start;font-weight:400">sink.py</text>
+<text x="722" y="194" style="font-family:var(--mono);font-size:14px;fill:var(--ink);text-anchor:start;font-weight:400">store/</text>
+<text x="744" y="228" style="font-family:var(--mono);font-size:14px;fill:var(--ink);text-anchor:start;font-weight:400">sink.py</text>
+<path d="M670 88 C 670 140, 690 155, 716 155" style="stroke:var(--key);stroke-width:2;fill:none" marker-end="url(#d-head)"/>
+<path d="M620 88 C 620 210, 680 223, 738 223" style="stroke:var(--del);stroke-width:1.6;fill:none;stroke-dasharray:5 4" marker-end="url(#d-head)"/>
+<text x="800" y="156" style="font-family:var(--sans);font-size:12.5px;fill:var(--key);text-anchor:start;font-weight:600">0.70.0:</text>
+<text x="800" y="172" style="font-family:var(--sans);font-size:12.5px;fill:var(--key);text-anchor:start;font-weight:400">the path it names</text>
+<text x="822" y="224" style="font-family:var(--sans);font-size:12.5px;fill:var(--del);text-anchor:start;font-weight:600">0.69.3: a file</text>
+<text x="822" y="240" style="font-family:var(--sans);font-size:12.5px;fill:var(--del);text-anchor:start;font-weight:400">whose name ends so</text>
+<text x="590" y="272" style="font-family:var(--sans);font-size:12.5px;fill:var(--key);text-anchor:start;font-weight:400">a vision of new files only is placed where it names them too</text>
+</svg>
+</figure><p class="issues"><a href="https://github.com/raoulg/atlas/issues/258">#258</a>, <a href="https://github.com/raoulg/atlas/issues/267">#267</a></p></section><section><h2>The page and the agent keep their notes whole</h2><p>The page and your agent write the same notes. When both wrote at once, a note could vanish; now a lock between the two makes one wait for the other. <code>atlas serve</code> answers every request within bounds, and what changes something answers only its own page, never another website.</p><figure class="diagram"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 305" role="img" aria-label="Swimlanes: in 0.69.3 the page and the agent both read notes 1 and 2, write their own new note, and note 3 is lost; in 0.70.0 a lock makes the agent wait, and notes 1 to 4 are kept"><defs><marker id="d-head" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 L10 5 L0 10 z" style="fill:var(--ink-3)"/></marker></defs>
+<text x="20" y="28" style="font-family:var(--sans);font-size:15px;fill:var(--del);text-anchor:start;font-weight:600">0.69.3</text>
+<text x="20" y="75" style="font-family:var(--mono);font-size:13px;fill:var(--ink-2);text-anchor:start;font-weight:400">page</text>
+<line x1="110" y1="70" x2="460" y2="70" style="stroke:var(--line);stroke-width:1;fill:none;stroke-dasharray:2 4"/>
+<text x="20" y="155" style="font-family:var(--mono);font-size:13px;fill:var(--ink-2);text-anchor:start;font-weight:400">notes.json</text>
+<line x1="110" y1="150" x2="460" y2="150" style="stroke:var(--line);stroke-width:1;fill:none;stroke-dasharray:2 4"/>
+<text x="20" y="235" style="font-family:var(--mono);font-size:13px;fill:var(--ink-2);text-anchor:start;font-weight:400">agent</text>
+<line x1="110" y1="230" x2="460" y2="230" style="stroke:var(--line);stroke-width:1;fill:none;stroke-dasharray:2 4"/>
+<text x="500" y="28" style="font-family:var(--sans);font-size:15px;fill:var(--key);text-anchor:start;font-weight:600">0.70.0</text>
+<text x="500" y="75" style="font-family:var(--mono);font-size:13px;fill:var(--ink-2);text-anchor:start;font-weight:400">page</text>
+<line x1="590" y1="70" x2="940" y2="70" style="stroke:var(--line);stroke-width:1;fill:none;stroke-dasharray:2 4"/>
+<text x="500" y="155" style="font-family:var(--mono);font-size:13px;fill:var(--ink-2);text-anchor:start;font-weight:400">notes.json</text>
+<line x1="590" y1="150" x2="940" y2="150" style="stroke:var(--line);stroke-width:1;fill:none;stroke-dasharray:2 4"/>
+<text x="500" y="235" style="font-family:var(--mono);font-size:13px;fill:var(--ink-2);text-anchor:start;font-weight:400">agent</text>
+<line x1="590" y1="230" x2="940" y2="230" style="stroke:var(--line);stroke-width:1;fill:none;stroke-dasharray:2 4"/>
+<circle cx="140" cy="150" r="10" style="fill:var(--panel);stroke:var(--ink-2);stroke-width:1.6"/><text x="140" y="154.5" style="font-family:var(--mono);font-size:12px;fill:var(--ink-2);text-anchor:middle;font-weight:600">1</text>
+<circle cx="164" cy="150" r="10" style="fill:var(--panel);stroke:var(--ink-2);stroke-width:1.6"/><text x="164" y="154.5" style="font-family:var(--mono);font-size:12px;fill:var(--ink-2);text-anchor:middle;font-weight:600">2</text>
+<path d="M150 140 L165 80" style="stroke:var(--ink-3);stroke-width:1.2;fill:none" marker-end="url(#d-head)"/>
+<text x="172" y="84" style="font-family:var(--sans);font-size:12px;fill:var(--ink-3);text-anchor:start;font-weight:400">reads 1 2</text>
+<path d="M150 160 L175 220" style="stroke:var(--ink-3);stroke-width:1.2;fill:none" marker-end="url(#d-head)"/>
+<text x="182" y="226" style="font-family:var(--sans);font-size:12px;fill:var(--ink-3);text-anchor:start;font-weight:400">reads 1 2</text>
+<text x="268" y="64" style="font-family:var(--sans);font-size:12px;fill:var(--ink-2);text-anchor:start;font-weight:400">writes 1 2 3</text>
+<path d="M300 72 L300 132" style="stroke:var(--ink-3);stroke-width:1.2;fill:none" marker-end="url(#d-head)"/>
+<text x="346" y="250" style="font-family:var(--sans);font-size:12px;fill:var(--ink-2);text-anchor:start;font-weight:400">writes 1 2 4</text>
+<path d="M380 232 L380 168" style="stroke:var(--ink-3);stroke-width:1.2;fill:none" marker-end="url(#d-head)"/>
+<circle cx="390" cy="118" r="10" style="fill:var(--panel);stroke:var(--del);stroke-width:1.6;stroke-dasharray:3 2"/><text x="390" y="122.5" style="font-family:var(--mono);font-size:12px;fill:var(--del);text-anchor:middle;font-weight:600">3</text>
+<text x="404" y="104" style="font-family:var(--sans);font-size:12px;fill:var(--del);text-anchor:start;font-weight:600">lost</text>
+<circle cx="330" cy="150" r="10" style="fill:var(--panel);stroke:var(--ink-2);stroke-width:1.6"/><text x="330" y="154.5" style="font-family:var(--mono);font-size:12px;fill:var(--ink-2);text-anchor:middle;font-weight:600">1</text>
+<circle cx="354" cy="150" r="10" style="fill:var(--panel);stroke:var(--ink-2);stroke-width:1.6"/><text x="354" y="154.5" style="font-family:var(--mono);font-size:12px;fill:var(--ink-2);text-anchor:middle;font-weight:600">2</text>
+<circle cx="378" cy="150" r="10" style="fill:var(--panel);stroke:var(--ink-2);stroke-width:1.6"/><text x="378" y="154.5" style="font-family:var(--mono);font-size:12px;fill:var(--ink-2);text-anchor:middle;font-weight:600">4</text>
+<rect x="600" y="58" width="170" height="108" rx="6" style="fill:var(--key);fill-opacity:0.08;stroke:var(--key);stroke-width:1.2;stroke-dasharray:4 3"/>
+<text x="608" y="180" style="font-family:var(--mono);font-size:11.5px;fill:var(--key);text-anchor:start;font-weight:400">lock</text>
+<circle cx="620" cy="150" r="10" style="fill:var(--panel);stroke:var(--ink-2);stroke-width:1.6"/><text x="620" y="154.5" style="font-family:var(--mono);font-size:12px;fill:var(--ink-2);text-anchor:middle;font-weight:600">1</text>
+<circle cx="644" cy="150" r="10" style="fill:var(--panel);stroke:var(--ink-2);stroke-width:1.6"/><text x="644" y="154.5" style="font-family:var(--mono);font-size:12px;fill:var(--ink-2);text-anchor:middle;font-weight:600">2</text>
+<text x="612" y="84" style="font-family:var(--sans);font-size:12px;fill:var(--ink-2);text-anchor:start;font-weight:400">reads, writes 1 2 3</text>
+<path d="M660 90 L660 132" style="stroke:var(--ink-3);stroke-width:1.2;fill:none" marker-end="url(#d-head)"/>
+<line x1="620" y1="230" x2="780" y2="230" style="stroke:var(--key);stroke-width:1.4;fill:none;stroke-dasharray:3 3"/>
+<text x="640" y="250" style="font-family:var(--sans);font-size:12px;fill:var(--key);text-anchor:start;font-weight:400">waits</text>
+<rect x="790" y="134" width="140" height="108" rx="6" style="fill:var(--key);fill-opacity:0.08;stroke:var(--key);stroke-width:1.2;stroke-dasharray:4 3"/>
+<text x="800" y="226" style="font-family:var(--sans);font-size:12px;fill:var(--ink-2);text-anchor:start;font-weight:400">reads, writes</text>
+<path d="M840 214 L840 168" style="stroke:var(--ink-3);stroke-width:1.2;fill:none" marker-end="url(#d-head)"/>
+<circle cx="822" cy="150" r="10" style="fill:var(--panel);stroke:var(--key);stroke-width:1.6"/><text x="822" y="154.5" style="font-family:var(--mono);font-size:12px;fill:var(--key);text-anchor:middle;font-weight:600">1</text>
+<circle cx="846" cy="150" r="10" style="fill:var(--panel);stroke:var(--key);stroke-width:1.6"/><text x="846" y="154.5" style="font-family:var(--mono);font-size:12px;fill:var(--key);text-anchor:middle;font-weight:600">2</text>
+<circle cx="870" cy="150" r="10" style="fill:var(--panel);stroke:var(--key);stroke-width:1.6"/><text x="870" y="154.5" style="font-family:var(--mono);font-size:12px;fill:var(--key);text-anchor:middle;font-weight:600">3</text>
+<circle cx="894" cy="150" r="10" style="fill:var(--panel);stroke:var(--key);stroke-width:1.6"/><text x="894" y="154.5" style="font-family:var(--mono);font-size:12px;fill:var(--key);text-anchor:middle;font-weight:600">4</text>
+<text x="20" y="290" style="font-family:var(--sans);font-size:12.5px;fill:var(--ink-3);text-anchor:start;font-weight:400">the page and the agent are two processes; one advisory lock on notes.json holds between them. A notes file that does not read is left as it is.</text>
+</svg>
+</figure><p class="issues"><a href="https://github.com/raoulg/atlas/issues/259">#259</a>, <a href="https://github.com/raoulg/atlas/issues/260">#260</a></p></section><section><h2>A fault stays where it happens</h2><p>One panic inside ty, one MCP tool call that fails, one notebook that does not parse: in 0.69.3 any of them ended the whole run. Now that one file is read untyped, that one call answers an error, and everything else goes on.</p><figure class="diagram"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 280" role="img" aria-label="In 0.69.3 one panic in one file stopped the whole run; in 0.70.0 a fault stays in its compartment: that file untyped, that call an error"><defs><marker id="d-head" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 L10 5 L0 10 z" style="fill:var(--ink-3)"/></marker></defs>
+<path d="M30 70 L430 70 L390 190 L70 190 Z" style="stroke:var(--ink-2);stroke-width:2;fill:none"/><text x="30" y="40" style="font-family:var(--sans);font-size:15px;fill:var(--del);text-anchor:start;font-weight:600">0.69.3: one hull</text>
+<path d="M48 120 L412 120 L390 190 L70 190 Z" style="stroke:var(--del);stroke-width:0;fill:var(--del)"/>
+<path d="M50 118 L410 118 L390 190 L70 190 Z" style="fill:var(--del);fill-opacity:.22;stroke:none"/>
+<text x="230" y="112" style="font-family:var(--sans);font-size:12.5px;fill:var(--del);text-anchor:middle;font-weight:400">a panic in ty on one file</text>
+<text x="230" y="234" style="font-family:var(--sans);font-size:13px;fill:var(--del);text-anchor:middle;font-weight:600">the whole run stops</text>
+<path d="M520 70 L930 70 L890 190 L560 190 Z" style="stroke:var(--ink-2);stroke-width:2;fill:none"/><text x="520" y="40" style="font-family:var(--sans);font-size:15px;fill:var(--key);text-anchor:start;font-weight:600">0.70.0: compartments</text>
+<path d="M543 140 L626 140 L626 190 L560 190 Z" style="fill:var(--del);fill-opacity:.22"/>
+<text x="593.0" y="112" style="font-family:var(--sans);font-size:12px;fill:var(--ink-2);text-anchor:middle;font-weight:400">a file</text>
+<line x1="626.0" y1="70" x2="626.0" y2="190" style="stroke:var(--ink-2);stroke-width:1.6;fill:none"/>
+<text x="659.0" y="112" style="font-family:var(--sans);font-size:12px;fill:var(--ink-2);text-anchor:middle;font-weight:400">a notebook</text>
+<line x1="692.0" y1="70" x2="692.0" y2="190" style="stroke:var(--ink-2);stroke-width:1.6;fill:none"/>
+<text x="725.0" y="112" style="font-family:var(--sans);font-size:12px;fill:var(--ink-2);text-anchor:middle;font-weight:400">an MCP call</text>
+<line x1="758.0" y1="70" x2="758.0" y2="190" style="stroke:var(--ink-2);stroke-width:1.6;fill:none"/>
+<text x="791.0" y="112" style="font-family:var(--sans);font-size:12px;fill:var(--ink-2);text-anchor:middle;font-weight:400">a request</text>
+<line x1="824.0" y1="70" x2="824.0" y2="190" style="stroke:var(--ink-2);stroke-width:1.6;fill:none"/>
+<text x="857.0" y="112" style="font-family:var(--sans);font-size:12px;fill:var(--ink-2);text-anchor:middle;font-weight:400">a drawing</text>
+<text x="590" y="174" style="font-family:var(--sans);font-size:11.5px;fill:var(--del);text-anchor:middle;font-weight:600">untyped</text>
+<text x="725" y="234" style="font-family:var(--sans);font-size:13px;fill:var(--key);text-anchor:middle;font-weight:600">that file untyped, that call an error: the rest is read</text>
+<text x="30" y="266" style="font-family:var(--sans);font-size:12.5px;fill:var(--ink-3);text-anchor:start;font-weight:400">a hull is a run of Atlas, a compartment one file, one tool call, one request, one drawing; water is a panic or a file that does not parse</text>
+</svg>
+</figure><p class="issues"><a href="https://github.com/raoulg/atlas/issues/261">#261</a></p></section><section><h2>Letters past z, and an exit status CI can read</h2><p>Steps past <code>z</code> go on as <code>aa</code>, <code>ab</code>, as a spreadsheet names its columns, so no label names two branches. <code>atlas-code check</code> exits 1 when it has questions and 2 when it could not read.</p><figure class="diagram"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 275" role="img" aria-label="Step letters past z go on as aa, ab in 0.70.0 where 0.69.3 began at a again; atlas check exits 0, 1 or 2, where 0.69.3 gave 1 for a failure too"><defs><marker id="d-head" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 L10 5 L0 10 z" style="fill:var(--ink-3)"/></marker></defs>
+<text x="20" y="30" style="font-family:var(--sans);font-size:15px;fill:var(--ink);text-anchor:start;font-weight:600">a match of 30 arms, step 2</text>
+<text x="20" y="62" style="font-family:var(--sans);font-size:13px;fill:var(--del);text-anchor:start;font-weight:600">0.69.3</text>
+<rect x="20" y="79" width="70" height="24" rx="12" style="fill:var(--panel);fill-opacity:1;stroke:var(--ink-3);stroke-width:1.5"/><text x="55" y="96" style="font-family:var(--mono);font-size:13px;fill:var(--ink-3);text-anchor:middle;font-weight:600">2y</text>
+<rect x="20" y="113" width="70" height="24" rx="12" style="fill:var(--panel);fill-opacity:1;stroke:var(--ink-3);stroke-width:1.5"/><text x="55" y="130" style="font-family:var(--mono);font-size:13px;fill:var(--ink-3);text-anchor:middle;font-weight:600">2z</text>
+<rect x="20" y="147" width="70" height="24" rx="12" style="fill:var(--panel);fill-opacity:1;stroke:var(--del);stroke-width:1.5"/><text x="55" y="164" style="font-family:var(--mono);font-size:13px;fill:var(--del);text-anchor:middle;font-weight:600">2a</text>
+<rect x="20" y="181" width="70" height="24" rx="12" style="fill:var(--panel);fill-opacity:1;stroke:var(--del);stroke-width:1.5"/><text x="55" y="198" style="font-family:var(--mono);font-size:13px;fill:var(--del);text-anchor:middle;font-weight:600">2b</text>
+<text x="260" y="62" style="font-family:var(--sans);font-size:13px;fill:var(--key);text-anchor:start;font-weight:600">0.70.0</text>
+<rect x="260" y="79" width="70" height="24" rx="12" style="fill:var(--panel);fill-opacity:1;stroke:var(--ink-3);stroke-width:1.5"/><text x="295" y="96" style="font-family:var(--mono);font-size:13px;fill:var(--ink-3);text-anchor:middle;font-weight:600">2y</text>
+<rect x="260" y="113" width="70" height="24" rx="12" style="fill:var(--panel);fill-opacity:1;stroke:var(--ink-3);stroke-width:1.5"/><text x="295" y="130" style="font-family:var(--mono);font-size:13px;fill:var(--ink-3);text-anchor:middle;font-weight:600">2z</text>
+<rect x="260" y="147" width="70" height="24" rx="12" style="fill:var(--panel);fill-opacity:1;stroke:var(--key);stroke-width:1.5"/><text x="295" y="164" style="font-family:var(--mono);font-size:13px;fill:var(--key);text-anchor:middle;font-weight:600">2aa</text>
+<rect x="260" y="181" width="70" height="24" rx="12" style="fill:var(--panel);fill-opacity:1;stroke:var(--key);stroke-width:1.5"/><text x="295" y="198" style="font-family:var(--mono);font-size:13px;fill:var(--key);text-anchor:middle;font-weight:600">2ab</text>
+<text x="100" y="166" style="font-family:var(--sans);font-size:12.5px;fill:var(--del);text-anchor:start;font-weight:400">= arm 1 again</text>
+<text x="340" y="166" style="font-family:var(--sans);font-size:12.5px;fill:var(--key);text-anchor:start;font-weight:400">arm 27</text>
+<text x="260" y="252" style="font-family:var(--sans);font-size:12.5px;fill:var(--key);text-anchor:start;font-weight:400">an override of a lettered step: 2a-a</text>
+<line x1="500" y1="20" x2="500" y2="270" style="stroke:var(--line);stroke-width:1;fill:none"/>
+<text x="530" y="30" style="font-family:var(--sans);font-size:15px;fill:var(--ink);text-anchor:start;font-weight:600">atlas-code check, and what CI reads</text>
+<rect x="530" y="54" width="170" height="32" rx="8" style="fill:var(--panel);fill-opacity:1;stroke:var(--line);stroke-width:1.2"/>
+<text x="615" y="75" style="font-family:var(--sans);font-size:13px;fill:var(--ink-2);text-anchor:middle;font-weight:400">nothing to ask</text>
+<line x1="700" y1="70" x2="860" y2="70" style="stroke:var(--key);stroke-width:1.6;fill:none" marker-end="url(#d-head)"/>
+<circle cx="884" cy="70" r="17" style="fill:var(--panel);stroke:var(--key);stroke-width:2"/>
+<text x="884" y="75" style="font-family:var(--mono);font-size:15px;fill:var(--key);text-anchor:middle;font-weight:700">0</text>
+<rect x="530" y="114" width="170" height="32" rx="8" style="fill:var(--panel);fill-opacity:1;stroke:var(--line);stroke-width:1.2"/>
+<text x="615" y="135" style="font-family:var(--sans);font-size:13px;fill:var(--ink-2);text-anchor:middle;font-weight:400">questions</text>
+<line x1="700" y1="130" x2="860" y2="130" style="stroke:var(--key);stroke-width:1.6;fill:none" marker-end="url(#d-head)"/>
+<circle cx="884" cy="130" r="17" style="fill:var(--panel);stroke:var(--key);stroke-width:2"/>
+<text x="884" y="135" style="font-family:var(--mono);font-size:15px;fill:var(--key);text-anchor:middle;font-weight:700">1</text>
+<rect x="530" y="174" width="170" height="32" rx="8" style="fill:var(--panel);fill-opacity:1;stroke:var(--line);stroke-width:1.2"/>
+<text x="615" y="195" style="font-family:var(--sans);font-size:13px;fill:var(--ink-2);text-anchor:middle;font-weight:400">could not read</text>
+<line x1="700" y1="190" x2="860" y2="190" style="stroke:var(--key);stroke-width:1.6;fill:none" marker-end="url(#d-head)"/>
+<circle cx="884" cy="190" r="17" style="fill:var(--panel);stroke:var(--key);stroke-width:2"/>
+<text x="884" y="195" style="font-family:var(--mono);font-size:15px;fill:var(--key);text-anchor:middle;font-weight:700">2</text>
+<path d="M700 190 C 760 190, 790 150, 860 136" style="stroke:var(--del);stroke-width:1.6;fill:none;stroke-dasharray:5 4" marker-end="url(#d-head)"/>
+<text x="735" y="222" style="font-family:var(--sans);font-size:12.5px;fill:var(--del);text-anchor:start;font-weight:400">0.69.3: 1 as well</text>
+<text x="530" y="252" style="font-family:var(--sans);font-size:12.5px;fill:var(--key);text-anchor:start;font-weight:400">and a cloned repository is removed on every exit</text>
+</svg>
+</figure><p class="issues"><a href="https://github.com/raoulg/atlas/issues/265">#265</a>, <a href="https://github.com/raoulg/atlas/issues/262">#262</a></p></section><section><h2>Setting a finding aside, in check --help</h2><p>A decision sets a finding of <code>atlas-code check</code> aside with its reason (0.68.0): a comment in the code, or a line of <code>.atlasignore</code> at the top of the repository, a pattern as <code>.gitignore</code> writes one, the principles it answers and the reason after <code>#</code>. <code>atlas-code check --help</code> now shows both forms and the file&#x27;s format, and so does the guide.</p><pre><code>src/sim/particles.py  changes   # in place for the frame rate, see docs/perf.md
+src/legacy/**                   # ported pipeline, rewrite planned</code></pre><figure class="diagram"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 920 330" role="img" aria-label="atlas check finds 16 questions; two decisions answer 4 of them, which are set aside with their reason; 12 stay open; a decision that answers nothing is asked about"><defs><marker id="d-head" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 L10 5 L0 10 z" style="fill:var(--ink-3)"/></marker></defs>
+  <g style="font-family:var(--sans);font-size:15px;fill:var(--ink-2)">
+    <text x="20" y="34">atlas check finds</text>
+    <text x="640" y="34">still asks</text>
+    <text x="640" y="214">set aside, each with its reason</text>
+  </g>
+  <g style="font-family:var(--mono);font-size:13px">
+    <!-- sixteen questions found -->
+    <g style="fill:none;stroke:var(--accent);stroke-width:2">
+      <circle cx="40" cy="70" r="13"/><circle cx="76" cy="70" r="13"/><circle cx="112" cy="70" r="13"/><circle cx="148" cy="70" r="13"/>
+      <circle cx="40" cy="106" r="13"/><circle cx="76" cy="106" r="13"/><circle cx="112" cy="106" r="13"/><circle cx="148" cy="106" r="13"/>
+      <circle cx="40" cy="142" r="13"/><circle cx="76" cy="142" r="13"/><circle cx="112" cy="142" r="13"/><circle cx="148" cy="142" r="13"/>
+      <circle cx="40" cy="178" r="13"/><circle cx="76" cy="178" r="13"/><circle cx="112" cy="178" r="13"/><circle cx="148" cy="178" r="13"/>
+    </g>
+    <g style="fill:var(--accent);font-weight:600;text-anchor:middle">
+      <text x="40" y="75">?</text><text x="76" y="75">?</text><text x="112" y="75">?</text><text x="148" y="75">?</text>
+      <text x="40" y="111">?</text><text x="76" y="111">?</text><text x="112" y="111">?</text><text x="148" y="111">?</text>
+      <text x="40" y="147">?</text><text x="76" y="147">?</text><text x="112" y="147">?</text><text x="148" y="147">?</text>
+      <text x="40" y="183">?</text><text x="76" y="183">?</text><text x="112" y="183">?</text><text x="148" y="183">?</text>
+    </g>
+    <text x="20" y="222" style="fill:var(--ink-3)">16 questions</text>
+
+    <!-- the decisions, written beside the code -->
+    <line x1="182" y1="124" x2="612" y2="124" style="stroke:var(--ink-3);stroke-width:1.5" marker-end="url(#d-head)"/>
+    <rect x="214" y="66" width="370" height="30" rx="3" style="fill:var(--bg);stroke:var(--line)"/>
+    <text x="226" y="86" style="fill:var(--ink)"># atlas: ignore[changes] <tspan style="fill:var(--ink-2)">in place, by design</tspan></text>
+    <rect x="214" y="152" width="370" height="30" rx="3" style="fill:var(--bg);stroke:var(--line)"/>
+    <text x="226" y="172" style="fill:var(--ink-3)">.atlasignore  <tspan style="fill:var(--ink)">src/legacy/**</tspan>  <tspan style="fill:var(--ink-2)"># rewrite planned</tspan></text>
+    <text x="226" y="118" style="font-family:var(--sans);font-size:13px;fill:var(--ink-3)">a decision in the code, or for a path</text>
+
+    <!-- twelve still open -->
+    <g style="fill:none;stroke:var(--accent);stroke-width:2">
+      <circle cx="660" cy="70" r="13"/><circle cx="696" cy="70" r="13"/><circle cx="732" cy="70" r="13"/><circle cx="768" cy="70" r="13"/><circle cx="804" cy="70" r="13"/><circle cx="840" cy="70" r="13"/>
+      <circle cx="660" cy="106" r="13"/><circle cx="696" cy="106" r="13"/><circle cx="732" cy="106" r="13"/><circle cx="768" cy="106" r="13"/><circle cx="804" cy="106" r="13"/><circle cx="840" cy="106" r="13"/>
+    </g>
+    <g style="fill:var(--accent);font-weight:600;text-anchor:middle">
+      <text x="660" y="75">?</text><text x="696" y="75">?</text><text x="732" y="75">?</text><text x="768" y="75">?</text><text x="804" y="75">?</text><text x="840" y="75">?</text>
+      <text x="660" y="111">?</text><text x="696" y="111">?</text><text x="732" y="111">?</text><text x="768" y="111">?</text><text x="804" y="111">?</text><text x="840" y="111">?</text>
+    </g>
+    <text x="640" y="150" style="fill:var(--ink-3)">12 questions</text>
+
+    <!-- four set aside -->
+    <g style="fill:none;stroke:var(--ink-3);stroke-width:1.5;stroke-dasharray:3 3">
+      <circle cx="660" cy="246" r="13"/><circle cx="696" cy="246" r="13"/><circle cx="732" cy="246" r="13"/><circle cx="768" cy="246" r="13"/>
+    </g>
+    <g style="fill:var(--ink-3);text-anchor:middle">
+      <text x="660" y="251">✓</text><text x="696" y="251">✓</text><text x="732" y="251">✓</text><text x="768" y="251">✓</text>
+    </g>
+    <text x="640" y="290" style="fill:var(--ink-3)">12 questions, 4 set aside</text>
+
+    <!-- a decision that answers nothing is itself asked -->
+    <rect x="214" y="250" width="370" height="30" rx="3" style="fill:var(--bg);stroke:var(--accent);stroke-dasharray:4 3"/>
+    <text x="226" y="270" style="fill:var(--ink-3)">.atlasignore  <tspan style="fill:var(--ink)">src/gone/**</tspan>  <tspan style="fill:var(--ink-2)"># removed</tspan></text>
+    <text x="226" y="306" style="font-family:var(--sans);font-size:14px;fill:var(--accent)">? It covers no finding: is the decision still needed?</text>
+  </g>
+</svg>
+</figure><p class="issues"><a href="https://github.com/raoulg/atlas/issues/311">#311</a></p></section><section><h2>Atlas measures itself, every night</h2><p>Every night Atlas builds itself, reads itself and a handful of public programs, cold and warm, and runs its tests, and keeps the numbers. A night that is slower than the ones before is only a reason to look: the same run measures that commit against the last good one, turn and turn about on the same machine. Only what that reproduces is reported, and its size says how urgent it is. Every Monday <code>next</code> is held against the last release, so that creep shows too, and any stretch of history can be searched for the landing that made it slower. It all runs at night, so no commit pays for it.</p><figure class="diagram"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 325" role="img" aria-label="A night past the band is only a reason to measure again: the same run measures the last commit within the band and tonight interleaved on one runner; not reproduced is the runner, reproduced small opens an issue, reproduced large is bisected and an urgent issue names the landing. Every Monday next is measured against the last release; by hand, any range is bisected."><defs><marker id="d-head" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 L10 5 L0 10 z" style="fill:var(--ink-3)"/></marker></defs>
+<text x="20" y="28" style="font-family:var(--sans);font-size:14px;fill:var(--ink);text-anchor:start;font-weight:600">every night</text>
+<rect x="20" y="104.5" width="200" height="31.5" rx="4" style="fill:var(--key);fill-opacity:0.1;stroke:var(--key);stroke-width:0"/>
+<polyline points="30,122 60,115 90,122 120,122 150,115 180,122 210,80" style="fill:none;stroke:var(--ink-3);stroke-width:1.3"/>
+<circle cx="30" cy="122" r="3.5" style="fill:var(--ink-2)"/>
+<circle cx="60" cy="115" r="3.5" style="fill:var(--ink-2)"/>
+<circle cx="90" cy="122" r="3.5" style="fill:var(--ink-2)"/>
+<circle cx="120" cy="122" r="3.5" style="fill:var(--ink-2)"/>
+<circle cx="150" cy="115" r="3.5" style="fill:var(--ink-2)"/>
+<circle cx="180" cy="122" r="3.5" style="fill:var(--ink-2)"/>
+<circle cx="210" cy="80" r="5" style="fill:var(--edit)"/>
+<text x="210" y="68" style="font-family:var(--sans);font-size:12px;fill:var(--edit);text-anchor:middle;font-weight:600">suspect</text>
+<text x="180" y="148" style="font-family:var(--mono);font-size:13px;fill:var(--ink-2);text-anchor:middle;font-weight:700">A</text>
+<text x="210" y="148" style="font-family:var(--mono);font-size:13px;fill:var(--edit);text-anchor:middle;font-weight:700">B</text>
+<text x="20" y="182" style="font-family:var(--sans);font-size:12px;fill:var(--ink-3);text-anchor:start;font-weight:400">past the band: a reason to look, no more</text>
+<path d="M230 110 L268 110" style="stroke:var(--ink-3);stroke-width:1.5;fill:none" marker-end="url(#d-head)"/>
+<text x="278" y="28" style="font-family:var(--sans);font-size:14px;fill:var(--ink);text-anchor:start;font-weight:600">the same run measures again, on this runner</text>
+<rect x="280" y="92" width="24" height="36" rx="5" style="fill:var(--panel);fill-opacity:1;stroke:var(--ink-3);stroke-width:1.4"/>
+<text x="292" y="115" style="font-family:var(--mono);font-size:13px;fill:var(--ink-2);text-anchor:middle;font-weight:700">A</text>
+<rect x="310" y="92" width="24" height="36" rx="5" style="fill:var(--panel);fill-opacity:1;stroke:var(--edit);stroke-width:1.4"/>
+<text x="322" y="115" style="font-family:var(--mono);font-size:13px;fill:var(--edit);text-anchor:middle;font-weight:700">B</text>
+<rect x="340" y="92" width="24" height="36" rx="5" style="fill:var(--panel);fill-opacity:1;stroke:var(--ink-3);stroke-width:1.4"/>
+<text x="352" y="115" style="font-family:var(--mono);font-size:13px;fill:var(--ink-2);text-anchor:middle;font-weight:700">A</text>
+<rect x="370" y="92" width="24" height="36" rx="5" style="fill:var(--panel);fill-opacity:1;stroke:var(--edit);stroke-width:1.4"/>
+<text x="382" y="115" style="font-family:var(--mono);font-size:13px;fill:var(--edit);text-anchor:middle;font-weight:700">B</text>
+<rect x="400" y="92" width="24" height="36" rx="5" style="fill:var(--panel);fill-opacity:1;stroke:var(--ink-3);stroke-width:1.4"/>
+<text x="412" y="115" style="font-family:var(--mono);font-size:13px;fill:var(--ink-2);text-anchor:middle;font-weight:700">A</text>
+<rect x="430" y="92" width="24" height="36" rx="5" style="fill:var(--panel);fill-opacity:1;stroke:var(--edit);stroke-width:1.4"/>
+<text x="442" y="115" style="font-family:var(--mono);font-size:13px;fill:var(--edit);text-anchor:middle;font-weight:700">B</text>
+<rect x="460" y="92" width="24" height="36" rx="5" style="fill:var(--panel);fill-opacity:1;stroke:var(--ink-3);stroke-width:1.4"/>
+<text x="472" y="115" style="font-family:var(--mono);font-size:13px;fill:var(--ink-2);text-anchor:middle;font-weight:700">A</text>
+<rect x="490" y="92" width="24" height="36" rx="5" style="fill:var(--panel);fill-opacity:1;stroke:var(--edit);stroke-width:1.4"/>
+<text x="502" y="115" style="font-family:var(--mono);font-size:13px;fill:var(--edit);text-anchor:middle;font-weight:700">B</text>
+<rect x="520" y="92" width="24" height="36" rx="5" style="fill:var(--panel);fill-opacity:1;stroke:var(--ink-3);stroke-width:1.4"/>
+<text x="532" y="115" style="font-family:var(--mono);font-size:13px;fill:var(--ink-2);text-anchor:middle;font-weight:700">A</text>
+<rect x="550" y="92" width="24" height="36" rx="5" style="fill:var(--panel);fill-opacity:1;stroke:var(--edit);stroke-width:1.4"/>
+<text x="562" y="115" style="font-family:var(--mono);font-size:13px;fill:var(--edit);text-anchor:middle;font-weight:700">B</text>
+<text x="278" y="152" style="font-family:var(--sans);font-size:12px;fill:var(--ink-2);text-anchor:start;font-weight:400">A: the last commit within the band; B: tonight</text>
+<text x="278" y="170" style="font-family:var(--sans);font-size:12px;fill:var(--ink-3);text-anchor:start;font-weight:400">what the runner does to one, it does to the other</text>
+<text x="278" y="188" style="font-family:var(--sans);font-size:12px;fill:var(--ink-3);text-anchor:start;font-weight:400">every B past every A: reproduced (1 in 252 by chance)</text>
+<path d="M582 110 C 610 110, 610 56, 640 56" style="stroke:var(--ink-3);stroke-width:1.5;fill:none" marker-end="url(#d-head)"/>
+<path d="M582 110 L640 110" style="stroke:var(--ink-3);stroke-width:1.5;fill:none" marker-end="url(#d-head)"/>
+<path d="M582 110 C 610 110, 610 164, 640 164" style="stroke:var(--ink-3);stroke-width:1.5;fill:none" marker-end="url(#d-head)"/>
+<rect x="645" y="36" width="295" height="40" rx="8" style="fill:var(--panel);fill-opacity:1;stroke:var(--ink-3);stroke-width:1.6"/>
+<text x="657" y="53" style="font-family:var(--sans);font-size:13px;fill:var(--ink-3);text-anchor:start;font-weight:600">not reproduced</text>
+<text x="657" y="69" style="font-family:var(--sans);font-size:12px;fill:var(--ink-2);text-anchor:start;font-weight:400">the runner: a line in the summary</text>
+<rect x="645" y="90" width="295" height="40" rx="8" style="fill:var(--panel);fill-opacity:1;stroke:var(--key);stroke-width:1.6"/>
+<text x="657" y="107" style="font-family:var(--sans);font-size:13px;fill:var(--key);text-anchor:start;font-weight:600">reproduced, below ×1.5</text>
+<text x="657" y="123" style="font-family:var(--sans);font-size:12px;fill:var(--ink-2);text-anchor:start;font-weight:400">an issue: find out where it came from</text>
+<rect x="645" y="144" width="295" height="40" rx="8" style="fill:var(--panel);fill-opacity:1;stroke:var(--del);stroke-width:1.6"/>
+<text x="657" y="161" style="font-family:var(--sans);font-size:13px;fill:var(--del);text-anchor:start;font-weight:600">reproduced, ×1.5 or more</text>
+<text x="657" y="177" style="font-family:var(--sans);font-size:12px;fill:var(--ink-2);text-anchor:start;font-weight:400">bisected now: an urgent issue names the landing</text>
+<line x1="20" y1="212" x2="940" y2="212" style="stroke:var(--line);stroke-width:1"/>
+<text x="20" y="240" style="font-family:var(--sans);font-size:14px;fill:var(--ink);text-anchor:start;font-weight:600">every Monday</text>
+<rect x="20" y="252" width="120" height="30" rx="8" style="fill:var(--panel);fill-opacity:1;stroke:var(--ink-3);stroke-width:1.3"/>
+<text x="80" y="272" style="font-family:var(--sans);font-size:12.5px;fill:var(--ink-2);text-anchor:middle;font-weight:400">last release</text>
+<rect x="300" y="252" width="90" height="30" rx="8" style="fill:var(--panel);fill-opacity:1;stroke:var(--edit);stroke-width:1.5"/>
+<text x="345" y="272" style="font-family:var(--mono);font-size:12.5px;fill:var(--edit);text-anchor:middle;font-weight:700">next</text>
+<path d="M142 267 L296 267" style="stroke:var(--key);stroke-width:1.4;fill:none;stroke-dasharray:4 3" marker-end="url(#d-head)"/>
+<text x="220" y="260" style="font-family:var(--mono);font-size:11.5px;fill:var(--key);text-anchor:middle;font-weight:400">A B A B</text>
+<text x="20" y="304" style="font-family:var(--sans);font-size:12px;fill:var(--ink-3);text-anchor:start;font-weight:400">creep of a few percent a landing, which no night shows</text>
+<text x="500" y="240" style="font-family:var(--sans);font-size:14px;fill:var(--ink);text-anchor:start;font-weight:600">by hand, looking back</text>
+<circle cx="510" cy="267" r="6" style="fill:var(--panel);stroke:var(--ink-3);stroke-width:1.3"/>
+<line x1="516" y1="267" x2="566" y2="267" style="stroke:var(--line);stroke-width:1.3"/>
+<circle cx="572" cy="267" r="6" style="fill:var(--panel);stroke:var(--ink-3);stroke-width:1.3"/>
+<line x1="578" y1="267" x2="628" y2="267" style="stroke:var(--line);stroke-width:1.3"/>
+<circle cx="634" cy="267" r="6" style="fill:var(--panel);stroke:var(--ink-3);stroke-width:1.3"/>
+<line x1="640" y1="267" x2="690" y2="267" style="stroke:var(--line);stroke-width:1.3"/>
+<circle cx="696" cy="267" r="6" style="fill:var(--panel);stroke:var(--del);stroke-width:2.2"/>
+<line x1="702" y1="267" x2="752" y2="267" style="stroke:var(--line);stroke-width:1.3"/>
+<circle cx="758" cy="267" r="6" style="fill:var(--panel);stroke:var(--ink-3);stroke-width:1.3"/>
+<line x1="764" y1="267" x2="814" y2="267" style="stroke:var(--line);stroke-width:1.3"/>
+<circle cx="820" cy="267" r="6" style="fill:var(--panel);stroke:var(--ink-3);stroke-width:1.3"/>
+<text x="510" y="292" style="font-family:var(--sans);font-size:11.5px;fill:var(--ink-3);text-anchor:middle;font-weight:400">from</text>
+<text x="820" y="292" style="font-family:var(--sans);font-size:11.5px;fill:var(--ink-3);text-anchor:middle;font-weight:400">to</text>
+<text x="696" y="250" style="font-family:var(--sans);font-size:12px;fill:var(--del);text-anchor:middle;font-weight:600">this landing</text>
+<text x="500" y="312" style="font-family:var(--sans);font-size:12px;fill:var(--ink-3);text-anchor:start;font-weight:400">30 s to 45 s in a week: the landing, or each landing&#x27;s share</text>
+</svg>
+</figure><div class="bars"><div class="bar"><span class="l">Linking Atlas&#x27;s own code</span><div class="v" style="width:82.00%"><span>22 s</span></div></div><div class="bar"><span class="l">Linking the libraries it calls</span><div class="v" style="width:54.05%"><span>14.5 s</span></div></div><div class="bar"><span class="l">What each route runs (flow)</span><div class="v" style="width:10.06%"><span>2.7 s</span></div></div><div class="bar"><span class="l">Everything else</span><div class="v" style="width:0.40%"><span>0.1 s</span></div></div><p class="cap">Where a cold reading of Atlas itself spent its time before the next point, release build, median of three rounds (<a href="https://github.com/raoulg/atlas/issues/270">#270</a>); what is left to do is <a href="https://github.com/raoulg/atlas/issues/288">#288</a> and <a href="https://github.com/raoulg/atlas/issues/290">#290</a>.</p></div><p class="issues"><a href="https://github.com/raoulg/atlas/issues/271">#271</a>, <a href="https://github.com/raoulg/atlas/issues/295">#295</a>, <a href="https://github.com/raoulg/atlas/issues/270">#270</a></p></section><section><h2>A view of Atlas in about a second</h2><p>Drawing a view worked out what every function reads back and changes again and again, each time copying what it already knew; reading a program walked each function body again for every name it followed. Now each answer is kept once and shared, and a body is read once for every question its steps ask. The picture is the same, byte for byte; on Atlas itself a warm view takes about a fifth of the time and a third of the memory (561 MB at its peak before, 211 MB after), and a cold one about a third of the time.</p><div class="bars"><div class="bar"><span class="l">Cold view of Atlas, before</span><div class="v" style="width:82.00%"><span>55 s</span></div></div><div class="bar"><span class="l">Cold view of Atlas, 0.70.0</span><div class="v" style="width:29.82%"><span>20 s</span></div></div><div class="bar"><span class="l">Warm view of Atlas, before</span><div class="v" style="width:8.80%"><span>5.9 s</span></div></div><div class="bar"><span class="l">Warm view of Atlas, 0.70.0</span><div class="v" style="width:1.49%"><span>1.0 s</span></div></div><p class="cap"><code>atlas-code view</code> of Atlas itself, release builds, before and after <a href="https://github.com/raoulg/atlas/issues/287">#287</a> and <a href="https://github.com/raoulg/atlas/issues/289">#289</a>, the median of three to five runs on a shared machine; measured again on a quiet one with the release.</p></div><p class="issues"><a href="https://github.com/raoulg/atlas/issues/289">#289</a>, <a href="https://github.com/raoulg/atlas/issues/287">#287</a></p></section><section><h2>A picture too dense to read an order in lays out at once</h2><p>Within a layer, Atlas keeps the boxes in the order the code gives them: types by name, steps in the order they are called. ELK keeps that order by sorting each layer against every line that passes through it, which grows with the square of the layer. In the picture of a route or a package, at most about 200 lines, that costs nothing; in the overview of atlas-engine with its tests open, 750 lines and too many boxes to read an order in, it took ten seconds. A picture of more than 400 lines is now laid out by its crossings alone and opens in about a second; every smaller picture is drawn as before, pixel for pixel.</p><figure class="diagram"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 380" role="img" aria-label="Layout time of 64 views of Atlas and vectormesh against their lines: with and without model order they take the same time up to 214 lines; the view of atlas-engine with its tests open, about 750 lines, took 21 seconds with model order and takes about one second without. 0.70.0 keeps model order up to 400 lines."><defs><marker id="d-head" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 L10 5 L0 10 z" style="fill:var(--ink-3)"/></marker></defs>
+<defs><marker id="down" viewBox="0 0 8 8" refX="4" refY="7" markerWidth="8" markerHeight="8" orient="auto"><path d="M0,0 L8,0 L4,8 Z" style="fill:var(--ink-2)"/></marker></defs>
+<line x1="78" x2="936" y1="287.7" y2="287.7" style="stroke:var(--line);stroke-width:1"/>
+<text x="70.0" y="291.7" style="font-family:var(--mono);font-size:12px;fill:var(--ink-3);text-anchor:end;font-weight:400">10 ms</text>
+<line x1="78" x2="936" y1="218.4" y2="218.4" style="stroke:var(--line);stroke-width:1"/>
+<text x="70.0" y="222.4" style="font-family:var(--mono);font-size:12px;fill:var(--ink-3);text-anchor:end;font-weight:400">100 ms</text>
+<line x1="78" x2="936" y1="149.1" y2="149.1" style="stroke:var(--line);stroke-width:1"/>
+<text x="70.0" y="153.1" style="font-family:var(--mono);font-size:12px;fill:var(--ink-3);text-anchor:end;font-weight:400">1 s</text>
+<line x1="78" x2="936" y1="79.7" y2="79.7" style="stroke:var(--line);stroke-width:1"/>
+<text x="70.0" y="83.7" style="font-family:var(--mono);font-size:12px;fill:var(--ink-3);text-anchor:end;font-weight:400">10 s</text>
+<text x="78.0" y="342.0" style="font-family:var(--mono);font-size:12px;fill:var(--ink-3);text-anchor:middle;font-weight:400">1</text>
+<text x="348.1" y="342.0" style="font-family:var(--mono);font-size:12px;fill:var(--ink-3);text-anchor:middle;font-weight:400">10</text>
+<text x="618.3" y="342.0" style="font-family:var(--mono);font-size:12px;fill:var(--ink-3);text-anchor:middle;font-weight:400">100</text>
+<text x="888.4" y="342.0" style="font-family:var(--mono);font-size:12px;fill:var(--ink-3);text-anchor:middle;font-weight:400">1000</text>
+<text x="507.0" y="368.0" style="font-family:var(--sans);font-size:13px;fill:var(--ink-2);text-anchor:middle;font-weight:400">lines in the view</text>
+<rect x="780.9" y="38" width="155.1" height="286" style="fill:var(--key);fill-opacity:0.06"/>
+<line x1="780.9" x2="780.9" y1="38" y2="324" style="stroke:var(--ink-3);stroke-width:1.2;stroke-dasharray:5 4"/>
+<text x="772.9" y="298.0" style="font-family:var(--sans);font-size:12px;fill:var(--ink-2);text-anchor:end;font-weight:600">order kept</text>
+<text x="788.9" y="298.0" style="font-family:var(--sans);font-size:12px;fill:var(--ink-2);text-anchor:start;font-weight:600">crossings alone</text>
+<text x="772.9" y="314.0" style="font-family:var(--sans);font-size:12px;fill:var(--ink-3);text-anchor:end;font-weight:400">up to 400 lines</text>
+<text x="788.9" y="314.0" style="font-family:var(--sans);font-size:12px;fill:var(--ink-3);text-anchor:start;font-weight:400">beyond 400</text>
+<circle cx="440.6" cy="241.8" r="4" style="fill:var(--key);fill-opacity:0.75"/>
+<circle cx="159.3" cy="282.3" r="4" style="fill:var(--key);fill-opacity:0.75"/>
+<circle cx="322.0" cy="298.5" r="4" style="fill:var(--key);fill-opacity:0.75"/>
+<circle cx="435.2" cy="264.0" r="4" style="fill:var(--key);fill-opacity:0.75"/>
+<circle cx="206.9" cy="298.5" r="4" style="fill:var(--key);fill-opacity:0.75"/>
+<circle cx="614.7" cy="235.3" r="4" style="fill:var(--key);fill-opacity:0.75"/>
+<circle cx="78.0" cy="308.6" r="4" style="fill:var(--key);fill-opacity:0.75"/>
+<circle cx="348.1" cy="290.9" r="4" style="fill:var(--key);fill-opacity:0.75"/>
+<circle cx="348.1" cy="294.5" r="4" style="fill:var(--key);fill-opacity:0.75"/>
+<circle cx="468.9" cy="271.8" r="4" style="fill:var(--key);fill-opacity:0.75"/>
+<circle cx="473.1" cy="270.0" r="4" style="fill:var(--key);fill-opacity:0.75"/>
+<circle cx="576.4" cy="249.2" r="4" style="fill:var(--key);fill-opacity:0.75"/>
+<circle cx="495.1" cy="244.5" r="4" style="fill:var(--key);fill-opacity:0.75"/>
+<circle cx="322.0" cy="290.9" r="4" style="fill:var(--key);fill-opacity:0.75"/>
+<circle cx="417.1" cy="256.7" r="4" style="fill:var(--key);fill-opacity:0.75"/>
+<circle cx="369.5" cy="290.9" r="4" style="fill:var(--key);fill-opacity:0.75"/>
+<circle cx="348.1" cy="294.5" r="4" style="fill:var(--key);fill-opacity:0.75"/>
+<circle cx="573.0" cy="248.4" r="4" style="fill:var(--key);fill-opacity:0.75"/>
+<circle cx="206.9" cy="298.5" r="4" style="fill:var(--key);fill-opacity:0.75"/>
+<circle cx="403.3" cy="290.9" r="4" style="fill:var(--key);fill-opacity:0.75"/>
+<circle cx="417.1" cy="277.6" r="4" style="fill:var(--key);fill-opacity:0.75"/>
+<circle cx="854.8" cy="134.9" r="4" style="fill:var(--key);fill-opacity:0.75"/>
+<circle cx="853.1" cy="155.9" r="4" style="fill:var(--key);fill-opacity:0.75"/>
+<circle cx="615.9" cy="216.1" r="4" style="fill:var(--key);fill-opacity:0.75"/>
+<circle cx="288.2" cy="298.5" r="4" style="fill:var(--key);fill-opacity:0.75"/>
+<circle cx="288.2" cy="298.5" r="4" style="fill:var(--key);fill-opacity:0.75"/>
+<circle cx="288.2" cy="298.5" r="4" style="fill:var(--key);fill-opacity:0.75"/>
+<circle cx="288.2" cy="308.6" r="4" style="fill:var(--key);fill-opacity:0.75"/>
+<circle cx="655.2" cy="196.7" r="4" style="fill:var(--key);fill-opacity:0.75"/>
+<circle cx="306.3" cy="277.6" r="4" style="fill:var(--key);fill-opacity:0.75"/>
+<circle cx="288.2" cy="303.1" r="4" style="fill:var(--key);fill-opacity:0.75"/>
+<circle cx="410.4" cy="294.5" r="4" style="fill:var(--key);fill-opacity:0.75"/>
+<circle cx="554.4" cy="250.0" r="4" style="fill:var(--key);fill-opacity:0.75"/>
+<circle cx="266.8" cy="298.5" r="4" style="fill:var(--key);fill-opacity:0.75"/>
+<circle cx="417.1" cy="279.8" r="4" style="fill:var(--key);fill-opacity:0.75"/>
+<circle cx="322.0" cy="298.5" r="4" style="fill:var(--key);fill-opacity:0.75"/>
+<circle cx="410.4" cy="290.9" r="4" style="fill:var(--key);fill-opacity:0.75"/>
+<circle cx="707.5" cy="178.8" r="4" style="fill:var(--key);fill-opacity:0.75"/>
+<circle cx="288.2" cy="303.1" r="4" style="fill:var(--key);fill-opacity:0.75"/>
+<circle cx="348.1" cy="294.5" r="4" style="fill:var(--key);fill-opacity:0.75"/>
+<circle cx="266.8" cy="303.1" r="4" style="fill:var(--key);fill-opacity:0.75"/>
+<circle cx="562.2" cy="240.5" r="4" style="fill:var(--key);fill-opacity:0.75"/>
+<circle cx="410.4" cy="290.9" r="4" style="fill:var(--key);fill-opacity:0.75"/>
+<circle cx="306.3" cy="303.1" r="4" style="fill:var(--key);fill-opacity:0.75"/>
+<circle cx="322.0" cy="298.5" r="4" style="fill:var(--key);fill-opacity:0.75"/>
+<circle cx="288.2" cy="303.1" r="4" style="fill:var(--key);fill-opacity:0.75"/>
+<circle cx="543.8" cy="264.0" r="4" style="fill:var(--key);fill-opacity:0.75"/>
+<circle cx="288.2" cy="308.6" r="4" style="fill:var(--key);fill-opacity:0.75"/>
+<circle cx="288.2" cy="308.6" r="4" style="fill:var(--key);fill-opacity:0.75"/>
+<circle cx="206.9" cy="308.6" r="4" style="fill:var(--key);fill-opacity:0.75"/>
+<circle cx="410.4" cy="282.3" r="4" style="fill:var(--key);fill-opacity:0.75"/>
+<circle cx="306.3" cy="303.1" r="4" style="fill:var(--key);fill-opacity:0.75"/>
+<circle cx="306.3" cy="294.5" r="4" style="fill:var(--key);fill-opacity:0.75"/>
+<circle cx="288.2" cy="308.6" r="4" style="fill:var(--key);fill-opacity:0.75"/>
+<circle cx="423.4" cy="260.2" r="4" style="fill:var(--key);fill-opacity:0.75"/>
+<circle cx="266.8" cy="303.1" r="4" style="fill:var(--key);fill-opacity:0.75"/>
+<circle cx="664.3" cy="181.7" r="4" style="fill:var(--key);fill-opacity:0.75"/>
+<circle cx="348.1" cy="294.5" r="4" style="fill:var(--key);fill-opacity:0.75"/>
+<circle cx="571.3" cy="226.3" r="4" style="fill:var(--key);fill-opacity:0.75"/>
+<circle cx="288.2" cy="303.1" r="4" style="fill:var(--key);fill-opacity:0.75"/>
+<circle cx="378.9" cy="294.5" r="4" style="fill:var(--key);fill-opacity:0.75"/>
+<circle cx="335.8" cy="298.5" r="4" style="fill:var(--key);fill-opacity:0.75"/>
+<circle cx="571.3" cy="216.1" r="4" style="fill:var(--key);fill-opacity:0.75"/>
+<circle cx="288.2" cy="298.5" r="4" style="fill:var(--key);fill-opacity:0.75"/>
+<path d="M440.6,251.7 L445.6,256.7 L440.6,261.7 L435.6,256.7 Z" style="fill:var(--edit);fill-opacity:0.85"/>
+<path d="M159.3,272.6 L164.3,277.6 L159.3,282.6 L154.3,277.6 Z" style="fill:var(--edit);fill-opacity:0.85"/>
+<path d="M322.0,293.5 L327.0,298.5 L322.0,303.5 L317.0,298.5 Z" style="fill:var(--edit);fill-opacity:0.85"/>
+<path d="M435.2,256.4 L440.2,261.4 L435.2,266.4 L430.2,261.4 Z" style="fill:var(--edit);fill-opacity:0.85"/>
+<path d="M206.9,293.5 L211.9,298.5 L206.9,303.5 L201.9,298.5 Z" style="fill:var(--edit);fill-opacity:0.85"/>
+<path d="M614.7,221.3 L619.7,226.3 L614.7,231.3 L609.7,226.3 Z" style="fill:var(--edit);fill-opacity:0.85"/>
+<path d="M78.0,310.3 L83.0,315.3 L78.0,320.3 L73.0,315.3 Z" style="fill:var(--edit);fill-opacity:0.85"/>
+<path d="M348.1,293.5 L353.1,298.5 L348.1,303.5 L343.1,298.5 Z" style="fill:var(--edit);fill-opacity:0.85"/>
+<path d="M348.1,293.5 L353.1,298.5 L348.1,303.5 L343.1,298.5 Z" style="fill:var(--edit);fill-opacity:0.85"/>
+<path d="M468.9,256.4 L473.9,261.4 L468.9,266.4 L463.9,261.4 Z" style="fill:var(--edit);fill-opacity:0.85"/>
+<path d="M473.1,261.9 L478.1,266.9 L473.1,271.9 L468.1,266.9 Z" style="fill:var(--edit);fill-opacity:0.85"/>
+<path d="M576.4,229.3 L581.4,234.3 L576.4,239.3 L571.4,234.3 Z" style="fill:var(--edit);fill-opacity:0.85"/>
+<path d="M495.1,243.4 L500.1,248.4 L495.1,253.4 L490.1,248.4 Z" style="fill:var(--edit);fill-opacity:0.85"/>
+<path d="M322.0,282.7 L327.0,287.7 L322.0,292.7 L317.0,287.7 Z" style="fill:var(--edit);fill-opacity:0.85"/>
+<path d="M417.1,268.6 L422.1,273.6 L417.1,278.6 L412.1,273.6 Z" style="fill:var(--edit);fill-opacity:0.85"/>
+<path d="M369.5,293.5 L374.5,298.5 L369.5,303.5 L364.5,298.5 Z" style="fill:var(--edit);fill-opacity:0.85"/>
+<path d="M348.1,289.5 L353.1,294.5 L348.1,299.5 L343.1,294.5 Z" style="fill:var(--edit);fill-opacity:0.85"/>
+<path d="M573.0,243.4 L578.0,248.4 L573.0,253.4 L568.0,248.4 Z" style="fill:var(--edit);fill-opacity:0.85"/>
+<path d="M206.9,293.5 L211.9,298.5 L206.9,303.5 L201.9,298.5 Z" style="fill:var(--edit);fill-opacity:0.85"/>
+<path d="M403.3,285.9 L408.3,290.9 L403.3,295.9 L398.3,290.9 Z" style="fill:var(--edit);fill-opacity:0.85"/>
+<path d="M417.1,279.9 L422.1,284.9 L417.1,289.9 L412.1,284.9 Z" style="fill:var(--edit);fill-opacity:0.85"/>
+<path d="M854.8,52.0 L859.8,57.0 L854.8,62.0 L849.8,57.0 Z" style="fill:var(--edit);fill-opacity:0.85"/>
+<path d="M853.1,51.1 L858.1,56.1 L853.1,61.1 L848.1,56.1 Z" style="fill:var(--edit);fill-opacity:0.85"/>
+<path d="M615.9,208.2 L620.9,213.2 L615.9,218.2 L610.9,213.2 Z" style="fill:var(--edit);fill-opacity:0.85"/>
+<path d="M288.2,298.1 L293.2,303.1 L288.2,308.1 L283.2,303.1 Z" style="fill:var(--edit);fill-opacity:0.85"/>
+<path d="M288.2,310.3 L293.2,315.3 L288.2,320.3 L283.2,315.3 Z" style="fill:var(--edit);fill-opacity:0.85"/>
+<path d="M288.2,298.1 L293.2,303.1 L288.2,308.1 L283.2,303.1 Z" style="fill:var(--edit);fill-opacity:0.85"/>
+<path d="M288.2,298.1 L293.2,303.1 L288.2,308.1 L283.2,303.1 Z" style="fill:var(--edit);fill-opacity:0.85"/>
+<path d="M655.2,190.2 L660.2,195.2 L655.2,200.2 L650.2,195.2 Z" style="fill:var(--edit);fill-opacity:0.85"/>
+<path d="M306.3,279.9 L311.3,284.9 L306.3,289.9 L301.3,284.9 Z" style="fill:var(--edit);fill-opacity:0.85"/>
+<path d="M288.2,298.1 L293.2,303.1 L288.2,308.1 L283.2,303.1 Z" style="fill:var(--edit);fill-opacity:0.85"/>
+<path d="M410.4,285.9 L415.4,290.9 L410.4,295.9 L405.4,290.9 Z" style="fill:var(--edit);fill-opacity:0.85"/>
+<path d="M554.4,245.9 L559.4,250.9 L554.4,255.9 L549.4,250.9 Z" style="fill:var(--edit);fill-opacity:0.85"/>
+<path d="M266.8,274.8 L271.8,279.8 L266.8,284.8 L261.8,279.8 Z" style="fill:var(--edit);fill-opacity:0.85"/>
+<path d="M417.1,263.4 L422.1,268.4 L417.1,273.4 L412.1,268.4 Z" style="fill:var(--edit);fill-opacity:0.85"/>
+<path d="M322.0,293.5 L327.0,298.5 L322.0,303.5 L317.0,298.5 Z" style="fill:var(--edit);fill-opacity:0.85"/>
+<path d="M410.4,289.5 L415.4,294.5 L410.4,299.5 L405.4,294.5 Z" style="fill:var(--edit);fill-opacity:0.85"/>
+<path d="M707.5,169.2 L712.5,174.2 L707.5,179.2 L702.5,174.2 Z" style="fill:var(--edit);fill-opacity:0.85"/>
+<path d="M288.2,310.3 L293.2,315.3 L288.2,320.3 L283.2,315.3 Z" style="fill:var(--edit);fill-opacity:0.85"/>
+<path d="M348.1,293.5 L353.1,298.5 L348.1,303.5 L343.1,298.5 Z" style="fill:var(--edit);fill-opacity:0.85"/>
+<path d="M266.8,303.6 L271.8,308.6 L266.8,313.6 L261.8,308.6 Z" style="fill:var(--edit);fill-opacity:0.85"/>
+<path d="M562.2,239.5 L567.2,244.5 L562.2,249.5 L557.2,244.5 Z" style="fill:var(--edit);fill-opacity:0.85"/>
+<path d="M410.4,293.5 L415.4,298.5 L410.4,303.5 L405.4,298.5 Z" style="fill:var(--edit);fill-opacity:0.85"/>
+<path d="M306.3,298.1 L311.3,303.1 L306.3,308.1 L301.3,303.1 Z" style="fill:var(--edit);fill-opacity:0.85"/>
+<path d="M322.0,298.1 L327.0,303.1 L322.0,308.1 L317.0,303.1 Z" style="fill:var(--edit);fill-opacity:0.85"/>
+<path d="M288.2,298.1 L293.2,303.1 L288.2,308.1 L283.2,303.1 Z" style="fill:var(--edit);fill-opacity:0.85"/>
+<path d="M543.8,268.6 L548.8,273.6 L543.8,278.6 L538.8,273.6 Z" style="fill:var(--edit);fill-opacity:0.85"/>
+<path d="M288.2,289.5 L293.2,294.5 L288.2,299.5 L283.2,294.5 Z" style="fill:var(--edit);fill-opacity:0.85"/>
+<path d="M288.2,303.6 L293.2,308.6 L288.2,313.6 L283.2,308.6 Z" style="fill:var(--edit);fill-opacity:0.85"/>
+<path d="M206.9,303.6 L211.9,308.6 L206.9,313.6 L201.9,308.6 Z" style="fill:var(--edit);fill-opacity:0.85"/>
+<path d="M410.4,256.4 L415.4,261.4 L410.4,266.4 L405.4,261.4 Z" style="fill:var(--edit);fill-opacity:0.85"/>
+<path d="M306.3,293.5 L311.3,298.5 L306.3,303.5 L301.3,298.5 Z" style="fill:var(--edit);fill-opacity:0.85"/>
+<path d="M306.3,298.1 L311.3,303.1 L306.3,308.1 L301.3,303.1 Z" style="fill:var(--edit);fill-opacity:0.85"/>
+<path d="M288.2,285.9 L293.2,290.9 L288.2,295.9 L283.2,290.9 Z" style="fill:var(--edit);fill-opacity:0.85"/>
+<path d="M423.4,216.3 L428.4,221.3 L423.4,226.3 L418.4,221.3 Z" style="fill:var(--edit);fill-opacity:0.85"/>
+<path d="M266.8,293.5 L271.8,298.5 L266.8,303.5 L261.8,298.5 Z" style="fill:var(--edit);fill-opacity:0.85"/>
+<path d="M664.3,184.2 L669.3,189.2 L664.3,194.2 L659.3,189.2 Z" style="fill:var(--edit);fill-opacity:0.85"/>
+<path d="M348.1,289.5 L353.1,294.5 L348.1,299.5 L343.1,294.5 Z" style="fill:var(--edit);fill-opacity:0.85"/>
+<path d="M571.3,212.8 L576.3,217.8 L571.3,222.8 L566.3,217.8 Z" style="fill:var(--edit);fill-opacity:0.85"/>
+<path d="M288.2,310.3 L293.2,315.3 L288.2,320.3 L283.2,315.3 Z" style="fill:var(--edit);fill-opacity:0.85"/>
+<path d="M378.9,289.5 L383.9,294.5 L378.9,299.5 L373.9,294.5 Z" style="fill:var(--edit);fill-opacity:0.85"/>
+<path d="M335.8,298.1 L340.8,303.1 L335.8,308.1 L330.8,303.1 Z" style="fill:var(--edit);fill-opacity:0.85"/>
+<path d="M571.3,218.0 L576.3,223.0 L571.3,228.0 L566.3,223.0 Z" style="fill:var(--edit);fill-opacity:0.85"/>
+<path d="M288.2,303.6 L293.2,308.6 L288.2,313.6 L283.2,308.6 Z" style="fill:var(--edit);fill-opacity:0.85"/>
+<line x1="840.8" x2="840.8" y1="63.0" y2="126.9" style="stroke:var(--ink-2);stroke-width:1.3" marker-end="url(#down)"/>
+<text x="832.8" y="61.0" style="font-family:var(--sans);font-size:12px;fill:var(--edit);text-anchor:end;font-weight:600">atlas-engine, tests open</text>
+<text x="832.8" y="138.9" style="font-family:var(--sans);font-size:12px;fill:var(--key);text-anchor:end;font-weight:600">in 0.70.0</text>
+<path d="M92,39 L97,44 L92,49 L87,44 Z" style="fill:var(--edit)"/>
+<text x="104.0" y="48.0" style="font-family:var(--sans);font-size:12px;fill:var(--ink-2);text-anchor:start;font-weight:400">order kept (model order)</text>
+<circle cx="92" cy="64" r="4" style="fill:var(--key)"/>
+<text x="104.0" y="68.0" style="font-family:var(--sans);font-size:12px;fill:var(--ink-2);text-anchor:start;font-weight:400">crossings alone</text>
+</svg>
+<figcaption>Each dot a view of Atlas or vectormesh, the time ELK takes to lay it out with the order kept and without, ELK alone in node.</figcaption></figure><p class="issues"><a href="https://github.com/raoulg/atlas/issues/320">#320</a></p></section>
+<nav class="pager"><a class="older" href="../0.69.4/">← Atlas 0.69.4</a></nav>
+<footer>Made by tools/release_page.py from docs/releases/0.70.0.md and the notes in docs/changes.</footer>
+</main>
+</body>
+</html>

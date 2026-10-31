@@ -79,6 +79,7 @@ async function pointAt(id) {
 const files = window.AtlasFiles.mount(byId('file-tree'), byId('preview'), {
   readFile: async (path) => new Uint8Array(await invoke('read_workspace_file', {path})),
   previewOpen: (open) => { byId('preview').hidden = !open; },
+  dock: (side) => setPreviewDock(side),
   pointAt,
   workspaceUrl: () => workspace?.url || '',
   openFullView: (view, at) => {
@@ -148,23 +149,34 @@ function showTerminal(show = byId('terminal-panel').hidden) {
 // the terminal panel's size follows its inner edge, dragged: the top edge at the bottom, the edge that
 // faces the view at a side; the view keeps as much as the panel's least size
 byId('terminal-grip').addEventListener('pointerdown', (event) => {
-  // a drag moves the edge and selects no text on its way
-  event.preventDefault();
   const panel = byId('terminal-panel');
   const content = panel.closest('.content');
-  const {size, axis, least} = window.AtlasTerminal.DOCKS[dock];
-  const from = {x: event.clientX, y: event.clientY};
-  const start = axis === 'y' ? panel.offsetHeight : panel.offsetWidth;
-  const most = (axis === 'y' ? content.offsetHeight : content.offsetWidth) - least;
-  document.body.classList.add('dragging', `dragging-${axis}`);
-  const move = (moved) => panel.style.setProperty(size, `${window.AtlasTerminal.dragged(dock, start, from, {x: moved.clientX, y: moved.clientY}, most)}px`);
-  const stop = () => {
-    document.body.classList.remove('dragging', 'dragging-x', 'dragging-y');
-    window.removeEventListener('pointermove', move);
-    terminal.fit();
-  };
-  window.addEventListener('pointermove', move);
-  window.addEventListener('pointerup', stop, {once: true});
+  const edge = window.AtlasTerminal.DOCKS[dock];
+  const start = edge.axis === 'y' ? panel.offsetHeight : panel.offsetWidth;
+  const most = (edge.axis === 'y' ? content.offsetHeight : content.offsetWidth) - edge.least;
+  window.AtlasPanel.follow(event, edge, start, most, (size) => panel.style.setProperty(edge.size, `${size}px`), () => terminal.fit());
+});
+
+// where the preview docks, beside the view on the left or the right, kept in Studio's settings as the
+// terminal's dock is; its width follows its inner edge, dragged, and the view keeps as much as the
+// preview's least width
+let previewSide = 'right';
+function showPreviewDock(next) {
+  previewSide = window.AtlasFiles.sideOf(next);
+  byId('preview').closest('.stage').dataset.preview = previewSide;
+  files.setDock(previewSide);
+}
+async function setPreviewDock(next) {
+  showPreviewDock(next);
+  try { await invoke('set_preview_dock', {side: previewSide}); }
+  catch (error) { byId('status-text').textContent = String(error); }
+}
+byId('preview-grip').addEventListener('pointerdown', (event) => {
+  const preview = byId('preview');
+  const stage = preview.closest('.stage');
+  const edge = window.AtlasFiles.SIDES[previewSide];
+  window.AtlasPanel.follow(event, edge, preview.offsetWidth, stage.offsetWidth - edge.least,
+    (size) => stage.style.setProperty('--preview-width', `${size}px`));
 });
 
 // the files Atlas reads, followed while the workspace is open; the tree is drawn anew only when
@@ -299,12 +311,12 @@ byId('workspace-button').addEventListener('click', showWorkspaces);
 byId('terminal-toggle').addEventListener('click', () => showTerminal());
 for (const tab of document.querySelectorAll('.side-tab')) tab.addEventListener('click', () => selectView(tab.dataset.view));
 // which build this is, at the right of the status bar: its version, and for a nightly its commit;
-// the settings name the commit of every build
+// the settings name the commit of every build. A click on it shows what changed in it (What's New).
 let buildSaid = 'Atlas Studio';
 invoke('studio_build').then((build) => {
   buildSaid = `Atlas Studio ${build.version}` + (build.nightly ? ' · nightly' : '') + (build.commit ? ` · ${build.commit}` : '');
   byId('studio-version').textContent = `Atlas Studio ${build.version}` + (build.nightly ? ` · nightly ${build.commit}` : '');
-  byId('studio-version').title = `atlas ${build.version}${build.nightly ? '-nightly' : ''}${build.commit ? ` (${build.commit})` : ''}`;
+  byId('studio-version').title = `What's new in atlas ${build.version}${build.nightly ? '-nightly' : ''}${build.commit ? ` (${build.commit})` : ''}`;
 }).catch(() => {});
 
 // a newer build of Studio's channel, looked for once an hour against an answer a day old at most
@@ -316,6 +328,7 @@ const updates = window.AtlasUpdates.mount(byId('updates'), byId('update-button')
 listen('studio-update', ({payload}) => updates.found(payload));
 // what changed in the build that runs: its release's notes in the window, else on GitHub
 async function whatsNew() {
+  if (settingsPage.isShown()) settingsPage.hide();
   byId('status-text').textContent = 'Looking up what changed…';
   try { updates.show(await invoke('whats_new')); byId('status-text').textContent = 'Ready'; }
   catch (error) { byId('status-text').textContent = String(error); }
@@ -357,15 +370,17 @@ listen('studio-menu', ({payload}) => {
   else if (action === 'view.terminal') showTerminal();
   else if (action === 'view.scheme') toggleScheme();
   else if (action === 'update.check') checkNow();
-  else if (action === 'update.notes') { if (settingsPage.isShown()) settingsPage.hide(); whatsNew(); }
+  else if (action === 'update.notes') whatsNew();
   else if (action === 'settings') { byId('atlas-bar').hidden = true; settingsPage.show(); }
 });
 listen('appearance', ({payload}) => showAppearance(payload));
 listen('terminal-dock', ({payload}) => showDock(payload));
+listen('preview-dock', ({payload}) => showPreviewDock(payload));
 Themes.darkSystem.addEventListener('change', () => { if (appearance.theme === 'system') showAppearance(appearance); });
 byId('scheme-toggle').addEventListener('click', toggleScheme);
-invoke('get_settings').then((settings) => { showAppearance(settings.appearance); showDock(settings.terminal); })
-  .catch(() => { showAppearance(appearance); showDock(dock); });
+byId('studio-version').addEventListener('click', () => whatsNew());
+invoke('get_settings').then((settings) => { showAppearance(settings.appearance); showDock(settings.terminal); showPreviewDock(settings.preview); })
+  .catch(() => { showAppearance(appearance); showDock(dock); showPreviewDock(previewSide); });
 listen('studio-backend-stopped', () => { displayWorkspace(null); showState('error', 'Atlas stopped. Open the workspace again to restart it.'); });
 showState('loading');
 // the first look for a newer Studio waits for the first workspace, which opening would close it over

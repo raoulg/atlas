@@ -3,7 +3,7 @@
     python3 tools/atlas_badge.py OUT.svg                 the pill: atlas | drawn on push
     python3 tools/atlas_badge.py OUT.svg FINDINGS.json   a pill of its own: atlas | N questions
 
-The second form counts what `atlas check --json` found, teal at none and amber otherwise. It is
+The second form counts what `atlas-code check --json` found, teal at none and amber otherwise. It is
 experimental: the questions Atlas asks are not yet reliable enough to wear as a badge.
 """
 
@@ -55,7 +55,7 @@ def render(segments):
 def main(out, findings=None):
     segments = [('atlas', INK), ('drawn on push', GREEN)]
     if findings:
-        # `atlas check --json` gives each part of the repository its own findings
+        # `atlas-code check --json` gives each part of the repository its own findings
         n = sum(len(part['findings']) for part in json.loads(pathlib.Path(findings).read_text())['parts'])
         segments[1] = (f'{n} question' + ('' if n == 1 else 's'), AMBER if n else TEAL)
     pathlib.Path(out).write_text(render(segments))

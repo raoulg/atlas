@@ -116,6 +116,10 @@ impl<'a> Eval<'a> {
         if let Some(scope) = at.scope {
             match bound(scope, name, pos, src) {
                 Some(Bound::Value(v)) => return named_by(&self.local(at.m, scope, name), self.of(at, v, depth + 1)),
+                Some(Bound::Handed(args)) => {
+                    let values = args.into_iter().fold(vec![], |acc, a| union(acc, self.of(at, a, depth + 1)));
+                    return named_by(&self.local(at.m, scope, name), values);
+                }
                 Some(Bound::Field(pattern, field, value)) => {
                     return self
                         .taken_apart(at, pattern, &field, value, depth)
@@ -724,18 +728,20 @@ fn enclosing_fn(n: TsNode) -> Option<TsNode> {
     None
 }
 
-/// What a binding of a name holds: a value, or the field a struct pattern takes out of the value
-/// it matches.
+/// What a binding of a name holds: a value, the field a struct pattern takes out of the value it
+/// matches, or for a parameter of a closure a `let` keeps, what each call of the closure hands it.
 enum Bound<'a> {
     Value(TsNode<'a>),
     Field(TsNode<'a>, String, TsNode<'a>),
+    Handed(Vec<TsNode<'a>>),
 }
 
 /// What a name holds where the code at `pos` reads it, by the binding of it in scope there that
 /// is written last: a `let` complete before `pos`, or a pattern (`if let` in the block it opens,
 /// `let .. else` after it, a `match` arm in its arm) that binds the whole value, takes the value
 /// `Some` or `Ok` holds out of it (`if let Some(dir) = to.parent()`), which holds what that one
-/// holds, or takes a field out of a struct or a variant (`Cmd::Analyze { out, .. }`).
+/// holds, or takes a field out of a struct or a variant (`Cmd::Analyze { out, .. }`), or a
+/// parameter of the closure `pos` is in (`handed`).
 fn bound<'a>(scope: TsNode<'a>, name: &str, pos: usize, src: &[u8]) -> Option<Bound<'a>> {
     let named = |p: TsNode| matches!(p.kind(), "identifier" | "mut_pattern") && text(p, src).trim_start_matches("mut ") == name;
     let binds = |p: TsNode<'a>, v: TsNode<'a>| -> Option<Bound<'a>> {
@@ -785,7 +791,43 @@ fn bound<'a>(scope: TsNode<'a>, name: &str, pos: usize, src: &[u8]) -> Option<Bo
             best = Some((end, x));
         }
     }
+    if let Some((end, x)) = handed(scope, name, pos, src).filter(|(end, _)| best.as_ref().map_or(true, |(e, _)| end >= e)) {
+        best = Some((end, x));
+    }
     best.map(|(_, x)| x)
+}
+
+/// The parameter `name` of the closure `pos` is in, where a `let` keeps the closure by a name the
+/// body calls it by (`let read = |name: &str| repo.text(root.join(name));`, `read("ty.toml")`):
+/// what each call hands it, as a function's parameter is what its callers hand it. With the end of
+/// the closure's parameters, where the binding starts.
+fn handed<'a>(scope: TsNode<'a>, name: &str, pos: usize, src: &[u8]) -> Option<(usize, Bound<'a>)> {
+    let inside = |n: TsNode| n.start_byte() <= pos && pos < n.end_byte();
+    // the innermost closure around `pos` that takes `name`
+    let (closure, slot) = walk(scope, &["closure_expression"])
+        .into_iter()
+        .filter(|c| c.child_by_field_name("body").map_or(false, inside))
+        .filter_map(|c| {
+            let params = named_children(c.child_by_field_name("parameters")?);
+            let slot = params.iter().position(|p| {
+                let pattern = if p.kind() == "parameter" { p.child_by_field_name("pattern") } else { Some(*p) };
+                pattern.map_or(false, |x| x.kind() == "identifier" && text(x, src) == name)
+            })?;
+            Some((c, slot))
+        })
+        .max_by_key(|(c, _)| c.start_byte())?;
+    let kept = closure.parent().filter(|l| l.kind() == "let_declaration")?;
+    let by = kept.child_by_field_name("pattern").filter(|p| p.kind() == "identifier").map(|p| text(p, src))?;
+    let args: Vec<TsNode<'a>> = walk(kept.parent()?, &["call_expression"])
+        .into_iter()
+        .filter(|c| c.start_byte() >= kept.end_byte())
+        .filter(|c| c.child_by_field_name("function").map_or(false, |f| f.kind() == "identifier" && text(f, src) == by))
+        .filter_map(|c| {
+            named_children(c.child_by_field_name("arguments")?).into_iter().filter(|a| !a.kind().ends_with("comment")).nth(slot)
+        })
+        .collect();
+    let end = closure.child_by_field_name("parameters")?.end_byte();
+    (!args.is_empty()).then_some((end, Bound::Handed(args)))
 }
 
 /// The value a `const` or `static` of this name is declared with, directly under `n`.

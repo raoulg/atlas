@@ -15,14 +15,14 @@
 //! arrows in and out, the node itself and what is named under it counting as the same) are one
 //! node, renamed, when that match is the only one either way. Atlas never guesses between two.
 //!
-//! `atlas changes` reads the same union, one reading at a time (`reading`), so the list it gives
+//! `atlas-code changes` reads the same union, one reading at a time (`reading`), so the list it gives
 //! holds what the picture marks.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 use serde::Serialize;
 
-use crate::model::{EdgeKind, Entry, Graph, Held, Node, NodeKind, Site, Touch};
+use crate::model::{Both, EdgeKind, Entry, Graph, Held, Node, NodeKind, Site, Touch};
 
 /// How a thing of the union stands to the two readings: B adds it, B no longer has it, or both
 /// hold it and its own arrows differ.
@@ -32,6 +32,17 @@ pub enum Status {
     Added,
     Removed,
     Changed,
+}
+
+impl Status {
+    /// The mark a diff writes before a line it adds, removes or changes.
+    pub fn sign(self) -> char {
+        match self {
+            Status::Added => '+',
+            Status::Removed => '-',
+            Status::Changed => '~',
+        }
+    }
 }
 
 /// The union of two readings, as the diff marks it. What is the same in both is absent.
@@ -238,7 +249,7 @@ impl Reading {
 
 /// One reading of a union, under the union's names: the nodes, edges, steps and touches it holds,
 /// what it hands each step, and its entries as it has them. The page draws a reading so, and
-/// `atlas changes` compares the two: one union, so both tell one story.
+/// `atlas-code changes` compares the two: one union, so both tell one story.
 pub fn reading(g: &Graph, d: &Diff, r: Reading) -> Graph {
     let mut out = Graph {
         root: g.root.clone(),
@@ -358,14 +369,18 @@ impl Renames {
         let m = |s: &mut String| *s = self.map(s);
         for n in &mut a.nodes {
             for t in n.touches.iter_mut().chain(n.instead.iter_mut()) {
-                let holder = match (t.by.as_slice(), t.users_of.as_slice()) {
-                    ([h], _) | ([], [h]) => h.as_str(),
-                    _ => n.id.as_str(),
+                // the value is one of the parameters of a function that makes the place whole (a
+                // caller or an entry of a condition), or of the touch's own where none does
+                let holders: Vec<&str> = match t.by.is_empty() {
+                    true => vec![n.id.as_str()],
+                    false => t.by.iter().flat_map(Both::names).collect(),
                 };
-                if let Some((old, new)) = owners.get(holder) {
-                    if let Some(rest) = t.what.strip_prefix(&format!("{old}.")) {
-                        t.what = format!("{new}.{rest}");
-                    }
+                let renamed = holders.iter().filter_map(|h| owners.get(*h)).find_map(|(old, new)| {
+                    let rest = t.what.strip_prefix(&format!("{old}."))?;
+                    Some(format!("{new}.{rest}"))
+                });
+                if let Some(what) = renamed {
+                    t.what = what;
                 }
             }
         }
@@ -382,10 +397,7 @@ impl Renames {
                 s.hands.iter_mut().chain(s.gives.iter_mut()).for_each(|h| m(&mut h.ty));
             }
             for t in n.touches.iter_mut().chain(n.instead.iter_mut()) {
-                for f in t.by.iter_mut() {
-                    *f = f.split('&').map(|x| self.map(x)).collect::<Vec<_>>().join("&");
-                }
-                t.users_of.iter_mut().for_each(m);
+                t.by = t.by.iter().map(|b| b.map(|x| self.map(x))).collect();
             }
         }
         for e in &mut a.edges {
@@ -936,7 +948,7 @@ impl<'g> Index<'g> {
         let nodes: HashMap<&str, &Node> = g.nodes.iter().map(|n| (n.id.as_str(), n)).collect();
         let mut made: HashMap<&str, Vec<&Touch>> = HashMap::new();
         for t in g.nodes.iter().flat_map(|n| &n.touches) {
-            for f in t.by.iter().flat_map(|f| f.split('&')) {
+            for f in t.by.iter().flat_map(Both::members) {
                 // a file named by a value the caller is handed itself (`Store.path`) waits for the
                 // caller's own callers: the caller does not make it whole
                 if !nodes.get(f).map_or(false, |h| holds_open(h, t)) {
@@ -951,7 +963,7 @@ impl<'g> Index<'g> {
     /// read where its callers make them whole, and those its calls make whole by what it hands
     /// them. A place a caller makes whole is the caller's arrow, not the callee's.
     fn own_touches(&self, n: &'g Node) -> Vec<&'g Touch> {
-        let own = n.touches.iter().filter(|t| t.by.is_empty() && t.users_of.is_empty()).chain(&n.instead);
+        let own = n.touches.iter().filter(|t| t.by.is_empty()).chain(&n.instead);
         own.chain(self.made.get(n.id.as_str()).into_iter().flatten().copied()).collect()
     }
 

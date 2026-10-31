@@ -18,22 +18,22 @@ use crate::knowledge;
 use crate::knowledge::OwnTypes;
 use crate::model::{Bucket, EdgeKind, Held, Node, NodeKind, Slot, Touch, World};
 use crate::tree::{
-    beneath, evaluation_order, literals, named_children, nth_of_kind, outermost, text, unquote, walk, what_of, wrapped, ChoiceSyntax,
-    CompareSyntax, Part,
+    beneath, evaluation_order, literals, named_children, nth_of_kind, outermost, path_maker_named, text, unquote, walk, what_of, wrapped,
+    ChoiceSyntax, CompareSyntax, Part,
 };
 
 pub(super) const OWN: OwnTypes = knowledge::TYPESCRIPT_OWN_TYPES;
 
 /// The package a client was made by: `new Anthropic()`, `new Pool()`, `axios.create()`,
-/// `createClient()`. What a package's other calls give back is a result, not a client.
+/// `createClient()` (knowledge::TYPESCRIPT_CLIENT_MAKERS). What a package's other calls give back
+/// is a result, not a client.
 fn made_by_package(value: TsNode, m: &Module, src: &[u8]) -> Option<String> {
     let v = beneath(value, WRAPPERS);
     let maker = match v.kind() {
         "new_expression" => v.child_by_field_name("constructor")?,
-        "call_expression" => v.child_by_field_name("function").filter(|f| {
-            let last = member_parts(*f, src).pop().unwrap_or_default();
-            last.starts_with("create") || matches!(last.as_str(), "connect" | "open")
-        })?,
+        "call_expression" => v
+            .child_by_field_name("function")
+            .filter(|f| knowledge::TYPESCRIPT_CLIENT_MAKERS.makes(&member_parts(*f, src).pop().unwrap_or_default()))?,
         _ => return None,
     };
     match m.bindings.get(member_parts(maker, src).first()?)? {
@@ -616,7 +616,7 @@ impl<'a, 't> Body<'a, 't> {
     /// The values a class keeps that the body changes by assignment: `Counter.total += 1`,
     /// `Registry.handlers[name] = fn`. A static of a class is no place Atlas draws, so what the
     /// change leaves behind it does not see.
-    fn class_state(&self, steps: &mut Steps) {
+    fn class_state(&self, steps: &mut Steps<'t, '_>) {
         if self.is_module {
             return;
         }
@@ -965,7 +965,7 @@ impl<'a, 't> Body<'a, 't> {
 
     /// A loop as the step it is: it takes what it goes over, and gives each element under the
     /// name it binds (`for (const n of g.nodes)` takes `g` and gives `n`).
-    fn each(&mut self, steps: &mut Steps, l: TsNode<'t>) {
+    fn each(&mut self, steps: &mut Steps<'t, '_>, l: TsNode<'t>) {
         let (Some(left), Some(right)) = (l.child_by_field_name("left"), l.child_by_field_name("right")) else { return };
         let hands = self.hands(&[Some(right)], &steps.kept);
         // an element of what holds a value of the plan is one; of the body's own parameters alone, where they hold one
@@ -1150,7 +1150,7 @@ impl<'a, 't> Body<'a, 't> {
     }
 
     /// One site of the body, as the step it is.
-    fn call(&mut self, steps: &mut Steps, c: TsNode<'t>) {
+    fn call(&mut self, steps: &mut Steps<'t, '_>, c: TsNode<'t>) {
         match c.kind() {
             "new_expression" => self.constructed(steps, c),
             "object" => self.literal(steps, c),
@@ -1161,7 +1161,7 @@ impl<'a, 't> Body<'a, 't> {
     }
 
     /// `new T(..)` of one of the program's classes, handing its constructor its arguments.
-    fn constructed(&mut self, steps: &mut Steps, c: TsNode<'t>) {
+    fn constructed(&mut self, steps: &mut Steps<'t, '_>, c: TsNode<'t>) {
         let parts = c.child_by_field_name("constructor").map(|x| member_parts(x, self.src)).unwrap_or_default();
         if let Some(r) = self.class(self.resolve(&parts).filter(|r| self.own(r))) {
             let step = Step {
@@ -1204,7 +1204,7 @@ impl<'a, 't> Body<'a, 't> {
     /// })`), and one handed to a parameter of the program's function that its signature writes with
     /// the type (`rename({ category: "a" }, ..)` where `rename(e: Expense, ..)`). A step to the type,
     /// handed what the literal is built from; the call it is handed to is handed what it builds.
-    fn literal(&self, steps: &mut Steps, c: TsNode<'t>) {
+    fn literal(&self, steps: &mut Steps<'t, '_>, c: TsNode<'t>) {
         if let Some(r) = self.literal_of(c).filter(|r| self.own(r)) {
             let step = Step { hands: self.hands(&[Some(c)], &steps.kept), gives: self.gives(c, Some(&r)), ..Default::default() };
             steps.call(c, &r, EdgeKind::Instantiates, None, step);
@@ -1270,7 +1270,7 @@ impl<'a, 't> Body<'a, 't> {
 
     /// `<Kaart/>` renders a component, handed its attributes; a lowercase name is an element of
     /// the page.
-    fn rendered(&self, steps: &mut Steps, c: TsNode<'t>) {
+    fn rendered(&self, steps: &mut Steps<'t, '_>, c: TsNode<'t>) {
         let parts = c.child_by_field_name("name").map(|x| member_parts(x, self.src)).unwrap_or_default();
         if parts.first().map_or(true, |p| !p.starts_with(|ch: char| ch.is_uppercase()) && parts.len() == 1) {
             return;
@@ -1283,7 +1283,7 @@ impl<'a, 't> Body<'a, 't> {
     }
 
     /// An own function handed on as a value: called by whoever receives it.
-    fn handed_on(&self, steps: &mut Steps, c: TsNode<'t>) {
+    fn handed_on(&self, steps: &mut Steps<'t, '_>, c: TsNode<'t>) {
         let handed = c.parent().map_or(false, |p| match p.kind() {
             "arguments" | "array" | "jsx_expression" | "return_statement" => true,
             "pair" | "variable_declarator" => p.child_by_field_name("value").map(|v| v.id()) == Some(c.id()),
@@ -1361,7 +1361,7 @@ impl<'a, 't> Body<'a, 't> {
     /// `Source.prototype.read.call(v, ..)` or `.apply(v, [..])`: the method the class's prototype
     /// finds, called through its class on the value handed first, and no override of it. Whether
     /// the call is one.
-    fn through_prototype(&mut self, steps: &mut Steps, c: TsNode<'t>, parts: &[String]) -> bool {
+    fn through_prototype(&mut self, steps: &mut Steps<'t, '_>, c: TsNode<'t>, parts: &[String]) -> bool {
         let [class @ .., proto, name, how] = parts else { return false };
         if proto != "prototype" || !matches!(how.as_str(), "call" | "apply") {
             return false;
@@ -1389,7 +1389,7 @@ impl<'a, 't> Body<'a, 't> {
     /// `f(..)` or `x.m(..)`: the program's function or method, found on the class of the value it
     /// is called on, or a call Atlas does not follow: a library's operation, which may cross into
     /// the world, or a call through a value the body cannot name.
-    fn called(&mut self, steps: &mut Steps, c: TsNode<'t>) {
+    fn called(&mut self, steps: &mut Steps<'t, '_>, c: TsNode<'t>) {
         let src = self.src;
         let Some(f) = function_of(c) else { return };
         if read_in_place(f) {
@@ -1425,8 +1425,13 @@ impl<'a, 't> Body<'a, 't> {
                 // a method found on a base runs on the subclass the value is; the body's own receiver
                 // is of the class the route runs the body on, the one it is written in or one below
                 let on_receiver = object.map_or(false, |o| o.kind() == "this") || !after.is_empty();
+                // a value built at the call (`new Section().show()`) is of its class and none below it, also where that
+                // is the method's own; one the code declares is of the class it declares or one below it
+                let built = object
+                    .and_then(|o| if WRAPPERS.contains(&o.kind()) { wrapped(o) } else { Some(o) })
+                    .map_or(false, |o| o.kind() == "new_expression");
                 let on = class
-                    .filter(|k| !on_receiver && self.store.nodes[&t].cls.as_deref().map_or(false, |b| b != k.as_str()))
+                    .filter(|k| !on_receiver && self.store.nodes[&t].cls.as_deref().map_or(false, |b| built || b != k.as_str()))
                     .unwrap_or_default();
                 let kind = if self.store.nodes[&t].kind == NodeKind::Class { EdgeKind::Instantiates } else { EdgeKind::Calls };
                 if kind == EdgeKind::Calls && value_used(c) {
@@ -1439,7 +1444,7 @@ impl<'a, 't> Body<'a, 't> {
                         gives.push(h);
                     }
                 }
-                let step = Step { on, on_receiver, named, after, hands, gives, ..Default::default() };
+                let step = Step { built: built && !on.is_empty(), on, on_receiver, named, after, hands, gives, ..Default::default() };
                 steps.call(c, &t, kind, None, step);
                 let callee = if kind == EdgeKind::Instantiates { self.store.initializer_of(&t) } else { Some(t.clone()) };
                 if let Some(mut a) =
@@ -1527,7 +1532,7 @@ impl<'a, 't> Body<'a, 't> {
     /// it, or changes the value it runs on (`changed`); any other call Atlas cannot follow always,
     /// since it may run the program's code. What an operation gives without a name goes into the
     /// call around it.
-    fn unread(&self, steps: &mut Steps, c: TsNode<'t>, name: &str, world: bool, hands: Vec<Held>, changed: Vec<Held>) {
+    fn unread(&self, steps: &mut Steps<'t, '_>, c: TsNode<'t>, name: &str, world: bool, hands: Vec<Held>, changed: Vec<Held>) {
         if !changed.is_empty() {
             steps.changes(c, name, hands, self.gives(c, None), changed);
         } else if world {
@@ -1832,7 +1837,8 @@ impl<'a, 't> Body<'a, 't> {
             return;
         };
         let op = parts.last().cloned().unwrap_or_default();
-        let cr = Crosses::read(c, src, kind, pkg.as_deref(), &op, &literals(c, src, STRINGS), STRINGS, &HashMap::new());
+        let cr =
+            Crosses::read(c, src, kind, pkg.as_deref(), &op, &literals(c, src, STRINGS), STRINGS, &HashMap::new(), &path_maker_named(src));
         let args = c.child_by_field_name("arguments").map(named_children).unwrap_or_default();
         let at = At { m, scope: self.scope, params: &self.params };
         // a statement is read where it is whole: from a constant, a template, or what the callers

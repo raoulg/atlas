@@ -2,7 +2,7 @@
 # Forms that say the same thing are the same, so the override gives the `Book` it builds, as on the clean side.
 
 route books.Store
-step Store()/Store.get
+step Store()/Store.get one of 1
 step Store()/Store.get/Shelf.get
 step Store()/Store.get/Shelf.get/Book()
 

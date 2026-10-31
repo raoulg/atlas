@@ -9,16 +9,16 @@ use anyhow::Result;
 
 use crate::cache::{Check, Written};
 use crate::knowledge;
-use crate::model::{Edge, EdgeKind, EntryKind, Graph, NodeKind, Part};
+use crate::model::{Edge, EdgeKind, Graph, Lang, Node, NodeKind, Part};
 use crate::options::Options;
-use crate::paths::{method_and_path, serving};
+use crate::paths::{served, serving, Served};
 use crate::repo::Repo;
 
 /// The directories whose manifests root a part: the repository itself, and every manifest
 /// below it, at any depth, that no part around it reads as its own (a workspace reads its
 /// members, a project its packages).
-pub fn roots(repo: &Repo, opts: &Options) -> Vec<(PathBuf, &'static str)> {
-    let mut out: Vec<(PathBuf, &'static str)> = vec![];
+pub fn roots(repo: &Repo, opts: &Options) -> Vec<(PathBuf, Lang)> {
+    let mut out: Vec<(PathBuf, Lang)> = vec![];
     let rel = |d: &Path| d.strip_prefix(repo.root()).unwrap_or(d).to_path_buf();
     // no part is under what a tool made, or under tests and the data they read
     let skipped = |d: &Path| {
@@ -33,15 +33,15 @@ pub fn roots(repo: &Repo, opts: &Options) -> Vec<(PathBuf, &'static str)> {
             if !l.manifests().iter().any(|m| repo.is_file(d.join(m))) {
                 continue;
             }
-            let read = out.iter().any(|(o, name)| *name == l.name() && d.starts_with(o) && l.reads(&repo.under(&rel(o)), &d));
+            let read = out.iter().any(|(o, lang)| *lang == l.lang() && d.starts_with(o) && l.reads(&repo.under(&rel(o)), &d));
             if !read {
-                out.push((d.clone(), l.name()));
+                out.push((d.clone(), l.lang()));
             }
         }
     }
     if out.is_empty() {
         if let Some(lang) = crate::language::detect(repo, &Options { package: None, ..opts.clone() }) {
-            out.push((repo.root().to_path_buf(), lang.name()));
+            out.push((repo.root().to_path_buf(), lang.lang()));
         }
     }
     out
@@ -53,11 +53,11 @@ pub fn graph_of(repo: &Repo, opts: &Options) -> Result<Graph> {
     let lang = crate::language::of(repo, opts)?;
     let mut g = lang.parse(repo, opts)?;
     crate::entries::read_makefile(repo, &mut g);
-    assign(&mut g);
+    assign(&mut g, lang.lang());
     Ok(crate::view::View::apply(&crate::view::reached(&g, opts.libraries), &g))
 }
 
-/// Each part's own graph, read in its language: what `atlas check` asks, part by part. Each
+/// Each part's own graph, read in its language: what `atlas-code check` asks, part by part. Each
 /// repository is read once; a part is a view of its reading.
 pub fn analyze_parts(repos: &[PathBuf], opts: &Options) -> Result<Vec<Graph>> {
     for _ in 0..3 {
@@ -182,7 +182,7 @@ fn indexed_graph(part: &Repo, opts: &Options) -> Result<(Graph, Witness)> {
     let key = format!(
         "{}\n{}\n{}\n{}\n{:?}\n{:?}",
         crate::repo::Repo::real(&part.root()).display(),
-        part.language().unwrap_or(""),
+        part.language().map_or("", Lang::name),
         part.asked().map_or_else(String::new, |p| p.display().to_string()),
         opts.libraries,
         opts.named,
@@ -260,8 +260,11 @@ fn apart(parts: Vec<(Graph, PathBuf)>) -> Vec<Graph> {
             // a dot in a directory's name is no package boundary
             let dir: Vec<String> = at.components().map(|c| c.as_os_str().to_string_lossy().replace('.', "_")).collect();
             // the code of two parts in one directory is told apart by its language; their Makefile is the directory's
-            let place =
-                if dirs.iter().filter(|d| **d == at).count() > 1 { [dir.clone(), vec![g.language.clone()]].concat() } else { dir.clone() };
+            let place: Vec<String> = if dirs.iter().filter(|d| **d == at).count() > 1 {
+                dir.iter().cloned().chain(g.language.iter().map(|l| l.name().into())).collect()
+            } else {
+                dir.clone()
+            };
             let (dir, place) = (dir.join("/"), place.join("/"));
             let under = |p: &str, id: &str| if p.is_empty() { id.to_string() } else { format!("{p}/{id}") };
             g.rename(&|id| match head(id) {
@@ -311,7 +314,7 @@ pub fn joined(name: &str, graphs: Vec<Graph>) -> Graph {
 /// A graph's parts and every node's part: the top-level packages it holds (a crate of a
 /// workspace, a Python package, an app); what sits beside them (scripts, notebooks) belongs
 /// to the first.
-pub fn assign(g: &mut Graph) {
+pub fn assign(g: &mut Graph, language: Lang) {
     // a library read for its types is the environment's, not a part of the repository
     let mut ids: Vec<String> = g
         .nodes
@@ -324,11 +327,8 @@ pub fn assign(g: &mut Graph) {
     }
     // the package named after the graph comes first: scripts and notebooks are routes into it
     ids.sort_by_key(|id| id != &g.root);
-    let (leaves, structural) = (crate::language::leaves(&g.language), crate::language::structural(&g.language));
-    g.parts = ids
-        .iter()
-        .map(|id| Part { id: id.clone(), language: g.language.clone(), dir: g.project_root.clone(), leaves, structural })
-        .collect();
+    let (leaves, structural) = (crate::language::leaves(language), crate::language::structural(language));
+    g.parts = ids.iter().map(|id| Part { id: id.clone(), language, dir: g.project_root.clone(), leaves, structural }).collect();
     let known: HashSet<&String> = ids.iter().collect();
     for n in &mut g.nodes {
         let head = n.id.split('.').next().unwrap_or("").to_string();
@@ -340,16 +340,18 @@ pub fn assign(g: &mut Graph) {
     }
 }
 
-/// Graphs side by side: their nodes, edges, files and routes.
+/// Graphs side by side: their nodes, edges, files and routes, their languages, and the calls they
+/// did not follow, counted by name over all of them. No graphs are the empty graph, which has no
+/// language and no project root.
 pub fn merge(name: &str, graphs: Vec<Graph>) -> Graph {
-    let languages: HashSet<&str> = graphs.iter().map(|g| g.language.as_str()).collect();
     let mut out = Graph {
         root: name.to_string(),
-        language: if languages.len() == 1 { graphs[0].language.clone() } else { String::new() },
-        project_root: graphs[0].project_root.clone(),
+        language: graphs.iter().flat_map(|g| g.language.iter()).collect(),
+        project_root: graphs.first().map(|g| g.project_root.clone()).unwrap_or_default(),
         ..Default::default()
     };
     let mut made = HashSet::new();
+    let mut unresolved: HashMap<String, u32> = HashMap::new();
     for g in graphs {
         out.parts.extend(g.parts);
         out.nodes.extend(g.nodes);
@@ -357,10 +359,7 @@ pub fn merge(name: &str, graphs: Vec<Graph>) -> Graph {
         for (file, text) in g.files {
             // a library's file two parts read keeps the lines either shows
             match out.files.get_mut(&file) {
-                Some(had) if *had != text => {
-                    *had =
-                        had.split('\n').zip(text.split('\n')).map(|(a, b)| if a.is_empty() { b } else { a }).collect::<Vec<_>>().join("\n")
-                }
+                Some(had) if *had != text => *had = overlay(had, &text),
                 Some(_) => {}
                 None => {
                     out.files.insert(file, text);
@@ -371,10 +370,38 @@ pub fn merge(name: &str, graphs: Vec<Graph>) -> Graph {
         out.stats.modules += g.stats.modules;
         out.stats.unresolved_calls_total += g.stats.unresolved_calls_total;
         out.stats.unresolved_calls += g.stats.unresolved_calls;
-        out.stats.unresolved_calls_top.extend(g.stats.unresolved_calls_top);
+        for (call, n) in g.stats.unresolved_calls_top {
+            *unresolved.entry(call).or_default() += n;
+        }
     }
+    out.stats.unresolved_calls_top = ranked(unresolved);
     out.recount();
     out
+}
+
+/// Two texts of one file, each with blank lines where it shows nothing: line by line the first's
+/// where it shows one, else the second's, as long as the longer.
+fn overlay(had: &str, text: &str) -> String {
+    let (mut a, mut b) = (had.split('\n'), text.split('\n'));
+    let mut lines = vec![];
+    loop {
+        let line = match (a.next(), b.next()) {
+            (None, None) => break,
+            (Some(x), Some(y)) if x.is_empty() => y,
+            (Some(x), _) => x,
+            (None, Some(y)) => y,
+        };
+        lines.push(line);
+    }
+    lines.join("\n")
+}
+
+/// Counts of names, the most first and equal counts by name: the order a graph keeps the calls it
+/// did not follow in.
+fn ranked(counts: HashMap<String, u32>) -> Vec<(String, u32)> {
+    let mut top: Vec<(String, u32)> = counts.into_iter().collect();
+    top.sort_by(|a, b| b.1.cmp(&a.1).then(a.0.cmp(&b.0)));
+    top
 }
 
 /// Requests between parts: a request one part makes whole and none of its own routes serves is a
@@ -384,24 +411,20 @@ pub fn join(g: &mut Graph) {
     if g.parts.len() < 2 {
         return;
     }
-    let mut routes: HashMap<&str, Vec<(String, String, String)>> = HashMap::new();
+    let mut routes: HashMap<&str, Vec<&Node>> = HashMap::new();
     for n in &g.nodes {
-        let Some(e) = n.entry.as_ref().filter(|e| e.kind == EntryKind::Route) else { continue };
-        let Some((method, path)) = e.label.split_once(' ') else { continue };
-        if method.split('|').all(|m| knowledge::registers_route(&m.to_ascii_lowercase())) && path.len() > 1 {
-            routes.entry(n.part.as_str()).or_default().push((n.id.clone(), method.to_string(), path.to_string()));
-        }
+        routes.entry(n.part.as_str()).or_default().push(n);
     }
+    let routes: Vec<(&str, Vec<Served>)> = routes.into_iter().map(|(part, nodes)| (part, served(nodes))).collect();
     let mut edges: BTreeMap<(String, String), String> = BTreeMap::new();
     for n in g.nodes.iter().filter(|n| !n.asks.is_empty()) {
         for ask in &n.asks {
-            let (method, path) = method_and_path(ask);
             for (part, served) in &routes {
                 if *part == n.part {
                     continue;
                 }
-                for (handler, _, route) in serving(served, method, path) {
-                    edges.entry((n.id.clone(), handler.clone())).or_insert_with(|| route.clone());
+                for s in serving(served, ask) {
+                    edges.entry((n.id.clone(), s.handler.clone())).or_insert_with(|| s.path().to_string());
                 }
             }
         }

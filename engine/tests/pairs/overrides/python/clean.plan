@@ -5,7 +5,7 @@
 # runs on; the base's own body does not read it. Every `read` gives bytes, of no type of the code's: what an override
 # gives goes back to the dispatch that ran it.
 route reading.feeds.Source
-step Source()/Source.read
+step Source()/Source.read one of 3
 step Source()/Source.read/Feed.read
 step Source()/Source.read/Tape.read
 

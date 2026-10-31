@@ -1,0 +1,78 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 325" role="img" aria-label="A night past the band is only a reason to measure again: the same run measures the last commit within the band and tonight interleaved on one runner; not reproduced is the runner, reproduced small opens an issue, reproduced large is bisected and an urgent issue names the landing. Every Monday next is measured against the last release; by hand, any range is bisected.">
+<text x="20" y="28" style="font-family:var(--sans);font-size:14px;fill:var(--ink);text-anchor:start;font-weight:600">every night</text>
+<rect x="20" y="104.5" width="200" height="31.5" rx="4" style="fill:var(--key);fill-opacity:0.1;stroke:var(--key);stroke-width:0"/>
+<polyline points="30,122 60,115 90,122 120,122 150,115 180,122 210,80" style="fill:none;stroke:var(--ink-3);stroke-width:1.3"/>
+<circle cx="30" cy="122" r="3.5" style="fill:var(--ink-2)"/>
+<circle cx="60" cy="115" r="3.5" style="fill:var(--ink-2)"/>
+<circle cx="90" cy="122" r="3.5" style="fill:var(--ink-2)"/>
+<circle cx="120" cy="122" r="3.5" style="fill:var(--ink-2)"/>
+<circle cx="150" cy="115" r="3.5" style="fill:var(--ink-2)"/>
+<circle cx="180" cy="122" r="3.5" style="fill:var(--ink-2)"/>
+<circle cx="210" cy="80" r="5" style="fill:var(--edit)"/>
+<text x="210" y="68" style="font-family:var(--sans);font-size:12px;fill:var(--edit);text-anchor:middle;font-weight:600">suspect</text>
+<text x="180" y="148" style="font-family:var(--mono);font-size:13px;fill:var(--ink-2);text-anchor:middle;font-weight:700">A</text>
+<text x="210" y="148" style="font-family:var(--mono);font-size:13px;fill:var(--edit);text-anchor:middle;font-weight:700">B</text>
+<text x="20" y="182" style="font-family:var(--sans);font-size:12px;fill:var(--ink-3);text-anchor:start;font-weight:400">past the band: a reason to look, no more</text>
+<path d="M230 110 L268 110" style="stroke:var(--ink-3);stroke-width:1.5;fill:none" marker-end="url(#d-head)"/>
+<text x="278" y="28" style="font-family:var(--sans);font-size:14px;fill:var(--ink);text-anchor:start;font-weight:600">the same run measures again, on this runner</text>
+<rect x="280" y="92" width="24" height="36" rx="5" style="fill:var(--panel);fill-opacity:1;stroke:var(--ink-3);stroke-width:1.4"/>
+<text x="292" y="115" style="font-family:var(--mono);font-size:13px;fill:var(--ink-2);text-anchor:middle;font-weight:700">A</text>
+<rect x="310" y="92" width="24" height="36" rx="5" style="fill:var(--panel);fill-opacity:1;stroke:var(--edit);stroke-width:1.4"/>
+<text x="322" y="115" style="font-family:var(--mono);font-size:13px;fill:var(--edit);text-anchor:middle;font-weight:700">B</text>
+<rect x="340" y="92" width="24" height="36" rx="5" style="fill:var(--panel);fill-opacity:1;stroke:var(--ink-3);stroke-width:1.4"/>
+<text x="352" y="115" style="font-family:var(--mono);font-size:13px;fill:var(--ink-2);text-anchor:middle;font-weight:700">A</text>
+<rect x="370" y="92" width="24" height="36" rx="5" style="fill:var(--panel);fill-opacity:1;stroke:var(--edit);stroke-width:1.4"/>
+<text x="382" y="115" style="font-family:var(--mono);font-size:13px;fill:var(--edit);text-anchor:middle;font-weight:700">B</text>
+<rect x="400" y="92" width="24" height="36" rx="5" style="fill:var(--panel);fill-opacity:1;stroke:var(--ink-3);stroke-width:1.4"/>
+<text x="412" y="115" style="font-family:var(--mono);font-size:13px;fill:var(--ink-2);text-anchor:middle;font-weight:700">A</text>
+<rect x="430" y="92" width="24" height="36" rx="5" style="fill:var(--panel);fill-opacity:1;stroke:var(--edit);stroke-width:1.4"/>
+<text x="442" y="115" style="font-family:var(--mono);font-size:13px;fill:var(--edit);text-anchor:middle;font-weight:700">B</text>
+<rect x="460" y="92" width="24" height="36" rx="5" style="fill:var(--panel);fill-opacity:1;stroke:var(--ink-3);stroke-width:1.4"/>
+<text x="472" y="115" style="font-family:var(--mono);font-size:13px;fill:var(--ink-2);text-anchor:middle;font-weight:700">A</text>
+<rect x="490" y="92" width="24" height="36" rx="5" style="fill:var(--panel);fill-opacity:1;stroke:var(--edit);stroke-width:1.4"/>
+<text x="502" y="115" style="font-family:var(--mono);font-size:13px;fill:var(--edit);text-anchor:middle;font-weight:700">B</text>
+<rect x="520" y="92" width="24" height="36" rx="5" style="fill:var(--panel);fill-opacity:1;stroke:var(--ink-3);stroke-width:1.4"/>
+<text x="532" y="115" style="font-family:var(--mono);font-size:13px;fill:var(--ink-2);text-anchor:middle;font-weight:700">A</text>
+<rect x="550" y="92" width="24" height="36" rx="5" style="fill:var(--panel);fill-opacity:1;stroke:var(--edit);stroke-width:1.4"/>
+<text x="562" y="115" style="font-family:var(--mono);font-size:13px;fill:var(--edit);text-anchor:middle;font-weight:700">B</text>
+<text x="278" y="152" style="font-family:var(--sans);font-size:12px;fill:var(--ink-2);text-anchor:start;font-weight:400">A: the last commit within the band; B: tonight</text>
+<text x="278" y="170" style="font-family:var(--sans);font-size:12px;fill:var(--ink-3);text-anchor:start;font-weight:400">what the runner does to one, it does to the other</text>
+<text x="278" y="188" style="font-family:var(--sans);font-size:12px;fill:var(--ink-3);text-anchor:start;font-weight:400">every B past every A: reproduced (1 in 252 by chance)</text>
+<path d="M582 110 C 610 110, 610 56, 640 56" style="stroke:var(--ink-3);stroke-width:1.5;fill:none" marker-end="url(#d-head)"/>
+<path d="M582 110 L640 110" style="stroke:var(--ink-3);stroke-width:1.5;fill:none" marker-end="url(#d-head)"/>
+<path d="M582 110 C 610 110, 610 164, 640 164" style="stroke:var(--ink-3);stroke-width:1.5;fill:none" marker-end="url(#d-head)"/>
+<rect x="645" y="36" width="295" height="40" rx="8" style="fill:var(--panel);fill-opacity:1;stroke:var(--ink-3);stroke-width:1.6"/>
+<text x="657" y="53" style="font-family:var(--sans);font-size:13px;fill:var(--ink-3);text-anchor:start;font-weight:600">not reproduced</text>
+<text x="657" y="69" style="font-family:var(--sans);font-size:12px;fill:var(--ink-2);text-anchor:start;font-weight:400">the runner: a line in the summary</text>
+<rect x="645" y="90" width="295" height="40" rx="8" style="fill:var(--panel);fill-opacity:1;stroke:var(--key);stroke-width:1.6"/>
+<text x="657" y="107" style="font-family:var(--sans);font-size:13px;fill:var(--key);text-anchor:start;font-weight:600">reproduced, below ×1.5</text>
+<text x="657" y="123" style="font-family:var(--sans);font-size:12px;fill:var(--ink-2);text-anchor:start;font-weight:400">an issue: find out where it came from</text>
+<rect x="645" y="144" width="295" height="40" rx="8" style="fill:var(--panel);fill-opacity:1;stroke:var(--del);stroke-width:1.6"/>
+<text x="657" y="161" style="font-family:var(--sans);font-size:13px;fill:var(--del);text-anchor:start;font-weight:600">reproduced, ×1.5 or more</text>
+<text x="657" y="177" style="font-family:var(--sans);font-size:12px;fill:var(--ink-2);text-anchor:start;font-weight:400">bisected now: an urgent issue names the landing</text>
+<line x1="20" y1="212" x2="940" y2="212" style="stroke:var(--line);stroke-width:1"/>
+<text x="20" y="240" style="font-family:var(--sans);font-size:14px;fill:var(--ink);text-anchor:start;font-weight:600">every Monday</text>
+<rect x="20" y="252" width="120" height="30" rx="8" style="fill:var(--panel);fill-opacity:1;stroke:var(--ink-3);stroke-width:1.3"/>
+<text x="80" y="272" style="font-family:var(--sans);font-size:12.5px;fill:var(--ink-2);text-anchor:middle;font-weight:400">last release</text>
+<rect x="300" y="252" width="90" height="30" rx="8" style="fill:var(--panel);fill-opacity:1;stroke:var(--edit);stroke-width:1.5"/>
+<text x="345" y="272" style="font-family:var(--mono);font-size:12.5px;fill:var(--edit);text-anchor:middle;font-weight:700">next</text>
+<path d="M142 267 L296 267" style="stroke:var(--key);stroke-width:1.4;fill:none;stroke-dasharray:4 3" marker-end="url(#d-head)"/>
+<text x="220" y="260" style="font-family:var(--mono);font-size:11.5px;fill:var(--key);text-anchor:middle;font-weight:400">A B A B</text>
+<text x="20" y="304" style="font-family:var(--sans);font-size:12px;fill:var(--ink-3);text-anchor:start;font-weight:400">creep of a few percent a landing, which no night shows</text>
+<text x="500" y="240" style="font-family:var(--sans);font-size:14px;fill:var(--ink);text-anchor:start;font-weight:600">by hand, looking back</text>
+<circle cx="510" cy="267" r="6" style="fill:var(--panel);stroke:var(--ink-3);stroke-width:1.3"/>
+<line x1="516" y1="267" x2="566" y2="267" style="stroke:var(--line);stroke-width:1.3"/>
+<circle cx="572" cy="267" r="6" style="fill:var(--panel);stroke:var(--ink-3);stroke-width:1.3"/>
+<line x1="578" y1="267" x2="628" y2="267" style="stroke:var(--line);stroke-width:1.3"/>
+<circle cx="634" cy="267" r="6" style="fill:var(--panel);stroke:var(--ink-3);stroke-width:1.3"/>
+<line x1="640" y1="267" x2="690" y2="267" style="stroke:var(--line);stroke-width:1.3"/>
+<circle cx="696" cy="267" r="6" style="fill:var(--panel);stroke:var(--del);stroke-width:2.2"/>
+<line x1="702" y1="267" x2="752" y2="267" style="stroke:var(--line);stroke-width:1.3"/>
+<circle cx="758" cy="267" r="6" style="fill:var(--panel);stroke:var(--ink-3);stroke-width:1.3"/>
+<line x1="764" y1="267" x2="814" y2="267" style="stroke:var(--line);stroke-width:1.3"/>
+<circle cx="820" cy="267" r="6" style="fill:var(--panel);stroke:var(--ink-3);stroke-width:1.3"/>
+<text x="510" y="292" style="font-family:var(--sans);font-size:11.5px;fill:var(--ink-3);text-anchor:middle;font-weight:400">from</text>
+<text x="820" y="292" style="font-family:var(--sans);font-size:11.5px;fill:var(--ink-3);text-anchor:middle;font-weight:400">to</text>
+<text x="696" y="250" style="font-family:var(--sans);font-size:12px;fill:var(--del);text-anchor:middle;font-weight:600">this landing</text>
+<text x="500" y="312" style="font-family:var(--sans);font-size:12px;fill:var(--ink-3);text-anchor:start;font-weight:400">30 s to 45 s in a week: the landing, or each landing&#x27;s share</text>
+</svg>

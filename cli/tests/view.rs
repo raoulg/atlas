@@ -1,4 +1,4 @@
-//! The page `atlas view` writes: the graph `atlas analyze` writes, with the findings `atlas check`
+//! The page `atlas-code view` writes: the graph `atlas-code analyze` writes, with the findings `atlas-code check`
 //! lists, each at a node the picture knows.
 
 use std::path::PathBuf;
@@ -13,8 +13,12 @@ fn root() -> PathBuf {
 /// Atlas run in the workspace root, keeping what it keeps in a cache of the tests' own.
 fn atlas(args: &[&str]) -> String {
     let cache = std::env::temp_dir().join(format!("atlas-view-cache-{}", std::process::id()));
-    let out =
-        Command::new(env!("CARGO_BIN_EXE_atlas")).args(args).current_dir(root()).env("XDG_CACHE_HOME", cache).output().expect("atlas runs");
+    let out = Command::new(env!("CARGO_BIN_EXE_atlas-code"))
+        .args(args)
+        .current_dir(root())
+        .env("XDG_CACHE_HOME", cache)
+        .output()
+        .expect("atlas runs");
     String::from_utf8(out.stdout).unwrap()
 }
 
@@ -33,7 +37,7 @@ fn page_of(repo: &str) -> Value {
     data["projects"].as_object().unwrap().values().next().unwrap().clone()
 }
 
-/// What `atlas check --json` prints: one document, a report per part, each part's findings in turn.
+/// What `atlas-code check --json` prints: one document, a report per part, each part's findings in turn.
 fn checked(repo: &str) -> Vec<Value> {
     let text = atlas(&["check", repo, "--json"]);
     let report: Value = serde_json::from_str(&text).expect("one JSON document");
@@ -48,8 +52,8 @@ fn analyzed(repo: &str) -> Value {
     g
 }
 
-/// A page holds the findings `atlas check` lists, part by part, and each is about a node of the
-/// graph it draws; that graph is the one `atlas analyze` reads, its parts merged and joined.
+/// A page holds the findings `atlas-code check` lists, part by part, and each is about a node of the
+/// graph it draws; that graph is the one `atlas-code analyze` reads, its parts merged and joined.
 #[test]
 fn a_page_holds_what_check_finds() {
     for repo in ["engine/tests/fixture", "engine/tests/fixture-parts"] {
@@ -65,7 +69,7 @@ fn a_page_holds_what_check_finds() {
         for k in ["flow", "findings", "open", "view"] {
             g.remove(k);
         }
-        assert!(Value::Object(g.clone()) == analyzed(repo), "{repo}: the page draws the graph `atlas analyze` reads");
+        assert!(Value::Object(g.clone()) == analyzed(repo), "{repo}: the page draws the graph `atlas-code analyze` reads");
     }
 }
 
@@ -102,7 +106,7 @@ fn view_opens_the_page_in_the_view_it_names() {
     let data = &html[html.find("window.DATA = ").expect("the page holds its data") + "window.DATA = ".len()..];
     let data: Value = serde_json::Deserializer::from_str(data).into_iter().next().unwrap().unwrap();
     assert_eq!(data["projects"]["fixture"]["view"], serde_json::from_str::<Value>(view).unwrap());
-    let refused = Command::new(env!("CARGO_BIN_EXE_atlas"))
+    let refused = Command::new(env!("CARGO_BIN_EXE_atlas-code"))
         .args(["view", "engine/tests/fixture", "--no-open", "--view", r#"{"route":"fixture.cli.build","opne":{}}"#])
         .current_dir(root())
         .output()

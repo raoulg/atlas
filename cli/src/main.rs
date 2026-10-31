@@ -10,6 +10,7 @@ mod update;
 mod version;
 
 use std::path::{Path, PathBuf};
+use std::process::ExitCode;
 
 use anyhow::Result;
 use atlas_engine::changes;
@@ -113,17 +114,17 @@ fn help_template() -> String {
 fn examples() -> String {
     let (head, cmd, dim) = (STYLES.get_header(), STYLES.get_literal(), Style::new().effects(Effects::DIMMED));
     let rows = [
-        ("atlas serve", "a page to work in with your agent"),
-        ("atlas view", "the same picture as one HTML file"),
-        ("atlas view ../api ../web", "two repositories as parts of one picture"),
-        ("atlas view notebooks/explore.ipynb", "one file, opened on its route"),
-        ("atlas view https://github.com/o/r/tree/main/src/pkg", "one folder of a repository on GitHub"),
-        ("atlas check", "where code and principles disagree"),
-        ("atlas revelation", "what is left to build"),
-        ("atlas changes", "what your edits did to the routes"),
-        ("atlas changes v1..main", "what changed between two revisions"),
-        ("atlas history", "pick two commits, see them as one picture"),
-        ("claude mcp add atlas -- atlas mcp", "give Claude Code the same picture"),
+        ("atlas-code serve", "a page to work in with your agent"),
+        ("atlas-code view", "the same picture as one HTML file"),
+        ("atlas-code view ../api ../web", "two repositories as parts of one picture"),
+        ("atlas-code view notebooks/explore.ipynb", "one file, opened on its route"),
+        ("atlas-code view https://github.com/o/r/tree/main/src/pkg", "one folder of a repository on GitHub"),
+        ("atlas-code check", "where code and principles disagree"),
+        ("atlas-code revelation", "what is left to build"),
+        ("atlas-code changes", "what your edits did to the routes"),
+        ("atlas-code changes v1..main", "what changed between two revisions"),
+        ("atlas-code history", "pick two commits, see them as one picture"),
+        ("claude mcp add atlas -- atlas-code mcp", "give Claude Code the same picture"),
     ];
     let mut s = format!("{head}Examples:{head:#}\n");
     for (c, what) in rows {
@@ -133,14 +134,47 @@ fn examples() -> String {
             _ => s += &format!("  {cmd}{c}{cmd:#}\n  {:<36}{dim}{what}{dim:#}\n", ""),
         }
     }
+    s += &format!("\n{head}Exit status:{head:#}\n");
+    for (code, what) in EXIT {
+        s += &format!("  {cmd}{code:<36}{cmd:#}{dim}{what}{dim:#}\n");
+    }
     s
 }
 
+/// How a decision is written that sets a finding of `atlas-code check` aside: in the code, or by
+/// path in `.atlasignore` (`docs/reference/principles.md`).
+fn decisions() -> String {
+    let (head, cmd, dim) = (STYLES.get_header(), STYLES.get_literal(), Style::new().effects(Effects::DIMMED));
+    format!(
+        "{head}Decisions:{head:#}
+  Where the code is right as it is, write the decision down with its reason: check sets the
+  findings it answers aside, counts them, lists them with --all and keeps them in --json.
+
+  In the code, after the line comment, for that line or the line below:
+    {cmd}# atlas: ignore[changes] in place for the frame rate{cmd:#}
+  For whole paths, one a line in {cmd}.atlasignore{cmd:#} at the top of the repository:
+    {cmd}src/sim/particles.py  changes  # in place for the frame rate{cmd:#}
+    {cmd}src/legacy/**                  # ported pipeline, rewrite planned{cmd:#}
+  {dim}A pattern as .gitignore writes one, the principles it answers, the reason after #.
+  No principle named answers them all; a decision that answers nothing is asked about.{dim:#}
+"
+    )
+}
+
+/// What the exit status says, as ruff and grep say it: what was asked is done, `atlas-code check` has
+/// something to ask, or Atlas could not do what was asked (a path it cannot read, a clone that
+/// fails, a command line it does not take).
+const EXIT: [(u8, &str); 3] = [
+    (0, "done; atlas-code check has nothing to ask"),
+    (1, "atlas-code check has something to ask"),
+    (2, "Atlas could not do what was asked"),
+];
+
 #[derive(Parser)]
 #[command(
-    name = "atlas",
+    name = "atlas-code",
     version = version::VERSION.as_str(),
-    about = "A mathematical panorama of your software code.",
+    about = "Atlas — your code's topology.",
     help_template = help_template(),
     after_help = examples(),
     styles = STYLES
@@ -165,7 +199,7 @@ enum Cmd {
     ///
     /// Serves a repository's page on this machine, drawn anew when its code changes and shared with
     /// an agent: what the page shows, where the agent points it, and the notes written on its boxes
-    /// and lines (`atlas mcp`: `shown`, `look`, `notes`, `resolve`).
+    /// and lines (`atlas-code mcp`: `shown`, `look`, `notes`, `resolve`).
     Serve {
         /// Repository root; default: the current directory.
         repo: Option<PathBuf>,
@@ -214,8 +248,15 @@ enum Cmd {
         /// `parts`, `units`, `steps`, `families`, `places`, `dirs`, as the page's address writes them.
         #[arg(long, value_name = "JSON")]
         view: Option<Sight>,
+        /// Write how long each phase took (read, check, flow, page), in seconds, as JSON to this file
+        #[arg(long, value_name = "FILE", hide = true)]
+        timings: Option<PathBuf>,
     },
     /// Where the code and the design principles disagree, each with a question
+    ///
+    /// Exit status 0 when there is nothing to ask, 1 when there is, 2 when Atlas could not read the
+    /// repository.
+    #[command(after_long_help = decisions())]
     Check {
         /// Repository root or git URL; default: the current directory.
         repo: Option<PathBuf>,
@@ -262,7 +303,7 @@ enum Cmd {
     /// The picture for your coding agent, over MCP
     ///
     /// Serves Atlas to a coding agent over MCP (stdio): principles, check, explain, routes, route,
-    /// view, changes, and with `atlas serve`, shown, look, notes, answer.
+    /// view, changes, and with `atlas-code serve`, shown, look, notes, answer.
     Mcp,
     /// The history in your browser: pick two commits, see them as one picture
     ///
@@ -293,7 +334,8 @@ enum Cmd {
 
 /// The page of `repos`, or of one of them `since` a revision (`until` another), written to `out`,
 /// else beside `home`, the folder of the first of them when it is not a clone. It opens in `sight`,
-/// and on the route of a file named on the command line.
+/// and on the route of a file named on the command line. How long each phase took goes to `timings`, as
+/// JSON, where one is named.
 fn view(
     repos: &[PathBuf],
     opts: &Options,
@@ -301,20 +343,49 @@ fn view(
     shown_in_browser: bool,
     (since, until): (Option<&str>, Option<&str>),
     sight: Option<Sight>,
+    timings: Option<&Path>,
 ) -> Result<()> {
+    let mut phases = Phases::new();
     let read = page::reading(repos, opts, since, until)?;
+    phases.done("read");
     let findings = read.findings();
+    phases.done("check");
     let (graph, compared) = read.drawn();
     let flow = atlas_engine::flow::of(&graph);
+    phases.done("flow");
     let opens = page::Opens { route: named_route(&graph, &opts.named), sight, served: None, preliminary: false };
     let html = page::Html::of(&graph, &flow, &findings, compared.as_ref(), &opens)?;
     let out = out.unwrap_or_else(|| home::made(home, &format!("{}.html", graph.root)));
     html.write(&out)?;
+    phases.done("page");
+    if let Some(timings) = timings {
+        std::fs::write(timings, serde_json::to_string(&phases.took)?)?;
+    }
     eprintln!("{} · wrote {}", page::summary(&graph), out.display());
     if shown_in_browser {
         page::open(out.as_os_str());
     }
     Ok(())
+}
+
+/// How long each phase of a command took, in seconds, in the order they ran: what `--timings` writes,
+/// for a benchmark to read (`tools/perf.py`).
+struct Phases {
+    last: std::time::Instant,
+    took: serde_json::Map<String, serde_json::Value>,
+}
+
+impl Phases {
+    fn new() -> Phases {
+        Phases { last: std::time::Instant::now(), took: serde_json::Map::new() }
+    }
+
+    /// The phase `name` ended now; it began where the one before it ended.
+    fn done(&mut self, name: &str) {
+        let now = std::time::Instant::now();
+        self.took.insert(name.to_string(), (now - self.last).as_secs_f64().into());
+        self.last = now;
+    }
 }
 
 /// The route of a file named on the command line: the entry that lies in one of the `named`, by its id.
@@ -361,7 +432,7 @@ fn local(arg: PathBuf, opts: &mut Options) -> Result<(PathBuf, Option<remote::Cl
 /// each part has and how many the author has set aside, with `all` each of those too; then the
 /// decisions that set nothing aside. As JSON, one document that holds every part and those decisions
 /// (`{"parts": [{"root", "findings"}], "stale": [..]}`), a finding set aside with its `aside`.
-/// Exit status 1 when there is anything to ask.
+/// Whether everything is answered: nothing open and no stale decision.
 fn check(repo: &std::path::Path, opts: &Options, json: bool, all: bool) -> Result<bool> {
     // each part in its own language: what a Python package declares, a crate's compiler checks
     let graphs = parts::analyze_parts(&[repo.to_path_buf()], opts)?;
@@ -382,7 +453,7 @@ fn check(repo: &std::path::Path, opts: &Options, json: bool, all: bool) -> Resul
             }
         }
         let counted: Vec<(&str, &[principles::Finding])> = parts.iter().map(|(r, f)| (*r, f.as_slice())).collect();
-        print!("{}", principles::summary(&counted, &principles::PRINCIPLES.iter().collect::<Vec<_>>(), &look));
+        print!("{}", principles::summary(&counted, &principles::Principle::ALL, &look));
         print!("{}", atlas_engine::aside::report(&stale, &look));
     }
     Ok(stale.is_empty() && parts.iter().all(|(_, f)| f.iter().all(|f| f.aside.is_some())))
@@ -437,19 +508,32 @@ fn exit_when_stdin_closes() {
     });
 }
 
-fn main() -> Result<()> {
-    let cli = Cli::parse();
+/// The command, its exit status as `EXIT` says: an error, with its causes, is 2.
+fn main() -> ExitCode {
+    match run(Cli::parse()) {
+        Ok(code) => code,
+        Err(e) => {
+            eprintln!("Error: {e:?}");
+            ExitCode::from(2)
+        }
+    }
+}
+
+/// The command, and 1 for `atlas-code check` with something to ask. It returns once what it holds is
+/// dropped, the temporary clone of a git URL among it, so that is removed whatever the status.
+fn run(cli: Cli) -> Result<ExitCode> {
+    let mut code = ExitCode::SUCCESS;
     // a person's commands say when a newer build is out; the agent's and the graph's do not
     let update = if matches!(cli.cmd, Cmd::Mcp | Cmd::Analyze { .. }) { None } else { Some(update::begin()) };
     let cache = if cli.no_cache { None } else { atlas_engine::cache::Cache::new(version::VERSION.as_str()) };
     let mut opts = Options { libraries: cli.libraries, cache, ..Options::default() };
     match cli.cmd {
-        Cmd::View { repos, out, no_open, since, until, view: sight } => {
+        Cmd::View { repos, out, no_open, since, until, view: sight, timings } => {
             let repos = if repos.is_empty() { vec![std::env::current_dir()?] } else { repos };
             let (repos, clones): (Vec<PathBuf>, Vec<Option<remote::Clone>>) =
                 repos.into_iter().map(|r| local(r, &mut opts)).collect::<Result<Vec<_>>>()?.into_iter().unzip();
             let home = clones[0].is_none().then(|| repos[0].as_path());
-            view(&repos, &opts, (out, home), !no_open, (since.as_deref(), until.as_deref()), sight)?
+            view(&repos, &opts, (out, home), !no_open, (since.as_deref(), until.as_deref()), sight, timings.as_deref())?
         }
         Cmd::Mcp => mcp::serve(&opts)?,
         Cmd::History { repo, port, no_open } => {
@@ -517,7 +601,7 @@ fn main() -> Result<()> {
                 &mut opts,
             )?;
             if !check(&repo, &opts, json, all)? {
-                std::process::exit(1);
+                code = ExitCode::from(1);
             }
         }
         Cmd::Analyze { repo, package, out } => {
@@ -554,5 +638,5 @@ fn main() -> Result<()> {
     if let Some(update) = update {
         update.finish();
     }
-    Ok(())
+    Ok(code)
 }

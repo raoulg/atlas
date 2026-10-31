@@ -1,11 +1,11 @@
 //! TypeScript and TSX read as the same algebra as Python and Rust: modules, types, calls,
 //! routes and the places a body touches.
 
-use std::collections::HashSet;
+use std::collections::{BTreeSet, HashSet};
 use std::path::PathBuf;
 
 use atlas_engine::principles::check;
-use atlas_engine::{analyze, EdgeKind, EntryKind, Graph, NodeKind, Options};
+use atlas_engine::{analyze, Both, EdgeKind, EntryKind, Graph, Lang, NodeKind, Options};
 
 fn fixture() -> Graph {
     let repo = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixture-ts");
@@ -25,7 +25,7 @@ fn has(set: &HashSet<(String, String)>, src: &str, dst: &str) -> bool {
 #[test]
 fn files_are_modules_and_types_are_types() {
     let g = fixture();
-    assert_eq!((g.language.as_str(), g.root.as_str()), ("typescript", "fixture-ts"));
+    assert_eq!((g.language.one(), g.root.as_str()), (Some(Lang::TypeScript), "fixture-ts"));
     let kind = |id: &str| g.node(&format!("fixture-ts.{id}")).map(|n| n.kind);
     assert_eq!(kind("lib.model"), Some(NodeKind::Module));
     assert_eq!(kind("lib"), Some(NodeKind::Module), "lib/index.ts stands for lib");
@@ -198,10 +198,10 @@ fn paths_and_requests_are_evaluated() {
     };
     // the file `klanten` hands `lees`, in the routes that reach `klanten`: under `DATA`, what
     // `DATA_DIR` says or its default, one input drawn as its default
-    let lees: Vec<(&str, &[String])> =
-        g.node("fixture-ts.server.opslag.lees").unwrap().touches.iter().map(|t| (t.artifact.as_str(), t.by.as_slice())).collect();
-    let klanten = &["fixture-ts.server.opslag.klanten".to_string()][..];
-    assert_eq!(lees, [("data/klanten.csv", klanten)], "`lees(\"klanten.csv\")` under `DATA`");
+    let lees: Vec<(&str, &BTreeSet<Both>)> =
+        g.node("fixture-ts.server.opslag.lees").unwrap().touches.iter().map(|t| (t.artifact.as_str(), &t.by)).collect();
+    let klanten = BTreeSet::from([Both::one("fixture-ts.server.opslag.klanten")]);
+    assert_eq!(lees, [("data/klanten.csv", &klanten)], "`lees(\"klanten.csv\")` under `DATA`");
     // an object holds what its constructor was handed: a parameter property, and `this.map = map`;
     // `new Archief("archief").bewaar("a.txt", ..)` hands the method the rest of the path
     assert_eq!(t("server.opslag.Archief.bewaar"), [("disk_write".into(), "archief/a.txt".into())], "`constructor(private map: string)`");

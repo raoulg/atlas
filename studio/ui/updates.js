@@ -5,7 +5,7 @@
   // changed (a release's page of notes, drawn in the window; for a nightly, the commits between the
   // two, in the browser) with the button that installs it. The page opens by itself once per newer
   // build, and again whenever the button is pressed. The same page shows what changed in the build that
-  // runs, when asked (What's New).
+  // runs, when asked (What's New); for a nightly, the notes of the release it leads to, as next has them.
 
   const node = (tag, className, label) => {
     const element = document.createElement(tag);
@@ -49,8 +49,9 @@
       // without a page of notes for the window, a banner over the picture says it
       host.classList.toggle('compact', !build.page);
       if (build.current) {
-        title.textContent = `What's new in Atlas Studio ${build.version}`;
-        said.textContent = build.page ? '' : build.notes.includes('/commits/')
+        title.textContent = `What's new in Atlas Studio ${build.version}` + (build.nightly ? ' (nightly)' : '');
+        said.textContent = build.page ? (build.nightly ? `The notes of ${build.version} as next has them so far: this build is no release yet.` : '')
+          : build.notes.includes('/commits/')
           ? 'This build is no release yet: what changed is in the commits it is made of.'
           : 'What changed is on its release page.';
       } else {

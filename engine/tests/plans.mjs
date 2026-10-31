@@ -2,7 +2,8 @@
 // it: `node plans.mjs PLAN_JS DATA_JSON ROUTE...` prints one JSON object per route. `engine/tests/plans.rs` hands it the
 // page's data of a program and compares the facts with the plan written down beside the program.
 //
-// - `step PATH`, `choice PATH`: an occurrence (a call, by the names on its path from the route) and a choice;
+// - `step PATH`, `choice PATH`: an occurrence (a call, by the names on its path from the route) and a choice; a call
+//   that may run one of several functions says how many (`step PATH one of N`);
 // - `line A > B CHANNEL`: a line of the plan, its channel `value`, `own`, `reached`, `call` or `back`;
 // - `home VALUE FRAME`: the frame a value stands in when every step is open (`outside` when none holds it);
 // - `side PLACE left|right|between|both`: where a place of the world stands, decided on the closed picture.
@@ -23,7 +24,7 @@ const D = JSON.parse(fs.readFileSync(dataJson, "utf8"));
 // `ATLAS_FINE_BUDGET=n` cuts the plan as a large program's is cut (`plan.js`, `FINE_BUDGET`)
 const window = process.env.ATLAS_FINE_BUDGET ? {ATLAS_FINE_BUDGET: Number(process.env.ATLAS_FINE_BUDGET)} : {};
 const M = new Function("D", "window", fs.readFileSync(planJs, "utf8") + `
-return {V, plan, imageOf, checkOpenings, treeInfo, stepLabel, typeLabel, sideOfRoles, familyOf, kindOf, byId, ordersOn, stepOf, opens, frameOf, valueBox, foldDirs, filePath};`)(D, window);
+return {V, plan, imageOf, checkOpenings, treeInfo, stepLabel, oneOf, typeLabel, sideOfRoles, familyOf, kindOf, byId, ordersOn, stepOf, opens, frameOf, valueBox, foldDirs, filePath, valuesOf, closedFamily, typesIn, lightOf, cutBy, familyFrames, here, kindsOf};`)(D, window);
 const {V} = M;
 
 const SIDES = {in: "left", out: "right", mid: "between", both: "both"};
@@ -104,7 +105,12 @@ function read(route) {
     return v;
   };
   const facts = [];
-  for (const n of nodes.values()) if (n.parent !== null && n.parent !== undefined) facts.push(`${n.synthetic ? "choice" : "step"} ${name.get(n.id)}${M.treeInfo.get(n.key)?.recursive ? " recursive" : ""}`);
+  // a step that is a call into a family says how many functions it may run, as its label does
+  for (const n of nodes.values()) {
+    if (n.parent === null || n.parent === undefined) continue;
+    const one = n.synthetic ? 0 : M.oneOf(n.key);
+    facts.push(`${n.synthetic ? "choice" : "step"} ${name.get(n.id)}${M.treeInfo.get(n.key)?.recursive ? " recursive" : ""}${one ? ` one of ${one}` : ""}`);
+  }
   const channel = (k, r) => k.startsWith("e:") ? "call" : k.startsWith("w:") ? (r ? "reached" : "own") : r ? "value reached" : "value";
   for (const P of F.pills.values()) {
     for (const [k, r] of P.D) facts.push(`line ${valueName(k)} > ${occ(P.id)} ${channel(k, r)}`);
@@ -125,7 +131,7 @@ function read(route) {
     const w = C.fine.ways.get(k), s = M.sideOfRoles([C.roles.get(k)].filter(Boolean), () => (w?.size === 1 ? [...w][0] : "mid"));
     facts.push(`side ${placeName(k)} ${SIDES[s]}`);
   }
-  const faults = [...pictures(F, open, occ, homes, valueName), ...familyOpenings(), ...folderOpenings([...C.fine.ways.keys()].map(M.filePath).filter(Boolean))];
+  const faults = [...pictures(F, open, occ, homes, valueName), ...familyOpenings(), ...pickings(), ...folderOpenings([...C.fine.ways.keys()].map(M.filePath).filter(Boolean))];
   if (window.ATLAS_FINE_BUDGET) faults.push(...cutOpenings(F, occ));
   return {facts: [...new Set(facts)].sort(), faults};
 }
@@ -145,6 +151,50 @@ function familyOpenings() {
     V.open.families = new Set([t]);
     const frames = new Set([...M.plan().places.values()].filter(p => p.type && M.frameOf(p.type)).map(p => M.valueBox(M.frameOf(p.type), p)));
     for (const b of boxes) if (!frames.has(b)) out.push(`the family ${M.typeLabel(t)}: its box ${b} opens into no frame`);
+  }
+  V.open.families = new Set();
+  M.plan();
+  return out;
+}
+
+// A picked type is lit where its values flow (#296), and the pick decides what exists before the families group it
+// (mathematics.md, "Saturation"): opening the families a pick cuts in two, until none does, leaves no closed box cut in two.
+// Opening a family carries its light (refinement keeps what it does not refine): a closed box lit whole opens into a lit
+// frame whose kinds are all lit, a dark one into nothing lit; the parts it holds are judged by their own type. And a box is
+// lit whole by the pick of what it is: its type's values are all the values it stands for, a family's kinds among them,
+// whether a base or a rank makes them its kinds (#306). Asked of every type of the route's fiber the Type lattice draws, a
+// class, a family the engine groups or one of its kinds, as the pick of its values
+function pickings() {
+  const out = [];
+  // the boxes of a picture that hold a type, an open family drawn as the page draws it: its frame, the value, and in it a box
+  // for each kind the value can be and each part it holds
+  const held = () => {
+    const places = new Map(M.plan().places);
+    for (const F of M.familyFrames(places).values()) {
+      places.set(F.id, {id: F.id, type: F.fam, frame: true, fam: F.fam});
+      for (const k of F.kids) places.set(k.id, {...k, inFrame: F.id, fam: F.fam});
+    }
+    return [...places.values()].filter(p => p.type);
+  };
+  V.open.steps = new Set();
+  V.open.families = new Set();
+  const closed = held(), families = [...new Set(closed.filter(M.closedFamily).map(p => p.type))];
+  for (const p of closed) if (M.lightOf(M.valuesOf(p.type), p) !== "lit") out.push(`the values of ${M.typeLabel(p.type)}: its box ${p.id} is ${M.lightOf(M.valuesOf(p.type), p) || "dark"}`);
+  const T = D.flow?.types || {};
+  const picks = [...new Set([...D.nodes.filter(n => n.kind === "class" && !n.library).map(n => n.id), ...Object.keys(T.members || {}), ...Object.keys(T.kind || {})])];
+  for (const t of picks.filter(t => M.here(t) || M.kindsOf(t).length)) {
+    const S = M.valuesOf(t), name = `the values of ${M.typeLabel(t)}`;
+    V.open.families = new Set();
+    for (let cut = M.cutBy(S, M.plan().places.values()); cut.length; cut = M.cutBy(S, M.plan().places.values())) for (const f of cut) V.open.families.add(f);
+    for (const p of M.plan().places.values()) if (M.cutBy(S, [p]).length) out.push(`${name}: the box ${p.id} is cut in two once the families they cut are open`);
+    for (const f of families) {
+      V.open.families = new Set();
+      const was = new Set(held().filter(p => p.type === f && M.closedFamily(p)).map(p => M.lightOf(S, p)));
+      if (was.size !== 1 || was.has("litpart")) continue;
+      V.open.families = new Set([f]);
+      const light = was.has("lit") ? "lit" : null;
+      for (const p of held()) if (p.fam === f && !p.part && M.lightOf(S, p) !== light) out.push(`${name}: the family ${M.typeLabel(f)}, ${light ? "lit whole" : "dark"} closed, opens into ${p.id}, which is ${M.lightOf(S, p) || "dark"}`);
+    }
   }
   V.open.families = new Set();
   M.plan();

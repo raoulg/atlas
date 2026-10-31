@@ -27,7 +27,7 @@
       "signingIdentity": "-"
     },
     "externalBin": [
-      "binaries/atlas"
+      "binaries/atlas-code"
     ],
     "icon": [
       "icons/icon.png",

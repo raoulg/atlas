@@ -1,7 +1,10 @@
 name: nightly
 
-# The nightly build of `next`, made when `next` has moved and `ci` is green for its commit: the CLI
-# for five platforms and Atlas Studio for macOS and Windows (`studio.yml`). Every
+# The nightly build of `next`, made when `next` has moved and `ci`'s tests, run here on three platforms
+# for exactly that commit, are green: the CLI for five platforms and Atlas Studio for macOS and Windows
+# (`studio.yml`). A failing test is a red nightly and no new build; the last one stays. A push to `next`
+# runs no `ci` of its own, so this is where `next` is tested on Linux and Windows; while a stable release
+# is prepared, a nightly is started by hand whenever a build is wanted. Every
 # build is its own immutable pre-release, `nightly-<yyyymmddHHMM>`, which the tap's formula names
 # with its checksums; the newest seven are kept. The pre-release `nightly` is the moving pointer
 # `install.sh` reads: its assets are replaced in place and its tag moved to the build. A
@@ -10,11 +13,11 @@ name: nightly
 
 on:
   schedule:
-    - cron: "0 3 * * *"
+    - cron: "30 3 * * *"
   workflow_dispatch:
     inputs:
       force:
-        description: "Build even when next has not moved or ci is not green"
+        description: "Build even when next has not moved since the last nightly"
         type: boolean
         default: false
 
@@ -40,7 +43,6 @@ jobs:
         run: |
           sha=$(git rev-parse HEAD)
           last=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/nightly" -q .object.sha 2>/dev/null || echo none)
-          ci=$(gh run list --workflow ci.yml --branch next --commit "$sha" --json conclusion -q '.[0].conclusion' 2>/dev/null || echo none)
           echo "sha=$sha" >> "$GITHUB_OUTPUT"
           echo "stamp=$(date -u +%Y%m%d%H%M)" >> "$GITHUB_OUTPUT"
           if [ "$FORCE" = true ]; then
@@ -48,16 +50,20 @@ jobs:
           elif [ "$last" = "$sha" ]; then
             echo "next has not moved since the last nightly ($sha)"
             echo "build=false" >> "$GITHUB_OUTPUT"
-          elif [ "$ci" != success ]; then
-            echo "ci is not green for $sha ($ci): no nightly"
-            echo "build=false" >> "$GITHUB_OUTPUT"
           else
             echo "build=true" >> "$GITHUB_OUTPUT"
           fi
 
-  build:
+  # the tests of the commit to build, on three platforms: nothing below runs unless they are green
+  test:
     needs: decide
     if: needs.decide.outputs.build == 'true'
+    uses: ./.github/workflows/ci.yml
+    with:
+      ref: ${{ needs.decide.outputs.sha }}
+
+  build:
+    needs: [decide, test]
     strategy:
       matrix:
         include:
@@ -76,26 +82,25 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target }}
-      - run: cargo build --release --locked --target ${{ matrix.target }} -p atlas
+      - run: cargo build --release --locked --target ${{ matrix.target }} -p atlas-code
       - name: package
         shell: bash
         run: |
           cd target/${{ matrix.target }}/release
           if [ "${{ runner.os }}" = "Windows" ]; then
-            7z a "$GITHUB_WORKSPACE/atlas-${{ matrix.target }}.zip" atlas.exe
+            7z a "$GITHUB_WORKSPACE/atlas-code-${{ matrix.target }}.zip" atlas-code.exe
           else
-            tar -czf "$GITHUB_WORKSPACE/atlas-${{ matrix.target }}.tar.gz" atlas
+            tar -czf "$GITHUB_WORKSPACE/atlas-code-${{ matrix.target }}.tar.gz" atlas-code
           fi
       - uses: actions/upload-artifact@v7
         with:
-          name: atlas-${{ matrix.target }}
-          path: atlas-${{ matrix.target }}.*
+          name: atlas-code-${{ matrix.target }}
+          path: atlas-code-${{ matrix.target }}.*
 
   # Atlas Studio for macOS and Windows of the same commit: its installers go into the nightly with the CLI's
   # archives, so the release's Studio build runs every night before a tag needs it.
   studio:
-    needs: decide
-    if: needs.decide.outputs.build == 'true'
+    needs: [decide, test]
     uses: ./.github/workflows/studio.yml
     with:
       ref: ${{ needs.decide.outputs.sha }}
@@ -118,8 +123,9 @@ jobs:
           gh release create "nightly-$STAMP" dist/* --repo "$GITHUB_REPOSITORY" --prerelease --target "$SHA" \
             --title "nightly $STAMP" --notes "$notes"
           if gh release view nightly --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            gh api -X PATCH "repos/$GITHUB_REPOSITORY/git/refs/tags/nightly" -f sha="$SHA" -F force=true >/dev/null
+            # the files first, then the tag: Studio asks the tag which commit is newest, and installs these files
             gh release upload nightly dist/* --repo "$GITHUB_REPOSITORY" --clobber
+            gh api -X PATCH "repos/$GITHUB_REPOSITORY/git/refs/tags/nightly" -f sha="$SHA" -F force=true >/dev/null
             gh release edit nightly --repo "$GITHUB_REPOSITORY" --notes "$notes"
           else
             gh release create nightly dist/* --repo "$GITHUB_REPOSITORY" --prerelease --target "$SHA" \

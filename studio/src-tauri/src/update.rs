@@ -1,6 +1,6 @@
 //! Whether a newer build of the channel Studio is from is out, asked once a day, as the CLI asks it
 //! (`cli/src/update.rs`): a stable build looks for a newer release, a nightly for a newer commit of
-//! the nightly. Which build Studio is, its sidecar says (`atlas --version`): it is of the same commit
+//! the nightly. Which build Studio is, its sidecar says (`atlas-code --version`): it is of the same commit
 //! and channel. GitHub is asked through `curl`, so Studio carries no TLS of its own, and the last
 //! answer is kept in Studio's configuration folder. Updating runs the install script of the channel
 //! into the folder Studio runs from (macOS), or the setup program (Windows).
@@ -10,13 +10,15 @@ use std::process::{Command, Stdio};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 const DAY: u64 = 24 * 60 * 60;
-const API: &str = "https://api.github.com/repos/raoulg/atlas/releases";
+const API: &str = "https://api.github.com/repos/raoulg/atlas";
 /// The site, at its own address: the window loads a release's notes from it.
 const SITE: &str = "https://atlas.pttrn.io";
 
-/// The page of a release's notes on the site.
-fn notes_of(version: &str) -> String {
-    format!("{SITE}/releases/{version}/")
+/// The page of a release's notes on the site; for a nightly, the notes of the release it leads to, as
+/// `next` has them, from the site's copy of `next`'s documentation.
+fn notes_of(version: &str, nightly: bool) -> String {
+    let next = if nightly { "/next" } else { "" };
+    format!("{SITE}{next}/releases/{version}/")
 }
 
 /// Which build this is: `0.68.0`, nightly or not, and the commit it is made from.
@@ -27,9 +29,9 @@ pub struct Build {
     pub commit: String,
 }
 
-/// The build `atlas --version` names: `atlas 0.68.0-nightly (9a7ecf0)`, `atlas 0.68.0 (9a7ecf0+)`.
+/// The build `atlas-code --version` names: `atlas-code 0.68.0-nightly (9a7ecf0)`, `atlas-code 0.68.0 (9a7ecf0+)`.
 pub fn build_of(said: &str) -> Option<Build> {
-    let rest = said.trim().strip_prefix("atlas ")?;
+    let rest = said.trim().strip_prefix("atlas-code ")?;
     let (version, commit) = match rest.split_once(" (") {
         Some((v, c)) => (v, c.trim_end_matches(')').trim_end_matches('+')),
         None => (rest, ""),
@@ -83,7 +85,7 @@ pub fn newer(this: &Build, latest: &Latest) -> Option<Newer> {
     let (theirs, ours) = (numbers(&latest.release)?, numbers(&this.version)?);
     (theirs > ours).then(|| {
         let version = latest.release.trim_start_matches('v').to_string();
-        let notes = notes_of(&version);
+        let notes = notes_of(&version, false);
         Newer { version, nightly: false, notes, page: true, installs, current: false }
     })
 }
@@ -98,18 +100,19 @@ pub fn shown(mut newer: Newer) -> Newer {
     newer
 }
 
-/// What changed in this build: its release's page of notes, in the window; else, in the browser, its
-/// release on GitHub, or for a build that is no release (a nightly, or one built here before its release)
-/// the commits it is made of.
+/// What changed in this build: its release's page of notes, in the window (for a nightly, the notes of
+/// the release it leads to, as far as they are written); else, in the browser, its release on GitHub, or
+/// for a build that is no release (a nightly, or one built here before its release) the commits it is
+/// made of.
 pub fn changes(this: &Build) -> Newer {
     let version = this.version.clone();
     let at =
         |notes: String, page: bool| Newer { version: version.clone(), nightly: this.nightly, notes, page, installs: false, current: true };
+    let page = notes_of(&version, this.nightly);
+    if answers(&page) {
+        return at(page, true);
+    }
     if !this.nightly {
-        let page = notes_of(&version);
-        if answers(&page) {
-            return at(page, true);
-        }
         let release = format!("https://github.com/raoulg/atlas/releases/tag/v{version}");
         if answers(&release) {
             return at(release, false);
@@ -136,8 +139,8 @@ fn arrived(code: &str) -> bool {
     code.trim() == "200"
 }
 
-/// What GitHub says one field of a release is.
-fn get(path: &str, field: &str) -> Option<String> {
+/// What GitHub says one field of an answer is, at `pointer` (`/object/sha`).
+fn get(path: &str, pointer: &str) -> Option<String> {
     let out = Command::new("curl")
         .args(["-fsS", "--max-time", "10", "-H", "Accept: application/vnd.github+json", &format!("{API}/{path}")])
         .stdin(Stdio::null())
@@ -145,15 +148,17 @@ fn get(path: &str, field: &str) -> Option<String> {
         .output()
         .ok()?;
     let value: serde_json::Value = serde_json::from_slice(&out.stdout).ok()?;
-    value[field].as_str().map(str::to_string)
+    value.pointer(pointer)?.as_str().map(str::to_string)
 }
 
-/// The newest build of this one's channel, asked of GitHub now.
+/// The newest build of this one's channel, asked of GitHub now: the latest release's tag, or the commit
+/// the tag `nightly` is at. The nightly moves that tag once its files are up; the release `nightly` keeps
+/// the commit it was made at as its target, so its target says nothing.
 pub fn ask(this: &Build) -> Option<Latest> {
     Some(if this.nightly {
-        Latest { nightly: get("tags/nightly", "target_commitish")?, ..Latest::default() }
+        Latest { nightly: get("git/ref/tags/nightly", "/object/sha")?, ..Latest::default() }
     } else {
-        Latest { release: get("latest", "tag_name")?, ..Latest::default() }
+        Latest { release: get("releases/latest", "/tag_name")?, ..Latest::default() }
     })
 }
 
@@ -161,17 +166,26 @@ pub fn now() -> u64 {
     SystemTime::now().duration_since(UNIX_EPOCH).map_or(0, |since| since.as_secs())
 }
 
-/// The last answer, and when it was asked.
+/// The last answer, when it was asked, and by which build.
 #[derive(Clone, Debug, Default, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct Asked {
     pub checked: u64,
+    /// The build that asked, as `key` names it.
+    #[serde(default)]
+    pub by: String,
     pub latest: Latest,
 }
 
+/// The build an answer was asked by: two nightlies share a version, so the commit says which.
+pub fn key(this: &Build) -> String {
+    format!("{}/{}/{}", if this.nightly { "nightly" } else { "" }, this.version, this.commit)
+}
+
 impl Asked {
-    /// Whether the answer is a day old, or none was asked yet.
-    pub fn stale(&self, now: u64) -> bool {
-        now.saturating_sub(self.checked) >= DAY
+    /// Whether the answer is a day old, was asked by another build (the one before an update), or none
+    /// was asked yet.
+    pub fn stale(&self, this: &Build, now: u64) -> bool {
+        self.by != key(this) || now.saturating_sub(self.checked) >= DAY
     }
 }
 
@@ -261,10 +275,13 @@ mod tests {
     #[test]
     fn the_sidecar_says_which_build_it_is() {
         assert_eq!(
-            build_of("atlas 0.68.0-nightly (9a7ecf0)\n"),
+            build_of("atlas-code 0.68.0-nightly (9a7ecf0)\n"),
             Some(Build { version: "0.68.0".into(), nightly: true, commit: "9a7ecf0".into() })
         );
-        assert_eq!(build_of("atlas 0.68.0 (9a7ecf0+)"), Some(Build { version: "0.68.0".into(), nightly: false, commit: "9a7ecf0".into() }));
+        assert_eq!(
+            build_of("atlas-code 0.68.0 (9a7ecf0+)"),
+            Some(Build { version: "0.68.0".into(), nightly: false, commit: "9a7ecf0".into() })
+        );
         assert_eq!(build_of("something else"), None);
     }
 
@@ -277,6 +294,12 @@ mod tests {
         assert!(newer.page);
         assert_eq!(super::newer(&this, &Latest { release: "v0.68.0".into(), ..Latest::default() }), None);
         assert_eq!(super::newer(&this, &Latest { release: "v0.67.9".into(), ..Latest::default() }), None);
+    }
+
+    #[test]
+    fn a_nightly_reads_the_notes_of_the_release_it_leads_to_from_next() {
+        assert_eq!(notes_of("0.70.0", true), "https://atlas.pttrn.io/next/releases/0.70.0/");
+        assert_eq!(notes_of("0.70.0", false), "https://atlas.pttrn.io/releases/0.70.0/");
     }
 
     #[test]
@@ -298,10 +321,21 @@ mod tests {
 
     #[test]
     fn an_answer_is_asked_again_after_a_day() {
-        let asked = Asked { checked: 1_000, latest: Latest::default() };
-        assert!(!asked.stale(1_000 + DAY - 1));
-        assert!(asked.stale(1_000 + DAY));
-        assert!(Asked::default().stale(now()));
+        let this = Build { version: "0.68.0".into(), nightly: true, commit: "9a7ecf0".into() };
+        let asked = Asked { checked: 1_000, by: key(&this), latest: Latest::default() };
+        assert!(!asked.stale(&this, 1_000 + DAY - 1));
+        assert!(asked.stale(&this, 1_000 + DAY));
+        assert!(Asked::default().stale(&this, now()));
+    }
+
+    #[test]
+    fn an_answer_belongs_to_the_build_that_asked() {
+        let before = Build { version: "0.68.0".into(), nightly: true, commit: "9a7ecf0".into() };
+        let after = Build { commit: "19ec16b".into(), ..before.clone() };
+        let asked = Asked { checked: 1_000, by: key(&before), latest: Latest::default() };
+        assert!(!asked.stale(&before, 1_001));
+        assert!(asked.stale(&after, 1_001));
+        assert!(asked.stale(&Build { nightly: false, ..before }, 1_001));
     }
 
     #[cfg(target_os = "macos")]

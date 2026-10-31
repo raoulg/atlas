@@ -1276,7 +1276,7 @@ impl<'a, 't> Body<'a, 't> {
 
     /// The command line kept under a name: a step that parses it with no options, since the code
     /// names none, giving the words under the names it keeps them by.
-    fn words(&mut self, steps: &mut Steps, w: TsNode<'t>) {
+    fn words(&mut self, steps: &mut Steps<'t, '_>, w: TsNode<'t>) {
         let unpacked = unpacked_as(w, self.src);
         let names: Vec<String> = match kept_as(w, self.src) {
             Some(n) => vec![n],
@@ -1288,7 +1288,7 @@ impl<'a, 't> Body<'a, 't> {
 
     /// A loop as the step it is: it takes what it goes over, and gives each element under the
     /// name it binds (`for n in g.nodes` takes `g` and gives `n`).
-    fn each(&mut self, steps: &mut Steps, l: TsNode<'t>) {
+    fn each(&mut self, steps: &mut Steps<'t, '_>, l: TsNode<'t>) {
         let (Some(left), Some(right)) = (l.child_by_field_name("left"), l.child_by_field_name("right")) else { return };
         let (hands, mut gives) = self.seen.each(l, self.ext, &steps.kept);
         self.read.new_ext.extend(hands.iter().chain(&gives).map(|h| h.ty.clone()).filter(|t| t.starts_with("ext:")));
@@ -1370,7 +1370,7 @@ impl<'a, 't> Body<'a, 't> {
     /// The values a class keeps that the body changes by assignment: `Counter.total += 1`,
     /// `cls.handlers[name] = fn`. An attribute of a class is no place Atlas draws, so what the
     /// change leaves behind it does not see.
-    fn class_state(&self, steps: &mut Steps) {
+    fn class_state(&self, steps: &mut Steps<'t, '_>) {
         if self.in_module {
             return;
         }
@@ -1392,7 +1392,7 @@ impl<'a, 't> Body<'a, 't> {
 
     /// One call of the body, as the step it is: the program's own function or class, or a
     /// library's, which may make a value the body keeps and may cross into the world.
-    fn call(&mut self, steps: &mut Steps, c: TsNode<'t>) {
+    fn call(&mut self, steps: &mut Steps<'t, '_>, c: TsNode<'t>) {
         let Some(fnode) = c.child_by_field_name("function") else { return };
         let callee = self.seen.callee(fnode);
         let receiver = (fnode.kind() == "attribute").then(|| fnode.child_by_field_name("object")).flatten();
@@ -1508,7 +1508,7 @@ impl<'a, 't> Body<'a, 't> {
     /// A call of the program's own function or class; a method called on a subclass's value is
     /// that subclass's step. A method called through a class (`Cached.read(self)`) runs on the
     /// value it is handed first, and one called through `super()` on the body's own receiver.
-    fn own(&mut self, steps: &mut Steps, c: TsNode<'t>, t: &str, receiver: Option<TsNode<'t>>, hands: Vec<Held>, gives: Vec<Held>) {
+    fn own(&mut self, steps: &mut Steps<'t, '_>, c: TsNode<'t>, t: &str, receiver: Option<TsNode<'t>>, hands: Vec<Held>, gives: Vec<Held>) {
         let seen = &self.seen;
         let after = receiver.and_then(|o| self.written_in(o));
         let method = seen.store.nodes.get(t).filter(|n| n.kind == NodeKind::Method);
@@ -1521,13 +1521,20 @@ impl<'a, 't> Body<'a, 't> {
             None if named && instance => first_argument(c),
             None => receiver,
         };
+        // a value built at the call (`Section(..).show()`) is of its class and none below it, also where that is the
+        // method's own; one the code declares is of the class it declares or one below it
+        let built = value
+            .filter(|o| o.kind() == "call")
+            .and_then(|o| o.child_by_field_name("function"))
+            .and_then(|f| seen.value(f))
+            .map_or(false, |v| v.is_class);
         let on = value.and_then(|o| {
             let b = seen.store.nodes.get(t)?.cls.clone()?;
             seen.value(o)
                 .map(|v| seen.drawn(v, self.ext))
                 .unwrap_or_default()
                 .into_iter()
-                .find(|c| *c != b && seen.is_class(c) && seen.descends(c, &b))
+                .find(|c| seen.is_class(c) && if *c == b { built } else { seen.descends(c, &b) })
         });
         let kind = if seen.is_class(t) { EdgeKind::Instantiates } else { EdgeKind::Calls };
         let on_receiver = match &after {
@@ -1572,6 +1579,7 @@ impl<'a, 't> Body<'a, 't> {
             kind,
             None,
             Step {
+                built: built && on.is_some(),
                 on: on.unwrap_or_default(),
                 on_receiver,
                 named,
@@ -1647,7 +1655,7 @@ impl<'a, 't> Body<'a, 't> {
 
     /// A library's call, or one Atlas cannot follow: a class it makes, and what it crosses into. A
     /// method on a value written out (`(root / name).write_text`) is its name alone.
-    fn library(&mut self, steps: &mut Steps, c: TsNode<'t>, fnode: TsNode<'t>, lib: Option<String>) {
+    fn library(&mut self, steps: &mut Steps<'t, '_>, c: TsNode<'t>, fnode: TsNode<'t>, lib: Option<String>) {
         let parts = named_path(fnode, self.src);
         if parts.is_empty() {
             return;
@@ -1776,13 +1784,14 @@ fn crossed<'t>(
             Crossed { touches: touches.into_iter().map(|(t, _)| t).collect(), waiting, ..Default::default() }
         }
         _ => {
-            let mut cr = Crosses::read(c, src, tag, lib, op, &literals(c, src, &["string"]), &["string"], &seen.handed(c));
+            let makes_path = |f: TsNode| eval.makes_path(at.m, f);
+            let mut cr = Crosses::read(c, src, tag, lib, op, &literals(c, src, &["string"]), &["string"], &seen.handed(c), &makes_path);
             // on the web, what a call asks for is the argument its library names so
             let url = asked(seen, c, fnode).filter(|_| cr.facts.kind == World::Net);
             if let Some(a) = url {
                 cr.what = literals(a, src, &["string"]).first().map(|l| l.trim().to_string()).unwrap_or_else(|| text(a, src).to_string());
                 cr.payload = payload_of(c, src, &cr.what, "arguments", &seen.handed(c));
-                cr.fixed = crate::tree::head_literal(a, src, &["string"]);
+                cr.fixed = crate::tree::head_literal(a, src, &["string"], &makes_path);
             }
             let said = match cr.facts.kind {
                 World::Db(db) => effects::access(db, op, keyword(c, src, knowledge::DRIVER_ACCESS).as_deref()),
@@ -1882,6 +1891,7 @@ fn file_calls<'t>(
     op: &str,
 ) -> Vec<(Touch, Vec<Built>)> {
     let src = &at.m.src;
+    let makes_path = |f: TsNode| eval.makes_path(at.m, f);
     let touch = |kind: Crossing, what: String, artifact: String, fixed: bool| {
         let payload = payload_of(c, src, &what, "arguments", &seen.handed(c));
         Touch {
@@ -1947,7 +1957,10 @@ fn file_calls<'t>(
             };
             // a pattern below a directory is the path the call gives, not the directory alone
             let patterned = name == "self" && knowledge::PATH_PATTERNS.iter().any(|(p, _, _)| *p == op);
-            (touch(kind, what, artifact, crate::tree::head_literal(a, src, &["string"])), eval.of(at, if patterned { c } else { a }, 0))
+            (
+                touch(kind, what, artifact, crate::tree::head_literal(a, src, &["string"], &makes_path)),
+                eval.of(at, if patterned { c } else { a }, 0),
+            )
         })
         .collect()
 }

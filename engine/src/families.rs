@@ -3,6 +3,10 @@
 //! stands in its base's place, a part in its one owner's. A base that only shares code (a config
 //! mixin, pydantic's `BaseModel`, torch's `Module`) is how a class is built, not what flows.
 //!
+//! A shaped array (`Float[Tensor, batch dim]`) stands in its rank family, named by its dtype, array
+//! type and rank (`Float Tensor · 2D`), where the graph holds two types of that rank: the family is a
+//! quotient of the shapes, its members stay types of their own.
+//!
 //! A type is data, or a door to a part of the world (a sink, a repository, a client): what a
 //! family's member reaches makes the whole family a door.
 
@@ -47,6 +51,8 @@ struct Ix<'g> {
     out: HashMap<&'g str, Vec<&'g Edge>>,
     into: HashMap<&'g str, Vec<&'g Edge>>,
     used_as_type: HashSet<&'g str>,
+    /// The rank family of each shaped array whose rank another type of the graph shares.
+    ranks: HashMap<&'g str, String>,
 }
 
 impl<'g> Ix<'g> {
@@ -63,15 +69,30 @@ impl<'g> Ix<'g> {
             .filter(|e| matches!(e.kind, EdgeKind::Takes | EdgeKind::Returns | EdgeKind::Has | EdgeKind::Mutates | EdgeKind::Variant))
             .map(|e| e.dst.as_str())
             .collect();
-        Ix { kinds: g.nodes.iter().map(|n| (n.id.as_str(), n.kind)).collect(), out, into, used_as_type }
+        let shaped: Vec<(&str, String)> = g
+            .nodes
+            .iter()
+            .filter(|n| n.kind == NodeKind::External)
+            .filter_map(|n| Some((n.id.as_str(), crate::shapes::family_id(&n.id)?)))
+            .collect();
+        let mut fiber: HashMap<&str, usize> = HashMap::new();
+        for (_, f) in &shaped {
+            *fiber.entry(f.as_str()).or_default() += 1;
+        }
+        let ranks = shaped.iter().filter(|(_, f)| fiber[f.as_str()] > 1).map(|(t, f)| (*t, f.clone())).collect();
+        Ix { kinds: g.nodes.iter().map(|n| (n.id.as_str(), n.kind)).collect(), out, into, used_as_type, ranks }
     }
 
     fn is_class(&self, id: &str) -> bool {
         self.kinds.get(id) == Some(&NodeKind::Class)
     }
 
-    /// The outermost ancestor the program uses as a type, through bases that only share code.
+    /// The outermost ancestor the program uses as a type, through bases that only share code; for
+    /// a shaped array, its rank family.
     fn used_base(&self, id: &str, depth: usize) -> Option<String> {
+        if let Some(f) = self.ranks.get(id) {
+            return Some(f.clone());
+        }
         let bases: Vec<&str> = self
             .out
             .get(id)

@@ -6,6 +6,8 @@ use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
 use indexmap::IndexMap;
+use serde::de::IgnoredAny;
+use serde::Deserialize;
 use tree_sitter::Node as TsNode;
 
 use super::body::{builds_container, chain_root, changes_in, container_type, link_calls, typed_package, Body, Changing, Linked, OWN};
@@ -16,7 +18,7 @@ use super::module::{
 use super::paths::{self, Eval};
 use crate::builder::{foreign_type, ClassInfo, Declared, GraphBuilder};
 use crate::knowledge;
-use crate::model::{Dir, EdgeKind, Entry, EntryKind, Node, NodeKind, Touch, World};
+use crate::model::{Dir, EdgeKind, Entry, EntryKind, Node, NodeKind, Route, Touch, World};
 use crate::repo::{normal, Repo};
 use crate::tree::{beneath, named_children, span, text, unquote, walk};
 
@@ -324,6 +326,8 @@ pub(super) fn collect_symbols(m: &mut Module, store: &mut GraphBuilder) {
             _ => {}
         }
     }
+    // a file route is a page the browser shows at its path: a route that serves no request a
+    // program sends, so it is labelled by its path alone
     if let Some(path) = route {
         if let Some(n) = store.nodes.get_mut(&m.id) {
             n.entry = Some(Entry::new(EntryKind::Route, if path == "__root" { "/ (root)".into() } else { path }));
@@ -575,28 +579,17 @@ pub(super) fn mark_bins(repo: &Repo, files: &HashMap<PathBuf, String>, store: &m
 /// `package.json` points to (`exports`, `module`, `main`) or else the index at its root. A
 /// name re-exported is followed to where it is defined.
 pub(super) fn mark_exports(repo: &Repo, files: &HashMap<PathBuf, String>, modules: &IndexMap<String, Module>, store: &mut GraphBuilder) {
-    let json = repo.text("package.json").and_then(|t| serde_json::from_str::<serde_json::Value>(&t).ok()).unwrap_or_default();
+    let text = repo.text("package.json").unwrap_or_default();
+    let json = serde_json::from_str::<serde_json::Value>(&text).unwrap_or_default();
     let repo = repo.root();
-    let dot = |v: &serde_json::Value| -> Option<String> {
-        match v {
-            serde_json::Value::String(s) => Some(s.clone()),
-            serde_json::Value::Object(o) => {
-                ["import", "default", "types", "require"].iter().find_map(|k| o.get(*k).and_then(|x| x.as_str()).map(str::to_string))
-            }
-            _ => None,
-        }
-    };
-    let declared = [
-        json["exports"].get(".").and_then(dot),
-        dot(&json["exports"]),
-        json["module"].as_str().map(str::to_string),
-        json["main"].as_str().map(str::to_string),
-    ];
+    // what the package exports at its root, as an import of a library's is found
+    let exported = Exports::of(&text).map(|e| e.at(".")).unwrap_or_default();
+    let declared = exported.into_iter().chain(["module", "main"].iter().filter_map(|k| json[*k].as_str().map(str::to_string)));
     let root = files
         .values()
         .find(|id| modules.get(*id).map_or(false, |m| m.path.file_stem().and_then(|s| s.to_str()) == Some("index") && !id.contains('.')))
         .cloned();
-    let Some(entry) = declared.into_iter().flatten().find_map(|p| module_at(repo, &p, files)).or(root) else { return };
+    let Some(entry) = declared.into_iter().find_map(|p| module_at(repo, &p, files)).or(root) else { return };
     let mut names: Vec<(String, String)> = vec![];
     let mut stack = vec![(entry.clone(), 0)];
     while let Some((mid, depth)) = stack.pop() {
@@ -723,8 +716,9 @@ fn router_pkg(parts: &[String], m: &Module) -> bool {
 }
 
 /// The routes a module registers on its routers: `app.get("/x", (c) => ..)` is a handler at
-/// `GET /x`, and `app.route("/api", sub)` (`app.use` in Express) mounts one router on another.
-/// An inline handler is a function of its own, named by its route.
+/// `GET /x`, `app.all("/x", ..)` one at every method (`knowledge::methods_served`), and
+/// `app.route("/api", sub)` (`app.use` in Express) mounts one router on another. An inline handler
+/// is a function of its own, named by its registration (`ALL /x`).
 pub(super) fn collect_routes(m: &mut Module, store: &mut GraphBuilder) {
     let tree = m.tree.clone();
     let src = m.src.clone();
@@ -776,15 +770,16 @@ pub(super) fn collect_routes(m: &mut Module, store: &mut GraphBuilder) {
         if !knowledge::registers_route(&verb) {
             continue;
         }
-        let method = if verb == "all" { "GET".to_string() } else { verb.to_uppercase() };
-        let label = format!("{method} {path}");
+        // the route as served, by the methods it serves; an inline handler is named by its registration as written
+        let served = Route { methods: knowledge::methods_served(&verb), path: Some(path.clone()) };
+        let written = format!("{} {path}", verb.to_uppercase());
         let Some(handler) = args.last().filter(|a| a.id() != args[0].id()) else { continue };
         let id = match handler.kind() {
             "arrow_function" | "function_expression" | "function" => {
                 let body = handler.child_by_field_name("body").unwrap_or(*handler);
-                let id = add_function(m, store, &format!("{router}.{}", label.replace('.', "_")), c, *handler, body, None);
+                let id = add_function(m, store, &format!("{router}.{}", written.replace('.', "_")), c, *handler, body, None);
                 if let Some(n) = store.nodes.get_mut(&id) {
-                    n.name = label.clone();
+                    n.name = written;
                 }
                 store.add_edge(&m.id.clone(), &id, EdgeKind::Contains, None);
                 id
@@ -796,7 +791,7 @@ pub(super) fn collect_routes(m: &mut Module, store: &mut GraphBuilder) {
             _ => continue,
         };
         if let Some(n) = store.nodes.get_mut(&id).filter(|n| n.entry.is_none()) {
-            n.entry = Some(Entry::new(EntryKind::Route, label));
+            n.entry = Some(Entry::route(served));
             m.routes.push((id, router.clone()));
         }
     }
@@ -1231,4 +1226,115 @@ fn package_value(modules: &IndexMap<String, Module>, kept: &str) -> bool {
         }
     }
     false
+}
+
+/// A package's `exports`, each object's keys in the order the package writes them: Node matches
+/// an import's conditions in that order.
+#[derive(Deserialize, Debug, PartialEq)]
+#[serde(untagged)]
+pub(super) enum Exports {
+    /// A path in the package.
+    Path(String),
+    /// Paths tried in turn.
+    Fallbacks(Vec<Exports>),
+    /// What each path below the package (`.`, `./sub`, `./*`) or each condition gives.
+    Map(IndexMap<String, Exports>),
+    /// Anything else: `null` exports nothing.
+    Other(IgnoredAny),
+}
+
+impl Exports {
+    /// The `exports` of a package's manifest, the text of its `package.json`.
+    pub(super) fn of(manifest: &str) -> Option<Exports> {
+        #[derive(Deserialize)]
+        struct Manifest {
+            exports: Option<Exports>,
+        }
+        serde_json::from_str::<Manifest>(manifest).ok()?.exports
+    }
+
+    /// The paths of code what the package exports at `key` (`.`, `./sub`) gives an import, in the
+    /// order an import tries them; a pattern (`./*`) by what its `*` stands for.
+    pub(super) fn at(&self, key: &str) -> Vec<String> {
+        match self {
+            Exports::Map(o) if o.keys().any(|k| k.starts_with('.')) => match o.get(key) {
+                Some(v) => v.code(),
+                None => o
+                    .iter()
+                    .find_map(|(k, v)| {
+                        let (pre, post) = k.split_once('*')?;
+                        let star = key.strip_prefix(pre)?.strip_suffix(post)?;
+                        Some(v.code().into_iter().map(|t| t.replace('*', star)).collect::<Vec<_>>()).filter(|t| !t.is_empty())
+                    })
+                    .unwrap_or_default(),
+            },
+            _ if key == "." => self.code(),
+            _ => vec![],
+        }
+    }
+
+    /// The paths of code a value of `exports` gives an import, in the order Node tries them: an
+    /// object's conditions in the package's order, those an import of code meets
+    /// (knowledge::EXPORT_CONDITIONS), and a list's entries in turn. A file of types is none.
+    fn code(&self) -> Vec<String> {
+        match self {
+            Exports::Path(p) if !types_only(p) => vec![p.clone()],
+            Exports::Fallbacks(a) => a.iter().flat_map(Exports::code).collect(),
+            Exports::Map(o) => {
+                o.iter().filter(|(c, _)| knowledge::EXPORT_CONDITIONS.contains(&c.as_str())).flat_map(|(_, v)| v.code()).collect()
+            }
+            _ => vec![],
+        }
+    }
+}
+
+/// Whether a file holds only types: `.d.ts`, `.d.mts`, `.d.cts`.
+fn types_only(p: &str) -> bool {
+    [".d.ts", ".d.mts", ".d.cts"].iter().any(|x| p.ends_with(x))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Exports;
+
+    fn root(exports: &str) -> Vec<String> {
+        Exports::of(&format!("{{\"name\": \"kit\", \"exports\": {exports}}}")).expect("the package exports").at(".")
+    }
+
+    /// Node goes through an `exports` object's conditions in the order the package writes them and
+    /// takes the first the import meets: the order is the package's, whichever conditions it names.
+    #[test]
+    fn an_import_takes_the_first_condition_the_package_writes() {
+        let conditions = ["node", "import", "require", "module", "browser", "default"];
+        for a in conditions {
+            for b in conditions.iter().filter(|b| **b != a) {
+                let written = format!("{{\"{a}\": \"./{a}.js\", \"{b}\": \"./{b}.js\"}}");
+                assert_eq!(root(&written).first().map(String::as_str), Some(format!("./{a}.js").as_str()), "{written}");
+            }
+        }
+    }
+
+    /// `types` names declarations, never code: wherever the package writes it, and whatever file it
+    /// names, an import of code takes what the other conditions give.
+    #[test]
+    fn types_is_no_condition_of_code() {
+        for written in [
+            r#"{"types": "./src/index.ts", "default": "./index.js"}"#,
+            r#"{"default": "./index.js", "types": "./src/index.ts"}"#,
+            r#"{".": {"types": "./index.d.ts", "default": "./index.js"}}"#,
+        ] {
+            assert_eq!(root(written), ["./index.js"], "{written}");
+        }
+    }
+
+    /// The forms `exports` gives the package's root in are one: a path, the path at `.`, the path
+    /// under the condition every import meets, and a list of one path.
+    #[test]
+    fn the_forms_of_a_root_export_are_one() {
+        for written in [r#""./index.js""#, r#"{".": "./index.js"}"#, r#"{".": {"default": "./index.js"}}"#, r#"["./index.js"]"#] {
+            assert_eq!(root(written), ["./index.js"], "{written}");
+        }
+        let patterns = Exports::of(r#"{"exports": {"./*": {"import": "./lib/*.js"}}}"#).expect("exports");
+        assert_eq!(patterns.at("./read"), ["./lib/read.js"]);
+    }
 }

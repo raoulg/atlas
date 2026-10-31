@@ -1,6 +1,6 @@
 //! A vision decided: its files written into the tree, what it adds marked as prophecy.
 
-use crate::model::{Graph, Node, NodeKind};
+use crate::model::{Graph, Lang, Node, NodeKind};
 use crate::repo::Repo;
 use anyhow::Context;
 
@@ -28,20 +28,14 @@ pub fn prophetize(
 ) -> anyhow::Result<Prophetized> {
     use anyhow::bail;
     let before = crate::parts::analyze_parts(&[repo.to_path_buf()], opts)?;
-    let after = crate::changes::envisioned(repo, vision, opts)?;
+    let crate::changes::Envisioned { parts: after, dir } = crate::changes::envisioned(repo, vision, opts)?;
     let known: std::collections::HashSet<&str> = before.iter().flat_map(|g| g.nodes.iter().map(|n| n.id.as_str())).collect();
     for (new, old) in supersedes {
         if !known.contains(old.as_str()) {
             bail!("`{new}` is said to supersede `{old}`, which the code does not hold");
         }
     }
-    let rel_of = |g: &Graph, n: &Node| -> std::path::PathBuf {
-        std::path::Path::new(&n.file)
-            .strip_prefix(&g.project_root)
-            .map(std::path::Path::to_path_buf)
-            .unwrap_or_else(|_| n.file.clone().into())
-    };
-    let in_file = |rel: &std::path::Path, r: &std::path::Path| r.ends_with(rel);
+    let placed = Placed::of(repo, &before, dir);
     let mut out = Prophetized::default();
     for (rel, text) in vision {
         let Some(text) = text else { bail!("a vision that removes `{}` is no prophecy: nothing is written for a removal", rel.display()) };
@@ -51,22 +45,19 @@ pub fn prophetize(
         let slice = |ls: &[&str], n: &Node| -> String {
             n.span.map(|(a, b)| ls.get(a as usize - 1..(b as usize).min(ls.len())).unwrap_or(&[]).join("\n")).unwrap_or_default()
         };
-        let mine = |gs: &[Graph]| -> Vec<(Node, std::path::PathBuf)> {
+        let mine = |gs: &[Graph], at: &dyn Fn(&Node) -> Option<std::path::PathBuf>| -> Vec<Node> {
             gs.iter()
-                .flat_map(|g| {
-                    g.nodes
-                        .iter()
-                        .filter(|n| matches!(n.kind, NodeKind::Function | NodeKind::Method | NodeKind::Class) && !n.library)
-                        .map(move |n| (n.clone(), rel_of(g, n)))
-                })
-                .filter(|(_, r)| in_file(rel, r))
+                .flat_map(|g| &g.nodes)
+                .filter(|n| matches!(n.kind, NodeKind::Function | NodeKind::Method | NodeKind::Class) && !n.library)
+                .filter(|n| at(n).as_deref() == Some(rel.as_path()))
+                .cloned()
                 .collect()
         };
-        let (was, now) = (mine(&before), mine(&after));
-        for (n, _) in &was {
-            match now.iter().find(|(m, _)| m.id == n.id) {
+        let (was, now) = (mine(&before, &|n| placed.in_tree(n)), mine(&after, &|n| placed.in_vision(n)));
+        for n in &was {
+            match now.iter().find(|m| m.id == n.id) {
                 None => bail!("the vision removes `{}` from `{}`: a vision that replaces what exists is no prophecy; give the new item a new name that `supersedes` it", n.id, rel.display()),
-                Some((m, _)) if slice(&tree_lines, n) != slice(&lines, m) => bail!(
+                Some(m) if slice(&tree_lines, n) != slice(&lines, m) => bail!(
                     "the vision changes `{}` in `{}`: writing it would replace what is built with a sketch. Give the new item a new name that `supersedes` it",
                     n.id,
                     rel.display()
@@ -74,13 +65,13 @@ pub fn prophetize(
                 Some(_) => {}
             }
         }
-        let added: Vec<&Node> = now.iter().map(|(n, _)| n).filter(|n| !was.iter().any(|(w, _)| w.id == n.id)).collect();
+        let added: Vec<&Node> = now.iter().filter(|n| !was.iter().any(|w| w.id == n.id)).collect();
         // an item inside an added class is marked with its class
         let top: Vec<&Node> =
             added.iter().copied().filter(|n| !n.cls.as_deref().is_some_and(|c| added.iter().any(|a| a.id == c))).collect();
         let lang = crate::language::of_file(rel);
         // what only Python asks: a body ty accepts in a sketch, and the `prophecy` the decorator calls
-        let python = lang.as_ref().is_some_and(|l| l.name() == "python");
+        let python = lang.as_ref().is_some_and(|l| l.lang() == Lang::Python);
         let mut new_lines: Vec<String> = lines.iter().map(|l| l.to_string()).collect();
         // what is written at a line: the body of a Python sketch that ty would refuse, and the marker
         // of an item; from the bottom up, so that a line added does not move one still to come
@@ -128,19 +119,17 @@ pub fn prophetize(
             body.push('\n');
         }
         if python && !out.marked.is_empty() {
-            let helper = after.iter().find_map(|g| {
-                let h = g.nodes.iter().find(|n| n.kind == NodeKind::Function && n.name == "prophecy" && !n.library)?;
-                Some((h, rel_of(g, h)))
-            });
+            let helper = after.iter().flat_map(|g| &g.nodes).find(|n| n.kind == NodeKind::Function && n.name == "prophecy" && !n.library);
             match helper {
-                Some((h, at)) => {
+                Some(h) => {
+                    let at = placed.in_vision(h);
                     let imported = text.lines().any(|l| (l.starts_with("from ") || l.starts_with("import ")) && l.contains("prophecy"));
-                    if !imported && !in_file(rel, &at) {
+                    if !imported && at.as_deref() != Some(rel.as_path()) {
                         body = with_import(&body, &h.module);
                         if let Some(module) = top.first().map(|n| n.module.as_str()) {
-                            let helper_text = Repo::text_at(&repo.join(&at)).unwrap_or_default();
+                            let helper_text = at.as_ref().and_then(|a| vision.get(a).cloned().flatten()).or_else(|| placed.text_in_tree(h)).unwrap_or_default();
                             // the package a relative import in the helper's file is taken from
-                            let package = if at.file_name().is_some_and(|f| f == "__init__.py") {
+                            let package = if std::path::Path::new(&h.file).file_name().is_some_and(|f| f == "__init__.py") {
                                 h.module.as_str()
                             } else {
                                 h.module.rsplit_once('.').map_or("", |(p, _)| p)
@@ -164,6 +153,51 @@ pub fn prophetize(
     }
     out.marked.sort();
     Ok(out)
+}
+
+/// Where the items of the tree and of the vision lie, each file by its path from the directory the
+/// vision is asked for, the one its paths start at. The tree's files are where the disk resolves
+/// them; the vision's are in the copy it is read in, by their path from the directory `envisioned`
+/// read it from.
+struct Placed {
+    /// Each file of the tree, as its items name it, by its path from the asked directory.
+    tree: std::collections::HashMap<String, std::path::PathBuf>,
+    /// The file of each item of the tree, by its id.
+    files: std::collections::HashMap<String, String>,
+    /// The directory of the copy the vision is read from, in place of the asked one.
+    copy: std::path::PathBuf,
+}
+
+impl Placed {
+    fn of(repo: &std::path::Path, before: &[Graph], copy: std::path::PathBuf) -> Placed {
+        let asked = Repo::real(repo);
+        let tree_items: Vec<&Node> = before.iter().flat_map(|g| &g.nodes).filter(|n| !n.library && !n.file.is_empty()).collect();
+        let mut tree = std::collections::HashMap::new();
+        for n in &tree_items {
+            if !tree.contains_key(&n.file) {
+                if let Ok(at) = Repo::real(std::path::Path::new(&n.file)).strip_prefix(&asked) {
+                    tree.insert(n.file.clone(), at.to_path_buf());
+                }
+            }
+        }
+        let files: std::collections::HashMap<String, String> = tree_items.iter().map(|n| (n.id.clone(), n.file.clone())).collect();
+        Placed { tree, files, copy }
+    }
+
+    /// The path of the file that holds `n`, an item of the tree.
+    fn in_tree(&self, n: &Node) -> Option<std::path::PathBuf> {
+        self.tree.get(&n.file).cloned()
+    }
+
+    /// The path of the file that holds `n`, an item of the vision.
+    fn in_vision(&self, n: &Node) -> Option<std::path::PathBuf> {
+        crate::repo::below(std::path::Path::new(&n.file), &self.copy)
+    }
+
+    /// The text of the tree's file that holds the item `n` is, where the tree holds it.
+    fn text_in_tree(&self, n: &Node) -> Option<String> {
+        Repo::text_at(std::path::Path::new(self.files.get(&n.id)?))
+    }
 }
 
 /// The last line of a Python sketch whose body is `...`, as ty accepts it where the function gives a
@@ -256,12 +290,18 @@ fn imports(text: &str, package: &str, module: &str) -> bool {
     })
 }
 
-/// The files with the seals of `ids` broken: `sealed=..` taken out of each prophecy's marker, in
-/// whichever form its language writes it, and nothing else. Each file by its path from the
-/// project's root. A seal is broken when its question is answered; Atlas does it when asked.
+/// A seal in a marker: `sealed=` and its value, quoted as a call writes it or bare as an attribute's
+/// or a JSDoc tag's text does, where it ends before a space, a comma, a quote or what closes the marker.
+const SEAL: &str = r#"\bsealed\s*=\s*(?:"[^"]*"|'[^']*'|[^\s,)"'\]*]+)"#;
+
+/// The files with the seals of `ids` broken: `sealed=..` taken out of each prophecy's marker with
+/// the separator that joins it, in whichever form its language writes it, and nothing else. Each
+/// file by its path from the project's root. A seal is broken when its question is answered; Atlas
+/// does it when asked. The files are read now, the graph may be older: a file that no longer
+/// reaches an item's line is an error.
 pub fn unseal(g: &Graph, ids: &[String]) -> anyhow::Result<std::collections::BTreeMap<std::path::PathBuf, String>> {
-    let seal = regex::Regex::new(r#"\s*,?\s*\bsealed\s*=\s*(?:"[^"]*"|'[^']*'|[^\s,)"'\]]+)"#)?;
-    let mut files: std::collections::BTreeMap<std::path::PathBuf, Vec<String>> = Default::default();
+    let seal = regex::Regex::new(SEAL)?;
+    let mut files: std::collections::BTreeMap<std::path::PathBuf, String> = Default::default();
     for id in ids {
         let Some(n) = g.node(id).filter(|n| n.prophecy.as_ref().is_some_and(|p| p.sealed.is_some())) else {
             anyhow::bail!("`{id}` is no sealed prophecy");
@@ -270,38 +310,93 @@ pub fn unseal(g: &Graph, ids: &[String]) -> anyhow::Result<std::collections::BTr
             .strip_prefix(&g.project_root)
             .map(std::path::Path::to_path_buf)
             .unwrap_or_else(|_| n.file.clone().into());
-        let lines = match files.entry(rel) {
+        let text = match files.entry(rel) {
             std::collections::btree_map::Entry::Occupied(e) => e.into_mut(),
             std::collections::btree_map::Entry::Vacant(e) => {
-                let text = Repo::text_at(std::path::Path::new(&n.file)).with_context(|| format!("reading {}", n.file))?;
-                e.insert(text.lines().map(str::to_string).collect())
+                e.insert(Repo::text_at(std::path::Path::new(&n.file)).with_context(|| format!("reading {}", n.file))?)
             }
         };
-        let from = n.span.map_or(1, |s| s.0 as usize).saturating_sub(1);
-        let marked = (from.saturating_sub(10)..=from.min(lines.len().saturating_sub(1)))
-            .rev()
-            .find(|i| lines[*i].contains("prophecy") && lines[*i].contains("sealed"));
-        let Some(i) = marked else { anyhow::bail!("the marker of `{id}` is not near its line") };
-        let broken =
-            seal.replace(&lines[i], "").replace("(, ", "(").replace("prophecy: ", "prophecy:").replace("prophecy:\"", "prophecy:\"");
-        lines[i] = broken.replace("prophecy:  ", "prophecy: ").trim_end().to_string();
-    }
-    let keep_newline = |p: &std::path::Path| Repo::text_at(p).map_or(true, |t| t.ends_with('\n'));
-    Ok(files
-        .into_iter()
-        .map(|(rel, lines)| {
-            let mut text = lines.join("\n");
-            if keep_newline(&std::path::Path::new(&g.project_root).join(&rel)) {
-                text.push('\n');
+        let seal_at = {
+            // each line by the byte it starts at, without its line end
+            let mut start = 0;
+            let lines: Vec<(usize, &str)> = text
+                .split_inclusive('\n')
+                .map(|l| {
+                    let at = start;
+                    start += l.len();
+                    (at, l.trim_end_matches(['\n', '\r']))
+                })
+                .collect();
+            let from = n.span.map_or(1, |s| s.0 as usize).saturating_sub(1);
+            if from >= lines.len() {
+                anyhow::bail!(
+                    "`{}` has {} lines, and `{id}` was read at line {}: the file changed since it was read; read it again",
+                    n.file,
+                    lines.len(),
+                    from + 1
+                );
             }
-            (rel, text)
-        })
-        .collect())
+            (from.saturating_sub(10)..=from).rev().find_map(|i| {
+                let (at, line) = lines[i];
+                let seal = line.contains("prophecy").then(|| seal_in(&seal, line))??;
+                Some(at + seal.start..at + seal.end)
+            })
+        };
+        let Some(seal_at) = seal_at else { anyhow::bail!("the marker of `{id}` is not near its line") };
+        text.replace_range(seal_at, "");
+    }
+    Ok(files)
+}
+
+/// The bytes of a marker's line that hold its seal: `sealed=..` with the separator that joins it to
+/// the argument after it, else to the one before it, else to what closes the marker; what is left
+/// is the marker as its language writes it without a seal (`@prophecy()`, `"prophecy:"`,
+/// `@prophecy */`).
+fn seal_in(seal: &regex::Regex, line: &str) -> Option<std::ops::Range<usize>> {
+    let m = seal.find(line)?;
+    let separator = |s: &str| s.len() - s.trim_start().trim_start_matches(',').trim_start().len();
+    let (before, after) = (&line[..m.start()], &line[m.end()..]);
+    let next = separator(after);
+    let argument_follows = next > 0 && after[next..].starts_with(|c: char| c.is_alphanumeric() || c == '_');
+    let last = before.len() - before.trim_end().trim_end_matches(',').trim_end().len();
+    Some(match (argument_follows, last > 0) {
+        (true, _) => m.start()..m.end() + next,
+        (false, true) => m.start() - last..m.end(),
+        (false, false) => m.start()..m.end() + next,
+    })
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{imports, with_import};
+    use super::{imports, seal_in, with_import};
+    use crate::prophecy::Form;
+
+    /// A seal broken leaves the marker its form writes without one: the line before, with the bytes
+    /// `seal_in` names taken out, is the line `Form::marker` writes, wherever the seal stood among the
+    /// arguments and however it was spaced.
+    #[test]
+    fn a_broken_seal_leaves_the_marker_without_it() {
+        let seal = regex::Regex::new(super::SEAL).expect("compiles");
+        let by = Some("pkg.Old");
+        let sealed = [
+            (Form::Decorator, None, "    @prophecy(sealed=\"#7\")"),
+            (Form::Decorator, None, "    @prophecy(sealed = '#7',)"),
+            (Form::Decorator, by, "    @prophecy(sealed=\"#7\", supersedes=\"pkg.Old\")"),
+            (Form::Decorator, by, "    @prophecy(supersedes=\"pkg.Old\", sealed=\"#7\")"),
+            (Form::Attribute, None, "    #[doc = \"prophecy: sealed=#7\"]"),
+            (Form::Attribute, by, "    #[doc = \"prophecy: sealed=#7 supersedes=pkg.Old\"]"),
+            (Form::Attribute, by, "    #[doc = \"prophecy: supersedes=pkg.Old sealed=#7\"]"),
+            (Form::JsDoc, None, "    /** @prophecy sealed=#7 */"),
+            (Form::JsDoc, by, "    /** @prophecy sealed=#7 supersedes=pkg.Old */"),
+            (Form::JsDoc, by, "    /** @prophecy supersedes=pkg.Old sealed=#7 */"),
+        ];
+        for (form, by, line) in sealed {
+            let at = seal_in(&seal, line).expect("the seal is found");
+            let mut broken = line.to_string();
+            broken.replace_range(at, "");
+            assert_eq!(broken, form.marker("    ", by), "{line}");
+        }
+    }
 
     #[test]
     fn the_import_goes_where_isort_puts_it() {

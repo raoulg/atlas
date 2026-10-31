@@ -1,5 +1,5 @@
 //! The page: one reading of a repository, or two drawn as one, in the viewer baked into the binary,
-//! and the browser that opens it. `atlas view`, `serve`, `history` and `mcp` all draw it in the same
+//! and the browser that opens it. `atlas-code view`, `serve`, `history` and `mcp` all draw it in the same
 //! steps: the parts are read (`Reading`), the principles asked of them (`Findings`), the parts drawn
 //! as one graph and its flow made (`flow::of`), and the page made of those (`Html`).
 
@@ -18,7 +18,7 @@ use serde::Serialize;
 /// The viewer, baked into the binary, with its model and its fonts: the layout of the graph it is handed.
 const VIEWER: &str = include_str!("../../viewer/index.html");
 const PLAN: &str = include_str!("../../viewer/plan.js");
-/// How far a drawing of `atlas serve` is: the viewer and the loading page measure it alike.
+/// How far a drawing of `atlas-code serve` is: the viewer and the loading page measure it alike.
 pub(crate) const PROGRESS: &str = include_str!("../../viewer/progress.js");
 /// The colours a host such as Studio hands a page it frames, which every served page applies.
 pub(crate) const PALETTE: &str = include_str!("../../viewer/palette.js");
@@ -89,7 +89,7 @@ impl Reading {
             let (raised, resolved, _) = changes::raised(&before, &found);
             Changed { raised: raised.len(), resolved: resolved.len() }
         });
-        // the page asks what is open; what the author has answered stays with `atlas check --all`
+        // the page asks what is open; what the author has answered stays with `atlas-code check --all`
         Findings { found: found.into_iter().filter(|f| f.aside.is_none()).collect(), changed }
     }
 
@@ -108,7 +108,7 @@ impl Reading {
     }
 }
 
-/// What `atlas view` reads: the repositories as they are, or one repository since a revision
+/// What `atlas-code view` reads: the repositories as they are, or one repository since a revision
 /// (`since`), until another (`until`) or the working tree.
 pub(crate) fn reading(repos: &[PathBuf], opts: &Options, since: Option<&str>, until: Option<&str>) -> Result<Reading> {
     match (since, repos) {
@@ -127,7 +127,7 @@ fn compared(repo: &Path, a: &str, b: Option<&str>, opts: &Options) -> Result<Rea
 }
 
 /// Where a page opens, besides what it draws: on a route by its entry's id, in a sight, and, where
-/// `atlas serve` serves it, as the drawing the server knows it by, to follow the next.
+/// `atlas-code serve` serves it, as the drawing the server knows it by, to follow the next.
 #[derive(Default)]
 pub(crate) struct Opens {
     pub(crate) route: Option<String>,

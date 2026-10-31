@@ -3,11 +3,13 @@
 //! Everything between `parse` and `layout` is `Graph -> Graph`. The JSON shape is the
 //! contract with the frontend; `ts-rs` generates the TypeScript side from these types.
 
-use std::collections::{BTreeMap, HashMap, VecDeque};
+use std::collections::{BTreeMap, BTreeSet, HashMap, VecDeque};
 
 use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
+
+pub use crate::lang::Lang;
 
 #[derive(Serialize, Deserialize, TS, Clone, Copy, PartialEq, Eq, Hash, Debug)]
 #[serde(rename_all = "snake_case")]
@@ -72,11 +74,125 @@ pub struct Entry {
     /// it reads as its usage line, `$ sunspots --raw --figure --months`.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub options: Vec<String>,
+    /// For a route: the requests it serves, of which the label is the words. None where the route
+    /// serves no request a program sends (a page's route in the browser).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub request: Option<Route>,
 }
 
 impl Entry {
     pub fn new(kind: EntryKind, label: impl Into<String>) -> Entry {
-        Entry { kind, label: label.into(), options: vec![] }
+        Entry { kind, label: label.into(), options: vec![], request: None }
+    }
+
+    /// A route that serves `route`, labelled by it.
+    pub fn route(route: Route) -> Entry {
+        let mut e = Entry::new(EntryKind::Route, String::new());
+        e.serve(route);
+        e
+    }
+
+    /// Serve `route`: the label is its words, written by `Route`'s `Display` alone.
+    pub fn serve(&mut self, route: Route) {
+        self.label = route.to_string();
+        self.request = Some(route);
+    }
+}
+
+/// A method a route serves or a request goes by, upper case as the protocol writes it (`GET`,
+/// `WEBSOCKET`). Methods go in the order of the table of methods, `knowledge::REQUEST_WAYS`,
+/// which orders them (`Ord`, beside the table).
+#[derive(Serialize, Deserialize, TS, Clone, Debug, PartialEq, Eq, Hash)]
+#[serde(transparent)]
+#[ts(export)]
+pub struct Method(String);
+
+impl Method {
+    pub fn new(name: &str) -> Method {
+        Method(name.to_ascii_uppercase())
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl std::fmt::Display for Method {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+/// The methods a route serves: a set, so the order the code lists them in says nothing
+/// (`["POST", "GET"]`, `{"GET", "POST"}`). Written `GET|POST`, in the order of its methods.
+#[derive(Serialize, Deserialize, TS, Clone, Debug, Default, PartialEq, Eq, Hash)]
+#[serde(transparent)]
+#[ts(export)]
+pub struct Methods(pub BTreeSet<Method>);
+
+impl Methods {
+    /// The methods of these names, in any case.
+    pub fn of<S: AsRef<str>>(names: impl IntoIterator<Item = S>) -> Methods {
+        Methods(names.into_iter().map(|n| Method::new(n.as_ref())).collect())
+    }
+
+    pub fn contains(&self, m: &Method) -> bool {
+        self.0.contains(m)
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = &Method> {
+        self.0.iter()
+    }
+}
+
+impl std::fmt::Display for Methods {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        let names: Vec<&str> = self.0.iter().map(Method::as_str).collect();
+        f.write_str(&names.join("|"))
+    }
+}
+
+/// The requests a route serves: its methods at its path. No path where the code names no
+/// literal one. Written `GET|POST /items`, or the methods alone without a path.
+#[derive(Serialize, Deserialize, TS, Clone, Debug, PartialEq, Eq, Hash)]
+#[ts(export)]
+pub struct Route {
+    pub methods: Methods,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub path: Option<String>,
+}
+
+impl std::fmt::Display for Route {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        match &self.path {
+            Some(p) => write!(f, "{} {p}", self.methods),
+            None => write!(f, "{}", self.methods),
+        }
+    }
+}
+
+/// A request a function makes whole: its method where the code says it, and its path. Written
+/// `GET /api/items/{id}`, or the path alone where the code does not say the method, and read
+/// back where a rendered request is split (`From<String>`, beside `paths::method_and_path`).
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, Hash)]
+#[serde(into = "String", from = "String")]
+pub struct Request {
+    pub method: Option<Method>,
+    pub path: String,
+}
+
+impl std::fmt::Display for Request {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        match &self.method {
+            Some(m) => write!(f, "{m} {}", self.path),
+            None => f.write_str(&self.path),
+        }
+    }
+}
+
+impl From<Request> for String {
+    fn from(r: Request) -> String {
+        r.to_string()
     }
 }
 
@@ -149,7 +265,8 @@ pub struct Node {
     /// The requests it makes whole that no route of its own part serves: the method when the code
     /// says it, and the path (`GET /api/items/{id}`). Another part's route may serve them.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub asks: Vec<String>,
+    #[ts(type = "Array<string>")]
+    pub asks: Vec<Request>,
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub is_pkg: bool,
     /// For a method: it is called on its class, not on a value of it, so the class is no input.
@@ -360,13 +477,22 @@ impl Param {
     }
 }
 
+/// A type's own name: its id without the library or module it is in (`ext:pandas.DataFrame` is `DataFrame`). A
+/// shaped array keeps its shape, a dot in it too: `ext:jaxtyping.Float[Tensor, batch {self.size}]` is
+/// `Float[Tensor, batch {self.size}]`.
+pub fn type_name(id: &str) -> &str {
+    let s = id.strip_prefix("ext:").unwrap_or(id);
+    let head = &s[..s.find('[').unwrap_or(s.len())];
+    &s[head.rfind('.').map_or(0, |i| i + 1)..]
+}
+
 /// The names of `held`, each as the last part of the type it resolves to: a type written through an
 /// alias (`Order as Parcel`, `use tree_sitter::Node as TsNode`) is the type it stands for, held by that
 /// type's name, as the `takes` it resolves to names it. A name that resolves to nothing stays as written.
 pub fn resolve_held(held: &[String], resolve: &impl Fn(&str) -> Option<String>) -> Vec<String> {
     let mut out: Vec<String> = vec![];
     for h in held {
-        let name = resolve(h).map_or(h.clone(), |id| id.strip_prefix("ext:").unwrap_or(&id).rsplit('.').next().unwrap_or(&id).to_string());
+        let name = resolve(h).map_or(h.clone(), |id| type_name(&id).to_string());
         if !out.contains(&name) {
             out.push(name);
         }
@@ -494,10 +620,15 @@ pub struct Site {
     /// `fails` is settled from them once the graph is whole.
     #[serde(skip)]
     pub caught: Vec<Vec<String>>,
-    /// The class of the value a method is called on, when that is a subclass of the method's own
-    /// class (`ComparePlot(..).plot()` reaches `BasePlot.plot` on a `ComparePlot`).
+    /// The class of the value a method is called on, when the reader knows it: the class the code declares the value
+    /// of, where that is a subclass of the method's own class (`plot: ComparePlot`, `plot.plot()` reaches `BasePlot.plot`
+    /// on a `ComparePlot` or a class below it), or the class it builds the value of at the call (`built`).
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub on: String,
+    /// The value the call runs on is built where the call stands (`ComparePlot(..).plot()`, `new Section().show()`):
+    /// its class is `on`, also where that is the method's own class, and none below it.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub built: bool,
     /// The call is made on the body's own receiver (`self.build(..)`): on a value of a
     /// subclass, it reaches that subclass's method.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
@@ -912,11 +1043,11 @@ pub struct Touch {
     /// The lines of the other calls it stands for, each once: two `write_text` calls of one file,
     /// one in an arm and one after a read, are one touch that runs on both lines.
     pub also_at: Vec<u32>,
-    /// The functions whose calls hand what makes its path or statement whole, where that is not
-    /// its own function: a route shows it when it reaches one of them (`a&b`: both).
-    pub by: Vec<String>,
-    /// The entries whose users hand what makes it whole: their own routes show it.
-    pub users_of: Vec<String>,
+    /// Who makes its path or statement whole, where that is not its own function: callers whose
+    /// calls hand what does, and entries whose users hand it. A disjunction of conjunctions, so a
+    /// route shows it when every condition of one of them holds: it reaches each caller and starts
+    /// at the entry (`mathematics.md`, "Who makes a path whole"). Empty: whole in its own function.
+    pub by: BTreeSet<Both>,
     /// What the call gives goes to nothing its function hands on: it only decides a choice, goes
     /// to an error, or is dropped. A read that checks what is there, not one that uses it.
     pub checks: bool,
@@ -942,20 +1073,16 @@ impl Touch {
             fixed_by: vec![],
             line: 0,
             also_at: vec![],
-            by: vec![],
-            users_of: vec![],
+            by: BTreeSet::new(),
             checks: false,
             holder: String::new(),
         }
     }
 
     /// Whether the route that starts at `entry` and reaches `reached` runs this touch: one whole
-    /// in its own function always, one whole by what callers hand when the route reaches one of
-    /// them, one whole by what an entry's users hand in that entry's route.
+    /// in its own function always, else where one of the conjunctions that make it whole holds.
     pub fn in_route(&self, entry: &str, reached: &dyn Fn(&str) -> bool) -> bool {
-        (self.by.is_empty() && self.users_of.is_empty())
-            || self.by.iter().any(|f| f.split('&').all(reached))
-            || self.users_of.iter().any(|e| e == entry)
+        self.by.is_empty() || self.by.iter().any(|b| b.holds(entry, reached))
     }
 
     pub fn crossing(&self) -> Crossing {
@@ -970,6 +1097,134 @@ impl Touch {
     /// The direction as the graph's JSON writes it beside the kind.
     pub fn dir_name(&self) -> &'static str {
         self.crossing().dir_name()
+    }
+}
+
+/// One condition a route meets for a touch whose path others make whole to run in it: it reaches
+/// a caller whose call hands what makes the path whole, or it starts at an entry whose users hand
+/// it. The graph's JSON writes the first as the caller's id and the second as `users_of:` and the
+/// entry's id.
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum Atom {
+    Reaches(String),
+    Starts(String),
+}
+
+impl Atom {
+    const STARTS: &'static str = "users_of:";
+
+    /// The function the condition names.
+    pub fn name(&self) -> &str {
+        match self {
+            Atom::Reaches(f) | Atom::Starts(f) => f,
+        }
+    }
+
+    /// Whether the route that starts at `entry` and reaches `reached` meets it.
+    pub fn holds(&self, entry: &str, reached: &dyn Fn(&str) -> bool) -> bool {
+        match self {
+            Atom::Reaches(f) => reached(f),
+            Atom::Starts(e) => e == entry,
+        }
+    }
+
+    /// The same condition on what `f` makes of the function it names.
+    pub fn map(&self, mut f: impl FnMut(&str) -> String) -> Atom {
+        match self {
+            Atom::Reaches(x) => Atom::Reaches(f(x)),
+            Atom::Starts(x) => Atom::Starts(f(x)),
+        }
+    }
+
+    fn parse(s: &str) -> Atom {
+        match s.strip_prefix(Atom::STARTS) {
+            Some(e) => Atom::Starts(e.to_string()),
+            None => Atom::Reaches(s.to_string()),
+        }
+    }
+}
+
+impl std::fmt::Display for Atom {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Atom::Reaches(x) => f.write_str(x),
+            Atom::Starts(e) => write!(f, "{}{e}", Atom::STARTS),
+        }
+    }
+}
+
+/// Conditions that make a path whole together: a conjunction, so a set (`a∧b = b∧a`, `a∧a = a`).
+/// The graph's JSON writes it `a&b`, its conditions in order.
+#[derive(Clone, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct Both(pub BTreeSet<Atom>);
+
+impl Both {
+    /// The conjunction of one caller.
+    pub fn one(f: impl Into<String>) -> Both {
+        Both(BTreeSet::from([Atom::Reaches(f.into())]))
+    }
+
+    /// The conjunction of one entry's users.
+    pub fn users(e: impl Into<String>) -> Both {
+        Both(BTreeSet::from([Atom::Starts(e.into())]))
+    }
+
+    /// The callers a route reaches, in order.
+    pub fn members(&self) -> impl Iterator<Item = &str> {
+        self.0.iter().filter_map(|a| match a {
+            Atom::Reaches(f) => Some(f.as_str()),
+            Atom::Starts(_) => None,
+        })
+    }
+
+    /// The function of each condition: the callers and the entries.
+    pub fn names(&self) -> impl Iterator<Item = &str> {
+        self.0.iter().map(Atom::name)
+    }
+
+    /// The one function, when the conjunction has one condition.
+    pub fn single(&self) -> Option<&str> {
+        match self.0.len() {
+            1 => self.names().next(),
+            _ => None,
+        }
+    }
+
+    /// The entry whose users alone make the path whole, when the conjunction is that.
+    pub fn users_of(&self) -> Option<&str> {
+        match self.0.iter().collect::<Vec<_>>().as_slice() {
+            [Atom::Starts(e)] => Some(e),
+            _ => None,
+        }
+    }
+
+    /// Whether the route that starts at `entry` and reaches `reached` meets every condition.
+    pub fn holds(&self, entry: &str, reached: &dyn Fn(&str) -> bool) -> bool {
+        self.0.iter().all(|a| a.holds(entry, reached))
+    }
+
+    /// The conjunction of what `f` makes of the function of each condition.
+    pub fn map(&self, mut f: impl FnMut(&str) -> String) -> Both {
+        Both(self.0.iter().map(|a| a.map(&mut f)).collect())
+    }
+
+    /// The conjunction the graph's JSON writes `a&b`.
+    pub fn parse(s: &str) -> Both {
+        Both(s.split('&').map(Atom::parse).collect())
+    }
+}
+
+impl std::fmt::Display for Both {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut written: Vec<String> = self.0.iter().map(Atom::to_string).collect();
+        written.sort();
+        f.write_str(&written.join("&"))
+    }
+}
+
+impl FromIterator<Atom> for Both {
+    fn from_iter<I: IntoIterator<Item = Atom>>(xs: I) -> Both {
+        Both(xs.into_iter().collect())
     }
 }
 
@@ -1010,6 +1265,16 @@ pub struct TouchJson {
 impl From<Touch> for TouchJson {
     fn from(t: Touch) -> TouchJson {
         let (kind, dir) = (t.kind_name().to_string(), t.dir_name().to_string());
+        // a conjunction of one entry's users alone is written in `users_of`, every other in `by`
+        let (mut by, mut users_of) = (vec![], vec![]);
+        for b in &t.by {
+            match b.users_of() {
+                Some(e) => users_of.push(e.to_string()),
+                None => by.push(b.to_string()),
+            }
+        }
+        by.sort();
+        users_of.sort();
         TouchJson {
             kind,
             what: t.what,
@@ -1023,8 +1288,8 @@ impl From<Touch> for TouchJson {
             fixed_by: t.fixed_by,
             line: t.line,
             also_at: t.also_at,
-            by: t.by,
-            users_of: t.users_of,
+            by,
+            users_of,
             checks: t.checks,
             holder: t.holder,
         }
@@ -1048,8 +1313,7 @@ impl TryFrom<TouchJson> for Touch {
             fixed_by: j.fixed_by,
             line: j.line,
             also_at: j.also_at,
-            by: j.by,
-            users_of: j.users_of,
+            by: j.by.iter().map(|b| Both::parse(b)).chain(j.users_of.into_iter().map(Both::users)).collect(),
             checks: j.checks,
             holder: j.holder,
         })
@@ -1149,6 +1413,7 @@ pub struct Stats {
     pub nodes: BTreeMap<String, usize>,
     pub edges: BTreeMap<String, usize>,
     pub unresolved_calls_total: u32,
+    /// Every name a call not followed starts from, with how often, most first.
     pub unresolved_calls_top: Vec<(String, u32)>,
     /// The same calls by what the name each starts from is bound to.
     #[serde(default)]
@@ -1212,13 +1477,63 @@ impl std::ops::AddAssign for Unresolved {
     }
 }
 
+/// The languages a graph is read in: the image of its parts' languages, since a repository's graph
+/// is the coproduct of its parts' and each part is read in one. Empty for no parts; a merge's is
+/// the union of the merged graphs'. The JSON writes the one name when there is one and nothing
+/// otherwise; a graph read back without one takes its parts' (`Graph`'s `Deserialize`).
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Languages(pub BTreeSet<Lang>);
+
+impl Languages {
+    /// The one language, when there is exactly one.
+    pub fn one(&self) -> Option<Lang> {
+        match self.0.len() {
+            1 => self.0.first().copied(),
+            _ => None,
+        }
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = Lang> + '_ {
+        self.0.iter().copied()
+    }
+
+    /// Not exactly one language: what the JSON leaves out.
+    pub fn not_one(&self) -> bool {
+        self.one().is_none()
+    }
+}
+
+impl From<Lang> for Languages {
+    fn from(l: Lang) -> Languages {
+        Languages(BTreeSet::from([l]))
+    }
+}
+
+impl FromIterator<Lang> for Languages {
+    fn from_iter<I: IntoIterator<Item = Lang>>(it: I) -> Languages {
+        Languages(it.into_iter().collect())
+    }
+}
+
+impl Serialize for Languages {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        self.one().serialize(s)
+    }
+}
+
+impl<'de> Deserialize<'de> for Languages {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Languages, D::Error> {
+        Ok(Option::<Lang>::deserialize(d)?.into_iter().collect())
+    }
+}
+
 /// One part of a repository: what one manifest roots (a crate, a Python package, an app),
 /// read in its own language.
-#[derive(Serialize, Deserialize, TS, Clone, Debug, Default, PartialEq)]
+#[derive(Serialize, Deserialize, TS, Clone, Debug, PartialEq)]
 #[ts(export)]
 pub struct Part {
     pub id: String,
-    pub language: String,
+    pub language: Lang,
     /// The directory that holds the part's manifest.
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub dir: String,
@@ -1250,13 +1565,14 @@ pub struct Leaves {
 }
 
 #[derive(Serialize, Deserialize, TS, Clone, Debug, Default)]
+#[serde(remote = "Graph")]
 #[ts(export)]
 pub struct Graph {
     pub root: String,
-    /// The language the repo was parsed as: `python`, `rust`, `typescript`; empty when its
-    /// parts are read in several.
-    #[serde(default, skip_serializing_if = "String::is_empty")]
-    pub language: String,
+    /// The languages the repo was parsed in, one per part: `python`, `rust`, `typescript`.
+    #[serde(default, skip_serializing_if = "Languages::not_one")]
+    #[ts(as = "Option<Lang>", optional)]
+    pub language: Languages,
     /// The directory that holds the repo's own manifests: Makefile, pyproject.toml, Cargo.toml.
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub project_root: String,
@@ -1282,6 +1598,24 @@ impl Node {
         let same_call = |a: &Touch, b: &Touch| a.line == b.line && a.op == b.op && a.kind == b.kind;
         let read: Vec<&Touch> = self.instead.iter().filter(|t| !runs.iter().any(|o| same_call(o, t))).collect();
         runs.into_iter().chain(read).collect()
+    }
+}
+
+impl Serialize for Graph {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        Graph::serialize(self, s)
+    }
+}
+
+/// A graph whose JSON names no language is read in its parts' languages: none for no parts, each of
+/// them where the parts are read in several.
+impl<'de> Deserialize<'de> for Graph {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Graph, D::Error> {
+        let mut g = Graph::deserialize(d)?;
+        if g.language.0.is_empty() {
+            g.language = g.parts.iter().map(|p| p.language).collect();
+        }
+        Ok(g)
     }
 }
 
@@ -1372,10 +1706,8 @@ impl Graph {
                 held(&mut t.on);
             }
             for t in n.touches.iter_mut().chain(n.instead.iter_mut()) {
-                for f in &mut t.by {
-                    *f = f.split('&').map(to).collect::<Vec<_>>().join("&");
-                }
-                t.users_of.iter_mut().chain(t.fixed_by.iter_mut()).for_each(&m);
+                t.by = t.by.iter().map(|b| b.map(to)).collect();
+                t.fixed_by.iter_mut().for_each(&m);
                 if !t.holder.is_empty() {
                     m(&mut t.holder);
                 }
@@ -1483,6 +1815,22 @@ pub fn edge_name(k: &EdgeKind) -> String {
 mod tests {
     use super::*;
 
+    /// A parameter holds the type its function takes by that type's own name, whatever its id holds: a module path, or a
+    /// shape with a dot in it (`{self.size}`), which is part of the name and no module.
+    #[test]
+    fn a_parameter_holds_the_type_it_takes_by_its_own_name() {
+        for (written, id, name) in [
+            ("Frame", "pandas.core.frame.Frame", "Frame"),
+            ("Frame", "ext:pandas.Frame", "Frame"),
+            ("Float[Tensor, batch dim]", "ext:jaxtyping.Float[Tensor, batch dim]", "Float[Tensor, batch dim]"),
+            ("Float[Tensor, batch {self.size}]", "ext:jaxtyping.Float[Tensor, batch {self.size}]", "Float[Tensor, batch {self.size}]"),
+            ("Float[Tensor, ... {self.a.b}]", "ext:jaxtyping.Float[Tensor, ... {self.a.b}]", "Float[Tensor, ... {self.a.b}]"),
+        ] {
+            assert_eq!(type_name(id), name, "{id}");
+            assert_eq!(resolve_held(&[written.to_string()], &|_| Some(id.to_string())), [name], "{id}");
+        }
+    }
+
     /// The method resolution order of `class` in a hierarchy written as `(class, [bases])`.
     fn mro<'a>(class: &'a str, hierarchy: &'a [(&'a str, &'a [&'a str])]) -> Vec<&'a str> {
         let bases = |c: &'a str| hierarchy.iter().find(|(k, _)| *k == c).map_or(vec![], |(_, bs)| bs.to_vec());
@@ -1519,5 +1867,86 @@ mod tests {
     fn a_contradiction_keeps_a_class_before_its_ancestors_and_a_cycle_ends() {
         assert_eq!(mro("K", &[("K", &["A", "B"]), ("B", &["A"])]), ["K", "B", "A"]);
         assert_eq!(mro("A", &[("A", &["B"]), ("B", &["A"])]), ["A", "B"]);
+    }
+
+    /// Conditions (callers, and entries whose users hand a path), conjunctions of them as the
+    /// graph's JSON writes them, and the same conjunctions with the conditions of each and the
+    /// alternatives in another order.
+    fn written_twice() -> impl proptest::strategy::Strategy<Value = (Vec<String>, Vec<String>)> {
+        use proptest::prelude::*;
+        let both = proptest::collection::vec("(users_of:)?[a-e](\\.[a-c])?", 1..4);
+        proptest::collection::vec(both, 0..4)
+            .prop_flat_map(|alts| {
+                let shuffled: Vec<_> = alts.iter().map(|b| Just(b.clone()).prop_shuffle()).collect();
+                (Just(alts), shuffled.prop_shuffle())
+            })
+            .prop_map(|(alts, shuffled)| {
+                let written = |xs: &[Vec<String>]| xs.iter().map(|b| b.join("&")).collect::<Vec<_>>();
+                (written(&alts), written(&shuffled))
+            })
+    }
+
+    /// Methods a route is registered with, as the code lists them (a method of `REQUEST_WAYS`, a
+    /// websocket, or one no table names), and the same methods in another order.
+    fn listed_twice() -> impl proptest::strategy::Strategy<Value = (Vec<String>, Vec<String>)> {
+        use proptest::prelude::*;
+        proptest::collection::vec("get|head|options|post|put|patch|delete|websocket|[a-z]{3,6}", 1..5)
+            .prop_flat_map(|ms| (Just(ms.clone()), Just(ms).prop_shuffle()))
+    }
+
+    proptest::proptest! {
+        /// Law: who makes a path whole is a disjunction of conjunctions, a set of sets
+        /// (`a∧b = b∧a`, `a∨b = b∨a`). Writing the conditions of each conjunction and the
+        /// alternatives in another order gives the same touch, the same JSON, and the same routes it
+        /// runs in; and the JSON reads back as the touch it was written from.
+        #[test]
+        fn the_order_callers_are_written_in_says_nothing(
+            (by, again) in written_twice(),
+            entry in "[a-e]",
+            reached in proptest::collection::btree_set("[a-e](\\.[a-c])?", 0..8),
+        ) {
+            let touch = |by: Vec<String>| Touch::try_from(TouchJson { kind: "disk_read".into(), by, ..TouchJson::default() }).unwrap();
+            let (t, u) = (touch(by), touch(again));
+            proptest::prop_assert_eq!(&t, &u);
+            let json = serde_json::to_string(&t).unwrap();
+            proptest::prop_assert_eq!(&json, &serde_json::to_string(&u).unwrap());
+            proptest::prop_assert_eq!(serde_json::from_str::<Touch>(&json).unwrap(), t.clone());
+            let reached = |f: &str| reached.contains(f);
+            proptest::prop_assert_eq!(t.in_route(&entry, &reached), u.in_route(&entry, &reached));
+        }
+
+        /// Law: a route serves a set of methods (`GET∨POST = POST∨GET`, `GET∨GET = GET`). Methods
+        /// listed in another order, repeated, or in another case give the same route, the same label
+        /// and the same JSON, and the JSON reads back as the route it was written from.
+        #[test]
+        fn the_order_methods_are_listed_in_says_nothing(
+            (listed, again) in listed_twice(),
+            twice in proptest::bool::ANY,
+            path in proptest::option::of("(/[a-z{}]{1,4}){1,3}"),
+        ) {
+            let mut again: Vec<String> = again.iter().map(|m| m.to_ascii_uppercase()).collect();
+            if twice {
+                again.extend(again.clone());
+            }
+            let (r, s) = (Route { methods: Methods::of(&listed), path: path.clone() }, Route { methods: Methods::of(&again), path });
+            proptest::prop_assert_eq!(&r, &s);
+            proptest::prop_assert_eq!(r.to_string(), s.to_string());
+            let json = serde_json::to_string(&r).unwrap();
+            proptest::prop_assert_eq!(&json, &serde_json::to_string(&s).unwrap());
+            proptest::prop_assert_eq!(serde_json::from_str::<Route>(&json).unwrap(), r);
+        }
+
+        /// Law: a request is written `METHOD path`, or its path alone where the code does not say
+        /// the method, and what is written reads back as the request (`Display`, `Request::of`).
+        #[test]
+        fn a_request_reads_back_as_written(
+            method in proptest::option::of("get|post|delete|[a-z]{3,6}"),
+            path in "(/[a-z{}]{1,4}){1,3}",
+        ) {
+            let r = Request { method: method.as_deref().map(Method::new), path };
+            proptest::prop_assert_eq!(Request::of(&r.to_string()), r.clone());
+            let json = serde_json::to_string(&r).unwrap();
+            proptest::prop_assert_eq!(serde_json::from_str::<Request>(&json).unwrap(), r);
+        }
     }
 }

@@ -2,13 +2,13 @@
 
 Atlas draws code as places where data rests and the functions between them. When the
 picture looks wrong, the cause is usually a design principle the code does not follow
-yet. `atlas check` computes those principles from the same graph the picture comes
+yet. `atlas-code check` computes those principles from the same graph the picture comes
 from, and reports where code and principle disagree.
 
 ```bash
-atlas check            # the repository you are in
-atlas check ../goad    # another one
-atlas check --json     # for an agent or a script
+atlas-code check            # the repository you are in
+atlas-code check ../goad    # another one
+atlas-code check --json     # for an agent or a script
 ```
 
 A finding says in a sentence what the graph shows, and holds the same as data in `--json`:
@@ -17,16 +17,16 @@ type, a place) or a name the code writes (a parameter, what a choice tests). A l
 about the type it `lost`, the `place`, and the methods that `put` and `get` there; an override's
 about the overrides that `breaks` its base. The MCP tool `check` gives the same with `json: true`.
 
-A coding agent asks the same through MCP. `atlas mcp` serves seven tools over stdio:
+A coding agent asks the same through MCP. `atlas-code mcp` serves seven tools over stdio:
 `principles`, `check`, `explain` (a principle's section of this page), `routes`, `route`
 (what one entry point does, step by step), `view` (the picture opened where the agent points,
 written as a page for the human) and `changes` (what an edit did to the routes). In Claude Code:
 
 ```bash
-claude mcp add atlas -- atlas mcp
+claude mcp add atlas -- atlas-code mcp
 ```
 
-Any other agent takes the same command: `{"command": "atlas", "args": ["mcp"]}`.
+Any other agent takes the same command: `{"command": "atlas-code", "args": ["mcp"]}`.
 
 Each finding names the principle, the place in the code, the evidence the graph holds,
 and ends in a question. Atlas coaches; it does not fix. The author decides what the
@@ -59,10 +59,10 @@ A decision that names no principle answers all of them. A finding a decision ans
 found: it is set aside, counted beside the open questions (`9 questions, 6 set aside`), kept in
 `--json` with the decision that answers it as `aside`, and listed with `--all`. A decision that
 sets nothing aside, gives no reason or names a principle that is none is asked about below the
-summary, so the file does not outlive the code it speaks of. What `atlas view` and `changes` ask is
+summary, so the file does not outlive the code it speaks of. What `atlas-code view` and `changes` ask is
 what is open: a finding set aside between two readings is neither raised nor resolved.
 
-`atlas view` and `atlas check` read the same graph. The view is the map: your eye finds
+`atlas-code view` and `atlas-code check` read the same graph. The view is the map: your eye finds
 the box that should not be there. Check is the list of places on that map that deserve
 a second look, found by the engine, which sees every type, call and effect at once.
 
@@ -109,7 +109,7 @@ the same table, the same way, as one that binds them.
 A finding is a signal to look critically at the code and at what the rule claims; it is never
 an oracle and never a target. Each section below says what its rule computes and what it cannot
 see, so that no finding means only that the code avoids the forms the rule reads. Atlas is its own
-first subject: what `atlas check` asks of Atlas is a reviewed list in `engine/tests/review.rs`,
+first subject: what `atlas-code check` asks of Atlas is a reviewed list in `engine/tests/review.rs`,
 each finding with why it stands, and the test shows when the list changes.
 
 ## A package names its doors, and each door says what goes in and what comes out.
@@ -309,8 +309,9 @@ its own and its ancestors': each method by name, with a signature that keeps the
 field by name, holding a type that fits the other's where the graph has the types of both. A type
 with a private method is had only by its subclasses. An array's shape is a promise no type checker
 reads (jaxtyping's `Float[Tensor, "batch dim"]`): each array an override gives has a shape its
-base allows, where `...` stands for any run of dimensions, a name for any one, and a number for
-itself.
+base allows, where `...` (or `*name`) stands for any run of dimensions, a name for any one, and a
+number for itself; an array the override gives with a run of its own fits where every array it may
+be does (`docs/reference/mathematics.md`, "Shapes and their rank").
 
 What the rule cannot see:
 
@@ -643,7 +644,7 @@ places, and `"parallel"` comes back three times. One `Experiment` per name, hold
 In Atlas, `file_direction` is such a step: which way a file argument goes (`Reads |
 Writes | src | dst | what the operation does`) is its whole body. Written inline in
 `file_calls`, the five arms would sit between reading the call's literals and placing its
-file, and `atlas check` asks for their name. Named, the body reads as what it does:
+file, and `atlas-code check` asks for their name. Named, the body reads as what it does:
 
 ```rust
 let f = effects::facts(tag, lib, op, &lits);
@@ -759,7 +760,7 @@ values no function changes) is no block, so what is imported from it alone (`fro
 __version__`) links nothing. Test code is known by where it stands; a test helper in a module of
 the program is the program's. The imports of a Rust test module are the tests', and the graph
 keeps none of them for the module around it. A request from one part to another is in the graph
-of the repository as a whole; `atlas check` reads each part alone.
+of the repository as a whole; `atlas-code check` reads each part alone.
 
 ## What a lens puts, it gets back.
 
@@ -926,5 +927,5 @@ What it cannot see: a test helper in a module of the program is built code. A Ru
 `use` (`supersedes=store::save` where `store` is a name the module imports) is read as written, not
 through the import, and `self::` and `super::` start from the file's module, also inside an inline
 `mod`. A request to a prophesied route of another part is in the graph of the repository as a
-whole; `atlas check` reads each part alone, and asks about a request only where a part serves it
+whole; `atlas-code check` reads each part alone, and asks about a request only where a part serves it
 itself (a TypeScript page that fetches its own routes).

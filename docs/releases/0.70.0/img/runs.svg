@@ -1,0 +1,50 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 450" role="img" aria-label="Three ways to call show over Block, Section and Boxed, and what each may run in 0.70.0; below, one question that the route, the parameters and the errors all ask">
+<text x="170" y="32" style="font-family:var(--mono);font-size:15px;fill:var(--ink);text-anchor:middle;font-weight:600">Block().show(h)</text>
+<text x="170" y="52" style="font-family:var(--sans);font-size:13px;fill:var(--ink-2);text-anchor:middle;font-weight:400">built at the call</text>
+<line x1="170" y1="112" x2="170" y2="132" style="stroke:var(--line);stroke-width:2;fill:none"/>
+<line x1="170" y1="162" x2="170" y2="182" style="stroke:var(--line);stroke-width:2;fill:none"/>
+<rect x="90" y="80" width="160" height="32" rx="8" style="fill:var(--key);fill-opacity:0.16;stroke:var(--key);stroke-width:2"/>
+<text x="170" y="101" style="font-family:var(--mono);font-size:13px;fill:var(--ink);text-anchor:middle;font-weight:600">Block.show</text>
+<rect x="90" y="130" width="160" height="32" rx="8" style="fill:var(--panel);fill-opacity:1;stroke:var(--line);stroke-width:1.2"/>
+<text x="170" y="151" style="font-family:var(--mono);font-size:13px;fill:var(--ink);text-anchor:middle;font-weight:400">Section</text>
+<rect x="90" y="180" width="160" height="32" rx="8" style="fill:var(--panel);fill-opacity:1;stroke:var(--line);stroke-width:1.2"/>
+<text x="170" y="201" style="font-family:var(--mono);font-size:13px;fill:var(--ink-3);text-anchor:middle;font-weight:400">Boxed.show</text>
+<text x="170" y="246" style="font-family:var(--mono);font-size:13px;fill:var(--key);text-anchor:middle;font-weight:600">runs Block.show</text>
+<text x="480" y="32" style="font-family:var(--mono);font-size:15px;fill:var(--ink);text-anchor:middle;font-weight:600">section.show(h)</text>
+<text x="480" y="52" style="font-family:var(--sans);font-size:13px;fill:var(--ink-2);text-anchor:middle;font-weight:400">section: Section, declared</text>
+<line x1="480" y1="112" x2="480" y2="132" style="stroke:var(--line);stroke-width:2;fill:none"/>
+<line x1="480" y1="162" x2="480" y2="182" style="stroke:var(--line);stroke-width:2;fill:none"/>
+<rect x="400" y="80" width="160" height="32" rx="8" style="fill:var(--key);fill-opacity:0.16;stroke:var(--key);stroke-width:2"/>
+<text x="480" y="101" style="font-family:var(--mono);font-size:13px;fill:var(--ink);text-anchor:middle;font-weight:600">Block.show</text>
+<rect x="400" y="130" width="160" height="32" rx="8" style="fill:var(--panel);fill-opacity:1;stroke:var(--line);stroke-width:1.2"/>
+<text x="480" y="151" style="font-family:var(--mono);font-size:13px;fill:var(--ink);text-anchor:middle;font-weight:400">Section</text>
+<rect x="400" y="180" width="160" height="32" rx="8" style="fill:var(--key);fill-opacity:0.16;stroke:var(--key);stroke-width:2"/>
+<text x="480" y="201" style="font-family:var(--mono);font-size:13px;fill:var(--ink);text-anchor:middle;font-weight:600">Boxed.show</text>
+<text x="480" y="246" style="font-family:var(--mono);font-size:13px;fill:var(--key);text-anchor:middle;font-weight:600">may run Section.show or Boxed.show</text>
+<text x="790" y="32" style="font-family:var(--mono);font-size:15px;fill:var(--ink);text-anchor:middle;font-weight:600">Section.show(s, h)</text>
+<text x="790" y="52" style="font-family:var(--sans);font-size:13px;fill:var(--ink-2);text-anchor:middle;font-weight:400">through the class</text>
+<line x1="790" y1="112" x2="790" y2="132" style="stroke:var(--line);stroke-width:2;fill:none"/>
+<line x1="790" y1="162" x2="790" y2="182" style="stroke:var(--line);stroke-width:2;fill:none"/>
+<rect x="710" y="80" width="160" height="32" rx="8" style="fill:var(--key);fill-opacity:0.16;stroke:var(--key);stroke-width:2"/>
+<text x="790" y="101" style="font-family:var(--mono);font-size:13px;fill:var(--ink);text-anchor:middle;font-weight:600">Block.show</text>
+<rect x="710" y="130" width="160" height="32" rx="8" style="fill:var(--panel);fill-opacity:1;stroke:var(--line);stroke-width:1.2"/>
+<text x="790" y="151" style="font-family:var(--mono);font-size:13px;fill:var(--ink);text-anchor:middle;font-weight:400">Section</text>
+<rect x="710" y="180" width="160" height="32" rx="8" style="fill:var(--panel);fill-opacity:1;stroke:var(--line);stroke-width:1.2"/>
+<text x="790" y="201" style="font-family:var(--mono);font-size:13px;fill:var(--ink-3);text-anchor:middle;font-weight:400">Boxed.show</text>
+<text x="790" y="246" style="font-family:var(--mono);font-size:13px;fill:var(--key);text-anchor:middle;font-weight:600">runs Block.show, no override</text>
+<line x1="20" y1="272" x2="940" y2="272" style="stroke:var(--line);stroke-width:1;fill:none"/>
+<rect x="380" y="292" width="200" height="40" rx="8" style="fill:var(--panel);fill-opacity:1;stroke:var(--ink);stroke-width:1.6"/>
+<text x="480" y="317" style="font-family:var(--sans);font-size:14px;fill:var(--ink);text-anchor:middle;font-weight:600">what may this call run?</text>
+<path d="M480 332 C 480 352, 170 352, 170 372" style="stroke:var(--key);stroke-width:1.6;fill:none" marker-end="url(#d-head)"/>
+<rect x="60" y="376" width="220" height="34" rx="8" style="fill:var(--panel);fill-opacity:1;stroke:var(--line);stroke-width:1.2"/>
+<text x="170" y="398" style="font-family:var(--sans);font-size:13px;fill:var(--ink-2);text-anchor:middle;font-weight:400">the route&#x27;s steps</text>
+<path d="M480 332 C 480 352, 480 352, 480 372" style="stroke:var(--key);stroke-width:1.6;fill:none" marker-end="url(#d-head)"/>
+<rect x="370" y="376" width="220" height="34" rx="8" style="fill:var(--panel);fill-opacity:1;stroke:var(--line);stroke-width:1.2"/>
+<text x="480" y="398" style="font-family:var(--sans);font-size:13px;fill:var(--ink-2);text-anchor:middle;font-weight:400">what a parameter holds</text>
+<path d="M480 332 C 480 352, 790 352, 790 372" style="stroke:var(--key);stroke-width:1.6;fill:none" marker-end="url(#d-head)"/>
+<rect x="680" y="376" width="220" height="34" rx="8" style="fill:var(--panel);fill-opacity:1;stroke:var(--line);stroke-width:1.2"/>
+<text x="790" y="398" style="font-family:var(--sans);font-size:13px;fill:var(--ink-2);text-anchor:middle;font-weight:400">which errors it hands on</text>
+<text x="20" y="312" style="font-family:var(--sans);font-size:13px;fill:var(--key);text-anchor:start;font-weight:600">0.70.0: one answer</text>
+<text x="20" y="330" style="font-family:var(--sans);font-size:13px;fill:var(--del);text-anchor:start;font-weight:400">0.69.3: three, which disagreed</text>
+<text x="20" y="438" style="font-family:var(--sans);font-size:12.5px;fill:var(--ink-3);text-anchor:start;font-weight:400">teal: what the call may run. Boxed overrides show below Section, which inherits it from Block.</text>
+</svg>

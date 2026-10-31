@@ -33,6 +33,14 @@
   };
   const language = (path) => LANGUAGES[extension(path)] || LANGUAGES[path.split('/').at(-1).toLowerCase()] || '';
 
+  // Where the preview docks: beside the view, on the left or the right, its inner edge following the
+  // pointer as the terminal's does (`AtlasPanel`). It folds to a bar at that side.
+  const SIDES = {
+    left: {label: 'on the left', folded: 'foldedLeft', least: 260, axis: 'x', grows: 1},
+    right: {label: 'on the right', folded: 'foldedRight', least: 260, axis: 'x', grows: -1},
+  };
+  const sideOf = (value) => Object.hasOwn(SIDES, value) ? value : 'right';
+
   // `text` highlighted as `language`, one piece of HTML per line, each with the spans it is inside
   // closed at its end and opened again on the next; nothing when highlight.js does not read it.
   // highlight.js writes the text escaped, and only `<span class>` around it.
@@ -102,12 +110,57 @@
     const modes = node('div', 'preview-modes');
     const close = control('✕', () => closePreview(), 'Close the preview');
     close.className = 'preview-close';
-    header.append(heading, close);
+    // the preview's own place: its side, folded to a bar there, or over the whole stage; a drag of its
+    // inner edge sets its width
+    const panel = root.AtlasPanel;
+    const tool = (title, handler) => {
+      const button = control('', handler, title);
+      button.className = 'preview-tool';
+      return button;
+    };
+    const sideButtons = Object.entries(SIDES).map(([each, {label}]) => {
+      const button = tool(`Dock the preview ${label}`, () => bridge.dock(each));
+      button.dataset.side = each;
+      button.setAttribute('role', 'radio');
+      button.append(panel.glyph(panel.PARTS[each]));
+      return button;
+    });
+    const sides = node('div', 'preview-sides');
+    sides.setAttribute('role', 'radiogroup');
+    sides.setAttribute('aria-label', 'Dock the preview');
+    sides.append(...sideButtons);
+    const foldButton = tool('Fold the preview to a bar', () => setMode('folded'));
+    const fullButton = tool('Fill the window', () => setMode(mode === 'full' ? '' : 'full'));
+    fullButton.append(panel.glyph(panel.PARTS.whole));
+    const tools = node('div', 'preview-tools');
+    tools.append(sides, foldButton, fullButton);
+    header.append(heading, tools, close);
+    const fold = control('', () => setMode(''), 'Unfold the preview');
+    fold.className = 'preview-fold';
+    const foldName = node('span', '', '');
     const tabs = node('div', 'preview-tabs');
     tabs.setAttribute('role', 'tablist');
     const body = node('div', 'preview-body');
     const footer = node('footer', 'preview-facts');
-    previewHost.append(header, tabs, modes, body, footer);
+    previewHost.append(header, tabs, modes, body, footer, fold);
+
+    let side = 'right';
+    let mode = '';
+    // '' beside the view at its width, 'folded' to a bar, 'full' over the stage
+    function setMode(next) {
+      mode = next;
+      if (mode) previewHost.dataset.mode = mode;
+      else previewHost.removeAttribute('data-mode');
+      fullButton.setAttribute('aria-pressed', String(mode === 'full'));
+      fullButton.title = mode === 'full' ? 'Back beside the view' : 'Fill the window';
+      foldName.textContent = active ? active.split('/').at(-1) : 'Preview';
+    }
+    function setDock(next) {
+      side = sideOf(next);
+      for (const button of sideButtons) button.setAttribute('aria-checked', String(button.dataset.side === side));
+      foldButton.replaceChildren(panel.glyph(panel.PARTS[SIDES[side].folded]));
+      fold.replaceChildren(panel.glyph(panel.PARTS[side]), foldName);
+    }
 
     let listing = {files: []};
     let byPath = new Map();
@@ -175,7 +228,7 @@
     }
 
     // where a traced file's reading starts: the route of the entry point it defines (a notebook or a
-    // script is one itself, a command line is a function in it), as a file named to `atlas view` opens;
+    // script is one itself, a command line is a function in it), as a file named to `atlas-code view` opens;
     // else its module's box, else the first thing defined in it
     const reading = (facts) => facts.find((fact) => fact.entry) || facts.find((fact) => fact.kind === 'module') || facts[0];
 
@@ -268,6 +321,7 @@
       selected = null;
       previews.length = 0;
       urls.splice(0).forEach((url) => URL.revokeObjectURL(url));
+      setMode('');
       bridge.previewOpen(false);
       draw();
     }
@@ -397,6 +451,8 @@
       reveal(path);
       draw();
       drawTabs();
+      // a file asked for is shown: a folded preview unfolds, a full one stays full
+      setMode(mode === 'folded' ? '' : mode);
       bridge.previewOpen(true);
       name.textContent = 'Preview';
       where.textContent = path;
@@ -473,9 +529,11 @@
     }
 
     draw();
-    return {load, clear, shown, openFile, factFile: (id) => factFile.get(id) || factFile.get(factOf(id))};
+    setDock(side);
+    setMode('');
+    return {load, clear, shown, openFile, setDock, factFile: (id) => factFile.get(id) || factFile.get(factOf(id))};
   }
 
-  root.AtlasFiles = {mount, tree, factOf, relative, highlightedLines, previewUrl, language};
+  root.AtlasFiles = {mount, tree, factOf, relative, highlightedLines, previewUrl, language, SIDES, sideOf};
   if (typeof module !== 'undefined' && module.exports) module.exports = root.AtlasFiles;
 })(typeof window !== 'undefined' ? window : globalThis);

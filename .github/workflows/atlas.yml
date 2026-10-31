@@ -35,7 +35,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - uses: astral-sh/setup-uv@v10.3.0
-      - run: cargo build --locked --release -p atlas
+      - run: cargo build --locked --release -p atlas-code
       - name: Start from the documentation, main's and next's
         run: |
           cp -R docs site
@@ -43,13 +43,13 @@ jobs:
           rm -rf next
       - name: Draw the page
         run: |
-          target/release/atlas view --no-open --out site/atlas.html --view '{"route": "atlas-engine.analyze"}'
+          target/release/atlas-code view --no-open --out site/atlas.html --view '{"route": "atlas-engine.analyze"}'
       - name: Take its picture
         run: uv run tools/atlas_picture.py site/atlas.html site/atlas.png
       - name: Write the pill
         run: |
           python3 tools/atlas_badge.py site/badge.svg
-          target/release/atlas check --json > findings.json || true
+          target/release/atlas-code check --json > findings.json || [ $? -eq 1 ]
           python3 tools/atlas_badge.py site/questions.svg findings.json
       - uses: actions/upload-pages-artifact@v5
         with:

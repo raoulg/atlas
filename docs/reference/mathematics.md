@@ -2,7 +2,7 @@
 
 Atlas draws a small piece of mathematics. This page names every notion it uses, once: what the
 notion is, what it is in Atlas, and where it lives. The design (`design.md`) is the engineering
-of these notions, the principles (`principles.md`) are the laws `atlas check` asks of code. A
+of these notions, the principles (`principles.md`) are the laws `atlas-code check` asks of code. A
 notion Atlas starts to use is added here first.
 
 Each entry says **what** the notion is, what it is **in Atlas**, and **where** it lives: a section
@@ -114,6 +114,8 @@ is chosen (`if not xs: return Failed(..)`), is that choice with what follows it 
 Fit(..)` after it runs otherwise, as an `else` would write it. A repository's graph is the coproduct of its parts' graphs, glued only
 along the libraries and places of the world they share (a pushout over those): two parts whose code
 holds one name stay two, each name injected under where its part lies (`orders/app`, `billing/app`).
+Each part is read in one language, so the graph's languages are the image of its parts': a set, empty for no parts,
+the union of theirs for a merge (`model::Languages`); one language is a value of the closed set Atlas reads (`Lang`).
 A call into a family runs one of its overrides, decided at run time, so its codomain is the coproduct of theirs: it
 hands on each error any of them can end with, as a call hands on each its one callee can end with, never one chosen
 for it (#213).
@@ -170,7 +172,10 @@ parameter holds it by that type's name, as the type it takes is named (#216).
 input with a default, where the package's code lies) closed under `/`-join, `parent`, `with_suffix` and a pattern below a
 directory. A collection of paths is the set of terms its elements can be; iterating it yields
 one of them. Substituting a parameter by the term a caller hands it is the term's evaluation, and
-a part no code determines is a named hole. A pattern below a directory (`D.glob("*/IO-*")`) is
+a part no code determines is a named hole. The parts of a term are what lies between the `/`s it
+writes, so a value between two of them is one part; `parent` drops exactly the last part
+(`~/data/{name}` is in `~/data`), and of a term that is one value not said yet it is that value's
+directory, `{p}/..`, taken once `p` is substituted: `parent` commutes with substitution (#284). A pattern below a directory (`D.glob("*/IO-*")`) is
 the fiber of `D` over the predicate "matches the pattern": the part of the directory the pattern
 holds. A listing of all of `D` (`D.iterdir()`, `D.glob("*")`) is the fiber over the predicate that
 always holds, `D` itself, and each element it yields is `D/*`. An element of a collection is also
@@ -205,8 +210,13 @@ written, a test whether it is there, a copy or a move into it or out of it, its 
 (`File({main.folder}/note.json)` for the rename that moves a note in, the read and the `remove_file`
 alike). The place is the term; its label says the term's patterns in words, from the
 file up (`every *.xml in OW-bestanden/ in each folder in {base_dir}/`), and the term is under the
-pointer. Words are a label, never an identity: two places are one when their terms are.
-**Where.** `paths.rs` (`Seg`, `join`, `place`, `folders`, `bound`, `with_suffix`, `Callers`),
+pointer. Words are a label, never an identity: two places are one when their terms are. A route
+is one in the same way, by what it serves: a set of methods at a path. `methods=["POST", "GET"]`,
+`["GET", "POST"]` and `{"GET", "POST"}` are one set, and a registration for every method
+(`app.all`) is the top of the set. Its label, `GET|POST /items`, writes the set in the order of
+`knowledge::REQUEST_WAYS`; a request meets a route whose set holds its method, at its path.
+**Where.** `paths.rs` (`Seg`, `join`, `place`, `folders`, `bound`, `with_suffix`, `Callers`,
+`served`, `serving`), `model.rs` (`Route`, `Methods`, `Request`),
 the readers' `paths.rs` (`Eval::of`), `flow.rs` (`Touch::place`), `plan.js` (`pathWords`); the
 pairs `python/paths`, `places` and `kept`.
 
@@ -229,6 +239,31 @@ only the first draws the group, since only its code says the files belong togeth
 `flow.rs` (`Touch::place`, its coarse place), `index.html` (the storage quotient); the pair
 `workbench`.
 
+### Who makes a path whole: a monotone formula
+**What.** A monotone Boolean formula over a set of atoms, in disjunctive normal form: a disjunction
+of conjunctions, with no negation. A conjunction is a set of atoms (`a∧b = b∧a`, `a∧a = a`) and the
+disjunction a set of conjunctions (`x∨y = y∨x`), so the formula is a set of sets. It holds at an
+assignment when every atom of one of its conjunctions does. The empty conjunction is true: the unit
+of `∧`.
+**In Atlas.** A touch whose path others make whole runs in a route only where they are on the
+calls (pushforward, rule 5). The atoms are of two kinds, conditions of one kind on a route
+(`Atom`): it reaches a caller whose call hands what makes the path whole, or it starts at an entry
+whose users hand it. `Touch::by` is the formula: each conjunction a set of conditions that make the
+path whole together (one caller set up the object whose field holds the root, another handed the
+rest), any conjunction enough. The order the code is read in says nothing: `a&b` and `b&a` are one
+conjunction, and two alternatives in either order one formula. A role one condition plays is no
+part of the set: the function a request is from is kept beside it, in `Whole { asks, with }`, where
+the request is drawn.
+Where two callers meet a path, the conjunction is the union of theirs (`Whole::and`), so the meet
+keeps every condition of both, however many levels of callers hand the path up. Its unit is the
+function the touch is in: every route that runs the touch reaches it, so `In(f)` there is the empty
+conjunction, and only there; one level up, the caller that hands the path is a condition like any
+other. The graph's JSON writes each conjunction `a&b`, its conditions in order, an entry's users as
+`users_of:e`, and the alternatives in order; a conjunction of one entry's users alone is written in
+`users_of`. It reads them back once.
+**Where.** `model.rs` (`Atom`, `Both`, `Touch::by`, `Touch::in_route`), `paths.rs` (`Whole`,
+`Callers::of`, `place_calls`), `plan.js` (`inRoute`); the pair `handing`.
+
 ### Yoneda: what changed
 **What.** An object is determined up to isomorphism by the arrows into it, `Hom(−, A)`, and
 dually by the arrows out of it.
@@ -249,9 +284,9 @@ step put in before another (`double(add_one(x))` where A had `double(x)`) is the
 marked: the step after it is handed in each reading what that reading gives it. A place a caller
 makes whole is the caller's arrow; a file named by a function's own parameter (`load.path`) is
 named so whoever calls the function. A rename is an isomorphism of the typed arrows in and out:
-`list[float] → float` is no `str → str`. `atlas changes` reads the same union along each route,
+`list[float] → float` is no `str → str`. `atlas-code changes` reads the same union along each route,
 so the picture and the list hold the same marks.
-**Where.** `atlas history`, `atlas changes A..B`, a vision beside the working tree (`atlas
+**Where.** `atlas-code history`, `atlas-code changes A..B`, a vision beside the working tree (`atlas
 mcp`'s `vision`); `diff::union`, `diff::reading`, `changes::between`; `design.md` §4, L5. Held by `engine/tests/arrows.rs`:
 on two readings of the same nodes, the marks are those of the direct arrows, and a node renamed is one node.
 
@@ -349,7 +384,10 @@ line or a box that appears or disappears means:
    as a count on the step (`graph_of · +25 types`). Contracting a vertex of degree one into its neighbour
    leaves the picture the same up to homotopy, and the border of the step stays whole: each line is still
    counted, and opening the step splits the block into the values, each with its line. A value that
-   another step takes or makes, a family that can be opened and the route's own values are not of the block.
+   another step takes or makes, a family that can be opened and the route's own values are not of the block,
+   and neither is a value the body makes in a frame of its own by no step (a name it binds anew): it stands
+   in that frame, the block's values stand beyond it, and closing the frame sends the two apart, so a block
+   of both would not be the image of the closed picture's.
 
 **Where.** `homeOf` and `madeAt` in `viewer/plan.js`, `addEdge` in `viewer/index.html`; `tools/pictures.py topology`
 holds the open picture to the closed one.
@@ -688,9 +726,16 @@ by a literal, `Steps::literals` (`body.rs`), and those a function declares, `dec
 **What.** A set is saturated by an equivalence when it never cuts a class in two.
 **In Atlas.** A filter and a quotient commute exactly when the filter's predicate is saturated by
 the quotient's equivalence. Otherwise the order of a view is meaning, and Atlas takes the filter
-first, so the reader decides what exists before the quotient decides how it groups.
+first, so the reader decides what exists before the quotient decides how it groups. A type picked
+in the Type lattice is the set of its values, the type and every type below it (a class below its base, a type
+below the family `kind` puts it in, a shape below its rank family: the lattice draws both orders as one), and the Flowchart
+lights its fiber in a route: a box is lit by what it is, so a closed family the pick cuts in two
+opens, and a box lit whole opens into lit kinds. What a box holds inside (a family its parts, a step
+the values its inner steps make and take) is lit dashed and does not open: a step claims no type.
 **Where.** `design.md` §1, "When order matters"; `engine/tests/laws.rs` holds both orders to each
-other on graphs `proptest` draws, and shows a filter that cuts a class in two.
+other on graphs `proptest` draws, and shows a filter that cuts a class in two. The pick:
+`valuesOf`, `typesIn`, `lightOf` and `cutBy` in `viewer/plan.js`, held on every route of the pairs
+and plans by `engine/tests/plans.rs` (#296, #306), with the law that the pick of what a box is lights it whole.
 
 ## Type theory
 
@@ -757,6 +802,28 @@ it in: `Boekwinkel(Winkel[Boek])` keeps the promise of `Winkel[Boek]`, the base'
 stands where another does when it has every member the other declares.
 **Where.** Principle `overrides`; `model::linearization`; for Python ty decides it (`pytypes.rs`).
 
+### Shapes and their rank
+**What.** A shaped array type `D[A, s]` (dtype `D`, array type `A`) has a shape `s`, a word over axes: a named axis
+(`batch`), a variable bound once per checked call; an anonymous one (`_`), free per array; a fixed size (`3`); a size
+an expression gives (`{self.hidden_size}`); and at most one run of axes (`...`, `*name`). A shape stands for the set of
+concrete shapes it admits, and `s ≤ t` when every array of `s` is one of `t`: a preorder by containment. The rank
+`r(s)` is the number of single axes, exact, or "at least" where a run stands. It is a map from shapes to ranks; its
+fibers, over one `D` and `A`, are the rank families, and the most general shape of each fiber, every axis anonymous
+after a run where the rank is open (`_ _`, `... _`), is an upper bound of it: every shape of the fiber is `≤` it.
+**In Atlas.** Each shape the code writes is a type of its own, named by its shape: two names are two variables, so
+`batch dim` and `batch ndim` are two types, and so are `Float[..]` and `Int[..]`. A shape stands in its rank family
+as a subclass stands in its base (Coequalizer: a quotient), where the program's types hold two shapes of that rank:
+closed, `Float Tensor · 2D` stands for the rank-2 float tensors the picture holds (`· ≥1D` where the rank is open);
+opened, it is a frame around the shapes themselves. The family is named by its dtype, array type and rank, never in
+the annotation's own notation: `Float[Tensor, _ _]` would read as a type the code wrote, and a box that says what the
+code does not is a guess. A shape the code writes as `_ _` is a member of its family like any other. The family is a
+quotient of the picture, never a fact of the graph:
+the shapes, the steps and their lines are the same with it closed or open. The preorder is what an override keeps
+(Behavioural subtyping); a family is never ordered above another in the picture, since the ranks are no base the
+code names. Names are not unified across axes, so `batch batch` is read as `batch _`.
+**Where.** `shapes.rs` (`Array`, `Axis`, `Rank`, `family_id`), `families.rs` (the rank as a kind), principle
+`overrides` (`Array::fits`); the pair `shapes/python`.
+
 ### Method resolution order
 **What.** A linear extension of the order of inheritance: one sequence of a class and its
 ancestors in which every class comes before its bases and each class's bases keep the order it
@@ -778,10 +845,17 @@ of `C.f` may run `B.f` on a `D`, though `B` is not below `C`, and there its `sup
 alternative is that method on that class, a body as any step on a known class runs it, named by the
 class it runs on (`D.f`); one of a class below the method's own runs on any value of its class, whose
 class is not known. A call through a class, and a `super()` call on a value whose class is known, run
-the one their call names.
+the one their call names. A value built at the call (`Block().show()`, `new Block().show()`, a unit struct's
+name `Plain.show()`) is of that class alone; a declared one (a parameter, an annotation, a return type, a field)
+may be that class or any below it. A Rust trait is below its supertraits (`trait Block: Named`), so a value of it
+runs their methods along its order. A call through a trait (`Language::parse(&words, text)`) names no class: the
+type it runs on is the value's it is handed first, as in `words.parse(text)`, which is the same call written another
+way.
 **Where.** `model::linearization`, `model::initializer_along`; `principles.rs` (`Index::mro`),
 `builder.rs` (`family`, `method_of`, `initializer_of`), `flow.rs` (`method_on`, `method_after`,
-`built_from`, `Step::named`, `Ix::overrides`).
+`built_from`, `Step::named`, `Ix::step_of`, `Ix::runs_below`, `Runs`: what a call runs, asked by the route and by the passes that settle parameters and errors);
+Rust's supertraits in `rust/passes.rs` (`collect_impls`), its unit structs and calls through a trait in `rust/body.rs`
+(`Body::unit_struct`, `Body::on_first`).
 
 ### Signatures say the arrow
 **What.** A function's type is its domain and its codomain.

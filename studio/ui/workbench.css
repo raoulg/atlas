@@ -3,8 +3,9 @@
 .content{display:grid;grid-template-rows:minmax(0,1fr) auto;grid-template-columns:minmax(0,1fr);grid-template-areas:"stage" "terminal"}
 .content[data-dock="left"]{grid-template-rows:minmax(0,1fr);grid-template-columns:auto minmax(0,1fr);grid-template-areas:"terminal stage"}
 .content[data-dock="right"]{grid-template-rows:minmax(0,1fr);grid-template-columns:minmax(0,1fr) auto;grid-template-areas:"stage terminal"}
-.stage{grid-area:stage;display:grid;grid-template-columns:minmax(0,1fr) auto;min-height:0}
-.center{position:relative;min-width:0;min-height:0}
+.stage{grid-area:stage;position:relative;display:grid;grid-template-columns:minmax(0,1fr) auto;grid-template-areas:"center preview";min-height:0}
+.stage[data-preview="left"]{grid-template-columns:auto minmax(0,1fr);grid-template-areas:"preview center"}
+.center{grid-area:center;position:relative;min-width:0;min-height:0}
 .files-label{display:flex;align-items:baseline;justify-content:space-between;padding-top:18px;border-top:1px solid var(--s4);margin-top:10px}
 .files-legend{font-size:9px;letter-spacing:0;color:var(--s14)}
 .files-legend .traced{color:var(--s2)}
@@ -31,8 +32,28 @@
 .file-empty{font:10px/1.45 ui-monospace,monospace;color:var(--s5);padding:5px 19px;margin:0}
 .lessons-label{padding-top:14px}
 .lesson-list{max-height:28%}
-.preview{width:clamp(340px,34vw,620px);min-height:0;display:flex;flex-direction:column;border-left:1px solid var(--s4);background:var(--s3)}
-.preview-head{display:flex;align-items:flex-start;gap:10px;padding:14px 16px 10px;border-bottom:1px solid var(--s21);background:var(--s6)}
+.preview{grid-area:preview;position:relative;width:var(--preview-width,clamp(340px,34vw,620px));min-height:0;display:flex;flex-direction:column;border-left:1px solid var(--s4);background:var(--s3)}
+.stage[data-preview="left"] .preview{border-left:0;border-right:1px solid var(--s4)}
+.preview-grip{position:absolute;top:0;bottom:0;left:-4px;width:8px;cursor:col-resize;z-index:2}
+.stage[data-preview="left"] .preview-grip{left:auto;right:-4px}
+.preview[data-mode] .preview-grip{display:none}
+.preview-tools{display:flex;align-items:center;gap:6px;flex:none}
+.preview-sides{display:flex;gap:2px}
+.preview-tool{display:grid;place-items:center;width:22px;height:20px;border:0;padding:0;background:transparent;color:var(--s5)}
+.preview-tool svg{width:14px;height:12px}
+.preview-tool:hover{color:var(--s0)}
+.preview-tool[aria-checked="true"],.preview-tool[aria-pressed="true"]{color:var(--s2);background:var(--s7)}
+.preview-fold{display:none}
+.preview[data-mode="folded"]{width:30px}
+.preview[data-mode="folded"]>:not(.preview-fold){display:none}
+.preview[data-mode="folded"] .preview-fold{flex:1;display:flex;flex-direction:column;align-items:center;gap:12px;min-height:0;border:0;padding:12px 0;background:var(--s6);color:var(--s5);cursor:pointer}
+.preview-fold:hover{background:var(--s7);color:var(--s2)}
+.preview-fold svg{flex:none;width:14px;height:12px}
+.preview-fold span{writing-mode:vertical-rl;min-height:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font:11px ui-monospace,monospace;color:var(--s8)}
+.preview[data-mode="full"]{grid-area:auto;position:absolute;inset:0;width:auto;z-index:3;border:0}
+.stage:has(>.preview[data-mode="full"]){grid-template-columns:minmax(0,1fr) var(--preview-width,clamp(340px,34vw,620px))}
+.stage[data-preview="left"]:has(>.preview[data-mode="full"]){grid-template-columns:var(--preview-width,clamp(340px,34vw,620px)) minmax(0,1fr)}
+.preview-head{display:flex;align-items:center;gap:10px;padding:14px 16px 10px;border-bottom:1px solid var(--s21);background:var(--s6)}
 .preview-title{flex:1;min-width:0;display:flex;flex-direction:column;gap:3px}
 .preview-title strong{font-size:12px;font-weight:600}
 .preview-title span{font:10.5px ui-monospace,monospace;color:var(--s5);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -99,6 +120,8 @@
 .status-button.on{background:var(--s24)}
 .status-button+.status-right{margin-left:12px}
 .status-button.scheme{margin-left:4px}
+.status-version{border:0;background:transparent;font:inherit;padding:3px 7px}
+.status-version:hover{background:var(--s24);color:var(--s2)}
 body.dragging iframe{pointer-events:none}
 body.dragging{user-select:none}
 body.dragging-y{cursor:row-resize}

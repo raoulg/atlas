@@ -67,8 +67,8 @@ fn about() -> AboutMetadata<'static> {
     AboutMetadata {
         credits: Some(ABOUT.into()),
         comments: Some(ABOUT.into()),
-        website: Some("https://raoulg.github.io/atlas/".into()),
-        website_label: Some("raoulg.github.io/atlas".into()),
+        website: Some("https://atlas.pttrn.io/".into()),
+        website_label: Some("atlas.pttrn.io".into()),
         ..Default::default()
     }
 }
@@ -77,9 +77,10 @@ fn about() -> AboutMetadata<'static> {
 pub const RECENT: &str = "workspace.recent.";
 
 /// The menu bar: the app's own menu on macOS, File with the workspaces, Edit, View with the
-/// The menu item that shows what changed in the build that runs, by its version.
+/// The menu item that shows what changed in the build that runs, by its version and, for a nightly, its channel.
 fn whats_new<R: Runtime>(app: &AppHandle<R>) -> String {
-    format!("What's New in Atlas Studio {}", app.package_info().version)
+    let channel = if env!("ATLAS_CHANNEL") == "nightly" { " (nightly)" } else { "" };
+    format!("What's New in Atlas Studio {}{channel}", app.package_info().version)
 }
 
 /// terminal (a menu's shortcut works wherever the focus is, also inside the Atlas view), Window.

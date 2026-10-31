@@ -1,4 +1,4 @@
-//! `atlas mcp`: the engine as an MCP server over stdio, so a coding agent can check a
+//! `atlas-code mcp`: the engine as an MCP server over stdio, so a coding agent can check a
 //! repository against Atlas's principles, ask why a principle matters, and read a route.
 //!
 //! The protocol is JSON-RPC 2.0, one message per line on stdin and stdout: `initialize`,
@@ -8,6 +8,7 @@ use std::io::{BufRead, Write};
 use std::path::PathBuf;
 
 use anyhow::Result;
+use atlas_engine::principles::Principle;
 use atlas_engine::sight::Sight;
 use atlas_engine::{principles, remote, story, Graph, Options};
 use serde::Deserialize;
@@ -28,7 +29,7 @@ them make the change, then run `check` again to see the finding go. Python's typ
 ty: a value whose type ty does not know (a function without a return annotation, a library \
 without an installed environment) is not followed, and `check` asks for the annotation. Atlas \
 sees Python best with the environment synced (`uv sync`) and Ruff's `ANN` rules on. When the \
-person you work with runs `atlas serve`, their page and you share one view: `shown` says what \
+person you work with runs `atlas-code serve`, their page and you share one view: `shown` says what \
 they have open (read it when they say \"this box\" or \"here\"), `look` takes their page to a \
 view or points at a box or a line (\"here, this one\"), and `notes` lists what they wrote on boxes \
 and lines, each with a link to its place. Handle a note where you work, by a fix or by explaining \
@@ -47,8 +48,16 @@ about built code that leans on one.";
 /// Answer every message on stdin until it closes, reading repositories with `opts`.
 pub fn serve(opts: &Options) -> Result<()> {
     let mut stdout = std::io::stdout().lock();
-    for line in std::io::stdin().lock().lines() {
+    for line in std::io::stdin().lock().split(b'\n') {
         let line = line?;
+        let line = match String::from_utf8(line) {
+            Ok(line) => line,
+            Err(e) => {
+                writeln!(stdout, "{}", error(Value::Null, -32700, &format!("not UTF-8: {e}")))?;
+                stdout.flush()?;
+                continue;
+            }
+        };
         if line.trim().is_empty() {
             continue;
         }
@@ -77,7 +86,10 @@ fn answer(msg: &Value, opts: &Options) -> Option<Value> {
         "tools/call" => {
             let name = params.get("name").and_then(Value::as_str).unwrap_or("");
             let args = params.get("arguments").cloned().unwrap_or_else(|| json!({}));
-            match call(name, &args, opts) {
+            // a tool that panics fails its own call; the server answers the next
+            let called = crate::http::guarded(|| call(name, &args, opts))
+                .unwrap_or_else(|said| Some(Err(format!("Atlas failed inside `{name}`: {said}. The other tools still answer."))));
+            match called {
                 Some(Ok(text)) => ok(id, json!({ "content": [{ "type": "text", "text": text }], "isError": false })),
                 Some(Err(e)) => ok(id, json!({ "content": [{ "type": "text", "text": e }], "isError": true })),
                 None => error(id, -32602, &format!("no tool called `{name}`")),
@@ -101,7 +113,7 @@ fn initialize(params: &Value) -> Value {
 fn tools() -> Value {
     let path = json!({ "type": "string", "description": "The repository: its root, a package directory, or a git URL (a `…/tree/<ref>/<folder>` URL names one folder). Default: the directory the server runs in." });
     let read_only = json!({ "readOnlyHint": true, "openWorldHint": false });
-    let local = json!({ "type": "string", "description": "The repository `atlas serve` serves: its root or a directory in it. Default: the directory the server runs in." });
+    let local = json!({ "type": "string", "description": "The repository `atlas-code serve` serves: its root or a directory in it. Default: the directory the server runs in." });
     json!([
         {
             "name": "principles",
@@ -115,7 +127,7 @@ fn tools() -> Value {
             "inputSchema": { "type": "object", "properties": {
                 "path": path,
                 "principle": { "type": "string", "description": "Only this principle's findings: an id from `principles`." },
-                "json": { "type": "boolean", "description": "The findings as data, as `atlas check --json` prints them: each with `about`, the ids it is about by the part each plays (`breaks`, `variant`, `put`, `lost`), to read without the sentences, and one set aside with its `aside`, the decision that answers it." },
+                "json": { "type": "boolean", "description": "The findings as data, as `atlas-code check --json` prints them: each with `about`, the ids it is about by the part each plays (`breaks`, `variant`, `put`, `lost`), to read without the sentences, and one set aside with its `aside`, the decision that answers it." },
                 "all": { "type": "boolean", "description": "List the findings set aside too, each with the decision that answers it." },
             } },
             "annotations": read_only,
@@ -162,7 +174,7 @@ fn tools() -> Value {
         },
         {
             "name": "route",
-            "description": "What one route does, step by step in call order: each step's parameters, what it hands on, what it changes (↻), and what it reads, writes or prints. Alternatives share a number, lettered by branch (4.1a | 4.1b).",
+            "description": "What one route does, step by step in call order: each step's parameters, what it hands on, what it changes (↻), and what it reads, writes or prints. Alternatives share a number, lettered by branch (4.1a | 4.1b; past z: 4.1aa), and the overrides of a lettered step after a dash (2a-a).",
             "inputSchema": { "type": "object", "properties": {
                 "path": path,
                 "entry": { "type": "string", "description": "An entry's label or id, from `routes`." },
@@ -181,7 +193,7 @@ fn tools() -> Value {
         },
         {
             "name": "view",
-            "description": "Draw a repository's Flowchart in a view of your choosing and write it as a page the human can open: the same picture `atlas view` draws, opened where you point. A view is JSON: `route` (an entry id from `routes`), and `open.functions` (the steps that run these functions are opened, as `route` lists them); also `kind` (all routes of one kind: cli, export, script, notebook, route, mcp, make), `part`, `focus` (package ids), and the opened `parts`, `units` (packages), `families` (type ids) and `places`. Gives the file the page is in.",
+            "description": "Draw a repository's Flowchart in a view of your choosing and write it as a page the human can open: the same picture `atlas-code view` draws, opened where you point. A view is JSON: `route` (an entry id from `routes`), and `open.functions` (the steps that run these functions are opened, as `route` lists them); also `kind` (all routes of one kind: cli, export, script, notebook, route, mcp, make), `part`, `focus` (package ids), and the opened `parts`, `units` (packages), `families` (type ids) and `places`. Gives the file the page is in.",
             "inputSchema": { "type": "object", "properties": {
                 "path": path,
                 "view": { "type": "object", "description": "The view, e.g. `{\"route\": \"pkg.cli.build\", \"open\": {\"functions\": [\"pkg.build.Pipeline.run\"]}}`." },
@@ -201,13 +213,13 @@ fn tools() -> Value {
         },
         {
             "name": "shown",
-            "description": "What the person you work with has open in `atlas serve`: the view (route, opened sets, focus), the boxes and lines it draws, and the box they selected. Read it when they say \"this box\" or \"here\".",
+            "description": "What the person you work with has open in `atlas-code serve`: the view (route, opened sets, focus), the boxes and lines it draws, and the box they selected. Read it when they say \"this box\" or \"here\".",
             "inputSchema": { "type": "object", "properties": { "path": local } },
             "annotations": read_only,
         },
         {
             "name": "look",
-            "description": "Point the page of `atlas serve` at something: \"look here, this box\". Give a view to go to (JSON as `view` takes it: `route`, `open.functions`, `kind`, `part`, `focus`, the opened `parts`, `units`, `families`, `places`), a box or a line to point at, or both. The open page goes there within a second, selects what it points at and makes it light up.",
+            "description": "Point the page of `atlas-code serve` at something: \"look here, this box\". Give a view to go to (JSON as `view` takes it: `route`, `open.functions`, `kind`, `part`, `focus`, the opened `parts`, `units`, `families`, `places`), a box or a line to point at, or both. The open page goes there within a second, selects what it points at and makes it light up.",
             "inputSchema": { "type": "object", "properties": {
                 "path": local,
                 "view": { "type": "object", "description": "The view, e.g. `{\"route\": \"pkg.cli.build\", \"open\": {\"functions\": [\"pkg.build.Pipeline.run\"]}}`. Without it the page keeps its view." },
@@ -217,7 +229,7 @@ fn tools() -> Value {
         },
         {
             "name": "vision",
-            "description": "Show the person you work with what you plan, drawn beside what is: give the files your change would write, as sketch code (the signatures with their types and the calls in their order; bodies may be `...`, `todo!()` or `throw` — a sketch has to parse, not to build), and `atlas serve` draws the working tree and your vision as one picture, with what you add, remove and change marked, and a switch between the two. Use it to ask \"shall I do this?\" with a picture rather than in words, then `look` to point at the part you mean. It answers with what the vision does to the routes. A new vision replaces the last; `prophetize` writes it into the tree as prophecy once it is decided, `retract` takes it away.",
+            "description": "Show the person you work with what you plan, drawn beside what is: give the files your change would write, as sketch code (the signatures with their types and the calls in their order; bodies may be `...`, `todo!()` or `throw` — a sketch has to parse, not to build), and `atlas-code serve` draws the working tree and your vision as one picture, with what you add, remove and change marked, and a switch between the two. Use it to ask \"shall I do this?\" with a picture rather than in words, then `look` to point at the part you mean. It answers with what the vision does to the routes. A new vision replaces the last; `prophetize` writes it into the tree as prophecy once it is decided, `retract` takes it away.",
             "inputSchema": { "type": "object", "properties": {
                 "path": local,
                 "title": { "type": "string", "description": "What the vision is, in a line: shown beside it on the page." },
@@ -237,7 +249,7 @@ fn tools() -> Value {
         },
         {
             "name": "annotate",
-            "description": "Say something on a box or a line of `atlas serve`'s page, in your own words: what a condition of `choices` means (\"only on the first run\"), what a step is for, why a place stands where it does. It shows as a mark on what it is on, with your words on hover, apart from what Atlas traces. Name what it is on as `shown` lists the boxes and lines (a choice's frame is a box). A new annotation on the same box replaces the last; an empty `text` takes it away.",
+            "description": "Say something on a box or a line of `atlas-code serve`'s page, in your own words: what a condition of `choices` means (\"only on the first run\"), what a step is for, why a place stands where it does. It shows as a mark on what it is on, with your words on hover, apart from what Atlas traces. Name what it is on as `shown` lists the boxes and lines (a choice's frame is a box). A new annotation on the same box replaces the last; an empty `text` takes it away.",
             "inputSchema": { "type": "object", "properties": {
                 "path": local,
                 "on": { "type": "string", "description": "A box by its id, or a line as `from>to`, as `shown` lists them." },
@@ -247,7 +259,7 @@ fn tools() -> Value {
         },
         {
             "name": "notes",
-            "description": "The notes the person you work with wrote on boxes and lines of `atlas serve`'s page that no agent has resolved: what each is on, the view and commit it was written at, its text (a line for each time it was opened), and a link to its place. Reading marks them seen, not resolved. Handle each where you work, by a fix or by explaining, then `resolve` it; a note worth keeping (a real bug) goes into an issue with its link first. Also lists the notes resolved while this page is served.",
+            "description": "The notes the person you work with wrote on boxes and lines of `atlas-code serve`'s page that no agent has resolved: what each is on, the view and commit it was written at, its text (a line for each time it was opened), and a link to its place. Reading marks them seen, not resolved. Handle each where you work, by a fix or by explaining, then `resolve` it; a note worth keeping (a real bug) goes into an issue with its link first. Also lists the notes resolved while this page is served.",
             "inputSchema": { "type": "object", "properties": { "path": local } },
             "annotations": { "readOnlyHint": false, "destructiveHint": false, "openWorldHint": false },
         },
@@ -269,24 +281,23 @@ fn tools() -> Value {
 fn call(name: &str, args: &Value, opts: &Options) -> Option<Result<String, String>> {
     let text = |k: &str| args.get(k).and_then(Value::as_str);
     Some(match name {
-        "principles" => Ok(principles::PRINCIPLES.iter().map(|p| format!("{} · {}", p.id, p.asks)).collect::<Vec<_>>().join("\n")),
+        "principles" => Ok(Principle::ALL.iter().map(|p| format!("{} · {}", p.id(), p.asks())).collect::<Vec<_>>().join("\n")),
         "explain" => {
             let id = text("principle").unwrap_or("");
-            principles::explain(id).map(str::to_string).ok_or_else(|| unknown_principle(id))
+            Principle::parse(id).and_then(principles::explain).map(str::to_string).ok_or_else(|| unknown_principle(id))
         }
         "check" => parts_of(text("path"), opts).and_then(|gs| {
-            if let Some(p) = text("principle").filter(|p| !principles::PRINCIPLES.iter().any(|x| x.id == *p)) {
-                return Err(unknown_principle(p));
-            }
-            let asked: Vec<&principles::Principle> =
-                principles::PRINCIPLES.iter().filter(|p| text("principle").map_or(true, |id| p.id == id)).collect();
+            let asked: Vec<Principle> = match text("principle") {
+                None => Principle::ALL.to_vec(),
+                Some(id) => vec![Principle::parse(id).ok_or_else(|| unknown_principle(id))?],
+            };
             let found: Vec<Vec<principles::Finding>> = gs.iter().map(atlas_engine::aside::check).collect();
             // whether a decision sets anything aside is asked of every finding, whichever are shown
             let stale = atlas_engine::aside::stale(&gs.iter().zip(&found).map(|(g, f)| (g, f.as_slice())).collect::<Vec<_>>());
             let parts: Vec<(String, Vec<principles::Finding>)> = gs
                 .iter()
                 .zip(found)
-                .map(|(g, f)| (g.root.clone(), f.into_iter().filter(|f| asked.iter().any(|p| p.id == f.principle)).collect()))
+                .map(|(g, f)| (g.root.clone(), f.into_iter().filter(|f| asked.contains(&f.principle)).collect()))
                 .collect();
             if args.get("json").and_then(Value::as_bool) == Some(true) {
                 let reports: Vec<Value> = parts.iter().map(|(root, findings)| json!({ "root": root, "findings": findings })).collect();
@@ -391,7 +402,7 @@ fn call(name: &str, args: &Value, opts: &Options) -> Option<Result<String, Strin
                 return Err("`look` takes a `view` (`{\"route\": …, \"open\": {…}}`), a box or line to point `at`, or both.".into());
             }
             crate::shared::look(&here(text("path")), &crate::shared::Look { view, at })
-                .map(|_| "The page of `atlas serve` goes there when it next asks, within a second while it is open.".to_string())
+                .map(|_| "The page of `atlas-code serve` goes there when it next asks, within a second while it is open.".to_string())
                 .map_err(|e| format!("Could not keep where to look: {e}"))
         }),
         "vision" => {
@@ -412,12 +423,12 @@ fn call(name: &str, args: &Value, opts: &Options) -> Option<Result<String, Strin
             };
             let vision = crate::shared::Vision { title: text("title").unwrap_or("a vision").to_string(), files };
             let before = atlas_engine::parts::analyze_parts(&[repo.clone()], opts);
-            let after = atlas_engine::changes::envisioned(&repo, &vision.files, opts);
+            let after = atlas_engine::changes::envisioned(&repo, &vision.files, opts).map(|v| v.parts);
             match (before, after) {
                 (Ok(before), Ok(after)) => crate::shared::envision(&repo, &vision).map_err(|e| format!("Could not keep the vision: {e}")).map(|_| {
                     let c = atlas_engine::changes::between("working tree", Some("vision"), &before, &after);
                     format!(
-                        "Envisioned: {}. The page of `atlas serve` draws it beside the working tree within a second; `look` points at what you mean.\n\n{}",
+                        "Envisioned: {}. The page of `atlas-code serve` draws it beside the working tree within a second; `look` points at what you mean.\n\n{}",
                         vision.title,
                         atlas_engine::changes::report(&c)
                     )
@@ -459,7 +470,7 @@ fn call(name: &str, args: &Value, opts: &Options) -> Option<Result<String, Strin
             Some(on) => crate::shared::annotate(&here(text("path")), on, text("text"))
                 .map(|all| {
                     format!(
-                        "The page of `atlas serve` shows {} annotation{} within a few seconds.",
+                        "The page of `atlas-code serve` shows {} annotation{} within a few seconds.",
                         all.len(),
                         if all.len() == 1 { "" } else { "s" }
                     )
@@ -471,20 +482,22 @@ fn call(name: &str, args: &Value, opts: &Options) -> Option<Result<String, Strin
         },
         "notes" => {
             let repo = here(text("path"));
-            crate::shared::read_open(&repo).map(|ns| notes(&repo, &ns)).map_err(|e| format!("Could not read the notes: {e}"))
+            crate::shared::read_notes(&repo).map(|ns| notes(&repo, &ns)).map_err(|e| format!("Could not read the notes: {e:#}"))
         }
-        "resolve" => match args.get("id").and_then(Value::as_u64) {
+        "resolve" => match args.get("id").and_then(Value::as_u64).and_then(|id| u32::try_from(id).ok()) {
             Some(id) => {
                 let given = |k: &str| text(k).map(str::trim).filter(|v| !v.is_empty()).map(str::to_string);
-                crate::shared::resolve(&here(text("path")), id as u32, given("commit"), given("issue"))
+                crate::shared::resolve(&here(text("path")), id, given("commit"), given("issue"))
                     .map_err(|e| format!("Could not resolve note {id}: {e}"))
                     .and_then(|n| {
                         n.map(|n| format!("Note {} on {} is resolved; the page marks it so while it is served. Tell the person you work with what you did.", n.id, n.label))
                             .ok_or_else(|| format!("No note {id}; `notes` lists them."))
                     })
             }
-            None => Err("`resolve` takes a note's `id`, and the `commit` and `issue`, if any.".into()),
+            None => Err("`resolve` takes a note's `id`, a number from `notes`, and the `commit` and `issue`, if any.".into()),
         },
+        #[cfg(test)]
+        "panic" => panic!("a tool made to panic"),
         "choices" => graph(text("path"), opts).and_then(|g| {
             let entry = text("entry").unwrap_or("");
             story::choices(&g, entry).ok_or_else(|| format!("No route `{entry}` in {}; `routes` lists them.", g.root))
@@ -527,7 +540,7 @@ fn view(path: Option<&str>, sight: Option<Sight>, out: Option<&str>, opts: &Opti
     ))
 }
 
-/// The repository `atlas serve` serves, as a tool names it: a directory, else where the server runs.
+/// The repository `atlas-code serve` serves, as a tool names it: a directory, else where the server runs.
 fn here(path: Option<&str>) -> PathBuf {
     PathBuf::from(path.unwrap_or("."))
 }
@@ -535,7 +548,7 @@ fn here(path: Option<&str>) -> PathBuf {
 /// What the page says it shows, as text: the view, the selected box, the boxes and the lines.
 fn shown(repo: &std::path::Path) -> String {
     let Some(s) = crate::shared::shown(repo) else {
-        return "No page has said what it shows: run `atlas serve` in the repository and open it.".into();
+        return "No page has said what it shows: run `atlas-code serve` in the repository and open it.".into();
     };
     let list = |k: &str, f: &dyn Fn(&Value) -> String| {
         s.get(k).and_then(Value::as_array).map(|xs| xs.iter().map(|x| f(x)).collect::<Vec<_>>()).unwrap_or_default()
@@ -562,9 +575,11 @@ fn shown(repo: &std::path::Path) -> String {
 
 /// The notes an agent has not resolved, each with the link to its place, then those resolved while
 /// the page is served, as text.
-fn notes(repo: &std::path::Path, open: &[crate::shared::Note]) -> String {
+fn notes(repo: &std::path::Path, all: &[crate::shared::Note]) -> String {
+    use crate::shared::State;
     let url = crate::shared::serving(repo);
     let place = |n: &crate::shared::Note| url.as_deref().map_or(String::new(), |u| format!("\n  Its place: {}", crate::shared::link(u, n)));
+    let open: Vec<&crate::shared::Note> = all.iter().filter(|n| n.state != State::Resolved).collect();
     let mut out = if open.is_empty() {
         "No open notes.".to_string()
     } else {
@@ -576,7 +591,7 @@ fn notes(repo: &std::path::Path, open: &[crate::shared::Note]) -> String {
                     n.id,
                     n.label,
                     n.on,
-                    &n.rev[..n.rev.len().min(7)],
+                    crate::shared::short(&n.rev),
                     n.view,
                     lines.join("\n"),
                     place(n)
@@ -585,9 +600,9 @@ fn notes(repo: &std::path::Path, open: &[crate::shared::Note]) -> String {
             .collect::<Vec<_>>()
             .join("\n\n")
     };
-    let resolved: Vec<String> = crate::shared::notes(repo)
-        .into_iter()
-        .filter(|n| n.state == crate::shared::State::Resolved)
+    let resolved: Vec<String> = all
+        .iter()
+        .filter(|n| n.state == State::Resolved)
         .map(|n| format!("  {} on {}: {}", n.id, n.label, n.text.lines().last().unwrap_or("")))
         .collect();
     if !resolved.is_empty() {
@@ -616,7 +631,7 @@ fn parts_of(path: Option<&str>, opts: &Options) -> Result<Vec<Graph>, String> {
 }
 
 fn unknown_principle(id: &str) -> String {
-    let ids: Vec<&str> = principles::PRINCIPLES.iter().map(|p| p.id).collect();
+    let ids: Vec<&str> = Principle::ALL.iter().map(|p| p.id()).collect();
     format!("No principle `{id}`; the principles are {}.", ids.join(", "))
 }
 
@@ -626,4 +641,44 @@ fn ok(id: Value, result: Value) -> Value {
 
 fn error(id: Value, code: i64, message: &str) -> Value {
     json!({ "jsonrpc": "2.0", "id": id, "error": { "code": code, "message": message } })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn called(id: u64, name: &str, args: Value) -> Value {
+        let msg = json!({"jsonrpc": "2.0", "id": id, "method": "tools/call", "params": {"name": name, "arguments": args}});
+        answer(&msg, &Options::default()).expect("a call is answered")
+    }
+
+    /// A tool that panics fails its own call, with what the panic said, as any failed call does
+    /// (`isError`); the server answers the next message as before.
+    #[test]
+    fn a_tool_that_panics_fails_its_call_and_the_server_goes_on() {
+        let reply = called(1, "panic", json!({}));
+        assert_eq!(reply["id"], 1);
+        assert_eq!(reply["result"]["isError"], true, "{reply}");
+        assert!(reply["result"]["content"][0]["text"].as_str().unwrap().contains("a tool made to panic"), "{reply}");
+        let next = called(2, "principles", json!({}));
+        assert_eq!((&next["id"], &next["result"]["isError"]), (&json!(2), &json!(false)), "{next}");
+        let ping = answer(&json!({"jsonrpc": "2.0", "id": 3, "method": "ping"}), &Options::default()).unwrap();
+        assert_eq!(ping["result"], json!({}));
+    }
+
+    /// A note's number is a `u32`: one beyond it names no note, and is refused rather than read as
+    /// another (2³² + 1 as note 1).
+    #[test]
+    fn a_note_number_beyond_u32_is_refused() {
+        let repo = std::env::temp_dir().join(format!("atlas-mcp-{}-beyond", std::process::id()));
+        let _ = std::fs::remove_dir_all(&repo);
+        std::fs::create_dir_all(repo.join(".git")).unwrap();
+        let note: crate::shared::Note = serde_json::from_value(json!({"on": "spots.count", "label": "count", "text": "why?"})).unwrap();
+        let id = crate::shared::add(&repo, note).unwrap().id;
+        let reply = called(1, "resolve", json!({"id": (1u64 << 32) + u64::from(id), "path": repo}));
+        assert_eq!(reply["result"]["isError"], true, "{reply}");
+        let notes = crate::shared::notes(&repo).unwrap();
+        assert_eq!(notes[0].state, crate::shared::State::Open, "note {id} is left as it was");
+        let _ = std::fs::remove_dir_all(&repo);
+    }
 }

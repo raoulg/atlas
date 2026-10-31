@@ -8,7 +8,7 @@
 
 route news.read.lines
 step lines/Trimmed.read
-step lines/Trimmed.read/Source.read                                                    # `super().read()`, a choice
+step lines/Trimmed.read/Source.read one of 2                                           # `super().read()`, a choice
 step lines/Trimmed.read/Source.read/urlopen                                            # `with urlopen(self.url) as response`
 step lines/Trimmed.read/Source.read/Cached.read                                        # what it runs on a feed
 step lines/Trimmed.read/Source.read/Cached.read/Store.has
@@ -60,7 +60,7 @@ side Disk(self.root / key) both
 # `cached_lines` runs on a feed does what it does on any cached source, as a cache that is also trimmed should.
 
 route news.read.cached_lines
-step cached_lines/Cached.read                                                     # `source.read()`, one of two
+step cached_lines/Cached.read one of 2                                            # `source.read()`, one of two
 step cached_lines/Cached.read/Store.has
 choice cached_lines/Cached.read/?1
 step cached_lines/Cached.read/?1/Store.get

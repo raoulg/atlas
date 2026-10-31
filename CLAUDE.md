@@ -41,7 +41,7 @@ The rigorous half and the visual half are the same structure. Read `docs/referen
   `architecture.yml`, no roles. When the picture differs from what the author has in
   mind, the code is what changes. If a view only works because of a special case, it is
   wrong.
-- **Atlas is its own first subject.** `atlas view .` must read as the algebra:
+- **Atlas is its own first subject.** `atlas-code view .` must read as the algebra:
   `Disk(repo) → Repo.read → Repo → Language.parse → Graph → (Flow, Findings) → Html → File(html) → open`:
   the graph goes to two arrows, `flow::of` and the principles' check, and the page is drawn from the
   pair; the view it opens in is the command line's. The picture is never bent to the line. Where they
@@ -112,11 +112,13 @@ The rigorous half and the visual half are the same structure. Read `docs/referen
 
 ## Branches, versions and releases
 
-Two long-lived branches, one release train. Everything else is a short-lived topic branch.
+Two long-lived branches, one release train, and while a release is finished its release branch. Everything
+else is a short-lived topic branch.
 
 | Branch | Holds | Version | Built as | Who moves it |
 | --- | --- | --- | --- | --- |
 | `next` | integration: everything finished | the next minor, `X.Y.0` | nightly, `X.Y.0-nightly.<timestamp>` | the integrating agent, by merging the topic branches of a round and testing them once |
+| `release-X.Y` | the release being finished, cut from `next` | `X.Y.0` | nothing; `ci` runs on it | the agent that prepares the promotion |
 | `main` | what is released | the released `X.Y.Z` | stable, tag `vX.Y.Z` | Raoul only |
 | `<topic>` | one piece of work | none | nothing | its owner |
 
@@ -142,12 +144,21 @@ Two long-lived branches, one release train. Everything else is a short-lived top
    `topology`) once on the whole, fixes there what fails, and lands that. A failure there is found by
    testing the branches in it, not by running the suite again for each. When `next` moves before the push, merge
    it again and run again only the suites its new commits touch: documentation and CI touch none.
-3. **Promote**: when Raoul says so, `next` is merged into `main` (a merge commit), `main` is tagged
-   `vX.Y.0` and pushed; the tag builds the stable release and, with the secret `TAP_TOKEN`, updates
+3. **Cut, then promote**: once what a release carries is on `next`, the agent that prepares it cuts
+   `release-X.Y` from `next` (`git push origin <commit>:refs/heads/release-X.Y`), and new work keeps
+   landing on `next`. Only the release's own finishing lands on `release-X.Y`: its notes and pictures, and
+   a fix of something it carries, landed as on `next` (from a detached `origin/release-X.Y`) and merged
+   into `next` in the same turn, so `next` never lacks what the release has. When Raoul says so,
+   `release-X.Y` is merged into `main` (a merge commit), `main` is tagged `vX.Y.0` and pushed, and the
+   release branch is removed; the tag builds the stable release and, with the secret `TAP_TOKEN`, updates
    the tap. `main` then holds nothing `next` lacks. An agent prepares the promotion (conflicts
    resolved, docs pictures drawn, checks green, the release's notes `docs/releases/<version>.md`
    gathered from `docs/changes/` and made a page by `uv run tools/release_page.py`, which must name no
-   point without a picture) and stops before the push.
+   point without a picture) and stops before the push. That a point has a picture is the floor: each is
+   as visual as 0.68.0's, an `Example:` that both releases draw, a `Compare:` of Atlas's pictures, `Bars:`
+   of numbers, or a drawing that carries the point, never a table of text. One point says how fast the
+   release is against the one before: `uv run tools/perf.py release-bars` gives its `Bars:` from the
+   nightly series (`docs/reference/performance.md`).
    The release machinery (`release.yml`, `install.sh`, `install.ps1`, the tap job, `tools/tap_formula.py`, `tools/tap_cask.py`)
    runs only on a `v*` tag, so a change to it on `next` is not exercised until the first tag after a
    promotion, and a fault in it breaks the formula for every stable user. A promotion that carries
@@ -156,12 +167,13 @@ Two long-lived branches, one release train. Everything else is a short-lived top
    their checksums, and that `brew install raoulg/tap/atlas-code`, `brew install --cask raoulg/tap/atlas-studio`
    and `install.sh` install it.
 4. **Stable fix**: a bug in released behaviour is fixed on a branch from `main`, merged into `main`
-   when Raoul says so, patch number raised, tagged `vX.Y.Z`; then `main` is merged into `next` at once.
+   when Raoul says so, patch number raised, tagged `vX.Y.Z`; then `main` is merged into `next`, and into a release branch if one is open, at once.
    A fix to code that is not released yet is ordinary work on `next`.
 5. **Versions are SemVer and are raised in one place each**: the first change on `next` that alters
-   what Atlas reads, draws or checks raises the minor, once; later commits leave it alone. A stable fix
+   what Atlas reads, draws or checks raises the minor, once; later commits leave it alone. After a cut,
+   `next` says the release branch's version until that change raises it past it. A stable fix
    raises the patch. Documentation, CI and the tap raise nothing.
-6. **History is never rewritten.** No force-push to `main` or `next`, no deleted or moved `v*` tag. A
+6. **History is never rewritten.** No force-push to `main`, `next` or a release branch, no deleted or moved `v*` tag. A
    mistake is a revert commit.
 7. **Before any push or tag, read the branch** (`git branch --show-current`). A push to `main`, a `v*`
    tag, a force-push or a change of the repository's settings needs Raoul's yes in this session,
@@ -170,11 +182,11 @@ Two long-lived branches, one release train. Everything else is a short-lived top
 | Channel | Source | Install |
 | --- | --- | --- |
 | stable | tags `v*` on `main` | `brew install raoulg/tap/atlas-code`, `install.sh` |
-| nightly | `next`, built daily when it changed | `brew install raoulg/tap/atlas-code-nightly`, `ATLAS_CHANNEL=nightly install.sh` |
+| nightly | `next`, built at 03:30 when it changed and its tests pass on three platforms, or by hand | `brew install raoulg/tap/atlas-code-nightly`, `ATLAS_CHANNEL=nightly install.sh` |
 
 ## Practical
 
-- Build and run: `cargo build`, `atlas view .` (install with `cargo install --path cli`;
+- Build and run: `cargo build`, `atlas-code view .` (install with `cargo install --path cli`;
   the viewer, `viewer/index.html` with its model `viewer/plan.js`, is baked into the binary, so rebuild
   after editing either).
 - Version: `version` in the root `Cargo.toml`, raised as the section above says. The build adds the
@@ -197,7 +209,8 @@ Two long-lived branches, one release train. Everything else is a short-lived top
   the seed in its summary. A broken site is a question, about
   the law, the code or the sampler, and gets an issue before anything is changed.
 - Tests: `cargo test`. The Rust workspace itself is a test subject. CI runs them on Linux, macOS
-  and Windows: a test that writes files builds them as the platform lays them out (a virtual
+  and Windows on every push to `main` and in the nightly, for the commit it builds; a push to `next`
+  runs no CI, so a fault on one platform shows as a red nightly the next morning, and is fixed then: a test that writes files builds them as the platform lays them out (a virtual
   environment keeps its packages in `Lib\site-packages` on Windows) and compares paths as `Path`s,
   never as strings with `/`.
 - The viewer's model, `viewer/plan.js` (the routes, the finest plan of a route, its quotient and the oracle), is a
@@ -234,10 +247,10 @@ Two long-lived branches, one release train. Everything else is a short-lived top
   otherwise, the commit stops and names it with the text that shows it: reread that text, change
   what no longer holds, and commit again.
 - The tour's history (`docs/img/interaction/history.png` and `history-dark.png`) is drawn by
-  `tools/interaction_pictures.py` from a real run of `atlas serve` on six commits of the sunspots pipeline: `uv run
-  tools/interaction_pictures.py target/release/atlas`. The pages of the tour's two sessions (pointing, designing ahead) are
-  drawn by `tools/session_pictures.py`, which plays each session again with `atlas serve` and `atlas mcp`: `uv run
-  tools/session_pictures.py target/release/atlas`; their chats are text in the page. Both draw every picture in the light
+  `tools/interaction_pictures.py` from a real run of `atlas-code serve` on six commits of the sunspots pipeline: `uv run
+  tools/interaction_pictures.py target/release/atlas-code`. The pages of the tour's two sessions (pointing, designing ahead) are
+  drawn by `tools/session_pictures.py`, which plays each session again with `atlas-code serve` and `atlas-code mcp`: `uv run
+  tools/session_pictures.py target/release/atlas-code`; their chats are text in the page. Both draw every picture in the light
   and the dark theme, as `docs_pictures.py` does, and the tour shows the one of its theme. No hook runs them; run them
   with a version raise that changes what those pages draw, and reread the text beside a picture they name.
   `docs/img/interaction/drawn.json` keeps what the history draws.
@@ -248,9 +261,9 @@ Two long-lived branches, one release train. Everything else is a short-lived top
   box at a time in each route and must report no box that takes a line away, draws a line the closed box did not
   (`more`: by rule 1 a fault of the closed picture), moves a box into or out of a frame that is not the one opened, or
   does not close to the picture it was (`docs/reference/mathematics.md`, "Refinement keeps what it does not refine").
-- `atlas check` is a signal to look critically at the code and at what the check claims, never an
+- `atlas-code check` is a signal to look critically at the code and at what the check claims, never an
   oracle and never a target. Zero findings on Atlas is no goal: never change Atlas's code, or bend a
-  rule, to keep `atlas check .` quiet. Where a finding is wrong, repair the rule and let Atlas carry
+  rule, to keep `atlas-code check .` quiet. Where a finding is wrong, repair the rule and let Atlas carry
   what the rule then finds. `engine/tests/review.rs` keeps Atlas's findings as a reviewed list,
   `REVIEWED`, each with why it stands; it fails when the findings change, so that each change is
   read, not so that the list shrinks. A finding a change brings is answered there: the code changes
@@ -263,7 +276,7 @@ Two long-lived branches, one release train. Everything else is a short-lived top
 - Languages: `engine/src/language.rs` is the trait; `python.rs`, `rust.rs` and
   `typescript.rs` implement it. `parts.rs` finds a repository's parts (one per manifest),
   reads each in its language, merges them and joins them where one requests another's
-  routes; `atlas view` and the MCP routes use the merged graph, `atlas check` each part. Grammars
+  routes; `atlas-code view` and the MCP routes use the merged graph, `atlas-code check` each part. Grammars
   are reused from tree-sitter crates. A reader supplies its language's syntax and facts:
   resolution, how its names get their types, entry points, which calls cross into the world,
   and syntax tables (`ChoiceSyntax`, `CompareSyntax`, `OwnTypes`). What every language shares is
@@ -293,6 +306,6 @@ Two long-lived branches, one release train. Everything else is a short-lived top
   Pass the project's path as an argument instead.
 - The shell is zsh: a loop over subjects must not name its variable `path` (`while read name path`),
   since zsh ties `path` to `$PATH` and every command in the body is then "not found". `status` is
-  read-only in zsh; store a command's exit code in a task-specific variable. `atlas analyze`
-  and `atlas view` write into `.atlas/` at the top of the subject's git repository unless given
+  read-only in zsh; store a command's exit code in a task-specific variable. `atlas-code analyze`
+  and `atlas-code view` write into `.atlas/` at the top of the subject's git repository unless given
   `-o`/`--out`; give the scratchpad when the subject is not ours.

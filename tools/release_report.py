@@ -22,7 +22,7 @@ fact is a box or a line of its own, the view that opens exactly the frames that 
   boxes and lines only one of them draws, and the places that stand on another side, are outlined in the page's own
   colours (`--del` in the before picture, `--add` in the after). The release changes more than one issue, so the
   difference also says which of its boxes the issue's facts name.
-- **B, what changed in Atlas.** `atlas view` of the repository with `--since <first commit>^ --until <last commit>`,
+- **B, what changed in Atlas.** `atlas-code view` of the repository with `--since <first commit>^ --until <last commit>`,
   which marks what was added, removed and changed. The changed facts are the functions the engine marks (their own
   arrow differs); a function the diff edits whose arrow stays is outlined amber where it is drawn, and leads the route
   only when the engine marks none. The route reaches the most of them, a call of a trait's or a base's method reaching
@@ -32,7 +32,7 @@ fact is a box or a line of its own, the view that opens exactly the frames that 
   named beside the picture (`called_by`); where that frame is still too fine, one picture per call it makes toward the
   changes (at most PICTURES), and a single change whose caller is still too fine is drawn as itself.
 - **C, where no picture shows it.** The card says why and shows what does: the help of the command the title names
-  (`atlas --help` when it names none) with both builds, `atlas check` on the pairs the issue changes, a gesture in the
+  (`atlas-code --help` when it names none) with both builds, `atlas-code check` on the pairs the issue changes, a gesture in the
   viewer played in both builds (`GESTURES`), the documentation's changed paragraphs before and after. A change that
   touches no plan, pair, check, command line, viewer or documentation is internal: its card says so beside B.
 
@@ -382,7 +382,7 @@ def page_data(html):
 
 
 def view_of(atlas, subject, html, view=None, extra=()):
-    """`atlas view` of a subject into `html`, in a view; what it said, or why it failed."""
+    """`atlas-code view` of a subject into `html`, in a view; what it said, or why it failed."""
     args = [str(atlas), 'view', str(subject), *extra, '--no-open', '--out', str(html)]
     if view:
         args += ['--view', json.dumps(view)]
@@ -876,13 +876,13 @@ def run(build, args, cwd=ROOT):
     env = {**os.environ, 'COLUMNS': '100', 'NO_COLOR': '1', 'TERM': 'dumb'}
     r = subprocess.run([str(build), *args], capture_output=True, text=True, cwd=cwd, env=env, check=False)
     # a build is named by its file (`atlas-b423b56`); its output names it `atlas`, as an installed one does
-    text = re.sub(r'\x1b\[[0-9;]*m', '', r.stdout + r.stderr).replace(str(build), 'atlas')
-    return re.sub(rf'\b{re.escape(pathlib.Path(build).name)}\b', 'atlas', text), r.returncode
+    text = re.sub(r'\x1b\[[0-9;]*m', '', r.stdout + r.stderr).replace(str(build), 'atlas-code')
+    return re.sub(rf'\b{re.escape(pathlib.Path(build).name)}\b', 'atlas-code', text), r.returncode
 
 
 def command_card(builds, it, out):
     """The interface of the command an issue changes, with both builds: the help of the one its title names, else
-    `atlas --help`. Only its help is run, since a command itself may write a page, open a browser or serve."""
+    `atlas-code --help`. Only its help is run, since a command itself may write a page, open a browser or serve."""
     said = ' '.join([it.get('title') or ''] + [c['subject'] for c in it['commits']])
     m = re.search(r'`?atlas((?:\s+[a-z][\w-]*)?(?:\s+--?[a-z][\w-]*)+|\s+[a-z][\w-]*)', said)
     args = [w for w in (m.group(1).split() if m else []) if not w.startswith('-')] + ['--help']
@@ -910,9 +910,9 @@ def programs_in(files):
 
 
 def check_card(builds, it, out):
-    """`atlas check` on the pairs the issue changes, with both builds."""
+    """`atlas-code check` on the pairs the issue changes, with both builds."""
     programs = programs_in([f for f in it['files'] if kind(f) == 'subject'])[:PAIRS]
-    card = {'kind': 'C', 'what': 'check', 'why': 'a finding is text: `atlas check` on the pairs the issue changes, with both builds',
+    card = {'kind': 'C', 'what': 'check', 'why': 'a finding is text: `atlas-code check` on the pairs the issue changes, with both builds',
             'pairs': []}
     for i, program in enumerate(programs):
         pair = {'program': program}

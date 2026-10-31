@@ -10,7 +10,9 @@ what Atlas draws. `plans.rs` builds the plans in node with the viewer's own mode
 `../plans.mjs`). Every fact the file writes down for a route must hold, and no other. Every route of every program
 under `pairs` and `plans`, with or without a file, is also asked for its pictures: for every set of open steps, the
 oracle and the quotient must find nothing, and every closed family must open into a frame with the id of its box for
-each value it stands for, as the page draws it (the walk's rule), and every box of files folded into a directory must
+each value it stands for, as the page draws it (the walk's rule), and every class of the route's fiber, picked as the set
+of its values, must leave no closed box cut in two once the families it cuts are open, and every family opened must carry
+the light its closed box had to its frame and kinds (#296), and every box of files folded into a directory must
 open, in one step, to the files it held or to directories below it, leaving every other file where it stood. They are asked again with the plan cut as a large
 program's is cut, at the budgets 1, 2 and 3 (`ATLAS_FINE_BUDGET`), where a step beyond the cut is the image of its body
 and each of its lines counts the fine lines its body draws there, and where each step beyond the cut, opened as the page
@@ -28,7 +30,7 @@ One fact per line; `#` starts a comment, at the start of a line or after a space
 | Fact | Says |
 | --- | --- |
 | `route ID` | the facts that follow are of the route of this entry (its node's id: `clean.run`) |
-| `step PATH` | an occurrence: a call of the route, by the names on its path from the route |
+| `step PATH` | an occurrence: a call of the route, by the names on its path from the route; `step PATH one of N` for a call that may run one of `N` functions, as its label counts them |
 | `choice PATH` | a choice in a body, a frame of its own with its arms inside |
 | `line A > B CHANNEL` | a line of the plan, from what makes to what takes |
 | `home VALUE FRAME` | the frame a value stands in with every step open (`outside` when no frame holds it) |
@@ -48,6 +50,10 @@ occurrence where the body names what it gives (`con = duckdb.connect(path)`) or 
 (`rows.append(row)`), labelled by the operation (`connect`, `append`); otherwise what it gives goes into the call around
 it. What a library operation touches at a place is its caller's own touch, whether or not it is a step: naming its
 result changes no line to the place (`design.md`, "An opened route is the fiber of its calls").
+A call into a family may run one of several functions: the one it reaches, unless an interface, a protocol, a trait or
+an abstract class only declares it, and each other one a class its value may be runs for it
+(`docs/reference/mathematics.md`, "Method resolution order"); each is named by the class it runs on, `Section.show` for
+`Block.show` on a `Section`, unless the call names the method (through a class or `super()`).
 
 **Values.** A value is `TYPE·NAME@MOMENT`. The type is the code's name for it (`Table`, `Circle`); a value of no type of
 the code's is `_`. The name is the one that holds it; a value no name holds has none. The moment is the occurrence that

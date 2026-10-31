@@ -9,11 +9,11 @@ The workflow runs on GitHub's machines: it needs nothing installed on yours. Tha
 in where Atlas cannot be installed locally, on a laptop someone else manages for instance: the
 page it draws is opened in the browser, from GitHub Pages or as a download.
 
-Both draw the page with `atlas view`, and take a picture of it with one small script.
+Both draw the page with `atlas-code view`, and take a picture of it with one small script.
 
 ## The picture script
 
-`atlas view` writes the page as one HTML file. A README shows images, so this script opens the
+`atlas-code view` writes the page as one HTML file. A README shows images, so this script opens the
 page in Chrome and takes a picture of it, in the light and the dark theme. Save it in your
 repository as `tools/atlas_picture.py`:
 
@@ -22,7 +22,7 @@ repository as `tools/atlas_picture.py`:
 # requires-python = ">=3.11"
 # dependencies = ["playwright"]
 # ///
-"""Take a picture of a page `atlas view` wrote, in the light and the dark theme.
+"""Take a picture of a page `atlas-code view` wrote, in the light and the dark theme.
 
     uv run tools/atlas_picture.py PAGE PICTURE
 
@@ -62,12 +62,12 @@ from what it reads to what it writes. To show one route instead (your command, y
 name it with `--view`:
 
 ```bash
-atlas view --no-open --out site/index.html --view '{"route": "mypackage.cli.main"}'
+atlas-code view --no-open --out site/index.html --view '{"route": "mypackage.cli.main"}'
 ```
 
 The id is the one the page's address writes once the route is open (`…&v={"route": …}`); the page
 the workflow publishes has it too, so it can be found without Atlas on your machine. `--view` also
-takes the functions to open in it, as `atlas view --help` says.
+takes the functions to open in it, as `atlas-code view --help` says.
 
 ## On every push: a GitHub workflow
 
@@ -108,7 +108,7 @@ jobs:
           curl -fsSL https://raw.githubusercontent.com/raoulg/atlas/main/install.sh | sh
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
       - name: Draw the page
-        run: atlas view --no-open --out site/index.html
+        run: atlas-code view --no-open --out site/index.html
       - name: Take its picture
         run: uv run tools/atlas_picture.py site/index.html site/atlas.png
       - name: Write the pill                       # optional, see "The pill"
@@ -138,12 +138,12 @@ images in a README through its own image cache, which may show the earlier pictu
 after a push.
 
 `ATLAS_CHANNEL=nightly` before `sh` installs the nightly build instead of the latest release, as the
-command `atlas-nightly`. The runner reads the update check as CI and stays silent.
+command `atlas-code-nightly`. The runner reads the update check as CI and stays silent.
 
 ### The pill
 
 A repository that draws its picture can say so, with a pill in the README:
-[![atlas: drawn on push](../badge-atlas.svg)](https://raoulg.github.io/atlas/)
+[![atlas: drawn on push](../badge-atlas.svg)](https://atlas.pttrn.io/)
 It comes in two kinds:
 
 - **Static**: save [`badge-atlas.svg`](../badge-atlas.svg) in your repository and name it from the
@@ -160,7 +160,7 @@ Both come from `tools/atlas_badge.py` in the Atlas repository, a script of the s
 alone: copy it next to `tools/atlas_picture.py`.
 
 Experimental: `python3 tools/atlas_badge.py questions.svg findings.json`, with the output of
-`atlas check --json`, writes a pill of its own that counts the questions Atlas asks of the code.
+`atlas-code check --json`, writes a pill of its own that counts the questions Atlas asks of the code.
 They are not yet reliable enough to wear as a badge; Atlas's own workflow writes it as
 `questions.svg`.
 
@@ -198,9 +198,11 @@ without a `pyproject.toml` fails.
 
 ### Checks on a pull request
 
-The same install gives a job that runs `atlas check` on every pull request. Its findings are
-questions for the review, not a gate: `atlas check` exits with 1 when it has something to ask, and
-`continue-on-error` keeps that from failing the pull request, so the findings stand in the job's log:
+The same install gives a job that runs `atlas-code check` on every pull request. Its findings are
+questions for the review, not a gate. `atlas-code check` exits with 0 when it has nothing to ask, 1 when
+it has something, and 2 when it could not read the repository; the step lets 1 pass, so the findings
+stand in the job's log, and fails on 2, so a check that did not run is never read as one that found
+nothing:
 
 ```yaml
 on:
@@ -217,11 +219,10 @@ jobs:
         run: |
           curl -fsSL https://raw.githubusercontent.com/raoulg/atlas/main/install.sh | sh
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
-      - run: atlas check
-        continue-on-error: true
+      - run: atlas-code check || [ $? -eq 1 ]
       - name: Draw what the pull request changed
         if: always()
-        run: atlas view --no-open --out changes/index.html --since origin/${{ github.base_ref }}
+        run: atlas-code view --no-open --out changes/index.html --since origin/${{ github.base_ref }}
       - uses: actions/upload-artifact@v7
         if: always()
         with:
@@ -252,7 +253,7 @@ As a plain git hook, `.git/hooks/pre-commit` (made executable with `chmod +x`):
 #!/bin/sh
 set -e
 page="$(mktemp -d)/atlas.html"
-atlas view --no-open --out "$page"
+atlas-code view --no-open --out "$page"
 uv run tools/atlas_picture.py "$page" docs/atlas.png
 git add docs/atlas.png docs/atlas-dark.png
 ```
@@ -266,7 +267,7 @@ pre-commit:
     atlas:
       run: >
         page="$(mktemp -d)/atlas.html" &&
-        atlas view --no-open --out "$page" &&
+        atlas-code view --no-open --out "$page" &&
         uv run tools/atlas_picture.py "$page" docs/atlas.png &&
         git add docs/atlas.png docs/atlas-dark.png
 ```

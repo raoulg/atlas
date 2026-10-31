@@ -23,15 +23,15 @@ use crate::repo::Repo;
 use crate::story;
 
 /// How one route differs between two revisions.
-#[derive(Debug, Default, serde::Serialize)]
+#[derive(Debug, serde::Serialize)]
 pub struct RouteChange {
     /// `API · GET /api/regels/{id}`, with its part when the repository has several.
     pub route: String,
     /// The node the route starts at, and the root of its part.
     pub id: String,
     pub root: String,
-    /// `added`, `removed` or `changed`.
-    pub status: &'static str,
+    /// Whether B adds the route, no longer has it, or both readings hold it and it differs.
+    pub status: Status,
     /// Steps by node id: those the route reaches in one reading only, and those it reaches whose
     /// own arrow differs.
     pub steps_added: Vec<String>,
@@ -353,9 +353,9 @@ pub fn between(a: &str, b: Option<&str>, before: &[Graph], after: &[Graph]) -> C
             id: here.id.clone(),
             root: here.root.clone(),
             status: match (a, b) {
-                (None, _) => "added",
-                (_, None) => "removed",
-                _ => "changed",
+                (None, _) => Status::Added,
+                (_, None) => Status::Removed,
+                _ => Status::Changed,
             },
             steps_added: diff(&b2.steps, &a2.steps),
             steps_removed: diff(&a2.steps, &b2.steps),
@@ -378,7 +378,7 @@ pub fn between(a: &str, b: Option<&str>, before: &[Graph], after: &[Graph]) -> C
                 .map(|id| place_changed(id))
                 .collect(),
         };
-        if c.status != "changed"
+        if c.status != Status::Changed
             || !(c.steps_added.is_empty()
                 && c.steps_removed.is_empty()
                 && c.steps_changed.is_empty()
@@ -445,34 +445,30 @@ pub fn report(c: &Changes) -> String {
         format!("{}: {renamed}was {}", short(&s.id), s.was)
     };
     for r in &c.routes {
-        let mark = match r.status {
-            "added" => "+",
-            "removed" => "-",
-            _ => "~",
-        };
-        out.push_str(&format!("\n{mark} {}\n", r.route));
+        out.push_str(&format!("\n{} {}\n", r.status.sign(), r.route));
         let short = |id: &str| id.strip_prefix(&format!("{}.", r.root)).unwrap_or(id).to_string();
         let changed: Vec<String> = r.steps_changed.iter().map(|s| step(&short, s)).collect();
         let places: Vec<String> = r.places_changed.iter().map(|p| format!("{}: was {}", p.place, p.was)).collect();
-        for (sign, what, xs) in [
-            ("+", "step", r.steps_added.iter().map(|x| short(x)).collect::<Vec<_>>()),
-            ("-", "step", r.steps_removed.iter().map(|x| short(x)).collect()),
-            ("~", "step", changed),
-            ("+", "place", r.places_added.clone()),
-            ("-", "place", r.places_removed.clone()),
-            ("~", "place", places),
+        for (status, what, xs) in [
+            (Status::Added, "step", r.steps_added.iter().map(|x| short(x)).collect::<Vec<_>>()),
+            (Status::Removed, "step", r.steps_removed.iter().map(|x| short(x)).collect()),
+            (Status::Changed, "step", changed),
+            (Status::Added, "place", r.places_added.clone()),
+            (Status::Removed, "place", r.places_removed.clone()),
+            (Status::Changed, "place", places),
         ] {
-            if r.status != "changed" && what == "step" {
+            if r.status != Status::Changed && what == "step" {
                 continue;
             }
             for x in xs {
-                out.push_str(&format!("    {sign} {what} {x}\n"));
+                out.push_str(&format!("    {} {what} {x}\n", status.sign()));
             }
         }
         for composition in &r.compositions_changed {
             let sequence = |body: &crate::flow::Body| body.steps().iter().map(|s| short(&s.to)).collect::<Vec<_>>().join(" → ");
             out.push_str(&format!(
-                "    ~ composition {}: {} ⇒ {}\n",
+                "    {} composition {}: {} ⇒ {}\n",
+                Status::Changed.sign(),
                 short(&composition.function),
                 sequence(&composition.before),
                 sequence(&composition.after)
@@ -481,7 +477,7 @@ pub fn report(c: &Changes) -> String {
     }
     let e = &c.elsewhere;
     if !e.is_empty() {
-        out.push_str("\n~ on no route\n");
+        out.push_str(&format!("\n{} on no route\n", Status::Changed.sign()));
         let short = |id: &str| c.roots.iter().find_map(|r| id.strip_prefix(&format!("{r}."))).unwrap_or(id).to_string();
         let changed: Vec<String> = e.changed.iter().map(|s| step(&short, s)).collect();
         let places: Vec<String> = e.places_changed.iter().map(|p| format!("{}: was {}", p.place, p.was)).collect();
@@ -489,16 +485,16 @@ pub fn report(c: &Changes) -> String {
             (e.places_added.iter().map(|p| p.place.clone()).collect(), e.places_removed.iter().map(|p| p.place.clone()).collect());
         let (added, removed): (Vec<String>, Vec<String>) =
             (e.added.iter().map(|x| short(x)).collect(), e.removed.iter().map(|x| short(x)).collect());
-        for (sign, what, xs) in [
-            ("+", "", &added),
-            ("-", "", &removed),
-            ("~", "", &changed),
-            ("+", "place ", &places_added),
-            ("-", "place ", &places_removed),
-            ("~", "place ", &places),
+        for (status, what, xs) in [
+            (Status::Added, "", &added),
+            (Status::Removed, "", &removed),
+            (Status::Changed, "", &changed),
+            (Status::Added, "place ", &places_added),
+            (Status::Removed, "place ", &places_removed),
+            (Status::Changed, "place ", &places),
         ] {
             for x in xs {
-                out.push_str(&format!("    {sign} {what}{x}\n"));
+                out.push_str(&format!("    {} {what}{x}\n", status.sign()));
             }
         }
     }
@@ -735,11 +731,21 @@ fn located(repo: &Path) -> Result<(PathBuf, PathBuf, std::ffi::OsString)> {
     Ok((top, rel, name))
 }
 
+/// A vision as it is read: its parts, and the directory they were read from, the copy's place for
+/// the directory the vision was asked for, where the vision's paths start. The copy is gone once it
+/// is read; `dir` names where its files lay, so an item of the vision is placed by the path of its
+/// file from `dir`.
+#[derive(Debug)]
+pub struct Envisioned {
+    pub parts: Vec<Graph>,
+    pub dir: PathBuf,
+}
+
 /// A vision: the working tree of `repo` with `files` written otherwise, each path from the
 /// repository's root given whole or, where it is none, removed. It is read as a revision is, from a
 /// directory of its own under the same name, so the graph's names agree with the working tree's; a
 /// vision is sketch code, which has to parse, not to build.
-pub fn envisioned(repo: &Path, files: &BTreeMap<PathBuf, Option<String>>, opts: &crate::Options) -> Result<Vec<Graph>> {
+pub fn envisioned(repo: &Path, files: &BTreeMap<PathBuf, Option<String>>, opts: &crate::Options) -> Result<Envisioned> {
     for rel in files.keys() {
         if rel.is_absolute() || rel.components().any(|c| !matches!(c, std::path::Component::Normal(_))) {
             bail!("a vision names files from the repository's root, inside it: {}", rel.display());
@@ -775,7 +781,9 @@ pub fn envisioned(repo: &Path, files: &BTreeMap<PathBuf, Option<String>>, opts: 
             tmp.link(&beside, Path::new(name));
         }
     }
-    crate::parts::analyze_parts(&[tmp.root.join(&laid).join(&inner)], opts)
+    // read where the file system resolves it, so that every item's file starts with `dir`
+    let dir = Repo::real(&tmp.root.join(&laid).join(&inner));
+    Ok(Envisioned { parts: crate::parts::analyze_parts(&[dir.clone()], opts)?, dir })
 }
 
 /// The repository as it was at `rev`, written to a `Tmp` of its own under the same name, so the

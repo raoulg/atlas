@@ -1,14 +1,25 @@
 name: ci
 
+# The tests on three platforms: on every push to main and to a release branch, on a pull request, by hand, and called by the
+# nightly for the commit it builds, which it builds only once these are green. A push to next runs
+# none: a round's integrating agent runs the suite before it lands, and the nightly asks the three
+# platforms once a night.
 on:
   push:
-    branches: [main, next]
+    branches: [main, "release-*"]
   pull_request:
+  workflow_dispatch:
+  workflow_call:
+    inputs:
+      ref:
+        description: "The commit to test"
+        type: string
+        required: true
 
 # a push stops the runs of the commits before it on the same branch: only the newest commit's run
-# says whether the branch is green, which is what the nightly asks
+# says whether the branch is green
 concurrency:
-  group: ci-${{ github.ref }}
+  group: ci-${{ github.ref }}-${{ inputs.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -20,6 +31,8 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.ref }}
       # the viewer's model runs in node: engine/tests/plans.rs holds its plans to the code
       - uses: actions/setup-node@v5
         with:
@@ -34,12 +47,16 @@ jobs:
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.ref }}
       - run: python3 tools/test_tap.py
 
   fmt:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.ref }}
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt
@@ -54,6 +71,8 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.ref }}
       - uses: dtolnay/rust-toolchain@stable
       - name: Install Linux dependencies
         if: runner.os == 'Linux'
@@ -71,10 +90,10 @@ jobs:
           triple=$(rustc --print host-tuple)
           case "$triple" in *-windows-*) ext=.exe ;; *) ext= ;; esac
           mkdir -p studio/src-tauri/binaries
-          touch "studio/src-tauri/binaries/atlas-$triple$ext"
+          touch "studio/src-tauri/binaries/atlas-code-$triple$ext"
       - run: cargo check --locked --manifest-path studio/src-tauri/Cargo.toml
       - run: cargo test --locked --manifest-path studio/src-tauri/Cargo.toml
       - run: node studio/tests/files.test.js
       - run: node studio/tests/themes.test.js
-      - run: node studio/tests/terminal.test.js
+      - run: node studio/tests/panels.test.js
       - run: node studio/tests/lessons/lesson.test.js

@@ -1,6 +1,6 @@
 [package]
-name = "atlas"
-description = "A mathematical panorama of your software code"
+name = "atlas-code"
+description = "Atlas — your code's topology"
 readme = "../README.md"
 keywords = ["code-visualization", "tree-sitter", "architecture", "static-analysis", "mcp"]
 categories = ["development-tools", "visualization", "command-line-utilities"]
@@ -12,7 +12,7 @@ homepage.workspace = true
 rust-version.workspace = true
 
 [[bin]]
-name = "atlas"
+name = "atlas-code"
 path = "src/main.rs"
 
 [dependencies]
@@ -21,6 +21,8 @@ anyhow.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 clap = { version = "4", features = ["derive", "wrap_help"] }
+base64 = "0.22"
+pulldown-cmark = { version = "0.13", default-features = false, features = ["html"] }
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"

@@ -19,7 +19,9 @@ jobs:
           if [ -z "$pre" ] && [ -f "docs/releases/${GITHUB_REF_NAME#v}.md" ]; then
             notes="**What changed, with pictures:** https://atlas.pttrn.io/releases/${GITHUB_REF_NAME#v}/"
           fi
-          gh release create "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME" --generate-notes --notes "$notes" $pre
+          # a draft until every file is uploaded: `publish` makes it public, so `releases/latest`
+          # (Studio's and `atlas-code update`'s question) never names a release whose files are not there yet
+          gh release create "$GITHUB_REF_NAME" --draft --title "$GITHUB_REF_NAME" --generate-notes --notes "$notes" $pre
         env:
           GH_TOKEN: ${{ github.token }}
 
@@ -39,17 +41,17 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target }}
-      - run: cargo build --release --locked --target ${{ matrix.target }} -p atlas
+      - run: cargo build --release --locked --target ${{ matrix.target }} -p atlas-code
       - name: package
         shell: bash
         run: |
           cd target/${{ matrix.target }}/release
           if [ "${{ runner.os }}" = "Windows" ]; then
-            7z a "$GITHUB_WORKSPACE/atlas-${{ matrix.target }}.zip" atlas.exe
+            7z a "$GITHUB_WORKSPACE/atlas-code-${{ matrix.target }}.zip" atlas-code.exe
           else
-            tar -czf "$GITHUB_WORKSPACE/atlas-${{ matrix.target }}.tar.gz" atlas
+            tar -czf "$GITHUB_WORKSPACE/atlas-code-${{ matrix.target }}.tar.gz" atlas-code
           fi
-      - run: gh release upload "$GITHUB_REF_NAME" atlas-${{ matrix.target }}.*
+      - run: gh release upload "$GITHUB_REF_NAME" atlas-code-${{ matrix.target }}.*
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
@@ -75,8 +77,18 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
 
+  publish:
+    needs: [build, studio-upload]
+    runs-on: ubuntu-latest
+    steps:
+      - run: |
+          case "$GITHUB_REF_NAME" in *-*) latest=--latest=false ;; *) latest=--latest ;; esac
+          gh release edit "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --draft=false $latest
+        env:
+          GH_TOKEN: ${{ github.token }}
+
   install:
-    needs: build
+    needs: publish
     strategy:
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
@@ -84,17 +96,17 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - if: runner.os != 'Windows'
-        run: sh install.sh && "$HOME/.local/bin/atlas" --version
+        run: sh install.sh && "$HOME/.local/bin/atlas-code" --version
       - if: runner.os == 'Windows'
         shell: pwsh
-        run: ./install.ps1; & "$env:LOCALAPPDATA\Programs\atlas\atlas.exe" --version
+        run: ./install.ps1; & "$env:LOCALAPPDATA\Programs\atlas-code\atlas-code.exe" --version
 
   # The Homebrew tap (raoulg/homebrew-tap) takes the new version and the checksums of the release:
-  # the formula `atlas-code` from the CLI's archives, the cask `atlas-studio` from Studio's disk images
-  # (`tools/tap_cask.py`). It needs the secret TAP_TOKEN (a token with Contents: write on that
+  # the formula `atlas-code` from the CLI's archives (`tools/tap_formula.py`), the cask `atlas-studio`
+  # from Studio's disk images (`tools/tap_cask.py`). It needs the secret TAP_TOKEN (a token with Contents: write on that
   # repository only); without it the job says so and does nothing.
   tap:
-    needs: [build, install, studio-upload]
+    needs: [publish, install]
     if: ${{ !contains(github.ref_name, '-') }}
     runs-on: ubuntu-latest
     steps:
@@ -109,20 +121,7 @@ jobs:
           version="${GITHUB_REF_NAME#v}"
           gh release download "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --pattern '*.tar.gz' --pattern 'atlas-studio-*.dmg' --dir assets
           git clone "https://x-access-token:${TAP_TOKEN}@github.com/raoulg/homebrew-tap.git" tap
-          python3 - "$version" "$GITHUB_REF_NAME" <<'PY'
-          import hashlib, pathlib, re, sys
-          version, tag = sys.argv[1:]
-          path = pathlib.Path("tap/Formula/atlas-code.rb")
-          text = re.sub(r'version "[^"]*"', f'version "{version}"', path.read_text(), count=1)
-          for target in ["aarch64-apple-darwin", "x86_64-apple-darwin", "aarch64-unknown-linux-gnu", "x86_64-unknown-linux-gnu"]:
-              sha = hashlib.sha256(pathlib.Path(f"assets/atlas-{target}.tar.gz").read_bytes()).hexdigest()
-              text = re.sub(
-                  rf'url "[^"]*/atlas-{target}\.tar\.gz"\n(\s*)sha256 "[^"]*"',
-                  lambda m: f'url "https://github.com/raoulg/atlas/releases/download/{tag}/atlas-{target}.tar.gz"\n{m.group(1)}sha256 "{sha}"',
-                  text,
-              )
-          path.write_text(text)
-          PY
+          python3 atlas/tools/tap_formula.py assets "$version" > tap/Formula/atlas-code.rb
           mkdir -p tap/Casks
           python3 atlas/tools/tap_cask.py assets "$version" > tap/Casks/atlas-studio.rb
           cd tap

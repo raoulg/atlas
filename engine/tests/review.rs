@@ -112,18 +112,18 @@ fn atlas_reads_as_its_algebra() {
 #[test]
 fn atlas_view_reads_as_its_algebra() {
     let g = atlas();
-    let call = |target| first_call_path(g, "atlas.view", target).unwrap_or_else(|| panic!("atlas.view reaches {target}"));
+    let call = |target| first_call_path(g, "atlas-code.view", target).unwrap_or_else(|| panic!("atlas-code.view reaches {target}"));
     let read = call("atlas-engine.repo.Repo.read");
     let parse = call("atlas-engine.language.Language.parse");
     let findings = call("atlas-engine.principles.check");
     let flow = call("atlas-engine.flow.of");
-    let page = call("atlas.page.Html.of");
-    let write = call("atlas.page.Html.write");
+    let page = call("atlas-code.page.Html.of");
+    let write = call("atlas-code.page.Html.write");
     assert!(read < parse, "read before parse: {read:?}, {parse:?}");
     assert!(parse < findings && parse < flow, "graph before its findings and flow: {parse:?}, {findings:?}, {flow:?}");
     assert!(findings < page && flow < page && page < write, "the page is made from both before it is written");
     let returns = edges(g, EdgeKind::Returns);
-    assert!(returns.contains(&("atlas.page.Html.of".into(), "atlas.page.Html".into())));
+    assert!(returns.contains(&("atlas-code.page.Html.of".into(), "atlas-code.page.Html".into())));
 }
 
 /// What `atlas check` asks of Atlas, each finding read: its principle, the node it is about, and
@@ -131,18 +131,13 @@ fn atlas_view_reads_as_its_algebra() {
 const REVIEWED: &[(&str, &str, &str)] = &[
     (
         "nothing",
-        "atlas.serve.Server.progress",
+        "atlas-code.serve.Server.progress",
         "`progress` writes the server's shared Progress value through a Mutex; Atlas does not trace the lock's interior mutation",
     ),
     (
         "choices",
         "atlas-engine.builder.GraphBuilder.declare",
         "`Declared` is a type already: the first test asks whether a name's first declaration, which has no node yet, starts its overloads, the `match` what a later one does, in one function",
-    ),
-    (
-        "choices",
-        "atlas.history.Server.respond",
-        "`respond` is shared with `atlas serve`, which lets a POST through to its own routes, while history's own server answers it 405: the two tests mean two things",
     ),
     (
         "choices",
@@ -179,6 +174,16 @@ const REVIEWED: &[(&str, &str, &str)] = &[
         "atlas-engine.typescript.libraries.Libraries.follow_in",
         "`\"default\"` is the language's name for the default export, read in two lines of one function",
     ),
+    (
+        "places",
+        "atlas-code.run",
+        "`run` is `main`'s body, split off so that what it holds drops before the exit status is returned: the command line's default repository, the directory it is run in, is the entry's decision, as it was `main`'s",
+    ),
+    (
+        "choices",
+        "atlas-engine.flow.body_of",
+        "a method's call is resolved along the order of the class it runs on (`Ix::step_of`); a function's call, or a library operation the graph does not hold, runs itself: dispatch is a fact of methods alone",
+    ),
 ];
 
 /// Atlas is its own first subject, and `atlas check` is a signal on it as on any code: never an
@@ -188,13 +193,13 @@ const REVIEWED: &[(&str, &str, &str)] = &[
 #[test]
 fn atlas_findings_are_the_reviewed_ones() {
     let fs = check(atlas());
-    let mut got: Vec<(&str, &str)> = fs.iter().map(|f| (f.principle, f.node.as_str())).collect();
+    let mut got: Vec<(&str, &str)> = fs.iter().map(|f| (f.principle.id(), f.node.as_str())).collect();
     let mut want: Vec<(&str, &str)> = REVIEWED.iter().map(|(p, n, _)| (*p, *n)).collect();
     got.sort();
     want.sort();
     let new: Vec<String> = fs
         .iter()
-        .filter(|f| !want.contains(&(f.principle, f.node.as_str())))
+        .filter(|f| !want.contains(&(f.principle.id(), f.node.as_str())))
         .map(|f| format!("{} {} ({}:{}) {}", f.principle, f.node, f.file, f.line, f.what))
         .collect();
     let gone: Vec<&(&str, &str)> = want.iter().filter(|w| !got.contains(w)).collect();

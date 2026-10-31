@@ -93,10 +93,17 @@ pub struct Param {
     pub file: Option<FileArg>,
 }
 
-/// The standard library's types for a path and for a file, by the class that defines them.
-fn file_of(class: &str) -> Option<FileArg> {
+/// The standard library's types for a path and for a file, by the class that defines them and the
+/// module ty finds it in: a path where the class is a path library's
+/// (`knowledge::PYTHON_PATH_CLASSES`).
+fn file_of(module: &str, class: &str) -> Option<FileArg> {
+    let path = crate::knowledge::PYTHON_PATH_CLASSES
+        .iter()
+        .any(|(lib, c)| *c == class && (module == *lib || module.strip_prefix(lib).is_some_and(|r| r.starts_with('.'))));
+    if path {
+        return Some(FileArg::Path);
+    }
     match class {
-        "PathLike" | "PurePath" | "Path" | "PurePosixPath" | "PureWindowsPath" | "PosixPath" | "WindowsPath" => Some(FileArg::Path),
         "SupportsRead" | "SupportsReadline" => Some(FileArg::Reads),
         "SupportsWrite" => Some(FileArg::Writes),
         "IO" | "TextIO" | "BinaryIO" | "IOBase" | "RawIOBase" | "BufferedIOBase" | "TextIOBase" | "TextIOWrapper" | "BufferedReader"
@@ -242,10 +249,11 @@ impl Types {
         self.files.get(file)
     }
 
-    /// Ask ty about `files`, read as part of the project at `root`. A file is named by the path
-    /// Atlas knows it by; a notebook's positions are in its cells joined as ruff joins them.
-    pub fn read(root: &Path, files: &[(String, PathBuf)]) -> Types {
-        Ty::new(root, files, None).map(|ty| ty.read(files, files)).unwrap_or_default()
+    /// Ask ty about `files`, read as part of the project at `at`, a directory of the reading
+    /// `repo`. A file is named by the path Atlas knows it by; a notebook's positions are in its
+    /// cells joined as ruff joins them.
+    pub fn read(repo: &Repo, at: &Path, files: &[(String, PathBuf)]) -> Types {
+        Ty::new(repo, at, files, None).map(|ty| ty.read(files, files)).unwrap_or_default()
     }
 }
 
@@ -376,6 +384,8 @@ pub struct Ty {
     /// The project's own files, by their keys.
     own: HashSet<String>,
     said: RefCell<HashMap<String, Arc<Said>>>,
+    /// The files ty panicked on, by their keys: read untyped, and asked about no more.
+    failed: RefCell<HashSet<String>>,
     keys: RefCell<HashMap<PathBuf, String>>,
     kept: Option<Kept>,
     /// Where the project's libraries are.
@@ -438,15 +448,15 @@ impl Kept {
 const KEPT: &str = "python-types";
 
 impl Ty {
-    /// ty over the project at `root`, whose own files are `own`; what it says of an installed
-    /// library's file is kept in `cache`.
-    pub fn new(root: &Path, own: &[(String, PathBuf)], cache: Option<&Cache>) -> Option<Ty> {
-        let root = absolute(root)?;
-        let (db, setup) = TyDb::new(&root);
+    /// ty over the project at `at`, a directory of the reading `repo`, whose own files are `own`;
+    /// what it says of an installed library's file is kept in `cache`.
+    pub fn new(repo: &Repo, at: &Path, own: &[(String, PathBuf)], cache: Option<&Cache>) -> Option<Ty> {
+        let root = absolute(at)?;
+        let (db, setup) = TyDb::new(repo, at, &root);
         let (environment, env) = (setup.environment, setup.env.clone());
         let kept = cache.map(|c| Kept::new(c, setup));
         let own = own.iter().filter_map(|(_, p)| absolute(p)).map(|p| key(p.as_std_path())).collect();
-        Some(Ty { db, environment, own, said: RefCell::default(), keys: RefCell::default(), kept, env })
+        Some(Ty { db, environment, own, said: RefCell::default(), failed: RefCell::default(), keys: RefCell::default(), kept, env })
     }
 
     /// Ask about `files`, with `project` the files Atlas reads: a call into one of them goes to
@@ -464,10 +474,12 @@ impl Ty {
                 classes.extend(self.classes(&path, &name));
             }
         }
-        let mut broken: HashMap<String, Vec<Broken>> = HashMap::new();
+        let mut broken: HashMap<String, Option<Vec<Broken>>> = HashMap::new();
         for o in overrides(&classes, &names) {
             let path = classes.iter().find(|c| c.file == o.file).map(|c| &c.path);
-            let found = broken.entry(o.file.clone()).or_insert_with(|| path.map_or_else(Vec::new, |p| self.broken(p)));
+            let checked = broken.entry(o.file.clone()).or_insert_with(|| path.map_or_else(|| Some(vec![]), |p| self.broken(p)));
+            // a file ty's check fails on says nothing of the promises its methods keep
+            let Some(found) = checked else { continue };
             let within = |r: &TextRange, at: usize| r.start().to_usize() <= at && at < r.end().to_usize();
             let here = found.iter().find(|b| within(&b.signature, o.at));
             // the method ty names as the one whose promise it breaks: the base whose signature it marks
@@ -503,6 +515,9 @@ impl Ty {
         if let Some(s) = self.said.borrow().get(&k) {
             return Some(s.clone());
         }
+        if self.failed.borrow().contains(&k) {
+            return None;
+        }
         let file = system_path_to_file(&self.db, path).ok()?;
         let own = self.own.contains(&k);
         let kept = self.kept.as_ref().filter(|_| !own).and_then(|kept| Some((kept, kept.key(&k)?)));
@@ -512,7 +527,7 @@ impl Ty {
                 // a call into a file of the project's own is named there whichever files are read;
                 // of a library's file only its own calls are, so what it says holds for any project
                 let alone = HashSet::from([k.clone()]);
-                let s = self.ask(file, if own { &self.own } else { &alone });
+                let s = self.guarded(path, || self.ask(file, if own { &self.own } else { &alone }))?;
                 if let Some((kept, entry)) = &kept {
                     kept.put(entry, &s);
                 }
@@ -522,6 +537,22 @@ impl Ty {
         let s = Arc::new(said);
         self.said.borrow_mut().insert(k, s.clone());
         Some(s)
+    }
+
+    /// What `ask` gives, or none where ty panics while it answers for the file at `path`: the file
+    /// is then read untyped, with a warning, and asked about no more, and the rest is read. ty's
+    /// database stays whole: salsa releases each query the panic unwinds through, and a query asked
+    /// again runs again.
+    fn guarded<R>(&self, path: &SystemPathBuf, ask: impl FnOnce() -> R) -> Option<R> {
+        match ruff_db::panic::catch_unwind(std::panic::AssertUnwindSafe(ask)) {
+            Ok(r) => Some(r),
+            Err(e) => {
+                if self.failed.borrow_mut().insert(key(path.as_std_path())) {
+                    eprintln!("ty failed on {path}, which is read without its types: {}", e.payload);
+                }
+                None
+            }
+        }
     }
 
     /// Walk a file and write down what ty says of it, with `certain` the files a call into which
@@ -540,26 +571,31 @@ impl Ty {
     fn classes(&self, path: &SystemPathBuf, name: &str) -> Vec<Class> {
         let db = &self.db;
         let Ok(file) = system_path_to_file(db, path) else { return vec![] };
-        let pf = db.program_file(file);
-        let model = SemanticModel::new(db, pf);
-        let parsed = parsed_module(db, pf.python_file(db)).load(db);
-        let none = HashSet::new();
-        let reader = Reader { db, model: &model, certain: &none, keys: &self.keys, said: Said::default() };
-        let mut found = Classes { reader, file: name, path, key: key(path.as_std_path()), out: vec![] };
-        found.visit_body(parsed.suite());
-        found.out
+        let ask = || {
+            let pf = db.program_file(file);
+            let model = SemanticModel::new(db, pf);
+            let parsed = parsed_module(db, pf.python_file(db)).load(db);
+            let none = HashSet::new();
+            let reader = Reader { db, model: &model, certain: &none, keys: &self.keys, said: Said::default() };
+            let mut found = Classes { reader, file: name, path, key: key(path.as_std_path()), out: vec![] };
+            found.visit_body(parsed.suite());
+            found.out
+        };
+        self.guarded(path, ask).unwrap_or_default()
     }
 
     /// Where ty's check of the file at `path` finds a method that does not keep the promise of one
     /// it overrides. A `# type: ignore[...]` on the first or last line of its signature is the code
     /// saying it knows, whatever its codes, as the bare `# type: ignore` is: ty itself honours only
-    /// the bare form and codes of its own (`ty:`).
-    fn broken(&self, path: &SystemPathBuf) -> Vec<Broken> {
+    /// the bare form and codes of its own (`ty:`). None where ty's check fails on the file: whether
+    /// its methods keep their promises is then not known.
+    fn broken(&self, path: &SystemPathBuf) -> Option<Vec<Broken>> {
         let db = &self.db;
-        let Ok(file) = system_path_to_file(db, path) else { return vec![] };
-        let found: Vec<Diagnostic> = db.check_file(file).into_iter().filter(|d| d.id().is_lint_named(OVERRIDES)).collect();
+        let Ok(file) = system_path_to_file(db, path) else { return Some(vec![]) };
+        let checked = self.guarded(path, || db.check_file(file))?;
+        let found: Vec<Diagnostic> = checked.into_iter().filter(|d| d.id().is_lint_named(OVERRIDES)).collect();
         if found.is_empty() {
-            return vec![];
+            return Some(vec![]);
         }
         let text = ruff_db::source::source_text(db, file);
         let parsed = parsed_module(db, db.program_file(file).python_file(db)).load(db);
@@ -576,7 +612,7 @@ impl Ty {
         let ignored = |r: TextRange| {
             [r.start().to_usize(), r.end().to_usize()].into_iter().map(line).any(|(a, b)| ignores.iter().any(|c| a <= *c && *c <= b))
         };
-        found
+        let broken = found
             .iter()
             .filter_map(|d| {
                 let signature = d.range().filter(|r| !ignored(*r))?;
@@ -589,7 +625,8 @@ impl Ty {
                     .collect();
                 Some(Broken { signature, bases })
             })
-            .collect()
+            .collect();
+        Some(broken)
     }
 }
 
@@ -695,13 +732,7 @@ fn key(p: &Path) -> String {
 
 /// A path as a key, as it is written: the key of a path the file system resolves to itself.
 fn keyed_as(p: &Path) -> String {
-    let s = p.to_string_lossy().replace('\\', "/");
-    let s = s.strip_prefix("//?/").unwrap_or(&s).to_string();
-    if cfg!(windows) {
-        s.to_lowercase()
-    } else {
-        s
-    }
+    crate::repo::keyed(p)
 }
 
 fn absolute(p: &Path) -> Option<SystemPathBuf> {
@@ -716,20 +747,22 @@ struct Settings {
     python_version: Option<String>,
     extra_paths: Vec<String>,
     roots: Vec<String>,
-    file: Option<SystemPathBuf>,
+    /// The file the environment is configured in, by its name in the project's directory.
+    file: Option<&'static str>,
     /// The project's name and the lowest Python it supports, from `[project]`.
     name: Option<String>,
     requires: Option<String>,
 }
 
 impl Settings {
-    fn of(root: &SystemPath) -> Settings {
-        let read = |name: &str| Repo::text_at(root.join(name).as_std_path()).and_then(|s| s.parse::<toml::Table>().ok());
+    /// What the project at `root` configures, read through the reading `repo` it is a directory
+    /// of. A directory outside the reading (the one a package read without a project is imported
+    /// from) configures nothing: a project there is read as the project (`Repo::asked`).
+    fn of(repo: &Repo, root: &Path) -> Settings {
+        let read = |name: &str| repo.text(root.join(name)).and_then(|s| s.parse::<toml::Table>().ok());
         let (table, file) = match read("ty.toml") {
-            Some(t) => (t.get("environment").cloned(), root.join("ty.toml")),
-            None => {
-                (read("pyproject.toml").and_then(|t| t.get("tool")?.get("ty")?.get("environment").cloned()), root.join("pyproject.toml"))
-            }
+            Some(t) => (t.get("environment").cloned(), "ty.toml"),
+            None => (read("pyproject.toml").and_then(|t| t.get("tool")?.get("ty")?.get("environment").cloned()), "pyproject.toml"),
         };
         let project = read("pyproject.toml").and_then(|t| t.get("project").cloned());
         let name = project.as_ref().and_then(|p| p.get("name")?.as_str().map(String::from));
@@ -779,22 +812,22 @@ struct Setup {
 }
 
 impl Setup {
-    /// How ty reads the project at `root`, with the search paths it reads with.
-    fn of(root: &SystemPath, system: &OsSystem, vendored: &VendoredFileSystem) -> (Setup, SearchPaths) {
-        let settings = Settings::of(root);
+    /// How ty reads the project at `at`, a directory of the reading `repo`, with the search paths
+    /// it reads with; `root` is `at` as the file system resolves it.
+    fn of(repo: &Repo, at: &Path, root: &SystemPath, system: &OsSystem, vendored: &VendoredFileSystem) -> (Setup, SearchPaths) {
+        let settings = Settings::of(repo, at);
         let mut roots: Vec<SystemPathBuf> = settings.roots.iter().map(|r| root.join(r)).collect();
         if roots.is_empty() {
             // the layouts ty finds by itself: the root, `src` and maturin's `python` where they are
             // no package, and a nested `<name>/<name>`
             roots.push(root.to_path_buf());
             for dir in ["src", "python"] {
-                let d = root.join(dir);
-                if system.is_directory(&d) && !system.is_file(&d.join("__init__.py")) {
-                    roots.push(d);
+                if repo.is_dir(at.join(dir)) && !repo.is_file(at.join(dir).join("__init__.py")) {
+                    roots.push(root.join(dir));
                 }
             }
             if let Some(name) = settings.name.as_deref().map(|n| n.replace('-', "_")) {
-                if system.is_directory(&root.join(&name).join(&name)) {
+                if repo.is_dir(at.join(&name).join(&name)) {
                     roots.push(root.join(&name));
                 }
             }
@@ -803,10 +836,7 @@ impl Setup {
         search.extra_paths = settings.extra_paths.iter().map(|p| root.join(p)).collect();
         let (venv, found) = match &settings.python {
             Some(p) => {
-                let origin = SysPrefixPathOrigin::ConfigFileSetting(
-                    Arc::new(settings.file.clone().unwrap_or_else(|| root.join("pyproject.toml"))),
-                    None,
-                );
+                let origin = SysPrefixPathOrigin::ConfigFileSetting(Arc::new(root.join(settings.file.unwrap_or("pyproject.toml"))), None);
                 (root.join(p), PythonEnvironment::new(root.join(p), origin, system).ok())
             }
             // the project's `.venv`; a `VIRTUAL_ENV`, a conda environment or a python on `PATH` are the shell's
@@ -937,12 +967,13 @@ impl Setup {
     }
 }
 
-/// What a reading of the Python project at `root` takes from outside it: where ty finds the
-/// modules its code and its libraries import, as checks of how each stands.
-pub fn environment(root: &Path) -> Vec<Check> {
-    let Some(root) = absolute(root) else { return vec![] };
+/// What a reading of the Python project at `at`, a directory of the reading `repo`, takes from
+/// outside it: where ty finds the modules its code and its libraries import, as checks of how each
+/// stands.
+pub fn environment(repo: &Repo, at: &Path) -> Vec<Check> {
+    let Some(root) = absolute(at) else { return vec![] };
     let system = OsSystem::new(&root);
-    let (setup, _) = Setup::of(&root, &system, ty_vendored::file_system());
+    let (setup, _) = Setup::of(repo, at, &root, &system, ty_vendored::file_system());
     setup.checks().into_iter().map(|(_, c)| c).collect()
 }
 
@@ -1113,8 +1144,9 @@ struct TyDb {
 }
 
 impl TyDb {
-    /// The database for the project at `root`, and how it reads the project.
-    fn new(root: &SystemPath) -> (TyDb, Setup) {
+    /// The database for the project at `at`, a directory of the reading `repo`, and how it reads
+    /// the project; `root` is `at` as the file system resolves it.
+    fn new(repo: &Repo, at: &Path, root: &SystemPath) -> (TyDb, Setup) {
         let system = OsSystem::new(root);
         let vendored = ty_vendored::file_system().clone();
         let mut db = TyDb {
@@ -1127,7 +1159,7 @@ impl TyDb {
             analysis_settings: AnalysisSettings::default().into(),
         };
         db.files().try_add_root(&db, root, FileRootKind::Project);
-        let (mut setup, search_paths) = Setup::of(root, &db.system, &db.vendored);
+        let (mut setup, search_paths) = Setup::of(repo, at, root, &db.system, &db.vendored);
         search_paths.try_register_static_roots(&db);
         db.program_settings = ProgramSettings {
             python_version: PythonVersionWithSource { version: setup.version, source: PythonVersionSource::default() },
@@ -1181,6 +1213,12 @@ impl Db for TyDb {
         &self.program_settings.python_version
     }
     fn rule_selection(&self, _file: File) -> &RuleSelection {
+        // ty asks for a file's rules inside its inference, as it reports a lint there: a test makes
+        // that inference panic as a fault of ty's would
+        #[cfg(test)]
+        if _file.path(self).as_str().ends_with(tests::PANICS) {
+            panic!("ty fails on this file");
+        }
         &self.rule_selection
     }
     fn lint_registry(&self) -> &LintRegistry {
@@ -1317,18 +1355,23 @@ impl Reader<'_, '_> {
                 _ => {}
             }
         }
-        let class = |t: &Type| -> Option<String> {
+        // a class by the module ty finds it in and its name
+        let class = |t: &Type| -> Option<(String, String)> {
             let TypeDefinition::StaticClass(_) = t.definition(self.db, &env)? else { return None };
             let r = t.definition(self.db, &env)?.focus_range(self.db)?;
             let text = ruff_db::source::source_text(self.db, r.file());
-            text.as_str().get(r.range().start().to_usize()..r.range().end().to_usize()).map(String::from)
+            let name = text.as_str().get(r.range().start().to_usize()..r.range().end().to_usize()).map(String::from)?;
+            let module = file_to_module(self.db, self.db.program_file(r.file()).resolver_file(self.db))?;
+            Some((module.name(self.db).to_string(), name))
         };
         let each: Vec<Param> = params
             .into_iter()
             .map(|(name, (a, b))| {
                 let inside = parts.details.iter().zip(&parts.targets).filter(|(_, r)| u32::from(r.start()) >= a && u32::from(r.end()) <= b);
                 let kinds: Vec<FileArg> = inside
-                    .filter_map(|(d, _)| if let TypeDetail::Type(t) = d { class(t).and_then(|c| file_of(&c)) } else { None })
+                    .filter_map(
+                        |(d, _)| if let TypeDetail::Type(t) = d { class(t).and_then(|(module, c)| file_of(&module, &c)) } else { None },
+                    )
                     .collect();
                 let annotation =
                     parts.label.get(a as usize..b as usize).and_then(|s| s.split_once(':')).map(|(_, t)| t.trim()).unwrap_or("");
@@ -1536,5 +1579,62 @@ mod tests {
         assert!(!ignores_with_codes("# type: ignore"));
         assert!(!ignores_with_codes("# ty: ignore[invalid-method-override]"));
         assert!(!ignores_with_codes("# a type: ignore[override] in prose"));
+    }
+
+    /// The name of a file whose inference panics inside ty, as a fault of ty's would: ty asks for its
+    /// rules while it reports a lint in it.
+    pub(super) const PANICS: &str = "ty_fails_here.py";
+
+    /// The facts ty gives for each of `files` (name, text), read as one project below a fresh
+    /// directory: by each file's name, the calls it records, the values it types and the overrides
+    /// it keeps the promise of, sorted.
+    fn facts(name: &str, files: &[(&str, &str)]) -> std::collections::BTreeMap<String, Option<[Vec<String>; 3]>> {
+        let root = std::env::temp_dir().join(format!("atlas-pytypes-{name}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(root.join("src/demo")).expect("makes the package");
+        std::fs::write(root.join("pyproject.toml"), "[project]\nname = \"demo\"\nversion = \"0\"\n").expect("writes the manifest");
+        let listed: Vec<(String, std::path::PathBuf)> = files
+            .iter()
+            .map(|(file, text)| {
+                let at = root.join("src/demo").join(file);
+                std::fs::write(&at, text).expect("writes the module");
+                (file.to_string(), at)
+            })
+            .collect();
+        let repo = crate::language::read(&root, &crate::Options::default()).expect("reads the project");
+        let types = super::Types::read(&repo, &root, &listed);
+        let _ = std::fs::remove_dir_all(&root);
+        listed
+            .iter()
+            .map(|(file, _)| {
+                let said = types.of(file).map(|f| {
+                    let mut said = [
+                        f.callees.iter().map(|(r, c)| format!("{r:?} {c:?}")).collect::<Vec<_>>(),
+                        f.values.iter().map(|(r, v)| format!("{r:?} {}", v.shown)).collect(),
+                        f.keeps.iter().map(|(at, kept)| format!("{at} {kept}")).collect(),
+                    ];
+                    said.iter_mut().for_each(|s| s.sort());
+                    said
+                });
+                (file.clone(), said)
+            })
+            .collect()
+    }
+
+    /// A panic inside ty on one file leaves that file untyped, and the rest is read as it is without
+    /// it: what ty says of the other file is what it says when that file is read alone, also of a
+    /// class whose override ty checks.
+    #[test]
+    fn a_panic_in_ty_leaves_its_file_untyped_and_the_rest_is_read() {
+        let fine = "from pathlib import Path\n\n\nclass Base:\n    def size(self, p: Path) -> int:\n        return len(p.read_text())\n\n\nclass Kept(Base):\n    def size(self, p: Path) -> int:\n        return 0\n\n\ndef run() -> int:\n    return Kept().size(Path.home())\n";
+        let failing = "count: int = \"many\"\n\n\ndef run() -> str:\n    return str(count)\n";
+        let alone = facts("alone", &[("fine.py", fine)]);
+        let both = facts("panics", &[("fine.py", fine), (PANICS, failing)]);
+        assert_eq!(both.get(PANICS), Some(&None), "the file ty fails on is untyped");
+        assert_eq!(both.get("fine.py"), alone.get("fine.py"));
+        assert!(
+            alone.get("fine.py").is_some_and(|f| f.as_ref().is_some_and(|[calls, _, keeps]| !calls.is_empty() && !keeps.is_empty())),
+            "{alone:?}"
+        );
     }
 }

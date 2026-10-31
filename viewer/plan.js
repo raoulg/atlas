@@ -4,7 +4,7 @@
 // `atlasPlan`): the page inlines it into its own script, where its names are the page's, and `engine/tests/plans.rs`
 // runs it in node on small programs whose plans are written down. It draws nothing and touches no document.
 
-// two readings drawn as one, when the page is their union (`--since`, `atlas history`): what B
+// two readings drawn as one, when the page is their union (`--since`, `atlas-code history`): what B
 // added, removed and changed, stamped on the nodes, steps, touches and edges of the union
 const DIFF = D.diff || null;
 if (DIFF) {
@@ -23,6 +23,8 @@ const has = x => !SIDE || inReading(x, SIDE);
 const edgesBy = new Map();
 for (const e of D.edges) { const k = `${e.src}>${e.dst}>${e.kind}`; if (!edgesBy.has(k)) edgesBy.set(k, []); edgesBy.get(k).push(e); }
 const edgeOn = (src, dst, kind) => { const es = edgesBy.get(`${src}>${dst}>${kind}`); return !es || es.some(has); };
+// a type's id as its module and its own name; a shaped array's shape is part of its name (`ext:jaxtyping.Float[Tensor, ... d]`)
+const idName = id => { const s = id.replace(/^ext:/, ""), cut = s.includes("[") ? s.indexOf("[") : s.length, head = s.slice(0, cut).split("."); return {module: head.slice(0, -1).join("."), name: head.pop() + s.slice(cut)}; };
 // a node by the name it has in the reading drawn: one B renamed has its old name in A
 const nameOf = n => SIDE === "a" && DIFF?.renamed[n.id] ? DIFF.renamed[n.id].split(".").pop() : n.name;
 // a step of a body as the reading drawn has it: in A, a step both readings hold is handed what A hands it
@@ -129,7 +131,7 @@ const holdsFigures = (cls, seen = new Set()) => {
 };
 // whether a parameter holds a value of a type: one its type holds as its language reads it (`Param::holds`, by name: a map
 // holds its values by its keys), or a sum written in place, by the names of its variants (`r: Fit | Failed`)
-const writesType = (p, x) => { const w = new Set(p.holds || []), b = id => id.replace(/^ext:/, "").split(".").pop(); return w.has(b(x)) || (VARIANTS.has(x) && VARIANTS.get(x).every(v => w.has(b(v)))); };
+const writesType = (p, x) => { const w = new Set(p.holds || []), b = id => idName(id).name; return w.has(b(x)) || (VARIANTS.has(x) && VARIANTS.get(x).every(v => w.has(b(v)))); };
 // the values a call is handed and gives, one value per name: the variants of a sum a name holds are the sum, a value
 // of no type a constructor gives is of the class it builds, one a change gives is the value it was handed, and one
 // handed by a name of no type is the value
@@ -343,10 +345,12 @@ function reach(id, on, root = null, chain = null, alts = null) {
 }
 // a route shows the places its own calls hand: a touch whose path or statement a caller makes
 // whole, when the route reaches that caller, and under a step of it, when the caller is on the
-// calls that lead there (`path`); one an entry's users hand, in that entry's route; and a call
-// none of whose touches it runs, as the call was read. A method runs on an instance its class's
-// constructor built, before the route or in it, so a value the constructor holds (`self.path`) is
-// whole wherever a method of its class runs
+// calls that lead there (`path`); one an entry's users hand, in that entry's route; one that
+// several make whole together (`a&b`, an entry's users among them as `users_of:e`), where each
+// holds; and a call none of whose touches it runs, as the call was read. A method runs on an
+// instance its class's constructor built, before the route or in it, so a value the constructor
+// holds (`self.path`) is whole wherever a method of its class runs
+const USERS = "users_of:";
 const builtFor = (g, seen) => {
   const c = byId.get(g);
   return !!(c?.ctor && c.cls) && [...seen].some(f => { const m = byId.get(f); return m && !m.ctor && m.cls === c.cls; });
@@ -354,7 +358,7 @@ const builtFor = (g, seen) => {
 const inRoute = (t, root, path) => {
   if (!root || (!(t.by || []).length && !(t.users_of || []).length) || (t.users_of || []).includes(root)) return true;
   const seen = path || reach(root, null).nodes;
-  return (t.by || []).some(f => f.split("&").every(g => seen.has(g) || builtFor(g, seen)));
+  return (t.by || []).some(f => f.split("&").every(g => g.startsWith(USERS) ? g.slice(USERS.length) === root : seen.has(g) || builtFor(g, seen)));
 };
 function touchesIn(n, root, path) {
   const own = (n.touches || []).filter(has);
@@ -403,9 +407,9 @@ const folds = k => kindsOf(k).length + (here(k) ? 1 : 0) > 1;
 // a type opens when it has kinds or parts of its own, or holds what it shares; (n) counts the types it opens into
 const opens = t => folds(t) || partsOf(t).length > 0 || sharedOf(t).length > 0;
 const opensInto = t => kindsOf(t).length + partsOf(t).length + sharedOf(t).length + (here(t) ? 1 : 0);
-const bare = id => byId.has(id) ? nameOf(byId.get(id)) : id.replace(/^ext:/, "").split(".").pop();
+const bare = id => byId.has(id) ? nameOf(byId.get(id)) : idName(id).name;
 const nameCount = new Map(); for (const n of D.nodes) if (n.kind === "class" || n.kind === "external") nameCount.set(bare(n.id), (nameCount.get(bare(n.id)) || 0) + 1);
-const typeLabel = id => { const b = bare(id); if ((nameCount.get(b) || 0) > 1) { const mod = (byId.get(id)?.module || id.replace(/^ext:/, "").split(".").slice(0, -1).join(".")).split(".").pop(); return mod ? `${mod}.${b}` : b; } return b; };
+const typeLabel = id => { const b = bare(id); if ((nameCount.get(b) || 0) > 1) { const mod = (byId.get(id)?.module || idName(id).module).split(".").pop(); return mod ? `${mod}.${b}` : b; } return b; };
 const entryTitle = id => { const n = byId.get(id); return n.entry ? `${KIND_LABEL[n.entry.kind]} ${n.entry.label}` : short(id); };
 // what a step changes in place is in its codomain too: `T -> T`
 
@@ -694,20 +698,85 @@ const frameOf = t => t === V.route ? undefined : [kindOf(t), t].find(f => V.open
 // it, the door whose parameter it is (the parameters of two doors are two values), the moment its maker made it. A family
 // opened is a frame with the id its closed box had, for each value it stood for (#182)
 const valueBox = (t, {name, door, at} = {}) => "t:" + t + (name ? "~" + name : "") + (door ? "^" + door : "") + (at ? "@" + at : "");
+// open families are frames around their members, one at each moment of the data; a member stands inside the frame of its
+// moment, the family itself is the frame. A value keeps its name in its box and its frame: two values of one family at one
+// moment are two frames, and so are the parameters of two doors, each door called by itself. The frame has the id its
+// closed box had (`valueBox`), and holds the kinds its values can be, each a box of its own (`kids`)
+function familyFrames(places) {
+  const frames = new Map(), nameAt = p => valueBox("", p).slice(2);
+  for (const p of places.values()) {
+    if (!p.type) continue;
+    const f = frameOf(p.type), at = nameAt(p), id = valueBox(f, p);
+    if (!f) continue;
+    if (!frames.has(id)) frames.set(id, {id, fam: f, at, name: p.name, when: p.at, label: places.get(id)?.label, types: new Set()});
+    frames.get(id).types.add(p.type);
+  }
+  for (const F of frames.values()) {
+    const f = F.fam, at = F.at;
+    const inFam = new Set([f, ...(members.get(f) || [])]);
+    const viaOf = m => (inn.get(m) || []).find(e => e.kind === "has" && inFam.has(e.src) && e.via)?.via;
+    // a kind of the family stands in it by the engine's `kind`: a subclass, or a shape of the family's rank
+    const isSub = m => { if (kindOf(m) === f) return true; let cur = m; for (let i = 0; i < 10; i++) { const b = (out.get(cur) || []).find(e => e.kind === "inherits" && inFam.has(e.dst)); if (!b) return false; if (b.dst === f) return true; cur = b.dst; } return false; };
+    // a frame holds the kinds its values can be: a value of one kind is that kind and what derives from it, in the fiber
+    const below = (m, t) => { let cur = m; for (let i = 0; i < 10 && cur; i++) { if (cur === t) return true; cur = (out.get(cur) || []).find(e => e.kind === "inherits")?.dst; } return false; };
+    const can = m => !isSub(m) || (here(m) && [...F.types].some(t => t === f || below(m, t)));
+    F.kids = (members.get(f) || []).filter(m => m !== V.route && can(m)).map(m => ({id: isSub(m) ? "t:" + m + at : `t:${f}${at}/${m}`, label: isSub(m) ? typeLabel(m) : `${viaOf(m) || "·"}: ${typeLabel(m)}`, kind: "type", hue: hueOf(byId.get(m)), type: m, name: F.name, at: F.when, ...(isSub(m) ? {} : {part: true})}));
+    F.kids.push(...sharedOf(f).map(e => ({id: `r:${f}:${e.via}${at}`, label: `${e.via}: ${typeLabel(e.dst)}`, kind: "ref", type: e.dst, part: true})));
+    F.title = (F.label || typeLabel(f)) + (F.kids.some(k => k.kind === "type" && !k.label.includes(": ")) ? " ⊇" : "");
+    F.hue = hueOf(byId.get(f));
+  }
+  return frames;
+}
+// a type picked is a set of values: the type and every type below it, a class below its base or a type below the family
+// `kind` puts it in (a value of a subclass is a value of the class, a shaped array one of its rank family)
+const valuesOf = id => {
+  const S = new Set([id]), stack = [id];
+  while (stack.length) {
+    const t = stack.pop();
+    for (const m of [...(inn.get(t) || []).filter(e => e.kind === "inherits").map(e => e.src), ...(members.get(t) || []).filter(m => kindOf(m) === t)]) if (!S.has(m)) { S.add(m); stack.push(m); }
+  }
+  return S;
+};
+// what a box is and what it holds: a closed family's box, and an open family's frame (`frame`), is a value of the family's
+// type or of one of its kinds in the fiber, and a closed family holds its parts inside; any other box is a value of its type
+const closedFamily = p => (p.kind === "type" || p.kind === "ext") && !p.inFrame && !!p.type && p.type !== V.route && opens(p.type) && !V.open.families.has(p.type);
+const typesIn = p => p.frame || closedFamily(p) ? [p.type, ...kindsOf(p.type)].filter(here) : [p.type];
+const partsIn = p => closedFamily(p) ? partsOf(p.type).filter(here) : [];
+// how a picked set of values lights a box: whole where every type it is is in the set, in part where some are or where it
+// holds one inside. A closed box the set cuts in two by what it is is a family to open (the filter first); what a box holds
+// inside it shows without opening, as a closed step does
+const lightOf = (S, p) => {
+  const ts = p.type ? typesIn(p) : [];
+  return ts.length && ts.every(t => S.has(t)) ? "lit" : [...ts, ...partsIn(p)].some(t => S.has(t)) ? "litpart" : null;
+};
+const cutBy = (S, places) => [...places].filter(p => closedFamily(p) && typesIn(p).some(t => S.has(t)) && !typesIn(p).every(t => S.has(t))).map(p => p.type);
 const typePlace = t => {
   const n = byId.get(t), closedFam = t !== V.route && opens(t) && !V.open.families.has(t);
-  return {id: "t:" + t, label: typeLabel(t) + (closedFam ? ` (${opensInto(t)})` : ""), kind: n && n.kind === "external" ? "ext" : "type", hue: hueOf(n), type: t};
+  // a family no type of the code's is (a rank of shaped arrays, `Float Tensor · 2D`) is of the library its members are
+  return {id: "t:" + t, label: typeLabel(t) + (closedFam ? ` (${opensInto(t)})` : ""), kind: (n ? n.kind === "external" : t.startsWith("ext:")) ? "ext" : "type", hue: hueOf(n), type: t};
 };
 const stepName = id => { if (id.startsWith("part:")) { const p = PARTS.find(x => x.id === id.slice(5)) || {}; return `${p.id} · ${p.language}`; } if (id.startsWith("unit:")) return unitLabel(id.slice(5)); const n = byId.get(id); if (!V.route && n.entry) return entryLabel(n); if (n.kind === "class") return nameOf(n) + "()"; if (n.make) return n.name; if (isCtor(n) && !n.on_class) return typeLabel(n.cls) + "()"; return n.cls ? `${typeLabel(n.cls)}.${nameOf(n)}` : nameOf(n); };
-// a step's name: a method run on a subclass is that class's, one its call names is its own class's, a library's
-// operation is its own name
+// the call names the method it runs, through a class (`Section.show(s, h)`) or through `super()`: the call's own site,
+// or for what a call may run instead, the site of that call
+const namesItsMethod = key => {
+  const i = treeInfo.get(key), s = (i?.dispatch != null ? treeInfo.get(i.dispatch) : i)?.site;
+  return !!s && (!!s.named || !!s.after);
+};
+// a step's name: a method run on a class it is known to run on is that class's (`D.f`, `mathematics.md`, "Method
+// resolution order"), one its call names is its own class's, a library's operation is its own name
 const stepLabel = key => {
   const info = treeInfo.get(key);
   if (!info) return stepName(key);
   if (info.step.startsWith("op:")) return info.step.slice(3);
   if (info.built) return typeLabel(info.built) + "()";
   const n = byId.get(info.step);
-  return info.on && !info.named && n && n.cls && !isCtor(n) ? `${typeLabel(info.on)}.${nameOf(n)}` : stepName(info.step);
+  return info.on && !namesItsMethod(key) && n && n.cls && !isCtor(n) ? `${typeLabel(info.on)}.${nameOf(n)}` : stepName(info.step);
+};
+// how many functions the call at a step may run, one of them: the one it reaches, unless an interface, a protocol, a
+// trait or an abstract class only declares it, and each it may run instead; 0 where it runs one function
+const oneOf = key => {
+  const alts = treeInfo.get(key)?.alts ?? bodyOf(stepOf(key), null).alts ?? [];
+  return alts.length ? alts.length + (byId.get(stepOf(key))?.declared ? 0 : 1) : 0;
 };
 // what the call at a step of the route may run instead, where its call says so (a call that names its method)
 const callAlts = key => (treeInfo.get(key)?.named ? treeInfo.get(key).alts : null);
@@ -995,7 +1064,7 @@ const stepMorphism = (key, own, isAnchor, leaf) => {
   // the names its body binds, by a step or by its own code (`Node::binds`, a literal among them)
   const fnode = byId.get(step), declared = declaredIn(step);
   const kept_ = new Set((fnode?.touches || []).filter(t => t.kind === "global").map(t => t.what));
-  const modular = u => !!u.name && !u.name.startsWith("#") && !!u.type && !declared.has(u.name) && !kept_.has(u.name) && u.name !== u.type.replace(/^ext:/, "").split(".").pop();
+  const modular = u => !!u.name && !u.name.startsWith("#") && !!u.type && !declared.has(u.name) && !kept_.has(u.name) && u.name !== idName(u.type).name;
   const uses = (!own || step.startsWith("op:") ? [] : !leaf ? (fnode?.uses || []).filter(u => u.name || u.type) : (fnode?.uses || []).filter(modular).map(u => ({...u, arms: []}))).map(u => (modular(u) ? {...u, extern: true} : u));
   // what an opened step changes of a value it was handed goes out at its border as what its steps made of it: its own arrow
   // takes the value each name it changes holds at its end (`self`, `lines`), of whatever type
@@ -1026,7 +1095,7 @@ const build = (node, parent, caller) => {
     const fid = "n:" + node.id, kids = [];
     // what the step shows closed, kept for the places it shows: opening it refines the code and leaves them where they stood
     const shut = fine || node.id === V.route || libraryClass(stepOf(node.id)) ? null : stepMorphism(node.id, false, false);
-    frames.set(fid, {id: fid, step: node.id, parent, hue: node.hue, branch: node.branch, choice: node.choice, anchor: node.id === V.route, ...(node.parse ? {parse: true} : {}), closed: shut && {goes: shut.goes, cod: shut.cod, hb: !!parent && !caller && !/^(part|unit|op):/.test(node.id) && goesBack(node.id, shut.cod, shut.errs)}, title: (node.id === V.route ? entryTitle(node.id) : stepLabel(node.id)) + (node.choice ? " · one of" : "")});
+    frames.set(fid, {id: fid, step: node.id, parent, hue: node.hue, branch: node.branch, choice: node.choice, anchor: node.id === V.route, ...(node.parse ? {parse: true} : {}), closed: shut && {goes: shut.goes, cod: shut.cod, hb: !!parent && !caller && !/^(part|unit|op):/.test(node.id) && goesBack(node.id, shut.cod, shut.errs)}, title: (node.id === V.route ? entryTitle(node.id) : stepLabel(node.id)) + (node.choice ? ` · one of ${oneOf(node.id)}` : "")});
     const lib = libraryClass(stepOf(node.id));
     // a library class that is the route starts at its public methods; met inside a route it is a call like another, with its own arrow
     const own = (lib && node.id === V.route) || node.id.startsWith("unit:") ? {dom: new Map(), cod: new Map(), goes: new Map()} : stepMorphism(node.id, true, node.id === V.route);
@@ -1913,7 +1982,9 @@ const imageOf = (F, opened, folded, {fineKeys = false} = {}) => {
   for (const P of [...pills.values()]) if (P.backTo && !pills.has(P.backTo)) delete P.backTo;
   for (const P of pills.values()) if (P.backTo) inc.set(`${P.backFrom}|back`, {way: "B", P: P.backFrom, k: P.backTo, p: P.id, c: P.backTo});
   // places with the same incidence are one block of the quotient with a multiplicity: the values that only one closed step takes
-  // and no step makes are the same block (one neighbour, no maker), drawn as a count on the step and drawn apart when it opens
+  // and no step makes are the same block (one neighbour, no maker), drawn as a count on the step and drawn apart when it opens.
+  // A value the body makes in a frame of its own (`@`, made there by no step) stands in that frame, and a block of the
+  // quotient holds no values of two frames: it is drawn by itself
   const joined = new Map(), at = new Map();
   for (const i of inc.values()) {
     if (i.way === "B") continue;
@@ -1923,7 +1994,7 @@ const imageOf = (F, opened, folded, {fineKeys = false} = {}) => {
   const free = new Map();
   for (const [id, e] of at) {
     const pl = places.get(id);
-    if (e.ways.size !== 1 || !e.ways.has("D") || e.blocks.size !== 1 || !pl || !/^[tv]:/.test(id) || (pl.type && (opens(pl.type) || pl.type === V.route)) || famId(pl)) continue;
+    if (e.ways.size !== 1 || !e.ways.has("D") || e.blocks.size !== 1 || !pl || pl.at || !/^[tv]:/.test(id) || (pl.type && (opens(pl.type) || pl.type === V.route)) || famId(pl)) continue;
     const b = [...e.blocks][0], P = pills.get(b);
     if (!P || P.own || /^(unit|part):/.test(P.steps[0])) continue;
     if (!free.has(b)) free.set(b, []);
@@ -1959,7 +2030,7 @@ const cutArrows = new Map(), makerSets = new Map(), siteIds = new WeakMap();
 // the callers whose calls make a path whole for a touch the step reaches: the only ones its arrow depends on
 const pathMakers = (step, on, alts = null) => {
   const k = `${SIDE}|${step}@${on || ""}${alts ? "!" + alts : ""}`;
-  if (!makerSets.has(k)) makerSets.set(k, new Set([...reach(step, on, null, null, alts).nodes].flatMap(id => (byId.get(id)?.touches || []).flatMap(t => (t.by || []).flatMap(f => f.split("&"))))));
+  if (!makerSets.has(k)) makerSets.set(k, new Set([...reach(step, on, null, null, alts).nodes].flatMap(id => (byId.get(id)?.touches || []).flatMap(t => (t.by || []).flatMap(f => f.split("&").filter(g => !g.startsWith(USERS)))))));
   return makerSets.get(k);
 };
 let sites = 0;
@@ -2062,7 +2133,7 @@ const coarsen = F => {
   // the storage quotient and the fold of the disk are taken on the places of the finest plan, whatever is open
   const ways = new Map();
   for (const P of F.pills.values()) for (const [way, m] of [["in", P.D], ["out", P.C]]) for (const k of m.keys()) { if (!ways.has(k)) ways.set(k, new Set()); ways.get(k).add(way); }
-  return {places: view.places, pills: view.pills, frames: view.frames, restArrows: [], folded: view.folded, roles, home: view.homeOf, fine: {places: F.places, ways}, oracle: window.ATLAS_ORACLE ? checkOpenings(F, view, folded) : null};
+  return {places: view.places, pills: view.pills, frames: view.frames, restArrows: [], folded: view.folded, roles, home: view.homeOf, fine: {places: F.places, pills: F.pills, ways}, oracle: window.ATLAS_ORACLE ? checkOpenings(F, view, folded) : null};
 };
 const plan = () => {
   if (!V.route) return planBase(false);

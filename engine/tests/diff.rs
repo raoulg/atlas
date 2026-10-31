@@ -166,7 +166,7 @@ fn made_whole(g: &Graph, d: &Diff, r: Reading, caller: &str) -> Vec<(String, Sid
     side.nodes
         .iter()
         .flat_map(|n| &n.touches)
-        .filter(|t| t.by.iter().any(|b| b.split('&').any(|f| f == caller)))
+        .filter(|t| t.by.iter().any(|b| b.members().any(|f| f == caller)))
         .map(|t| (t.drawn().place.id, t.drawn().side))
         .collect()
 }
@@ -676,4 +676,15 @@ fn the_log_names_branches_and_tags() {
     assert_eq!(changes::refs("HEAD"), [changes::Ref { name: "HEAD".into(), kind: RefKind::Head }], "a detached HEAD");
     assert_eq!(changes::refs("refs/remotes/origin/main, refs/stash"), [changes::Ref { name: "origin/main".into(), kind: RefKind::Remote }]);
     done(&repo);
+}
+
+/// Interface contract: a verdict is written in JSON as its name, the form the page and
+/// `atlas changes --json` read, and the text marks each verdict with a sign of its own.
+#[test]
+fn a_verdict_is_written_as_its_name_and_marked_by_a_sign_of_its_own() {
+    let all = [Status::Added, Status::Removed, Status::Changed];
+    let names: Vec<String> = all.iter().map(|s| serde_json::to_string(s).unwrap()).collect();
+    assert_eq!(names, ["\"added\"", "\"removed\"", "\"changed\""]);
+    let signs: BTreeSet<char> = all.iter().map(|s| s.sign()).collect();
+    assert_eq!(signs.len(), all.len(), "{signs:?}");
 }

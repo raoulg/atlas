@@ -131,6 +131,9 @@ svg#canvas:active{cursor:grabbing}
 #crumbs button{font:inherit;font-family:var(--mono);font-size:11px;border:1px solid var(--line);background:var(--panel);color:var(--ink);border-radius:0;padding:1px 9px;cursor:pointer}
 #crumbs button:hover{border-color:var(--ink-3)}
 #crumbs button.all{margin-left:8px;font-weight:600}
+/* a strip over the picture takes the pointer only where it draws something */
+#crumbs,#zoomctl,#hint{pointer-events:none}
+#crumbs > *,#zoomctl > *,#hint > *{pointer-events:auto}
 .sedge.reach{stroke-dasharray:5 4}
 .sedge.back{stroke-dasharray:1 3;stroke-linecap:round}
 .sedge.uses{stroke-dasharray:1 3;stroke-linecap:round;opacity:.7}
@@ -293,6 +296,11 @@ pre.code .l::before{counter-increment:ln;content:counter(ln);display:inline-bloc
 .tnode{cursor:pointer}
 .tnode rect.bg{fill:var(--panel);stroke:var(--line)}
 .tnode.ghost rect.bg{stroke-dasharray:4 3;fill:transparent}
+/* the fiber of a picked type, lit in its route; the rest of the route stays, dimmed. A closed box only some of whose values are of the type is lit dashed */
+.scene.fibered .tnode:not(.lit):not(.litpart){opacity:.3}
+.tnode.lit rect.bg{stroke:var(--focus);stroke-width:2.6;stroke-dasharray:none;fill:color-mix(in oklab, var(--focus) 14%, var(--panel))}
+.tnode.litpart rect.bg,.tstep.litpart rect.bg{stroke:var(--focus);stroke-width:2.2;stroke-dasharray:5 3}
+.frame.fam.lit > rect.bg{stroke:var(--focus);stroke-width:2.6}
 /* a prophecy: sketch code not built yet, in its own colour with a dotted border and full-strength text; veiled, the dots are finer, as the shape is not known either */
 .tstep.prophecy rect.bg,.tnode.prophecy rect.bg{stroke:var(--proph);stroke-dasharray:2 3.5;stroke-linecap:round;stroke-width:2;fill:color-mix(in oklab, var(--proph) 9%, var(--panel))}
 .tstep.prophecy.veiled rect.bg,.tnode.prophecy.veiled rect.bg{stroke-dasharray:.1 5}
@@ -344,7 +352,7 @@ pre.code .l::before{counter-increment:ln;content:counter(ln);display:inline-bloc
     <div class="sub">what the page does not show by itself</div>
     <dl>
       <dt><kbd>shift</kbd>-click a package</dt><dd>add it to the focus, or drop it (Flowchart)</dd>
-      <dt>double-click a box</dt><dd>pin its lines; a second box adds its own</dd>
+      <dt>double-click a box</dt><dd>pin its lines; a second box adds its own. In the Type lattice: light its values in the Flowchart</dd>
       <dt>double-click empty space · <kbd>Esc</kbd></dt><dd>let go of the pinned lines</dd>
       <dt><kbd>space</kbd> over a box</dt><dd>its details and code over the picture; <kbd>space</kbd>, <kbd>Esc</kbd> or a click on the picture puts them away</dd>
       <dt>drag the panel's edge</dt><dd>make the code panel wider or narrower</dd>
@@ -407,7 +415,7 @@ for (const e of D.edges) {
 { const count = k => OWN.filter(n => n.kind === k).length;
   document.getElementById("stats").textContent = `${modules.length} modules · ${count("class")} classes · ${count("function")} functions · ${D.edges.filter(e => e.kind !== "contains" && !byId.get(e.src)?.library).length} edges`; }
 
-// ---------- findings: what the principles ask of the code, as `atlas check` lists them ----------
+// ---------- findings: what the principles ask of the code, as `atlas-code check` lists them ----------
 // each finding by the node it is about
 const ASKS = new Map();
 for (const f of D.findings || []) { if (!ASKS.has(f.node)) ASKS.set(f.node, []); ASKS.get(f.node).push(f); }
@@ -440,6 +448,8 @@ const zoom = d3.zoom().scaleExtent([0.08, 4]).on("zoom", ev => { scene.attr("tra
 // the boxes whose lines stay lit, pinned by a double click; `repaintPins` lights them in the picture
 const pinned = new Set();
 let repaintPins = () => {};
+// a type picked in the lattice, lit where its values flow: `lightIn`
+let lit = null;
 // one click acts after a beat, so that a second click makes it a double click
 function clicks(node, once, twice) {
   let t = null;
@@ -449,6 +459,28 @@ function clicks(node, once, twice) {
 }
 listen(document, "keydown", ev => { if (ev.key === "Escape" && pinned.size) { pinned.clear(); repaintPins(); crumbs(); } });
 svg.call(zoom).on("dblclick.zoom", null);
+// a wheel takes the camera from a move under way (after a render, `goTo`, `centre`, `fit`, + and −)
+svg.node().addEventListener("wheel", () => svg.interrupt(), {capture: true, passive: true, signal: controller.signal});
+// a press on the picture released outside the frame (Studio's bar, another window) never reaches the page: the first
+// move with no button held ends the drag, so the picture stops following the pointer
+{ let pressed = false;
+  listen(svg.node(), "mousedown", ev => { pressed = ev.button === 0; }, true);
+  listen(window, "mouseup", () => { pressed = false; }, true);
+  listen(window, "mousemove", ev => {
+    if (!pressed || ev.buttons & 1) return;
+    pressed = false;
+    window.dispatchEvent(new MouseEvent("mouseup", {clientX: ev.clientX, clientY: ev.clientY, screenX: ev.screenX, screenY: ev.screenY, view: window}));
+  }, true); }
+// the page listens for the wheel on the document, since WebKit hands a framed page (Studio's view) a wheel only where
+// the page listens for one, and counts a listener on the document from the first wheel but one on the picture alone
+// not until the page has been used. What stands on the picture passes the wheel on to it: the state bar, the zoom's
+// buttons and the hint let the pointer through where they draw nothing (CSS); their words and buttons, the legend and
+// the status bar hand it to the zoom. A wheel over the inspector scrolls it.
+document.addEventListener("wheel", ev => {
+  if (!ev.target.closest?.("main") || svg.node().contains(ev.target)) return;
+  ev.preventDefault();
+  svg.node().dispatchEvent(new WheelEvent("wheel", ev));
+}, {passive: false, signal: controller.signal});
 // a double click on empty space lets the pinned boxes go
 svg.on("dblclick.pins", ev => { if (pinned.size && !ev.target.closest("g.tstep, g.tnode")) { pinned.clear(); repaintPins(); crumbs(); } });
 // the height the state bar takes at the top of the canvas, when it shows
@@ -480,7 +512,7 @@ function fit(animate = false, pad = 40, tries = 0) {
   const bb = document.getElementById("scene").getBBox();
   if (!bb.width || !bb.height) return;
   const top = barHeight();  // keep the state bar clear
-  let s = Math.max(0.08, Math.min((W - pad*2) / bb.width, (H - top - pad*2) / bb.height, 1.4));
+  let s = Math.max(zoom.scaleExtent()[0], Math.min((W - pad*2) / bb.width, (H - top - pad*2) / bb.height, 1.4));
   let t = d3.zoomIdentity.translate(W/2 - s*(bb.x + bb.width/2), top + (H - top)/2 - s*(bb.y + bb.height/2)).scale(s);
   if (animate) svg.transition().duration(300).call(zoom.transform, t); else svg.call(zoom.transform, t);
 }
@@ -488,8 +520,16 @@ document.getElementById("fit").onclick = () => fit(true);
 document.getElementById("zin").onclick = () => svg.transition().duration(150).call(zoom.scaleBy, 1.25);
 document.getElementById("zout").onclick = () => svg.transition().duration(150).call(zoom.scaleBy, 0.8);
 document.getElementById("zone").onclick = () => { const t = d3.zoomTransform(svg.node()); svg.transition().duration(200).call(zoom.transform, d3.zoomIdentity.translate(t.x, t.y).scale(1)); };
-let userZoomed = false;
-zoom.on("zoom.user", ev => { if (ev.sourceEvent) userZoomed = true; });
+// a move is the reader's when it comes with an event not felt before: a move the page makes while a wheel or a drag is
+// under way comes with that gesture's last event again
+let userZoomed = false, felt = null;
+zoom.on("zoom.user", ev => {
+  if (!ev.sourceEvent || ev.sourceEvent === felt) return;
+  felt = ev.sourceEvent;
+  userZoomed = true;
+  // a wheel or a drag while a new reading is drawn moves the camera the page comes back to
+  if (back) back.t = [ev.transform.x, ev.transform.y, ev.transform.k];
+});
 listen(window, "resize", () => { if (!userZoomed) { if (lessonEmbed) frameLesson(lessonAt); else fit(); } });
 { const rz = document.getElementById("resizer"); let drag = false;
   rz.addEventListener("mousedown", e => { drag = true; e.preventDefault(); document.body.style.cursor = "col-resize"; });
@@ -526,7 +566,7 @@ let hoverTarget = null;  // shows what is under the pointer in the inspector
       if (peeking) peek(false); else if (hoverTarget) { hoverTarget(); peek(true); }
     } else if (ev.key === "Escape" && peeking) { peek(false); ev.stopPropagation(); }
   }, true);
-  document.getElementById("canvas").addEventListener("click", ev => { if (app.classList.contains("peek") && !ev.target.closest("g.tstep, g.tnode, .frame")) peek(false); });
+  listen(document.getElementById("canvas"), "click", ev => { if (app.classList.contains("peek") && !ev.target.closest("g.tstep, g.tnode, .frame")) peek(false); });
   document.getElementById("peekclose").onclick = () => peek(false);
   document.getElementById("peekpin").onclick = () => { peek(false); document.getElementById("codetoggle").click(); }; }
 
@@ -535,16 +575,24 @@ let view = "plaat", selected = null;
 document.querySelectorAll(".tabs button").forEach(b => b.addEventListener("click", () => { view = b.dataset.view; plaatFit = true; prevPos = new Map(); prevParent = new Map(); document.querySelectorAll(".tabs button").forEach(x => x.setAttribute("aria-selected", x === b)); render(); }));
 
 // ---------- type lattice ----------
+// the order the lattice draws: a class below its base, and a type below the family the engine's `kind` puts it in where no
+// base says so (a shaped array below its rank family); a box stands as its class, or as the family where it is no node
+let latticeUp = new Map();
+const latticeNode = id => byId.get(id) || {id, name: typeLabel(id), kind: "external", module: idName(id).module};
 function renderTypes() {
   const g = scene.node();
   const classes = OWN.filter(n => n.kind === "class");
   const parentOf = new Map(), kids = new Map();
-  for (const c of classes) { const e = (out.get(c.id) || []).find(x => x.kind === "inherits"); if (e) { parentOf.set(c.id, e.dst); if (!kids.has(e.dst)) kids.set(e.dst, []); kids.get(e.dst).push(c.id); } }
+  const below = (m, up) => { parentOf.set(m, up); if (!kids.has(up)) kids.set(up, []); kids.get(up).push(m); };
+  for (const c of classes) { const e = (out.get(c.id) || []).find(x => x.kind === "inherits"); if (e) below(c.id, e.dst); }
+  for (const [f, ms] of members) for (const m of ms) if (kindOf(m) === f && m !== f && !parentOf.has(m) && byId.has(m)) below(m, f);
+  latticeUp = parentOf;
   const roots = [...new Set([...kids.keys()].filter(k => k.startsWith("ext:") || !parentOf.has(k)))];
   const singles = classes.filter(c => !parentOf.has(c.id) && !kids.has(c.id)).map(c => c.id);
-  const W = 168, H = 40, HG = 14, VG = 54, GRID = 6, RG = 14;
+  const named = [...parentOf.keys(), ...kids.keys(), ...singles].map(id => latticeNode(id).name.length);
+  const W = Math.max(168, 30 + 6.6 * Math.max(0, ...named)), H = 40, HG = 14, VG = 54, GRID = 6, RG = 14;
   const size = id => 1 + (kids.get(id) || []).reduce((s, k) => s + size(k), 0);
-  const sortedKids = id => (kids.get(id) || []).slice().sort((a, b) => size(b) - size(a) || byId.get(a).name.localeCompare(byId.get(b).name));
+  const sortedKids = id => (kids.get(id) || []).slice().sort((a, b) => size(b) - size(a) || latticeNode(a).name.localeCompare(latticeNode(b).name));
   // a family of more than GRID leaf children is laid out as a grid instead of one long row
   const isGrid = id => { const k = kids.get(id) || []; return k.length > GRID && k.every(c => !(kids.get(c) || []).length); };
   const dims = id => {
@@ -558,7 +606,7 @@ function renderTypes() {
   const lg = el("g", {}, g), ng = el("g", {}, g);
   let x = 40, y = 60, rowH = 0; const maxX = 2400;
   function place(id, x0, y0) {
-    const n = byId.get(id), d = dims(id), cx = x0 + d.w/2;
+    const n = latticeNode(id), d = dims(id), cx = x0 + d.w/2;
     drawTypeNode(ng, n, cx - W/2, y0, W, H, (kids.get(id) || []).length);
     const ks = sortedKids(id);
     if (!ks.length) return;
@@ -568,7 +616,7 @@ function renderTypes() {
       ks.forEach((k, i) => {
         const r = Math.floor(i / GRID), c = i % GRID, kx = x0 + c * (W + HG), ky = top + r * (H + RG);
         el("path", {class: "tlink", d: r === 0 ? `M${kx + W/2},${busY} V${ky}` : `M${kx + W/2},${ky - RG} V${ky}`}, lg);
-        drawTypeNode(ng, byId.get(k), kx, ky, W, H, 0);
+        drawTypeNode(ng, latticeNode(k), kx, ky, W, H, 0);
       });
       return;
     }
@@ -607,17 +655,17 @@ function drawTypeNode(g, n, x, y, W, H, nkids) {
     el("text", {class: "dmark", x: W + 3, y: 3}, grp).textContent = MARK[n.ds];
     el("title", {}, grp).textContent = n.ds === "changed" ? `changed · was ${DIFF.was[n.id] || ""}` : `${n.ds} in B`;
   }
-  grp.addEventListener("click", () => select(n.id));
-  grp.addEventListener("mouseenter", () => focusType(n.id, true));
-  grp.addEventListener("mouseleave", () => focusType(n.id, false));
+  clicks(grp, () => selectType(n.id), () => lightIn(n.id));
+  grp.addEventListener("mouseenter", () => { focusType(n.id, true); hoverTarget = () => selectType(n.id); });
+  grp.addEventListener("mouseleave", () => { focusType(n.id, false); hoverTarget = null; });
 }
 function focusType(id, on) {
   const s = scene.node(); s.classList.toggle("focus", on); s.querySelectorAll(".on").forEach(x => x.classList.remove("on"));
   if (!on) return;
   const rel = new Set([id]);
-  for (const e of D.edges) if (e.kind === "inherits" && (e.src === id || e.dst === id)) { rel.add(e.src); rel.add(e.dst); }
+  for (const [m, up] of latticeUp) if (up === id) rel.add(m);
   // whole chain up
-  let cur = id; for (let i = 0; i < 10; i++) { const e = (out.get(cur) || []).find(x => x.kind === "inherits"); if (!e) break; rel.add(e.dst); cur = e.dst; }
+  for (let cur = latticeUp.get(id), i = 0; cur && i < 10; cur = latticeUp.get(cur), i++) rel.add(cur);
   rel.forEach(r => { const n = s.querySelector(`.tnode[data-id="${CSS.escape(r)}"]`); if (n) n.classList.add("on"); });
 }
 
@@ -690,10 +738,10 @@ entrySel.addEventListener("change", () => {
   else if (v.startsWith("kind:")) { V.kind = v.slice(5); V.route = null; V.part = null; } else { V.kind = null; V.route = v || null; if (!v) V.part = null; }
   V.open.steps.clear(); plaatFit = true; render();
 });
-// a file named on the command line (`atlas view demo/x.ipynb`) opens on its route
+// a file named on the command line (`atlas-code view demo/x.ipynb`) opens on its route
 if (D.open && byId.has(D.open)) { V.route = D.open; entrySel.value = D.open; }
 // a view written down: in the address, so that a picture can be linked, or handed to the page by
-// `atlas view --view` (an agent's); the address comes first
+// `atlas-code view --view` (an agent's); the address comes first
 const viewData = () => {
   const o = {};
   if (V.route) o.route = V.route;
@@ -737,7 +785,6 @@ const KIND_NAME = {cmd: "start", file: "file", db: "database", web: "web", scree
 const placeKind = id => id.startsWith("e:") ? "cmd" : placeGlyph.get(id) || (/^w:(File|Disk)/.test(id) ? "file" : /^w:(DuckDB|SQLite|GraphDB|SQL)\b/.test(id) ? "db" : id.startsWith("w:Web") ? "web" : id.startsWith("w:Screen") ? "screen" : /^w:(LLM|Model)\b/.test(id) ? "model" : id.startsWith("w:open") ? "proc" : null);
 const glyphSvg = kind => `<svg class="glyph" width="13" height="13" viewBox="0 0 14 14" style="color:var(--k-${kind})">${GLYPH[kind]}</svg>`;
 function glyphAt(parent, kind, x, y) { const g = el("g", {class: "glyph", transform: `translate(${x},${y})`, style: `color:var(--k-${kind})`}, parent); g.innerHTML = GLYPH[kind]; return g; }
-const altCount = id => (bodyOf(id, null).alts || []).length;
 // two orders of ids as one: what both hold keeps its order, and between two such, what only the
 // first holds comes before what only the second holds, as a diff interleaves lines
 const interleave = (xs, ys) => {
@@ -800,6 +847,11 @@ const ELK_WORKER = /*__ELK_WORKER__*/null, KEPT = 48;
 const SUPERSEDED = new Error("laid out for a picture no longer asked for");
 const LAYOUTS = new Map();      // input → the promise of its layout, the least recently used first
 const rate = {ms: 0, size: 0};  // how long this page's layouts took, by their boxes and lines
+// A layer keeps the order the code gives its boxes and lines in (ELK's model order) in a picture of up to this many
+// lines. ELK sorts each layer against every line that passes through it, which grows with the square of the layer:
+// free in the pictures of a route or a package (at most about 200 lines), twenty seconds in one of 750 (#320), where
+// the boxes are too many to read an order in. Beyond it ELK orders a layer by its crossings alone.
+const ORDERED_LINES = 400;
 let elkUrl = null, layWorker = null;
 const sizeOf = n => 1 + (n.edges || []).length + (n.children || []).reduce((s, c) => s + sizeOf(c), 0);
 const startWorker = () => {
@@ -907,7 +959,7 @@ async function renderPlaat(mine) {
     if (A.fine && B.fine) {
       const ways = new Map(), fp = new Map([...A.fine.places, ...B.fine.places]);
       for (const f of [A.fine, B.fine]) for (const [k, w] of f.ways) ways.set(k, new Set([...(ways.get(k) || []), ...w]));
-      fine = {places: fp, ways};
+      fine = {places: fp, pills: new Map([...A.fine.pills, ...B.fine.pills]), ways};
     }
     return {places, pills, frames, restArrows: [...rest.values()], roles, home, fine, oracle};
   };
@@ -999,11 +1051,12 @@ async function renderPlaat(mine) {
   }
   // siblings that draw the same lines on the finest plan (the same places, versions and channels) are one pill: a
   // quotient of the plan's steps, so it is the same whatever else is open, and each of its lines stands for the
-  // lines of all of them. In a union, only siblings that both readings, or the same one, hold, and that changed alike
+  // lines of all of them. In a union, only siblings that both readings, or the same one, hold, and that changed alike.
+  // A step the reader opened stands on its own: opening the pill refines the quotient into its members
   const merged = new Map();
   const counts = (P, n) => P[n] || new Map([...(n[0] === "D" ? P.D : P.C)].filter(([, r]) => n[1] === "n" || r).map(([k]) => [k, 1]));
   for (const P of [...pills.values()]) {
-    if (P.own || P.hue || P.steps[0].startsWith("part:") || P.steps[0].startsWith("unit:")) continue;
+    if (P.own || P.hue || P.steps[0].startsWith("part:") || P.steps[0].startsWith("unit:") || P.steps.some(st => V.open.steps.has(st))) continue;
     const lines = P.fine ?? [...P.D.keys()].sort() + ">" + [...P.C.keys()].sort();
     const key = (P.parent || "") + "|" + lines + "|" + (P.backTo || "") + "|" + [...(P.sides || [])].sort() + "|" + stepChanged(P.steps);
     const Q = merged.get(key);
@@ -1031,31 +1084,17 @@ async function renderPlaat(mine) {
   // open families are frames around their members, one at each moment of the data; a member stands
   // inside the frame of its moment, the family itself is the frame. A type opens where it stood closed:
   // in the kind it is a kind of, or as itself; a part stands on its own, as it did closed
-  const famFrames = new Map();
-  // a value keeps its name in its box and its frame: two values of one family at one moment are two frames, and so are the
-  // parameters of two doors, each door called by itself. The frame has the id its closed box had (`valueBox`)
-  const nameAt = p => valueBox("", p).slice(2);
-  for (const p of places.values()) {
-    if (!p.type) continue;
-    const f = frameOf(p.type), at = nameAt(p), id = valueBox(f, p);
-    if (!f) continue;
-    if (!famFrames.has(id)) famFrames.set(id, {id, fam: f, at, name: p.name, when: p.at, label: places.get(id)?.label, types: new Set()});
-    famFrames.get(id).types.add(p.type);
-  }
+  const famFrames = familyFrames(places);
   for (const F of famFrames.values()) {
-    const f = F.fam, at = F.at;
     places.delete(F.id); keep.delete(F.id);
-    const inFam = new Set([f, ...(members.get(f) || [])]);
-    const viaOf = m => (inn.get(m) || []).find(e => e.kind === "has" && inFam.has(e.src) && e.via)?.via;
-    const isSub = m => { let cur = m; for (let i = 0; i < 10; i++) { const b = (out.get(cur) || []).find(e => e.kind === "inherits" && inFam.has(e.dst)); if (!b) return false; if (b.dst === f) return true; cur = b.dst; } return false; };
-    // a frame holds the kinds its values can be: a value of one kind is that kind and what derives from it, in the fiber
-    const below = (m, t) => { let cur = m; for (let i = 0; i < 10 && cur; i++) { if (cur === t) return true; cur = (out.get(cur) || []).find(e => e.kind === "inherits")?.dst; } return false; };
-    const can = m => !isSub(m) || (here(m) && [...F.types].some(t => t === f || below(m, t)));
-    F.kids = (members.get(f) || []).filter(m => m !== V.route && can(m)).map(m => ({id: isSub(m) ? "t:" + m + at : `t:${f}${at}/${m}`, label: isSub(m) ? typeLabel(m) : `${viaOf(m) || "·"}: ${typeLabel(m)}`, kind: "type", hue: hueOf(byId.get(m)), type: m, name: F.name, at: F.when}));
-    F.kids.push(...sharedOf(f).map(e => ({id: `r:${f}:${e.via}${at}`, label: `${e.via}: ${typeLabel(e.dst)}`, kind: "ref", type: e.dst})));
-    F.title = (F.label || typeLabel(f)) + (F.kids.some(k => k.kind === "type" && !k.label.includes(": ")) ? " ⊇" : "");
-    F.hue = hueOf(byId.get(f));
     for (const k of F.kids) { places.set(k.id, {...k, inFrame: F.id}); keep.add(k.id); }
+  }
+
+  // at the pick, the closed families the picked values cut in two open, until none does: a lit box is all of the type
+  if (lit?.fresh) {
+    const cut = cutBy(lit.types, [...places.values()].filter(p => keep.has(p.id)));
+    if (cut.length) { for (const f of cut) V.open.families.add(f); crumbs(); writeView(); return renderPlaat(mine); }
+    lit.fresh = false;
   }
 
   // the node a step stands for, as a finding names it: a package (not its own module beside its
@@ -1068,7 +1107,6 @@ async function renderPlaat(mine) {
   // code, a step of a body, a place. A type the picture draws as a box of its own, or inside a closed
   // family, is not inside a package, and a finding the picture marks with a dot is not inside one
   // either. Edges are not counted: they show at the border, or once the box is opened.
-  const closedFamily = p => (p.kind === "type" || p.kind === "ext") && !p.inFrame && !!p.type && p.type !== V.route && opens(p.type) && !V.open.families.has(p.type);
   const alone = new Set(), inFamily = new Set();
   for (const p of places.values()) if (p.type && keep.has(p.id)) { alone.add(p.type); if (closedFamily(p)) for (const m of members.get(p.type) || []) inFamily.add(m); }
   const notAlone = id => !alone.has(id) && !inFamily.has(id);
@@ -1213,7 +1251,7 @@ async function renderPlaat(mine) {
     if (P.own && P.steps[0].startsWith("part:")) { const rs = requesters(P.steps[0].slice(5)); return rs.length <= 2 ? rs.join(", ") : `${rs.slice(0, 2).join(", ")} +${rs.length - 2}`; }
     if (P.own) return stepLabel(P.steps[0]);
     const ns = [...new Set(P.steps.map(stepLabel))], text = ns.length <= 2 ? ns.join(", ") : `${ns.slice(0, 2).join(", ")} +${ns.length - 2}`;
-    const at = treeInfo.get(P.steps[0]), alts = P.steps.length === 1 && !stepOf(P.steps[0]).startsWith("op:") ? (at ? at.alts.length : altCount(P.steps[0])) : 0;
+    const alts = P.steps.length === 1 && !stepOf(P.steps[0]).startsWith("op:") ? oneOf(P.steps[0]) : 0;
     return (P.steps.some(st => treeInfo.get(st)?.recursive) ? "↻ " : P.steps.some(openable) || !V.route ? "▸ " : "") + text + (alts ? ` · one of ${alts}` : "") + (P.folded ? ` · +${P.folded} types` : "");
   };
   // in a union, a step named otherwise in A reads `old → new`
@@ -1373,7 +1411,7 @@ async function renderPlaat(mine) {
   for (const e of root.edges) { const t = bundleOf(edgeInfo.get(e.id)); if (t) (e.labels ||= []).push({text: t, width: textW(t, 6.2), height: 12}); }
   // boxes are placed by Brandes–Köpf, which grows about linearly with the lines, so a picture of a few
   // hundred lines opens at once; network simplex straightens long lines a little at ten times the cost
-  Object.assign(root, {layoutOptions: {"elk.algorithm": "layered", "elk.direction": "RIGHT", "elk.hierarchyHandling": "INCLUDE_CHILDREN", "elk.edgeRouting": "ORTHOGONAL", "elk.layered.spacing.nodeNodeBetweenLayers": "56", "elk.spacing.nodeNode": "16", "elk.layered.nodePlacement.strategy": "BRANDES_KOEPF", "elk.spacing.edgeNode": "14", "elk.layered.spacing.edgeNodeBetweenLayers": "16", "elk.layered.considerModelOrder.strategy": "NODES_AND_EDGES"}});
+  Object.assign(root, {layoutOptions: {"elk.algorithm": "layered", "elk.direction": "RIGHT", "elk.hierarchyHandling": "INCLUDE_CHILDREN", "elk.edgeRouting": "ORTHOGONAL", "elk.layered.spacing.nodeNodeBetweenLayers": "56", "elk.spacing.nodeNode": "16", "elk.layered.nodePlacement.strategy": "BRANDES_KOEPF", "elk.spacing.edgeNode": "14", "elk.layered.spacing.edgeNodeBetweenLayers": "16", "elk.layered.considerModelOrder.strategy": root.edges.length <= ORDERED_LINES ? "NODES_AND_EDGES" : "NONE"}});
   let layout;
   laying(root, () => mine === undefined || mine === renderSeq);
   try { layout = await laidOut(root); } catch (err) { if (err === SUPERSEDED) return; throw err; }
@@ -1570,7 +1608,8 @@ async function renderPlaat(mine) {
       if (stepOf(P.steps[0]).startsWith("op:")) return;
       if (P.steps.length === 1) select(stepOf(P.steps[0])); else selectArrows({fns: P.steps.map(stepOf), kind: "steps"});
       if (P.own) return;
-      if (!V.route) { if (P.steps.length === 1) { V.route = P.steps[0]; entrySel.value = V.route; V.open.steps.clear(); plaatAnchor = P.id; render(); } return; }
+      // without a route a box opens as the route; a pill of several opens into its members, each of which then does
+      if (!V.route) { if (P.steps.length === 1) { V.route = P.steps[0]; entrySel.value = V.route; V.open.steps.clear(); } else P.steps.forEach(st => V.open.steps.add(st)); plaatAnchor = P.id; render(); return; }
       const opens = P.steps.filter(openable);
       if (opens.length) { opens.forEach(id => V.open.steps.add(id)); plaatAnchor = P.id; render(); }
     }, () => pin(P.id));
@@ -1582,7 +1621,7 @@ async function renderPlaat(mine) {
     const Q = pos.get(p.id), kind = placeKind(p.id);
     const grp = el("g", {class: "tnode" + (p.kind === "ext" ? " ghost" : "") + (p.kind === "ref" ? " ref" : "") + (kind ? " world" : "") + (kind ? "" : prophecyClass(byId.get(p.type))), "data-id": p.id}, ng);
     pointable(grp, p.id);
-    grp.addEventListener("mouseenter", () => { hoverTarget = () => { if (p.id.startsWith("e:")) select(p.id.slice(2)); else if (kind) selectPlace(p.id, p.label); else if (byId.has(p.type)) select(p.type); }; });
+    grp.addEventListener("mouseenter", () => { hoverTarget = () => { if (p.id.startsWith("e:")) select(p.id.slice(2)); else if (kind) selectPlace(p.id, p.label); else if (p.type) selectType(p.type); }; });
     grp.addEventListener("mouseleave", () => { hoverTarget = null; });
     if (kind) grp.style.setProperty("--k", `var(--k-${kind})`);
     el("rect", {class: "bg", width: Q.w, height: Q.h}, grp);
@@ -1620,6 +1659,23 @@ async function renderPlaat(mine) {
     }, () => pin(p.id));
     place(grp, p.id);
   }
+  g.classList.toggle("fibered", !!lit);
+  if (lit) {
+    lit.drawn = 0;
+    for (const p of places.values()) { const box = nodeEls.get(p.id), c = box && lightOf(lit.types, p); if (c) { box.classList.add(c); lit.drawn++; } }
+    for (const F of famFrames.values()) if (lightOf(lit.types, {type: F.fam, frame: true}) === "lit") g.querySelector(`.frame.fam[data-id="${CSS.escape(F.id)}"]`)?.classList.add("lit");
+    // a step claims no type: one with a step inside it that takes or makes a value of the type holds the fiber inside, and
+    // is lit dashed, as a closed box shows what it holds inside without opening
+    if (fine?.pills) {
+      const inFiber = new Set([...fine.places.values()].filter(p => p.type && lit.types.has(p.type)).map(p => p.id));
+      const holders = [...fine.pills.values()].filter(P => [...P.D.keys(), ...P.C.keys()].some(k => inFiber.has(k))).map(P => P.id.slice(2));
+      for (const P of pills.values()) {
+        const box = !P.own && nodeEls.get(P.id);
+        if (box && P.steps.some(s => holders.some(k => k.startsWith(s + "/") || k.startsWith(s + "~")))) { box.classList.add("litpart"); lit.drawn++; }
+      }
+    }
+    crumbs();
+  }
   // a pin is a set of boxes and zoom carries it by `q`: a pinned box that opened is its frame, which keeps its id; a
   // pinned box whose frame closed is the box it closed into, the nearest frame around it before that this picture
   // draws. A pin with nothing left to stand for is let go
@@ -1640,14 +1696,14 @@ async function renderPlaat(mine) {
   for (const q of pos.values()) { x0 = Math.min(x0, q.x); y0 = Math.min(y0, q.y); x1 = Math.max(x1, q.x + q.w); y1 = Math.max(y1, q.y + q.h); }
   x0 = Math.min(x0, 20); y0 = Math.min(y0, 10);
   const W = svg.node().clientWidth, H = svg.node().clientHeight, top = document.getElementById("crumbs").offsetHeight + 14, pad = 30;
-  const fitK = Math.max(0.08, Math.min((W - 2 * pad) / (x1 - x0), (H - top - 2 * pad) / (y1 - y0), 1.4));
+  const fitK = Math.max(zoom.scaleExtent()[0], Math.min((W - 2 * pad) / (x1 - x0), (H - top - 2 * pad) / (y1 - y0), 1.4));
   const t0 = d3.zoomTransform(svg.node());
   const alt = id => [id, "group:" + id, "n:" + id, id.replace(/^o:/, "n:"), id.replace(/^(n|o|group):/, "")];
   const anchorIn = m => { for (const id of alt(plaatAnchor)) if (m.has(id)) return m.get(id); return null; };
   const a0 = plaatAnchor && !plaatFit ? anchorIn(prevPos) : null, a1 = a0 ? anchorIn(pos) : null;
   let t1;
   if (a0 && a1) {
-    const k = Math.min(t0.k, (W - 2 * pad) / a1.w, (H - top - 2 * pad) / a1.h);
+    const k = Math.max(zoom.scaleExtent()[0], Math.min(t0.k, (W - 2 * pad) / a1.w, (H - top - 2 * pad) / a1.h));
     let tx = t0.x + t0.k * a0.x - k * a1.x, ty = t0.y + t0.k * a0.y - k * a1.y;
     // the box opened stands wholly in view
     tx = Math.min(Math.max(tx, pad - k * a1.x), W - pad - k * (a1.x + a1.w));
@@ -1678,6 +1734,7 @@ function crumbs() {
   if (V.route) chip(entryTitle(V.route), () => { V.route = null; entrySel.value = V.kind ? "kind:" + V.kind : ""; V.open.steps.clear(); });
   if (!V.kind && !V.route && !V.part) C.appendChild(html("span", "none", entries.length ? "all" : "none"));
   if (view === "plaat" && pinned.size) { lbl("pinned"); chip(`${pinned.size} ${pinned.size === 1 ? "box" : "boxes"}`, () => pinned.clear()); }
+  if (lit) { lbl("lit"); chip(`values of ${typeLabel(lit.pick)}${lit.drawn === 0 ? " · none here" : ""}`, () => { lit = null; }); }
   if (V.open.parts.size && !V.route) { lbl("parts"); for (const p of V.open.parts) chip(p, () => V.open.parts.delete(p)); }
   const opened = u => u === "~in" ? "the rest, handing in" : u === "~out" ? "the rest, taking" : unitLabel(u);
   if (V.open.units.size && !V.route && !V.kind) { lbl("packages"); for (const u of V.open.units) chip(opened(u), () => V.open.units.delete(u)); }
@@ -1748,6 +1805,29 @@ function focusPanel() {
   for (const {u, n} of ns) { const b = html("button", "fn", `+ ${unitLabel(u)} · ${n} ${n === 1 ? "type" : "types"} across`); b.title = u; b.onclick = () => { V.focus.add(u); redraw(); }; around.appendChild(b); }
   insp.appendChild(section("around it", ns.length, around));
 }
+// the button that lights a type's values in the Flowchart (`lightIn`)
+function lightsSection(id) {
+  const lights = html("button", "fn", "light its values in the Flowchart");
+  lights.title = "every box of this type or a type below it, in a route that holds one";
+  lights.onclick = () => lightIn(id);
+  const d = html("div", "links"); d.appendChild(lights);
+  return section("in the Flowchart", null, d);
+}
+// a family no node of the code is (the rank family of shaped arrays): what the picture knows of it, its kinds and its light
+function selectFamily(id) {
+  selected = id;
+  scene.node().querySelectorAll(".selected").forEach(x => x.classList.remove("selected"));
+  scene.node().querySelectorAll(`[data-id="${CSS.escape(id)}"]`).forEach(x => x.classList.add("selected"));
+  insp.innerHTML = "";
+  const eb = html("div", "eyebrow"); eb.appendChild(html("span", null, "family")); insp.appendChild(eb);
+  insp.appendChild(html("h1", "name", typeLabel(id)));
+  insp.appendChild(html("div", "path", "external · " + (idName(id).module || "builtins")));
+  const ks = (members.get(id) || []).filter(m => kindOf(m) === id && byId.has(m));
+  insp.appendChild(section("kinds", ks.length, linkList(ks)));
+  insp.appendChild(lightsSection(id));
+  insp.scrollTop = 0;
+}
+const selectType = id => byId.has(id) ? select(id) : selectFamily(id);
 function selectPlace(pid, label) {
   selected = pid;
   scene.node().querySelectorAll(".selected").forEach(x => x.classList.remove("selected"));
@@ -1804,6 +1884,7 @@ function select(id, extra) {
     if (n.cls) insp.appendChild(section("method of", null, linkList([n.cls])));
   } else if (n.kind === "class") {
     insp.appendChild(html("div", "sig", `class ${n.name}(${(n.bases || []).join(", ")})`));
+    insp.appendChild(lightsSection(id));
   }
   if (n.doc) insp.appendChild(html("p", "doc", n.doc));
   const pro = prophecyOf(n);
@@ -1965,6 +2046,25 @@ function openTo(n) {
 }
 // a type's box in the picture: the type itself, or a value of it that a name holds
 const typeBox = id => [...scene.node().querySelectorAll("[data-id]")].map(e => e.dataset.id).find(d => d === "t:" + id || d.startsWith(`t:${id}~`));
+// a type picked in the lattice is a set of values (`valuesOf`). The Flowchart lights its fiber, the boxes of those types,
+// in a route that holds one: the current picture where it does, else the first route that does. It is a mark on the
+// picture, as a pin is, not a part of what the picture is a function of
+const TYPED = new Set(["takes", "returns", "has", "mutates", "variant"]);
+async function lightIn(id) {
+  lit = {pick: id, types: valuesOf(id), fresh: true};
+  const S = lit.types, typed = f => S.has(f) || (out.get(f) || []).some(e => TYPED.has(e.kind) && S.has(e.dst));
+  const routes = overviewEntries().map(e => e.id).filter(r => r !== V.route && [...reach(r, null).nodes].some(typed));
+  const shown = async r => {
+    if (r) { V.route = r; entrySel.value = r; V.open.steps.clear(); plaatFit = true; }
+    lit.fresh = true; await render(); return lit?.drawn;
+  };
+  if (view !== "plaat") {
+    view = "plaat"; plaatFit = true; prevPos = new Map(); prevParent = new Map();
+    document.querySelectorAll(".tabs button").forEach(x => x.setAttribute("aria-selected", x.dataset.view === "plaat"));
+  }
+  if (await shown()) return;
+  for (const r of routes.slice(0, 8)) if (await shown(r)) return;
+}
 // jumping to a symbol opens the way to it and centres on it. A package is found in the overview.
 // In a route a class is its box, which stands in its family until the family is opened, else the
 // call that builds it. A symbol the view does not hold is shown in the first route that reaches
@@ -2029,7 +2129,7 @@ let renderSeq = 0;
 async function render() {
   const mine = ++renderSeq;
   // the flowchart keeps what is drawn until its next picture is laid out; the others draw at once
-  if (view === "plaat") scene.node().classList.add("busy"); else { scene.node().innerHTML = ""; scene.node().classList.remove("focus"); PICTURE = {boxes: new Map(), lines: []}; }
+  if (view === "plaat") scene.node().classList.add("busy"); else { scene.node().innerHTML = ""; scene.node().classList.remove("focus", "fibered"); PICTURE = {boxes: new Map(), lines: []}; }
   faultEl.hidden = true;
   hideAsks();
   shownUnits = new Set();
@@ -2090,9 +2190,9 @@ function diffBar() {
 }
 diffBar();
 
-// ---------- served: one view shared with an agent (`atlas serve`) ----------
+// ---------- served: one view shared with an agent (`atlas-code serve`) ----------
 // The page tells its server what it shows, goes where an agent points it, and keeps the notes its
-// reader writes on boxes and lines; `atlas mcp` reads and answers them. The server takes a change
+// reader writes on boxes and lines; `atlas-code mcp` reads and answers them. The server takes a change
 // only from its own page, which says so with `X-Atlas`.
 const post = (path, body) => fetch(path, {method: "POST", headers: {"X-Atlas": "1", "Content-Type": "application/json"}, body: JSON.stringify(body)});
 // a drawn box as the agent reads it: the id the page knows it by, and the words it shows
@@ -2221,7 +2321,14 @@ async function redraw() {
     const t = d3.zoomTransform(svg.node());
     const resume = {view, selected, pinned: [...pinned], t: [t.x, t.y, t.k], state: viewData()};
     dispose();
-    document.getElementById("app").replaceWith(template.cloneNode(true));
+    // the picture's svg, and the zoom bound to it, live as long as the page: a new reading draws in the same svg, so
+    // a wheel gesture the browser holds to it goes on into the new picture
+    const app = template.cloneNode(true), canvas = svg.node(), blank = app.querySelector("#canvas");
+    svg.interrupt();
+    delete canvas.__zooming;
+    canvas.replaceChildren(...blank.childNodes);
+    blank.replaceWith(canvas);
+    document.getElementById("app").replaceWith(app);
     mount(data, resume);
   } catch (err) {
     const fault = document.getElementById("fault");
@@ -2235,6 +2342,7 @@ function comeBack() {
   for (const id of back.pinned || []) pinned.add(id);
   if (pinned.size) { repaintPins(); crumbs(); }
   svg.call(zoom.transform, d3.zoomIdentity.translate(back.t[0], back.t[1]).scale(back.t[2]));
+  back = null;
 }
 // alt-click on a box or a line: a note on it, for the agent
 const noteEl = html("div"); noteEl.id = "notefield"; noteEl.hidden = true; document.body.appendChild(noteEl);
@@ -2326,13 +2434,13 @@ if (D.served) {
       else if (D.preliminary) bar.seen(s);
       fresh.hidden = !ready && (!s.drawing || D.preliminary);
       fresh.textContent = ready ? (D.preliminary ? "complete picture ↻" : "the code changed ↻") : "the code changed · drawing…";
-      fresh.title = ready ? "open the latest picture in this view" : "atlas serve is drawing the changed code; the page follows when it is done";
+      fresh.title = ready ? "open the latest picture in this view" : "atlas-code serve is drawing the changed code; the page follows when it is done";
     } catch {}
   }, 1000);
   // the history beside the page, from the same server
   const hl = html("a", null, "history");
   hl.id = "histlink"; hl.href = "/history"; hl.title = "the commits: pick one, or two to see as one picture";
-  // the page as `atlas view` writes it, opened where the reader is: a file to keep or send
+  // the page as `atlas-code view` writes it, opened where the reader is: a file to keep or send
   const ex = html("a", null, "export");
   ex.className = "histlink"; ex.title = "keep this picture as one HTML file, opened in this view";
   ex.onclick = () => { ex.href = "/export?v=" + encodeURIComponent(JSON.stringify(viewData())); };
@@ -2384,7 +2492,7 @@ if (D.served) {
   }
   document.getElementById("hint").prepend(html("span", null, "alt-click: a note for the agent · "));
   const dl = document.querySelector("#keys dl");
-  dl.append(html("dt", null, "alt-click a box or a line"), html("dd", null, "write a note on it for the agent (atlas serve); its answer shows once on the ring"));
+  dl.append(html("dt", null, "alt-click a box or a line"), html("dd", null, "write a note on it for the agent (atlas-code serve); its answer shows once on the ring"));
 }
 // a link to a place (`#v=…&at=…`, the place of a note) points at it once the picture is drawn
 const linkedAt = lessonAt || decodeURIComponent((location.hash.match(/[#&]at=([^&]*)/) || [])[1] || "");

@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 920 210" role="img" aria-label="A terminal: the command is atlas-code; brew upgrade or atlas update moves an earlier atlas over and names the alias that keeps the short name">
+  <rect x="1" y="1" width="918" height="208" rx="6" style="fill:var(--panel);stroke:var(--line)"/>
+  <g style="font-family:var(--mono);font-size:13.5px">
+    <text x="22" y="36" style="fill:var(--ink-3)">$ <tspan style="fill:var(--ink)">curl -fsSL https://raw.githubusercontent.com/raoulg/atlas/main/install.sh | sh</tspan></text>
+    <text x="22" y="62" style="fill:var(--ink)">atlas-code installed in ~/.local/bin/atlas-code</text>
+    <text x="22" y="84" style="fill:var(--accent)">removed the earlier ~/.local/bin/atlas; to keep the short name: alias atlas=atlas-code</text>
+    <text x="22" y="122" style="fill:var(--ink-3)">$ <tspan style="fill:var(--ink)">atlas-code view .</tspan></text>
+    <text x="22" y="160" style="fill:var(--ink-3)">$ <tspan style="fill:var(--ink)">claude mcp add --scope user atlas -- atlas-code mcp</tspan></text>
+    <text x="22" y="190" style="fill:var(--ink-3)">… the MCP server keeps its name, atlas; only the command it runs is atlas-code</text>
+  </g>
+</svg>

@@ -12,8 +12,9 @@
 
 mod common;
 
-use common::Pair;
+use common::{by, Pair};
 
+use std::collections::BTreeSet;
 use std::path::PathBuf;
 use std::sync::OnceLock;
 
@@ -256,14 +257,14 @@ fn places_where_data_lives_is_decided_where_the_program_starts() {
     let c = clean();
     assert_eq!(found(c, "places"), Vec::<String>::new());
     let settings = touches(c, "spend.config.Config.load", "disk_read");
-    assert!(settings.iter().any(|t| t.artifact == "spend.toml" && !t.fixed && t.by == ["spend.main"]), "{settings:#?}");
+    assert!(settings.iter().any(|t| t.artifact == "spend.toml" && !t.fixed && t.by == by(["spend.main"])), "{settings:#?}");
     let report = touches(c, "spend.report.write", "disk_write");
-    assert!(report.iter().all(|t| t.artifact == "reports/" && !t.fixed && t.by == ["spend.main"]), "{report:#?}");
+    assert!(report.iter().all(|t| t.artifact == "reports/" && !t.fixed && t.by == by(["spend.main"])), "{report:#?}");
 
     // the shortcut's settings are still read, at a place made whole in the library itself
     let s = shortcut();
     let settings = touches(s, "spend.config.load", "disk_read");
-    assert!(!settings.is_empty() && settings.iter().all(|t| t.by.is_empty() && t.users_of.is_empty()), "{settings:#?}");
+    assert!(!settings.is_empty() && settings.iter().all(|t| t.by.is_empty()), "{settings:#?}");
 }
 
 /// Library code does not decide where data lives. A library function that falls back to a path of
@@ -779,6 +780,26 @@ fn prophecy_a_decided_vision_is_marked_where_it_is_written() {
     assert_eq!(stands.len(), 3, "the two prophecies of the clean side, and the new one: {stands:?}");
 }
 
+/// A vision is placed by the directory it is read from, so a vision that shares nothing with the
+/// tree is placed as one that does: a crate with only its manifest, and a vision that writes its
+/// first file. The file is written at the path the vision names it by, and what it adds is marked.
+#[test]
+fn prophecy_a_vision_of_new_files_only_is_placed_where_it_names_them() {
+    use std::collections::BTreeMap;
+    let copy = common::clean_copy("rust", "new-files");
+    std::fs::remove_dir_all(copy.join("src")).expect("removes the code");
+    let file = PathBuf::from("src/lib.rs");
+    let vision = BTreeMap::from([(
+        file.clone(),
+        Some("pub struct Vault;\n\nimpl Vault {\n    pub fn keep(&self, _report: &str) {\n        todo!()\n    }\n}\n".to_string()),
+    )]);
+    let decided = atlas_engine::decide::prophetize(&copy, &vision, &BTreeMap::new(), &Options::default());
+    let _ = std::fs::remove_dir_all(copy.parent().expect("has a parent"));
+    let decided = decided.expect("a vision that only adds new files is decided");
+    assert_eq!(decided.files.keys().collect::<Vec<_>>(), [&file]);
+    assert_eq!(decided.marked, ["archive.Vault"]);
+}
+
 /// A prophecy whose shape waits on an open question is sealed on its issue. The seals come back
 /// as a list with what the host says of each issue (here: one closed, one open), and the one whose
 /// issue is closed can be broken: `sealed=..` leaves its marker and nothing else changes. The
@@ -808,6 +829,32 @@ fn prophecy_a_seal_is_listed_and_broken_when_its_issue_is_closed() {
         "a prophecy that is not sealed has no seal to break"
     );
     let _ = std::fs::remove_dir_all(copy.parent().expect("has a parent"));
+}
+
+/// Breaking a seal changes the bytes of `sealed=..` and of the separator that joins it, and no
+/// other: the file comes back as it was with exactly those bytes taken out, the seal first among
+/// the attribute's arguments, last, or alone. The file is read when the seal is broken and the
+/// graph may be older: a file emptied or shortened since is an error.
+#[test]
+fn prophecy_breaking_a_seal_changes_its_bytes_and_no_other() {
+    let sealed = "//! Where reports wait.\n\n#[doc = \"prophecy: supersedes=archive.Sink sealed=#7\"]\npub struct Vault;\n\n#[doc = \"prophecy: sealed=#8 supersedes=archive.Sink\"]\npub struct Crate;\n\n#[doc = \"prophecy: sealed=#9\"]\npub struct Shelf;\n";
+    let copy = common::clean_copy("rust", "unseal");
+    let lib = std::fs::read_to_string(copy.join("src/lib.rs")).expect("reads");
+    std::fs::write(copy.join("src/lib.rs"), format!("{lib}\npub mod vault;\n")).expect("writes");
+    let file = copy.join("src/vault.rs");
+    std::fs::write(&file, sealed).expect("writes");
+    let g = analyze(&copy, &Options::default()).expect("reads");
+    let ids = ["archive.vault.Vault", "archive.vault.Crate", "archive.vault.Shelf"].map(String::from);
+    let broken = atlas_engine::decide::unseal(&g, &ids).expect("the seals are broken");
+    let unsealed = sealed.replacen(" sealed=#7", "", 1).replacen("sealed=#8 ", "", 1).replacen(" sealed=#9", "", 1);
+    let text = broken.get(std::path::Path::new("src/vault.rs")).cloned();
+    let changed = ["", "//! Where reports wait.\n\n"].map(|cut| {
+        std::fs::write(&file, cut).expect("writes");
+        atlas_engine::decide::unseal(&g, &ids).is_err()
+    });
+    let _ = std::fs::remove_dir_all(copy.parent().expect("has a parent"));
+    assert_eq!(text, Some(unsealed));
+    assert_eq!(changed, [true, true], "an emptied file, a shortened one");
 }
 
 fn fits(side: &str) -> Graph {
@@ -1381,6 +1428,43 @@ fn composition_a_method_called_by_its_path_runs_on_its_first_argument() {
     assert_eq!(to("sources.any"), [("sources.Source.read".to_string(), String::new())]);
 }
 
+/// A call by name runs, for each type its value may be, the method that type runs (#268), as in Python and TypeScript:
+/// a value of a struct is of that struct, built at the call or declared, since no type is below a struct; one the code
+/// declares of a trait (`&dyn Block`) may be of any type that implements it. The built pair (`tests/pairs/built/rust`)
+/// shows a heading on a block under the block's name: the clean side is handed a `&dyn Block`, so `block.show(..)` may
+/// run `Boxed.show`; the shortcut builds a `Plain` where it shows it, a unit struct named as the value (`Plain.show(..)`),
+/// which runs the trait's own `show` alone. `Boxed.show`'s `heading` holds the heading exactly where the call may run it
+/// (#263). The name is a supertrait's method (`trait Block: Named`, #285): on the `&dyn Block` it may run the `name` of
+/// each type below `Block`, on the `Plain` that type's alone.
+#[test]
+fn built_a_value_of_a_struct_runs_its_type_and_one_of_a_trait_any_type_below() {
+    for side in ["clean", "shortcut"] {
+        let g = analyze(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/pairs/built/rust").join(side), &Options::default())
+            .expect("reads");
+        let bodies = atlas_engine::flow::bodies(&g);
+        // the bodies a call may run: a trait's method without a body of its own runs none
+        let may = |method: &str| -> BTreeSet<String> {
+            let call = bodies["notes.report"].steps().into_iter().find(|s| s.to.ends_with(method)).expect("report calls it");
+            std::iter::once(call.to.clone())
+                .chain(call.alts(&bodies).iter().map(|k| atlas_engine::flow::split(k).0.to_string()))
+                .filter(|f| !node(&g, f).declared)
+                .collect()
+        };
+        let runs = may(".show").contains("notes.Boxed.show");
+        assert_eq!(runs, side == "clean", "{side}");
+        assert_eq!(
+            node(&g, "notes.Boxed.show").uses.iter().any(|u| u.name == "heading"),
+            runs,
+            "{side}: the parameter follows what the call runs"
+        );
+        let named: BTreeSet<String> = match side {
+            "clean" => ["notes.Plain.name", "notes.Boxed.name"].map(String::from).into(),
+            _ => ["notes.Plain.name"].map(String::from).into(),
+        };
+        assert_eq!(may(".name"), named, "{side}");
+    }
+}
+
 /// A version of the sunspots pipeline (`tests/pairs/pipeline`).
 fn sunspots(version: &str) -> Graph {
     analyze(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/pairs/pipeline").join(version), &Options::default()).expect("reads")
@@ -1581,4 +1665,43 @@ fn a_recursive_call_takes_what_its_call_hands_it() {
 #[test]
 fn a_list_made_by_a_literal_is_made_by_the_body() {
     common::a_list_made_by_a_literal_is_made_by_the_body("rust", "by_literal", "by_call", "by_constant");
+}
+
+/// One side of the sockets pair (`tests/pairs/sockets/rust`): a server that greets each client by
+/// the name it sends and lets the client read the greeting before the connection closes.
+fn greeter(side: &str) -> Graph {
+    analyze(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/pairs/sockets/rust").join(side), &Options::default()).expect("reads")
+}
+
+/// A call leaves something behind, and a socket is a place: what a function reads from or writes to
+/// std's `TcpStream` reaches the network, as what Python's `socket` receives and sends does. The
+/// clean server lingers as TCP asks: it shuts its writing half and reads what the client still sends,
+/// so `linger` reaches the network and nothing is asked. The shortcut sleeps a moment and drops the
+/// connection: its `linger` reaches no place, and Atlas asks what the wait leaves behind. Binding an
+/// address, shutting a half and setting a timeout move no data, on both sides.
+#[test]
+fn nothing_a_socket_is_a_place() {
+    let (c, s) = (greeter("clean"), greeter("shortcut"));
+    assert_eq!(found(&c, "nothing"), Vec::<String>::new());
+    assert_eq!(found(&s, "nothing"), ["greeter.linger"]);
+    let ops = |g: &Graph, f: &str| touches(g, f, "net").iter().map(|t| t.op.clone()).collect::<Vec<_>>();
+    assert_eq!(ops(&c, "greeter.linger"), ["read"], "what the client still sends is read from the network");
+    assert!(ops(&s, "greeter.linger").is_empty(), "a wait reaches no place");
+    for g in [&c, &s] {
+        assert_eq!(ops(g, "greeter.answer"), ["read", "write_all"], "the name is received and the greeting sent");
+        assert!(node(g, "greeter.main").touches.is_empty(), "binding an address and accepting a connection move no data");
+    }
+}
+
+/// The parents pair: `source.parent()` of `~/data/{name}` is `~/data`, as `Path.parent` and `path.dirname` are (#284).
+#[test]
+fn places_a_parent_drops_the_last_part_of_a_path() {
+    common::a_parent_drops_the_last_part_of_a_path("rust", "shelf.summarise", "shelf.log");
+}
+
+/// The closures pair: a closure a `let` keeps and the body calls takes what each call hands it (#239), as a function of
+/// the module does, and as a lambda or a `def` inside a `def` does in Python.
+#[test]
+fn a_closures_parameter_is_what_its_calls_hand_it() {
+    common::a_closures_parameter_is_what_its_calls_hand_it("rust", &["knot.settings", "knot.lock"]);
 }

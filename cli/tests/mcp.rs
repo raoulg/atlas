@@ -1,4 +1,4 @@
-//! `atlas mcp` spoken to as a client would: one JSON-RPC message per line.
+//! `atlas-code mcp` spoken to as a client would: one JSON-RPC message per line.
 
 use std::io::Write;
 use std::process::{Command, Stdio};
@@ -10,14 +10,14 @@ use serde_json::{json, Value};
 fn session(msgs: &[Value]) -> Vec<Value> {
     let root = concat!(env!("CARGO_MANIFEST_DIR"), "/..");
     let cache = std::env::temp_dir().join(format!("atlas-mcp-cache-{}", std::process::id()));
-    let mut child = Command::new(env!("CARGO_BIN_EXE_atlas"))
+    let mut child = Command::new(env!("CARGO_BIN_EXE_atlas-code"))
         .arg("mcp")
         .current_dir(root)
         .env("XDG_CACHE_HOME", cache)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .spawn()
-        .expect("atlas mcp starts");
+        .expect("atlas-code mcp starts");
     let mut stdin = child.stdin.take().unwrap();
     for m in msgs {
         writeln!(stdin, "{m}").unwrap();
@@ -83,7 +83,7 @@ fn a_client_initializes_lists_and_calls() {
     assert_eq!(replies[6]["error"]["code"], -32602, "an unknown tool is a protocol error");
 }
 
-/// `check` with `json: true` gives the findings as data, the document `atlas check --json` prints: per
+/// `check` with `json: true` gives the findings as data, the document `atlas-code check --json` prints: per
 /// part its findings, each with what it is about, by role and id.
 #[test]
 fn check_gives_the_findings_as_data() {
@@ -167,4 +167,26 @@ fn view_writes_the_page_in_a_view() {
     let replies = session(&[call(1, "view", json!({ "path": "engine/tests/fixture", "view": { "rout": "fixture.cli.build" } }))]);
     assert_eq!(replies[0]["result"]["isError"], true);
     assert!(text(&replies[0]).contains("unknown field `rout`"), "{}", text(&replies[0]));
+}
+
+#[test]
+fn invalid_utf8_line_gets_a_parse_error_and_the_next_line_is_read() {
+    let root = concat!(env!("CARGO_MANIFEST_DIR"), "/..");
+    let cache = std::env::temp_dir().join(format!("atlas-mcp-cache-{}", std::process::id()));
+    let mut child = Command::new(env!("CARGO_BIN_EXE_atlas-code"))
+        .arg("mcp")
+        .current_dir(root)
+        .env("XDG_CACHE_HOME", cache)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .spawn()
+        .expect("atlas mcp starts");
+    let mut stdin = child.stdin.take().unwrap();
+    stdin.write_all(b"\xff\n{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"ping\"}\n").unwrap();
+    drop(stdin);
+    let out = child.wait_with_output().unwrap();
+    let replies: Vec<Value> = String::from_utf8(out.stdout).unwrap().lines().map(|l| serde_json::from_str(l).unwrap()).collect();
+    assert_eq!(replies.len(), 2, "a malformed line gets an error and does not end the session");
+    assert_eq!(replies[0]["error"]["code"], -32700);
+    assert_eq!(replies[1], json!({ "jsonrpc": "2.0", "id": 1, "result": {} }));
 }

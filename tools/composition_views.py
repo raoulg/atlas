@@ -72,7 +72,7 @@ def main(atlas, output):
                                 check=True, capture_output=True, text=True)
         (out / 'changes.txt').write_text(report.stdout)
         results['changes_detects_order'] = any(r['id'] == 'composition.run' for r in results['changes']['routes'])
-        assert results['changes_detects_order'], 'atlas changes must report the reordered composition'
+        assert results['changes_detects_order'], 'atlas-code changes must report the reordered composition'
         route = next(r for r in results['changes']['routes'] if r['id'] == 'composition.run')
         assert len(route['compositions_changed']) == 1
         assert not route['steps_added'] and not route['steps_removed']
@@ -109,7 +109,7 @@ def main(atlas, output):
             browser.close()
     (out / 'checks.json').write_text(json.dumps(results, indent=2) + '\n')
     print('Standalone value chains and ordered diff occurrences verified.')
-    print('atlas changes detects order:', results['changes_detects_order'])
+    print('atlas-code changes detects order:', results['changes_detects_order'])
     print('Union preserves value handoff:', {s: results[s + '_handoff_preserved'] for s in ['a', 'b']})
 
 

@@ -6,7 +6,8 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use indexmap::IndexMap;
 
 use crate::model::{
-    Bucket, Dir, Edge, EdgeKind, Entry, EntryKind, Graph, Held, Node, NodeKind, Signature, Site, Slot, Stats, Touch, Unresolved, World,
+    Bucket, Dir, Edge, EdgeKind, Entry, EntryKind, Graph, Held, Lang, Node, NodeKind, Signature, Site, Slot, Stats, Touch, Unresolved,
+    World,
 };
 
 /// Per-class facts that only matter during resolution.
@@ -237,7 +238,7 @@ impl GraphBuilder {
         let t = self.owned(id, t);
         let Some(n) = self.nodes.get_mut(id) else { return };
         if !n.instead.iter().any(|x| x.kind == t.kind && x.what == t.what && x.op == t.op && x.line == t.line) {
-            n.instead.push(Touch { n: 1, by: vec![], users_of: vec![], ..t });
+            n.instead.push(Touch { n: 1, by: BTreeSet::new(), ..t });
         }
     }
 
@@ -268,7 +269,7 @@ impl GraphBuilder {
     }
 
     /// A request `id` makes whole that no route of its part serves.
-    pub fn ask(&mut self, id: &str, request: String) {
+    pub fn ask(&mut self, id: &str, request: crate::model::Request) {
         let Some(n) = self.nodes.get_mut(id) else { return };
         if !n.asks.contains(&request) {
             n.asks.push(request);
@@ -325,8 +326,7 @@ impl GraphBuilder {
                 // one call that uses what it reads makes the touch a use
                 x.checks &= t.checks;
                 // whole in its own function is whole in every route; else in the routes of each
-                let whole_here = |y: &Touch| y.by.is_empty() && y.users_of.is_empty();
-                let here = whole_here(x) || whole_here(&t);
+                let here = x.by.is_empty() || t.by.is_empty();
                 // a place is decided where any of the calls that touch it decides it
                 x.fixed |= t.fixed;
                 for f in t.fixed_by {
@@ -339,18 +339,8 @@ impl GraphBuilder {
                 }
                 if here {
                     x.by.clear();
-                    x.users_of.clear();
                 } else {
-                    for f in t.by {
-                        if !x.by.contains(&f) {
-                            x.by.push(f);
-                        }
-                    }
-                    for e in t.users_of {
-                        if !x.users_of.contains(&e) {
-                            x.users_of.push(e);
-                        }
-                    }
+                    x.by.extend(t.by);
                 }
             }
             None => n.touches.push(Touch { n: 1, ..t }),
@@ -359,9 +349,8 @@ impl GraphBuilder {
 
     /// The graph, once every file is parsed: the scratch is dropped, the names that did not
     /// resolve are counted.
-    pub fn finish(self, root: String, project_root: Option<&std::path::Path>, language: &str) -> Graph {
+    pub fn finish(self, root: String, project_root: Option<&std::path::Path>, language: Lang) -> Graph {
         let mut top: Vec<(String, u32)> = self.unresolved.iter().map(|(k, v)| (k.clone(), *v)).collect();
-        let family = self.family();
         let mut nodes = self.nodes;
         for (id, info) in &self.classes {
             if let Some(n) = nodes.get_mut(id).filter(|n| n.kind == NodeKind::Class) {
@@ -374,10 +363,10 @@ impl GraphBuilder {
             }
         }
         serve_data(&mut nodes);
-        settle_fails(&mut nodes, &self.edges, &family);
+        settle_fails(&mut nodes, &self.edges);
         crate::flow::wire(&mut nodes, &self.edges);
         fill_nested(&mut nodes);
-        settle_parameters(&mut nodes, &family);
+        settle_parameters(&mut nodes, &self.edges);
         mark_doors(&mut nodes, &self.edges);
         mark_options(&mut nodes);
         crate::prophecy::settle(&mut nodes, &self.edges);
@@ -395,7 +384,7 @@ impl GraphBuilder {
             files: self.files,
             stats: Stats {
                 unresolved_calls_total: self.unresolved.values().sum(),
-                unresolved_calls_top: top.into_iter().take(25).collect(),
+                unresolved_calls_top: top,
                 unresolved_calls: self.unresolved_by,
                 ..Default::default()
             },
@@ -467,33 +456,15 @@ impl GraphBuilder {
 }
 
 /// The parameters of no type of the code's that hold a value of the plan (`mathematics.md`, "One fine plan"): those a call
-/// fills with a value, a step's result, a projection of one or a parameter of its caller's that holds one, and those of an
-/// override where the method it overrides is so filled (a call into a family runs one of them). A literal fills a
-/// parameter with none, and a function no call of the program fills (an entry, a door) is handed none by what calls it
-/// from outside. A value a body hands or reads by such a parameter's name (`Held::param`, `Use::param`) is the parameter:
-/// where it holds none, the body is handed and reads nothing of it.
-fn settle_parameters(nodes: &mut IndexMap<String, Node>, family: &Family) {
+/// fills with a value, a step's result, a projection of one or a parameter of its caller's that holds one, in each
+/// function the call may run (`flow::Runs`): a call into a family fills the parameters of every override it may run, and
+/// a call through a class those of the method it names alone. A literal fills a parameter with none, and a function no
+/// call of the program fills (an entry, a door) is handed none by what calls it from outside. A value a body hands or
+/// reads by such a parameter's name (`Held::param`, `Use::param`) is the parameter: where it holds none, the body is
+/// handed and reads nothing of it.
+fn settle_parameters(nodes: &mut IndexMap<String, Node>, edges: &[Edge]) {
     let args = |n: &Node| -> Vec<String> { n.params.iter().filter(|p| !p.receiver).map(|p| p.name.clone()).collect() };
-    // what a call runs: the initializer of a class it builds, a method and each override of it
-    let mut below: HashMap<&str, Vec<&str>> = HashMap::new();
-    for (m, bases) in &family.overrides {
-        for (b, _) in bases {
-            below.entry(b.as_str()).or_default().push(m.as_str());
-        }
-    }
-    for overrides in below.values_mut() {
-        overrides.sort();
-    }
-    let runs = |s: &Site| -> Vec<String> {
-        let Some(n) = nodes.get(&s.to) else { return vec![] };
-        match n.kind {
-            NodeKind::Class => n.initializer(|m| nodes.get(m)).into_iter().collect(),
-            NodeKind::Function | NodeKind::Method => {
-                std::iter::once(n.id.as_str()).chain(below.get(n.id.as_str()).into_iter().flatten().copied()).map(str::to_string).collect()
-            }
-            _ => vec![],
-        }
-    };
+    let runs = crate::flow::Runs::new(nodes, edges);
     // the places a slot of a call fills among the callee's parameters after its receiver
     let places = |callee: &Node, slot: &Slot, written: &[Slot]| -> Vec<usize> {
         let ps: Vec<&crate::model::Param> = callee.params.iter().filter(|p| !p.receiver).collect();
@@ -523,7 +494,7 @@ fn settle_parameters(nodes: &mut IndexMap<String, Node>, family: &Family) {
         for n in nodes.values() {
             let mine = args(n);
             for s in &n.sites {
-                for callee in runs(s).iter().filter_map(|c| nodes.get(c)) {
+                for callee in runs.of(s).iter().filter_map(|c| nodes.get(c)) {
                     for h in &s.hands {
                         let theirs = h.param.then(|| mine.iter().position(|p| *p == h.name)).flatten();
                         if theirs.is_some_and(|i| !filled.contains(&(n.id.clone(), i))) {
@@ -717,7 +688,7 @@ fn parsed(nodes: &IndexMap<String, Node>, id: &str, seen: &mut HashSet<String>, 
 /// raises, by the class of the error it builds, and with what its calls hand on, each where no handler
 /// around it catches it. A handler catches the classes it names and those below them, and one that
 /// names none catches whatever is raised. A call that `?` hands on fails as its reader said (`Steps`).
-fn settle_fails(nodes: &mut IndexMap<String, Node>, edges: &[Edge], family: &Family) {
+fn settle_fails(nodes: &mut IndexMap<String, Node>, edges: &[Edge]) {
     let bare = |id: &str| id.trim_start_matches("ext:").rsplit(['.', ':']).next().unwrap_or("").to_string();
     let mut bases: HashMap<&str, Vec<&str>> = HashMap::new();
     for e in edges.iter().filter(|e| e.kind == EdgeKind::Inherits) {
@@ -738,35 +709,15 @@ fn settle_fails(nodes: &mut IndexMap<String, Node>, edges: &[Edge], family: &Fam
         let of = kinds(error);
         handlers.iter().any(|h| h.is_empty() || h.iter().any(|n| of.contains(&bare(n))))
     };
-    // what a call runs: the initializer of a class it builds, a method and each override of it, one
-    // of which a call into the family runs
-    let mut below: HashMap<&str, Vec<&str>> = HashMap::new();
-    for (m, bases) in &family.overrides {
-        for (b, _) in bases {
-            below.entry(b.as_str()).or_default().push(m.as_str());
-        }
-    }
-    for overrides in below.values_mut() {
-        overrides.sort();
-    }
-    let runs = |s: &Site| -> Vec<String> {
-        let Some(n) = nodes.get(&s.to) else { return vec![] };
-        match n.kind {
-            NodeKind::Class => n.initializer(|m| nodes.get(m)).into_iter().collect(),
-            // a call through a class runs the method that class's order finds, and no override of it
-            _ => std::iter::once(n.id.as_str())
-                .chain(below.get(n.id.as_str()).filter(|_| !s.named).into_iter().flatten().copied())
-                .map(str::to_string)
-                .collect(),
-        }
-    };
+    // the functions a call may run, one of which runs (`flow::Runs`)
+    let runs = crate::flow::Runs::new(nodes, edges);
     // the errors a call hands on: each that what it runs can end with, uncaught around the call
     let handed = |s: &Site, ends: &HashMap<String, Vec<String>>| -> Vec<String> {
         if !s.handed_on || !s.fails.is_empty() {
             return s.fails.clone();
         }
         let errors: BTreeSet<String> =
-            runs(s).iter().flat_map(|f| ends.get(f).into_iter().flatten()).filter(|e| !caught(&s.caught, e)).cloned().collect();
+            runs.of(s).iter().flat_map(|f| ends.get(f).into_iter().flatten()).filter(|e| !caught(&s.caught, e)).cloned().collect();
         errors.into_iter().collect()
     };
     // what each function's body ends with uncaught, grown to the fixpoint: a call that hands on what
@@ -846,7 +797,7 @@ fn serve_data(nodes: &mut IndexMap<String, Node>) {
 /// Whether touch `t` only prepares a place that another of `all` reads or writes, in every route
 /// `t` is in: the other is in every route, or in the same ones.
 fn prepares(t: &Touch, all: &[Touch]) -> bool {
-    let along = |d: &Touch| (d.by.is_empty() && d.users_of.is_empty()) || (d.by == t.by && d.users_of == t.users_of);
+    let along = |d: &Touch| d.by.is_empty() || d.by == t.by;
     let data = |d: &&Touch| d.kind == t.kind && !d.shape() && along(d);
     match t.kind {
         World::Disk => {

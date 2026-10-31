@@ -17,6 +17,7 @@
   <script defer src="lesson.js"></script>
   <script defer src="lesson.html.js"></script>
   <script defer src="lesson.mount.js"></script>
+  <script defer src="panel.js"></script>
   <script defer src="files.js"></script>
   <script defer src="terminal.js"></script>
   <script defer src="workspaces.js"></script>
@@ -59,14 +60,16 @@
               <section id="lesson-panel" aria-label="Lesson" hidden></section>
             </section>
           </div>
-          <aside id="preview" class="preview" aria-label="Preview" hidden></aside>
+          <aside id="preview" class="preview" aria-label="Preview" hidden>
+            <div id="preview-grip" class="preview-grip" title="Drag to resize"></div>
+          </aside>
         </div>
         <section id="terminal-panel" class="terminal-panel" aria-label="Terminal" hidden>
           <div id="terminal-grip" class="terminal-grip" title="Drag to resize"></div>
         </section>
       </main>
     </div>
-    <footer class="statusbar"><span class="status-dot"></span><span id="status-text">Ready</span><button id="update-button" class="status-button update" type="button" hidden></button><button id="terminal-toggle" class="status-button" type="button" title="Show or hide the terminal (Ctrl+`)" disabled>▸_ Terminal</button><button id="scheme-toggle" class="status-button scheme" type="button">◐</button><span id="studio-version" class="status-right">Atlas Studio</span></footer>
+    <footer class="statusbar"><span class="status-dot"></span><span id="status-text">Ready</span><button id="update-button" class="status-button update" type="button" hidden></button><button id="terminal-toggle" class="status-button" type="button" title="Show or hide the terminal (Ctrl+`)" disabled>▸_ Terminal</button><button id="scheme-toggle" class="status-button scheme" type="button">◐</button><button id="studio-version" class="status-right status-version" type="button">Atlas Studio</button></footer>
   </div>
 </body>
 </html>

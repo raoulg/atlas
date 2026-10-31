@@ -109,7 +109,10 @@ fn screen_at(program: &str, route: &str, budget: Option<usize>) -> BTreeSet<Stri
     let mut data = serde_json::to_value(&graph).expect("the graph is data");
     data["flow"] = serde_json::to_value(flow::of(&graph)).expect("the flow is data");
     let name = program.replace('/', "-");
-    let file = std::env::temp_dir().join(format!("atlas-figures-{}-{name}-{budget:?}.json", std::process::id()));
+    // a file of this call's own: tests run side by side, and two may read one program at one budget
+    static CALLS: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+    let call = CALLS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let file = std::env::temp_dir().join(format!("atlas-figures-{}-{call}-{name}-{budget:?}.json", std::process::id()));
     std::fs::write(&file, data.to_string()).expect("writes the data");
     let mut node = Command::new("node");
     if let Some(b) = budget {

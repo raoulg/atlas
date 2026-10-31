@@ -59,11 +59,11 @@ choice main/?1/Format.renderer/?1
 step main/?1/Format.renderer/?1/Markdown()
 step main/?1/Format.renderer/?1/Csv()
 step main/?1/write
-step main/?1/write/Render.extension
+step main/?1/write/Render.extension one of 2
 step main/?1/write/Render.extension/Markdown.extension
 step main/?1/write/Render.extension/Csv.extension
 step main/?1/write/join
-step main/?1/write/Render.render
+step main/?1/write/Render.render one of 2
 step main/?1/write/Render.render/Markdown.render
 step main/?1/write/Render.render/Csv.render
 step main/?1/write/Render.render/Csv.render/from
