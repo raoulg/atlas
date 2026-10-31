@@ -1,0 +1,38 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 340" role="img" aria-label="A function that calls itself one folder deeper reaches data, data/*, data/*/* and so on; before, Atlas drew one place per level down to a depth limit and left a place there that no call names; 0.71 completes the recursion to its least fixpoint, data/**, one place at every depth, the place rglob reads">
+<defs>
+<marker id="fx-k" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" style="fill:var(--key)"/></marker>
+</defs>
+<rect x="20" y="66" width="380" height="148" rx="8" style="fill:var(--panel);stroke:var(--line);stroke-width:1.5"/>
+<text x="36" y="94" style="font-family:var(--mono);font-size:13px;fill:var(--ink)">def copy_tree(source, target):</text>
+<text x="52" y="116" style="font-family:var(--mono);font-size:13px;fill:var(--ink)">for entry in source.iterdir():</text>
+<text x="68" y="138" style="font-family:var(--mono);font-size:13px;fill:var(--ink)"><tspan style="fill:var(--key);font-weight:600">copy_tree(entry</tspan>, target / entry.name)</text>
+<text x="36" y="172" style="font-family:var(--sans);font-size:12px;fill:var(--ink-3)">the first call</text>
+<text x="36" y="196" style="font-family:var(--mono);font-size:13px;fill:var(--ink)">copy_tree(Path("data"), Path("backup"))</text>
+<text x="440" y="30" style="font-family:var(--sans);font-size:15px;fill:var(--ink-3);font-weight:600">before: one place per level</text>
+<g style="fill:var(--panel);stroke:var(--ink-3);stroke-width:1.2;stroke-dasharray:5 4">
+<rect x="440" y="46" width="180" height="28" rx="4"/>
+<rect x="440" y="84" width="180" height="28" rx="4"/>
+<rect x="440" y="122" width="180" height="28" rx="4"/>
+<rect x="440" y="176" width="180" height="28" rx="4"/>
+</g>
+<g style="font-family:var(--mono);font-size:13px;fill:var(--ink-3)">
+<text x="454" y="65">data/</text>
+<text x="454" y="103">data/*/</text>
+<text x="454" y="141">data/*/*/</text>
+<text x="530" y="168" style="text-anchor:middle">⋮</text>
+<text x="454" y="195">data/*/…/*/</text>
+</g>
+<rect x="440" y="226" width="180" height="28" rx="4" style="fill:none;stroke:var(--del);stroke-width:1.6;stroke-dasharray:5 4"/>
+<text x="454" y="245" style="font-family:var(--mono);font-size:13px;fill:var(--del)">{source}/*/…/*</text>
+<text x="440" y="276" style="font-family:var(--sans);font-size:13px;fill:var(--del)">left at the depth limit</text>
+<path d="M628,46 Q640,46 640,58 L640,113 Q640,125 652,125 Q640,125 640,137 L640,192 Q640,204 628,204" style="fill:none;stroke:var(--key);stroke-width:1.6"/>
+<line x1="656" y1="125" x2="736" y2="125" style="stroke:var(--key);stroke-width:2" marker-end="url(#fx-k)"/>
+<text x="690" y="114" style="font-family:var(--sans);font-size:13px;fill:var(--key);text-anchor:middle;font-weight:600">completes to</text>
+<text x="740" y="30" style="font-family:var(--sans);font-size:15px;fill:var(--ink);font-weight:600">0.71: the least fixpoint</text>
+<rect x="740" y="96" width="200" height="58" rx="10" style="fill:var(--key);fill-opacity:0.14;stroke:var(--key);stroke-width:2"/>
+<text x="840" y="132" style="font-family:var(--mono);font-size:20px;fill:var(--ink);text-anchor:middle;font-weight:600">data/**</text>
+<text x="840" y="180" style="font-family:var(--sans);font-size:13px;fill:var(--ink-2);text-anchor:middle">one place, every depth</text>
+<text x="840" y="206" style="font-family:var(--mono);font-size:13px;fill:var(--key);text-anchor:middle">X ∪ X/* ∪ X/*/* ∪ … = X/**</text>
+<text x="840" y="232" style="font-family:var(--sans);font-size:13px;fill:var(--ink-2);text-anchor:middle">as <tspan style="font-family:var(--mono)">rglob("*")</tspan> reads it</text>
+<text x="20" y="328" style="font-family:var(--sans);font-size:12px;fill:var(--ink-3)">teal: what 0.71 draws · gray dashed: what before drew, one place per level · red: a place no call names</text>
+</svg>
