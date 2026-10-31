@@ -1734,12 +1734,6 @@ pub const HUB_LOADER: &str = "load_dataset";
 
 // ---------- paths ----------
 
-/// The constructors a path or a URL is made by from its parts, by the name the code calls them by,
-/// where that name is the language's own: Rust's `Path::new` and `PathBuf::from`, the web
-/// platform's `URL`. Python's are classes of a library, known where ty finds them
-/// (`PYTHON_PATH_CLASSES`).
-pub const PATH_MAKERS: &[&str] = &["Path::new", "PathBuf::from", "URL", "new URL"];
-
 /// Libraries whose values are paths: a method of one names its file by the path it is called on.
 /// importlib's are what a package ships (`files("pages").joinpath("template.html").read_text()`).
 pub const PATH_LIBRARIES: &[&str] = &["pathlib", "importlib"];
@@ -1779,6 +1773,18 @@ pub const LISTINGS_BELOW: &[Listing] = &[
 /// (the one class `read_dir`'s elements are).
 pub const ELEMENT_PATHS: &[(&str, &str, &str)] = &[("os", "DirEntry", "path"), ("std::fs", "DirEntry", "path")];
 
+/// The attributes of a listing's element that are its name alone, by the library and the element's
+/// class: `entry.name` of an `os.DirEntry`, `entry.file_name()` of a `std::fs::DirEntry`, `entry.name`
+/// of a Node `Dirent`. The name is below the directory listed, `*`, as each name `os.listdir(d)` and
+/// `readdirSync(d)` give is, which the code puts back below the directory itself.
+pub const ELEMENT_NAMES: &[(&str, &str, &str)] =
+    &[("os", "DirEntry", "name"), ("std::fs", "DirEntry", "file_name"), ("fs", "Dirent", "name")];
+
+/// The option that makes a library's listing give each element as an entry rather than as its
+/// name, by the library and the option's key: Node's `readdirSync(d, { withFileTypes: true })` gives
+/// `Dirent`s, whose `name` is the name (`ELEMENT_NAMES`).
+pub const LISTING_ENTRIES: &[(&str, &str)] = &[("fs", "withFileTypes")];
+
 /// Functions that give back the elements of the collection they are handed, in another order or
 /// kind: `sorted(paths)` holds the paths `paths` holds.
 pub const SAME_ELEMENTS: &[&str] = &["sorted", "list", "set", "tuple", "frozenset", "reversed", "iter", "fromkeys"];
@@ -1805,14 +1811,24 @@ pub enum PathFn {
     Temp,
     /// What the environment holds for the variable its first argument names.
     Environment,
+    /// Its first argument, read from the directory its second is in where it is handed one, as a
+    /// URL is resolved against its base (`new URL("../data", import.meta.url)`); else its first
+    /// argument as it is.
+    Relative,
 }
 
 impl PathFn {
-    /// Whether what it makes starts where its first argument starts: a join of parts, the
-    /// directory a path is in, the argument as it is. `os.path.join("data", name)` starts at the
-    /// literal `"data"`, as `Path("data") / name` does.
-    pub fn starts_at_first(self) -> bool {
-        matches!(self, PathFn::Join | PathFn::Parent | PathFn::Same)
+    /// Which of the `args` arguments it is handed what it makes starts at: the first for a join of
+    /// parts, the directory a path is in and the argument as it is (`os.path.join("data", name)`
+    /// starts at the literal `"data"`, as `Path("data") / name` does), the base a URL is resolved
+    /// against where it is handed one; none for a place of its own (the user's home, what the
+    /// environment holds).
+    pub fn starts_at(self, args: usize) -> Option<usize> {
+        match self {
+            PathFn::Join | PathFn::Parent | PathFn::Same => Some(0),
+            PathFn::Relative => Some(usize::from(args > 1)),
+            PathFn::Home | PathFn::Here | PathFn::Temp | PathFn::Environment => None,
+        }
     }
 }
 
@@ -1912,6 +1928,14 @@ pub const PATH_FUNCTIONS: &[(&str, &str, PathFn)] = &[
     ("os", "tmpdir", PathFn::Temp),
     ("process", "cwd", PathFn::Here),
 ];
+
+/// The web platform's classes whose values are paths or URLs, made with `new` of their parts, by
+/// their name: `new URL("./template.html", import.meta.url)`.
+pub const TYPESCRIPT_PATH_CLASSES: &[(&str, PathFn)] = &[("URL", PathFn::Relative)];
+
+/// The values of a JavaScript runtime that hold the environment's variables by their names, as
+/// `process.env.STORE` and `process.env["STORE"]` read them: Node's (and Bun's) `process.env`.
+pub const TYPESCRIPT_ENVIRONMENT: &[&[&str]] = &[&["process", "env"]];
 
 /// Rust's path functions, by the type or module they are on and their name.
 pub const RUST_PATH_FUNCTIONS: &[(&str, &str, PathFn)] = &[

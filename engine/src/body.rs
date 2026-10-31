@@ -33,7 +33,8 @@ impl Crosses {
     /// Read a call that crosses `kind` through operation `op` of `lib`: the facts its literals
     /// refine, what it touches, what flows (by the types of the names `held`), and whether its
     /// place starts at a literal. `strings` are the kinds of node a string is in the language, and
-    /// `makes_path` says which of its calls make a path or a URL of their first argument.
+    /// `path_function` says which path function a call's function is, as the reader's evaluator
+    /// of paths finds it.
     #[allow(clippy::too_many_arguments)]
     pub fn read(
         c: TsNode,
@@ -44,12 +45,12 @@ impl Crosses {
         literals: &[String],
         strings: &[&str],
         held: &HashMap<String, String>,
-        makes_path: &dyn Fn(TsNode) -> bool,
+        path_function: &dyn Fn(TsNode) -> Option<crate::knowledge::PathFn>,
     ) -> Crosses {
         let facts = effects::facts(kind, lib, op, literals);
         let what = what_of(c, src, strings, "arguments");
         let payload = payload_of(c, src, &what, "arguments", held);
-        let fixed = facts.kind.located() && starts_at_literal(c, src, strings, "arguments", effects::on_receiver(op), makes_path);
+        let fixed = facts.kind.located() && starts_at_literal(c, src, strings, "arguments", effects::on_receiver(op), path_function);
         Crosses { facts, what, payload, fixed, op: op.to_string(), line: c.start_position().row as u32 + 1 }
     }
 

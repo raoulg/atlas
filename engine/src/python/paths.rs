@@ -13,7 +13,7 @@ use crate::pytypes::{FileArg, Param, Target, Types};
 use crate::tree::{beneath, named_children, path_str, text, unquote, walk};
 
 use crate::knowledge::{self, PathAttribute, PathFn, PathMethod};
-use crate::paths::{bound as named_by, cross, environment, hole, lit, or_else, parent, substitute, union};
+use crate::paths::{bound as named_by, cross, environment_named, hole, lit, or_else, parent, substitute, union};
 pub(super) use crate::paths::{Built, Seg};
 
 const DEPTH: u32 = 40;
@@ -102,14 +102,13 @@ impl<'a> Eval<'a> {
         function().map(|(_, _, k)| *k)
     }
 
-    /// Whether calling `f` makes a path that starts where its first argument does: where ty finds
-    /// the call goes into the library of the path class or the path function `f` names
-    /// (knowledge::PYTHON_PATH_CLASSES, knowledge::PYTHON_PATH_FUNCTIONS), and what that makes
-    /// starts at its first argument (`PathFn::starts_at_first`), as `Path("data")` and
+    /// The path function calling `f` is, as the evaluator reads the call: where ty finds the call
+    /// goes into the library of the path class or the path function `f` names
+    /// (knowledge::PYTHON_PATH_CLASSES, knowledge::PYTHON_PATH_FUNCTIONS), as `Path("data")` and
     /// `os.path.join("data", name)` do. A class or a function of the project's own of the same
     /// name is the project's.
-    pub fn makes_path(&self, m: &Module, f: TsNode) -> bool {
-        self.path_function(m, f, &called(f, &m.src)).is_some_and(PathFn::starts_at_first)
+    pub fn path_function_of(&self, m: &Module, f: TsNode) -> Option<PathFn> {
+        self.path_function(m, f, &called(f, &m.src))
     }
 
     /// What the method `f` of a library's path, named `name`, makes of the path it is called on,
@@ -254,17 +253,23 @@ impl<'a> Eval<'a> {
                     a if knowledge::ELEMENT_PATHS.iter().any(|(lib, class, name)| *name == a && self.of_class(at.m, obj, lib, class)) => {
                         self.of(at, obj, depth + 1)
                     }
+                    // its name alone, below the directory listed: `entry.name`, `*`, as each name
+                    // `os.listdir(d)` gives is
+                    a if knowledge::ELEMENT_NAMES.iter().any(|(lib, class, name)| *name == a && self.of_class(at.m, obj, lib, class)) => {
+                        vec![lit("*")]
+                    }
                     a => self.parsed(at, obj, a, depth).or_else(|| self.defined(at, e, depth)).unwrap_or_else(|| vec![named()]),
                 }
             }
             "subscript" => {
                 // `os.environ["DATA_DIR"]`: what the environment holds for the variable, where ty types
-                // the mapping as the environment's
+                // the mapping as the environment's and the code decides the variable's name; one no
+                // code decides is a value the code gives no name
                 let environ = e
                     .child_by_field_name("value")
                     .map_or(false, |v| knowledge::PYTHON_ENVIRONMENT.iter().any(|(lib, class, _)| self.of_class(at.m, v, lib, class)));
-                if let Some(var) = e.child_by_field_name("subscript").filter(|s| environ && s.kind() == "string") {
-                    return vec![environment(&unquote(text(var, src)))];
+                if let Some(var) = e.child_by_field_name("subscript").filter(|_| environ) {
+                    return vec![environment_named(&self.of(at, var, depth + 1)).unwrap_or_else(|| hole("value"))];
                 }
                 // `x.parents[n]`: the directory n + 1 levels up, where the attribute is the path's
                 let v = e.child_by_field_name("value").filter(|v| v.kind() == "attribute");
@@ -337,6 +342,14 @@ impl<'a> Eval<'a> {
         if held(v, &at.m.src) {
             return Some(self.picked(at, v, key, index, depth));
         }
+        let (at, right) = self.assigned(at, v)?;
+        held(right, &at.m.src).then(|| self.picked(at, right, key, index, depth))
+    }
+
+    /// What the assignment that defines the name `v` gives it, with where that is evaluated: the
+    /// `{..}` of `KINDS = {..}` for `KINDS`, in this module or the one it is imported from; none
+    /// where `v` is no name an assignment defines.
+    fn assigned<'s, 't>(&'s self, at: At<'s, 't>, v: TsNode) -> Option<(At<'s, 't>, TsNode<'s>)> {
         if !matches!(v.kind(), "identifier" | "attribute") {
             return None;
         }
@@ -347,8 +360,47 @@ impl<'a> Eval<'a> {
             n = n.parent().filter(|p| p.kind() == "identifier").unwrap_or(n);
         }
         let a = n.parent().filter(|a| a.kind() == "assignment" && a.child_by_field_name("left").map(|l| l.id()) == Some(n.id()))?;
-        let right = a.child_by_field_name("right").filter(|r| held(*r, &m.src))?;
-        Some(self.picked(at.of_definition(m, offset), right, key, index, depth))
+        Some((at.of_definition(m, offset), a.child_by_field_name("right")?))
+    }
+
+    /// The keys of the mapping `v` is, as a loop goes over them (`for k in d`, `for k in d.keys()`,
+    /// `for k in sorted(d)`): each key as built, where the code writes the mapping out here or in the
+    /// assignment that defines `v`; none where `v` is no mapping the code writes out whole.
+    fn keys(&self, at: At, v: TsNode, depth: u32) -> Option<Vec<Built>> {
+        if depth > DEPTH {
+            return None;
+        }
+        let src = &at.m.src;
+        match v.kind() {
+            "dictionary" => {
+                let entries: Vec<TsNode> = named_children(v).into_iter().filter(|x| x.kind() != "comment").collect();
+                // a mapping unpacked into it (`**base`) has keys of its own
+                if entries.iter().any(|x| x.kind() != "pair") {
+                    return None;
+                }
+                let keys = entries.iter().filter_map(|p| p.child_by_field_name("key"));
+                Some(keys.fold(vec![], |acc, k| union(acc, self.of(at, k, depth + 1))))
+            }
+            "call" => {
+                let f = v.child_by_field_name("function")?;
+                let args = positional(v.child_by_field_name("arguments")?);
+                if f.kind() == "attribute" && f.child_by_field_name("attribute").is_some_and(|a| text(a, src) == "keys") && args.is_empty()
+                {
+                    return self.keys(at, f.child_by_field_name("object")?, depth + 1);
+                }
+                // the elements of what it is handed: `sorted(d)`
+                let same = call_path(f, src).last().is_some_and(|l| knowledge::SAME_ELEMENTS.contains(&l.as_str()));
+                match args.as_slice() {
+                    [d] if same => self.keys(at, *d, depth + 1),
+                    _ => None,
+                }
+            }
+            // a name: the keys of what the assignment that defines it gives it
+            _ => {
+                let (at, right) = self.assigned(at, v)?;
+                self.keys(at, right, depth + 1)
+            }
+        }
     }
 
     /// What a key or an index picks of a collection the code writes out (a mapping by a key its
@@ -606,9 +658,10 @@ impl<'a> Eval<'a> {
                 })?;
                 self.follow(at, file, first.child_by_field_name("left")?.start_byte(), depth + 1)
             }
-            // `for m in mappen`: one of the paths `mappen` holds
+            // `for m in mappen`: one of the paths `mappen` holds; a mapping, gone over, gives its keys
             "for_in_clause" | "for_statement" if p.child_by_field_name("left").map(|l| l.id()) == Some(n.id()) => {
-                let values = self.of(at.of_definition(m, offset), p.child_by_field_name("right")?, depth + 1);
+                let (here, right) = (at.of_definition(m, offset), p.child_by_field_name("right")?);
+                let values = self.keys(here, right, depth + 1).unwrap_or_else(|| self.of(here, right, depth + 1));
                 // an iterable of nothing known leaves the name the code gives the element
                 (!values.iter().all(|b| matches!(b.as_slice(), [Seg::Hole(_)]))).then_some(values)
             }
@@ -731,11 +784,12 @@ impl<'a> Eval<'a> {
                 None => vec![hole("call")],
             };
         }
-        // what the environment says, or the default the code takes where it says nothing
+        // what the environment says for the variable the code names, or the default the code takes
+        // where it says nothing; a variable no code names is a value the code gives no name
         let environ = |at: At| {
-            let var = positional.first().map(|a| unquote(text(*a, src))).unwrap_or_default();
+            let var = positional.first().and_then(|a| environment_named(&self.of(at, *a, depth + 1))).unwrap_or_else(|| hole("call"));
             let default = positional.get(1).map(|a| self.of(at, *a, depth + 1)).unwrap_or_default();
-            or_else(vec![environment(&var)], default)
+            or_else(vec![var], default)
         };
         // a library's path function, where ty finds the call goes into that library
         if let Some(kind) = self.path_function(at.m, f, last) {

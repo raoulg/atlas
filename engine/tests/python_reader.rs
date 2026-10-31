@@ -233,3 +233,53 @@ async def awaited() -> str:
     assert_eq!(read("parenthesized"), plain, "parentheses are the value inside");
     assert_eq!(read("awaited"), plain, "`await place()` is the place `place()` returns");
 }
+
+/// A variable of the environment is one place however the lookup names it (`docs/reference/mathematics.md`,
+/// "Paths as terms"): `os.environ["STORE"]`, `os.environ[NAME]`, `NAME` a constant the code gives `"STORE"`,
+/// `os.getenv("STORE")` and `os.environ.get(NAME)` are the variable `STORE`, as TypeScript's lookups are
+/// (`typescript.rs`). A name no code decides (`os.environ[name]` of a parameter) is no variable the code names.
+#[test]
+fn a_variable_is_one_place_however_its_lookup_names_it() {
+    let g = written(
+        "lookups",
+        &[(
+            "lookups/__init__.py",
+            r#"import os
+
+NAME = "STORE"
+
+
+def keyed() -> str:
+    with open(os.environ["STORE"]) as f:
+        return f.read()
+
+
+def constant() -> str:
+    with open(os.environ[NAME]) as f:
+        return f.read()
+
+
+def asked() -> str:
+    with open(os.getenv("STORE")) as f:
+        return f.read()
+
+
+def got() -> str:
+    with open(os.environ.get(NAME)) as f:
+        return f.read()
+
+
+def undecided(name: str) -> str:
+    with open(os.environ[name]) as f:
+        return f.read()
+"#,
+        )],
+    );
+    let places = |f: &str| -> Vec<String> { g.node(&format!("lookups.{f}")).unwrap().touches.iter().map(|t| t.place().id).collect() };
+    let store = places("keyed");
+    assert_eq!(store.len(), 1, "{store:?}");
+    assert_eq!(places("constant"), store, "`os.environ[NAME]`");
+    assert_eq!(places("asked"), store, "`os.getenv(\"STORE\")`");
+    assert_eq!(places("got"), store, "`os.environ.get(NAME)`");
+    assert_ne!(places("undecided"), store, "`os.environ[name]`");
+}

@@ -528,11 +528,12 @@ pub fn bound(name: &str, values: Vec<Built>) -> Vec<Built> {
 }
 
 /// The place a path names: the file, or for an operation on a directory that directory. A file
-/// whose name is known under a directory that is not (`artefacts/{variant}/report.json`,
-/// `{$DATA_DIR}/report.txt`) is that name under that directory, the hole kept in the term by the
-/// name the code gives it; a hole the code gives no name (`{value}`) is `{}`, so it is never taken
-/// for a wildcard the code writes, nor two named holes for one directory; a path whose last part is not known rests in
-/// the directory before its first unknown part, so what is unpacked into `D/{kind}/{id}` and what
+/// or a directory whose name is known under a directory that is not (`artefacts/{variant}/report.json`,
+/// `{$DATA_DIR}/report.txt`, the folder `{project}/.made/`) is that name under that directory, the hole
+/// kept in the term by the name the code gives it; a hole the code gives no name (`{value}`) is `{}`, so it is never taken
+/// for a wildcard the code writes, nor two named holes for one directory; a path whose last part is not known, or is the
+/// step up `..` that names no file of its own, rests in the directory before its first unknown part, so what is
+/// unpacked into `D/{kind}/{id}` and what
 /// lists `D` meet at `D/`. A pattern the code writes (`D.glob("*/IO-*")`) is the fiber below its
 /// directory, whatever operation it is handed to: the listing and the reads of what it yields are
 /// one place. A path that names nothing (only `.`, only wildcards, or nothing before an unknown
@@ -588,8 +589,15 @@ pub fn place(b: &Built, op: &str) -> Option<String> {
         _ if pattern && parts.iter().any(|x| unknown(x) || wild(x)) => any(),
         None if dir => format!("{p}/"),
         None => p.clone(),
-        // a file whose name is known is that name under any directory the code leaves unknown
-        Some(i) if !dir && i + 1 < parts.len() && !unknown(parts[parts.len() - 1]) => any(),
+        // a file or a directory whose name is known is that name under any directory the code
+        // leaves unknown
+        Some(i) if i + 1 < parts.len() && !unknown(parts[parts.len() - 1]) && parts[parts.len() - 1] != ".." => {
+            if dir {
+                format!("{}/", any())
+            } else {
+                any()
+            }
+        }
         Some(0) => return None,
         Some(i) => format!("{}/", parts[..i].join("/")),
     };
@@ -625,6 +633,16 @@ fn by_value<'b>(store: &crate::builder::GraphBuilder, holders: &[&str], mut buil
     let takes = |h: &&&str| store.nodes.get(**h).is_some_and(|n| n.params.iter().any(|p| !p.receiver && p.name == first));
     let [holder] = holders.iter().filter(takes).collect::<Vec<_>>()[..] else { return None };
     Some(format!("{}.{first}", store.owner(holder)?))
+}
+
+/// What names the place a value is: the value, where an input whose default is the empty path is
+/// the input alone, since the empty path names nothing: `process.argv[2] ?? ""` is named as
+/// `process.argv[2]!` is, `os.environ.get("REPORT", "")` as `$REPORT`.
+fn naming(b: &Built) -> Built {
+    match b.as_slice() {
+        [Seg::Option(x, d)] if known(d) && render(d).is_empty() => hole(x),
+        _ => b.clone(),
+    }
 }
 
 /// The deepest a value is followed out through the callers.
@@ -978,7 +996,11 @@ pub fn place_calls(store: &mut crate::builder::GraphBuilder, completed: Vec<Comp
         // a route that reaches none of the callers that make it whole sees the call as it was read,
         // a file named by the value its function holds as it is where nothing calls the function
         if wholes.iter().any(|w| !w.both(&f).0.is_empty()) {
-            let what = if t.kind == World::Disk { by_value(store, &[f.as_str()], built.iter()) } else { None };
+            let what = if t.kind == World::Disk {
+                by_value(store, &[f.as_str()], built.iter().map(naming).collect::<Vec<_>>().iter())
+            } else {
+                None
+            };
             let dir = if t.kind == World::Net { way_of_request(built.iter()).or(t.dir) } else { t.dir };
             store.instead(
                 &f,
@@ -1094,15 +1116,19 @@ pub fn place_calls(store: &mut crate::builder::GraphBuilder, completed: Vec<Comp
             // whole, so every call handed it touches the same place: `path` in a helper and
             // `self.path` in a method are both `Store.path` when the constructor takes it; a path
             // no place is named by is the term it evaluates to, its unknown parts left as the names
-            // the code gives them, and what the environment says as its variable
+            // the code gives them, and what the environment says as its variable. The file a
+            // database is opened on is named as a file is, however the code joins its path.
+            let file = t.kind == World::Disk || matches!(t.kind, World::Db(db) if crate::knowledge::opens_a_file(db, &t.op));
             let named = |built: &[&Built]| {
-                let value = if t.kind == World::Disk { by_value(store, &holders, built.iter().copied()) } else { None };
+                let built: Vec<Built> = built.iter().map(|b| naming(b)).collect();
+                let value = if file { by_value(store, &holders, built.iter()) } else { None };
                 value.or_else(|| {
                     let mut terms: Vec<String> = vec![];
-                    for b in built {
+                    for b in &built {
                         let term = render(b).replace('\\', "/");
                         let said = b.iter().any(|s| !matches!(s, Seg::Hole(h) if !h.starts_with('$')));
-                        if t.kind == World::Disk && said && !terms.contains(&term) {
+                        // the empty path names nothing
+                        if file && said && !term.is_empty() && !terms.contains(&term) {
                             terms.push(term);
                         }
                     }
@@ -1115,7 +1141,12 @@ pub fn place_calls(store: &mut crate::builder::GraphBuilder, completed: Vec<Comp
                 if !requested {
                     // a URL without a host is the page's own origin, decided by whoever serves it
                     let fixed = if t.kind != World::Net || !t.artifact.is_empty() { decides } else { vec![] };
-                    let touch = at(t.artifact.clone(), way, fixed);
+                    // a file whose path, as built, names no place is one the code does not name,
+                    // whatever the literals of the call that touches it say; what is known of it is
+                    // at most its format (`*.json`)
+                    let format = t.artifact.starts_with("*.");
+                    let artifact = if t.kind == World::Disk && !format { String::new() } else { t.artifact.clone() };
+                    let touch = at(artifact, way, fixed);
                     store.touch(&f, Touch { what: value.unwrap_or_else(|| touch.what.clone()), file: opened, ..touch });
                 }
                 continue;
@@ -1281,6 +1312,16 @@ mod tests {
         assert_eq!(place(&pattern, "read_text").as_deref(), Some("assets/regelingen/*/IO-*"), "what the glob yields");
         assert_eq!(place(&lit("build/*"), "rmtree").as_deref(), Some("build/"));
         assert_eq!(place(&lit("*"), "read_text"), None);
+        // a directory whose name is known is that name under the directory the code leaves unknown,
+        // as a file is
+        for b in [[hole("project"), lit("/.made")].concat(), env("/sub"), [lit("out/"), hole("kind"), lit("/plots")].concat()] {
+            assert_eq!(place(&b, "remove_dir_all"), place(&b, "read").map(|p| format!("{p}/")), "{b:?}");
+        }
+        // the step up names no directory of its own: above a part the code leaves unknown it rests
+        // where that part does
+        for b in [hole("project"), [lit("out/"), hole("kind")].concat()] {
+            assert_eq!(place(&[b.clone(), lit("/..")].concat(), "remove_dir_all"), place(&b, "remove_dir_all"), "{b:?}");
+        }
         let unset = or_else(vec![environment("DATA_DIR")], vec![lit("")]);
         let joined: Vec<Option<String>> = cross(&unset, &[lit("sub/report.txt")], "/").iter().map(|b| place(b, "read")).collect();
         assert_eq!(joined, [Some("sub/report.txt".into())], "the empty path joins as nothing, and the variable is its input");

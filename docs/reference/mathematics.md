@@ -181,7 +181,14 @@ holds. A listing of all of `D` (`D.iterdir()`, `D.glob("*")`) is the fiber over 
 always holds, `D` itself, and each element it yields is `D/*`. An element of a collection is also
 what a function handed the collection to run on each element takes (`sorted(ps, key=lambda p: ..)`'s
 `p`) and what a pick of it gives (`max(ps)`, `ps[0]`). A lookup `d[k]` in a table the code writes is
-the value the key picks where the code decides `k`, and else the union of the values `d` holds.
+the value the key picks where the code decides `k`, and else the union of the values `d` holds. A
+loop over a table goes over its keys (`for k in d`, `d.keys()`, `for (const k in d)`): its variable
+is the union of the keys the code writes. An element of a listing has a name as well as a path
+(`e.name`, `e.file_name()`), and that name joined below the directory listed is the element, `D/*`.
+The empty path `""` names nothing: an input whose default is the empty path is the input alone, a
+hole, never the place the empty term would be. The step up `..` names no file or folder of its own:
+`{p}/..` is the directory of `p`, decided once `p` is. A path resolved against a base
+(`new URL(rel, base)`) starts at the base, as a join does.
 **In Atlas.** A place on the disk the code names only through a variable is drawn as the term it
 evaluates to (`assets/regelingen/*/IO-*`), not as the variable (`m`). The root is traced to a
 default or to a parameter wherever the code says it; what it cannot trace stays a hole in the
@@ -191,7 +198,12 @@ where the package's code lies ships with it. The code decides a place in the fra
 function where the root becomes something it holds, a literal or a constant, which is where
 `places` asks. A file the term decides to the last part is a `File`; one whose name it decides
 below a directory it does not is that name under that directory, the hole kept in the term by
-the name the code gives it, wherever in the term it stands: `File({$DATA_DIR}/report.txt)`. Two
+the name the code gives it, wherever in the term it stands: `File({$DATA_DIR}/report.txt)`. A
+folder is placed as a file is: one whose name the term decides is that name under the directory it
+does not (`{project}/.made/`, the folder `clear` removes as the parent of the report it names), and
+one whose last part it leaves open, or whose last part is `..`, rests in the directory before the
+first part it leaves open. A folder made for a file holds that file by its term
+(`D/{x}/kind/` holds `D/{x}/kind/{id}.json`), so making it is a step towards the file, one place. Two
 holes the code names differently are two directories, since nothing in the code says they are one;
 a hole the code gives no name (an expression Atlas does not follow) is `{}`, never `*`, which is
 a wildcard the code writes. The name a hole has is the name the code binds the value to, in the
@@ -214,15 +226,20 @@ pointer. Words are a label, never an identity: two places are one when their ter
 graph names a touched file by (`Touch.what`) is that term too, never a literal or an expression of
 the call that touches it: a term written out in full is the place itself, however the code spells
 it (`./.made/log.txt` is `.made/log.txt`), and a term with a hole keeps the names the code gives its
-holes (`~/data/{name}`). A route
+holes (`~/data/{name}`). A database opened on a file is named by that file's term, as any file is,
+however the code builds its path (`Path("data") / kind / "counts.db"` and `f"data/{kind}/counts.db"`
+are one place). A variable of the environment is one place however its lookup names it
+(`os.environ["STORE"]`, `os.getenv(NAME)`, `process.env.STORE`, `process.env[NAME]` of a constant);
+a lookup whose name the code does not decide names no variable. A route
 is one in the same way, by what it serves: a set of methods at a path. `methods=["POST", "GET"]`,
 `["GET", "POST"]` and `{"GET", "POST"}` are one set, and a registration for every method
 (`app.all`) is the top of the set. Its label, `GET|POST /items`, writes the set in the order of
 `knowledge::REQUEST_WAYS`; a request meets a route whose set holds its method, at its path.
 **Where.** `paths.rs` (`Seg`, `join`, `place`, `folders`, `bound`, `with_suffix`, `Callers`,
 `served`, `serving`), `model.rs` (`Route`, `Methods`, `Request`),
-the readers' `paths.rs` (`Eval::of`), `flow.rs` (`Touch::place`), `plan.js` (`pathWords`); the
-pairs `python/paths`, `places` and `kept`.
+the readers' `paths.rs` (`Eval::of`), `flow.rs` (`Touch::place`), `plan.js` (`pathWords`),
+`knowledge.rs` (`PathFn`, `ELEMENT_NAMES`, `LISTING_ENTRIES`); the pairs `python/paths`, `places`,
+`kept`, `workbench`, `unset` and `opened`.
 
 ### Places by the type that holds them
 **What.** A quotient of the places by the program's type whose code builds each place's path: the

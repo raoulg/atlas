@@ -865,3 +865,47 @@ export function main(): number {
     assert!(held(&push.hands).contains(&(this.clone(), String::new())), "handed the box it runs on: {push:#?}");
     assert_eq!(held(&push.gives), [(this, "this".to_string())], "and gives it anew");
 }
+
+/// A variable of the environment is one place however the lookup names it (`docs/reference/mathematics.md`,
+/// "Paths as terms"): `process.env.STORE`, `process.env["STORE"]` and `process.env[NAME]`, `NAME` a constant
+/// the code gives `"STORE"`, are the variable `STORE`, as Python's lookups are (`python_reader.rs`). A name
+/// no code decides (`process.env[name]` of a parameter) is no variable the code names.
+#[test]
+fn a_variable_is_one_place_however_its_lookup_names_it() {
+    let g = written(
+        "env-lookups",
+        &[
+            ("package.json", "{\"name\": \"lookups\", \"version\": \"0.0.0\"}\n"),
+            (
+                "src/env.ts",
+                r#"import { readFileSync } from "node:fs";
+
+const NAME = "STORE";
+
+export function member(): string {
+  return readFileSync(process.env.STORE!, "utf8");
+}
+
+export function keyed(): string {
+  return readFileSync(process.env["STORE"]!, "utf8");
+}
+
+export function constant(): string {
+  return readFileSync(process.env[NAME]!, "utf8");
+}
+
+export function undecided(name: string): string {
+  return readFileSync(process.env[name]!, "utf8");
+}
+"#,
+            ),
+        ],
+    );
+    let places =
+        |f: &str| -> Vec<String> { g.node(&format!("{}.env.{f}", g.root)).unwrap().touches.iter().map(|t| t.place().id).collect() };
+    let store = places("member");
+    assert_eq!(store.len(), 1, "{store:?}");
+    assert_eq!(places("keyed"), store, "`process.env[\"STORE\"]`");
+    assert_eq!(places("constant"), store, "`process.env[NAME]`");
+    assert_ne!(places("undecided"), store, "`process.env[name]`");
+}

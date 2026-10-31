@@ -134,6 +134,12 @@ impl<'a> Eval<'a> {
             }
             "identifier" | "shorthand_property_identifier" => self.name(at, e, depth),
             "member_expression" => self.member(at, e, depth),
+            // `process.env[name]`: what the environment holds for the variable, where the code decides
+            // its name, as `process.env.NAME` is; one no code decides is a value the code gives no name
+            "subscript_expression" if e.child_by_field_name("object").is_some_and(|o| environment_object(&member_parts(o, src))) => {
+                let named = e.child_by_field_name("index").and_then(|k| environment_named(&self.of(at, k, depth + 1)));
+                vec![named.unwrap_or_else(|| hole("value"))]
+            }
             "subscript_expression" => self.looked_up(at, e, depth).unwrap_or_else(|| vec![hole("value")]),
             // an array is the values it holds; iterating it yields one of them
             "array" => {
@@ -141,15 +147,13 @@ impl<'a> Eval<'a> {
             }
             "spread_element" => inner(e),
             "call_expression" => self.call(at, e, depth),
+            // a path class made of its parts: `new URL("../data", import.meta.url)` is relative to
+            // the module's own file
             "new_expression" => {
-                // `new URL("../data", import.meta.url)`: relative to the module's own file
                 let args = e.child_by_field_name("arguments").map(named_children).unwrap_or_default();
-                match (e.child_by_field_name("constructor").map(|c| text(c, src)), args.as_slice()) {
-                    (Some("URL"), [rel, base]) => {
-                        cross(&self.of(at, *base, depth + 1).iter().map(parent).collect::<Vec<_>>(), &self.of(at, *rel, depth + 1), "/")
-                    }
-                    (Some("URL"), [x]) => self.of(at, *x, depth + 1),
-                    _ => vec![hole("value")],
+                match e.child_by_field_name("constructor").and_then(|c| self.path_function_of(at.m, c)) {
+                    Some(made) => self.made(at, made, &args, depth),
+                    None => vec![hole("value")],
                 }
             }
             _ => vec![hole("value")],
@@ -166,8 +170,16 @@ impl<'a> Eval<'a> {
             _ => {}
         }
         // an environment variable is set where the program runs
-        if matches!(parts.as_slice(), [p, env, _] if p == "process" && env == "env") {
+        if parts.split_last().is_some_and(|(_, object)| environment_object(object)) {
             return vec![environment(&last)];
+        }
+        // the name of an entry a listing gives (`e.name` of `readdirSync(d, { withFileTypes: true })`):
+        // below the directory listed, `*`, as each name `readdirSync(d)` gives is
+        if let (Some(o), [_, attr]) = (e.child_by_field_name("object"), parts.as_slice()) {
+            let library = (o.kind() == "identifier").then(|| self.lists_entries(at, o)).flatten();
+            if library.is_some_and(|lib| knowledge::ELEMENT_NAMES.iter().any(|(l, _, n)| *l == lib && n == attr)) {
+                return vec![lit("*")];
+            }
         }
         // what an object holds: a field its constructor sets from what it is handed
         if let [this, name] = parts.as_slice() {
@@ -430,29 +442,28 @@ impl<'a> Eval<'a> {
         None
     }
 
-    /// The value the name `name`, read at `e`, is bound to as an element: by a loop over a
-    /// collection (`for (const p of ps)`), or as the parameter of a function handed to a method of
-    /// an array that runs it on each element (`ps.map((p) => ..)`, knowledge::TYPESCRIPT_EACH):
-    /// one of the values `ps` holds, as Python's `for p in ps` is. An element of nothing known
-    /// leaves the name the code gives it.
-    fn element<'t>(&self, at: At<'_, 't>, e: TsNode<'t>, name: &str, depth: u32) -> Option<Vec<Built>> {
+    /// What the name `name`, read at `e`, is bound to an element of: by a loop over a collection
+    /// (`for (const p of ps)`), or as the parameter of a function handed to a method of an array that
+    /// runs it on each element (`ps.map((p) => ..)`, knowledge::TYPESCRIPT_EACH); or what it is bound
+    /// to a key of, by a loop over an object's keys (`for (const k in obj)`), which says `true`.
+    fn bound_over<'t>(&self, at: At<'_, 't>, e: TsNode<'t>, name: &str) -> Option<(TsNode<'t>, bool)> {
         let src = &at.m.src;
         let inside = |n: Option<TsNode>| n.is_some_and(|n| n.start_byte() <= e.start_byte() && e.end_byte() <= n.end_byte());
         let mut p = e.parent();
-        let over = loop {
+        loop {
             let x = p?;
             match x.kind() {
                 "for_in_statement"
-                    if x.child_by_field_name("operator").is_some_and(|o| text(o, src) == "of")
-                        && x.child_by_field_name("left").is_some_and(|l| l.kind() == "identifier" && text(l, src) == name)
+                    if x.child_by_field_name("left").is_some_and(|l| l.kind() == "identifier" && text(l, src) == name)
                         && inside(x.child_by_field_name("body")) =>
                 {
-                    break x.child_by_field_name("right")?;
+                    let keys = x.child_by_field_name("operator").is_some_and(|o| text(o, src) == "in");
+                    return Some((x.child_by_field_name("right")?, keys));
                 }
                 // a parameter of a function inside the body binds the name, as an element or not
                 "arrow_function" | "function_expression" | "function" if inside(x.child_by_field_name("body")) => {
                     if let Some(slot) = param_names(x, src).iter().position(|n| n == name) {
-                        break each_over(x, slot, src)?;
+                        return Some((each_over(x, slot, src)?, false));
                     }
                 }
                 _ => {}
@@ -462,18 +473,50 @@ impl<'a> Eval<'a> {
                 return None;
             }
             p = x.parent();
+        }
+    }
+
+    /// The library of the listing the name `o` is bound to an element of, where the listing is handed
+    /// the option that makes it give entries rather than names (knowledge::LISTING_ENTRIES), through the
+    /// methods that keep an array's elements: `e` of `for (const e of readdirSync(d, { withFileTypes: true }))`.
+    fn lists_entries<'t>(&self, at: At<'_, 't>, o: TsNode<'t>) -> Option<&'static str> {
+        let src = &at.m.src;
+        let Some((mut over, false)) = self.bound_over(at, o, text(o, src)) else { return None };
+        let call = loop {
+            let c = beneath(over, WRAPPERS);
+            let f = c.child_by_field_name("function").filter(|_| c.kind() == "call_expression")?;
+            match f.child_by_field_name("property").filter(|_| f.kind() == "member_expression").map(|p| text(p, src)) {
+                Some(m) if knowledge::TYPESCRIPT_SAME_ELEMENTS.contains(&m) => over = f.child_by_field_name("object")?,
+                _ => break c,
+            }
         };
+        let parts = member_parts(call.child_by_field_name("function")?, src);
+        let pkg = parts.first().and_then(|h| self.package(at.m, h)).unwrap_or_default();
+        let l = listing(&pkg, parts.last()?)?;
+        let (_, option) = knowledge::LISTING_ENTRIES.iter().find(|(lib, _)| *lib == l.library)?;
+        let args = call.child_by_field_name("arguments").map(named_children).unwrap_or_default();
+        let options = args.into_iter().filter(|x| x.kind() != "comment").nth(1).filter(|x| x.kind() == "object")?;
+        (field(options, option, src)?.kind() == "true").then_some(l.library)
+    }
+
+    /// The value the name `name`, read at `e`, is bound to as an element (`bound_over`): one of the
+    /// values `ps` holds, as Python's `for p in ps` is, or one of the keys `obj` writes out, as
+    /// Python's `for k in d` is. An element of nothing known leaves the name the code gives it.
+    fn element<'t>(&self, at: At<'_, 't>, e: TsNode<'t>, name: &str, depth: u32) -> Option<Vec<Built>> {
+        let src = &at.m.src;
+        let (over, keys) = self.bound_over(at, e, name)?;
+        let read = |at: At<'_, 't>| if keys { self.keys(at, over, depth + 1) } else { self.of(at, over, depth + 1) };
         // what the element is of is read where it is written: outside the function the body is, in
         // the function around that
         let values = if at.scope.is_some_and(|s| s.start_byte() <= over.start_byte() && over.end_byte() <= s.end_byte()) {
-            self.of(at, over, depth + 1)
+            read(at)
         } else {
             let mut outer = over.parent();
             while let Some(x) = outer.filter(|x| function_node(*x) != Some(*x)) {
                 outer = x.parent();
             }
             let names = outer.map(|f| param_names(f, src)).unwrap_or_default();
-            self.of(At { m: at.m, scope: outer, params: &names }, over, depth + 1)
+            read(At { m: at.m, scope: outer, params: &names })
         };
         (!values.iter().all(|b| matches!(b.as_slice(), [Seg::Hole(_)]))).then_some(values)
     }
@@ -530,17 +573,7 @@ impl<'a> Eval<'a> {
             let i = key.and_then(|k| k.parse::<usize>().ok());
             return self.of(at, i.and_then(|i| entries.get(i).copied()).unwrap_or(held), depth + 1);
         }
-        // a property's key as the code writes it: a name, a string, a number, or `[K]` computed
-        let named = |p: TsNode<'s>| -> Option<String> {
-            let k = p.child_by_field_name("key")?;
-            match k.kind() {
-                "computed_property_name" => match self.of(at, named_children(k).into_iter().next()?, depth + 1).as_slice() {
-                    [b] if crate::paths::known(b) => Some(crate::paths::render(b)),
-                    _ => None,
-                },
-                _ => Some(key_text(k, src)),
-            }
-        };
+        let named = |p: TsNode<'s>| self.key(at, p, depth);
         let value = |p: TsNode<'s>| match p.kind() {
             "pair" => p.child_by_field_name("value"),
             "shorthand_property_identifier" | "spread_element" => Some(p),
@@ -559,6 +592,77 @@ impl<'a> Eval<'a> {
         }
     }
 
+    /// A property's key as the code writes it: a name, a string, a number, or `[K]` computed where the
+    /// code decides `K`; none for a spread or a key no code decides.
+    fn key<'s>(&self, at: At<'s, 's>, p: TsNode<'s>, depth: u32) -> Option<String> {
+        let src = &at.m.src;
+        if p.kind() == "shorthand_property_identifier" {
+            return Some(text(p, src).to_string());
+        }
+        let k = p.child_by_field_name("key")?;
+        match k.kind() {
+            "computed_property_name" => match self.of(at, named_children(k).into_iter().next()?, depth + 1).as_slice() {
+                [b] if crate::paths::known(b) => Some(crate::paths::render(b)),
+                _ => None,
+            },
+            _ => Some(key_text(k, src)),
+        }
+    }
+
+    /// The keys of an object the code writes out, where `v` stands or where the name it is read by is
+    /// declared, as `for (k in obj)` goes over them: each as the code writes it. Nothing is known of
+    /// them where one is not decided (a spread, a key computed from a value).
+    fn keys<'s>(&self, at: At<'s, 's>, v: TsNode<'s>, depth: u32) -> Vec<Built> {
+        let Some((here, held)) = self.written_out(at, v, depth).filter(|(_, h)| h.kind() == "object") else { return vec![] };
+        let mut out = vec![];
+        for p in named_children(held).into_iter().filter(|x| x.kind() != "comment") {
+            match self.key(here, p, depth) {
+                Some(k) => out = union(out, vec![lit(&k)]),
+                None => return vec![],
+            }
+        }
+        out
+    }
+
+    /// The path function the function `f` of a call, or the class of a `new`, is: a function by
+    /// the package it is imported from or by the global object it is on (`path.join`,
+    /// `process.cwd`; knowledge::PATH_FUNCTIONS), a class by its name (`URL`;
+    /// knowledge::TYPESCRIPT_PATH_CLASSES).
+    pub fn path_function_of(&self, m: &Module, f: TsNode) -> Option<PathFn> {
+        let src = &m.src;
+        if f.parent().is_some_and(|p| p.kind() == "new_expression") {
+            return knowledge::TYPESCRIPT_PATH_CLASSES.iter().find(|(c, _)| *c == text(f, src)).map(|(_, k)| *k);
+        }
+        let parts = member_parts(f, src);
+        let last = parts.last().map(String::as_str).unwrap_or("call");
+        let pkg = parts.first().and_then(|h| self.package(m, h)).unwrap_or_default();
+        let on = if pkg.is_empty() && parts.len() == 2 { parts[0].as_str() } else { pkg.as_str() };
+        knowledge::PATH_FUNCTIONS.iter().find(|(p, n, _)| *p == on && *n == last).map(|(_, _, k)| *k)
+    }
+
+    /// What the path function `made` makes of the `args` it is handed.
+    fn made<'t>(&self, at: At<'_, 't>, made: PathFn, args: &[TsNode<'t>], depth: u32) -> Vec<Built> {
+        let arg = |i: usize| args.get(i).map(|a| self.of(at, *a, depth + 1)).unwrap_or_else(|| vec![hole("value")]);
+        match made {
+            PathFn::Join => args.iter().fold(vec![vec![]], |acc: Vec<Built>, a| {
+                let next = self.of(at, *a, depth + 1);
+                if acc == vec![Vec::<Seg>::new()] {
+                    next
+                } else {
+                    cross(&acc, &next, "/")
+                }
+            }),
+            PathFn::Parent => arg(0).iter().map(parent).collect(),
+            PathFn::Same => arg(0),
+            PathFn::Home => vec![lit("~")],
+            PathFn::Here => vec![lit(".")],
+            PathFn::Temp => vec![lit(knowledge::TEMP_DIR)],
+            PathFn::Environment => vec![environment_named(&arg(0)).unwrap_or_else(|| hole("call"))],
+            PathFn::Relative if args.len() > 1 => cross(&arg(1).iter().map(parent).collect::<Vec<_>>(), &arg(0), "/"),
+            PathFn::Relative => arg(0),
+        }
+    }
+
     fn call<'t>(&self, at: At<'_, 't>, c: TsNode<'t>, depth: u32) -> Vec<Built> {
         let src = &at.m.src;
         let Some(f) = c.child_by_field_name("function") else { return vec![hole("call")] };
@@ -572,23 +676,8 @@ impl<'a> Eval<'a> {
             "member_expression" => f.child_by_field_name("property").map_or("", |p| text(p, src)),
             _ => "",
         };
-        // a path function by the package it is imported from, or by the global object it is on
-        let on = if pkg.is_empty() && parts.len() == 2 { parts[0].as_str() } else { pkg.as_str() };
-        match knowledge::PATH_FUNCTIONS.iter().find(|(p, f, _)| *p == on && *f == last).map(|(_, _, k)| *k) {
-            Some(PathFn::Join) => args.iter().fold(vec![vec![]], |acc: Vec<Built>, a| {
-                let next = self.of(at, *a, depth + 1);
-                if acc == vec![Vec::<Seg>::new()] {
-                    next
-                } else {
-                    cross(&acc, &next, "/")
-                }
-            }),
-            Some(PathFn::Parent) => arg(0).iter().map(parent).collect(),
-            Some(PathFn::Same) => arg(0),
-            Some(PathFn::Home) => vec![lit("~")],
-            Some(PathFn::Here) => vec![lit(".")],
-            Some(PathFn::Temp) => vec![lit(knowledge::TEMP_DIR)],
-            Some(PathFn::Environment) => vec![environment_named(&arg(0)).unwrap_or_else(|| hole("call"))],
+        match self.path_function_of(at.m, f) {
+            Some(made) => self.made(at, made, &args, depth),
             // the language's own conversions to a string
             None if parts.as_slice() == ["String"] => arg(0),
             None if last == "toString" => {
@@ -728,6 +817,12 @@ impl<'a> Eval<'a> {
         let handed: HashMap<&str, Vec<Built>> = names.iter().zip(args).map(|(p, a)| (p.as_str(), self.of(at, *a, depth + 1))).collect();
         Some(gives.iter().flat_map(|b| substitute(b, |p| handed.get(p).cloned().unwrap_or_else(|| vec![hole(p)]))).collect())
     }
+}
+
+/// Whether a value, by the parts of its name, is the runtime's object that holds the environment's
+/// variables (knowledge::TYPESCRIPT_ENVIRONMENT): `process.env`.
+fn environment_object(parts: &[String]) -> bool {
+    knowledge::TYPESCRIPT_ENVIRONMENT.iter().any(|o| o.len() == parts.len() && o.iter().zip(parts).all(|(a, b)| a == b))
 }
 
 /// The library's function that lists a directory (knowledge::LISTINGS_BELOW) a call of `function`
