@@ -561,6 +561,12 @@ fn put(b: &Built, one: &[(Seg, Built)], all: &[(Seg, Vec<Built>)]) -> Built {
         }
         match s {
             Seg::Lit(t) if said && up_first(t) => out = up_from(out, t),
+            // the empty path is the unit of a join where it is written in, as where it is written (`join`)
+            Seg::Lit(t) if said && t.starts_with('/') && known(&out) && render(&out).is_empty() => {
+                if t.len() > 1 {
+                    out = lit(&t[1..]);
+                }
+            }
             Seg::Var(n, vs) => {
                 let mut values: Vec<Built> = vec![];
                 let every = |s: &Seg| all.iter().find(|(k, _)| k == s).map(|(_, v)| v.clone());
@@ -1641,6 +1647,19 @@ mod tests {
             let handed = substitute(&t, hand);
             proptest::prop_assert_eq!(handed.len(), 1);
             proptest::prop_assert_eq!(substitute(&parent(&t), hand), vec![parent(&handed[0])]);
+        }
+
+        /// Law: a join commutes with what is handed. `{P}/a/b` with `v` written in for `{P}` is `v`
+        /// joined with `a/b`, also where `v` is the empty path, the unit of a join (`PathBuf::new()`):
+        /// then it is `a/b`, and no `/` stands before it.
+        #[test]
+        fn a_join_commutes_with_what_is_handed(rest in proptest::collection::vec(a_part(), 1..3), v in proptest::option::of(a_path())) {
+            let p = vec![Seg::Param("P".into())];
+            let t = rest.iter().fold(p, |b, q| join(&b, q, "/"));
+            let v = v.unwrap_or_default();
+            let hand = |x: &str| if x == "P" { vec![v.clone()] } else { vec![vec![Seg::Param(x.into())]] };
+            let written = rest.iter().fold(v.clone(), |b, q| join(&b, q, "/"));
+            proptest::prop_assert_eq!(substitute(&t, hand), vec![written]);
         }
 
         /// Law: where two callers meet a path, the meet keeps every condition of both, the

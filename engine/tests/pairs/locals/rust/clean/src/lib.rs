@@ -1,4 +1,4 @@
-//! Two levels of a signal, shown side by side: `pair` makes the array that holds them by its own code.
+//! Two levels of a signal, shown side by side: `pair` makes the array that holds them by its own code, `listed` the vector.
 
 /// A level of a signal.
 pub struct Level {
@@ -39,4 +39,14 @@ pub fn named(first: &Level, second: &Level) {
 pub fn written(first: &Level, second: &Level) {
     draw(first.db - second.db);
     list(&[first, second]);
+}
+
+fn listed(first: Level, second: Level) -> Vec<Level> {
+    let both: Vec<Level> = vec![first, second];
+    both
+}
+
+/// The two levels, listed and shown.
+pub fn shown(first: Level, second: Level) {
+    show(&listed(first, second));
 }

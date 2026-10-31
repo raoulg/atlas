@@ -12,7 +12,7 @@ use crate::effects::{self, Facts};
 use crate::model::{Crossing, Dir, EdgeKind, Held, NodeKind, Set, Site, Slot, Test, Touch, Use, World};
 use crate::tree::{
     beneath, guarded_by, guards, named_children, number_choices, payload_of, starts_at_literal, text, walk, walk_all, what_of, wrapped,
-    ChoiceSyntax, Part, Wrappers,
+    wraps, ChoiceSyntax, Part, Wrappers,
 };
 
 /// A call that crosses into the world, as the code writes it.
@@ -392,7 +392,7 @@ impl<'t, 's> Steps<'t, 's> {
     fn outermost(&self, n: TsNode<'t>) -> TsNode<'t> {
         let wrappers = self.uses.wrappers;
         let mut n = n;
-        while let Some(p) = self.up(n).filter(|p| wrappers.contains(&p.kind()) && wrapped(*p).map(|x| x.id()) == Some(n.id())) {
+        while let Some(p) = self.up(n).filter(|p| wraps(wrappers, *p) && wrapped(*p).map(|x| x.id()) == Some(n.id())) {
             n = p;
         }
         n
@@ -465,7 +465,7 @@ impl<'t, 's> Steps<'t, 's> {
                 return true;
             }
             let last = up.named_child(up.named_child_count().saturating_sub(1)).map(|l| l.id()) == Some(at.id());
-            let through = (u.wrappers.contains(&up.kind()) && wrapped(up).map(|w| w.id()) == Some(at.id()))
+            let through = (wraps(u.wrappers, up) && wrapped(up).map(|w| w.id()) == Some(at.id()))
                 || (u.tails.contains(&up.kind()) && last && !(u.drops)(up, at, self.src))
                 || matches!((self.syntax.part)(up, at, self.src), Part::Arm(_));
             if !through {
@@ -491,7 +491,7 @@ impl<'t, 's> Steps<'t, 's> {
             }
             let Some(up) = self.up(at).filter(|_| at.id() != self.body.id()) else { return false };
             let last = named_children(up).into_iter().filter(|x| !x.kind().ends_with("comment")).last().is_some_and(|l| l.id() == at.id());
-            let through = (u.wrappers.contains(&up.kind()) && wrapped(up).is_some_and(|w| w.id() == at.id()))
+            let through = (wraps(u.wrappers, up) && wrapped(up).is_some_and(|w| w.id() == at.id()))
                 || (u.tails.contains(&up.kind()) && last && !(u.drops)(up, at, self.src))
                 || matches!((self.syntax.part)(up, at, self.src), Part::Arm(_));
             if !through && !(u.leaves)(up, self.body) {
@@ -531,7 +531,7 @@ impl<'t, 's> Steps<'t, 's> {
         let u = self.uses;
         let Some(propagates) = u.propagates else { return true };
         let mut at = c;
-        while let Some(p) = self.up(at).filter(|p| u.wrappers.contains(&p.kind()) && wrapped(*p).map(|w| w.id()) == Some(at.id())) {
+        while let Some(p) = self.up(at).filter(|p| wraps(u.wrappers, *p) && wrapped(*p).map(|w| w.id()) == Some(at.id())) {
             if propagates.contains(&p.kind()) {
                 return !self.in_function(p);
             }
@@ -762,10 +762,10 @@ impl<'t, 's> Steps<'t, 's> {
                     let mut e = n;
                     while let Some(q) = self.up(e).filter(|_| e.id() != c.id()) {
                         let of = |x: TsNode| beneath(x, u.wrappers).id() == beneath(e, u.wrappers).id();
-                        let wraps = u.wrappers.contains(&q.kind()) && wrapped(q).is_some_and(|w| w.id() == e.id());
+                        let wrapper = wraps(u.wrappers, q) && wrapped(q).is_some_and(|w| w.id() == e.id());
                         let reads = (u.field)(q, self.src).is_some_and(|(o, _)| of(o))
                             || (u.keeps.contains(&q.kind()) && q.named_child(0).is_some_and(of));
-                        if !(wraps || reads) || callee(q) {
+                        if !(wrapper || reads) || callee(q) {
                             break;
                         }
                         e = q;
@@ -863,7 +863,7 @@ impl<'t, 's> Steps<'t, 's> {
         let mut k = at;
         while let Some(p) = self.up(k) {
             let of = |x: TsNode| beneath(x, u.wrappers).id() == beneath(k, u.wrappers).id();
-            if (u.wrappers.contains(&p.kind()) && wrapped(p).is_some_and(|w| w.id() == k.id()))
+            if (wraps(u.wrappers, p) && wrapped(p).is_some_and(|w| w.id() == k.id()))
                 || (u.field)(p, self.src).is_some_and(|(o, _)| of(o))
                 || (u.keeps.contains(&p.kind()) && p.named_child(0).is_some_and(of))
             {
@@ -948,7 +948,7 @@ impl<'t, 's> Steps<'t, 's> {
         while let Some(p) = self.up(child).filter(|_| child.id() != self.body.id()) {
             let last =
                 named_children(p).into_iter().filter(|x| !x.kind().ends_with("comment")).last().is_some_and(|l| l.id() == child.id());
-            if u.wrappers.contains(&p.kind()) && wrapped(p).is_some_and(|w| w.id() == child.id()) {
+            if wraps(u.wrappers, p) && wrapped(p).is_some_and(|w| w.id() == child.id()) {
                 child = p;
             } else if u.keeps.contains(&p.kind()) {
                 (child, part) = (p, true);
@@ -1078,7 +1078,7 @@ impl<'t, 's> Steps<'t, 's> {
             // (`fig, ax = self.fig, self.ax`)
             let paired = self.up(p).and_then(|b| (u.binds)(b)).is_some_and(|(t, v)| v.id() == p.id() && (u.pairs)(t, v));
             through |= u.keeps.contains(&p.kind());
-            chain &= u.keeps.contains(&p.kind()) || u.wrappers.contains(&p.kind()) || paired;
+            chain &= u.keeps.contains(&p.kind()) || wraps(u.wrappers, p) || paired;
             child = p;
         }
         true

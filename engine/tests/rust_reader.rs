@@ -573,3 +573,29 @@ fn a_listener_s_connections_are_doors_to_its_address() {
         assert_eq!(reached, BTreeSet::from(["127.0.0.1:7878".to_string()]), "{f}: {:?}", places(&g, f));
     }
 }
+
+/// A dereference hands on the value it is written on, as a borrow does (`tree::Wrappers`): `let l = *level;` binds `l` to
+/// `level` itself, so the step `l` is handed to is handed `level`, as it is where the body hands `level` straight on, and
+/// the body binds no value of its own: `*x`, `&*x` and `x` are one value (#327).
+#[test]
+fn a_dereference_is_the_value_it_is_written_on() {
+    let g = written(
+        "deref",
+        &[(
+            "src/lib.rs",
+            "#[derive(Clone, Copy)]\npub struct Level {\n    pub db: f32,\n}\n\nfn show(level: &Level) {\n    println!(\"{}\", level.db);\n}\n\npub fn given(level: &Level) {\n    show(level);\n}\n\npub fn dereferenced(level: &Level) {\n    let l = *level;\n    show(&l);\n}\n\npub fn reborrowed(level: &Level) {\n    let l = &*level;\n    show(l);\n}\n\npub fn inline(level: &Level) {\n    show(&*level);\n}\n",
+        )],
+    );
+    let read = |f: &str| {
+        let n = g.node(&format!("deref.{f}")).unwrap_or_else(|| panic!("no node deref.{f}"));
+        let show = n.sites.iter().find(|s| s.to == "deref.show").unwrap_or_else(|| panic!("{f} calls show"));
+        let hands: Vec<(String, String, Vec<atlas_engine::Slot>)> =
+            show.hands.iter().map(|h| (h.ty.clone(), h.name.clone(), h.fills.clone())).collect();
+        (hands, n.binds.len())
+    };
+    let straight = read("given");
+    assert_eq!(straight.0.iter().map(|h| h.1.as_str()).collect::<Vec<_>>(), ["level"], "{straight:?}");
+    for f in ["dereferenced", "reborrowed", "inline"] {
+        assert_eq!(read(f), straight, "{f}");
+    }
+}

@@ -197,6 +197,26 @@ fn a_request_goes_the_way_its_method_says() {
     }
 }
 
+/// A package's doors are what its root names, in every language: a crate's `pub fn` in `lib.rs`, what the module
+/// `package.json` points to exports, the names the root `__init__.py` binds. The six clients of the requests pair are
+/// one client written three ways, clean and with the shortcut, so each has the same doors, the functions `item` and
+/// `order`, and a part reaches what its doors reach alike: isomorphic is the same.
+#[test]
+fn one_client_has_the_same_doors_in_every_language() {
+    use atlas_engine::{EntryKind, NodeKind};
+    let g = pair("requests");
+    for side in ["clean", "shortcut", "pyclean", "pyshortcut", "rsclean", "rsshortcut"] {
+        let doors: Vec<&str> = g
+            .nodes
+            .iter()
+            .filter(|n| n.id.starts_with(&format!("{side}.")) && n.kind == NodeKind::Function)
+            .filter(|n| n.entry.as_ref().is_some_and(|e| e.kind == EntryKind::Export))
+            .map(|n| n.name.as_str())
+            .collect();
+        assert_eq!(doors, ["item", "order"], "{side}: the functions its root names");
+    }
+}
+
 /// A shaped array is a type of its own and stands in its rank family (`docs/reference/mathematics.md`, "Shapes and their
 /// rank"). The clean components say the shape of what they take and give (`Float[Tensor, "batch dim"]`); the shortcut
 /// says `Tensor`. Each shape of the clean side stays its own type, and stands in a family shared by exactly the shapes of
@@ -296,8 +316,9 @@ fn a_key_no_code_decides_is_one_of_a_tables_values_in_every_language() {
 /// "Paths as terms"), in every language: Python's `D.glob("*")` and `os.listdir(D)`, TypeScript's
 /// `readdirSync(D)`, whose names the code joins back below the directory, looped over or mapped, and
 /// Rust's `fs::read_dir(D)`, whose entries are at their `path()`, looped over, mapped or handed to a
-/// closure for each. The file read in each folder is one place, and the directory listed is one
-/// place, whichever form and language the code takes.
+/// closure for each, as the path's own method `D.read_dir()`, which std documents as `fs::read_dir(D)`, and
+/// tokio's `read_dir(D)`, whose entries `next_entry` gives one by one. The file read in each folder is one
+/// place, and the directory listed is one place, whichever form and language the code takes.
 #[test]
 fn a_listing_is_a_pattern_below_its_directory_in_every_language() {
     let glob = run_places("python", "listing-glob", "    for p in DATA.glob(\"*\"):\n        print((p / \"x.txt\").read_text())");
@@ -321,14 +342,66 @@ fn a_listing_is_a_pattern_below_its_directory_in_every_language() {
             "listing-each",
             "    fs::read_dir(DATA)?.flatten().for_each(|e| {\n        let _ = fs::read_to_string(e.path().join(\"x.txt\"));\n    });",
         ),
+        ("rust", "listing-method", "    for e in Path::new(DATA).read_dir()? {\n        fs::read_to_string(e?.path().join(\"x.txt\"))?;\n    }"),
+        (
+            "rust",
+            "listing-tokio",
+            "    let mut entries = tokio::fs::read_dir(DATA).await?;\n    while let Some(e) = entries.next_entry().await? {\n        tokio::fs::read_to_string(e.path().join(\"x.txt\")).await?;\n    }",
+        ),
     ] {
         assert_eq!(run_places(language, name, body), glob, "{language} {name}");
     }
 }
 
+/// A path is one term whichever form builds it (`docs/reference/mathematics.md`, "Paths as terms"): a join is the join
+/// whether the code writes it as a method or as the function it is (`Path::join(p, x)` is `p.join(x)`), and a path the
+/// code changes in place is what it holds after each change, as a name bound anew is (`p.push(x)` is `p = p.join(x)`,
+/// `p.pop()` is `p = p.parent()`, `p.set_extension(e)` and `p.set_file_name(n)` are the path with another extension or
+/// name). So Python's `DATA / kind / "x.txt"`, TypeScript's `path.join(DATA, kind, "x.txt")` and each Rust form read
+/// one place. A change the body may skip (in an `if`) leaves the path as it was or changed: the union of both; a join it
+/// repeats (in a loop) as often as the code does not say leaves it where it was or below it, however the join is written.
+#[test]
+fn a_path_is_one_term_whichever_form_builds_it() {
+    let one = run_places("python", "term-slash", "    print((DATA / kind / \"x.txt\").read_text())");
+    assert_eq!(one.len(), 1, "{one:?}");
+    assert_eq!(run_places("typescript", "term-join", "  readFileSync(path.join(DATA, kind, \"x.txt\"));"), one, "typescript");
+    for (name, body) in [
+        ("term-method", "    fs::read_to_string(Path::new(DATA).join(kind).join(\"x.txt\"))?;"),
+        ("term-function", "    fs::read_to_string(Path::join(&Path::join(Path::new(DATA), kind), \"x.txt\"))?;"),
+        ("term-push", "    let mut p = std::path::PathBuf::from(DATA);\n    p.push(kind);\n    p.push(\"x.txt\");\n    fs::read_to_string(&p)?;"),
+        (
+            "term-push-new",
+            "    let mut p = std::path::PathBuf::new();\n    p.push(DATA);\n    p.push(kind);\n    p.push(\"x.txt\");\n    fs::read_to_string(p)?;",
+        ),
+        ("term-push-function", "    let mut p = Path::new(DATA).join(kind);\n    std::path::PathBuf::push(&mut p, \"x.txt\");\n    fs::read_to_string(p)?;"),
+        ("term-rebound", "    let mut p = Path::new(DATA).to_path_buf();\n    p = p.join(kind).join(\"x.txt\");\n    fs::read_to_string(p)?;"),
+        ("term-pop", "    let mut p = Path::new(DATA).join(kind).join(\"y\");\n    p.pop();\n    p.push(\"x.txt\");\n    fs::read_to_string(p)?;"),
+        ("term-extension", "    let mut p = Path::new(DATA).join(kind).join(\"x\");\n    p.set_extension(\"txt\");\n    fs::read_to_string(p)?;"),
+        ("term-file-name", "    let mut p = Path::new(DATA).join(kind).join(\"y.txt\");\n    p.set_file_name(\"x.txt\");\n    fs::read_to_string(p)?;"),
+    ] {
+        assert_eq!(run_places("rust", name, body), one, "rust {name}");
+    }
+    let kept = run_places("rust", "term-kept", "    fs::read_to_string(Path::new(DATA).join(kind))?;");
+    let both: std::collections::BTreeSet<_> = kept.union(&one).cloned().collect();
+    assert_eq!(both.len(), 2, "{both:?}");
+    let skipped = "    let mut p = Path::new(DATA).join(kind);\n    if kind.len() > 1 {\n        p.push(\"x.txt\");\n    }\n    fs::read_to_string(p)?;";
+    assert_eq!(run_places("rust", "term-skipped", skipped), both, "a change the body may skip");
+    // a join the body repeats as often as the code does not say leaves the path where it was or below it
+    let before = run_places("rust", "term-before", "    fs::read_to_string(Path::new(DATA).join(\"x\"))?;");
+    let loop_over = |change: &str| {
+        format!("    let mut p = Path::new(DATA).join(\"x\");\n    for part in kind.split('/') {{\n        {change}\n    }}\n    fs::read_to_string(p)?;")
+    };
+    let repeated = run_places("rust", "term-repeated", &loop_over("p.push(part);"));
+    assert_eq!(run_places("rust", "term-repeated-rebound", &loop_over("p = p.join(part);")), repeated, "`p = p.join(x)` is `p.push(x)`");
+    let below = |(kind, place): &(String, String)| before.iter().any(|(k, q)| k == kind && place.starts_with(&format!("{q}/")));
+    assert!(before.is_subset(&repeated) && repeated.len() > before.len(), "{repeated:?} holds {before:?}");
+    assert!(repeated.difference(&before).all(below), "{repeated:?} where it was or below {before:?}");
+}
+
 /// The places `run` of a one-module program touches, each with its kind: a program in `language`
 /// that keeps a directory `DATA` (`data`) and a table `KINDS` from a key to a folder below it
-/// (`a` to `regelingen`, `b` to `ontwerp`), and runs `body` with a `kind` its caller hands.
+/// (`a` to `regelingen`, `b` to `ontwerp`), and runs `body` with a `kind` its caller hands. A Rust `run` whose body
+/// awaits is an `async fn`.
 fn run_places(language: &str, name: &str, body: &str) -> std::collections::BTreeSet<(String, String)> {
     let root = std::env::temp_dir().join(format!("atlas-{language}-{name}-{}", std::process::id()));
     let write = |file: &str, text: &str| {
@@ -363,7 +436,8 @@ fn run_places(language: &str, name: &str, body: &str) -> std::collections::BTree
             write(
                 "src/lib.rs",
                 &format!(
-                    "use std::collections::HashMap;\nuse std::fs;\nuse std::path::Path;\n\nconst DATA: &str = \"data\";\n\npub fn run(kind: &str) -> std::io::Result<()> {{\n    let kinds: HashMap<&str, &str> = HashMap::from([(\"a\", \"regelingen\"), (\"b\", \"ontwerp\")]);\n{body}\n    Ok(())\n}}\n"
+                    "use std::collections::HashMap;\nuse std::fs;\nuse std::path::Path;\n\nconst DATA: &str = \"data\";\n\npub {}fn run(kind: &str) -> std::io::Result<()> {{\n    let kinds: HashMap<&str, &str> = HashMap::from([(\"a\", \"regelingen\"), (\"b\", \"ontwerp\")]);\n{body}\n    Ok(())\n}}\n",
+                    if body.contains(".await") { "async " } else { "" }
                 ),
             );
             "demo.run"

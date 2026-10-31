@@ -30,10 +30,20 @@ pub fn field_children<'t>(n: TsNode<'t>, field: &str) -> Vec<TsNode<'t>> {
 }
 
 /// The expressions of a language that hand on the value inside them: parentheses, and the
-/// language's casts, assertions and unwrappings (`(x as T)!`, `&x`, `x?`, `await x`). Atlas reads a
-/// value through them as through an identity, as it reads an `Option`, a `Result` or a promise as
-/// what it holds. Each reader names its language's.
+/// language's casts, assertions, references and unwrappings (`(x as T)!`, `&x`, `*x`, `x?`, `await
+/// x`). Atlas reads a value through them as through an identity, as it reads an `Option`, a `Result`
+/// or a promise as what it holds. Each reader names its language's, each by its kind of node, or by
+/// its kind and the operator it is written with where that kind writes other operators too
+/// (`unary_expression *`: a dereference, not a negation).
 pub type Wrappers = &'static [&'static str];
+
+/// Whether `n` is one of the wrappers (`Wrappers`).
+pub fn wraps(wrappers: Wrappers, n: TsNode) -> bool {
+    wrappers.iter().any(|w| match w.split_once(' ') {
+        Some((kind, op)) => n.kind() == kind && n.child(0).is_some_and(|c| c.kind() == op),
+        None => n.kind() == *w,
+    })
+}
 
 /// The value a wrapper hands on: its `value` (`&mut x`), else its first named child.
 pub fn wrapped<'t>(n: TsNode<'t>) -> Option<TsNode<'t>> {
@@ -43,7 +53,7 @@ pub fn wrapped<'t>(n: TsNode<'t>) -> Option<TsNode<'t>> {
 /// The expression a value is, beneath its wrappers: `x` of `(x as T)!`.
 pub fn beneath<'t>(n: TsNode<'t>, wrappers: Wrappers) -> TsNode<'t> {
     let mut n = n;
-    while wrappers.contains(&n.kind()) {
+    while wraps(wrappers, n) {
         match wrapped(n) {
             Some(x) => n = x,
             None => break,
@@ -55,7 +65,7 @@ pub fn beneath<'t>(n: TsNode<'t>, wrappers: Wrappers) -> TsNode<'t> {
 /// The outermost wrapper an expression stands in, or the expression itself: `(x as T)!` of `x`.
 pub fn outermost<'t>(n: TsNode<'t>, wrappers: Wrappers) -> TsNode<'t> {
     let mut n = n;
-    while let Some(p) = n.parent().filter(|p| wrappers.contains(&p.kind()) && wrapped(*p).map(|x| x.id()) == Some(n.id())) {
+    while let Some(p) = n.parent().filter(|p| wraps(wrappers, *p) && wrapped(*p).map(|x| x.id()) == Some(n.id())) {
         n = p;
     }
     n

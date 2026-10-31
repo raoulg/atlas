@@ -93,8 +93,6 @@ impl<'a> Eval<'a> {
                 cross(&field("left"), &field("right"), "")
             }
             "call_expression" => self.call(at, e, depth),
-            // a dereference is the value it refers to, as a reference is
-            "unary_expression" if e.child(0).map_or(false, |o| o.kind() == "*") => first(e),
             // what leaves (`return`, `break`, `continue`) gives no value where it stands: an arm
             // that leaves adds none to its `match`
             "return_expression" | "break_expression" | "continue_expression" => vec![],
@@ -133,7 +131,10 @@ impl<'a> Eval<'a> {
         let src = &at.m.src;
         if let Some(scope) = at.scope {
             match bound(scope, name, pos, src) {
-                Some(Bound::Value(v)) => return named_by(&self.local(at.m, scope, name), self.of(at, v, depth + 1)),
+                Some(Bound::Value(v)) => {
+                    let values = self.changed(at, scope, name, v, pos, self.of(at, v, depth + 1), depth);
+                    return named_by(&self.local(at.m, scope, name), values);
+                }
                 Some(Bound::Handed(args)) => {
                     let values = args.into_iter().fold(vec![], |acc, a| union(acc, self.of(at, a, depth + 1)));
                     return named_by(&self.local(at.m, scope, name), values);
@@ -166,6 +167,94 @@ impl<'a> Eval<'a> {
             }
         }
         self.constant(at.m, &[name.to_string()], depth).unwrap_or_else(|| vec![hole(name)])
+    }
+
+    /// What the function makes of `values`, which the name holds where `v` binds it, by the changes it makes
+    /// to that value before `pos`, in the order they run: a method of a `PathBuf` that changes the path it
+    /// holds (knowledge::RUST_PATH_CHANGES), on the value or called by its type's path (`p.push(x)` and
+    /// `PathBuf::push(&mut p, x)` are each `p = p.join(x)`), and an assignment of another value
+    /// (`p = p.join(x)`). A change that may not run where the binding does (in an arm the binding is not
+    /// in) leaves the value one of the two; one the code repeats (in a loop or a closure) runs a number of
+    /// times the code does not say, so a join leaves the value below what it was, a change of its
+    /// extension or name one of the two, and any other change a value not said.
+    fn changed(
+        &self,
+        at: At<'a, '_>,
+        scope: TsNode<'a>,
+        name: &str,
+        v: TsNode<'a>,
+        pos: usize,
+        values: Vec<Built>,
+        depth: u32,
+    ) -> Vec<Built> {
+        let src = &at.m.src;
+        let this = |n: TsNode<'a>| {
+            n.kind() == "identifier"
+                && text(n, src) == name
+                && matches!(bound(scope, name, n.start_byte(), src), Some(Bound::Value(x)) if x.id() == v.id())
+        };
+        // a method called on the value, as a method or by its type's path: its name and its other arguments
+        let on_this = |c: TsNode<'a>| -> Option<(String, Vec<TsNode<'a>>)> {
+            let c = beneath(c, super::module::WRAPPERS);
+            let f = c.child_by_field_name("function").filter(|_| c.kind() == "call_expression")?;
+            let args: Vec<TsNode<'a>> = c
+                .child_by_field_name("arguments")
+                .map(named_children)
+                .unwrap_or_default()
+                .into_iter()
+                .filter(|a| !a.kind().ends_with("comment"))
+                .collect();
+            let (target, method, rest) = match f.kind() {
+                "field_expression" => (f.child_by_field_name("value")?, text(f.child_by_field_name("field")?, src).to_string(), args),
+                _ => match (expand(at.m, &path_parts(Some(f), src)).as_slice(), args.split_first()) {
+                    ([.., ty, m], Some((on, rest))) if knowledge::RUST_PATH_TYPES.contains(&ty.as_str()) => (*on, m.clone(), rest.to_vec()),
+                    _ => return None,
+                },
+            };
+            this(beneath(target, super::module::WRAPPERS)).then_some((method, rest))
+        };
+        let mut out = values;
+        for c in walk(scope, &["call_expression", "assignment_expression"]) {
+            if c.start_byte() < v.end_byte() || c.end_byte() > pos {
+                continue;
+            }
+            let (made, kind) = if c.kind() == "assignment_expression" {
+                match (c.child_by_field_name("left"), c.child_by_field_name("right")) {
+                    // `p = p.join(x)` is the change `p.push(x)` is
+                    (Some(l), Some(r)) if this(l) => {
+                        let kind =
+                            on_this(r).and_then(|(m, _)| knowledge::RUST_PATH_METHODS.iter().find(|(n, _)| *n == m).map(|(_, k)| *k));
+                        (self.of(at, r, depth + 1), kind)
+                    }
+                    _ => continue,
+                }
+            } else {
+                let Some((method, rest)) = on_this(c) else { continue };
+                let Some(k) = knowledge::RUST_PATH_CHANGES.iter().find(|(m, _)| *m == method).map(|(_, k)| *k) else { continue };
+                if !holds_path_buf(at.m, v) {
+                    continue;
+                }
+                let first = rest.first().map(|a| self.of(at, *a, depth + 1)).unwrap_or_else(|| vec![hole("value")]);
+                (path_made(k, out.clone(), first), Some(k))
+            };
+            out = match (runs(c, v), kind) {
+                (Runs::Once, _) => made,
+                (Runs::Maybe, _) | (Runs::Repeated, Some(PathMethod::Same | PathMethod::Extension | PathMethod::Sibling)) => {
+                    union(out, made)
+                }
+                (Runs::Repeated, Some(PathMethod::Join)) => {
+                    // below a value not said is again a value not said
+                    let below = out
+                        .iter()
+                        .filter(|b| !matches!(b.as_slice(), [Seg::Hole(_)]))
+                        .map(|b| crate::paths::join(b, &hole("value"), "/"))
+                        .collect();
+                    union(out, below)
+                }
+                (Runs::Repeated, _) => vec![hole("value")],
+            };
+        }
+        out
     }
 
     /// The element `i` of what `value` gives, where the code says it: of a tuple it writes, or of the
@@ -336,8 +425,9 @@ impl<'a> Eval<'a> {
 
     /// The listing of a directory (knowledge::LISTINGS_BELOW) a value comes from, where it is one
     /// of its elements or the listing itself: through the bindings that hold it, the loops and the
-    /// methods that go over it, and the methods that hand it on (`entry?`, `.unwrap()`,
-    /// `.flatten()`).
+    /// methods that go over it or take one of its elements (`entries.next_entry()`), and the
+    /// methods that hand it on (`entry?`, `.unwrap()`, `.flatten()`). A path's method that is
+    /// another name for a listing (`p.read_dir()`) is that listing.
     fn listing_of(&self, at: At<'a, '_>, e: TsNode<'a>, depth: u32) -> Option<&'static knowledge::Listing> {
         if depth > DEPTH {
             return None;
@@ -354,9 +444,14 @@ impl<'a> Eval<'a> {
                 let f = e.child_by_field_name("function")?;
                 if f.kind() == "field_expression" {
                     let method = text(f.child_by_field_name("field")?, src);
+                    let on = f.child_by_field_name("value")?;
+                    if let Some(l) = path_listing(method).filter(|_| self.type_of(at, on, depth + 1).is_none()) {
+                        return Some(l);
+                    }
                     let keeps = knowledge::hands_on(method) && !matches!(method, "map" | "and_then");
-                    return (keeps || knowledge::RUST_SAME_ELEMENTS.contains(&method))
-                        .then(|| self.listing_of(at, f.child_by_field_name("value")?, depth + 1))
+                    let one = knowledge::RUST_ONE_ELEMENT.contains(&method);
+                    return (keeps || one || knowledge::RUST_SAME_ELEMENTS.contains(&method))
+                        .then(|| self.listing_of(at, on, depth + 1))
                         .flatten();
                 }
                 listing(&expand(at.m, &path_parts(Some(f), src)))
@@ -628,14 +723,15 @@ impl<'a> Eval<'a> {
             };
             let method = text(field, src);
             let on = || self.of(at, recv, depth + 1);
-            return match knowledge::RUST_PATH_METHODS.iter().find(|(m, _)| *m == method).map(|(_, k)| *k) {
-                Some(PathMethod::Join) => cross(&on(), &arg(0), "/"),
-                Some(PathMethod::Parent) => on().iter().map(parent).collect(),
-                Some(PathMethod::Same) => on(),
-                Some(PathMethod::Extension) => {
-                    on().into_iter().flat_map(|b| arg(0).into_iter().map(move |x| with_extension(&b, &x))).collect()
-                }
-                Some(PathMethod::Sibling) => cross(&on().iter().map(parent).collect::<Vec<_>>(), &arg(0), "/"),
+            if let Some(k) = knowledge::RUST_PATH_METHODS.iter().find(|(m, _)| *m == method).map(|(_, k)| *k) {
+                return path_made(k, on(), arg(0));
+            }
+            // a listing of the directory a path names, as the function it is another name for: `p.read_dir()` is
+            // `fs::read_dir(p)`; a method of the program's own type of that name is the program's
+            let listed = path_listing(method).filter(|_| args.is_empty() && self.type_of(at, recv, depth + 1).is_none());
+            return match listed {
+                Some(l) if l.names => vec![lit("*")],
+                Some(_) => cross(&on(), &[lit("*")], "/"),
                 // the value a key picks of a collection the code writes out: `paths.get(key)`
                 None if knowledge::RUST_LOOKUPS.contains(&method) && args.len() == 1 && self.written_out(at, recv, depth).is_some() => {
                     self.looked_up(at, recv, args[0], depth).unwrap_or_else(|| vec![hole("call")])
@@ -647,8 +743,13 @@ impl<'a> Eval<'a> {
                 {
                     on()
                 }
-                // the elements an iterator keeps, and what the closure it runs on each gives
+                // the elements an iterator keeps, one of them, and what the closure it runs on each gives
                 None if knowledge::RUST_SAME_ELEMENTS.contains(&method) => on(),
+                // one element of what it is called on, as a loop's is: of nothing known, a value the name it is bound to names
+                None if knowledge::RUST_ONE_ELEMENT.contains(&method) => match on() {
+                    v if v.iter().all(|b| matches!(b.as_slice(), [Seg::Hole(_)])) => vec![hole("value")],
+                    v => v,
+                },
                 None if knowledge::RUST_GIVES_EACH.contains(&method)
                     && matches!(args.as_slice(), [c] if beneath(*c, super::module::WRAPPERS).kind() == "closure_expression") =>
                 {
@@ -679,6 +780,14 @@ impl<'a> Eval<'a> {
             };
         }
         let n = parts.len();
+        // a path's method called by its type's path is handed the path first: `Path::join(p, x)` is `p.join(x)`
+        if let ([.., ty, method], [on, rest @ ..]) = (parts.as_slice(), args.as_slice()) {
+            let k = knowledge::RUST_PATH_METHODS.iter().find(|(m, _)| m == method).map(|(_, k)| *k);
+            if let Some(k) = k.filter(|_| knowledge::RUST_PATH_TYPES.contains(&ty.as_str())) {
+                let first = rest.first().map(|a| self.of(at, *a, depth + 1)).unwrap_or_else(|| vec![hole("value")]);
+                return path_made(k, self.of(at, *on, depth + 1), first);
+            }
+        }
         // a socket opened at the address it is handed is a door to that place
         if let Some((_, _, i)) = knowledge::RUST_DOORS.iter().find(|(on, name, _)| n >= 2 && parts[n - 2] == *on && parts[n - 1] == *name) {
             return arg(*i);
@@ -985,6 +1094,94 @@ fn listing(parts: &[String]) -> Option<&'static knowledge::Listing> {
     knowledge::LISTINGS_BELOW.iter().find(|l| l.function == function && l.library == library)
 }
 
+/// The listing a path's method is another name for (knowledge::RUST_PATH_ALIASES): `read_dir` is
+/// `fs::read_dir`.
+fn path_listing(method: &str) -> Option<&'static knowledge::Listing> {
+    let (_, module) = knowledge::RUST_PATH_ALIASES.iter().find(|(m, _)| *m == method)?;
+    knowledge::LISTINGS_BELOW.iter().find(|l| l.function == method && l.library == *module)
+}
+
+/// Whether the value `v` a binding is bound to is a `PathBuf`, where the code says so: by the type the
+/// binding declares (`let mut p: PathBuf`), or by what makes the value, through what hands it on (`?`,
+/// `.unwrap()`): a path type's function (`PathBuf::from(d)`, `PathBuf::new()`), one of the directories
+/// the environment gives (`env::current_dir()`), or a path's method that gives a `PathBuf`
+/// (knowledge::RUST_PATH_BUFS: `d.join(x)`, `d.to_path_buf()`). A list's or a string's `push` and
+/// `pop` change no path.
+fn holds_path_buf(m: &Module, v: TsNode) -> bool {
+    let src = &m.src;
+    let path_type = |parts: &[String]| parts.last().is_some_and(|t| knowledge::RUST_PATH_TYPES.contains(&t.as_str()));
+    if let Some(ty) = v.parent().filter(|l| l.kind() == "let_declaration").and_then(|l| l.child_by_field_name("type")) {
+        return path_type(&path_parts(Some(ty), src));
+    }
+    let mut e = beneath(v, super::module::WRAPPERS);
+    while let Some(f) = e.child_by_field_name("function").filter(|_| e.kind() == "call_expression") {
+        if f.kind() == "field_expression" {
+            let (Some(on), Some(method)) = (f.child_by_field_name("value"), f.child_by_field_name("field").map(|x| text(x, src))) else {
+                return false;
+            };
+            if !knowledge::hands_on(method) {
+                return knowledge::RUST_PATH_BUFS.contains(&method);
+            }
+            e = beneath(on, super::module::WRAPPERS);
+            continue;
+        }
+        let parts = expand(m, &path_parts(Some(f), src));
+        let n = parts.len();
+        let made = knowledge::RUST_PATH_FUNCTIONS.iter().find(|(on, name, _)| n >= 2 && parts[n - 2] == *on && parts[n - 1] == *name);
+        return match made.map(|(_, _, k)| *k) {
+            Some(PathFn::Home | PathFn::Here | PathFn::Temp) => true,
+            Some(_) => path_type(&parts[..n - 1]),
+            None => false,
+        };
+    }
+    false
+}
+
+/// How often a change runs where the binding it changes runs.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum Runs {
+    /// Once, whenever the binding does.
+    Once,
+    /// Once or not at all: it stands in an arm of a choice the binding does not stand in.
+    Maybe,
+    /// As often as the code around it says, none or more: it stands in the body of a loop or a closure
+    /// the binding does not stand in.
+    Repeated,
+}
+
+/// How often `change` runs where the binding `v` runs.
+fn runs(change: TsNode, v: TsNode) -> Runs {
+    let mut around = std::collections::HashSet::new();
+    let mut p = Some(v);
+    while let Some(x) = p {
+        around.insert(x.id());
+        p = x.parent();
+    }
+    let (mut child, mut p, mut out) = (change, change.parent(), Runs::Once);
+    while let Some(x) = p.filter(|x| !around.contains(&x.id())) {
+        let at = |field: &str| x.child_by_field_name(field).is_some_and(|f| f.id() == child.id());
+        match x.kind() {
+            "for_expression" | "while_expression" | "loop_expression" | "closure_expression" if at("body") => return Runs::Repeated,
+            "if_expression" if at("consequence") || at("alternative") => out = Runs::Maybe,
+            "match_arm" => out = Runs::Maybe,
+            _ => {}
+        }
+        (child, p) = (x, x.parent());
+    }
+    out
+}
+
+/// The path a method of a path makes of the path it is called on, `on`, and its first argument.
+fn path_made(k: PathMethod, on: Vec<Built>, first: Vec<Built>) -> Vec<Built> {
+    match k {
+        PathMethod::Join => cross(&on, &first, "/"),
+        PathMethod::Parent => on.iter().map(parent).collect(),
+        PathMethod::Same => on,
+        PathMethod::Extension => on.iter().flat_map(|b| first.iter().map(move |x| with_extension(b, x))).collect(),
+        PathMethod::Sibling => cross(&on.iter().map(parent).collect::<Vec<_>>(), &first, "/"),
+    }
+}
+
 /// What a binding of a name holds: a value, the field a struct pattern takes out of the value it
 /// matches, an element of the tuple it matches, for a parameter of a closure a `let` keeps what
 /// each call of the closure hands it, or one element of what a loop or a method that runs a
@@ -1089,7 +1286,7 @@ fn handed<'a>(scope: TsNode<'a>, name: &str, pos: usize, src: &[u8]) -> Option<(
     // a closure handed to a method that runs it on each element of what the method is called on
     // (knowledge::RUST_EACH): its parameters from the element's place on are elements of that
     let mut handed_to = closure;
-    while let Some(p) = handed_to.parent().filter(|p| super::module::WRAPPERS.contains(&p.kind())) {
+    while let Some(p) = handed_to.parent().filter(|p| crate::tree::wraps(super::module::WRAPPERS, *p)) {
         handed_to = p;
     }
     if let Some(method) = handed_to
