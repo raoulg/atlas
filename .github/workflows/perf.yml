@@ -30,7 +30,7 @@ on:
       measure:
         description: "bisect: the measure, as perf-data names it (read/atlas/cold/seconds); compare: the measures, separated by spaces"
       subject:
-        description: "compare: commits of Atlas both read, each the subject atlas-<its short commit> (optional)"
+        description: "compare, bisect: commits of Atlas every commit measured reads, each the subject atlas-<its short commit> (optional)"
       issue:
         description: "bisect, compare: the issue to comment the result on (optional)"
 
@@ -249,6 +249,7 @@ jobs:
       FROM: ${{ inputs.from }}
       TO: ${{ inputs.to || 'HEAD' }}
       MEASURE: ${{ inputs.measure }}
+      SUBJECT: ${{ inputs.subject }}
       ISSUE: ${{ inputs.issue }}
     steps:
       - name: what to bisect
@@ -274,8 +275,14 @@ jobs:
       - name: bisected
         working-directory: atlas
         run: |
-          # shellcheck disable=SC2086 # $SUBJECTS splits into its --subject arguments
-          uv run tools/perf.py bisect --repo . --from "$FROM" --to "$TO" --measure "$MEASURE" $SUBJECTS \
+          read -ra subjects <<< "$SUBJECTS"
+          for commit in $SUBJECT; do
+            short=$(git rev-parse --short=7 "$commit")
+            git worktree add --detach "$GITHUB_WORKSPACE/subject-$short" "$commit"
+            (cd "$GITHUB_WORKSPACE/subject-$short" && cargo fetch --locked)
+            subjects+=(--subject "atlas-$short=$GITHUB_WORKSPACE/subject-$short")
+          done
+          uv run tools/perf.py bisect --repo . --from "$FROM" --to "$TO" --measure "$MEASURE" "${subjects[@]}" \
             --out "$GITHUB_WORKSPACE/bisect.json" | tee "$GITHUB_WORKSPACE/bisect.md"
           cat "$GITHUB_WORKSPACE/bisect.md" >> "$GITHUB_STEP_SUMMARY"
       - name: the result, on the issue

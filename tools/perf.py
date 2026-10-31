@@ -882,6 +882,8 @@ def ab_table(measures: dict[str, dict]) -> list[str]:
     rows = ["| measure | A | B | B / A | |", "| --- | ---: | ---: | ---: | --- |"]
     for m, g in measures.items():
         word = {"large": "**reproduced, large**", "small": "reproduced", "noise": "not reproduced"}[g["grade"]]
+        if g["grade"] == "noise" and max(g["b"]) < min(g["a"]):
+            word = "faster in every round"
         ratio = f"×{g['ratio']:.2f}" if g["ratio"] else "–"
         rows.append(f"| `{m}` | {amount(g['median_a'], g['unit'])} | {amount(g['median_b'], g['unit'])} | {ratio} | {word} |")
     return rows

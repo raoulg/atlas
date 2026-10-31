@@ -111,7 +111,8 @@ read, each the subject `atlas-<its short commit>`, its libraries fetched as the 
 name that subject (`read/atlas-4ef2ca0/cold/seconds`), and two commits of Atlas read by both builds are the four
 readings that tell a slower reader from a larger subject. The job takes the dispatched ref's `tools/perf.py`,
 measures A and B interleaved as `reproduce` does, and writes the comparison with where each reading's time went
-(`perf.py stages`) to its summary, to the artifact `perf-compare`, and to the `issue`, when one is given.
+(`perf.py stages`) to its summary, to the artifact `perf-compare`, and to the `issue`, when one is given. A bisection
+takes `subject` as well, so that a range is bisected for the reader alone (`measure: read/atlas-4ef2ca0/cold/seconds`).
 
 ## In every release
 
