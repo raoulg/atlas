@@ -3016,3 +3016,17 @@ fn places_a_walk_of_a_tree_is_one_place_at_every_depth() {
     assert_eq!(read(&p.clean, "backup.copy_tree"), read(&p.clean, "backup.size"), "the recursion walks what `rglob` walks");
     assert_ne!(read(&p.shortcut, "backup.copy_tree"), read(&p.shortcut, "backup.size"), "the shortcut walks the top alone");
 }
+
+/// The locals pair: a list a step changes in place (`both.append(second)`) holds a value of its own and stands for nothing,
+/// where the list written out once stands for the levels it holds (#355), as in Rust and TypeScript.
+#[test]
+fn a_name_changed_in_place_holds_a_value_of_its_own() {
+    common::a_name_changed_in_place_holds_a_value_of_its_own("python");
+}
+
+/// The locals pair's shortcut: a function of the package that changes what it is handed changes it in place as a method
+/// that changes what it runs on does (#355): `_add(both, second)` is `both.append(second)`, as in Rust and TypeScript.
+#[test]
+fn a_name_a_function_changes_holds_a_value_of_its_own() {
+    common::a_name_a_function_changes_holds_a_value_of_its_own("python", "_add", "append");
+}

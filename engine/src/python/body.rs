@@ -369,6 +369,21 @@ pub(super) fn changed_by<'t>(seen: &Seen, changing: &Changing, c: TsNode<'t>, cl
     library_change(seen.facts, c, src).into_iter().collect()
 }
 
+/// The bindings whose value a step of the body changes in place, by their nodes: of each name a call changes
+/// (`changed_by`: `both.append(second)` as `knowledge::MUTATORS` says, `random.shuffle(both)`, a function of the package
+/// that changes what it is handed), the assignments that reach the name there. Such a binding holds a value of its own
+/// wherever it reaches, which each change makes anew (`mathematics.md`, "One fine plan").
+pub(super) fn changed_bindings(seen: &Seen, changing: &Changing, body: TsNode, cls: Option<&str>) -> HashSet<usize> {
+    let src = &seen.m.src;
+    walk(body, &["call"])
+        .into_iter()
+        .flat_map(|c| changed_by(seen, changing, c, cls))
+        .filter(|n| n.kind() == "identifier")
+        .flat_map(|n| reaching(n, text(n, src), src))
+        .map(|b| b.id())
+        .collect()
+}
+
 /// What a body changes in place: every attribute or item it assigns (`self.x = ..`,
 /// `p.items[k] = ..`, each of `a.x, b.y = ..`) or deletes, and what a call changes (`changed_by`).
 pub(super) fn changed<'t>(body: TsNode<'t>, changes: &dyn Fn(TsNode<'t>) -> Vec<TsNode<'t>>) -> Vec<TsNode<'t>> {
@@ -465,6 +480,8 @@ pub(super) struct Seen<'a> {
     pub(super) receiver: Option<String>,
     /// The class `cls` holds, in a method that runs on its class (`@classmethod`).
     pub(super) class: Option<String>,
+    /// The bindings whose value a step of the body changes in place, by their nodes (`changed_bindings`).
+    pub(super) changed: HashSet<usize>,
 }
 
 impl<'a> Seen<'a> {
@@ -476,7 +493,8 @@ impl<'a> Seen<'a> {
         store: &'a GraphBuilder,
         own: &'a Own,
     ) -> Self {
-        Seen { m, facts: types.of(&crate::tree::path_str(&m.path)), sites, modules, store, own, receiver: None, class: None }
+        let facts = types.of(&crate::tree::path_str(&m.path));
+        Seen { m, facts, sites, modules, store, own, receiver: None, class: None, changed: HashSet::new() }
     }
 
     fn range(n: TsNode) -> (usize, usize) {
@@ -799,7 +817,15 @@ impl<'a> Seen<'a> {
                 out.push(at);
                 continue;
             }
-            let rights: Vec<TsNode> = match reaching(at, name, src) {
+            let bound = reaching(at, name, src);
+            // a value Python's own code computes that a step changes in place is a value of its own, which each change makes
+            // anew: the name stands for nothing
+            let computes = |b: &TsNode| b.child_by_field_name("right").is_some_and(|r| (USES.computes)(beneath(r, WRAPPERS), src));
+            if bound.iter().any(|b| self.changed.contains(&b.id()) && computes(b)) {
+                out.push(at);
+                continue;
+            }
+            let rights: Vec<TsNode> = match bound {
                 bound if !bound.is_empty() => bound.into_iter().filter_map(|b| b.child_by_field_name("right")).collect(),
                 _ => matched_by(at, name, src).or_else(|| looped_by(at, name, src)).into_iter().collect(),
             };
@@ -1028,6 +1054,7 @@ pub(super) fn link_calls<'t>(
         let mut seen = Seen::new(m, types, sites, modules, store, own);
         seen.receiver = n.cls.clone().filter(|_| n.kind == NodeKind::Method && !n.on_class && n.params.iter().any(|p| p.receiver));
         seen.class = n.cls.clone().filter(|_| n.kind == NodeKind::Method && n.on_class);
+        seen.changed = changed_bindings(&seen, changing, body, n.cls.as_deref());
         let mut b = Body::new(seen, modules, ext, eval, changing, &n, d, body);
         for r in b.steps() {
             let c = match r {

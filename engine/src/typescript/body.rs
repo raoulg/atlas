@@ -1161,7 +1161,7 @@ impl<'a, 't> Body<'a, 't> {
     /// other name.
     fn stands(&self, i: TsNode, kept: &HashSet<String>) -> Vec<TsNode<'t>> {
         let (values, element) = self.bound_to(i);
-        if element || values.is_empty() || kept.contains(text(i, self.src)) {
+        if element || values.is_empty() || kept.contains(text(i, self.src)) || self.changed_in_place(i) {
             return vec![];
         }
         let computed: Vec<Vec<TsNode<'t>>> = values.iter().map(|v| crate::body::stands_for(*v, &USES, self.src, &part)).collect();
@@ -1169,6 +1169,20 @@ impl<'a, 't> Body<'a, 't> {
             return vec![];
         }
         computed.into_iter().flatten().collect()
+    }
+
+    /// Whether a step changes in place the value the binding of the name `i` visible where it stands holds, anywhere that
+    /// binding is visible: a call that changes the name or a part of it (`changed_by`): a method that changes what it runs
+    /// on (`both.push(second)`, as `knowledge::MUTATORS` says, or the program's own), or a function of the program's handed
+    /// it whose parameter it changes (`add(both, second)`). Such a name holds a value of its own, which each change makes
+    /// anew (`mathematics.md`, "One fine plan").
+    fn changed_in_place(&self, i: TsNode) -> bool {
+        let (name, binding) = (text(i, self.src), self.locals.which(i, self.src));
+        let this = |o: TsNode| o.kind() == "identifier" && text(o, self.src) == name && self.locals.which(o, self.src) == binding;
+        binding.is_some()
+            && walk(self.body, &["call_expression"])
+                .into_iter()
+                .any(|c| self.changed_by(c).into_iter().any(|x| root_of(beneath(x, WRAPPERS)).is_some_and(this)))
     }
 
     /// What a call gives back, by the name the body keeps it by. Its type is one a step gives: what
@@ -2004,24 +2018,28 @@ impl<'a, 't> Body<'a, 't> {
     /// changes nothing (`http.delete(..)` on a library's client). A call of the program's own also
     /// changes each argument whose parameter its body changes (`addLine(lines, ..)`).
     pub(super) fn changed(&self) -> std::collections::BTreeSet<&'t str> {
-        let changes = |c: TsNode<'t>| -> Vec<TsNode<'t>> {
-            let Some(f) = function_of(c) else { return vec![] };
-            let on = (f.kind() == "member_expression").then(|| f.child_by_field_name("object")).flatten();
-            match self.callee(c).filter(|t| self.own(t)) {
-                Some(t) => self.changed_parts(&t, on, c).into_iter().map(|(x, _)| x).collect(),
-                None => {
-                    let language = f
-                        .child_by_field_name("property")
-                        .filter(|_| f.kind() == "member_expression")
-                        .map_or(false, |p| knowledge::mutates(knowledge::Registry::Npm, "javascript", text(p, self.src)));
-                    on.filter(|o| language && self.holds_container(*o)).into_iter().collect()
-                }
-            }
-        };
-        changes_in(self.body, self.src, &changes)
+        changes_in(self.body, self.src, &|c| self.changed_by(c))
             .into_iter()
             .filter_map(|(x, root)| changed_through(self.body, self.src, &BINDS, root, x.start_byte()))
             .collect()
+    }
+
+    /// The parts of what it is handed that call `c` changes in place (`changed`): the value it is made on, where the
+    /// program's own method changes its receiver or the language's table changes the container it holds, and each
+    /// argument whose parameter the program's own function changes.
+    fn changed_by(&self, c: TsNode<'t>) -> Vec<TsNode<'t>> {
+        let Some(f) = function_of(c) else { return vec![] };
+        let on = (f.kind() == "member_expression").then(|| f.child_by_field_name("object")).flatten();
+        match self.callee(c).filter(|t| self.own(t)) {
+            Some(t) => self.changed_parts(&t, on, c).into_iter().map(|(x, _)| x).collect(),
+            None => {
+                let language = f
+                    .child_by_field_name("property")
+                    .filter(|_| f.kind() == "member_expression")
+                    .map_or(false, |p| knowledge::mutates(knowledge::Registry::Npm, "javascript", text(p, self.src)));
+                on.filter(|o| language && self.holds_container(*o)).into_iter().collect()
+            }
+        }
     }
 
     /// What the body changes among what it is handed, each by its name with the type its change is

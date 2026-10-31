@@ -2086,3 +2086,17 @@ fn places_a_name_bound_once_is_one_value() {
 fn places_a_walk_of_a_tree_is_one_place_at_every_depth() {
     common::a_walk_of_a_tree_is_one_place_at_every_depth("typescript", "backup.copyTree", "backup.main");
 }
+
+/// The locals pair: an array a step changes in place (`both.push(second)`) holds a value of its own and stands for nothing,
+/// where the array written out once stands for the levels it holds (#355), as in Python and Rust.
+#[test]
+fn a_name_changed_in_place_holds_a_value_of_its_own() {
+    common::a_name_changed_in_place_holds_a_value_of_its_own("typescript");
+}
+
+/// The locals pair's shortcut: a function of the program's that changes what it is handed changes it in place as a method
+/// that changes what it runs on does (#355): `add(both, second)` is `both.push(second)`, as in Python and Rust.
+#[test]
+fn a_name_a_function_changes_holds_a_value_of_its_own() {
+    common::a_name_a_function_changes_holds_a_value_of_its_own("typescript", "add", "push");
+}
