@@ -1409,6 +1409,19 @@ impl<'a, 't> Body<'a, 't> {
             "identifier" => self.locals.get(text(v, src), v.start_byte()).cloned().or_else(|| self.unit_struct(v)),
             "scoped_identifier" => self.unit_struct(v),
             "struct_expression" => self.resolve(&path_parts(v.child_by_field_name("name"), src)).and_then(|r| self.class_of(&r.id())),
+            // a list Rust's own code writes out by its elements holds the class they are all of (`vec![start]`, `[a, b]`), as
+            // `let s: Vec<&Level>` declares it
+            "array_expression" | "macro_invocation" if v.kind() == "array_expression" || listed_of_names(v, src) => {
+                let elements: Vec<Option<TsNode>> = match v.kind() {
+                    "array_expression" => named_children(v).into_iter().filter(|e| !e.kind().ends_with("comment")).map(Some).collect(),
+                    _ => named_children(v).into_iter().find(|t| t.kind() == "token_tree").map(positional).unwrap_or_default(),
+                };
+                let classes: Vec<Option<String>> = elements.into_iter().map(|e| e.and_then(|e| self.value_class(e))).collect();
+                match classes.split_first() {
+                    Some((Some(first), rest)) if rest.iter().all(|c| c.as_ref() == Some(first)) => Some(first.clone()),
+                    _ => None,
+                }
+            }
             "call_expression" if function(v).map_or(false, |f| f.kind() == "field_expression") => {
                 let f = function(v)?;
                 let on = self.value_class(f.child_by_field_name("value")?)?;
@@ -1573,12 +1586,38 @@ impl<'a, 't> Body<'a, 't> {
     }
 
     /// The names the name `name` written at byte `at` stands for: where a `let` binds it to what Rust's own code computes of
-    /// names and nothing has made it anew since, no step and no assignment (`let gap = first.db - second.db`, `let both =
-    /// [first, second]`), the names that value is computed of (`body::stands_for`); none for any other name.
+    /// names and nothing makes it anew, no step, no assignment and no change in place (`let gap = first.db - second.db`, `let
+    /// both = [first, second]`), the names that value is computed of (`body::stands_for`); none for any other name.
     fn stands(&self, name: &str, at: usize, kept: &HashSet<String>) -> Vec<TsNode<'t>> {
         let (holder, from) = self.holder(name, at);
-        let made = self.made_by.get(&holder, from).filter(|_| !kept.contains(&holder) && !self.reassigned(&holder, from));
+        let anew = |h: &String| kept.contains(h) || self.reassigned(h, from) || self.is_changed_in_place(h, from);
+        let made = self.made_by.get(&holder, from).filter(|_| !anew(&holder));
         made.map(|v| crate::body::stands_for(*v, &USES, self.src, &part)).unwrap_or_default()
+    }
+
+    /// Whether a step changes in place the value the `let` visible at `at` binds the name to, anywhere that binding is
+    /// visible: a method that changes what it runs on, called on the name (`both.push(second)`: a library's, as
+    /// `changes_library_value` reads `knowledge::MUTATORS`, or one of the program's that takes `&mut self`), or a call handed
+    /// the name as `&mut` (`add(&mut both, x)`, `Vec::push(&mut both, x)`). Rust lets a step change only a value its name is
+    /// bound `mut` to. Such a name holds a value of its own, which each change makes anew (`mathematics.md`, "One fine plan").
+    fn is_changed_in_place(&self, name: &str, at: usize) -> bool {
+        let Some(binding) = self.made_by.which(name, at).filter(|_| self.mutable.holds(name, at)) else { return false };
+        let this =
+            |n: TsNode| n.kind() == "identifier" && text(n, self.src) == name && self.made_by.which(name, n.start_byte()) == Some(binding);
+        walk(self.def, &["call_expression"]).into_iter().any(|c| {
+            let on_this = function(c).filter(|f| f.kind() == "field_expression").and_then(|f| {
+                let (value, field) = (f.child_by_field_name("value")?, f.child_by_field_name("field")?);
+                this(value).then(|| (value, text(field, self.src)))
+            });
+            let changes = |(value, method): (TsNode<'t>, &str)| {
+                let own = self.value_class(value).and_then(|cls| self.store.method_of(&cls, method)).filter(|t| !t.starts_with("ext:"));
+                match own {
+                    Some(t) => self.store.nodes.get(&t).is_some_and(|n| n.params.first().is_some_and(|p| p.receiver && p.changes)),
+                    None => self.changes_library_value(value, method),
+                }
+            };
+            on_this.is_some_and(changes) || (USES.changes)(c).into_iter().any(this)
+        })
     }
 
     /// Whether the body assigns the name again where the `let` visible at `at` binds it (`x = ..`, `x += ..`): what the

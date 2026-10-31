@@ -50,3 +50,9 @@ fn listed(first: Level, second: Level) -> Vec<Level> {
 pub fn shown(first: Level, second: Level) {
     show(&listed(first, second));
 }
+
+/// The two levels, gathered in a vector written out once and listed.
+pub fn gathered(first: &Level, second: &Level) {
+    let both = vec![first, second];
+    list(&both);
+}

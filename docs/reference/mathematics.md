@@ -774,7 +774,16 @@ open:
   reads the name, as it reads a projection's root, never where it binds it: the binding is no use, so the route
   that binds `gap` and hands it to `draw` takes no line of its own from `first` and `second`, as the route that
   writes the expression in `draw`'s call takes none (#343). Where the name holds a value of its own instead (a step
-  made it anew), the code that computes the value reads its operands where it is written. A choice among them is the body's
+  made it anew), the code that computes the value reads its operands where it is written. A name a step changes in
+  place holds such a value from its binding on, and stands for nothing: the step calls a method that changes what it
+  runs on (`both.append(second)`, `both.push(second)`) or a function that changes what it is handed (`add(both,
+  second)`, in Rust lent as `&mut`: `add(&mut both, second)`). A
+  change in place is the name bound anew, as it is of a path (`p.push(x)` is `p = p.join(x)`), so the binding is a
+  value: `both = [first]; both.append(second); show(both)` makes the list where it binds it, reading `first` there,
+  the change is handed that list and `second` and makes the list anew, and `show` takes what the change made, never
+  `first`. Where the change runs in one arm or in a loop, the name stands for nothing either, as a path changed there
+  is no longer the term before alone (#327): the binding is a value, the change makes it anew, and what the arms make
+  of it is one value at the choice's moment, as it is of a value a step made (#355). A choice among them is the body's
   choice, and a part a call makes (`samples.abs()`) is that call's value, which the name keeps (#328). What an
   opened step changes of a value it was handed goes out at its border as what its steps made of it;
 - a step that can fail has the codomain `T + E`: the error is a value its constructor makes in the arm
@@ -890,10 +899,13 @@ which parameters of no type of the code's hold a value, `builder::settle_paramet
 by its own code, `Steps::binds` and `Steps::literals` (`body.rs`), and those a function declares, `declaredIn` and
 `bodyMade` in `viewer/plan.js`; the names a name computed of names stands for, `body::computed_of` and
 `body::stands_for` with each language's `UseSyntax::computes`, and where the body's own code reads them, `Steps::reading`
-and `Steps::stood` with each reader's `stands`; the values of one kind from beyond that keep their names,
+and `Steps::stood` with each reader's `stands`, and the names a step changes in place, which stand for nothing,
+`knowledge::MUTATORS` with Rust's `Body::is_changed_in_place`, Python's `changed_bindings` (`Seen::changed`) and
+TypeScript's `Body::changed_in_place`; the values of one kind from beyond that keep their names,
 `split` and `splitBy` in `viewer/plan.js`; `tools/pictures.py`; `engine/tests/plans.rs`; the recursion, literals and
 locals pairs (`common::a_recursive_call_takes_what_its_call_hands_it`, `common::a_list_made_by_a_literal_is_made_by_the_body`,
-`common::a_local_is_bound_by_the_bodys_own_code`, `common::a_name_computed_of_names_stands_for_them`).
+`common::a_local_is_bound_by_the_bodys_own_code`, `common::a_name_computed_of_names_stands_for_them`,
+`common::a_name_changed_in_place_holds_a_value_of_its_own`, `common::a_name_a_function_changes_holds_a_value_of_its_own`).
 
 ### Saturation: when the order of a view does not matter
 **What.** A set is saturated by an equivalence when it never cuts a class in two.

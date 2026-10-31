@@ -43,3 +43,22 @@ home Level·second written
 
 side entry left
 side Screen right
+
+# `gathered` writes the list of both levels out once (`[first, second]`): it stands for them, so the step that shows it
+# takes the two levels.
+
+route signal.gathered
+step gathered/_show
+
+line entry > gathered call
+line Level·first > gathered value
+line Level·second > gathered value
+line Level·first > gathered/_show value              # `_show(both)`, `both: list[Level] = [first, second]`
+line Level·second > gathered/_show value
+line gathered/_show > Screen own
+
+home Level·first gathered
+home Level·second gathered
+
+side entry left
+side Screen right

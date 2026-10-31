@@ -3103,3 +3103,17 @@ fn doors_a_sockets_read_is_drawn_as_a_files_read() {
         }
     }
 }
+
+/// The locals pair: a list a step changes in place (`both.append(second)`) holds a value of its own and stands for nothing,
+/// where the list written out once stands for the levels it holds (#355), as in Rust and TypeScript.
+#[test]
+fn a_name_changed_in_place_holds_a_value_of_its_own() {
+    common::a_name_changed_in_place_holds_a_value_of_its_own("python");
+}
+
+/// The locals pair's shortcut: a function of the package that changes what it is handed changes it in place as a method
+/// that changes what it runs on does (#355): `_add(both, second)` is `both.append(second)`, as in Rust and TypeScript.
+#[test]
+fn a_name_a_function_changes_holds_a_value_of_its_own() {
+    common::a_name_a_function_changes_holds_a_value_of_its_own("python", "_add", "append");
+}

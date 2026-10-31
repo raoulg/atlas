@@ -2107,3 +2107,17 @@ fn handles_a_file_handle_handed_on_keeps_its_place() {
         }
     }
 }
+
+/// The locals pair: an array a step changes in place (`both.push(second)`) holds a value of its own and stands for nothing,
+/// where the array written out once stands for the levels it holds (#355), as in Python and Rust.
+#[test]
+fn a_name_changed_in_place_holds_a_value_of_its_own() {
+    common::a_name_changed_in_place_holds_a_value_of_its_own("typescript");
+}
+
+/// The locals pair's shortcut: a function of the program's that changes what it is handed changes it in place as a method
+/// that changes what it runs on does (#355): `add(both, second)` is `both.push(second)`, as in Python and Rust.
+#[test]
+fn a_name_a_function_changes_holds_a_value_of_its_own() {
+    common::a_name_a_function_changes_holds_a_value_of_its_own("typescript", "add", "push");
+}

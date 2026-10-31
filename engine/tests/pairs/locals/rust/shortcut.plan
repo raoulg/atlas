@@ -42,3 +42,29 @@ home Level·QUIET written
 
 side entry left
 side Screen right
+
+# A name a step changes in place holds a value of its own from its binding on, and stands for nothing (#355): `gathered`
+# binds a vector of the first level (`vec![first]`) and pushes the second onto it. The body's own code makes the vector
+# where it binds it, and reads the first level there; the push is handed that vector and the second level and makes the
+# vector anew, and the step that lists it takes what the push made. No step takes the first level.
+
+route signal.gathered
+step gathered/push
+step gathered/list
+
+line entry > gathered call
+line Level·first > gathered value                    # `let mut both = vec![first]`
+line Level·second > gathered value
+line Level·both@gathered/~both > gathered/push value # `both.push(second)`
+line Level·second > gathered/push value
+line gathered/push > Level·both@gathered/push value
+line Level·both@gathered/push > gathered/list value  # `list(&both)`
+line gathered/list > Screen own
+
+home Level·first gathered
+home Level·second gathered
+home Level·both@gathered/~both gathered
+home Level·both@gathered/push gathered
+
+side entry left
+side Screen right

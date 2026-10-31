@@ -43,3 +43,22 @@ home Level·second written
 
 side entry left
 side Screen right
+
+# `gathered` writes the vector of both levels out once (`vec![first, second]`): it stands for them, so the step that
+# lists it takes the two levels.
+
+route signal.gathered
+step gathered/list
+
+line entry > gathered call
+line Level·first > gathered value
+line Level·second > gathered value
+line Level·first > gathered/list value               # `list(&both)`, `let both = vec![first, second]`
+line Level·second > gathered/list value
+line gathered/list > Screen own
+
+home Level·first gathered
+home Level·second gathered
+
+side entry left
+side Screen right

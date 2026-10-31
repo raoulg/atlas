@@ -720,3 +720,99 @@ pub fn a_walk_of_a_tree_is_one_place_at_every_depth(language: &str, id: &str, ma
         }
     }
 }
+
+/// The locals pair of `language`, its route `gathered`: the clean side writes the two levels out once in the list it shows
+/// (`both = [first, second]`), the shortcut writes the first and pushes the second onto the list it named (`both = [first];
+/// both.append(second)`, `both.push(second)`). A change in place is the name bound anew by a step (#327: `p.push(x)` is `p =
+/// p.join(x)`), a call that changes what it runs on, `T × A → T`: it takes the value the name holds and gives it anew. So a
+/// name a step changes in place holds a value of its own and stands for nothing (#355, `mathematics.md`, "One fine plan"):
+/// the body's own code makes it where it binds the name, the change is handed that value and never the names the binding
+/// computed it of, and each step after the change is handed what the change gave. The clean side's name stands for the two
+/// levels (#328). How the body builds the list changes what its steps take, never what crosses the route's border: the
+/// route's own arrow takes on the shortcut what it takes on the clean side. So in the graph, and in the plan uncut and at
+/// every budget, in every language.
+#[allow(dead_code)]
+pub fn a_name_changed_in_place_holds_a_value_of_its_own(language: &str) {
+    let p = pair(&format!("locals/{language}"));
+    let (route, at) = ("gathered", language.to_string());
+    let node = |g: &'_ Graph| g.node(&format!("signal.{route}")).unwrap_or_else(|| panic!("{at}: no node signal.{route}")).clone();
+    let named = |hs: &[atlas_engine::Held]| -> BTreeSet<String> { hs.iter().map(|h| h.name.clone()).collect() };
+    let names = |xs: &[&str]| -> BTreeSet<String> { xs.iter().map(|x| x.to_string()).collect() };
+    // the graph: the clean side's step is handed the two levels; the shortcut's change is handed the list's own value and the
+    // level it pushes, and gives the list anew, which alone the step after it is handed
+    let (clean, shortcut) = (node(&p.clean), node(&p.shortcut));
+    let [shown] = &clean.sites[..] else { panic!("{at} clean: one step: {:?}", clean.sites) };
+    assert_eq!(named(&shown.hands), names(&["first", "second"]), "{at} clean: the list stands for the two levels");
+    let [change, after] = &shortcut.sites[..] else { panic!("{at} shortcut: the change and the step after it: {:?}", shortcut.sites) };
+    assert!(change.changes, "{at} shortcut: `{}` changes the list in place", change.op);
+    assert_eq!(named(&change.hands), names(&["both", "second"]), "{at} shortcut: the change is handed the list's value");
+    assert_eq!(named(&change.gives), names(&["both"]), "{at} shortcut: the change gives the list anew");
+    assert_eq!(named(&after.hands), names(&["both"]), "{at} shortcut: the step after the change is handed what it gave");
+    for (side, n) in [("clean", &clean), ("shortcut", &shortcut)] {
+        let binds: BTreeSet<String> = n.binds.iter().map(|b| b.name.clone()).collect();
+        assert_eq!(binds, names(&["both"]), "{at} {side}: the body binds the list by its own code");
+    }
+    for budget in BUDGETS {
+        let at = format!("{at}, budget {budget:?}");
+        let clean = &planned(&p.clean, &format!("inplace-{language}-clean"), budget)[&format!("signal.{route}")];
+        let shortcut = &planned(&p.shortcut, &format!("inplace-{language}-shortcut"), budget)[&format!("signal.{route}")];
+        // what goes into a box of the plan, and what comes out of it
+        let into = |facts: &BTreeSet<String>, to: &str| -> BTreeSet<String> {
+            let end = format!(" > {to} value");
+            facts.iter().filter_map(|f| f.strip_prefix("line ")?.strip_suffix(&end)).map(String::from).collect()
+        };
+        let out = |facts: &BTreeSet<String>, from: &str| -> BTreeSet<String> {
+            let start = format!("{from} > ");
+            facts.iter().filter_map(|f| f.strip_prefix("line ")?.strip_prefix(&start)?.strip_suffix(" value")).map(String::from).collect()
+        };
+        let steps = |facts: &BTreeSet<String>| -> BTreeSet<String> {
+            facts.iter().filter_map(|f| f.strip_prefix("step ")).map(String::from).collect()
+        };
+        let step =
+            |s: &atlas_engine::Site| format!("{route}/{}", if s.op.is_empty() { s.to.rsplit('.').next().unwrap_or("") } else { &s.op });
+        let (shows, changing, showing) = (step(shown), step(change), step(after));
+        assert_eq!(steps(clean), names(&[&shows]), "{at} clean: one step");
+        assert_eq!(into(clean, &shows), names(&["Level·first", "Level·second"]), "{at} clean: {shows} takes the two levels");
+        assert_eq!(steps(shortcut), names(&[&changing, &showing]), "{at} shortcut: the change and the step after it");
+        // the step after the change takes what the change gave: the list's own value, made by the change
+        let made = out(shortcut, &changing);
+        assert_eq!(made, names(&[&format!("Level·both@{changing}")]), "{at} shortcut: the change gives the list anew");
+        assert_eq!(into(shortcut, &showing), made, "{at} shortcut: {showing} takes what the change gave");
+        // the change takes the list's value, which the body made where it binds the name, no step, and the level it pushes
+        let taken = into(shortcut, &changing);
+        let bound: Vec<&String> =
+            taken.iter().filter(|v| v.split_once('@').is_some_and(|(v, m)| v == "Level·both" && !steps(shortcut).contains(m))).collect();
+        assert_eq!(bound.len(), 1, "{at} shortcut: the change takes the value the body binds the list to: {taken:?}");
+        assert_eq!(taken, names(&[bound[0], "Level·second"]), "{at} shortcut: the change takes the list and the level it pushes");
+        // the list stands for nothing: no step takes the level the binding computed it of
+        for s in steps(shortcut) {
+            assert!(!into(shortcut, &s).contains("Level·first"), "{at} shortcut: {s} takes the level the list was bound to");
+        }
+        // the route's border: its own arrow takes what it takes on the clean side
+        assert_eq!(into(shortcut, route), into(clean, route), "{at}: the route's own arrow takes what the clean side's takes");
+    }
+}
+
+/// The locals pair's shortcut in `language`: a function of the program's that changes what it is handed (`add`, in Rust
+/// handed it as `&mut`) changes it in place as a method that changes what it runs on does (#355). `lent` hands the list to
+/// `add`, which pushes the level onto it; `gathered` pushes it itself (`push`, `append`: `change`). With the function
+/// closed, the plan cut below its body, the two routes are one plan: the change takes the list's own value and the level,
+/// and the step after it takes what the change gave. The list stands for nothing, so no step takes the level it was bound
+/// to. So at every budget that cuts the function, in every language.
+#[allow(dead_code)]
+pub fn a_name_a_function_changes_holds_a_value_of_its_own(language: &str, add: &str, change: &str) {
+    let p = pair(&format!("locals/{language}"));
+    // a fact of a route with its name written as `R` and its change as `C`
+    let renamed = |fact: &str, route: &str, change: &str| fact.replace(&format!("{route}/{change}"), "R/C").replace(route, "R");
+    for budget in [Some(1), Some(2)] {
+        let plans = planned(&p.shortcut, &format!("inplace-{language}-lent"), budget);
+        let route =
+            |r: &str, change: &str| -> BTreeSet<String> { plans[&format!("signal.{r}")].iter().map(|f| renamed(f, r, change)).collect() };
+        let lent = route("lent", add);
+        assert_eq!(lent, route("gathered", change), "{language}, budget {budget:?}: `{add}` changes the list in place");
+        assert!(
+            !lent.iter().any(|f| f.starts_with("line Level·first > R/")),
+            "{language}, budget {budget:?}: the list stands for nothing: {lent:#?}"
+        );
+    }
+}
