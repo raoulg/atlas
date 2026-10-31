@@ -813,11 +813,17 @@ fn prepares(t: &Touch, all: &[Touch]) -> bool {
     match t.kind {
         World::Disk => {
             let within = |file: &str| file == t.artifact || (t.artifact.ends_with('/') && file.starts_with(&t.artifact));
+            // a path built below the directory's own lies in it, however coarse the place its
+            // unknown parts leave it: `D/{x}/kind/{id}.json` rests in `D/` and is in `D/{}/kind/`
+            let below = |d: &Touch| {
+                let terms = |w: &str| w.split('|').map(|x| format!("{}/", x.trim_end_matches('/'))).collect::<Vec<_>>();
+                !t.what.is_empty() && terms(&t.what).iter().all(|w| d.what.split('|').any(|x| x.starts_with(w.as_str())))
+            };
             // a database's file is made for as a file is
             let opens = |d: &&Touch| matches!(d.kind, World::Db(_)) && !d.file.is_empty() && along(d);
             t.shape()
                 && !t.artifact.is_empty()
-                && (all.iter().filter(data).filter(|d| !d.artifact.is_empty()).any(|d| within(&d.artifact))
+                && (all.iter().filter(data).filter(|d| !d.artifact.is_empty()).any(|d| within(&d.artifact) || below(d))
                     || all.iter().filter(opens).any(|d| within(&d.file)))
         }
         World::Db(_) | World::Global if t.shape() => {

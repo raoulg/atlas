@@ -49,6 +49,19 @@ pub(super) fn param_names(f: TsNode, src: &[u8]) -> Vec<String> {
         .collect()
 }
 
+/// The path function a path names (`knowledge::RUST_PATH_FUNCTIONS`), by its last two parts as the
+/// module's `use`s expand them: `Path::new`, `std::path::PathBuf::from`, `env::home_dir`.
+fn path_function(parts: &[String]) -> Option<PathFn> {
+    let n = parts.len();
+    knowledge::RUST_PATH_FUNCTIONS.iter().find(|(on, name, _)| n >= 2 && parts[n - 2] == *on && parts[n - 1] == *name).map(|(_, _, k)| *k)
+}
+
+/// The path function the function `f` of a call is, as the evaluator reads the call: one called by
+/// its path; a method is none.
+pub(super) fn path_function_of(m: &Module, f: TsNode) -> Option<PathFn> {
+    (f.kind() != "field_expression").then(|| path_function(&expand(m, &path_parts(Some(f), &m.src)))).flatten()
+}
+
 /// Whether a function takes `self`.
 pub(super) fn takes_self(f: TsNode) -> bool {
     f.child_by_field_name("parameters").map_or(false, |ps| named_children(ps).iter().any(|p| p.kind() == "self_parameter"))
@@ -743,6 +756,14 @@ impl<'a> Eval<'a> {
                 {
                     on()
                 }
+                // its name alone, below the directory listed: `entry.file_name()`, `*`, as each name
+                // a listing of names gives is
+                None if knowledge::ELEMENT_NAMES.iter().any(|(lib, _, m)| {
+                    *m == method && args.is_empty() && self.listing_of(at, recv, depth).is_some_and(|l| l.library == *lib)
+                }) =>
+                {
+                    vec![lit("*")]
+                }
                 // the elements an iterator keeps, one of them, and what the closure it runs on each gives
                 None if knowledge::RUST_SAME_ELEMENTS.contains(&method) => on(),
                 // one element of what it is called on, as a loop's is: of nothing known, a value the name it is bound to names
@@ -792,11 +813,7 @@ impl<'a> Eval<'a> {
         if let Some((_, _, i)) = knowledge::RUST_DOORS.iter().find(|(on, name, _)| n >= 2 && parts[n - 2] == *on && parts[n - 1] == *name) {
             return arg(*i);
         }
-        let known = knowledge::RUST_PATH_FUNCTIONS
-            .iter()
-            .find(|(on, name, _)| n >= 2 && parts[n - 2] == *on && parts[n - 1] == *name)
-            .map(|(_, _, k)| *k);
-        match known {
+        match path_function(&parts) {
             Some(PathFn::Same) => arg(0),
             Some(PathFn::Join) => args.iter().fold(vec![vec![]], |acc: Vec<Built>, a| {
                 if acc == vec![Vec::<Seg>::new()] {
@@ -810,6 +827,8 @@ impl<'a> Eval<'a> {
             Some(PathFn::Here) => vec![lit(".")],
             Some(PathFn::Temp) => vec![lit(knowledge::TEMP_DIR)],
             Some(PathFn::Environment) => vec![environment_named(&arg(0)).unwrap_or_else(|| hole("call"))],
+            Some(PathFn::Relative) if args.len() > 1 => cross(&arg(1).iter().map(parent).collect::<Vec<_>>(), &arg(0), "/"),
+            Some(PathFn::Relative) => arg(0),
             None => self.given(at, f, &args, depth).unwrap_or_else(|| vec![hole("call")]),
         }
     }

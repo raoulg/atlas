@@ -18,8 +18,8 @@ use crate::knowledge;
 use crate::knowledge::OwnTypes;
 use crate::model::{Bucket, EdgeKind, Held, Node, NodeKind, Slot, Touch, World};
 use crate::tree::{
-    beneath, evaluation_order, literals, named_children, nth_of_kind, outermost, path_maker_named, text, unquote, walk, what_of, wrapped,
-    ChoiceSyntax, CompareSyntax, Part,
+    beneath, evaluation_order, literals, named_children, nth_of_kind, outermost, text, unquote, walk, what_of, wrapped, ChoiceSyntax,
+    CompareSyntax, Part,
 };
 
 pub(super) const OWN: OwnTypes = knowledge::TYPESCRIPT_OWN_TYPES;
@@ -1851,8 +1851,8 @@ impl<'a, 't> Body<'a, 't> {
             return;
         };
         let op = parts.last().cloned().unwrap_or_default();
-        let cr =
-            Crosses::read(c, src, kind, pkg.as_deref(), &op, &literals(c, src, STRINGS), STRINGS, &HashMap::new(), &path_maker_named(src));
+        let path_function = |f: TsNode| self.eval.path_function_of(m, f);
+        let cr = Crosses::read(c, src, kind, pkg.as_deref(), &op, &literals(c, src, STRINGS), STRINGS, &HashMap::new(), &path_function);
         let args = c.child_by_field_name("arguments").map(named_children).unwrap_or_default();
         let at = At { m, scope: self.scope, params: &self.params };
         // a statement is read where it is whole: from a constant, a template, or what the callers

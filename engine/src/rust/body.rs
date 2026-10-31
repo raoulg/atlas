@@ -17,8 +17,8 @@ use crate::effects::{self, Crossing};
 use crate::knowledge::{self, OwnTypes};
 use crate::model::{Bucket, EdgeKind, Held, Node, NodeKind, Slot, Touch, World};
 use crate::tree::{
-    beneath, evaluation_order, literals, named_children, nth_of_kind, path_maker_named, text, unquote, walk, wrapped, wraps, ChoiceSyntax,
-    CompareSyntax, Part,
+    beneath, evaluation_order, literals, named_children, nth_of_kind, text, unquote, walk, wrapped, wraps, ChoiceSyntax, CompareSyntax,
+    Part,
 };
 
 /// The macros that end a body by panicking.
@@ -1695,9 +1695,14 @@ impl<'a, 't> Body<'a, 't> {
         }
     }
 
+    /// The path function a call's function is, as the evaluator of paths reads the call.
+    fn path_function(&self, f: TsNode) -> Option<knowledge::PathFn> {
+        paths::path_function_of(self.m, f)
+    }
+
     /// A boundary call's touches, refined by the literals that name its place.
     fn touch(&self, c: TsNode, kind: Crossing, op: &str, lits: &[String]) -> Vec<Touch> {
-        Crosses::read(c, self.src, kind, None, op, lits, STRINGS, &self.locals.visible(c.start_byte()), &path_maker_named(self.src))
+        Crosses::read(c, self.src, kind, None, op, lits, STRINGS, &self.locals.visible(c.start_byte()), &|f| self.path_function(f))
             .touches(None)
     }
 
@@ -2283,17 +2288,9 @@ impl<'a, 't> Body<'a, 't> {
         let mut out = vec![];
         for v in values {
             let held = self.locals.visible(c.start_byte());
-            let mut cr = Crosses::read(
-                c,
-                self.src,
-                tag,
-                None,
-                op,
-                &[vec![v.clone()], lits.clone()].concat(),
-                STRINGS,
-                &held,
-                &path_maker_named(self.src),
-            );
+            let mut cr = Crosses::read(c, self.src, tag, None, op, &[vec![v.clone()], lits.clone()].concat(), STRINGS, &held, &|f| {
+                self.path_function(f)
+            });
             cr.what = v;
             out.extend(cr.touches(None));
         }
@@ -2446,17 +2443,9 @@ impl<'a, 't> Body<'a, 't> {
         let (mut out, two) = (vec![], files.len() > 1);
         for (kind, a) in files {
             let lits = literals(a, self.src, STRINGS);
-            let mut cr = Crosses::read(
-                c,
-                self.src,
-                kind,
-                None,
-                op,
-                &lits,
-                STRINGS,
-                &self.locals.visible(c.start_byte()),
-                &path_maker_named(self.src),
-            );
+            let mut cr = Crosses::read(c, self.src, kind, None, op, &lits, STRINGS, &self.locals.visible(c.start_byte()), &|f| {
+                self.path_function(f)
+            });
             // a file is named by the argument that is its path, not by what is written into it; a
             // call handed two paths names each by its own
             cr.what = if two {
@@ -2464,7 +2453,7 @@ impl<'a, 't> Body<'a, 't> {
             } else {
                 crate::tree::what_in(a, self.src, STRINGS)
             };
-            cr.fixed = crate::tree::head_literal(a, self.src, STRINGS, &path_maker_named(self.src));
+            cr.fixed = crate::tree::head_literal(a, self.src, STRINGS, &|f| self.path_function(f));
             let built = self.eval.of(self.at(), a, 0);
             out.extend(cr.touches(None).into_iter().map(|t| (t, built.clone())));
         }
