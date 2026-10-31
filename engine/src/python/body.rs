@@ -778,8 +778,21 @@ impl<'a> Seen<'a> {
     /// Where `computed`, a name holds what an operator computes it from as well (`sources`); a change
     /// made through a name changes only what the name is or is a part of.
     fn projected<'t>(&self, i: TsNode<'t>, made: &HashSet<String>, computed: bool) -> Vec<TsNode<'t>> {
+        self.followed(i, made, computed).0
+    }
+
+    /// The names the name `i` stands for where it stands, as `projected` follows it with `computed`: those a binding it
+    /// follows binds a name to by what Python's own code computes of them (`gap = first.db - second.db`,
+    /// `body::stands_for`).
+    fn stands<'t>(&self, i: TsNode<'t>, made: &HashSet<String>) -> Vec<TsNode<'t>> {
+        self.followed(i, made, true).1
+    }
+
+    /// The names `i` is followed to (`projected`), and the names it is followed through that stand where a binding binds a
+    /// name to what Python's own code computes of them (`stands`).
+    fn followed<'t>(&self, i: TsNode<'t>, made: &HashSet<String>, computed: bool) -> (Vec<TsNode<'t>>, Vec<TsNode<'t>>) {
         let src = &self.m.src;
-        let (mut out, mut todo, mut seen) = (vec![], vec![(i, 0)], HashSet::new());
+        let (mut out, mut stood, mut todo, mut seen) = (vec![], vec![], vec![(i, 0)], HashSet::new());
         while let Some((at, depth)) = todo.pop() {
             let name = text(at, src);
             if !seen.insert(at.id()) || depth > 8 || made.contains(name) || name == "self" {
@@ -790,15 +803,19 @@ impl<'a> Seen<'a> {
                 bound if !bound.is_empty() => bound.into_iter().filter_map(|b| b.child_by_field_name("right")).collect(),
                 _ => matched_by(at, name, src).or_else(|| looped_by(at, name, src)).into_iter().collect(),
             };
-            let roots: Vec<Option<TsNode>> =
-                rights.into_iter().flat_map(|r| if computed { sources(r, src) } else { projections(r) }).collect();
+            let parts: Vec<(TsNode, Vec<Option<TsNode>>)> =
+                rights.into_iter().map(|r| (r, if computed { sources(r, src) } else { projections(r) })).collect();
+            let roots: Vec<Option<TsNode>> = parts.iter().flat_map(|(_, roots)| roots.iter().copied()).collect();
             if roots.is_empty() || roots.iter().any(|r| r.is_none_or(|r| r.id() == at.id())) {
                 out.push(at);
                 continue;
             }
+            for (_, roots) in parts.iter().filter(|(r, _)| computed && (USES.computes)(beneath(*r, WRAPPERS), src)) {
+                stood.extend(roots.iter().flatten());
+            }
             todo.extend(roots.into_iter().flatten().map(|r| (r, depth + 1)));
         }
-        out
+        (out, stood)
     }
 
     /// Whether class `c` is `b` or descends from it.
@@ -1030,7 +1047,8 @@ pub(super) fn link_calls<'t>(
         }
         let kept = steps.kept.clone();
         let held = |n| if b.holds(n) { b.seen.held_in(n, b.ext, &kept) } else { vec![] };
-        steps.uses(&held);
+        let stands = |n| if b.holds(n) { b.seen.stands(n, &kept) } else { vec![] };
+        steps.uses(&held, &stands);
         steps.fills(&held);
         b.class_state(&mut steps);
         b.ends();

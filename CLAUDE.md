@@ -102,8 +102,10 @@ The rigorous half and the visual half are the same structure. Read `docs/referen
   progress) to `P4` (later); a new theme becomes an epic under the roadmap, with the next number. Older commits name issues by an id of the form `PTT-…`; an open
   issue that has one names it on its first line.
 - **Two agents work in this repository: Claude Code and Codex.** Before starting, claim the
-  issue on GitHub: label it `in progress` and comment a *Coordination* note that names the active
-  owner, the branch, the worktree, the base commit and the files in scope. Work in your own
+  issue on GitHub: label it `in progress`, assign it to the account you work under
+  (`gh issue edit N --add-assignee @me`; an epic's list of sub-issues shows the assignee, not the label),
+  and comment a *Coordination* note that names the active owner, the branch, the worktree, the base
+  commit and the files in scope. Work in your own
   worktree and branch; never edit another agent's worktree, branch or files in scope. Claude's
   checkout is `/Users/rgrouls/code/packages/atlas`, kept on `next`; its subagents'
   are `.claude/worktrees/agent-*`; Codex's are under `~/.codex/worktrees/`. Since `next` is checked

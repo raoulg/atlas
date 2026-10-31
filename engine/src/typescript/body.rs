@@ -386,7 +386,8 @@ pub(super) fn link_calls<'t>(
             }
             out
         };
-        steps.uses(&held);
+        let stands = |n| if b.mine(n) { b.stands(n, &kept) } else { vec![] };
+        steps.uses(&held, &stands);
         if let Some(cls) = b.cls.clone().filter(|_| b.initializer) {
             steps.keeps(Held::new(cls, ""), b.properties());
         }
@@ -1090,28 +1091,11 @@ impl<'a, 't> Body<'a, 't> {
             }
             return;
         }
-        // a name bound to values without a step stands for what they are made of: what it is declared
-        // with, and what each assignment to it sets (`let unit; if (..) unit = CELSIUS; else unit = KELVIN`)
-        let from = self.locals.from(i, self.src);
-        let element = matches!(from, Some((_, BoundFrom::Element)));
-        let declared = match from {
-            Some((v, BoundFrom::Whole | BoundFrom::Part)) => Some(v),
-            _ => None,
-        };
-        let binding = self.locals.which(i, self.src);
-        let assigned = self
-            .assigned
-            .get(name)
-            .into_iter()
-            .flatten()
-            .filter(|(left, _)| binding.is_some() && self.locals.which(*left, self.src) == binding)
-            .map(|(_, right)| *right);
-        let values: Vec<TsNode> = declared.into_iter().chain(assigned).collect();
-        // what TypeScript's own code computes of names stands for them, whatever type the name has (`const both: Level[] =
-        // [first, second]`, `body::stands_for`), where no step made it anew
-        let computed: Vec<Vec<TsNode>> = values.iter().map(|v| crate::body::stands_for(*v, &USES, self.src, &part)).collect();
-        if depth <= 8 && !element && !kept.contains(name) && !values.is_empty() && computed.iter().all(|c| !c.is_empty()) {
-            for n in computed.into_iter().flatten() {
+        // a name bound to values without a step stands for what they are made of
+        let (values, element) = self.bound_to(i);
+        let computed = if depth <= 8 { self.stands(i, kept) } else { vec![] };
+        if !computed.is_empty() {
+            for n in computed {
                 let before = out.len();
                 self.held(n, kept, depth + 1, out);
                 for h in out[before..].iter_mut().filter(|h| h.bound == 0) {
@@ -1148,6 +1132,43 @@ impl<'a, 't> Body<'a, 't> {
                 h.bound = n.start_byte() as u32;
             }
         }
+    }
+
+    /// What the name `i` is bound to where it stands, by no step: what it is declared with, and what each assignment to it
+    /// sets (`let unit; if (..) unit = CELSIUS; else unit = KELVIN`); and whether it is declared an element of what it is
+    /// declared with (`for (const x of xs)`, `xs.map((x) => ..)`).
+    fn bound_to(&self, i: TsNode) -> (Vec<TsNode<'t>>, bool) {
+        let from = self.locals.from(i, self.src);
+        let element = matches!(from, Some((_, BoundFrom::Element)));
+        let declared = match from {
+            Some((v, BoundFrom::Whole | BoundFrom::Part)) => Some(v),
+            _ => None,
+        };
+        let binding = self.locals.which(i, self.src);
+        let assigned = self
+            .assigned
+            .get(text(i, self.src))
+            .into_iter()
+            .flatten()
+            .filter(|(left, _)| binding.is_some() && self.locals.which(*left, self.src) == binding)
+            .map(|(_, right)| *right);
+        (declared.into_iter().chain(assigned).collect(), element)
+    }
+
+    /// The names the name `i` stands for where it stands: where everything it is bound to (`bound_to`) is what TypeScript's
+    /// own code computes of names, whatever type the name has (`const gap = first.db - second.db`, `const both: Level[] =
+    /// [first, second]`), and no step made it anew, the names those values are computed of (`body::stands_for`); none for any
+    /// other name.
+    fn stands(&self, i: TsNode, kept: &HashSet<String>) -> Vec<TsNode<'t>> {
+        let (values, element) = self.bound_to(i);
+        if element || values.is_empty() || kept.contains(text(i, self.src)) {
+            return vec![];
+        }
+        let computed: Vec<Vec<TsNode<'t>>> = values.iter().map(|v| crate::body::stands_for(*v, &USES, self.src, &part)).collect();
+        if computed.iter().any(Vec::is_empty) {
+            return vec![];
+        }
+        computed.into_iter().flatten().collect()
     }
 
     /// What a call gives back, by the name the body keeps it by. Its type is one a step gives: what
