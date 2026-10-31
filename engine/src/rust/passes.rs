@@ -17,7 +17,7 @@ use super::module::{
 use super::paths::{Eval, Evaluated};
 use crate::builder::{foreign_type, ClassInfo, GraphBuilder};
 use crate::knowledge;
-use crate::model::{EdgeKind, Entry, EntryKind, Node, NodeKind};
+use crate::model::{ext, EdgeKind, Entry, EntryKind, Node, NodeKind, Resolved};
 use crate::tree::{named_children, span, text, walk};
 
 /// A trait impl found in a module, resolved once bindings exist.
@@ -129,11 +129,11 @@ pub(super) fn mark_exports(modules: &IndexMap<String, Module>, store: &mut Graph
             collect_use(u, &[], &m.src, &mut out, &mut wild);
             for (alias, parts) in out {
                 if let Some(r) = resolve(m, &parts, modules, &store.nodes, crate_ids) {
-                    names.push((alias, r));
+                    names.push((alias, r.id()));
                 }
             }
             for w in wild {
-                if let Some(t) = resolve(m, &w, modules, &store.nodes, crate_ids).and_then(|r| modules.get(&r)) {
+                if let Some(t) = resolve(m, &w, modules, &store.nodes, crate_ids).and_then(|r| modules.get(&r.id())) {
                     names.extend(pub_items(t));
                 }
             }
@@ -337,7 +337,7 @@ pub(super) fn collect_uses(m: &mut Module, crate_ids: &HashMap<String, String>, 
     let is_module = |id: &str| module_ids.contains(id);
     for ((alias, parts), test) in out.into_iter().zip(tested) {
         let id = path_to_id(m, &parts, crate_ids, &is_module);
-        if !id.starts_with("ext:") && !test {
+        if !ext::is(&id) && !test {
             edges.push(id.clone());
         }
         bindings.push((alias, id));
@@ -346,7 +346,7 @@ pub(super) fn collect_uses(m: &mut Module, crate_ids: &HashMap<String, String>, 
         let id = path_to_id(m, &w, crate_ids, &is_module);
         // a glob over a name the module binds (`use Kind::*` of its own enum) is no library's
         let bound = w.first().map_or(false, |h| m.symbols.contains_key(h) || bindings.iter().any(|(a, _)| a == h));
-        if id.starts_with("ext:") {
+        if ext::is(&id) {
             if !bound && !m.globs.contains(&id) {
                 m.globs.push(id);
             }
@@ -391,8 +391,8 @@ pub(super) fn collect_impls(
                 if parts.is_empty() {
                     continue;
                 }
-                let sup = resolve(m, &parts, modules, &store.nodes, crate_ids).unwrap_or_else(|| format!("ext:{}", parts.join(".")));
-                if sup.starts_with("ext:") {
+                let sup = resolve(m, &parts, modules, &store.nodes, crate_ids).unwrap_or_else(|| Resolved::Beyond(parts.join("."))).id();
+                if ext::is(&sup) {
                     store.ext_node(&sup);
                 }
                 store.add_edge(&tr, &sup, EdgeKind::Inherits, None);
@@ -411,11 +411,12 @@ pub(super) fn collect_impls(
     for im in impls {
         let m = &modules[&im.module];
         let src = &m.src;
-        let Some(cls) = resolve(m, &im.type_parts, modules, &store.nodes, crate_ids).filter(|c| !c.starts_with("ext:")) else { continue };
+        let Some(cls) = resolve(m, &im.type_parts, modules, &store.nodes, crate_ids).and_then(Resolved::code) else { continue };
         if !im.trait_parts.is_empty() {
             let tr = resolve(m, &im.trait_parts, modules, &store.nodes, crate_ids)
-                .unwrap_or_else(|| format!("ext:{}", im.trait_parts.join(".")));
-            if tr.starts_with("ext:") {
+                .unwrap_or_else(|| Resolved::Beyond(im.trait_parts.join(".")))
+                .id();
+            if ext::is(&tr) {
                 store.ext_node(&tr);
             }
             store.add_edge(&cls, &tr, EdgeKind::Inherits, None);
@@ -470,8 +471,8 @@ pub(super) fn link(modules: &IndexMap<String, Module>, store: &mut GraphBuilder,
         let (fields, arms) = store.classes.get(id).map(|c| (c.fields.clone(), c.arms.clone())).unwrap_or_default();
         for (fname, types) in fields {
             for t in types {
-                let Some(r) = resolve(m, &t, modules, &store.nodes, crate_ids) else { continue };
-                if r.starts_with("ext:") {
+                let Some(r) = resolve(m, &t, modules, &store.nodes, crate_ids).map(Resolved::id) else { continue };
+                if ext::is(&r) {
                     store.classes.entry(id.clone()).or_default().foreign.entry(fname.clone()).or_insert(r);
                 } else if store.nodes.get(&r).map_or(false, |x| x.kind == NodeKind::Class) {
                     store.classes.entry(id.clone()).or_default().attr_types.insert(fname.clone(), r.clone());
@@ -485,12 +486,9 @@ pub(super) fn link(modules: &IndexMap<String, Module>, store: &mut GraphBuilder,
         let mut seen: Vec<String> = vec![];
         for (vname, carried, at) in arms {
             let mut known: Vec<String> = vec![];
-            for r in carried.iter().filter_map(|t| resolve(m, t, modules, &store.nodes, crate_ids)) {
-                let holds = if r.starts_with("ext:") {
-                    foreign_type(&r, &OWN)
-                } else {
-                    store.nodes.get(&r).map_or(false, |x| x.kind == NodeKind::Class)
-                };
+            for r in carried.iter().filter_map(|t| resolve(m, t, modules, &store.nodes, crate_ids).map(Resolved::id)) {
+                let holds =
+                    if ext::is(&r) { foreign_type(&r, &OWN) } else { store.nodes.get(&r).map_or(false, |x| x.kind == NodeKind::Class) };
                 if holds && r != *id && !known.contains(&r) {
                     known.push(r);
                 }
@@ -514,7 +512,7 @@ pub(super) fn link(modules: &IndexMap<String, Module>, store: &mut GraphBuilder,
                 if seen.contains(&r) {
                     continue;
                 }
-                if r.starts_with("ext:") {
+                if ext::is(&r) {
                     store.ext_node(&r);
                 }
                 store.add_edge(id, &r, EdgeKind::Variant, None);
@@ -539,12 +537,13 @@ pub(super) fn link(modules: &IndexMap<String, Module>, store: &mut GraphBuilder,
                     ([s], Some(c)) if s == "Self" => vec![c.clone()],
                     // `Self::Item` is the type the impl fixes it to; in the trait, each its implementations fix
                     ([s, name], Some(c)) if s == "Self" => match def.and_then(impl_around) {
-                        Some(item) => {
-                            fixed_in(item, name, &m.src).iter().filter_map(|t| resolve(m, t, modules, &store.nodes, crate_ids)).collect()
-                        }
+                        Some(item) => fixed_in(item, name, &m.src)
+                            .iter()
+                            .filter_map(|t| resolve(m, t, modules, &store.nodes, crate_ids).map(Resolved::id))
+                            .collect(),
                         None => fixed.get(&(c.clone(), name.clone())).cloned().unwrap_or_default(),
                     },
-                    _ => resolve(m, t, modules, &store.nodes, crate_ids).into_iter().collect(),
+                    _ => resolve(m, t, modules, &store.nodes, crate_ids).map(Resolved::id).into_iter().collect(),
                 };
                 for r in resolved {
                     signed(store, id, &r, kind);
@@ -553,7 +552,9 @@ pub(super) fn link(modules: &IndexMap<String, Module>, store: &mut GraphBuilder,
         }
         take_sums(modules, store, crate_ids, id);
         // a type written through an alias is held by the name of the type it stands for
-        let held = crate::model::holds_resolved(&store.nodes[id], |h| resolve(m, &[h.to_string()], modules, &store.nodes, crate_ids));
+        let held = crate::model::holds_resolved(&store.nodes[id], |h| {
+            resolve(m, &[h.to_string()], modules, &store.nodes, crate_ids).map(Resolved::id)
+        });
         crate::model::set_holds(store.nodes.get_mut(id).expect("a node of the graph"), held);
     }
     // every signature before any body: a body's locals take their types from what the functions
@@ -608,15 +609,18 @@ fn fixed_by_implementations(
     for m in modules.values() {
         for item in items(m.tree.root_node()).into_iter().filter(|i| i.kind() == "impl_item") {
             let parts = path_parts(item.child_by_field_name("trait"), &m.src);
-            let Some(tr) = Some(parts).filter(|p| !p.is_empty()).and_then(|p| resolve(m, &p, modules, &store.nodes, crate_ids)) else {
+            let Some(tr) =
+                Some(parts).filter(|p| !p.is_empty()).and_then(|p| resolve(m, &p, modules, &store.nodes, crate_ids).map(Resolved::id))
+            else {
                 continue;
             };
             let body = item.child_by_field_name("body").map(named_children).unwrap_or_default();
             for t in body.into_iter().filter(|t| t.kind() == "type_item") {
                 let Some(name) = t.child_by_field_name("name").map(|n| text(n, &m.src).to_string()) else { continue };
                 let types = out.entry((tr.clone(), name)).or_default();
-                for r in
-                    type_names(t.child_by_field_name("type"), &m.src).iter().filter_map(|p| resolve(m, p, modules, &store.nodes, crate_ids))
+                for r in type_names(t.child_by_field_name("type"), &m.src)
+                    .iter()
+                    .filter_map(|p| resolve(m, p, modules, &store.nodes, crate_ids).map(Resolved::id))
                 {
                     if !types.contains(&r) {
                         types.push(r);
@@ -631,7 +635,7 @@ fn fixed_by_implementations(
 /// A type a signature names, as the edge of its kind (`Takes`, `Returns`): one of the program's,
 /// or a library's that holds data.
 fn signed(store: &mut GraphBuilder, id: &str, r: &str, kind: EdgeKind) {
-    if r.starts_with("ext:") {
+    if ext::is(r) {
         if !foreign_type(r, &OWN) {
             return;
         }
@@ -663,7 +667,7 @@ fn take_sums(modules: &IndexMap<String, Module>, store: &mut GraphBuilder, crate
     let Some(params) = def_node(m, &n).and_then(|d| d.child_by_field_name("parameters")) else { return };
     let resolved = |parts: &[String], nodes: &IndexMap<String, Node>| match (parts, &n.cls) {
         ([s], Some(c)) if s == "Self" => Some(c.clone()),
-        _ => resolve(m, parts, modules, nodes, crate_ids),
+        _ => resolve(m, parts, modules, nodes, crate_ids).map(Resolved::id),
     };
     for p in named_children(params).into_iter().filter(|p| p.kind() == "parameter") {
         let Some(mut t) = p.child_by_field_name("type") else { continue };
@@ -682,11 +686,8 @@ fn take_sums(modules: &IndexMap<String, Module>, store: &mut GraphBuilder, crate
         let mut variants: Vec<String> = vec![];
         for a in t.child_by_field_name("type_arguments").map(named_children).unwrap_or_default() {
             for r in type_names(Some(a), src).iter().filter_map(|x| resolved(x, &store.nodes)) {
-                let known = if r.starts_with("ext:") {
-                    foreign_type(&r, &OWN)
-                } else {
-                    store.nodes.get(&r).map_or(false, |x| x.kind == NodeKind::Class)
-                };
+                let known =
+                    if ext::is(&r) { foreign_type(&r, &OWN) } else { store.nodes.get(&r).map_or(false, |x| x.kind == NodeKind::Class) };
                 if known && !variants.contains(&r) {
                     variants.push(r);
                 }
@@ -705,13 +706,13 @@ fn take_sums(modules: &IndexMap<String, Module>, store: &mut GraphBuilder, crate
             let parts = path_parts(Some(x), src);
             meant.push_str(&String::from_utf8_lossy(&src[at..x.start_byte()]));
             let r = resolved(&parts, &store.nodes).unwrap_or_else(|| parts.join("."));
-            meant.push_str(r.strip_prefix("ext:").unwrap_or(&r));
+            meant.push_str(ext::name(&r));
             at = x.end_byte();
         }
         meant.push_str(&String::from_utf8_lossy(&src[at..t.end_byte()]));
-        let sum = format!("ext:{}", meant.split_whitespace().collect::<String>());
+        let sum = ext::of(&meant.split_whitespace().collect::<String>());
         if !store.nodes.contains_key(&sum) {
-            let home = of.as_deref().map(|r| r.trim_start_matches("ext:")).and_then(|r| r.rsplit_once('.')).map_or("", |(h, _)| h);
+            let home = of.as_deref().map(ext::name).and_then(|r| r.rsplit_once('.')).map_or("", |(h, _)| h);
             store.add_node(Node {
                 id: sum.clone(),
                 kind: NodeKind::External,
@@ -720,7 +721,7 @@ fn take_sums(modules: &IndexMap<String, Module>, store: &mut GraphBuilder, crate
                 ..Default::default()
             });
             for v in variants {
-                if v.starts_with("ext:") {
+                if ext::is(&v) {
                     store.ext_node(&v);
                 }
                 store.add_edge(&sum, &v, EdgeKind::Variant, None);

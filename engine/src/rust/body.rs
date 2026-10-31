@@ -15,7 +15,7 @@ use crate::body::{Bindings, Crosses, Range, Step, Steps, UseSyntax};
 use crate::builder::{foreign_type, GraphBuilder};
 use crate::effects::{self, Crossing};
 use crate::knowledge::{self, OwnTypes};
-use crate::model::{Bucket, EdgeKind, Held, Node, NodeKind, Slot, Touch, World};
+use crate::model::{ext, Bucket, EdgeKind, Held, Node, NodeKind, Resolved, Slot, Touch, World};
 use crate::tree::{
     beneath, evaluation_order, literals, named_children, nth_of_kind, text, unquote, walk, wrapped, wraps, ChoiceSyntax, CompareSyntax,
     Part,
@@ -669,7 +669,7 @@ pub(super) fn link_calls<'t>(
         let error = n.returns.as_ref().filter(|r| r.fails).map(|r| {
             let named = crate::body::error_written(&r.written).map(|e| e.split('<').next().unwrap_or(e).trim_start_matches(['&', ' ']));
             let parts = named.map(|e| e.trim_start_matches("dyn ").split("::").map(str::to_string).collect::<Vec<_>>());
-            parts.and_then(|p| b.resolve(&p)).and_then(|t| b.class_of(&t)).unwrap_or_default()
+            parts.and_then(|p| b.resolve(&p)).and_then(|t| b.class_of(&t.id())).unwrap_or_default()
         });
         steps.converts(error);
         // a loop binds its element once what it goes over is made, and before its body runs
@@ -885,13 +885,13 @@ impl<'a, 't> Body<'a, 't> {
         b
     }
 
-    fn resolve(&self, parts: &[String]) -> Option<String> {
+    fn resolve(&self, parts: &[String]) -> Option<Resolved> {
         resolve(self.m, parts, self.modules, &self.store.nodes, self.crate_ids)
     }
 
     /// What a path written at `at` names where a value is wanted: none where it names a local the
     /// body binds there, which shadows the item of that name.
-    fn resolve_value(&self, at: TsNode, parts: &[String]) -> Option<String> {
+    fn resolve_value(&self, at: TsNode, parts: &[String]) -> Option<Resolved> {
         if shadowed(Some(self.def), at, parts, self.src) {
             return None;
         }
@@ -902,7 +902,7 @@ impl<'a, 't> Body<'a, 't> {
     /// else the first library type it names (`Value` of `Result<Value, reqwest::Error>`, read as
     /// what the `Result` holds; `Vec` of `Vec<f64>`).
     fn library_type(&self, types: &[Vec<String>]) -> Option<String> {
-        let libs: Vec<String> = types.iter().filter_map(|t| self.resolve(t).filter(|r| r.starts_with("ext:"))).collect();
+        let libs: Vec<String> = types.iter().filter_map(|t| self.resolve(t).filter(Resolved::is_beyond).map(Resolved::id)).collect();
         libs.iter().find(|r| foreign_type(r, &OWN)).or(libs.first()).cloned()
     }
 
@@ -937,7 +937,7 @@ impl<'a, 't> Body<'a, 't> {
             if let Some(lib) = self.library_type(&types) {
                 self.foreign.bind(&pname, from, to, lib);
             }
-            let class = types.iter().find_map(|t| self.resolve(t).filter(|r| !r.starts_with("ext:")).and_then(|r| self.class_of(&r)));
+            let class = types.iter().find_map(|t| self.resolve(t).and_then(Resolved::code).and_then(|r| self.class_of(&r)));
             if let Some(r) = class {
                 if by_mut_ref {
                     self.read.mutates.push((r.clone(), pname.clone()));
@@ -1107,11 +1107,11 @@ impl<'a, 't> Body<'a, 't> {
     /// The program's classes a struct pattern's fields hold, by field: a struct's, or an enum
     /// variant's (`Command::Report`), read where the enum declares it.
     fn declared_fields(&self, parts: &[String]) -> Option<Vec<(String, String)>> {
-        if let Some(r) = self.resolve(parts).filter(|r| !r.starts_with("ext:")).and_then(|r| self.class_of(&r)) {
+        if let Some(r) = self.resolve(parts).and_then(Resolved::code).and_then(|r| self.class_of(&r)) {
             return self.store.classes.get(&r).map(|c| c.attr_types.clone().into_iter().collect());
         }
         let (variant, owner) = parts.split_last()?;
-        let e = self.resolve(owner).filter(|r| !r.starts_with("ext:")).and_then(|r| self.class_of(&r))?;
+        let e = self.resolve(owner).and_then(Resolved::code).and_then(|r| self.class_of(&r))?;
         let n = self.store.nodes.get(&e)?;
         let home = self.modules.get(&n.module)?;
         let item = def_node(home, n).filter(|d| d.kind() == "enum_item")?;
@@ -1120,9 +1120,7 @@ impl<'a, 't> Body<'a, 't> {
             .find(|v| v.child_by_field_name("name").map(|x| text(x, &home.src)) == Some(variant.as_str()))?;
         let list = v.child_by_field_name("body").filter(|b| b.kind() == "field_declaration_list")?;
         let class = |t: Vec<String>| {
-            resolve(home, &t, self.modules, &self.store.nodes, self.crate_ids)
-                .filter(|r| !r.starts_with("ext:"))
-                .and_then(|r| self.class_of(&r))
+            resolve(home, &t, self.modules, &self.store.nodes, self.crate_ids).and_then(Resolved::code).and_then(|r| self.class_of(&r))
         };
         Some(
             named_children(list)
@@ -1156,7 +1154,7 @@ impl<'a, 't> Body<'a, 't> {
             if let Some(t) = self.library_type(&declared) {
                 self.foreign.bind(&name, from, to, t);
             }
-            let annotated = declared.iter().find_map(|t| self.resolve(t).and_then(|t| self.class_of(&t)));
+            let annotated = declared.iter().find_map(|t| self.resolve(t).and_then(|t| self.class_of(&t.id())));
             let mut value = l.child_by_field_name("value");
             while let Some(v) = value {
                 value = match v.kind() {
@@ -1232,7 +1230,9 @@ impl<'a, 't> Body<'a, 't> {
             let name = bound_name(pat, src).to_string();
             let Some((from, to)) = scope(pat) else { continue };
             let element = match self.sequence(value) {
-                _ if declared.is_some() => type_names(declared, src).iter().find_map(|t| self.resolve(t).and_then(|r| self.class_of(&r))),
+                _ if declared.is_some() => {
+                    type_names(declared, src).iter().find_map(|t| self.resolve(t).and_then(|r| self.class_of(&r.id())))
+                }
                 // a sequence the body names, as its type is written (`readings: &[Reading]`)
                 Some(s) if s.kind() == "identifier" => {
                     let (name, at) = (text(s, src), s.start_byte());
@@ -1249,7 +1249,7 @@ impl<'a, 't> Body<'a, 't> {
                         .and_then(|c| self.store.classes.get(&c))
                         .and_then(|k| k.fields.iter().find(|(f, _)| f == field))
                         .map(|(_, t)| t.clone());
-                    named.unwrap_or_default().iter().find_map(|t| self.resolve(t).and_then(|r| self.class_of(&r)))
+                    named.unwrap_or_default().iter().find_map(|t| self.resolve(t).and_then(|r| self.class_of(&r.id())))
                 }
                 _ => None,
             };
@@ -1357,13 +1357,12 @@ impl<'a, 't> Body<'a, 't> {
                 let ty = p.child_by_field_name("type");
                 let named = |parts: &Vec<String>| match parts.as_slice() {
                     [s] if s == "Self" => n.cls.clone(),
-                    _ => resolve(home, parts, self.modules, &self.store.nodes, self.crate_ids),
+                    _ => resolve(home, parts, self.modules, &self.store.nodes, self.crate_ids).map(Resolved::id),
                 };
                 // a class of the program's as its parameter is typed, the records it holds
                 // (`&[Month]`); a library's type only where it is the parameter's own, never one
                 // it holds (`&[(NaiveDate, f64)]` names no what)
-                let class =
-                    type_names(ty, &home.src).iter().filter_map(named).find(|r| !r.starts_with("ext:") && self.class_of(r).is_some());
+                let class = type_names(ty, &home.src).iter().filter_map(named).find(|r| !ext::is(r) && self.class_of(r).is_some());
                 let lib = Some(path_parts(ty, &home.src))
                     .filter(|parts| !parts.is_empty())
                     .as_ref()
@@ -1392,7 +1391,7 @@ impl<'a, 't> Body<'a, 't> {
         let parts = path_parts(Some(f), src);
         let t = match (parts.first().map(String::as_str), &self.cls) {
             (Some("Self"), Some(cls)) => self.store.method_of(cls, parts.get(1)?)?,
-            _ => self.resolve_value(f, &parts)?,
+            _ => self.resolve_value(f, &parts)?.id(),
         };
         own(t).map(|t| (t, false))
     }
@@ -1407,7 +1406,7 @@ impl<'a, 't> Body<'a, 't> {
             "self" => self.cls.clone(),
             "identifier" => self.locals.get(text(v, src), v.start_byte()).cloned().or_else(|| self.unit_struct(v)),
             "scoped_identifier" => self.unit_struct(v),
-            "struct_expression" => self.resolve(&path_parts(v.child_by_field_name("name"), src)).and_then(|r| self.class_of(&r)),
+            "struct_expression" => self.resolve(&path_parts(v.child_by_field_name("name"), src)).and_then(|r| self.class_of(&r.id())),
             "call_expression" if function(v).map_or(false, |f| f.kind() == "field_expression") => {
                 let f = function(v)?;
                 let on = self.value_class(f.child_by_field_name("value")?)?;
@@ -1425,9 +1424,10 @@ impl<'a, 't> Body<'a, 't> {
                     return None;
                 }
                 self.resolve_value(v, &parts)
+                    .map(Resolved::id)
                     .as_deref()
                     .and_then(|f| self.returned_class(f))
-                    .or_else(|| self.resolve(&parts[..parts.len() - 1]).and_then(|r| self.class_of(&r)))
+                    .or_else(|| self.resolve(&parts[..parts.len() - 1]).and_then(|r| self.class_of(&r.id())))
             }
             _ => None,
         }
@@ -1453,7 +1453,7 @@ impl<'a, 't> Body<'a, 't> {
             let changes = named_children(item).iter().any(|c| c.kind() == "mutable_specifier")
                 || types.iter().any(|t| t.last().is_some_and(|l| knowledge::rust_interior(l)));
             let Some(name) = item.child_by_field_name("name").filter(|_| !changes) else { continue };
-            let class = types.iter().find_map(|t| self.resolve(t).filter(|r| !r.starts_with("ext:")).and_then(|r| self.class_of(&r)));
+            let class = types.iter().find_map(|t| self.resolve(t).and_then(Resolved::code).and_then(|r| self.class_of(&r)));
             if let Some(c) = class {
                 out.insert(text(name, src).to_string(), c);
             }
@@ -1630,14 +1630,14 @@ impl<'a, 't> Body<'a, 't> {
                 "struct_expression"
                     if self
                         .resolve(&path_parts(n.child_by_field_name("name"), src))
-                        .filter(|r| !r.starts_with("ext:"))
+                        .and_then(Resolved::code)
                         .and_then(|r| self.class_of(&r))
                         .is_some() =>
                 {
                     out.push(n.byte_range())
                 }
                 "token_tree" => match token_callee(n, src) {
-                    Some(Called::Path(parts)) if self.resolve_value(n, &parts).map_or(false, |t| own(&t)) => out.push(n.byte_range()),
+                    Some(Called::Path(parts)) if self.resolve_value(n, &parts).map_or(false, |t| own(&t.id())) => out.push(n.byte_range()),
                     Some(Called::Method(recv, method)) => {
                         let owner = |t: TsNode| {
                             if t.kind() == "self" {
@@ -1653,7 +1653,7 @@ impl<'a, 't> Body<'a, 't> {
                             }
                             _ => None,
                         };
-                        if class.and_then(|k| self.store.method_of(&k, &method)).map_or(false, |t| !t.starts_with("ext:")) {
+                        if class.and_then(|k| self.store.method_of(&k, &method)).map_or(false, |t| !ext::is(&t)) {
                             out.push(recv.first().map_or(n.start_byte(), |r| r.start_byte())..n.end_byte());
                         }
                     }
@@ -1778,7 +1778,7 @@ impl<'a, 't> Body<'a, 't> {
         match class {
             // a method not found on the type (`to_string`, `len`) is not known; it builds nothing
             Some(r) => {
-                if let Some(t) = self.store.method_of(&r, &method).filter(|t| !t.starts_with("ext:")) {
+                if let Some(t) = self.store.method_of(&r, &method).filter(|t| !ext::is(t)) {
                     self.own_step(steps, c, &t, recv.last().copied(), Some(&r), None);
                 }
             }
@@ -1788,10 +1788,8 @@ impl<'a, 't> Body<'a, 't> {
 
     /// `Type { .. }`: a value of one of the program's types, built from its fields.
     fn literal(&self, steps: &mut Steps<'t, '_>, c: TsNode<'t>) {
-        let Some(r) = self
-            .resolve(&path_parts(c.child_by_field_name("name"), self.src))
-            .filter(|r| !r.starts_with("ext:"))
-            .and_then(|r| self.class_of(&r))
+        let Some(r) =
+            self.resolve(&path_parts(c.child_by_field_name("name"), self.src)).and_then(Resolved::code).and_then(|r| self.class_of(&r))
         else {
             return;
         };
@@ -1829,7 +1827,7 @@ impl<'a, 't> Body<'a, 't> {
         if v.kind() == "identifier" && self.parameter.get(text(v, self.src), v.start_byte()).is_some() {
             return None;
         }
-        let r = self.resolve(&path_parts(Some(v), self.src)).filter(|r| !r.starts_with("ext:")).and_then(|r| self.class_of(&r))?;
+        let r = self.resolve(&path_parts(Some(v), self.src)).and_then(Resolved::code).and_then(|r| self.class_of(&r))?;
         let n = self.store.nodes.get(&r)?;
         let def = self.modules.get(&n.module).and_then(|home| def_node(home, n))?;
         (def.kind() == "struct_item" && def.child_by_field_name("body").is_none()).then_some(r)
@@ -1852,7 +1850,7 @@ impl<'a, 't> Body<'a, 't> {
             let ps = path_parts(Some(a), self.src);
             let handed = match (ps.first().map(String::as_str), &self.cls) {
                 (Some("Self"), Some(c)) => ps.get(1).and_then(|m| self.store.method_of(c, m)),
-                _ => self.resolve_value(a, &ps),
+                _ => self.resolve_value(a, &ps).map(Resolved::id),
             };
             let Some(t) =
                 handed.filter(|t| self.store.nodes.get(t).map_or(false, |n| matches!(n.kind, NodeKind::Function | NodeKind::Method)))
@@ -1890,8 +1888,8 @@ impl<'a, 't> Body<'a, 't> {
             return Some(made.ty.into_iter().chain([method]).collect());
         }
         let parts = path_parts(Some(f), self.src);
-        let t = self.resolve_value(f, &parts)?;
-        Some(t.strip_prefix("ext:")?.split('.').map(String::from).collect())
+        let path = self.resolve_value(f, &parts)?.beyond()?;
+        Some(path.split('.').map(String::from).collect())
     }
 
     /// A call Atlas reads as computing what it gives, `written` as the code writes it: where what
@@ -2083,7 +2081,7 @@ impl<'a, 't> Body<'a, 't> {
             // the class the body says it is
             _ => self.value_class(value),
         };
-        let own = receiver.as_deref().and_then(|r| self.store.method_of(r, &method)).filter(|t| !t.starts_with("ext:"));
+        let own = receiver.as_deref().and_then(|r| self.store.method_of(r, &method)).filter(|t| !ext::is(t));
         if own.is_none() && self.changes_library_value(value, &method) {
             let hands = self.call_hands(c, Some(value), &steps.kept);
             let mut changed = self.hands(&[Some(value)], &steps.kept);
@@ -2133,11 +2131,10 @@ impl<'a, 't> Body<'a, 't> {
                 None => return self.changed_in_place(value, method),
             },
         };
-        let Some(t) = self.resolve(&ty) else { return false };
-        let Some(path) = t.strip_prefix("ext:") else { return false };
+        let Some(path) = self.resolve(&ty).and_then(Resolved::beyond) else { return false };
         let krate = match path.split_once('.') {
             Some((k, _)) => k,
-            None if knowledge::RUST_PRELUDE.contains(&path) => knowledge::RUST_PRELUDE_CRATE,
+            None if knowledge::RUST_PRELUDE.contains(&path.as_str()) => knowledge::RUST_PRELUDE_CRATE,
             None => return false,
         };
         knowledge::mutates(knowledge::Registry::Crates, krate, method)
@@ -2171,7 +2168,7 @@ impl<'a, 't> Body<'a, 't> {
             }
             _ => None,
         }?;
-        Some(ext.strip_prefix("ext:")?.split('.').map(String::from).collect())
+        Some(ext::path(&ext)?.split('.').map(String::from).collect())
     }
 
     /// What a library's method call touches, through the value its chain made. Traffic through a
@@ -2379,9 +2376,9 @@ impl<'a, 't> Body<'a, 't> {
             .child_by_field_name("function")
             .and_then(|f| qualified(f, self.src))
             .and_then(|(ty, _)| self.resolve(&ty))
-            .and_then(|r| self.class_of(&r));
+            .and_then(|r| self.class_of(&r.id()));
         let class = named.or_else(|| self.value_class(first));
-        let ran = class.as_deref().and_then(|k| self.store.method_of(k, &n.name)).filter(|m| !m.starts_with("ext:"));
+        let ran = class.as_deref().and_then(|k| self.store.method_of(k, &n.name)).filter(|m| !ext::is(m));
         Some((ran.unwrap_or_else(|| t.to_string()), first, class))
     }
 
@@ -2403,17 +2400,18 @@ impl<'a, 't> Body<'a, 't> {
             }
             ("Self", None) => None,
             // `Type::new(..)`: a function on a type
-            _ => self.resolve_value(c, &parts).or_else(|| {
+            _ => self.resolve_value(c, &parts).map(Resolved::id).or_else(|| {
                 let r = self
                     .resolve(&parts[..parts.len().saturating_sub(1)])
-                    .filter(|r| !r.starts_with("ext:") && parts.len() > 1)
+                    .and_then(Resolved::code)
+                    .filter(|_| parts.len() > 1)
                     .and_then(|r| self.class_of(&r))?;
                 Some(self.store.method_of(&r, &parts[parts.len() - 1]).unwrap_or(r))
             }),
         };
         match target {
             // `Type::method(..)` with no such method known: keep the name, it is what was called
-            Some(t) if !t.starts_with("ext:") => {
+            Some(t) if !ext::is(&t) => {
                 let via = (parts.len() > 1 && parts[0] != "Self").then(|| parts.last().cloned()).flatten();
                 match self.on_first(c, &t) {
                     Some((ran, first, class)) => self.own_step(steps, c, &ran, Some(first), class.as_deref(), via),
@@ -2452,10 +2450,10 @@ impl<'a, 't> Body<'a, 't> {
         if self.bound.get_or_init(|| bound_in(self.def, self.src)).contains(head) {
             return Bucket::Local;
         }
-        if self.m.bindings.get(head).map_or(false, |b| b.starts_with("ext:")) {
+        if self.m.bindings.get(head).map_or(false, |b| ext::is(b)) {
             return Bucket::Library;
         }
-        let free = head != "Self" && self.resolve(parts).map_or(false, |r| r.starts_with("ext:"));
+        let free = head != "Self" && self.resolve(parts).map_or(false, |r| r.is_beyond());
         if !free {
             Bucket::Unknown
         } else if knowledge::RUST_PRELUDE.contains(&head) {

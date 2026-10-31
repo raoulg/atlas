@@ -11,7 +11,7 @@ use tree_sitter::{Node as TsNode, Parser, Tree};
 
 use crate::builder::SigInfo;
 use crate::knowledge;
-use crate::model::{Node, NodeKind, Param, Returns};
+use crate::model::{ext, Node, NodeKind, Param, Resolved, Returns};
 use crate::tree::{named_children, text, walk, Wrappers};
 
 /// What hands on the value inside it: parentheses, a reference `&x`, a dereference `*x`, `x?` and
@@ -330,7 +330,7 @@ pub(super) fn fn_name(f: TsNode, src: &[u8]) -> String {
     f.child_by_field_name("name").map(|n| text(n, src)).unwrap_or("").to_string()
 }
 
-/// A path as written -> an internal id or `ext:...`.
+/// A path as written -> an internal id or the id of a name past the code (`ext`).
 pub(super) fn path_to_id(m: &Module, parts: &[String], crate_ids: &HashMap<String, String>, is_module: &dyn Fn(&str) -> bool) -> String {
     let Some(head) = parts.first() else { return String::new() };
     let (base, rest): (String, &[String]) = match head.as_str() {
@@ -347,7 +347,7 @@ pub(super) fn path_to_id(m: &Module, parts: &[String], crate_ids: &HashMap<Strin
         }
         h if crate_ids.contains_key(h) => (crate_ids[h].clone(), &parts[1..]),
         h if is_module(&format!("{}.{h}", m.id)) => (format!("{}.{h}", m.id), &parts[1..]),
-        _ => return format!("ext:{}", parts.join(".")),
+        _ => return ext::of(&parts.join(".")),
     };
     let mut id = base;
     for p in rest {
@@ -356,7 +356,7 @@ pub(super) fn path_to_id(m: &Module, parts: &[String], crate_ids: &HashMap<Strin
     }
     // a library's path is its own, found where Atlas reads it
     if m.library {
-        id.insert_str(0, "ext:");
+        return ext::of(&id);
     }
     id
 }
@@ -378,7 +378,7 @@ pub(super) fn type_parameters(tree: &Tree, src: &[u8]) -> HashSet<String> {
         .collect()
 }
 
-/// A path as written -> what it names: one of the program's items, or `ext:..` a library's. Rust
+/// A path as written -> what it names: one of the program's items, or a library's past the code. Rust
 /// keeps types and modules apart from values, and the head of a longer path (`download::f`) is a
 /// module or a type, never a function bound by the same name (`pub use download::download`).
 /// A name the module neither declares nor imports by name is the prelude's, or one a library's
@@ -390,7 +390,7 @@ pub(super) fn resolve(
     modules: &IndexMap<String, Module>,
     nodes: &IndexMap<String, Node>,
     crate_ids: &HashMap<String, String>,
-) -> Option<String> {
+) -> Option<Resolved> {
     let head = parts.first()?;
     let is_module = |id: &str| nodes.get(id).map_or(false, |n| n.kind == NodeKind::Module);
     let value = |id: &&String| parts.len() > 1 && nodes.get(*id).map_or(false, |n| matches!(n.kind, NodeKind::Function | NodeKind::Method));
@@ -408,23 +408,24 @@ pub(super) fn resolve(
     } else if let Some(glob) = glob_of(m, parts) {
         (format!("{glob}.{head}"), &[])
     } else {
-        (format!("ext:{}", parts.join(".")), &[])
+        (ext::of(&parts.join(".")), &[])
     };
     for p in rest {
         target.push('.');
         target.push_str(p);
     }
     // a library's item where Atlas read its code
-    if let Some(lib) = target.strip_prefix("ext:") {
-        return Some(library_item(lib, modules, nodes, 0).unwrap_or(target));
+    if let Some(lib) = ext::path(&target) {
+        let read = library_item(lib, modules, nodes, 0);
+        return Some(Resolved::of_id(read.unwrap_or(target)));
     }
     if nodes.contains_key(&target) {
-        return Some(target);
+        return Some(Resolved::Code(target));
     }
     // a re-export through another module's `pub use`
     let (modid, nm) = target.rsplit_once('.')?;
     let re = modules.get(modid)?.bindings.get(nm)?;
-    nodes.contains_key(re).then(|| re.clone())
+    nodes.contains_key(re).then(|| Resolved::of_id(re.clone()))
 }
 
 /// The item of a library's code Atlas read that a library's path names (`serde_json.from_str`):
@@ -448,13 +449,13 @@ fn library_item(path: &str, modules: &IndexMap<String, Module>, nodes: &IndexMap
             return None;
         }
         if let Some(b) = cur.bindings.get(*seg) {
-            return library_item(&format!("{}{rest}", b.strip_prefix("ext:").unwrap_or(b)), modules, nodes, depth + 1);
+            return library_item(&format!("{}{rest}", ext::name(b)), modules, nodes, depth + 1);
         }
         // a glob brings in the names of a module read
         return cur
             .globs
             .iter()
-            .filter_map(|g| library_module(g.strip_prefix("ext:").unwrap_or(g), modules))
+            .filter_map(|g| library_module(ext::name(g), modules))
             .find_map(|g| library_item(&format!("{}.{seg}{rest}", g.id), modules, nodes, depth + 1));
     }
     Some(cur.id.clone())
@@ -489,22 +490,24 @@ pub(super) fn resolve_value(
     modules: &IndexMap<String, Module>,
     nodes: &IndexMap<String, Node>,
     crate_ids: &HashMap<String, String>,
-) -> Option<String> {
+) -> Option<Resolved> {
     if let [name] = parts {
         let value = |id: &&String| nodes.get(*id).is_some_and(|n| n.kind != NodeKind::Module);
         if let Some(own) = m.symbols.get(name).filter(value).or_else(|| m.bindings.get(name).filter(value)) {
-            return Some(own.clone());
+            return Some(Resolved::of_id(own.clone()));
         }
     }
-    let r = resolve(m, parts, modules, nodes, crate_ids)?;
+    let r = resolve(m, parts, modules, nodes, crate_ids)?.id();
     if nodes.get(&r).map_or(true, |n| n.kind != NodeKind::Module) {
-        return Some(r);
+        return Some(Resolved::of_id(r));
     }
     let value = r.rsplit_once('.').and_then(|(parent, name)| {
         let home = modules.get(parent)?;
-        resolve(home, &[name.to_string()], modules, nodes, crate_ids).filter(|v| nodes.get(v).map_or(false, |n| n.kind != NodeKind::Module))
+        resolve(home, &[name.to_string()], modules, nodes, crate_ids)
+            .map(Resolved::id)
+            .filter(|v| nodes.get(v).map_or(false, |n| n.kind != NodeKind::Module))
     });
-    Some(value.unwrap_or(r))
+    Some(Resolved::of_id(value.unwrap_or(r)))
 }
 
 /// The kinds of item a node of the graph is defined by.
@@ -539,9 +542,9 @@ pub(super) fn def_node<'t>(m: &'t Module, n: &Node) -> Option<TsNode<'t>> {
 /// Expand the head of a call path through its binding, so `fs::read` becomes `std.fs.read`, and a
 /// library's call that is another by a second name to that one (`knowledge::RUST_SAME_CALLS`).
 pub(super) fn expand(m: &Module, parts: &[String]) -> Vec<String> {
-    let out = match parts.first().and_then(|h| m.bindings.get(h)) {
-        Some(b) if b.starts_with("ext:") => {
-            let mut out: Vec<String> = b[4..].split('.').map(String::from).collect();
+    let out = match parts.first().and_then(|h| m.bindings.get(h)).and_then(|b| ext::path(b)) {
+        Some(path) => {
+            let mut out: Vec<String> = path.split('.').map(String::from).collect();
             out.extend(parts[1..].iter().cloned());
             out
         }

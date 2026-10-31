@@ -16,7 +16,7 @@ use crate::body::{changed_through, BindSyntax, Crosses, Range, Step, Steps, UseS
 use crate::builder::{foreign_type, GraphBuilder};
 use crate::effects::{self, Crossing};
 use crate::knowledge::{self, OwnTypes};
-use crate::model::{Bucket, Dir, EdgeKind, Held, Node, NodeKind, Slot, Touch, World};
+use crate::model::{ext, Bucket, Dir, EdgeKind, Held, Node, NodeKind, Resolved, Slot, Touch, World};
 use crate::pytypes::{By, Facts, FileArg, Target, Types, Value};
 use crate::tree::{
     beneath, evaluation_order, field_children, literals, named_children, nth_of_kind, outermost, payload_of, text, unquote, walk, what_of,
@@ -45,8 +45,8 @@ fn changed_types(
         let name = text(name, &m.src).to_string();
         let mut drawn = None;
         for tn in type_names(Some(t), &m.src) {
-            match resolve(m, &tn, modules, nodes, own) {
-                Some(r) if !r.starts_with("ext:") && nodes.get(&r).map_or(false, |x| x.kind == NodeKind::Class) => drawn = Some(r),
+            match resolve(m, &tn, modules, nodes, own).map(Resolved::id) {
+                Some(r) if !ext::is(&r) && nodes.get(&r).map_or(false, |x| x.kind == NodeKind::Class) => drawn = Some(r),
                 Some(r) if drawn.is_none() && foreign_type(&r, &OWN) => drawn = Some(r),
                 _ => {}
             }
@@ -61,7 +61,7 @@ fn changed_types(
                 changeable.insert(name.clone());
             }
         }
-        if let Some(r) = drawn.or_else(|| outer.map(|(package, class)| format!("ext:{package}.{class}"))) {
+        if let Some(r) = drawn.or_else(|| outer.map(|(package, class)| ext::of(&format!("{package}.{class}")))) {
             out.insert(name, r);
         }
     }
@@ -615,7 +615,7 @@ impl<'a> Seen<'a> {
                 Target::Here { .. } => self.node(t).filter(|id| self.is_class(id)).cloned(),
                 Target::Lib(module) => {
                     let pkg = package_of(module);
-                    let id = ext.get(&(pkg.clone(), name.clone())).cloned().unwrap_or_else(|| format!("ext:{pkg}.{name}"));
+                    let id = ext.get(&(pkg.clone(), name.clone())).cloned().unwrap_or_else(|| ext::of(&format!("{pkg}.{name}")));
                     foreign_type(&id, &OWN).then_some(id)
                 }
             };
@@ -863,7 +863,7 @@ impl<'a> Seen<'a> {
         if !self.m.bindings.contains_key(head) && !self.m.symbols.contains_key(head) {
             return None;
         }
-        let r = resolve(self.m, &parts, self.modules, &self.store.nodes, self.own)?;
+        let r = resolve(self.m, &parts, self.modules, &self.store.nodes, self.own)?.id();
         Some(match lib_of(&r) {
             Some(lib) => Callee::Lib(lib),
             None => Callee::Def(r),
@@ -1060,7 +1060,9 @@ pub(super) fn link_calls<'t>(
         let is_type = |(a, b): (usize, usize)| {
             facts.and_then(|f| f.value((a, b))).is_some_and(|v| v.is_class) || {
                 let parts: Vec<String> = String::from_utf8_lossy(&m.src[a..b]).split('.').map(str::to_string).collect();
-                resolve(m, &parts, modules, &store.nodes, own).and_then(|t| store.nodes.get(&t)).is_some_and(|t| t.kind == NodeKind::Class)
+                resolve(m, &parts, modules, &store.nodes, own)
+                    .and_then(|t| store.nodes.get(&t.id()))
+                    .is_some_and(|t| t.kind == NodeKind::Class)
             }
         };
         let receiver = n.params.iter().find(|p| p.receiver && !n.on_class).map(|p| p.name.as_str());
@@ -1256,7 +1258,7 @@ impl<'a, 't> Body<'a, 't> {
             let parts = dotted(Some(*n), src);
             let Some((head, rest)) = parts.split_first() else { return false };
             let Some(bound) = self.m.bindings.get(head) else { return false };
-            let full: Vec<&str> = bound.trim_start_matches("ext:").split('.').chain(rest.iter().map(String::as_str)).collect();
+            let full: Vec<&str> = ext::name(bound).split('.').chain(rest.iter().map(String::as_str)).collect();
             knowledge::PYTHON_COMMAND_LINE.contains(&full.as_slice())
         };
         let mut out = vec![];
@@ -1301,7 +1303,7 @@ impl<'a, 't> Body<'a, 't> {
     fn each(&mut self, steps: &mut Steps<'t, '_>, l: TsNode<'t>) {
         let (Some(left), Some(right)) = (l.child_by_field_name("left"), l.child_by_field_name("right")) else { return };
         let (hands, mut gives) = self.seen.each(l, self.ext, &steps.kept);
-        self.read.new_ext.extend(hands.iter().chain(&gives).map(|h| h.ty.clone()).filter(|t| t.starts_with("ext:")));
+        self.read.new_ext.extend(hands.iter().chain(&gives).map(|h| h.ty.clone()).filter(|t| ext::is(t)));
         // the step stands where what it goes over is written: a call there hands it what it gives, the loop's body does not
         let label = format!("for {} in {}", text(left, self.src), text(right, self.src));
         // a loop over the command line keeps each word under the name it binds: it parses the command line
@@ -1371,7 +1373,7 @@ impl<'a, 't> Body<'a, 't> {
         v.classes.iter().zip(&v.names).find_map(|(t, name)| match t {
             Target::Lib(module) => {
                 let pkg = package_of(module);
-                Some(self.ext.get(&(pkg.clone(), name.clone())).cloned().unwrap_or_else(|| format!("ext:{pkg}.{name}")))
+                Some(self.ext.get(&(pkg.clone(), name.clone())).cloned().unwrap_or_else(|| ext::of(&format!("{pkg}.{name}"))))
             }
             Target::Here { .. } => None,
         })
@@ -1416,7 +1418,7 @@ impl<'a, 't> Body<'a, 't> {
         };
         let assigned =
             if unpacked.is_empty() { assigned } else { unpacked.iter().map(|n| text(*n, self.src)).collect::<Vec<_>>().join(", ") };
-        self.read.new_ext.extend(hands.iter().chain(&gives).map(|h| h.ty.clone()).filter(|t| t.starts_with("ext:")));
+        self.read.new_ext.extend(hands.iter().chain(&gives).map(|h| h.ty.clone()).filter(|t| ext::is(t)));
         steps.keep(&gives);
         // a function of the package handed on as a value (`executor.submit(self.run, x)`,
         // `Thread(target=work)`) is called by whoever receives it; a class handed to code Atlas
@@ -1575,7 +1577,7 @@ impl<'a, 't> Body<'a, 't> {
             }
         }
         for r in changed.into_iter().filter(|h| !h.name.is_empty()) {
-            if r.ty.starts_with("ext:") {
+            if ext::is(&r.ty) {
                 self.read.new_ext.push(r.ty.clone());
             }
             if !gives.contains(&r) {
@@ -1786,7 +1788,7 @@ impl<'a, 't> Body<'a, 't> {
         for r in roots {
             let ty = if r == "self" { self.cls.clone().filter(|_| !self.initializer) } else { self.params.get(r).cloned() };
             if let Some(t) = ty {
-                if t.starts_with("ext:") {
+                if ext::is(&t) {
                     self.read.new_ext.push(t.clone());
                 }
                 self.read.changes.push((t, r.to_string()));

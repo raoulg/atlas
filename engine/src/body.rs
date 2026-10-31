@@ -9,7 +9,7 @@ use tree_sitter::Node as TsNode;
 
 use crate::builder::GraphBuilder;
 use crate::effects::{self, Facts};
-use crate::model::{Crossing, Dir, EdgeKind, Held, NodeKind, Set, Site, Slot, Test, Touch, Use, World};
+use crate::model::{ext, Crossing, Dir, EdgeKind, Held, NodeKind, Set, Site, Slot, Test, Touch, Use, World};
 use crate::tree::{
     beneath, guarded_by, guards, named_children, number_choices, payload_of, starts_at_literal, text, walk, walk_all, what_of, wrapped,
     wraps, ChoiceSyntax, Part, Wrappers,
@@ -624,11 +624,11 @@ impl<'t, 's> Steps<'t, 's> {
         }
         // a name a step gave holds what the step gave, where the reader knows no type for it where it is read, or one of a
         // library's: the value is the step's, of no type of the code's where the step gives none (`fig, ax = plt.subplots()`)
-        for u in out.iter_mut().filter(|u| (u.ty.is_empty() || u.ty.starts_with("ext:")) && !u.name.is_empty()) {
+        for u in out.iter_mut().filter(|u| (u.ty.is_empty() || ext::is(&u.ty)) && !u.name.is_empty()) {
             let types: HashSet<&String> = self.sites.iter().flat_map(|s| &s.gives).filter(|g| g.name == u.name).map(|g| &g.ty).collect();
             let types: Vec<&String> = types.into_iter().collect();
             match types[..] {
-                [t] if !t.is_empty() || u.ty.starts_with("ext:") => u.ty = t.clone(),
+                [t] if !t.is_empty() || ext::is(&u.ty) => u.ty = t.clone(),
                 _ => {
                     if let [t] = types.iter().filter(|t| !t.is_empty()).collect::<Vec<_>>()[..] {
                         if u.ty.is_empty() {

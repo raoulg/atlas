@@ -22,7 +22,7 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 use serde::Serialize;
 
-use crate::model::{Both, EdgeKind, Entry, Graph, Held, Node, NodeKind, Site, Touch};
+use crate::model::{ext, Both, EdgeKind, Entry, Graph, Held, Node, NodeKind, Site, Touch};
 
 /// How a thing of the union stands to the two readings: B adds it, B no longer has it, or both
 /// hold it and its own arrows differ.
@@ -642,7 +642,7 @@ fn was(ix: &Index, n: &Node, as_in_a: &dyn Fn(&str) -> String) -> String {
 }
 
 fn short(id: &str) -> String {
-    id.trim_start_matches("ext:").rsplit('.').next().unwrap_or(id).to_string()
+    ext::name(id).rsplit('.').next().unwrap_or(id).to_string()
 }
 
 /// A body's steps in both readings, as `merged_sites` unites them.

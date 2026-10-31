@@ -211,7 +211,7 @@ mod tests {
     /// named by them and its rank, never as a shape an annotation could write.
     #[test]
     fn a_family_keeps_dtype_and_array_and_is_no_shape() {
-        let id = |s: &str| family_id(&format!("ext:jaxtyping.{s}")).unwrap();
+        let id = |s: &str| family_id(&crate::model::ext::of(&format!("jaxtyping.{s}"))).unwrap();
         assert_ne!(id("Float[Tensor, batch]"), id("Int[Tensor, batch]"));
         assert_ne!(id("Float[Tensor, batch]"), id("Float[ndarray, batch]"));
         assert_eq!(id("Float[Tensor, batch dim]"), id("Float[Tensor, _ {self.size}]"));

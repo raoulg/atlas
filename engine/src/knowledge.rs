@@ -857,7 +857,7 @@ pub const SHAPED_ARRAYS: &[&str] = &["jaxtyping"];
 
 /// A shaped array's id without its library: `Float[Tensor, batch dim]`.
 pub fn shaped(id: &str) -> Option<&str> {
-    SHAPED_ARRAYS.iter().find_map(|p| id.strip_prefix("ext:")?.strip_prefix(p)?.strip_prefix('.'))
+    SHAPED_ARRAYS.iter().find_map(|p| crate::model::ext::path(id)?.strip_prefix(p)?.strip_prefix('.'))
 }
 
 /// Functions that wrap a callback-taking function into one that returns a promise: what they
