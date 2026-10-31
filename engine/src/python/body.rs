@@ -552,13 +552,11 @@ impl<'a> Seen<'a> {
     /// the value the chain starts from is (`table[cols].assign(..)` on a pandas `DataFrame` is
     /// pandas'), where that value is of a library's class alone.
     fn on_library_value(&self, f: TsNode) -> Option<String> {
-        let mut root = f.child_by_field_name("object").filter(|_| f.kind() == "attribute")?;
+        let mut root = called_on(f)?;
         while let Some(inner) = match root.kind() {
             "attribute" => root.child_by_field_name("object"),
             "subscript" => root.child_by_field_name("value"),
-            "call" => {
-                root.child_by_field_name("function").filter(|g| g.kind() == "attribute").and_then(|g| g.child_by_field_name("object"))
-            }
+            "call" => root.child_by_field_name("function").and_then(called_on),
             _ => None,
         } {
             root = inner;
@@ -1664,6 +1662,26 @@ impl<'a, 't> Body<'a, 't> {
             steps.edge(c, &cls, EdgeKind::Instantiates);
         }
         let op = parts.last().map_or("", String::as_str);
+        // traffic through a file an `open` made is at the file it was opened at, wherever the file
+        // object is handed (`docs/reference/mathematics.md`, "A door keeps its place")
+        let traffic = knowledge::PYTHON_FILE_TRAFFIC.iter().find(|(o, _)| *o == op).map(|(_, d)| *d);
+        let file = called_on(fnode).filter(|o| self.seen.value(*o).is_some_and(|v| v.open_file()));
+        if let (Some(dir), Some(on)) = (traffic, file) {
+            let what = text(beneath(on, WRAPPERS), self.src).to_string();
+            let payload = payload_of(c, self.src, &what, "arguments", &self.seen.handed(c));
+            let t =
+                Touch { what, payload, op: op.to_string(), line: c.start_position().row as u32 + 1, ..Touch::new(World::Disk, Some(dir)) };
+            // a file the body opened is at the place its opening touches, named as the opening names
+            // it; one handed in is at the term it is opened at, which the callers make whole
+            let opened = self
+                .opening(on)
+                .map(|(o, built)| (Touch { what: o.what.clone(), artifact: o.artifact.clone(), fixed: o.fixed, ..t.clone() }, built));
+            match opened.unwrap_or_else(|| (t, self.eval.of(self.at(), on, 0))) {
+                (t, built) if built.is_empty() => self.read.touches.push(t),
+                waiting => self.read.waiting.push(waiting),
+            }
+            return;
+        }
         let Some(tag) = effects::boundary(lib.as_deref(), &parts).filter(|t| self.seen.moves(fnode, t, lib.as_deref(), op)) else { return };
         // a print handed a file writes that file (where it was opened), not the screen; one handed
         // a stream the human sees (`file=sys.stderr`) still shows it
@@ -1679,6 +1697,26 @@ impl<'a, 't> Body<'a, 't> {
         self.read.waiting.extend(crossed.waiting);
         self.read.declared.extend(crossed.said);
         self.read.handed.extend(crossed.handed);
+    }
+
+    /// The touch of the call that opened the file `on`, with the term its place waits for, where the
+    /// body binds `on` to that call before this use (`with open(p) as f`, `f = open(p)`): the last
+    /// such binding's touch on a disk.
+    fn opening(&self, on: TsNode) -> Option<(&Touch, Vec<Built>)> {
+        let on = beneath(on, WRAPPERS);
+        let name = (on.kind() == "identifier").then(|| text(on, self.src))?;
+        let named = |n: Option<TsNode>| n.is_some_and(|n| text(n, self.src) == name);
+        let opened = walk(self.body, &["as_pattern", "assignment"])
+            .into_iter()
+            .filter(|n| n.end_byte() <= on.start_byte())
+            .filter_map(|n| match n.kind() {
+                "as_pattern" => named(n.child_by_field_name("alias")).then(|| n.named_child(0)).flatten(),
+                _ => named(n.child_by_field_name("left")).then(|| n.child_by_field_name("right")).flatten(),
+            })
+            .last()?;
+        let line = beneath(opened, WRAPPERS).start_position().row as u32 + 1;
+        let made = self.read.touches.iter().map(|t| (t, vec![])).chain(self.read.waiting.iter().map(|(t, b)| (t, b.clone())));
+        made.filter(|(t, _)| t.line == line && t.kind == World::Disk).last()
     }
 
     /// What the name a call not followed starts from is bound to, as ty finds where it is
@@ -1828,6 +1866,15 @@ fn crossed<'t>(
             let request = url.filter(|_| lib.map_or(false, effects::network)).map(|a| {
                 let (way, a) = sent(seen, c, a, op);
                 crate::paths::request_of(&way, eval.of(at, a, 0))
+            });
+            // a socket's traffic handed no address is at the door's place, the address of the socket it
+            // runs on, which the callers hand as they hand a path (`docs/reference/mathematics.md`, "A
+            // door keeps its place")
+            let request = request.or_else(|| {
+                let socket =
+                    lib.is_some_and(|l| knowledge::PYTHON_DOORS.iter().any(|(d, _, _)| *d == l)) && knowledge::python_socket_op(op);
+                let on = called_on(fnode).filter(|_| socket)?;
+                Some(crate::paths::request_of(op, eval.of(at, on, 0)))
             });
             if let (Some(built), Some(t)) = (request, cr.touches(said).into_iter().next()) {
                 return Crossed { waiting: vec![(t, built)], said: said.map(|d| (cr.facts.kind, d)), handed, ..Default::default() };
@@ -2430,3 +2477,8 @@ fn matched<'t>(n: TsNode<'t>, src: &[u8]) -> Option<(String, Vec<TsNode<'t>>, Op
 
 /// Python's own types: the standard library's modules that describe code, not data.
 pub(super) const OWN: OwnTypes = knowledge::PYTHON_OWN_TYPES;
+
+/// The value a method is called on, where the callee `f` is a method of one: `conn` of `conn.recv`.
+fn called_on(f: TsNode) -> Option<TsNode> {
+    f.child_by_field_name("object").filter(|_| f.kind() == "attribute")
+}

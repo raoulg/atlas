@@ -1743,25 +1743,18 @@ fn built_a_unit_struct_named_in_a_macro_is_built_where_it_is_named() {
     }
 }
 
-/// The sockets pair (#302): a connection is a door to the place it is opened at, and keeps that place wherever it is handed
-/// (`docs/reference/mathematics.md`, "A door keeps its place"). The client `ask` connects to the greeter's address and hands
-/// the connection to `hear`; the server binds the address and hands each connection it accepts to `answer`, which hands it
-/// to `linger`. A client that writes to an address and a server that reads at it meet at one place: every place the
-/// server's connections reach is the one the client's do, a place the code names, made whole where each door is opened.
+/// The sockets pair (#302): the client `ask` connects to the greeter's address and hands the connection to `hear`; the
+/// server binds the address and hands each connection it accepts to `answer`, which hands it to `linger`. Each keeps the
+/// place it is opened at (`common::a_connection_keeps_its_place`).
 #[test]
 fn a_door_keeps_its_place() {
-    for side in ["clean", "shortcut"] {
-        let g = greeter(side);
-        let reached = |fs: &[&str], opened: &str| -> BTreeSet<String> {
-            let at: Vec<&Touch> = fs.iter().flat_map(|f| touches(&g, f, "net")).collect();
-            assert!(at.iter().all(|t| t.by == by([opened])), "{side}: made whole where the door is opened: {at:#?}");
-            at.iter().map(|t| t.artifact.clone()).collect()
-        };
-        let server = reached(&["greeter.answer", "greeter.linger"], "greeter.main");
-        let client = reached(&["greeter.bin.ask.hear"], "greeter.bin.ask.main");
-        assert_eq!(server, client, "{side}: the two ends of a connection meet at one place");
-        assert!(client.len() == 1 && !client.contains(""), "{side}: the place is one the code names: {client:?}");
-        let connected: BTreeSet<String> = touches(&g, "greeter.bin.ask.main", "net").iter().map(|t| t.artifact.clone()).collect();
-        assert_eq!(connected, client, "{side}: a connection handed on reaches the place its `connect` names");
-    }
+    common::a_connection_keeps_its_place("rust", ["greeter.answer", "greeter.linger"], "greeter.main", "greeter.bin.ask");
+}
+
+/// The handles pair (#323): a `File` handed on is read and written at the path it was opened at, never at the buffer
+/// an operation is handed (`f.read_to_string(&mut text)` reads the file `f` is), as a `TcpStream` handed on is at its
+/// address (`common::a_file_handed_on_keeps_its_place`).
+#[test]
+fn handles_a_file_handed_on_keeps_its_place() {
+    common::a_file_handed_on_keeps_its_place("rust");
 }

@@ -116,6 +116,17 @@ pub struct Value {
     pub is_code: bool,
 }
 
+impl Value {
+    /// Whether the value is an open file, a door to the file it was opened at: of one of the file
+    /// classes (`knowledge::PYTHON_FILE_CLASSES`), as ty finds the class in its library.
+    pub fn open_file(&self) -> bool {
+        self.classes.iter().zip(&self.names).any(|(t, n)| match t {
+            Target::Lib(m) => matches!(file_of(m, n), Some(FileArg::Open | FileArg::Reads | FileArg::Writes)),
+            Target::Here { .. } => false,
+        })
+    }
+}
+
 /// The classes a type is, as written: through the containers that hold values (`tuple`,
 /// `list`, `dict`, a union) to each value's own class, but not into a class's own parameters
 /// (`ndarray[tuple[int], dtype[float64]]` is an `ndarray`), nor into a pair a collection holds,

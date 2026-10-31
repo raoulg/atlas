@@ -865,3 +865,67 @@ export function main(): number {
     assert!(held(&push.hands).contains(&(this.clone(), String::new())), "handed the box it runs on: {push:#?}");
     assert_eq!(held(&push.gives), [(this, "this".to_string())], "and gives it anew");
 }
+
+/// Isomorphic is the same: a socket of `node:net` or `node:dgram` is at its address however the code opens it (#323),
+/// as Python's and Rust's are: handed a port and a host (`net.createConnection(port, host)`) or an object that names them
+/// (`net.connect({ port, host })`), made without one and connected later (`new net.Socket()`, `.connect(port, host)`),
+/// or a datagram sent to one (`send(msg, port, host)`). A connection a server accepts, handed to the function it runs on
+/// each or to a listener for its `connection` event, is at the address it `listen`s at; a listener for `data` receives.
+#[test]
+fn a_node_socket_is_at_its_address_however_it_is_opened() {
+    let g = written(
+        "nodesockets",
+        &[
+            ("package.json", r#"{ "name": "nodesockets", "version": "0.1.0", "type": "module" }"#),
+            (
+                "src/index.ts",
+                r#"import * as net from "node:net";
+import * as dgram from "node:dgram";
+
+const PORT = 7878;
+const HOST = "127.0.0.1";
+
+export function handed(): void {
+  const s = net.createConnection(PORT, HOST);
+  s.write("hi");
+}
+
+export function named(): void {
+  const s = net.connect({ port: PORT, host: HOST });
+  s.write("hi");
+}
+
+export function later(): void {
+  const s = new net.Socket();
+  s.connect(PORT, HOST);
+  s.write("hi");
+}
+
+export function sent(): void {
+  const s = dgram.createSocket("udp4");
+  s.send("hi", PORT, HOST);
+}
+
+export function served(): void {
+  net.createServer((conn) => conn.on("data", (d) => conn.write(d))).listen(PORT, HOST);
+}
+
+export function heard(): void {
+  const server = net.createServer();
+  server.on("connection", (conn) => conn.on("data", () => {}));
+  server.listen(PORT, HOST);
+}
+"#,
+            ),
+        ],
+    );
+    let reached = |f: &str| -> BTreeSet<String> {
+        let n = g.node(&format!("nodesockets.{f}")).unwrap_or_else(|| panic!("no node {f}"));
+        n.touches.iter().filter(|t| t.kind_name() == "net").map(|t| t.artifact.clone()).collect()
+    };
+    let handed = reached("handed");
+    assert!(handed.len() == 1 && !handed.contains(""), "{handed:?}");
+    for f in ["named", "later", "sent", "served", "heard"] {
+        assert_eq!(reached(f), handed, "{f}");
+    }
+}

@@ -896,6 +896,18 @@ impl<'a, 't> Body<'a, 't> {
                 }
             }
         }
+        // so does the parameter of a function a package's server runs on each connection it accepts
+        // (`net.createServer((conn) => ..)`), as a parameter declared with the type would
+        for f in walk(if self.is_module { root } else { self.body }, &["arrow_function", "function_expression"]) {
+            let Some(server) = self.eval.served(m, f, 0) else { continue };
+            let pkg = match server.kind() {
+                "call_expression" => made_by_package(server, m, src),
+                _ => self.made.get(text(server, src)).cloned(),
+            };
+            if let (Some(name), Some(pkg)) = (paths::param_names(f, src).into_iter().next().filter(|n| !n.is_empty()), pkg) {
+                self.made.insert(name, pkg);
+            }
+        }
         // a parameter declared with a library's type holds a value its package made
         for p in self.scope.and_then(|f| f.child_by_field_name("parameters")).map(named_children).unwrap_or_default() {
             if let (Some(name), Some(pkg)) = (
@@ -1817,6 +1829,16 @@ impl<'a, 't> Body<'a, 't> {
         names.into_iter().map(|n| text(n, self.src).to_string()).collect()
     }
 
+    /// The touch the body made where it made the door the name `on` holds (`const conn =
+    /// net.createConnection(..)`), with the term its place waits for: the last touch in `world` on
+    /// the line of the value the name is declared with.
+    fn opening(&self, on: TsNode<'t>, world: World) -> Option<(Touch, Vec<crate::paths::Built>)> {
+        let (value, BoundFrom::Whole) = self.locals.from(on, self.src)? else { return None };
+        let line = value.start_position().row as u32 + 1;
+        let made = self.read.touches.iter().map(|t| (t, vec![])).chain(self.read.calls.iter().map(|(t, b)| (t, b.clone())));
+        made.filter(|(t, _)| t.line == line && t.kind == world).last().map(|(t, b)| (t.clone(), b))
+    }
+
     /// What a library's call crosses into: a file call, a request or a database statement waits
     /// for the path, URL or statement it is handed, placed once every call is known; any other
     /// touches what its facts name.
@@ -1830,6 +1852,24 @@ impl<'a, 't> Body<'a, 't> {
             Some(Bound::Ext(e)) => Some(package_from_ext(e, &m.ext_pkgs)),
             _ => self.made.get(&head).cloned(),
         };
+        let args = c.child_by_field_name("arguments").map(named_children).unwrap_or_default();
+        // a Node socket receives by the event a listener waits for, which names the operation
+        // (`socket.on("data", ..)`)
+        let socket = pkg.as_deref().is_some_and(knowledge::node_socket_package);
+        let event = parts
+            .last()
+            .filter(|l| socket && knowledge::NODE_LISTENERS.contains(&l.as_str()))
+            .and(args.first())
+            .filter(|a| a.kind() == "string")
+            .map(|a| unquote(text(*a, src)));
+        let listened: Vec<String>;
+        let parts = match event {
+            Some(e) => {
+                listened = parts[..parts.len() - 1].iter().cloned().chain([e]).collect();
+                &listened[..]
+            }
+            None => parts,
+        };
         // some parts of the world are reached only through a client the package made, not its helpers
         let Some(kind) = effects::boundary_ts(pkg.as_deref(), parts)
             .filter(|k| !knowledge::THROUGH_A_CLIENT.contains(&k.world) || self.made.contains_key(&head))
@@ -1839,8 +1879,41 @@ impl<'a, 't> Body<'a, 't> {
         let op = parts.last().cloned().unwrap_or_default();
         let cr =
             Crosses::read(c, src, kind, pkg.as_deref(), &op, &literals(c, src, STRINGS), STRINGS, &HashMap::new(), &path_maker_named(src));
-        let args = c.child_by_field_name("arguments").map(named_children).unwrap_or_default();
         let at = At { m, scope: self.scope, params: &self.params };
+        // a socket's traffic is at the door's place, which the callers hand as they hand a path
+        // (`docs/reference/mathematics.md`, "A door keeps its place"): the address the call that
+        // opens the door is handed, the one the operation is handed (`send(msg, port, host)`), else
+        // the address of the socket it runs on
+        if socket && kind.world == World::Net {
+            let object = function_of(c).filter(|f| f.kind() == "member_expression").and_then(|f| f.child_by_field_name("object"));
+            // the package's own function that opens a door (`net.connect(..)`), not a method of one it made
+            let imported = matches!(m.bindings.get(&head), Some(Bound::Ext(_)));
+            let opens = imported && knowledge::NODE_DOORS.iter().any(|(p, f, _)| pkg.as_deref() == Some(*p) && *f == op);
+            let handed = knowledge::NODE_SOCKET_ADDRESSES.iter().chain(knowledge::NODE_DOOR_PLACES).find(|(o, _)| *o == op);
+            let door = match (opens, handed, object) {
+                (true, _, _) | (false, None, None) => self.eval.of(at, c, 0),
+                (false, Some((_, a)), _) => self.eval.address(at, &args, a, 0),
+                (false, None, Some(o)) => self.eval.of(at, o, 0),
+            };
+            let t = Touch {
+                what: text(object.filter(|_| !opens).unwrap_or(c), src).to_string(),
+                payload: cr.payload.clone(),
+                op: op.clone(),
+                line: cr.line,
+                ..Touch::new(World::Net, None)
+            };
+            // a door the body opened is at the place its opening touches, named as the opening names it
+            let opened = object.filter(|_| !opens && handed.is_none()).and_then(|o| self.opening(o, World::Net));
+            let (t, built) = match opened {
+                Some((o, built)) => (Touch { what: o.what, artifact: o.artifact, fixed: o.fixed, ..t }, built),
+                None => (t, crate::paths::request_of(&op, door)),
+            };
+            match built {
+                built if built.is_empty() => self.read.touches.push(t),
+                built => self.read.calls.push((t, built)),
+            }
+            return;
+        }
         // a statement is read where it is whole: from a constant, a template, or what the callers
         // hand the parameters it is built from
         let statement = match (cr.facts.kind, args.first()) {

@@ -573,3 +573,39 @@ fn a_listener_s_connections_are_doors_to_its_address() {
         assert_eq!(reached, BTreeSet::from(["127.0.0.1:7878".to_string()]), "{f}: {:?}", places(&g, f));
     }
 }
+
+/// Isomorphic is the same: a socket's address is one place however the code writes it, as a string (`"127.0.0.1:7878"`),
+/// of its host and its port (`SocketAddr::from(([127, 0, 0, 1], 7878))`, `SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST),
+/// 7878)`) or as a pair of them (`(Ipv4Addr::LOCALHOST, 7878)`), as Python's tuple `("127.0.0.1", 7878)` is (#323).
+#[test]
+fn an_address_is_one_place_however_it_is_written() {
+    let g = written(
+        "addresses",
+        &[(
+            "src/main.rs",
+            "use std::io::Write;\nuse std::net::{IpAddr, Ipv4Addr, SocketAddr, TcpStream};\n\nfn text() -> std::io::Result<()> {\n    let mut s = TcpStream::connect(\"127.0.0.1:7878\")?;\n    s.write_all(b\"hi\")\n}\n\nfn parts() -> std::io::Result<()> {\n    let mut s = TcpStream::connect(SocketAddr::from(([127, 0, 0, 1], 7878)))?;\n    s.write_all(b\"hi\")\n}\n\nfn named() -> std::io::Result<()> {\n    let mut s = TcpStream::connect(SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 7878))?;\n    s.write_all(b\"hi\")\n}\n\nfn pair() -> std::io::Result<()> {\n    let mut s = TcpStream::connect((Ipv4Addr::LOCALHOST, 7878))?;\n    s.write_all(b\"hi\")\n}\n\nfn main() -> std::io::Result<()> {\n    text()?;\n    parts()?;\n    named()?;\n    pair()\n}\n",
+        )],
+    );
+    let reached = |f: &str| places(&g, f).into_iter().filter(|p| p.0 == "net").map(|p| (p.1, p.2)).collect::<BTreeSet<_>>();
+    let text = reached("addresses.text");
+    assert!(!text.is_empty() && text.iter().all(|(_, at)| !at.is_empty()), "{:?}", places(&g, "addresses.text"));
+    for f in ["addresses.parts", "addresses.named", "addresses.pair"] {
+        assert_eq!(reached(f), text, "{f}: {:?}", places(&g, f));
+    }
+}
+
+/// `File::options()` is `OpenOptions::new()`, as std says (#327): a file opened through either is the same door, opened
+/// and written at the path its `open` is handed.
+#[test]
+fn file_options_is_open_options() {
+    let g = written(
+        "opened",
+        &[(
+            "src/main.rs",
+            "use std::fs::{File, OpenOptions};\nuse std::io::Write;\n\nfn through_file() -> std::io::Result<()> {\n    let mut f = File::options().append(true).create(true).open(\"log.txt\")?;\n    f.write_all(b\"hi\")\n}\n\nfn through_options() -> std::io::Result<()> {\n    let mut f = OpenOptions::new().append(true).create(true).open(\"log.txt\")?;\n    f.write_all(b\"hi\")\n}\n\nfn main() -> std::io::Result<()> {\n    through_file()?;\n    through_options()\n}\n",
+        )],
+    );
+    let file = places(&g, "opened.through_file");
+    assert!(!file.is_empty() && file.iter().all(|p| p.0 == "disk_write" && !p.2.is_empty()), "{file:?}");
+    assert_eq!(file, places(&g, "opened.through_options"));
+}

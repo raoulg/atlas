@@ -2032,3 +2032,36 @@ fn a_request_meets_the_routes_that_serve_its_method() {
 fn places_a_parent_drops_the_last_part_of_a_path() {
     common::a_parent_drops_the_last_part_of_a_path("typescript", "shelf.summarise", "shelf.log");
 }
+
+// ---------- sockets: a socket of `node:net` is a place ----------
+
+/// The sockets pair (#323), the greeter and client Python and Rust write, on Node's `net`: a call leaves something
+/// behind, and a socket is a place. Node receives through a listener for the socket's `data` event, which is the
+/// operation that receives, and sends by `write`; listening, shutting the writing half (`end()`) and setting a timeout
+/// move no data. The clean server lingers as TCP asks, so `linger` reaches the network and nothing is asked; the
+/// shortcut waits, its `linger` reaches no place, and Atlas asks what the wait leaves behind.
+#[test]
+fn nothing_a_socket_is_a_place() {
+    let p = common::pair("sockets/typescript");
+    assert_eq!(asked_nodes(&p.clean, "nothing"), Vec::<String>::new());
+    assert_eq!(asked_nodes(&p.shortcut, "nothing"), ["greeter.greeter.linger"]);
+    assert!(!touches(&p.clean, "greeter.linger", "net").is_empty(), "what the client still sends is read from the network");
+    assert!(touches(&p.shortcut, "greeter.linger", "net").is_empty(), "a wait reaches no place");
+    for g in [&p.clean, &p.shortcut] {
+        assert!(node(g, "greeter.main").touches.is_empty(), "making a server and listening move no data");
+    }
+}
+
+/// The sockets pair (#323): a connection is a door to the place it is opened at, wherever it is handed
+/// (`common::a_connection_keeps_its_place`). A connection the server accepts is the parameter of the function handed to
+/// `net.createServer`, run on each, as a loop over a Rust listener's `incoming()` is: it is at the address the server
+/// `listen`s at, a port and a host handed apart.
+#[test]
+fn sockets_a_connection_keeps_its_place() {
+    common::a_connection_keeps_its_place(
+        "typescript",
+        ["greeter.greeter.answer", "greeter.greeter.linger"],
+        "greeter.greeter.main",
+        "greeter.ask",
+    );
+}

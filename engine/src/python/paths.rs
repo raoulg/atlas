@@ -293,6 +293,11 @@ impl<'a> Eval<'a> {
                 }
             }
             "call" => self.call(at, e, depth),
+            // a socket's address, a host and a port: `("127.0.0.1", 7878)` is `127.0.0.1:7878`
+            "tuple" if self.port(at, e).is_some() => {
+                let host = named_children(e).into_iter().next().map(|h| self.of(at, h, depth + 1)).unwrap_or_default();
+                cross(&host, &[lit(&self.port(at, e).unwrap_or_default())], ":")
+            }
             // a collection of paths is the paths it can hold; iterating it yields one of them
             "list" | "tuple" | "set" => named_children(e).into_iter().fold(vec![], |acc, x| union(acc, self.of(at, x, depth + 1))),
             // a mapping holds its values: `{p.name: p for p in dirs}` holds `dirs`
@@ -594,9 +599,17 @@ impl<'a> Eval<'a> {
         // `with open(p) as f`: `f` is what the context gives, the file at `p`
         if p.kind() == "as_pattern_target" {
             let value = p.parent().filter(|a| a.kind() == "as_pattern").and_then(|a| named_children(a).into_iter().next())?;
-            return Some(self.of(at.of_definition(m, offset), value, depth + 1));
+            let here = at.of_definition(m, offset);
+            return self.placed_later(here, value, n, depth).or_else(|| Some(self.of(here, value, depth + 1)));
         }
         match p.kind() {
+            // `conn, _ = listener.accept()`: the element of what the pattern takes apart, where the
+            // code says it
+            "pattern_list" | "tuple_pattern" if p.parent().is_some_and(|a| a.kind() == "assignment") => {
+                let i = named_children(p).iter().position(|x| x.id() == n.id())?;
+                let right = p.parent()?.child_by_field_name("right")?;
+                self.element(at.of_definition(m, offset), right, i, depth)
+            }
             // `x |= ..` defines `x` as the assignment before it does, with what it adds
             "augmented_assignment" => {
                 let first = enclosing_def(p).or_else(|| Some(m.tree.root_node())).and_then(|d| {
@@ -634,6 +647,10 @@ impl<'a> Eval<'a> {
                         )
                     }
                     None => {
+                        // a door made without a place takes the one a later call on it names
+                        if let Some(placed) = self.placed_later(here, right, n, depth) {
+                            return Some(placed);
+                        }
                         let mut values = self.of(here, right, depth + 1);
                         // what the same function adds to it afterwards (`x |= {..}`, `x += [..]`)
                         if let Some(d) = enclosing_def(p) {
@@ -737,6 +754,16 @@ impl<'a> Eval<'a> {
             let default = positional.get(1).map(|a| self.of(at, *a, depth + 1)).unwrap_or_default();
             or_else(vec![environment(&var)], default)
         };
+        // a door opened at the address it is handed (`socket.create_connection(address)`), one made
+        // without a place, or a door to the place of the socket it is called on (`conn.dup()`)
+        if self.of_doors(at.m, f) {
+            if let Some((_, _, i)) = knowledge::PYTHON_DOORS.iter().find(|(_, name, _)| *name == last) {
+                return i.and_then(|i| positional.get(i)).map(|a| self.of(at, *a, depth + 1)).unwrap_or_else(|| vec![hole(last)]);
+            }
+            if f.kind() == "attribute" && knowledge::PYTHON_DOOR_KEEPERS.contains(&(last, None)) {
+                return receiver();
+            }
+        }
         // a library's path function, where ty finds the call goes into that library
         if let Some(kind) = self.path_function(at.m, f, last) {
             match kind {
@@ -803,6 +830,13 @@ impl<'a> Eval<'a> {
                 return self.of(at, a, depth + 1);
             }
         }
+        // a file a call opens where ty picks none of its signatures (it is handed a value ty does
+        // not type) is at what the call is handed first, as the opening's touch is
+        let opened =
+            || self.types.of(&path_str(&at.m.path)).and_then(|x| x.value((c.start_byte(), c.end_byte()))).is_some_and(|v| v.open_file());
+        if let Some(a) = positional.first().filter(|_| self.signature(at.m, f).is_none() && opened()) {
+            return self.of(at, *a, depth + 1);
+        }
         // a function of the package: what it gives back, its parameters bound to what the call
         // hands them
         if let Some((file, offset)) = self.callee_def(at.m, f) {
@@ -814,6 +848,73 @@ impl<'a> Eval<'a> {
             }
         }
         vec![hole("call")]
+    }
+
+    /// The port of a socket's address written as a host and a port (`("127.0.0.1", 7878)`): the
+    /// pair's second, a number the code writes or a name it defines as one (`PORT = 7878`).
+    fn port(&self, at: At, pair: TsNode) -> Option<String> {
+        let [_, port] = named_children(pair).into_iter().filter(|x| x.kind() != "comment").collect::<Vec<_>>()[..] else { return None };
+        let port = beneath(port, WRAPPERS);
+        let number = |n: TsNode, src: &[u8]| (n.kind() == "integer").then(|| text(n, src).to_string());
+        match port.kind() {
+            "integer" => number(port, &at.m.src),
+            "identifier" => {
+                let Target::Here { file, at: offset } = self.def(at.m, port)? else { return None };
+                let m = *self.by_file.get(&file)?;
+                let n = m.tree.root_node().descendant_for_byte_range(offset, offset)?;
+                let a = n.parent().filter(|a| a.kind() == "assignment" && a.child_by_field_name("left").map(|l| l.id()) == Some(n.id()))?;
+                number(beneath(a.child_by_field_name("right")?, WRAPPERS), &m.src)
+            }
+            _ => None,
+        }
+    }
+
+    /// Whether calling `f` reaches a function of a library whose values are doors (`knowledge::PYTHON_DOORS`).
+    fn of_doors(&self, m: &Module, f: TsNode) -> bool {
+        self.types.of(&path_str(&m.path)).map_or(false, |x| {
+            x.callees((f.start_byte(), f.end_byte())).iter().any(|c| {
+                matches!(&c.target, Target::Lib(l) if knowledge::PYTHON_DOORS.iter().any(|(lib, _, _)| *lib == super::module::package_of(l)))
+            })
+        })
+    }
+
+    /// The element `i` of what `value` gives, where the code says it: of a tuple it writes, or of the
+    /// pair a socket's `accept` gives, whose first is a door to the listener's place.
+    fn element(&self, at: At, value: TsNode, i: usize, depth: u32) -> Option<Vec<Built>> {
+        let value = beneath(value, WRAPPERS);
+        match value.kind() {
+            "tuple" => named_children(value).into_iter().filter(|x| x.kind() != "comment").nth(i).map(|x| self.of(at, x, depth + 1)),
+            "call" => {
+                let f = value.child_by_field_name("function").filter(|f| f.kind() == "attribute")?;
+                let method = text(f.child_by_field_name("attribute")?, &at.m.src);
+                let kept = knowledge::PYTHON_DOOR_KEEPERS.contains(&(method, Some(i))) && self.of_doors(at.m, f);
+                kept.then(|| f.child_by_field_name("object").map(|o| self.of(at, o, depth + 1))).flatten()
+            }
+            _ => None,
+        }
+    }
+
+    /// The place of a door made without one, as a later call on the name it is kept by names it
+    /// (`s = socket.socket()` and then `s.bind(address)`): the address the first such call after
+    /// the binding at `name` is handed, in the function or the module the binding is in.
+    fn placed_later(&self, at: At, value: TsNode, name: TsNode, depth: u32) -> Option<Vec<Built>> {
+        let src = &at.m.src;
+        let made = beneath(value, WRAPPERS);
+        let f = made.child_by_field_name("function").filter(|_| made.kind() == "call")?;
+        let unplaced = knowledge::PYTHON_DOORS.iter().any(|(_, n, i)| i.is_none() && *n == called(f, src)) && self.of_doors(at.m, f);
+        if !unplaced {
+            return None;
+        }
+        let scope = enclosing_def(name).unwrap_or(at.m.tree.root_node());
+        let named = text(name, src);
+        walk(scope, &["call"]).into_iter().filter(|c| c.start_byte() > name.end_byte()).find_map(|c| {
+            let g = c.child_by_field_name("function").filter(|g| g.kind() == "attribute")?;
+            g.child_by_field_name("object").filter(|o| o.kind() == "identifier" && text(*o, src) == named)?;
+            let (_, i) =
+                knowledge::PYTHON_DOOR_PLACES.iter().find(|(m, _)| Some(*m) == g.child_by_field_name("attribute").map(|a| text(a, src)))?;
+            let args: Vec<TsNode> = c.child_by_field_name("arguments").map(named_children).unwrap_or_default();
+            args.into_iter().filter(|a| !matches!(a.kind(), "keyword_argument" | "comment")).nth(*i).map(|a| self.of(at, a, depth + 1))
+        })
     }
 }
 
