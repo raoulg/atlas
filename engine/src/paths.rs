@@ -372,7 +372,8 @@ fn up_first(s: &str) -> bool {
 /// combination. A step up written right after such a segment (`{source}/..`, the directory `parent`
 /// gives of a path not said yet) is the directory of what is written in: going up from a path a
 /// caller hands is going up from what the caller hands, so `{source}/..` handed `~/data/{name}`
-/// is `~/data`.
+/// is `~/data`. A join written right after such a segment is the join with what is written in, so
+/// the empty path written in is its unit: `{root}/{p}` handed the empty path for `root` is `{p}`.
 fn written_in(b: &Built, mut value: impl FnMut(&Seg) -> Option<Vec<Built>>) -> Vec<Built> {
     let mut out: Vec<Built> = vec![vec![]];
     let mut said = false;
@@ -396,6 +397,27 @@ fn written_in(b: &Built, mut value: impl FnMut(&Seg) -> Option<Vec<Built>>) -> V
                     }
                 }
                 out = up;
+                said = false;
+            }
+            // the empty path is the unit of a join where it is written in, as where it is written (`join`)
+            (Seg::Lit(t), None) if said && t.starts_with('/') => {
+                let mut joined = vec![];
+                for o in &out {
+                    let o = match &t[1..] {
+                        rest if known(o) && render(o).is_empty() => {
+                            if rest.is_empty() {
+                                o.clone()
+                            } else {
+                                lit(rest)
+                            }
+                        }
+                        _ => join(o, &lit(t), ""),
+                    };
+                    if !joined.contains(&o) {
+                        joined.push(o);
+                    }
+                }
+                out = joined;
                 said = false;
             }
             (s, None) => {
@@ -1380,6 +1402,19 @@ mod tests {
             let handed = substitute(&t, hand);
             proptest::prop_assert_eq!(handed.len(), 1);
             proptest::prop_assert_eq!(substitute(&parent(&t), hand), vec![parent(&handed[0])]);
+        }
+
+        /// Law: a join commutes with what is handed. `{P}/a/b` with `v` written in for `{P}` is `v`
+        /// joined with `a/b`, also where `v` is the empty path, the unit of a join (`PathBuf::new()`):
+        /// then it is `a/b`, and no `/` stands before it.
+        #[test]
+        fn a_join_commutes_with_what_is_handed(rest in proptest::collection::vec(a_part(), 1..3), v in proptest::option::of(a_path())) {
+            let p = vec![Seg::Param("P".into())];
+            let t = rest.iter().fold(p, |b, q| join(&b, q, "/"));
+            let v = v.unwrap_or_default();
+            let hand = |x: &str| if x == "P" { vec![v.clone()] } else { vec![vec![Seg::Param(x.into())]] };
+            let written = rest.iter().fold(v.clone(), |b, q| join(&b, q, "/"));
+            proptest::prop_assert_eq!(substitute(&t, hand), vec![written]);
         }
 
         /// Law: where two callers meet a path, the meet keeps every condition of both, the

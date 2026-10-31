@@ -47,7 +47,7 @@ pub fn boundary_rust(parts: &[String]) -> Option<Crossing> {
     let has = |p: &str| parts.iter().any(|x| x == p);
     // building moves nothing: `Client::new()`, `Client::builder()..build()`, `OpenOptions::new()`
     let builds = k::BUILDS.contains(&last);
-    if has(k::RUST_FS_MODULE) {
+    if k::fs_path(parts) {
         if builds {
             return None;
         }
@@ -911,16 +911,27 @@ mod tests {
         assert_eq!(rs(&["std", "net", "IpAddr", "from_str"]), None, "an address parsed moves nothing");
     }
 
-    /// A library is judged by its own row, whatever module its path runs through (#302): a network
-    /// library's call in its `net` module crosses as its calls elsewhere do (`hyper::net`), and a
-    /// crate no table names reaches nothing through a module of that name. Only the modules of
-    /// sockets are judged by the socket table.
+    /// A library is judged by its own row, whatever module its path runs through (#302, #327): a
+    /// network library's call in a `net` or an `fs` module crosses as its calls elsewhere do
+    /// (`hyper::net`, `hyper::fs`), and a crate no table names reaches nothing through a module of
+    /// either name. Only the modules of sockets are judged by the socket table, and only the
+    /// modules of files by the file table, each the same in std and in the async runtimes.
     #[test]
     fn a_library_is_judged_by_its_own_row_whatever_module_its_path_runs_through() {
         let rs = |xs: &[&str]| name(boundary_rust(&parts(xs)));
-        for op in ["get", "read", "send", "new", "shutdown"] {
-            assert_eq!(rs(&["hyper", "net", "HttpConnector", op]), rs(&["hyper", "client", "HttpConnector", op]), "hyper's `{op}`");
-            assert_eq!(rs(&["netcode", "net", "TcpStream", op]), None, "a crate no table names: `{op}`");
+        for module in ["net", "fs"] {
+            for op in ["get", "read", "send", "new", "shutdown", "read_to_string", "write"] {
+                assert_eq!(rs(&["hyper", module, "HttpConnector", op]), rs(&["hyper", "client", "HttpConnector", op]), "hyper's `{op}`");
+                assert_eq!(rs(&["netcode", module, "TcpStream", op]), None, "a crate no table names: `{module}::{op}`");
+            }
+        }
+        for op in ["read_to_string", "read_dir", "write", "remove_file", "create_dir_all"] {
+            let std = rs(&["std", "fs", op]);
+            assert!(std.is_some(), "std's `fs::{op}` reaches the disk");
+            for module in k::RUST_FS_MODULES {
+                let path: Vec<&str> = module.iter().copied().chain([op]).collect();
+                assert_eq!(rs(&path), std, "`{}` crosses as std's `fs::{op}`", path.join("::"));
+            }
         }
     }
 

@@ -1,5 +1,5 @@
-//! A level of a signal, shown beside the quiet level: `pair` makes the array that holds them by its own code, from the
-//! level it is handed and the module's quiet level.
+//! A level of a signal, shown beside the quiet level: `pair` makes the array that holds them by its own code, `listed`
+//! the vector, from the level it is handed and the module's quiet level.
 
 /// A level of a signal.
 pub struct Level {
@@ -21,4 +21,14 @@ fn pair(first: Level) -> [Level; 2] {
 /// The level, shown beside the quiet level.
 pub fn paired(first: Level) {
     show(&pair(first));
+}
+
+fn listed(first: Level) -> Vec<Level> {
+    let both: Vec<Level> = vec![first, QUIET];
+    both
+}
+
+/// The level, listed beside the quiet level and shown.
+pub fn shown(first: Level) {
+    show(&listed(first));
 }

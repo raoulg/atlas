@@ -14,8 +14,10 @@ use crate::knowledge;
 use crate::model::{Node, NodeKind, Param, Returns};
 use crate::tree::{named_children, text, walk, Wrappers};
 
-/// What hands on the value inside it: parentheses, a reference `&x`, `x?` and `x.await`.
-pub(super) const WRAPPERS: Wrappers = &["parenthesized_expression", "reference_expression", "try_expression", "await_expression"];
+/// What hands on the value inside it: parentheses, a reference `&x`, a dereference `*x`, `x?` and
+/// `x.await`.
+pub(super) const WRAPPERS: Wrappers =
+    &["parenthesized_expression", "reference_expression", "unary_expression *", "try_expression", "await_expression"];
 
 pub(crate) struct Crate {
     pub(super) name: String,

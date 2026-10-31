@@ -1674,6 +1674,27 @@ fn a_local_is_bound_by_the_bodys_own_code() {
     common::a_local_is_bound_by_the_bodys_own_code("rust", "pair");
 }
 
+/// The locals pair: a `vec![..]` is the array it holds, so `listed` binds its vector by its own code as `pair` binds its
+/// array, and what the macro is written of is read as the array's elements are: the module's constant in the shortcut's
+/// `vec![first, QUIET]` comes from beyond, as it does in `[first, QUIET]` (#327).
+#[test]
+fn a_vec_is_the_array_it_holds() {
+    let p = common::pair("locals/rust");
+    for (side, g) in [("clean", &p.clean), ("shortcut", &p.shortcut)] {
+        let read = |f: &str| {
+            let n = g.node(f).unwrap_or_else(|| panic!("{side}: no node {f}"));
+            let names = |xs: &[atlas_engine::Use]| xs.iter().map(|u| u.name.clone()).collect::<Vec<_>>();
+            (names(&n.uses), names(&n.binds))
+        };
+        assert_eq!(read("signal.listed"), read("signal.pair"), "{side}: what the body reads and binds");
+        for budget in common::BUDGETS {
+            let plans = common::planned(g, &format!("vec-{side}"), budget);
+            let beyond = |route: &str| common::from_beyond(&plans[route], &common::parameters(g, route));
+            assert_eq!(beyond("signal.shown"), beyond("signal.paired"), "{side}, budget {budget:?}: from beyond");
+        }
+    }
+}
+
 /// One side of the sockets pair (`tests/pairs/sockets/rust`): a server that greets each client by
 /// the name it sends and lets the client read the greeting before the connection closes.
 fn greeter(side: &str) -> Graph {

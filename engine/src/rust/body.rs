@@ -17,7 +17,7 @@ use crate::effects::{self, Crossing};
 use crate::knowledge::{self, OwnTypes};
 use crate::model::{Bucket, EdgeKind, Held, Node, NodeKind, Slot, Touch, World};
 use crate::tree::{
-    beneath, evaluation_order, literals, named_children, nth_of_kind, path_maker_named, text, unquote, walk, wrapped, ChoiceSyntax,
+    beneath, evaluation_order, literals, named_children, nth_of_kind, path_maker_named, text, unquote, walk, wrapped, wraps, ChoiceSyntax,
     CompareSyntax, Part,
 };
 
@@ -191,7 +191,7 @@ fn kept_as(c: TsNode, src: &[u8]) -> Vec<(String, usize)> {
         let Some(p) = n.parent() else { return vec![] };
         let is = |field: &str| p.child_by_field_name(field).map(|x| x.id()) == Some(n.id());
         match p.kind() {
-            k if WRAPPERS.contains(&k) || k == "else_clause" => n = p,
+            k if wraps(WRAPPERS, p) || k == "else_clause" => n = p,
             "match_expression" if is("body") => n = p,
             "block"
                 if p.named_child(p.named_child_count().saturating_sub(1)).map(|x| x.id()) == Some(n.id())
@@ -374,9 +374,8 @@ fn library_chain<'t>(
     let mut locals = 0;
     loop {
         match v.kind() {
-            k if WRAPPERS.contains(&k) => v = wrapped(v)?,
             // a dereference is the value it refers to: `conn` of `(&*conn).read(..)`
-            "unary_expression" if v.child(0).map_or(false, |o| o.kind() == "*") => v = named_children(v).into_iter().next()?,
+            _ if wraps(WRAPPERS, v) => v = wrapped(v)?,
             "identifier" | "field_expression" if !made_by.holds(text(v, src), v.start_byte()) => {
                 let ty = declared(v)?;
                 before.reverse();
@@ -571,7 +570,7 @@ fn names_value(i: TsNode, src: &[u8]) -> bool {
         Some(p) if p.kind() == "token_tree" => {
             !matches!(i.prev_sibling().map(|p| p.kind()), Some("." | "::"))
                 && !matches!(i.next_sibling().map(|n| n.kind()), Some("::" | "!"))
-                && !names_type(text(i, src))
+                && (!names_type(text(i, src)) || names_constant(text(i, src)))
         }
         _ => true,
     }
@@ -1128,7 +1127,7 @@ impl<'a, 't> Body<'a, 't> {
             let mut value = l.child_by_field_name("value");
             while let Some(v) = value {
                 value = match v.kind() {
-                    k if WRAPPERS.contains(&k) => wrapped(v),
+                    _ if wraps(WRAPPERS, v) => wrapped(v),
                     "unary_expression" => named_children(v).into_iter().next(),
                     "call_expression" => match function(v) {
                         Some(f)
@@ -1244,7 +1243,7 @@ impl<'a, 't> Body<'a, 't> {
         let mut over = Some(value);
         while let Some(v) = over {
             over = match v.kind() {
-                k if WRAPPERS.contains(&k) => wrapped(v),
+                _ if wraps(WRAPPERS, v) => wrapped(v),
                 "call_expression" => function(v).filter(|f| {
                     f.kind() == "field_expression"
                         && f.child_by_field_name("field").map_or(false, |x| {
@@ -1371,7 +1370,7 @@ impl<'a, 't> Body<'a, 't> {
     fn value_class(&self, v: TsNode) -> Option<String> {
         let src = self.src;
         match v.kind() {
-            k if WRAPPERS.contains(&k) => self.value_class(wrapped(v)?),
+            _ if wraps(WRAPPERS, v) => self.value_class(wrapped(v)?),
             "self" => self.cls.clone(),
             "identifier" => self.locals.get(text(v, src), v.start_byte()).cloned().or_else(|| self.unit_struct(v)),
             "scoped_identifier" => self.unit_struct(v),
@@ -2699,6 +2698,16 @@ fn place(n: TsNode) -> Option<TsNode> {
 /// lints hold every type to.
 fn names_type(q: &str) -> bool {
     q.rsplit("::").next().and_then(|s| s.chars().next()).is_some_and(|c| c.is_uppercase())
+}
+
+/// Whether a name is written as Rust writes a constant's or a static's, in screaming snake case
+/// (`QUIET`, `MAX_LEN`), which the compiler's naming lints hold every one to: among a macro's
+/// tokens it names that value, as it does written outside them (`vec![first, QUIET]` as
+/// `[first, QUIET]`). A single capital is a type's (`T`).
+fn names_constant(name: &str) -> bool {
+    name.chars().count() > 1
+        && name.starts_with(|c: char| c.is_uppercase())
+        && name.chars().all(|c| c.is_uppercase() || c.is_ascii_digit() || c == '_')
 }
 
 /// The two operands of a test of equality.

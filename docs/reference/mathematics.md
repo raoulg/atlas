@@ -182,6 +182,12 @@ always holds, `D` itself, and each element it yields is `D/*`. An element of a c
 what a function handed the collection to run on each element takes (`sorted(ps, key=lambda p: ..)`'s
 `p`) and what a pick of it gives (`max(ps)`, `ps[0]`). A lookup `d[k]` in a table the code writes is
 the value the key picks where the code decides `k`, and else the union of the values `d` holds.
+The empty path is the unit of a join (`PathBuf::new().join(x)` is `x`), where it is written and where a caller hands it:
+a join commutes with what is handed. A path the code changes in place is the term it holds after each change, as a name
+bound anew is (`p.push(x)` is `p = p.join(x)`, `p.pop()` is `p = p.parent()`); a change the body may skip (in an arm) leaves
+it the union of the term before and after the change, and a change it repeats (in a loop) as many times as the code does
+not say: a join leaves it below the term before (`p/{…}`), a change of its extension or name one of the two, since
+doing it again changes nothing more, and any other change a value not said.
 **In Atlas.** A place on the disk the code names only through a variable is drawn as the term it
 evaluates to (`assets/regelingen/*/IO-*`), not as the variable (`m`). The root is traced to a
 default or to a parameter wherever the code says it; what it cannot trace stays a hole in the
@@ -221,7 +227,7 @@ is one in the same way, by what it serves: a set of methods at a path. `methods=
 `knowledge::REQUEST_WAYS`; a request meets a route whose set holds its method, at its path.
 **Where.** `paths.rs` (`Seg`, `join`, `place`, `folders`, `bound`, `with_suffix`, `Callers`,
 `served`, `serving`), `model.rs` (`Route`, `Methods`, `Request`),
-the readers' `paths.rs` (`Eval::of`), `flow.rs` (`Touch::place`), `plan.js` (`pathWords`); the
+the readers' `paths.rs` (`Eval::of`; Rust's `Eval::changed`), `flow.rs` (`Touch::place`), `plan.js` (`pathWords`); the
 pairs `python/paths`, `places` and `kept`.
 
 ### Places by the type that holds them
@@ -831,14 +837,14 @@ not reach. Python's narrowing is ty's.
 **What.** An identity arrow `1_A: A → A` hands on its value unchanged; composing with it changes
 nothing.
 **In Atlas.** An expression that hands on the value inside it is an identity on what Atlas reads of
-the value: parentheses, a cast or an assertion (`as`, `satisfies`, `!`), a reference (`&x`), and an
-unwrapping (`await`, `x?`, `x.await`), since a promise, a coroutine, an `Option` and a `Result` are read as what
+the value: parentheses, a cast or an assertion (`as`, `satisfies`, `!`), a reference (`&x`) and a
+dereference (`*x`), and an unwrapping (`await`, `x?`, `x.await`), since a promise, a coroutine, an `Option` and a `Result` are read as what
 they hold. A value read through any of them is the value inside, so a change, a place or a call
 written through a wrapper is the one written without it. Moving a value into a container that holds
 one and is read as it (`RefCell::new(x)`, `Box::new(x)`, `Rc::new(x)`) hands on that value: no new
 one, as a copy makes (`copy.copy(x)`), so it is no step. A cast also names a type, and where the
 question is the class a method runs on (`(x as Store).f()`), that type answers it.
-**Where.** `tree.rs`: `Wrappers`, `beneath`, `outermost`; each reader's `WRAPPERS`.
+**Where.** `tree.rs`: `Wrappers`, `wraps`, `beneath`, `outermost`; each reader's `WRAPPERS`.
 
 ### Behavioural subtyping
 **What.** A subtype can stand wherever its base stands (Liskov).

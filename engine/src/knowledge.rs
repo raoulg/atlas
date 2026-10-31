@@ -1726,8 +1726,24 @@ pub const EXPORT_CONDITIONS: &[&str] = &["node", "import", "require", "module", 
 /// model anything).
 pub const THROUGH_A_CLIENT: &[World] = &[World::Llm];
 
-/// Rust's std module whose functions read and write files.
-pub const RUST_FS_MODULE: &str = "fs";
+/// The Rust modules whose functions and types read and write files, by their path from the crate:
+/// std's `fs` and its platforms' extensions (`std::os::unix::fs::symlink`), and the async runtimes'.
+/// A library whose own path runs through a module of that name is judged by its own row of
+/// `PACKAGES`, as a socket's module is (`RUST_SOCKET_MODULES`).
+pub const RUST_FS_MODULES: &[&[&str]] = &[
+    &["std", "fs"],
+    &["std", "os", "unix", "fs"],
+    &["std", "os", "windows", "fs"],
+    &["std", "os", "wasi", "fs"],
+    &["tokio", "fs"],
+    &["async_std", "fs"],
+];
+
+/// Whether a Rust path is of a module of files (`RUST_FS_MODULES`): a function of one, or a type
+/// of one or a function or a method on it (`std::fs::File::open`).
+pub fn fs_path(parts: &[String]) -> bool {
+    RUST_FS_MODULES.iter().any(|m| parts.len() > m.len() && parts.iter().zip(*m).all(|(p, m)| p == m))
+}
 
 /// The datasets library's function that loads a dataset, from the Hub or by a builtin loader.
 pub const HUB_LOADER: &str = "load_dataset";
@@ -1772,12 +1788,19 @@ pub const LISTINGS_BELOW: &[Listing] = &[
     Listing { library: "std::fs", function: "read_dir", names: false },
     Listing { library: "fs", function: "readdirSync", names: true },
     Listing { library: "fs", function: "readdir", names: true },
+    Listing { library: "tokio::fs", function: "read_dir", names: false },
+    Listing { library: "async_std::fs", function: "read_dir", names: false },
 ];
 
 /// The attributes of a listing's element that are the path the element is at, by the library and
 /// the element's class: `entry.path` of an `os.DirEntry`, `entry.path()` of a `std::fs::DirEntry`
 /// (the one class `read_dir`'s elements are).
-pub const ELEMENT_PATHS: &[(&str, &str, &str)] = &[("os", "DirEntry", "path"), ("std::fs", "DirEntry", "path")];
+pub const ELEMENT_PATHS: &[(&str, &str, &str)] = &[
+    ("os", "DirEntry", "path"),
+    ("std::fs", "DirEntry", "path"),
+    ("tokio::fs", "DirEntry", "path"),
+    ("async_std::fs", "DirEntry", "path"),
+];
 
 /// Functions that give back the elements of the collection they are handed, in another order or
 /// kind: `sorted(paths)` holds the paths `paths` holds.
@@ -1926,6 +1949,8 @@ pub const RUST_PATH_FUNCTIONS: &[(&str, &str, PathFn)] = &[
     ("env", "temp_dir", PathFn::Temp),
     ("env", "var", PathFn::Environment),
     ("env", "var_os", PathFn::Environment),
+    // the join of no parts: the empty path, the unit of a join (`PathBuf::new().join("x")` is `x`)
+    ("PathBuf", "new", PathFn::Join),
 ];
 
 /// Python's classes whose values are paths, by the library module ty finds the class in (or one
@@ -2245,9 +2270,11 @@ pub const RUST_FORMAT_MACROS: &[&str] = &[
 ];
 
 /// The methods of a sequence or an iterator that give one of its elements, as it is held (in an
-/// `Option`, which is read as what it holds): `series.first()`.
+/// `Option`, which is read as what it holds), as Python's `next(xs)` (`ONE_OF_ELEMENTS`) does:
+/// `series.first()`, and the `next_entry` of tokio's listing of a directory, which gives its entries
+/// one by one.
 pub const RUST_ONE_ELEMENT: &[&str] =
-    &["first", "last", "get", "get_mut", "first_mut", "last_mut", "pop", "next", "next_back", "nth", "find"];
+    &["first", "last", "get", "get_mut", "first_mut", "last_mut", "pop", "next", "next_back", "nth", "find", "next_entry"];
 
 /// The crate the prelude's types are of: `Vec` and `String` are `std`'s.
 pub const RUST_PRELUDE_CRATE: &str = "std";
@@ -2497,3 +2524,26 @@ pub const TYPESCRIPT_SAME_ELEMENTS: &[&str] = &["filter", "sort", "toSorted", "r
 /// The methods of an array that give what the function they are handed gives for each element:
 /// `names.map((n) => path.join(d, n))` holds the paths it joins.
 pub const TYPESCRIPT_GIVES_EACH: &[&str] = &["map", "flatMap"];
+
+/// The types whose methods `RUST_PATH_METHODS` names: a method called by its type's path is handed
+/// the value it runs on first, so `Path::join(p, x)` is `p.join(x)` (Rust's fully qualified call).
+pub const RUST_PATH_TYPES: &[&str] = &["Path", "PathBuf"];
+
+/// The methods of a `PathBuf` that change the path it holds, each with the method of a path that
+/// makes the path it is changed to: `p.push(x)` makes `p` what `p = p.join(x)` makes it, `p.pop()`
+/// its `parent()`, `p.set_extension(e)` its `with_extension(e)`, `p.set_file_name(n)` its
+/// `with_file_name(n)`.
+pub const RUST_PATH_CHANGES: &[(&str, PathMethod)] = &[
+    ("push", PathMethod::Join),
+    ("pop", PathMethod::Parent),
+    ("set_extension", PathMethod::Extension),
+    ("set_file_name", PathMethod::Sibling),
+];
+
+/// The methods of a path that give a `PathBuf`, whose changes (`RUST_PATH_CHANGES`) change the path it
+/// holds: `let mut p = dir.join("out"); p.push(name)`.
+pub const RUST_PATH_BUFS: &[&str] = &["join", "with_extension", "with_file_name", "to_path_buf"];
+
+/// A path's methods that are a function of a module handed the path, as std documents each, by the
+/// method and the module: `p.read_dir()` is `fs::read_dir(p)`.
+pub const RUST_PATH_ALIASES: &[(&str, &str)] = &[("read_dir", "std::fs")];
