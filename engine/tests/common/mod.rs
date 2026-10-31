@@ -463,3 +463,64 @@ pub fn a_closures_parameter_is_what_its_calls_hand_it(language: &str, functions:
         assert_eq!(shortcut, clean, "{language}: {f} reads what a function of the module reads");
     }
 }
+
+/// The locals pair of `language` (`tests/pairs/locals`), its routes `named` and `written`: `named` binds the gap between two
+/// levels and the two side by side to names before it hands each to a step (`gap = first.db - second.db; draw(gap)`, `both =
+/// [first, second]; show(both)`), and `written` writes each where its step is handed it. What the language's own code
+/// computes of names with no call has no moment of its own, and binding it to a name adds no arrow: the name stands for the
+/// names it is computed of (#328, `mathematics.md`, "One fine plan"), and is still the body's own (`Node::binds`). So each
+/// step of `named` is handed what the same step of `written` is handed, by the same parameters and through the same fields;
+/// and in the plan, uncut and at every budget, each step of one route takes what the same step of the other takes. The
+/// shortcut computes both of the module's quiet level in place of the second level it is handed: that level alone comes
+/// from beyond, and every step of either route takes it. So in every language. What a route's own arrow takes where its
+/// code computes the value (`Steps::read_here`) is no step's, and not held here.
+#[allow(dead_code)]
+pub fn a_name_computed_of_names_stands_for_them(language: &str) {
+    let p = pair(&format!("locals/{language}"));
+    // a fact of a route with the route's name written as `R`, so that the facts of two routes can be compared
+    let renamed = |fact: &str, route: &str| -> String {
+        let moment = |m: &str| match m.strip_prefix(route) {
+            Some("") => "R".to_string(),
+            Some(rest) if rest.starts_with('/') => format!("R{rest}"),
+            _ => m.to_string(),
+        };
+        let token = |t: &str| match t.split_once('@') {
+            Some((value, m)) => format!("{value}@{}", moment(m)),
+            None => moment(t),
+        };
+        fact.split(' ').map(token).collect::<Vec<_>>().join(" ")
+    };
+    for (side, g, beyond) in [("clean", &p.clean, vec![]), ("shortcut", &p.shortcut, vec!["Level·QUIET".to_string()])] {
+        let at = format!("{language} {side}");
+        let node = |f: &str| g.node(&format!("signal.{f}")).unwrap_or_else(|| panic!("{at}: no node signal.{f}"));
+        let binds: BTreeSet<(&str, usize)> = node("named").binds.iter().map(|b| (b.name.as_str(), b.arms.len())).collect();
+        assert_eq!(binds, BTreeSet::from([("both", 0), ("gap", 0)]), "{at}: the body binds both names by its own code");
+        let handed = |f: &str| -> Vec<(String, BTreeSet<String>)> {
+            let hand = |h: &atlas_engine::Held| format!("{}·{} {:?} {:?} {}", h.ty, h.name, h.fills, h.through, h.param);
+            node(f).sites.iter().map(|s| (s.to.clone(), s.hands.iter().map(hand).collect())).collect()
+        };
+        let named = handed("named");
+        assert!(named.len() == 2 && named.iter().all(|(_, h)| !h.is_empty()), "{at}: each step of named is handed values: {named:?}");
+        assert_eq!(named, handed("written"), "{at}: a step handed a name is handed what the value written in its place hands");
+        let want: BTreeSet<String> = beyond.into_iter().collect();
+        for budget in BUDGETS {
+            let at = format!("{at}, budget {budget:?}");
+            let plans = planned(g, &format!("computed-{language}-{side}"), budget);
+            let route = |r: &str| &plans[&format!("signal.{r}")];
+            // what the steps take, and what the route draws but its own arrow
+            let of_steps = |r: &str| -> BTreeSet<String> {
+                route(r).iter().filter(|f| !f.ends_with(&format!(" > {r} value"))).map(|f| renamed(f, r)).collect()
+            };
+            assert_eq!(of_steps("named"), of_steps("written"), "{at}: each step takes what the value written in its place hands");
+            for r in ["named", "written"] {
+                let params = parameters(g, &format!("signal.{r}"));
+                assert_eq!(from_beyond(route(r), &params), want, "{at}: {r} from beyond");
+                let steps: Vec<String> = route(r).iter().filter_map(|f| f.strip_prefix("step ")).map(String::from).collect();
+                let taken: BTreeSet<(String, String)> = taken_from_beyond(route(r), &params).into_iter().filter(|(_, s)| s != r).collect();
+                let every: BTreeSet<(String, String)> =
+                    want.iter().flat_map(|v| steps.iter().map(move |s| (v.clone(), s.clone()))).collect();
+                assert_eq!(taken, every, "{at}: {r}'s steps take from beyond");
+            }
+        }
+    }
+}

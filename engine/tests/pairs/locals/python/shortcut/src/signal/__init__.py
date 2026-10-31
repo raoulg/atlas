@@ -3,7 +3,7 @@ level it is handed and the module's quiet level."""
 
 from dataclasses import dataclass
 
-__all__ = ["paired"]
+__all__ = ["paired", "named", "written"]
 
 
 @dataclass
@@ -28,3 +28,21 @@ def _pair(first: Level) -> list[Level]:
 def paired(first: Level) -> None:
     """The level, shown beside the quiet level."""
     _show(_pair(first))
+
+
+def _draw(gap: float) -> None:
+    print(gap)
+
+
+def named(first: Level) -> None:
+    """The gap between the level and the quiet level and the two side by side, each named before it is shown."""
+    gap = first.db - QUIET.db
+    _draw(gap)
+    both: list[Level] = [first, QUIET]
+    _show(both)
+
+
+def written(first: Level) -> None:
+    """The gap between the level and the quiet level and the two side by side, each written where it is shown."""
+    _draw(first.db - QUIET.db)
+    _show([first, QUIET])

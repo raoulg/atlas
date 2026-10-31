@@ -18,3 +18,25 @@ fn pair(first: Level, second: Level) -> [Level; 2] {
 pub fn paired(first: Level, second: Level) {
     show(&pair(first, second));
 }
+
+fn draw(gap: f32) {
+    println!("{gap}");
+}
+
+fn list(levels: &[&Level]) {
+    println!("{}", levels.len());
+}
+
+/// The gap between the two levels and the two levels side by side, each named before it is shown.
+pub fn named(first: &Level, second: &Level) {
+    let gap = first.db - second.db;
+    draw(gap);
+    let both = [first, second];
+    list(&both);
+}
+
+/// The gap between the two levels and the two levels side by side, each written where it is shown.
+pub fn written(first: &Level, second: &Level) {
+    draw(first.db - second.db);
+    list(&[first, second]);
+}

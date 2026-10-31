@@ -1,0 +1,45 @@
+# A name bound to what the language's own code computes of names, with no call, stands for those names (#328): `named`
+# binds the gap between the two levels (`first.db - second.db`) and the array of both (`const both: Level[] = [first,
+# second]`, whose type is written) to names before it hands each to a step, and `written` writes each where its step is
+# handed it. An operator is no occurrence and a name adds no arrow, so the two routes are one plan: each step takes the
+# two levels, and no value of the body's own (`gap`, `both`) stands between them and the step.
+
+route signal.named
+step named/draw
+step named/show
+
+line entry > named call
+line Level·first > named value
+line Level·second > named value
+line Level·first > named/draw value                  # `draw(gap)`, `const gap = first.db - second.db`
+line Level·second > named/draw value
+line Level·first > named/show value                  # `show(both)`, `const both: Level[] = [first, second]`
+line Level·second > named/show value
+line named/draw > Screen own
+line named/show > Screen own
+
+home Level·first named
+home Level·second named
+
+side entry left
+side Screen right
+
+route signal.written
+step written/draw
+step written/show
+
+line entry > written call
+line Level·first > written value
+line Level·second > written value
+line Level·first > written/draw value                # `draw(first.db - second.db)`
+line Level·second > written/draw value
+line Level·first > written/show value                # `show([first, second])`
+line Level·second > written/show value
+line written/draw > Screen own
+line written/show > Screen own
+
+home Level·first written
+home Level·second written
+
+side entry left
+side Screen right

@@ -273,6 +273,18 @@ fn bound_names<'t>(pat: TsNode<'t>, src: &[u8]) -> Vec<TsNode<'t>> {
         .collect()
 }
 
+/// What a part of a value Rust's own code computes is made of (`body::computed_of`): a literal, a type and a path of none (a
+/// constant by its path, `f32::EPSILON`, names no value of the body's, as it is handed none written in place), any other
+/// part the name it is a part of (`root`).
+fn part(p: TsNode) -> Option<Vec<TsNode>> {
+    match p.kind() {
+        "integer_literal" | "float_literal" | "boolean_literal" | "string_literal" | "raw_string_literal" | "char_literal"
+        | "line_comment" | "block_comment" | "scoped_identifier" => Some(vec![]),
+        k if k.ends_with("type") || k.ends_with("type_identifier") => Some(vec![]),
+        _ => root(p).map(|r| vec![r]),
+    }
+}
+
 /// The name a value is a part of, where the code writes it so: through what hands a value on
 /// unchanged, a field and an index (`settings.months`, `&config["base"]`, `row?`), the name or the
 /// `self` it starts at; none for a value a call or a literal makes.
@@ -1488,7 +1500,7 @@ impl<'a, 't> Body<'a, 't> {
                 })
             };
             for i in walk(*p, &["identifier"]).into_iter().filter(|i| names_value(*i, self.src) && !bound_inside(*i)) {
-                if let Some(h) = self.held_by(text(i, self.src), i.start_byte(), kept) {
+                for h in self.held_through(text(i, self.src), i.start_byte(), kept, 0) {
                     add(h);
                 }
             }
@@ -1502,7 +1514,7 @@ impl<'a, 't> Body<'a, 't> {
             // a name a format string writes (`format!("{key} {low}")`) is an argument as one after it is
             for lit in walk(*p, &["string_literal", "raw_string_literal"]).into_iter().filter(|l| formats(*l, self.src)) {
                 for (name, off) in inline_names(text(lit, self.src)) {
-                    if let Some(h) = self.held_by(name, lit.start_byte() + off, kept) {
+                    for h in self.held_through(name, lit.start_byte() + off, kept, 0) {
                         add(h);
                     }
                 }
@@ -1514,6 +1526,43 @@ impl<'a, 't> Body<'a, 't> {
             }
         }
         out
+    }
+
+    /// The values the name `name` written at byte `at` holds, as a call is handed them: the value `held_by` says, or, where
+    /// a `let` binds the name to what Rust's own code computes of names and nothing has made it anew since, no step and no
+    /// assignment (`let gap = first.db - second.db`, `let both = [first, second]`), the values those names hold there, as the
+    /// value written in the name's place hands them (`body::stands_for`). Each is handed where the name is written, from
+    /// where the name it holds it by is (`Held::bound`).
+    fn held_through(&self, name: &str, at: usize, kept: &HashSet<String>, depth: usize) -> Vec<(Held, Option<usize>)> {
+        let (holder, from) = self.holder(name, at);
+        let made = self.made_by.get(&holder, from).filter(|_| depth <= 8 && !kept.contains(&holder) && !self.reassigned(&holder, from));
+        let names = made.map(|v| crate::body::stands_for(*v, &USES, self.src, &part)).unwrap_or_default();
+        if names.is_empty() {
+            return self.held_by(name, at, kept).into_iter().collect();
+        }
+        names
+            .into_iter()
+            .flat_map(|n| {
+                let held = match n.kind() {
+                    "self" => self.cls.clone().map(|ty| (Held::at(ty, String::new(), n.start_byte(), false), None)).into_iter().collect(),
+                    _ => self.held_through(text(n, self.src), n.start_byte(), kept, depth + 1),
+                };
+                held.into_iter().map(move |(h, param)| {
+                    (Held { at: at as u32, bound: if h.bound != 0 { h.bound } else { n.start_byte() as u32 }, ..h }, param)
+                })
+            })
+            .collect()
+    }
+
+    /// Whether the body assigns the name again where the `let` visible at `at` binds it (`x = ..`, `x += ..`): what the
+    /// `let` bound it to is then not all it holds.
+    fn reassigned(&self, name: &str, at: usize) -> bool {
+        let Some(binding) = self.made_by.which(name, at).filter(|_| self.mutable.holds(name, at)) else { return false };
+        walk(self.def, &["assignment_expression", "compound_assignment_expr"]).into_iter().any(|a| {
+            a.child_by_field_name("left").is_some_and(|l| {
+                l.kind() == "identifier" && text(l, self.src) == name && self.made_by.which(name, l.start_byte()) == Some(binding)
+            })
+        })
     }
 
     /// The value the name `name` written at byte `at` holds, as a call is handed it: the instance
@@ -2564,6 +2613,13 @@ const USES: UseSyntax = UseSyntax {
             .flatten()
     },
     pairs: |targets, value| targets.kind() == "tuple_expression" && value.kind() == "tuple_expression",
+    // `&&` and `||` are choices; `*x` is the value `x` refers to
+    computes: |n, src| match n.kind() {
+        "binary_expression" => n.child_by_field_name("operator").is_some_and(|o| !matches!(text(o, src), "&&" | "||")),
+        "unary_expression" => n.child(0).is_some_and(|o| o.kind() != "*"),
+        "tuple_expression" | "array_expression" | "type_cast_expression" => true,
+        _ => false,
+    },
     wrappers: WRAPPERS,
     // a statement ends in `;`: a block's last expression without one is the block's value
     drops: |n, child, src| match n.kind() {

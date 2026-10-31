@@ -113,6 +113,10 @@ pub struct UseSyntax {
     /// Are a binding's targets and its value written as as many parts each, so that each target is
     /// bound to the part of the value at its place: `a.x, a.y = b, c`, `(a.x, a.y) = (b, c)`.
     pub pairs: fn(TsNode, TsNode) -> bool,
+    /// Does the language's own code compute what `node` gives of its parts, with no call: an operator, a display of several
+    /// values, a format (`a - b`, `!ok`, `[a, b]`, `(a, b)`, `f"{a}"`, `` `${a}` ``). A choice is none (`a if c else b`, `x ??
+    /// y`, `a && b`): its arms are the body's choices (`computed_of`).
+    pub computes: fn(TsNode, &[u8]) -> bool,
     /// What hands on the value inside it (`tree::Wrappers`): a call written in one is that call to
     /// what it stands in (`await f(x)`, `f(x)?`).
     pub wrappers: Wrappers,
@@ -197,6 +201,42 @@ pub fn placed<'t>(
         }
     }
     out
+}
+
+/// The names the value `v` is computed of by the language's own code (`UseSyntax::computes`): through its operators,
+/// displays and formats down to the parts that are none, each of which is what `part` says, the reader's: the names it is a
+/// projection of (`a` of `a.x[k]`), none for a literal, `None` for a part made otherwise (a call, a function written in
+/// place, a choice), and then for the whole. An operator is no occurrence: it is the language's operation
+/// handed its parts, glued into what takes its value as a projection is (`mathematics.md`, "One fine plan"), so a step
+/// handed `height - margin` is handed what `height` and `margin` hold.
+pub fn computed_of<'t>(
+    v: TsNode<'t>,
+    u: &UseSyntax,
+    src: &[u8],
+    part: &dyn Fn(TsNode<'t>) -> Option<Vec<TsNode<'t>>>,
+) -> Option<Vec<TsNode<'t>>> {
+    let v = beneath(v, u.wrappers);
+    if !(u.computes)(v, src) {
+        return part(v);
+    }
+    let mut out = vec![];
+    for c in named_children(v) {
+        out.extend(computed_of(c, u, src, part)?);
+    }
+    Some(out)
+}
+
+/// The names a name bound to `v` stands for: those `v` is computed of, where it is a computation of at least one name and
+/// no part of it is made otherwise (`computed_of`). Such a name is the body's own (`Node::binds`) but holds no value of its
+/// own: `bottom = height - margin; f(bottom)` is `f(height - margin)`, and own code that reads `bottom` reads `height` and
+/// `margin`, in every language. None for any other value: a name, a projection, a literal (a value the body makes itself), a
+/// call's result.
+pub fn stands_for<'t>(v: TsNode<'t>, u: &UseSyntax, src: &[u8], part: &dyn Fn(TsNode<'t>) -> Option<Vec<TsNode<'t>>>) -> Vec<TsNode<'t>> {
+    let v = beneath(v, u.wrappers);
+    if !(u.computes)(v, src) {
+        return vec![];
+    }
+    computed_of(v, u, src, part).unwrap_or_default()
 }
 
 /// One call as a step of the route through its body: what it runs, on which class and how the
@@ -1435,7 +1475,9 @@ impl<'t, 's> Steps<'t, 's> {
     /// it binds that no step makes. In an arm, either the binding standing in the arm (`unit = KELVIN`)
     /// or the value it binds being a choice whose arm gives it (`let out = match f { .. }`, `x = a if c
     /// else b`); outside the choices, a literal (`items = []`) or any other expression (`mask =
-    /// samples.abs() > 0`, `let total = a + b`): the body makes that value itself, whatever it reads.
+    /// samples.abs() > 0`, `let total = a + b`), whatever it reads: the name is the body's own. What
+    /// the language's own code computes of names with no call (`a + b`) is no value of its own: the name
+    /// stands for those names where it is read (`stands_for`).
     /// What a loop binds, its step gives; a field or an element is kept beyond a name; a name bound to
     /// another, to what a step gives or to a part of either (`width = settings.width`) holds that value
     /// (`Node::uses`); a function written in place is a function.
