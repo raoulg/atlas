@@ -6,8 +6,8 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use indexmap::IndexMap;
 
 use crate::model::{
-    ext, type_name, Bucket, Dir, Edge, EdgeKind, Entry, EntryKind, Graph, Held, Lang, Node, NodeKind, Signature, Site, Slot, Stats, Touch,
-    Unresolved, World,
+    ext, sum, type_name, Bucket, Dir, Edge, EdgeKind, Entry, EntryKind, Graph, Held, Lang, Node, NodeKind, Signature, Site, Slot, Stats,
+    Touch, Unresolved, World,
 };
 
 /// Per-class facts that only matter during resolution.
@@ -191,7 +191,7 @@ impl GraphBuilder {
         if let Some((id, _)) = known {
             return id.to_string();
         }
-        let id = format!("({})", key.join(" | "));
+        let id = sum::of(&key);
         self.add_node(Node {
             id: id.clone(),
             kind: NodeKind::Class,
