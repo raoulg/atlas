@@ -334,6 +334,8 @@ export function unused() {}
     let main = |g: &Graph| g.node(&format!("{}.main.main", g.root)).unwrap().clone();
     let read = one.node("filekit.lib.read.readConfig").expect("the function the program calls is read");
     assert!(read.library, "a library's function is marked as one");
+    // the package as the dependency it is: the directory its code is read from, which its files lie under
+    assert!(read.file.starts_with(&one.libraries["filekit"].dir), "{:?}", one.libraries);
     let file = read.touches.iter().find(|t| t.kind_name() == "disk_read").expect("the package's own code reads the disk");
     assert_eq!((file.op.as_str(), file.artifact.as_str()), ("readFileSync", "settings.json"), "at the path the program hands it: {file:?}");
     let to: Vec<String> = main(&one).sites.iter().map(|s| if s.to.is_empty() { s.op.clone() } else { s.to.clone() }).collect();

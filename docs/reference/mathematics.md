@@ -116,13 +116,22 @@ is chosen (`if not xs: return Failed(..)`), is that choice with what follows it 
 Fit(..)` after it runs otherwise, as an `else` would write it. A repository's graph is the coproduct of its parts' graphs, glued only
 along the libraries and places of the world they share (a pushout over those): two parts whose code
 holds one name stay two, each name injected under where its part lies (`orders/app`, `billing/app`).
+Two parts share a library when they read the same code, and the directory a library is read from names its code
+(Cargo's registry keeps one directory per version, an environment its own copy): a library the parts read from one
+directory is one library under its own name, and a node both parts keep is held once, as the first part reads it
+(the common refinement of the two readings is #377). A library read from several
+directories is one library per directory, since a version's types and bodies are its own (rustc tells `Value` of
+1.0.151 from 1.0.154's): each takes its name with its version after it (`serde_json-1_0_151`), or, where the
+versions do not tell the directories apart, the place where its first reader lies, and the names past its fiber take
+that name too. A name past the code that two parts both name holds no code to differ in, and is one node.
 Each part is read in one language, so the graph's languages are the image of its parts': a set, empty for no parts,
 the union of theirs for a merge (`model::Languages`); one language is a value of the closed set Atlas reads (`Lang`).
 A call into a family runs one of its overrides, decided at run time, so its codomain is the coproduct of theirs: it
 hands on each error any of them can end with, as a call hands on each its one callee can end with, never one chosen
 for it (#213).
 **Where.** Principles `sums` and `choices`; `Node::whens` (`body.rs`), `arms_of` and `guarded_by` (`tree.rs`), `Item::Choice` (`flow.rs`),
-the MCP tool `choices`; `parts::apart`, `Graph::rename`; `Site::fails` and `settle_fails` (`builder.rs`).
+the MCP tool `choices`; `parts::apart`, `parts::versions`, `parts::merge`, `Graph::rename`, `Graph::libraries` and
+`model::Dependency`, held by `engine/tests/versions.rs` and `a_merge_holds_each_id_once` (`merge.rs`); `Site::fails` and `settle_fails` (`builder.rs`).
 
 ### Lenses
 **What.** A lens on S has `get: S → A` and `put: A × S → S`, and a lawful one gets back what

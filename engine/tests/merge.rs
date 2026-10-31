@@ -144,3 +144,49 @@ proptest! {
         }
     }
 }
+
+/// A part holding the functions `ids` as part `i` reads them (its doc says which), with a line from
+/// each to the next.
+fn holding(i: usize, ids: &[String]) -> Graph {
+    let node = |id: &String| atlas_engine::Node {
+        id: id.clone(),
+        kind: atlas_engine::NodeKind::Function,
+        doc: format!("read by {i}"),
+        ..Default::default()
+    };
+    let line = |w: &[String]| atlas_engine::Edge {
+        src: w[0].clone(),
+        dst: w[1].clone(),
+        kind: atlas_engine::EdgeKind::Calls,
+        via: Some(format!("by {i}")),
+        weight: None,
+        arms: vec![],
+        uses: false,
+    };
+    Graph { nodes: ids.iter().map(node).collect(), edges: ids.windows(2).map(line).collect(), ..Default::default() }
+}
+
+proptest! {
+    /// Law: a repository's graph is its parts' glued along what they share (`mathematics.md`,
+    /// Coproducts), and an id names one node: the merge holds each id the parts hold once, as the
+    /// first part that holds it reads it, with the lines out of it that part draws; in two steps as
+    /// at once.
+    #[test]
+    fn a_merge_holds_each_id_once(held in proptest::collection::vec(proptest::collection::btree_set("[a-e]", 0..5), 0..5)) {
+        let graphs: Vec<Graph> = held.iter().enumerate().map(|(i, ids)| holding(i, &ids.iter().cloned().collect::<Vec<_>>())).collect();
+        let merged = parts::merge("repo", graphs.clone());
+        let ids: Vec<&str> = merged.nodes.iter().map(|n| n.id.as_str()).collect();
+        let all: BTreeSet<&String> = held.iter().flatten().collect();
+        prop_assert_eq!(ids.len(), all.len(), "{:?}", ids);
+        for n in &merged.nodes {
+            let first = held.iter().position(|ids| ids.contains(&n.id)).unwrap();
+            prop_assert_eq!(&n.doc, &format!("read by {first}"));
+            for e in merged.edges.iter().filter(|e| e.src == n.id) {
+                prop_assert_eq!(e.via.clone(), Some(format!("by {first}")));
+            }
+        }
+        let (first, rest) = graphs.split_at(graphs.len() / 2);
+        let halves = vec![parts::merge("repo", first.to_vec()), parts::merge("repo", rest.to_vec())];
+        prop_assert_eq!(json(&parts::merge("repo", halves)), json(&merged));
+    }
+}
