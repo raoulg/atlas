@@ -2,8 +2,8 @@ name: perf
 
 # How fast `next` builds, reads and tests, measured on one runner type and kept as a series per measure on
 # the branch `perf-data` (`history.jsonl` and a README of charts). Every night: the release build timed
-# clean, `atlas-code view` cold and warm on Atlas itself and on the programs `laws.yml` reads, each test binary
-# on its own. A measure past its baseline is suspect, and says nothing yet: the same run builds the last
+# clean, `atlas-code view` cold, warm and after a file no reader asks about, and `atlas-code serve` from a cold
+# start, on Atlas itself and on the programs `laws.yml` reads, each test binary on its own. A measure past its baseline is suspect, and says nothing yet: the same run builds the last
 # commit that lay within it and measures the two interleaved on this runner. Only what that reproduces is
 # reported, graded by its size: a small slowdown comments on the tracking issue, a large one is bisected on
 # the spot and opens an urgent issue that names its landing. Every week the same comparison is made between
@@ -97,7 +97,7 @@ jobs:
           uv run tools/perf.py time build/release --out "$RUN" -- cargo build --release --locked -p atlas-code
           cp "$CARGO_TARGET_DIR/release/atlas-code" "$RUNNER_TEMP/atlas-code"
           rm -rf "$CARGO_TARGET_DIR"
-      - name: the readings, cold and warm
+      - name: the readings, cold, warm and after a file no reader asks about, and serve from a cold start
         working-directory: atlas
         run: |
           uv run tools/perf.py read --atlas "$RUNNER_TEMP/atlas-code" --out "$RUN" \
@@ -184,9 +184,11 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 150
     steps:
+      # the tool is next's on the schedule and the dispatched ref's by hand, so that a measure is measured
+      # before it lands; what is measured is next either way, built in a worktree of its own
       - uses: actions/checkout@v7
         with:
-          ref: next
+          ref: ${{ github.event_name == 'workflow_dispatch' && github.sha || 'next' }}
           path: atlas
           fetch-depth: 0
       - name: the programs, at the revisions laws.yml reads
@@ -204,8 +206,10 @@ jobs:
           release=$(git tag -l 'v*' --sort=-v:refname | head -1)
           echo "RELEASE=$release" >> "$GITHUB_ENV"
           # shellcheck disable=SC2086 # $SUBJECTS splits into its --subject arguments
-          uv run tools/perf.py reproduce --repo . --a "$release" --b HEAD $SUBJECTS \
+          uv run tools/perf.py reproduce --repo . --a "$release" --b origin/next $SUBJECTS \
             --measure read/atlas/cold/seconds --measure read/atlas/warm/seconds --measure read/atlas/cold/peak_rss \
+            --measure read/atlas/unasked/seconds \
+            --measure read/atlas/serve/seconds --measure read/atlas/serve/first/seconds --measure read/atlas/serve/redraw/seconds \
             --measure read/vectormesh/cold/seconds --measure read/goad_toolkit/cold/seconds \
             --measure build/release/seconds \
             --out "$GITHUB_WORKSPACE/weekly.json"
