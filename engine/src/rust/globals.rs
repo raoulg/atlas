@@ -15,7 +15,7 @@ use super::module::{bound_in, def_node, items, path_parts, path_to_id, resolve, 
 use crate::builder::GraphBuilder;
 use crate::knowledge;
 use crate::model::{Dir, NodeKind, Touch, World};
-use crate::tree::{named_children, text, walk};
+use crate::tree::{named_children, parent, text, walk};
 
 /// A static that can change, as declared: its name, and whether it is `mut` itself.
 struct Static {
@@ -136,7 +136,7 @@ fn in_tokens(tt: TsNode, src: &[u8], in_place: &dyn Fn(&[String]) -> bool) -> Ve
 /// declaration's name or a `use`; among a macro's tokens, a path not after a `.` and not before a
 /// `::` or a `!`.
 fn used(x: TsNode, src: &[u8]) -> Option<Vec<String>> {
-    let p = x.parent()?;
+    let p = parent(x)?;
     if p.kind() != "token_tree" {
         if matches!(
             p.kind(),
@@ -215,7 +215,7 @@ impl Effect {
 
 /// What a use does with a static, written as an expression or among a macro's tokens.
 fn effect(x: TsNode, open: bool, refers: bool, src: &[u8], depth: u32) -> Effect {
-    if x.parent().map_or(false, |p| p.kind() == "token_tree") {
+    if parent(x).map_or(false, |p| p.kind() == "token_tree") {
         among_tokens(x, open, src)
     } else {
         follow(x, open, refers, src, depth)
@@ -232,7 +232,7 @@ fn effect(x: TsNode, open: bool, refers: bool, src: &[u8], depth: u32) -> Effect
 fn follow(mut n: TsNode, mut open: bool, mut refers: bool, src: &[u8], depth: u32) -> Effect {
     let mut handed = Effect::default();
     loop {
-        let Some(p) = n.parent() else { return handed.and(Effect::READS) };
+        let Some(p) = parent(n) else { return handed.and(Effect::READS) };
         let is = |f: &str| p.child_by_field_name(f).map(|x| x.id()) == Some(n.id());
         match p.kind() {
             "field_expression" if is("value") => {
@@ -297,7 +297,7 @@ fn local(decl: TsNode, open: bool, src: &[u8], depth: u32) -> Effect {
         .child_by_field_name("pattern")
         .filter(|x| matches!(x.kind(), "identifier" | "mut_pattern"))
         .map(|x| text(x, src).trim_start_matches("mut ").to_string());
-    match (name, decl.parent()) {
+    match (name, parent(decl)) {
         (Some(name), Some(scope)) => kept_in(scope, &name, decl.end_byte(), open, src, depth),
         _ => Effect::READS,
     }

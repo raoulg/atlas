@@ -12,7 +12,7 @@ use tree_sitter::{Node as TsNode, Parser, Tree};
 use crate::builder::SigInfo;
 use crate::knowledge;
 use crate::model::{Node, NodeKind, Param, Returns};
-use crate::tree::{named_children, text, walk, Wrappers};
+use crate::tree::{named_children, parent, text, walk, Wrappers};
 
 /// What hands on the value inside it: parentheses, a reference `&x`, a dereference `*x`, `x?` and
 /// `x.await`.
@@ -531,7 +531,7 @@ pub(super) fn def_node<'t>(m: &'t Module, n: &Node) -> Option<TsNode<'t>> {
     let &(from, to) = m.defs.get(&(start, n.name.clone()))?;
     let mut d = m.tree.root_node().descendant_for_byte_range(from, to)?;
     while !DEFINES.contains(&d.kind()) || d.byte_range() != (from..to) {
-        d = d.parent()?;
+        d = parent(d)?;
     }
     Some(d)
 }
@@ -578,7 +578,7 @@ pub(super) fn bound_at<'t>(def: TsNode<'t>, at: TsNode<'t>, src: &[u8]) -> HashS
     }
     let mut patterns: Vec<TsNode<'t>> = vec![];
     let mut child = at;
-    while let Some(p) = child.parent() {
+    while let Some(p) = parent(child) {
         let is = |f: &str| p.child_by_field_name(f).map(|x| x.id()) == Some(child.id());
         match p.kind() {
             "block" => patterns.extend(named_children(p).into_iter().filter_map(|s| match s.kind() {
@@ -635,7 +635,7 @@ pub(super) fn bound_in(def: TsNode, src: &[u8]) -> HashSet<String> {
                 out.extend(name.map(|n| text(n, src).to_string()));
             }
         }
-        scope = s.parent();
+        scope = parent(s);
     }
     for n in
         walk(def, &["parameter", "closure_parameters", "let_declaration", "for_expression", "match_arm", "let_condition", "function_item"])

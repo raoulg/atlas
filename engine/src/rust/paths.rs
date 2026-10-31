@@ -2,7 +2,7 @@
 //! the code, through the constants it names (across `use`), the functions of the program that
 //! give it, and the values a function's parameters are handed by its callers.
 
-use std::cell::OnceCell;
+use std::cell::{OnceCell, RefCell};
 use std::collections::HashMap;
 
 use indexmap::IndexMap;
@@ -25,6 +25,9 @@ pub(super) struct Eval<'a> {
     /// The struct literals of every module, by the type each builds: found once, when a field is
     /// first asked for.
     literals: OnceCell<HashMap<String, Vec<(&'a Module, TsNode<'a>)>>>,
+    /// The `const` and `static` items of a module, by its id and their name, the first of a name
+    /// where it declares two: found once, when a constant of the module is first asked for.
+    constants: RefCell<HashMap<String, HashMap<String, TsNode<'a>>>>,
 }
 
 /// Where an expression is evaluated: its module, and the function it is in with that function's
@@ -69,7 +72,7 @@ pub(super) fn takes_self(f: TsNode) -> bool {
 
 impl<'a> Eval<'a> {
     pub fn new(modules: &'a IndexMap<String, Module>, nodes: &IndexMap<String, Node>, crate_ids: &'a HashMap<String, String>) -> Self {
-        Eval { modules, nodes: nodes.clone(), crate_ids, literals: OnceCell::new() }
+        Eval { modules, nodes: nodes.clone(), crate_ids, literals: OnceCell::new(), constants: RefCell::new(HashMap::new()) }
     }
 
     /// The values `e` can have.
@@ -325,7 +328,14 @@ impl<'a> Eval<'a> {
             }
             [] => return None,
         };
-        Some((home, name.to_string(), const_in(home.tree.root_node(), name, &home.src)?))
+        let value = self
+            .constants
+            .borrow_mut()
+            .entry(home.id.clone())
+            .or_insert_with(|| constants(home.tree.root_node(), &home.src))
+            .get(name)
+            .and_then(|i| i.child_by_field_name("value"));
+        Some((home, name.to_string(), value?))
     }
 
     /// `d[k]`, `d.get(k)`: `d` a collection the code writes out where it stands or where `d` is
@@ -705,9 +715,9 @@ impl<'a> Eval<'a> {
 
     /// The type of the `impl` a node is written in.
     fn impl_type(&self, m: &'a Module, n: TsNode<'a>) -> Option<String> {
-        let mut p = n.parent();
+        let mut p = crate::tree::parent(n);
         while let Some(x) = p.filter(|x| x.kind() != "impl_item") {
-            p = x.parent();
+            p = crate::tree::parent(x);
         }
         resolve(m, &path_parts(p?.child_by_field_name("type"), &m.src), self.modules, &self.nodes, self.crate_ids)
             .filter(|r| !r.starts_with("ext:"))
@@ -1174,12 +1184,12 @@ fn derived_parser(m: &Module, item: TsNode) -> Option<&'static knowledge::Derive
 
 /// The function a node is written in.
 fn enclosing_fn(n: TsNode) -> Option<TsNode> {
-    let mut p = n.parent();
+    let mut p = crate::tree::parent(n);
     while let Some(x) = p {
         if x.kind() == "function_item" {
             return Some(x);
         }
-        p = x.parent();
+        p = crate::tree::parent(x);
     }
     None
 }
@@ -1220,7 +1230,7 @@ fn path_listing(method: &str) -> Option<&'static knowledge::Listing> {
 fn holds_path_buf(m: &Module, v: TsNode) -> bool {
     let src = &m.src;
     let path_type = |parts: &[String]| parts.last().is_some_and(|t| knowledge::RUST_PATH_TYPES.contains(&t.as_str()));
-    if let Some(ty) = v.parent().filter(|l| l.kind() == "let_declaration").and_then(|l| l.child_by_field_name("type")) {
+    if let Some(ty) = crate::tree::parent(v).filter(|l| l.kind() == "let_declaration").and_then(|l| l.child_by_field_name("type")) {
         return path_type(&path_parts(Some(ty), src));
     }
     let mut e = beneath(v, super::module::WRAPPERS);
@@ -1265,9 +1275,9 @@ fn runs(change: TsNode, v: TsNode) -> Runs {
     let mut p = Some(v);
     while let Some(x) = p {
         around.insert(x.id());
-        p = x.parent();
+        p = crate::tree::parent(x);
     }
-    let (mut child, mut p, mut out) = (change, change.parent(), Runs::Once);
+    let (mut child, mut p, mut out) = (change, crate::tree::parent(change), Runs::Once);
     while let Some(x) = p.filter(|x| !around.contains(&x.id())) {
         let at = |field: &str| x.child_by_field_name(field).is_some_and(|f| f.id() == child.id());
         match x.kind() {
@@ -1276,7 +1286,7 @@ fn runs(change: TsNode, v: TsNode) -> Runs {
             "match_arm" => out = Runs::Maybe,
             _ => {}
         }
-        (child, p) = (x, x.parent());
+        (child, p) = (x, crate::tree::parent(x));
     }
     out
 }
@@ -1350,16 +1360,20 @@ fn bound<'a>(scope: TsNode<'a>, name: &str, pos: usize, src: &[u8]) -> Option<Bo
             }
             "let_condition" => {
                 let (Some(p), Some(v)) = (b.child_by_field_name("pattern"), b.child_by_field_name("value")) else { continue };
-                let mut opens = b.parent();
+                let mut opens = crate::tree::parent(b);
                 while let Some(x) = opens.filter(|x| !matches!(x.kind(), "if_expression" | "while_expression")) {
-                    opens = x.parent();
+                    opens = crate::tree::parent(x);
                 }
                 let block = opens.and_then(|x| x.child_by_field_name("consequence").or_else(|| x.child_by_field_name("body")));
                 around(block).then(|| binds(p, v)).flatten().map(|x| (p.end_byte(), x))
             }
             _ => {
                 let Some(p) = b.child_by_field_name("pattern").and_then(|m| named_children(m).into_iter().next()) else { continue };
-                let Some(v) = b.parent().and_then(|arms| arms.parent()).and_then(|m| m.child_by_field_name("value")) else { continue };
+                let Some(v) =
+                    crate::tree::parent(b).and_then(|arms| crate::tree::parent(arms)).and_then(|m| m.child_by_field_name("value"))
+                else {
+                    continue;
+                };
                 around(b.child_by_field_name("value")).then(|| binds(p, v)).flatten().map(|x| (p.end_byte(), x))
             }
         };
@@ -1396,13 +1410,13 @@ fn handed<'a>(scope: TsNode<'a>, name: &str, pos: usize, src: &[u8]) -> Option<(
     // a closure handed to a method that runs it on each element of what the method is called on
     // (knowledge::RUST_EACH): its parameters from the element's place on are elements of that
     let mut handed_to = closure;
-    while let Some(p) = handed_to.parent().filter(|p| crate::tree::wraps(super::module::WRAPPERS, *p)) {
+    while let Some(p) = crate::tree::parent(handed_to).filter(|p| crate::tree::wraps(super::module::WRAPPERS, *p)) {
         handed_to = p;
     }
     if let Some(method) = handed_to
         .parent()
         .filter(|a| a.kind() == "arguments")
-        .and_then(|a| a.parent())
+        .and_then(|a| crate::tree::parent(a))
         .filter(|c| c.kind() == "call_expression")
         .and_then(|c| c.child_by_field_name("function"))
         .filter(|f| f.kind() == "field_expression")
@@ -1413,9 +1427,9 @@ fn handed<'a>(scope: TsNode<'a>, name: &str, pos: usize, src: &[u8]) -> Option<(
             _ => None,
         };
     }
-    let kept = closure.parent().filter(|l| l.kind() == "let_declaration")?;
+    let kept = crate::tree::parent(closure).filter(|l| l.kind() == "let_declaration")?;
     let by = kept.child_by_field_name("pattern").filter(|p| p.kind() == "identifier").map(|p| text(p, src))?;
-    let args: Vec<TsNode<'a>> = walk(kept.parent()?, &["call_expression"])
+    let args: Vec<TsNode<'a>> = walk(crate::tree::parent(kept)?, &["call_expression"])
         .into_iter()
         .filter(|c| c.start_byte() >= kept.end_byte())
         .filter(|c| c.child_by_field_name("function").map_or(false, |f| f.kind() == "identifier" && text(f, src) == by))
@@ -1434,6 +1448,18 @@ fn const_in<'a>(n: TsNode<'a>, name: &str, src: &[u8]) -> Option<TsNode<'a>> {
         .child_by_field_name("value")
 }
 
+/// The `const` and `static` items under `n` by their name, the first of each name, as `const_in`
+/// finds them.
+fn constants<'a>(n: TsNode<'a>, src: &[u8]) -> HashMap<String, TsNode<'a>> {
+    let mut of = HashMap::new();
+    for i in walk(n, &["const_item", "static_item"]) {
+        if let Some(name) = i.child_by_field_name("name") {
+            of.entry(text(name, src).to_string()).or_insert(i);
+        }
+    }
+    of
+}
+
 /// The expression a block ends in, which is what it gives.
 fn tail(block: TsNode) -> Option<TsNode> {
     let last = named_children(block).into_iter().rev().find(|x| !x.kind().ends_with("comment"))?;
@@ -1450,12 +1476,12 @@ fn tail(block: TsNode) -> Option<TsNode> {
 /// closure or a function inside it) gives.
 fn returns(body: TsNode) -> Vec<TsNode> {
     let own = |r: &TsNode| {
-        let mut p = r.parent();
+        let mut p = crate::tree::parent(*r);
         while let Some(x) = p.filter(|x| x.id() != body.id()) {
             if matches!(x.kind(), "closure_expression" | "function_item") {
                 return false;
             }
-            p = x.parent();
+            p = crate::tree::parent(x);
         }
         true
     };

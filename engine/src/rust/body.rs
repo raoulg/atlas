@@ -17,8 +17,8 @@ use crate::effects::{self, Crossing};
 use crate::knowledge::{self, OwnTypes};
 use crate::model::{Bucket, EdgeKind, Held, Node, NodeKind, Slot, Touch, World};
 use crate::tree::{
-    beneath, evaluation_order, literals, named_children, nth_of_kind, text, unquote, walk, wrapped, wraps, ChoiceSyntax, CompareSyntax,
-    Part,
+    beneath, evaluation_order, literals, named_children, nth_of_kind, parent, text, unquote, walk, wrapped, wraps, ChoiceSyntax,
+    CompareSyntax, Part,
 };
 
 /// The macros that end a body by panicking.
@@ -89,8 +89,8 @@ fn function(c: TsNode) -> Option<TsNode> {
 /// Whether a string literal is the format string of a macro that formats: a token of its own
 /// among the macro's tokens (`format!("{key}")`, also inside another macro's tokens).
 fn formats(lit: TsNode, src: &[u8]) -> bool {
-    let Some(t) = lit.parent().filter(|t| t.kind() == "token_tree") else { return false };
-    let name = match t.parent() {
+    let Some(t) = parent(lit).filter(|t| t.kind() == "token_tree") else { return false };
+    let name = match parent(t) {
         Some(m) if m.kind() == "macro_invocation" => m.child_by_field_name("macro").and_then(|x| path_parts(Some(x), src).pop()),
         _ => t.prev_sibling().filter(|b| b.kind() == "!").and_then(|b| b.prev_sibling()).map(|x| text(x, src).to_string()),
     };
@@ -149,20 +149,20 @@ const PATTERNS: &[&str] = &[
 fn scope(pat: TsNode) -> Option<(usize, usize)> {
     let mut n = pat;
     loop {
-        let p = n.parent()?;
+        let p = parent(n)?;
         match p.kind() {
-            "let_declaration" => return Some((p.end_byte(), p.parent()?.end_byte())),
-            "parameters" => return Some((p.parent()?.start_byte(), p.parent()?.end_byte())),
-            "closure_parameters" => return Some((p.end_byte(), p.parent()?.end_byte())),
+            "let_declaration" => return Some((p.end_byte(), parent(p)?.end_byte())),
+            "parameters" => return Some((parent(p)?.start_byte(), parent(p)?.end_byte())),
+            "closure_parameters" => return Some((p.end_byte(), parent(p)?.end_byte())),
             "for_expression" => {
                 let body = p.child_by_field_name("body")?;
                 return Some((body.start_byte(), body.end_byte()));
             }
             "match_arm" => return Some((n.end_byte(), p.end_byte())),
             "let_condition" => {
-                let mut c = p.parent()?;
+                let mut c = parent(p)?;
                 while c.kind() == "let_chain" {
-                    c = c.parent()?;
+                    c = parent(c)?;
                 }
                 let block = c.child_by_field_name(if c.kind() == "while_expression" { "body" } else { "consequence" })?;
                 return Some((p.end_byte(), block.end_byte()));
@@ -188,7 +188,7 @@ fn bound_name<'s>(pat: TsNode, src: &'s [u8]) -> &'s str {
 fn kept_as(c: TsNode, src: &[u8]) -> Vec<(String, usize)> {
     let mut n = c;
     loop {
-        let Some(p) = n.parent() else { return vec![] };
+        let Some(p) = parent(n) else { return vec![] };
         let is = |field: &str| p.child_by_field_name(field).map(|x| x.id()) == Some(n.id());
         match p.kind() {
             k if wraps(WRAPPERS, p) || k == "else_clause" => n = p,
@@ -201,9 +201,9 @@ fn kept_as(c: TsNode, src: &[u8]) -> Vec<(String, usize)> {
             }
             "arguments"
                 if p.named_child_count() == 1
-                    && p.parent().and_then(|c| function(c)).map_or(false, |f| matches!(text(f, src), "Some" | "Ok" | "Err")) =>
+                    && parent(p).and_then(|c| function(c)).map_or(false, |f| matches!(text(f, src), "Some" | "Ok" | "Err")) =>
             {
-                match p.parent() {
+                match parent(p) {
                     Some(call) => n = call,
                     None => return vec![],
                 }
@@ -226,7 +226,7 @@ fn kept_as(c: TsNode, src: &[u8]) -> Vec<(String, usize)> {
             }
             "tuple_expression" => {
                 let at = named_children(p).iter().position(|x| x.id() == n.id());
-                let Some(b) = p.parent().filter(|b| matches!(b.kind(), "let_declaration" | "let_condition")) else { return vec![] };
+                let Some(b) = parent(p).filter(|b| matches!(b.kind(), "let_declaration" | "let_condition")) else { return vec![] };
                 let Some(pat) = b.child_by_field_name("pattern").filter(|x| x.kind() == "tuple_pattern") else { return vec![] };
                 let parts = named_children(pat);
                 return match at {
@@ -260,7 +260,7 @@ fn binds(pat: TsNode, src: &[u8]) -> Vec<(String, usize)> {
 fn bound_names<'t>(pat: TsNode<'t>, src: &[u8]) -> Vec<TsNode<'t>> {
     let guard = pat.child_by_field_name("condition").map(|g| g.byte_range());
     let variant = |i: TsNode| {
-        i.parent().map_or(false, |p| {
+        parent(i).map_or(false, |p| {
             matches!(p.kind(), "scoped_identifier" | "scoped_type_identifier")
                 || (matches!(p.kind(), "tuple_struct_pattern" | "struct_pattern")
                     && p.child_by_field_name("type").map(|t| t.id()) == Some(i.id()))
@@ -282,7 +282,7 @@ fn part(p: TsNode) -> Option<Vec<TsNode>> {
         | "line_comment" | "block_comment" | "scoped_identifier" => Some(vec![]),
         k if k.ends_with("type") || k.ends_with("type_identifier") => Some(vec![]),
         // a macro's name is no value
-        "identifier" if p.parent().and_then(|m| m.child_by_field_name("macro")).is_some_and(|m| m.id() == p.id()) => Some(vec![]),
+        "identifier" if parent(p).and_then(|m| m.child_by_field_name("macro")).is_some_and(|m| m.id() == p.id()) => Some(vec![]),
         _ => root(p).map(|r| vec![r]),
     }
 }
@@ -343,7 +343,7 @@ fn each_of<'t>(call: TsNode<'t>, src: &[u8]) -> Vec<TsNode<'t>> {
 /// not `n` of `xs.iter().fold(0, |n, x| ..)`, whose first is what it gathers. A parameter that writes its type
 /// (`|t: &Touch|`) is given as the `parameter` it is.
 fn element_parameters<'t>(closure: TsNode<'t>, src: &[u8]) -> Vec<(TsNode<'t>, TsNode<'t>)> {
-    let Some(call) = closure.parent().filter(|a| a.kind() == "arguments").and_then(|a| a.parent()) else { return vec![] };
+    let Some(call) = parent(closure).filter(|a| a.kind() == "arguments").and_then(|a| parent(a)) else { return vec![] };
     let Some((at, on)) = method_on(call, src).and_then(|(m, v)| Some((knowledge::rust_element(m)?, v))) else { return vec![] };
     let params = closure.child_by_field_name("parameters").map(named_children).unwrap_or_default();
     params.into_iter().filter(|p| !p.kind().ends_with("comment")).skip(at as usize).map(|p| (p, on)).collect()
@@ -536,9 +536,9 @@ fn turbofish(close: TsNode) -> Option<TsNode> {
 
 /// Whether a group sits among the tokens of a macro's invocation, below its own arguments.
 fn in_macro(g: TsNode) -> bool {
-    let mut t = g.parent().filter(|p| p.kind() == "token_tree");
+    let mut t = parent(g).filter(|p| p.kind() == "token_tree");
     while let Some(x) = t {
-        match x.parent() {
+        match parent(x) {
             Some(p) if p.kind() == "token_tree" => t = Some(p),
             Some(p) => return p.kind() == "macro_invocation",
             None => return false,
@@ -551,8 +551,8 @@ fn in_macro(g: TsNode) -> bool {
 /// before a guard's `if`.
 fn in_pattern(g: TsNode, src: &[u8]) -> bool {
     let mut child = g;
-    while let Some(t) = child.parent().filter(|t| t.kind() == "token_tree") {
-        let name = match t.parent() {
+    while let Some(t) = parent(child).filter(|t| t.kind() == "token_tree") {
+        let name = match parent(t) {
             Some(m) if m.kind() == "macro_invocation" => m.child_by_field_name("macro").and_then(|x| path_parts(Some(x), src).pop()),
             _ => t.prev_sibling().filter(|b| b.kind() == "!").and_then(|b| b.prev_sibling()).map(|x| text(x, src).to_string()),
         };
@@ -588,7 +588,7 @@ fn token_values(g: TsNode) -> Vec<TsNode> {
 /// of `Error::Amount`), not a macro's name, and among a macro's tokens not a field or a method after
 /// a `.` nor a path's segment.
 fn names_value(i: TsNode, src: &[u8]) -> bool {
-    match i.parent() {
+    match parent(i) {
         Some(p) if p.kind() == "scoped_identifier" => false,
         Some(p) if p.kind() == "macro_invocation" => p.child_by_field_name("macro").map(|m| m.id()) != Some(i.id()),
         Some(p) if p.kind() == "token_tree" => {
@@ -605,7 +605,7 @@ fn names_value(i: TsNode, src: &[u8]) -> bool {
 /// read of (`Plain.name()`); not a segment of a path or a field after a `.`, and not in a pattern the macro takes
 /// (`matches!(v, Plain)`).
 fn token_value(n: TsNode, src: &[u8]) -> bool {
-    let Some(g) = n.parent().filter(|g| g.kind() == "token_tree") else { return false };
+    let Some(g) = parent(n).filter(|g| g.kind() == "token_tree") else { return false };
     if in_pattern(n, src) || matches!(n.prev_sibling().map(|p| p.kind()), Some("." | "::")) {
         return false;
     }
@@ -662,6 +662,23 @@ pub(super) fn link_calls<'t>(
     let m = &modules[&n.module];
     let Some(d) = def_node(m, &n) else { return Linked::default() };
     let Some(body) = d.child_by_field_name("body") else { return Linked::default() };
+    crate::tree::indexed(d, || link_body(modules, store, crate_ids, eval, returned, id, &n, m, d, body))
+}
+
+/// `link_calls` of the function `n`, which `d` defines and whose body is `body`.
+#[allow(clippy::too_many_arguments)]
+fn link_body<'t>(
+    modules: &'t IndexMap<String, Module>,
+    store: &mut GraphBuilder,
+    crate_ids: &HashMap<String, String>,
+    eval: &Eval<'t>,
+    returned: &HashMap<String, String>,
+    id: &str,
+    n: &Node,
+    m: &'t Module,
+    d: TsNode<'t>,
+    body: TsNode<'t>,
+) -> Linked<'t> {
     let stage = |name: &'static str| crate::clock::of(name, &m.krate, n.library);
     let mut steps = Steps::new(body, &m.src, &CHOICES, &USES);
     let read = {
@@ -699,7 +716,7 @@ pub(super) fn link_calls<'t>(
         let kept = steps.kept.clone();
         // among a macro's tokens, the value a call that is a step is made on is that step's
         let stepped = |n: TsNode| {
-            n.parent().filter(|p| p.kind() == "token_tree").is_some_and(|p| b.steps_within(p).iter().any(|r| r.contains(&n.start_byte())))
+            parent(n).filter(|p| p.kind() == "token_tree").is_some_and(|p| b.steps_within(p).iter().any(|r| r.contains(&n.start_byte())))
         };
         let held = |n: TsNode<'t>| match n.kind() {
             _ if stepped(n) => vec![],
@@ -1098,7 +1115,7 @@ impl<'a, 't> Body<'a, 't> {
             }
         }
         for c in walk(body, &["closure_expression"]) {
-            let Some(call) = c.parent().filter(|a| a.kind() == "arguments").and_then(|a| a.parent()) else { continue };
+            let Some(call) = parent(c).filter(|a| a.kind() == "arguments").and_then(|a| parent(a)) else { continue };
             // a name holds one value: where the elements are parts of two (`a.iter().chain(&b)`), the closure's names hold
             // a value the body binds out of sight
             let &[held] = each_of(call, src).as_slice() else { continue };
@@ -1293,7 +1310,7 @@ impl<'a, 't> Body<'a, 't> {
                                 || knowledge::RUST_JOINS_ELEMENTS.contains(&m)
                         })
                 }),
-                "field_expression" if v.parent().map_or(false, |p| p.kind() == "call_expression") => v.child_by_field_name("value"),
+                "field_expression" if parent(v).map_or(false, |p| p.kind() == "call_expression") => v.child_by_field_name("value"),
                 _ => return Some(v),
             };
         }
@@ -1812,7 +1829,7 @@ impl<'a, 't> Body<'a, 't> {
     /// they put a value (`println!("{}", Plain.name())`).
     fn unit(&self, steps: &mut Steps<'t, '_>, c: TsNode<'t>) {
         let is = |p: TsNode, field: &str| p.child_by_field_name(field).map(|v| v.id()) == Some(c.id());
-        let value = c.parent().map_or(false, |p| match p.kind() {
+        let value = parent(c).map_or(false, |p| match p.kind() {
             "arguments" | "return_expression" | "array_expression" | "tuple_expression" | "reference_expression" => true,
             "let_declaration" | "field_initializer" | "match_arm" | "field_expression" => is(p, "value"),
             "assignment_expression" => is(p, "right"),
@@ -1934,7 +1951,7 @@ impl<'a, 't> Body<'a, 't> {
             let on = value
                 .parent()
                 .filter(|f| f.kind() == "field_expression" && f.child_by_field_name("value").map(|v| v.id()) == Some(value.id()));
-            match on.and_then(|f| f.parent()).filter(|p| p.kind() == "call_expression") {
+            match on.and_then(|f| parent(f)).filter(|p| p.kind() == "call_expression") {
                 Some(call) => end = call,
                 None => break,
             }
@@ -2194,7 +2211,7 @@ impl<'a, 't> Body<'a, 't> {
         let src = self.src;
         let made = library_chain(value, self.m, src, &self.made_by, &|v| self.declared(v));
         // the outer call of a chain stands for the chain: `client.get(url).send()`
-        if made.is_some() && c.parent().map_or(false, |p| p.kind() == "field_expression") {
+        if made.is_some() && parent(c).map_or(false, |p| p.kind() == "field_expression") {
             return vec![];
         }
         let subtree = || {
@@ -2542,8 +2559,7 @@ impl<'a, 't> Body<'a, 't> {
 fn else_if_depth(n: TsNode) -> u32 {
     let mut d = 0;
     let mut cur = n;
-    while let Some(up) = cur.parent().filter(|p| p.kind() == "else_clause").and_then(|e| e.parent()).filter(|p| p.kind() == "if_expression")
-    {
+    while let Some(up) = parent(cur).filter(|p| p.kind() == "else_clause").and_then(|e| parent(e)).filter(|p| p.kind() == "if_expression") {
         d += 1;
         cur = up;
     }
@@ -2586,9 +2602,9 @@ const CHOICES: ChoiceSyntax = ChoiceSyntax {
     },
     continues: |n| {
         if n.kind() == "match_arm" {
-            return n.parent();
+            return parent(n);
         }
-        let up = n.parent().filter(|p| p.kind() == "else_clause")?.parent()?;
+        let up = parent(n).filter(|p| p.kind() == "else_clause")?.parent()?;
         (n.kind() == "if_expression" && up.kind() == "if_expression").then_some(up)
     },
     part: |c, child, src| {
@@ -2684,7 +2700,7 @@ const USES: UseSyntax = UseSyntax {
         "unary_expression" => n.child(0).is_some_and(|o| o.kind() != "*"),
         "tuple_expression" | "array_expression" | "type_cast_expression" => true,
         "macro_invocation" => listed_of_names(n, src),
-        "token_tree" => n.parent().is_some_and(|m| listed_of_names(m, src)),
+        "token_tree" => parent(n).is_some_and(|m| listed_of_names(m, src)),
         _ => false,
     },
     wrappers: WRAPPERS,
@@ -2713,7 +2729,7 @@ const USES: UseSyntax = UseSyntax {
     reads: &["self", "string_literal", "raw_string_literal"],
     // a part of a path (`Error::Empty`), a macro's name, and among a macro's tokens a field after a `.`
     label: |n, _| {
-        let Some(p) = n.parent() else { return false };
+        let Some(p) = parent(n) else { return false };
         match p.kind() {
             "scoped_identifier" | "scoped_type_identifier" => true,
             "macro_invocation" => p.child_by_field_name("macro").is_some_and(|m| m.id() == n.id()),
@@ -2740,7 +2756,7 @@ const USES: UseSyntax = UseSyntax {
         n.kind() == "arguments"
             && n.named_child_count() == 1
             && n.named_child(0).map(|c| c.id()) == Some(child.id())
-            && n.parent()
+            && parent(n)
                 .and_then(|c| c.child_by_field_name("function"))
                 .is_some_and(|f| matches!(text(f, src).rsplit("::").next(), Some("Err")))
     },

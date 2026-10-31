@@ -375,8 +375,10 @@ fn library_calls(
         let _reach = crate::clock::of("reach", &m.krate, n.library);
         let Some(d) = def_node(m, n) else { continue };
         let Some(body) = d.child_by_field_name("body") else { continue };
-        let b = Body::new(modules, store, crate_ids, &eval, &returned, m, n, d, body);
-        out.extend(walk(body, &["call_expression"]).into_iter().filter_map(|c| b.library_target(c)));
+        crate::tree::indexed(d, || {
+            let b = Body::new(modules, store, crate_ids, &eval, &returned, m, n, d, body);
+            out.extend(walk(body, &["call_expression"]).into_iter().filter_map(|c| b.library_target(c)));
+        });
     }
     out
 }
