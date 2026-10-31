@@ -368,7 +368,14 @@ conjunction, and two alternatives in either order one formula. Nor does how the 
 built) is not written, and the callers the arrow of a step depends on are those of the minimal
 conjunctions. Under a step of a route a condition holds where what ran before the step meets it,
 and a route is its steps in call order (composition): what ran before a step is the calls that lead
-there and, in each of their bodies, the steps before the one that leads there, with all they run. A
+there and, in each of their bodies, the steps before the one that leads there, with all they run.
+Before is call order in a body, met with its choices and loops: a call ran before another when it
+stands before it and no choice holds the two in different arms (the arms each call's site names,
+`Site::arms`, so a choice inside an arm stands in that arm), and in a loop every call of the loop ran
+before every call of it, whichever stands first, since a later round runs after the round before.
+What ran is all that call may run, its overrides too. The engine's read-back of a function's arrow
+(`flow::orders`) and the page's plan read this one order, and say the same places under each
+occurrence of a route that starts at a function. A
 caller that handed the rest hands it down the calls into the touch's function, so it holds only on
 them; a caller that set up the object a method on the calls runs on (its calls reach a constructor
 of that method's class) holds wherever it ran before, also in a step beside the calls (`main`
@@ -383,7 +390,10 @@ other. The graph's JSON writes each conjunction `a&b`, its conditions in order, 
 `users_of:e`, and the alternatives in order; a conjunction of one entry's users alone is written in
 `users_of`. It reads them back once.
 **Where.** `model.rs` (`Atom`, `Both`, `absorb`, `Touch::by`, `Touch::in_route`), `paths.rs` (`Whole`,
-`Callers::of`, `place_calls`), `plan.js` (`inRoute`, `before`); the pairs `handing` and `setup`.
+`Callers::of`, `place_calls`), `flow.rs` (`holds`, what ran before a call: `Ix::prior`, the memo's `Key`;
+`along`), `plan.js` (`inRoute`, `before`, `ranBefore`); the pairs `handing` and `setup`, the programs
+`plans/setup-in-a-loop` and `plans/setup-in-an-arm`, and `engine/tests/ran_before.rs`, which holds the
+engine's reading and the page's to one answer.
 
 ### Yoneda: what changed
 **What.** An object is determined up to isomorphism by the arrows into it, `Hom(−, A)`, and

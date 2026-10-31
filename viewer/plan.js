@@ -353,7 +353,8 @@ function reach(id, on, root = null, chain = null, alts = null, before = null) {
 // instance its class's constructor built, before the route or in it, so a value the constructor
 // holds (`self.path`) is whole wherever a method of its class runs. A route is its steps in call
 // order: under a step, what ran before it is the calls that lead there and, in each of their
-// bodies, the steps before the one that leads there, with all they run (`before`). A caller that
+// bodies, the steps that ran before the one that leads there, with all they run (`before`,
+// `ranBefore`: not one in another arm of a choice, and in a loop any step of it). A caller that
 // set up the object a method on the calls runs on (its calls reach a constructor of the method's
 // class) has done so by then wherever it ran before; a caller that hands the rest hands it down
 // the calls, so only on them
@@ -616,6 +617,34 @@ const ranAfter = (ran, s) => {
   const more = [...reach(to, s.on || null, null, null, s.named ? insteadOf(s) : null).nodes].filter(f => CONDITIONS.has(f) && !ran.has(f));
   return more.length ? new Set([...ran, ...more]) : ran;
 };
+// what ran before each step of body `b` of `n`, inside the body (mathematics.md, "Who makes a path whole"): each step that ran
+// earlier in the same run of it, with all it runs. A step before it in the body runs before it unless a choice holds the two in
+// different arms (its arms are its call's, `Site::arms`); in a loop that holds both, any step of the loop has run before it,
+// whichever stands first, since a later round runs after an earlier one. The same as `flow.rs`'s `Ix::prior`
+const ranLocal = new WeakMap();
+const ranInside = (n, b) => {
+  if (ranLocal.has(b)) return ranLocal.get(b);
+  const steps = b.items.flatMap((it, i) => (it.members ? it.members.map(m => ({s: m, it, i})) : [{s: it, it: null, i}]));
+  const site = x => (x.s.site != null ? siteIn(n, x.s.site) : null);
+  // the order of the calls is the body's, as its sites list them; a body that lists none runs its items in order
+  const at = x => x.s.site ?? x.i;
+  const armsOf = x => site(x)?.arms ?? (x.it ? [[x.it.choice, x.s.branch]] : []);
+  const apart = (x, y) => armsOf(x).some(([c, a]) => armsOf(y).some(([d, e]) => c === d && a !== e));
+  const looped = (x, y) => { const [l, m] = [site(x)?.line, site(y)?.line]; return l != null && m != null && (n?.loop_lines || []).some(([a, z]) => a <= Math.min(l, m) && Math.max(l, m) <= z); };
+  const runs = steps.map(x => ranAfter(NONE, x.s)), out = new Map();
+  for (const x of steps) {
+    const ran = new Set();
+    steps.forEach((y, j) => { if (runs[j].size && ((at(y) < at(x) && !apart(y, x)) || looped(y, x))) for (const f of runs[j]) ran.add(f); });
+    out.set(x.s, ran);
+  }
+  ranLocal.set(b, out);
+  return out;
+};
+// what ran before step `s` of body `b`: what ran before the body, and what ran before `s` inside it
+const ranBefore = (n, b, before, s) => {
+  const more = [...(ranInside(n, b).get(s) || [])].filter(f => !before.has(f));
+  return more.length ? new Set([...before, ...more]) : before;
+};
 function routeTree() {
   const closedRoutes = ids => ids.map(id => ({id, open: false, kids: [], hue: null}));
   if (V.route && !has(byId.get(V.route))) return [];
@@ -685,21 +714,16 @@ function routeTree() {
       if (FINE && foldable && parse.hidden.has(s.site)) k.parse = true;
       return k;
     };
-    // what ran before each step: what ran before this one, and the steps before it in its body; in a choice, those before it
-    // in its arm, and after the choice what any arm ran
-    let ran = before;
+    // what ran before each step: what ran before this one, and what ran before it in its body (`ranBefore`)
     for (const it of body.items) {
-      if (!it.members) { const k = call(it, hue, ran); if (k) node.kids.push(k); ran = ranAfter(ran, it); continue; }
+      if (!it.members) { const k = call(it, hue, ranBefore(n, body, before, it)); if (k) node.kids.push(k); continue; }
       // the arm of the choice a member stands in, as its call says (`arms`): a choice nested in an arm is drawn in it
       const armIn = m => (m.site != null && (siteIn(n, m.site)?.arms || []).find(([c]) => c === it.choice)?.[1]) ?? m.branch;
-      const inArm = new Map();
       const kids = it.members.map(m => {
-        const b = inArm.get(m.branch) ?? ran, k = call(m, m.branch % 8 + 1, b);
-        inArm.set(m.branch, ranAfter(b, m));
+        const k = call(m, m.branch % 8 + 1, ranBefore(n, body, before, m));
         if (k) k.branch = armIn(m);
         return k;
       }).filter(Boolean);
-      ran = it.members.reduce(ranAfter, ran);
       // what decides each branch, in the branch's colour; a choice of one branch runs it only when that holds
       const branches = [...new Set(it.members.map(m => m.branch))].sort((a, b) => a - b);
       const when = branches.map(b => [b % 8 + 1, (it.when || [])[b] || ""]);
