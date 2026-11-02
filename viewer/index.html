@@ -931,6 +931,8 @@ async function renderPlaat(mine) {
         if (!q) continue;
         for (const [m, ms, from] of [[P.D, P.Ds, q.D], [P.C, P.Cs, q.C]]) from.forEach((r, k) => { m.set(k, m.has(k) ? m.get(k) && r : r); if (!ms.has(k)) ms.set(k, new Set()); ms.get(k).add(s); });
         if (q.backTo) P.backTo = q.backTo;
+        // a call is in each reading that draws it
+        if (q.calls) { P.calls ||= new Set(); P.Ks ||= new Map(); for (const b of q.calls) { P.calls.add(b); if (!P.Ks.has(b)) P.Ks.set(b, new Set()); P.Ks.get(b).add(s); } }
         joinGoes(P.goes, q.goes);
       }
       pills.set(id, P);
@@ -959,9 +961,9 @@ async function renderPlaat(mine) {
       for (const f of [A.fine, B.fine]) for (const [k, w] of f.ways) ways.set(k, new Set([...(ways.get(k) || []), ...w]));
       fine = {places: fp, pills: new Map([...A.fine.pills, ...B.fine.pills]), ways};
     }
-    return {places, pills, frames, restArrows: [...rest.values()], roles, home, fine, oracle};
+    return {places, pills, frames, restArrows: [...rest.values()], roles, home, fine, oracle, calling: A.calling || B.calling};
   };
-  const {places, pills, frames, restArrows, roles, home, fine, oracle} = DIFF ? unite() : plan();
+  const {places, pills, frames, restArrows, roles, home, fine, oracle, calling: planCalls} = DIFF ? unite() : plan();
   // Storage quotients are computed on the visible fiber. A singleton keeps its concrete
   // expression; an opened quotient retains a frame around the same members.
   const storage = new Map(), worldFrames = new Map(), worldParent = new Map();
@@ -1331,13 +1333,15 @@ async function renderPlaat(mine) {
     const info = {label: `${ts.size} ${ts.size === 1 ? "type" : "types"}`, title: [...ts].map(typeLabel).sort().join(", "), sides};
     if (r === "~in") addEdge(rest, at, info); else addEdge(at, rest, info);
   }
-  // units whose code calls one another: a dotted line, from the caller, between the smallest boxes
-  // drawn for the packages the two lie in, a closed package or an opened one's frame. The calls are a
-  // channel of their own, drawn whatever data also joins the two: a quotient keeps the image of a
-  // relation, and "calls while no data joins them" is no relation, so opening a package would bring
-  // back a line its closed box did not draw. Opening a package refines the line, to what inside it is
-  // called; a box draws none to what it holds. In a union, a line is in each reading that holds both
-  // and makes the call
+  // code that calls other code: a dotted line, from the caller. The calls are a channel of their own,
+  // drawn whatever data also joins the two: a quotient keeps the image of a relation, and "calls while
+  // no data joins them" is no relation, so opening a package would bring back a line its closed box did
+  // not draw. In the overview they are lines of the plan, the image of the calls between functions
+  // (`overviewBase`), in each reading that draws them
+  if (planCalls) for (const P of pills.values()) for (const b of P.calls || []) addEdge(P.id, b, {uses: true, sides: DIFF ? new Set(P.Ks?.get(b) || []) : undefined});
+  // in a focus, between the smallest boxes drawn for the packages the two lie in, a closed package or an
+  // opened one's frame; a box draws none to what it holds. In a union, a line is in each reading that
+  // holds both and makes the call
   const unitOf = B => (B.steps ? B.steps[0] : B.step || "").slice(5);
   const unitBoxes = [...pills.values(), ...frames.values()].filter(B => (B.steps ? B.steps[0] : B.step || "").startsWith("unit:") && !isRest(unitOf(B)));
   const unitAt = id => unitBoxes.filter(B => inUnit(id, unitOf(B))).reduce((a, B) => (!a || unitOf(B).length > unitOf(a).length ? B : a), null);
@@ -1346,7 +1350,7 @@ async function renderPlaat(mine) {
   const pillOf = new Map([...pills.values()].filter(P => !P.own).flatMap(P => P.steps.map(s => [s, P])));
   const boxAt = id => { const U = unitAt(id), P = U && pillOf.get(id); return P && holds(U, P) ? P : U; };
   const calling = new Map();  // `A>B` -> the readings in which code of A calls code of B
-  for (const e of D.edges) if (e.kind === "calls" || e.kind === "instantiates") {
+  if (!planCalls) for (const e of D.edges) if (e.kind === "calls" || e.kind === "instantiates") {
     const A = boxAt(e.src), B = A && boxAt(e.dst);
     if (!A || !B || A === B || holds(A, B) || holds(B, A)) continue;
     const k = A.id + ">" + B.id;

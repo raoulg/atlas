@@ -124,8 +124,14 @@ fn built(program: &Path) -> BTreeMap<String, (BTreeSet<String>, Vec<String>)> {
 /// What the viewer's model builds of a program's data, its plan cut at about `budget` steps as a large program's is cut
 /// (`ATLAS_FINE_BUDGET`), or at its own budget.
 fn modelled(program: &Path, data: &str, budget: Option<usize>) -> BTreeMap<String, (BTreeSet<String>, Vec<String>)> {
+    asked(program, data, budget, &[])
+}
+
+/// What the viewer's model says of a program's data, asked as `plans.mjs` is asked: of its routes, or with `--overview`, of
+/// its overview.
+fn asked(program: &Path, data: &str, budget: Option<usize>, args: &[&str]) -> BTreeMap<String, (BTreeSet<String>, Vec<String>)> {
     let name = program.to_string_lossy().replace(['/', '\\', ':'], "_");
-    let file = std::env::temp_dir().join(format!("atlas-plans-{}-{name}-{budget:?}.json", std::process::id()));
+    let file = std::env::temp_dir().join(format!("atlas-plans-{}-{name}-{budget:?}-{}.json", std::process::id(), args.join("")));
     std::fs::write(&file, data).expect("writes the data");
     let here = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let mut node = Command::new("node");
@@ -136,6 +142,7 @@ fn modelled(program: &Path, data: &str, budget: Option<usize>) -> BTreeMap<Strin
         .arg(here.join("tests/plans.mjs"))
         .arg(here.join("../viewer/plan.js"))
         .arg(&file)
+        .args(args)
         .output()
         .expect("node runs the viewer's model: the test needs node on the PATH");
     let _ = std::fs::remove_file(&file);
@@ -308,6 +315,37 @@ fn every_picture_of_a_cut_plan_is_its_image() {
     });
     let fails = fails.into_inner().unwrap();
     assert!(fails.is_empty(), "{} faults of the cut plans:\n{}", fails.len(), fails.join("\n"));
+}
+
+/// The overview is the image of one fine plan of generators, as a route's pictures are of theirs (mathematics.md, "One fine
+/// plan, every picture its image"; #69): for every set of open packages and parts of every program, each line of the picture
+/// counts the fine lines it stands for, a type internal to a closed package draws none, a call goes between the blocks of its
+/// ends, opening one more box refines the picture (the oracle), and the picture is a function of the set of open boxes. The
+/// faults known of a program are known here too.
+#[test]
+fn every_package_view_is_the_image_of_its_plan() {
+    let (tests, all) = all_programs();
+    let (next, fails) = (AtomicUsize::new(0), Mutex::new(vec![]));
+    let workers = std::thread::available_parallelism().map_or(4, |n| n.get());
+    std::thread::scope(|s| {
+        for _ in 0..workers {
+            s.spawn(|| {
+                while let Some(program) = all.get(next.fetch_add(1, Ordering::Relaxed)) {
+                    let name = program.strip_prefix(&tests).unwrap().display().to_string();
+                    let file = program.with_extension("plan");
+                    let plan = if file.is_file() { read_plan(&file) } else { Plan::default() };
+                    let marks: Vec<&Known> = plan.faults.iter().filter(|k| k.fault).collect();
+                    for (_, (_, faults)) in asked(program, &data(program), None, &["--overview"]) {
+                        let (mut f, mut known) = (vec![], vec![]);
+                        faults_of(&marks, &faults, &mut f, &mut known);
+                        fails.lock().unwrap().extend(f.into_iter().map(|x| format!("{name}: {x}")));
+                    }
+                }
+            });
+        }
+    });
+    let fails = fails.into_inner().unwrap();
+    assert!(fails.is_empty(), "{} faults of the overviews:\n{}", fails.len(), fails.join("\n"));
 }
 
 /// How many levels the route of `a_step_beyond_the_cut_is_made_without_unfolding_its_body` calls down, each twice.
