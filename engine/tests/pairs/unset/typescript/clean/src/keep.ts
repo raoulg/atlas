@@ -1,16 +1,29 @@
-// A report and a log, each kept in the file the environment names: the program asks for each and
-// stops where it is not set.
+// A report and a log, each kept in the file an environment variable names: `keep` asks for the
+// variable its caller names and stops where it is not set, and `showReport` reads the report back
+// from the file its own lookup names.
 
-import { writeFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
+
+function setting(name: string): string {
+  const file = process.env[name];
+  if (file === undefined) throw new Error(`${name} names no file`);
+  return file;
+}
+
+function keep(name: string, text: string): void {
+  writeFileSync(setting(name), text);
+}
 
 export function saveReport(text: string): void {
-  const report = process.env.REPORT;
-  if (report === undefined) throw new Error("REPORT names the report");
-  writeFileSync(report, text);
+  keep("REPORT", text);
 }
 
 export function saveLog(text: string): void {
-  const log = process.env.LOG;
-  if (log === undefined) throw new Error("LOG names the log");
-  writeFileSync(log, text);
+  keep("LOG", text);
+}
+
+export function showReport(): string {
+  const report = process.env.REPORT;
+  if (report === undefined) throw new Error("REPORT names the report");
+  return readFileSync(report, "utf8");
 }

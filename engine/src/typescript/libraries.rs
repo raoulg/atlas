@@ -24,7 +24,7 @@ use crate::builder::GraphBuilder;
 use crate::effects;
 use crate::environment::Environment;
 use crate::knowledge::{self, Registry};
-use crate::model::{Node, NodeKind};
+use crate::model::{Dependency, Node, NodeKind};
 use crate::repo::Repo;
 use crate::tree::{span, text, walk};
 use path_clean::clean;
@@ -36,6 +36,8 @@ const DEPTH: u32 = 12;
 struct Package {
     /// Its name: `filekit`, `@scope/name`.
     name: String,
+    /// The id of its root, which its modules' ids begin with: `filekit`, `scope.name`.
+    root: String,
     dir: PathBuf,
     manifest: Value,
     exports: Option<Exports>,
@@ -96,7 +98,7 @@ impl Package {
             by_id.insert(id.clone(), p.clone());
             files.insert(p, id);
         }
-        Some(Package { name, dir: package_dir.to_path_buf(), manifest, exports, files, by_id })
+        Some(Package { name, root, dir: package_dir.to_path_buf(), manifest, exports, files, by_id })
     }
 
     /// The file a specifier's path below the package names (`""` for the package itself): what
@@ -327,6 +329,8 @@ impl Libraries {
         }
         let mut m = self.parse(file)?;
         let pkg = self.holding(file)?;
+        let version = pkg.manifest["version"].as_str().unwrap_or_default().to_string();
+        store.libraries.insert(pkg.root.clone(), Dependency { dir: crate::tree::path_str(&pkg.dir), version });
         let local: Vec<(String, String)> = m
             .bindings
             .iter()

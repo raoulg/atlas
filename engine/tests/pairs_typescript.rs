@@ -1712,7 +1712,7 @@ fn choices_an_early_return_and_the_left_of_a_logical_operator() {
 /// that builds the error it throws (#138). What one gives without a name goes into the call around it. `const db = new Database(this.path)`
 /// is a step that gives `db` (`readback`); `text.split("\n").filter(..).map(parseLine).filter(..)`
 /// in the pipeline's `parse`, returned unnamed, is none, and neither is `x(month.date)`, a call of
-/// the scale d3 gave `trend`.
+/// the scale d3 gave `trend`, nor `series.at(-1)`, a lookup, which is the projection a subscript is (#346).
 #[test]
 fn composition_an_operation_is_a_step_where_its_result_is_named() {
     let readback = common::pair("readback/typescript");
@@ -1725,13 +1725,13 @@ fn composition_an_operation_is_a_step_where_its_result_is_named() {
         analyze(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/pairs/pipeline/typescript"), &Options::default()).expect("reads");
     assert!(node(&pipeline, "series.parse").sites.iter().all(|s| !s.to.is_empty()), "{:#?}", node(&pipeline, "series.parse").sites);
     let trend: Vec<&str> = node(&pipeline, "plot.trend").sites.iter().filter(|s| s.to.is_empty()).map(|s| s.op.as_str()).collect();
-    assert_eq!(trend, ["at", "Error()", "range", "range", "line", "map", "map"], "each named, by its operation");
+    assert_eq!(trend, ["Error()", "range", "range", "line", "map", "map"], "each named, by its operation");
 }
 
 /// A call is handed the values the names in its arguments hold (#128), also through a name the body
 /// binds to a value without a step (#103): a projection or an element bound first, a pattern that
 /// takes a value apart, a value computed by operators, `this` in an argument. In the pipeline's
-/// `trend`, the scale `range` gives `x` is handed the months (`first = series[0]`) and the settings
+/// `trend`, the scale `range` gives `x` is handed the months (`first = series[0]`, `last = series.at(-1)`) and the settings
 /// (`const { width, height } = settings`); `parseLine` builds its Month of what `const [year, ..] =
 /// fields` took apart; `new Database(this.path)` is handed the ledger it runs on (`readback`), and so
 /// is the step a chain on `readFileSync(this.outages, ..)` ends in, since a library's call that is no
@@ -1748,7 +1748,7 @@ fn composition_a_call_is_handed_what_its_names_hold() {
         names.sort();
         names
     };
-    assert_eq!(handed("plot.trend", "range"), ["last", "series", "settings"], "`first.date`, `width - MARGIN.right` and what `at` gave");
+    assert_eq!(handed("plot.trend", "range"), ["series", "settings"], "`first.date`, `last.date` and `width - MARGIN.right`");
     assert_eq!(handed("series.parseLine", ".Month"), ["fields"]);
     let readback = common::pair("readback/typescript");
     let keep = node(&readback.clean, "cli.Ledger.keep");
@@ -2033,6 +2033,19 @@ fn places_a_parent_drops_the_last_part_of_a_path() {
     common::a_parent_drops_the_last_part_of_a_path("typescript", "shelf.summarise", "shelf.log");
 }
 
+/// The unset pair: `process.env[name]` and `process.env[name] ?? ""` of the name a caller hands are the variable that
+/// caller names, as `process.env.REPORT` is (#348).
+#[test]
+fn places_a_variable_a_caller_names_is_that_variable() {
+    common::a_variable_a_caller_names_is_that_variable(
+        "typescript",
+        "notes.keep.keep",
+        "notes.keep.saveReport",
+        "notes.keep.saveLog",
+        "notes.keep.showReport",
+    );
+}
+
 // ---------- sockets: a socket of `node:net` is a place ----------
 
 /// The sockets pair (#323), the greeter and client Python and Rust write, on Node's `net`: a call leaves something
@@ -2120,4 +2133,24 @@ fn a_name_changed_in_place_holds_a_value_of_its_own() {
 #[test]
 fn a_name_a_function_changes_holds_a_value_of_its_own() {
     common::a_name_a_function_changes_holds_a_value_of_its_own("typescript", "add", "push");
+}
+
+/// The locals pair: an array pushed onto in one arm is the choice's value, which the step after the choice takes, where
+/// the array the choice gives, written out in each arm, is the body's own (#366), as in Python and Rust.
+#[test]
+fn a_name_changed_in_one_arm_is_the_choices_value() {
+    common::a_name_changed_in_one_arm_is_the_choices_value("typescript");
+}
+
+/// The lookups pair: `levels.at(0)` is the projection `levels[0]` is and a `Map`'s `levels.get(name)` the one a record's
+/// `levels[name]` is, no step, also of an array changed in place first (#346, #355), and a `push` to the row `rows.at(0)!`
+/// picks is the step a `push` to `rows[0]` is, as in Python and Rust. That step is a call not followed that gives nothing,
+/// in both: the row of a `Level[][]` is not read as an array (#374).
+#[test]
+fn a_lookup_is_the_projection_its_subscript_is() {
+    common::a_lookup_is_the_projection_its_subscript_is(
+        "typescript",
+        &[("indexed", "lookedUp"), ("keyed", "got"), ("pushed", "pushedLookedUp"), ("added", "addedLookedUp")],
+        &[("NAMED", "BY_NAME")],
+    );
 }

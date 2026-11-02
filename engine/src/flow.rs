@@ -17,15 +17,19 @@ use serde::Serialize;
 use crate::model::{Both, Db, Dir, Edge, EdgeKind, Graph, Held, Leaves, Node, NodeKind, Site, Touch, World};
 
 /// Wire the steps of every body: a call written inside another call hands it its result, under
-/// the name the body gives it or, without one, under the step's own (`#n`, unique in the graph);
+/// the name the body gives it or, without one, under the step's own (`#n`, counted in its body);
 /// a library's operation that only turns a value of one type into a value of the same type is an
 /// identity, and the value it names is the one the step before it makes.
+///
+/// The name a step gives its result is a fact of its body alone, as every fact of the body's own
+/// arrow is: the bodies read beside it, and the order they are read in, name none of its values.
+/// The name is unique within its body, and the graph never relates two bodies' values by it: a
+/// value no name holds goes only to the step written around the one that makes it.
 pub fn wire(nodes: &mut IndexMap<String, Node>, edges: &[Edge]) {
     let gives_class = classes_given(nodes, edges);
-    let mut next = 0;
     for id in nodes.keys().cloned().collect::<Vec<_>>() {
         let mut sites = std::mem::take(&mut nodes[&id].sites);
-        nest(&mut sites, &gives_class, &mut next);
+        nest(&mut sites, &gives_class);
         drop_identities(&mut sites);
         nodes[&id].sites = sites;
     }
@@ -55,8 +59,10 @@ fn written(s: &Site) -> bool {
 }
 
 /// Each step written inside another hands it its result; the outer step is no longer handed what
-/// the inner one is.
-fn nest(sites: &mut [Site], gives_class: &HashMap<String, String>, next: &mut usize) {
+/// the inner one is. A result without a name is named by its step: `#n` for the `n`th step of the
+/// body written inside another.
+fn nest(sites: &mut [Site], gives_class: &HashMap<String, String>) {
+    let mut next = 0;
     // the call each step is written in: the smallest other step around it
     let around: Vec<Option<usize>> = (0..sites.len())
         .map(|i| {
@@ -69,7 +75,7 @@ fn nest(sites: &mut [Site], gives_class: &HashMap<String, String>, next: &mut us
         let Some(outer) = around[i] else { continue };
         // the result without a name is named by its step
         let name = format!("#{next}");
-        *next += 1;
+        next += 1;
         let s = &mut sites[i];
         if !s.gives.iter().any(|g| !g.name.is_empty()) {
             if s.gives.is_empty() {
@@ -863,20 +869,40 @@ fn one_of(runs: &[Done]) -> Vec<(u32, Order)> {
     out.into_iter().map(|(p, (o, always))| (p, Order { always_writes: always == all, ..o })).collect()
 }
 
-/// What `id` does at places in each context its arrow stands in, together: with no caller above it that makes a path
-/// whole, and under each such caller a touch it reaches names (`Touch::by`). In one context every touch is at one place
-/// (`orders`); an arrow stands in all of them, so it reads back, or changes, what it does in any one: the places where
-/// what it reads is only what was written, and those where it writes on what it found. Without `done`, its own body
-/// alone.
-fn in_every_context(ix: &Ix, id: &str, on: &str, mut done: Option<&mut Memo>) -> Orders {
+/// The contexts each body stands in, by the body (`Key::body`): the keys `orders` worked it out under in `done`, each with
+/// what it does there. Every function starts a chain (`arrows_in`), so a body's contexts are the chain that starts at it,
+/// with nothing above it and nothing before it, and each chain of calls that leads to it from another function, with
+/// the callers on it and what ran before it there (`Key::of`, `Ix::prior`): the contexts it can be called in, as the
+/// route reads each. A function it calls itself runs below it, where its body calls it, and is in none of them above it.
+fn contexts(done: &Memo) -> FxHashMap<(u32, u32), Vec<(&Key, &Done)>> {
+    let mut out: FxHashMap<(u32, u32), Vec<(&Key, &Done)>> = FxHashMap::default();
+    for (k, d) in &done.done {
+        out.entry(k.body).or_default().push((k, d));
+    }
+    out
+}
+
+/// What `id` does at places in each context its arrow stands in (`contexts`), together. In one context every touch is at
+/// one place (`orders`); an arrow stands in all of them, so it reads back, or changes, what it does in any one: the
+/// places where what it reads is only what was written, and those where it writes on what it found. With `own`, its own
+/// body alone in each, its calls left out.
+fn in_every_context(ix: &Ix, id: &str, on: &str, contexts: &FxHashMap<(u32, u32), Vec<(&Key, &Done)>>, own: bool) -> Orders {
     let (mut reads_back, mut updates): (BTreeSet<u32>, BTreeSet<u32>) = Default::default();
-    for above in contexts(ix, id) {
-        let top = above.first().copied().unwrap_or(id);
-        // the callers above are on the chain, and so are the classes of those that are methods
-        let classes = above.iter().filter_map(|f| ix.nodes.get(f)).filter(|m| !m.ctor).filter_map(|m| m.cls.as_deref()).map(|c| ix.name(c));
-        let (calls, classes): (Vec<u32>, Vec<u32>) = (above.iter().map(|f| ix.name(f)).collect(), classes.collect());
-        let under = Under { calls: &calls, before: &[], classes: &classes, top: ix.name(top) };
-        for &(p, o) in orders(ix, id, on, top, &under, done.as_deref_mut()).iter() {
+    let none = ix.name("");
+    for &(k, done) in contexts.get(&(ix.name(id), ix.name(on))).into_iter().flatten() {
+        let alone;
+        let done = if own {
+            // the context as its key keeps it, which `Key::of` gives back as this key: the body alone runs the touches
+            // it runs with its calls
+            let top = if k.entry == none { id.to_string() } else { ix.named(k.entry) };
+            let under = k.under(&k.before, k.entry);
+            debug_assert!(ix.nodes.get(id).is_some_and(|n| Key::of(ix, n, on, &under) == *k), "{id}: a context is its own key");
+            alone = orders(ix, id, on, &top, &under, None);
+            &alone
+        } else {
+            done
+        };
+        for &(p, o) in done.iter() {
             if o.reads_back && !o.finds {
                 reads_back.insert(p);
             }
@@ -891,36 +917,6 @@ fn in_every_context(ix: &Ix, id: &str, on: &str, mut done: Option<&mut Memo>) ->
         out
     };
     Orders { reads_back: named(reads_back), updates: named(updates) }
-}
-
-/// The callers above `id` that may make a path it reaches whole: none, and each set a touch it reaches names in `by`.
-fn contexts<'g>(ix: &Ix<'g>, id: &str) -> Vec<Vec<&'g str>> {
-    let mut out: Vec<Vec<&'g str>> = vec![vec![]];
-    let mut seen: HashSet<&str> = HashSet::new();
-    let mut stack: Vec<&str> = vec![id];
-    while let Some(f) = stack.pop() {
-        if !seen.insert(f) {
-            continue;
-        }
-        let Some(&n) = ix.nodes.get(f) else { continue };
-        for t in &n.touches {
-            for by in &t.by {
-                let makers: Vec<&'g str> = by.members().filter_map(|m| ix.nodes.get_key_value(m).map(|(k, _)| *k)).collect();
-                if !makers.is_empty() && !out.contains(&makers) {
-                    out.push(makers);
-                }
-            }
-        }
-        stack.extend(
-            ix.out
-                .get(f)
-                .into_iter()
-                .flatten()
-                .filter(|e| matches!(e.kind, EdgeKind::Calls | EdgeKind::Instantiates))
-                .map(|e| e.dst.as_str()),
-        );
-    }
-    out
 }
 
 impl<'g> Ix<'g> {
@@ -1060,7 +1056,7 @@ enum Value<'s> {
     Unknown,
 }
 
-fn arrow_of(ix: &Ix, n: &Node, done: &mut Memo) -> Arrow {
+fn arrow_of(ix: &Ix, n: &Node, contexts: &FxHashMap<(u32, u32), Vec<(&Key, &Done)>>) -> Arrow {
     if n.kind == NodeKind::Class {
         return Arrow {
             takes: ix.built_from(&n.id),
@@ -1072,12 +1068,12 @@ fn arrow_of(ix: &Ix, n: &Node, done: &mut Memo) -> Arrow {
     // a module's own code runs where it is a program (`if __name__ == "__main__":`): what it
     // reads back of what it wrote
     if n.kind == NodeKind::Module {
-        let (at, own) = (in_every_context(ix, &n.id, "", Some(done)), in_every_context(ix, &n.id, "", None));
+        let (at, own) = (in_every_context(ix, &n.id, "", contexts, false), in_every_context(ix, &n.id, "", contexts, true));
         return Arrow { reads_back: at.reads_back, own_reads_back: own.reads_back, updates: at.updates, ..Default::default() };
     }
     let ctor = n.ctor;
     let gives = ix.targets(&n.id, EdgeKind::Returns);
-    let (at, own) = (in_every_context(ix, &n.id, "", Some(done)), in_every_context(ix, &n.id, "", None));
+    let (at, own) = (in_every_context(ix, &n.id, "", contexts, false), in_every_context(ix, &n.id, "", contexts, true));
     // a function whose signature does not say what it gives back gives back a value where its callers use one
     let returns_value = n.returns.as_ref().map_or(false, |r| !r.value.is_empty()) || (ix.unsaid(n) && ix.used(&n.id));
     Arrow {
@@ -1118,27 +1114,69 @@ pub fn arrows(g: &Graph) -> BTreeMap<String, Arrow> {
 /// body for what a call may run in place of the function it reaches (`key`). Each holds the places of the touches its
 /// own body runs there (`running`), each once. A call of a function already on the calls is not opened.
 pub fn along(g: &Graph, entry: &str) -> BTreeMap<String, BTreeSet<String>> {
-    let ix = Ix::new(g);
-    let mut out = BTreeMap::new();
-    occurrences(&ix, entry, "", entry.to_string(), entry, &Under::start(ix.name(entry)), &mut vec![], &mut out);
-    out
+    let mut a = Along::new(g, entry);
+    a.read(entry, entry, "", usize::MAX);
+    a.occurrences.into_iter().map(|(at, o)| (at, o.touches.iter().map(|t| t.place().id).collect())).collect()
+}
+
+/// One occurrence of a route as `along` reads it: the touches its own body runs there (`running`), and which reading of
+/// its body it is, numbered in the order the reader first reads it. Two occurrences with one `reading` run their bodies
+/// alike, and all those bodies run (`Key`): they differ at most in which call of a function already on the calls is not
+/// opened.
+pub struct Occurrence<'g> {
+    pub touches: Vec<&'g Touch>,
+    pub reading: usize,
+}
+
+/// The route that starts at `entry` as `along` reads it, read a part at a time: each occurrence by its name, with one
+/// numbering of readings for all of it.
+pub struct Along<'g> {
+    ix: Ix<'g>,
+    entry: String,
+    readings: FxHashMap<Key, usize>,
+    occurrences: BTreeMap<String, Occurrence<'g>>,
+}
+
+impl<'g> Along<'g> {
+    /// The route that starts at `entry`, none of it read yet.
+    pub fn new(g: &'g Graph, entry: &str) -> Self {
+        Along { ix: Ix::new(g), entry: entry.to_string(), readings: FxHashMap::default(), occurrences: BTreeMap::new() }
+    }
+
+    /// Reads the part of the route that starts at body `id` run on class `on` (none where that is not known), nothing
+    /// above it and nothing before it, down to `depth` calls below it, its occurrences named from `at`: the entry itself,
+    /// or a body the route runs that no call in a body's sites leads to (a door of a class the route starts at, what the
+    /// entry may run instead). A part read to a depth reads each occurrence above it as the whole route does.
+    pub fn read(&mut self, at: &str, id: &str, on: &str, depth: usize) {
+        let mut out = Out { depth, readings: &mut self.readings, occurrences: &mut self.occurrences };
+        let top = self.entry.as_str();
+        occurrences(&self.ix, id, on, at.to_string(), top, &Under::start(self.ix.name(top)), &mut vec![], &mut out);
+    }
+
+    /// The occurrence named `at`, where a route read so far has it.
+    pub fn occurrence(&self, at: &str) -> Option<&Occurrence<'g>> {
+        self.occurrences.get(at)
+    }
+}
+
+/// Where `occurrences` reads into: how deep, the readings of bodies by their keys, and the occurrences by their names.
+struct Out<'a, 'g> {
+    depth: usize,
+    readings: &'a mut FxHashMap<Key, usize>,
+    occurrences: &'a mut BTreeMap<String, Occurrence<'g>>,
 }
 
 /// The occurrences below the one named `at` of body `id` run on class `on` under `under` (`along`), into `out`.
 #[allow(clippy::too_many_arguments)]
-fn occurrences(
-    ix: &Ix,
-    id: &str,
-    on: &str,
-    at: String,
-    top: &str,
-    under: &Under,
-    path: &mut Vec<String>,
-    out: &mut BTreeMap<String, BTreeSet<String>>,
-) {
+fn occurrences<'g>(ix: &Ix<'g>, id: &str, on: &str, at: String, top: &str, under: &Under, path: &mut Vec<String>, out: &mut Out<'_, 'g>) {
     let Some(&n) = ix.nodes.get(id) else { return };
     let k = Key::of(ix, n, on, under);
-    out.insert(at.clone(), running(ix, n, top, &k).into_iter().map(|t| t.place().id).collect());
+    let next = out.readings.len();
+    let reading = *out.readings.entry(k.clone()).or_insert(next);
+    out.occurrences.insert(at.clone(), Occurrence { touches: running(ix, n, top, &k), reading });
+    if path.len() >= out.depth {
+        return;
+    }
     let calls = ix.calls(k.body, n, on);
     let prior = ix.prior(k.body, n, on, &calls);
     path.push(id.to_string());
@@ -1179,9 +1217,10 @@ fn arrows_in<'g>(g: &'g Graph, ix: &Ix<'g>, done: &mut Memo) -> BTreeMap<String,
         }
         done.before = std::mem::take(&mut done.done);
     }
-    let mut out: BTreeMap<String, Arrow> = g.nodes.iter().filter(kinds).map(|n| (n.id.clone(), arrow_of(ix, n, &mut *done))).collect();
+    let contexts = contexts(done);
+    let mut out: BTreeMap<String, Arrow> = g.nodes.iter().filter(kinds).map(|n| (n.id.clone(), arrow_of(ix, n, &contexts))).collect();
     for (f, c) in &on {
-        let at = in_every_context(ix, f, c, Some(&mut *done));
+        let at = in_every_context(ix, f, c, &contexts, false);
         if let Some(a) = out.get_mut(f).filter(|a| a.reads_back != at.reads_back || a.updates != at.updates) {
             a.on.insert(c.clone(), at);
         }
@@ -1941,7 +1980,7 @@ mod tests {
             site("", "ok_or_else", (10, 40), vec![at("Options", "opts", 17)], vec![Held::new("Language", "lang")]),
         ];
         let gives_class = HashMap::from([("detect".to_string(), "Language".to_string())]);
-        nest(&mut sites, &gives_class, &mut 0);
+        nest(&mut sites, &gives_class);
         assert_eq!(sites[1].hands, [Held::new("Language", "#0")], "the outer call is handed the inner one's result, not its arguments");
         drop_identities(&mut sites);
         assert_eq!(sites.len(), 1, "an identity is not drawn");
@@ -1958,7 +1997,7 @@ mod tests {
             site("g", "", (2, 6), vec![at("X", "x", 4)], vec![]),
             site("f", "", (0, 10), vec![at("X", "x", 4), at("Y", "y", 8)], vec![]),
         ];
-        nest(&mut sites, &HashMap::from([("g".to_string(), "Z".to_string())]), &mut 0);
+        nest(&mut sites, &HashMap::from([("g".to_string(), "Z".to_string())]));
         assert_eq!(sites[0].gives, [Held::new("Z", "#0")]);
         assert_eq!(sites[1].hands, [Held::new("Y", "y"), Held::new("Z", "#0")]);
     }
@@ -2108,7 +2147,7 @@ mod tests {
             site("detect", "", (10, 22), vec![at("Options", "opts", 17)], vec![Held::new("Language", "lang")]),
             site("", "unwrap", (10, 31), vec![at("Options", "opts", 17)], vec![Held::new("Language", "lang")]),
         ];
-        nest(&mut sites, &HashMap::new(), &mut 0);
+        nest(&mut sites, &HashMap::new());
         drop_identities(&mut sites);
         assert_eq!(sites.iter().map(|s| s.to.as_str()).collect::<Vec<_>>(), ["detect"]);
     }
@@ -2140,8 +2179,10 @@ mod tests {
         assert_eq!((up.to.as_str(), up.instead.as_slice()), (source, [key(cached, feed)].as_slice()));
         assert!(b.contains_key(&key(cached, feed)) && b[&key(cached, feed)].alts.is_empty(), "on a feed, nothing runs in its place");
         // what a route does at a place is what its calls may run there: on a feed, `lines` reads the store in one arm
-        // and writes it in the other, the place as `lines` names it (the store from beyond, `self.root / key`)
-        assert_eq!(arrows(&g)["news.read.lines"].updates, ["w:Disk:self.root / key", "w:Disk:{cache}/{url}"]);
+        // and writes it in the other, the place as `lines` names it (the store from beyond, `self.root / key`), the one
+        // context it is called in; `headlines` builds the feed on the store it names, and changes `{cache}/{url}`
+        assert_eq!(arrows(&g)["news.read.lines"].updates, ["w:Disk:self.root / key"]);
+        assert_eq!(arrows(&g)["news.read.headlines"].updates, ["w:Disk:{cache}/{url}"]);
         let g = crate::analyze(&at("shortcut"), &crate::Options::default()).expect("reads the pair");
         assert!(arrows(&g)["news.read.lines"].updates.is_empty(), "the shortcut's lines never reads the store");
     }
@@ -2184,7 +2225,7 @@ mod tests {
             site("make", "", (10, 22), vec![], vec![Held::new("Board", "board")]),
             site("", "copy", (40, 56), vec![at("Board", "board", 50)], vec![Held::new("Board", "board")]),
         ];
-        nest(&mut sites, &HashMap::new(), &mut 0);
+        nest(&mut sites, &HashMap::new());
         drop_identities(&mut sites);
         assert_eq!(sites.iter().map(|s| s.op.as_str()).collect::<Vec<_>>(), ["", "copy"]);
     }

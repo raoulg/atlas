@@ -1749,6 +1749,14 @@ fn places_a_parent_drops_the_last_part_of_a_path() {
     common::a_parent_drops_the_last_part_of_a_path("rust", "shelf.summarise", "shelf.log");
 }
 
+/// The unset pair: `env::var(name)` of the name a caller hands is the variable that caller names, as
+/// `env::var("REPORT")` is, and `unwrap_or(String::new())` falls back to the empty path as `unwrap_or_default()` does
+/// (#348).
+#[test]
+fn places_a_variable_a_caller_names_is_that_variable() {
+    common::a_variable_a_caller_names_is_that_variable("rust", "notes.keep", "notes.save_report", "notes.save_log", "notes.show_report");
+}
+
 /// The closures pair: a closure a `let` keeps and the body calls takes what each call hands it (#239), as a function of
 /// the module does, and as a lambda or a `def` inside a `def` does in Python.
 #[test]
@@ -1836,4 +1844,32 @@ fn a_name_changed_in_place_holds_a_value_of_its_own() {
 #[test]
 fn a_name_handed_as_mut_is_changed_in_place() {
     common::a_name_a_function_changes_holds_a_value_of_its_own("rust", "add", "push");
+}
+
+/// The locals pair: a vector pushed onto in one arm is the choice's value, which the step after the choice takes, where
+/// the vector the choice gives, written out in each arm, is the body's own (#366), as in Python and TypeScript.
+#[test]
+fn a_name_changed_in_one_arm_is_the_choices_value() {
+    common::a_name_changed_in_one_arm_is_the_choices_value("rust");
+}
+
+/// The lookups pair: `levels.first()?` and `levels.get(0)?` are the projection `&levels[0]` is and `levels.get(name)?` the
+/// one `&levels[name]` is, no step, also of a vector changed in place first and of a map a `LazyLock` keeps (#346, #355),
+/// as in Python and TypeScript; a tuple a tuple pattern takes apart binds each name as a `let` of its element would, so
+/// `let (first, second) = (levels.first()?, levels.get(1)?)` is `(&levels[0], &levels[1])` (`paired`). The twins `added`
+/// and `added_looked_up` are not one route yet: a `push` to the row `rows.first_mut()?` picks changes the rows, one to the
+/// row `&mut rows[0]` borrows is no step (known #374).
+#[test]
+fn a_lookup_is_the_projection_its_subscript_is() {
+    common::a_lookup_is_the_projection_its_subscript_is(
+        "rust",
+        &[
+            ("indexed", "looked_up"),
+            ("indexed", "got_at"),
+            ("paired", "paired_looked_up"),
+            ("keyed", "got"),
+            ("pushed", "pushed_looked_up"),
+        ],
+        &[],
+    );
 }

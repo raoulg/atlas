@@ -1,16 +1,27 @@
-//! A report and a log, each kept in the file the environment names: the program asks for each and
-//! stops where it is not set.
+//! A report and a log, each kept in the file an environment variable names: `keep` asks for the
+//! variable its caller names and stops where it is not set, and `show_report` reads the report back
+//! from the file its own lookup names.
 
 use std::env;
 use std::fs;
 use std::io;
 
+fn setting(name: &str) -> String {
+    env::var(name).expect("the variable names a file")
+}
+
+fn keep(name: &str, text: &str) -> io::Result<()> {
+    fs::write(setting(name), text)
+}
+
 pub fn save_report(text: &str) -> io::Result<()> {
-    let report = env::var("REPORT").expect("REPORT names the report");
-    fs::write(report, text)
+    keep("REPORT", text)
 }
 
 pub fn save_log(text: &str) -> io::Result<()> {
-    let log = env::var("LOG").expect("LOG names the log");
-    fs::write(log, text)
+    keep("LOG", text)
+}
+
+pub fn show_report() -> io::Result<String> {
+    fs::read_to_string(env::var("REPORT").expect("REPORT names the report"))
 }

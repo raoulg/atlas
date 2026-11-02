@@ -1,0 +1,47 @@
+# `main` runs `review`, which sets the shelf up in a step of its own, `open_shelf`, keeps its report on it and reads the
+# report back from it; only then does it set the drafts up, in `open_drafts`, and print their folder. A set-up counts
+# for what runs after it (composition is call order, #359): the drafts are set up after the report is kept and read, so
+# the write under `keep_report` and the read under `report` both touch `out/report.txt` alone. Inside `review` the read
+# is of the file as `keep_report` left it, a value made and taken inside `review` (mathematics.md, rule 4); the file
+# keeps what `review` leaves there. `review` hands the report to `main`, which prints it. The route takes nothing from
+# beyond it.
+
+route shelf.cli.main
+step main/review
+step main/review/open_shelf
+step main/review/open_shelf/Shelf()
+step main/review/Shelf.keep_report
+step main/review/Shelf.keep_report/write
+step main/review/Shelf.report
+step main/review/Shelf.report/read
+step main/review/open_drafts
+step main/review/open_drafts/Shelf()
+
+line entry > main call
+line main/review/open_shelf/Shelf() > Shelf@main/review/open_shelf/Shelf() value
+line Shelf@main/review/open_shelf/Shelf() > main/review/open_shelf value                    # the shelf built goes back
+line main/review/open_shelf > Shelf·shelf@main/review/open_shelf value
+line Shelf·shelf@main/review/open_shelf > main/review/Shelf.keep_report/write value          # `write(self.root / "report.txt", text)`
+line Shelf·shelf@main/review/open_shelf > main/review/Shelf.report/read value                # `read(self.root / "report.txt")`
+line main/review/Shelf.keep_report/write > File(out/report.txt) own
+line main/review/Shelf.keep_report/write > File(out/report.txt) in main/review value          # what the write leaves, inside `review`
+line File(out/report.txt) in main/review > main/review/Shelf.report/read value               # read back inside `review`
+line main/review/Shelf.report/read > main/review/Shelf.report back                           # the text read goes back
+line main/review/Shelf.report > main/review back
+line main/review/open_drafts/Shelf() > Shelf@main/review/open_drafts/Shelf() value
+line Shelf@main/review/open_drafts/Shelf() > main/review/open_drafts value
+line main/review/open_drafts > Shelf·drafts@main/review/open_drafts value
+line Shelf·drafts@main/review/open_drafts > main/review value                                # `print(drafts.root)`
+line main/review > Screen own
+line main/review > main back                                                                  # the report
+line main > Screen own                                                                        # `print(review())`
+
+home Shelf@main/review/open_shelf/Shelf() main/review/open_shelf
+home Shelf·shelf@main/review/open_shelf main/review
+home Shelf@main/review/open_drafts/Shelf() main/review/open_drafts
+home Shelf·drafts@main/review/open_drafts main/review
+home File(out/report.txt) in main/review main/review
+
+side entry left
+side File(out/report.txt) right
+side Screen right

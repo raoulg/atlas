@@ -36,6 +36,36 @@ fn two_parts_are_named_apart() {
     }
 }
 
+/// Two parts that depend on one version of a library read one library: one directory is one code,
+/// under the library's own name, and both parts call it. Two parts whose dependencies drift to two
+/// versions read two libraries, each named after its version, and each part calls the one it runs,
+/// which does what that version's code does: 0.1.0 writes its file whole, 0.2.0 writes beside it and
+/// renames it in. Neither side holds an id twice (`mathematics.md`, Coproducts; #372).
+#[test]
+fn two_versions_of_a_library_are_two_libraries() {
+    use std::collections::BTreeSet;
+    let (clean, shortcut) = (pair("versions/rust/clean"), pair("versions/rust/shortcut"));
+    let library = |g: &Graph| g.nodes.iter().filter(|n| n.library).map(|n| n.id.as_str().to_string()).collect::<BTreeSet<_>>();
+    let saves = |g: &Graph, main: &str| {
+        g.node(main).unwrap().sites.iter().map(|s| s.to.clone()).filter(|t| t.ends_with(".save")).collect::<Vec<_>>()
+    };
+    let renames = |g: &Graph, id: &str| g.node(id).unwrap().touches.iter().any(|t| t.op == "rename");
+    assert_eq!(library(&clean), BTreeSet::from(["notekit".to_string(), "notekit.save".to_string()]));
+    for main in ["orders.main", "billing.main"] {
+        assert_eq!(saves(&clean, main), ["notekit.save"], "{main}");
+    }
+    assert!(renames(&clean, "notekit.save"));
+    let versions = ["notekit-0_1_0", "notekit-0_1_0.save", "notekit-0_2_0", "notekit-0_2_0.save"];
+    assert_eq!(library(&shortcut), versions.iter().map(|v| v.to_string()).collect::<BTreeSet<_>>());
+    assert_eq!(saves(&shortcut, "orders.main"), ["notekit-0_1_0.save"]);
+    assert_eq!(saves(&shortcut, "billing.main"), ["notekit-0_2_0.save"]);
+    assert!(!renames(&shortcut, "notekit-0_1_0.save") && renames(&shortcut, "notekit-0_2_0.save"));
+    for g in [&clean, &shortcut] {
+        let ids: Vec<&str> = g.nodes.iter().map(|n| n.id.as_str()).collect();
+        assert_eq!(ids.len(), ids.iter().collect::<BTreeSet<_>>().len(), "{ids:?}");
+    }
+}
+
 /// Isomorphic is the same (`CLAUDE.md`): one program draws one set of places in every language.
 /// The kept pair (`kept/{python,rust,typescript}`) keeps a note in a file in the folder `where.txt`
 /// names, reads it and takes it; the clean side writes it whole beside its file and renames it in
@@ -532,10 +562,12 @@ fn a_folder_is_placed_as_the_files_in_it_are() {
 /// An empty default decides no place (`docs/reference/mathematics.md`, "Paths as terms"): the empty
 /// path names nothing, so an input that falls back to it is named as the input alone. The unset
 /// pair (`unset/{python,rust,typescript}`) keeps a report and a log in the files the environment
-/// names; the clean side asks for each variable, the shortcut falls back to the empty path
-/// (`os.environ.get("REPORT", "")`, `unwrap_or_default()`, `?? ""`). Each side draws two places,
-/// one per function, the same on both sides and in every language: the shortcut's two empty
-/// defaults are not one file.
+/// names, and reads the report back; the clean side asks for each variable, the shortcut falls back
+/// to the empty path, for the name a caller hands (`os.environ.get(name, "")`,
+/// `unwrap_or(String::new())`, `?? ""`) and for the one its lookup writes
+/// (`os.environ.get("REPORT", "")`, `unwrap_or_default()`). Each side draws two places, one per
+/// variable, the same on both sides and in every language: the shortcut's two empty defaults are
+/// not one file.
 #[test]
 fn an_empty_default_decides_no_place() {
     use std::collections::BTreeSet;

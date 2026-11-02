@@ -135,3 +135,4 @@ smallest that showed one law:
 | `door-tensor-pad` | a value a step planned by itself takes by a name its caller holds is the caller's: a cut door names the one value of its kind from beyond as its opened picture does, by its type alone (#319) |
 | `setup-in-a-loop` | what ran before a step in a loop is every call of the loop: a shelf a later call opens is the one an earlier call keeps its report on in the next round (#329) |
 | `setup-in-an-arm` | what ran before a step in an arm is what ran before its choice and before it in its arm: a set-up in an arm counts for a call in a choice inside that arm (#329) |
+| `changed-in-an-arm` | a name the body binds by its own code holds the body's value, in its frame, for every step after the binding: a change in one arm makes it anew at the choice's moment, which the step after the choice takes, and a change in a loop takes it, never the latest of its kind the loop gives; in Python, Rust and TypeScript (#366) |

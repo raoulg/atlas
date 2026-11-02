@@ -25,3 +25,7 @@ def keep(path: str) -> None:
 def draw(window: curses.window) -> int:
     window.addstr(0, 0, "press a key")
     return window.getch()
+
+
+def warn(message: str) -> None:
+    sys.stderr.write(message)

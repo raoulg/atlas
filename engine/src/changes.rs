@@ -16,7 +16,7 @@ use anyhow::{bail, Context, Result};
 use crate::cache::{Cache, Check, Written};
 use crate::diff::{self, Reading, Status};
 use crate::flow::Drawn;
-use crate::model::{EdgeKind, Graph, NodeKind, Touch, World};
+use crate::model::{EdgeKind, Graph, Node, NodeKind, Touch, World};
 use crate::places::Tmp;
 use crate::principles::Finding;
 use crate::repo::Repo;
@@ -117,6 +117,21 @@ pub struct Changes {
     /// The findings asked before that are still found, and the author has since set aside.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub findings_set_aside: Vec<Finding>,
+    /// The nodes listed above whose id says no dotted name a reader finds them by (`model::dotted`: a sum written in
+    /// place), each by its id with the name Atlas says it by (`model::said`). Every other node is listed by its dotted
+    /// name (`Changes::listed`).
+    #[serde(skip_serializing_if = "BTreeMap::is_empty")]
+    pub names: BTreeMap<String, String>,
+}
+
+impl Changes {
+    /// The name the report lists a node by: the dotted name a reader finds it by (`model::dotted`), from the root of its
+    /// part (one of `roots`) when it lies under one, the name the view draws with the modules it stands in before it
+    /// (`cli.Repo.fetch`); a node whose id says none by the name Atlas says it by (`names`).
+    pub fn listed(&self, roots: &[&str], id: &str) -> String {
+        let Some(dotted) = crate::model::dotted(id) else { return self.names.get(id).cloned().unwrap_or_else(|| id.to_string()) };
+        roots.iter().find_map(|r| dotted.strip_prefix(r).and_then(|p| p.strip_prefix('.'))).unwrap_or(dotted).to_string()
+    }
 }
 
 /// The revisions a range names, as git reads one: `A..B` is A against B, a side left out is
@@ -414,7 +429,36 @@ pub fn between(a: &str, b: Option<&str>, before: &[Graph], after: &[Graph]) -> C
     let (fa, fb): (Vec<Finding>, Vec<Finding>) =
         (before.iter().flat_map(crate::aside::check).collect(), after.iter().flat_map(crate::aside::check).collect());
     (out.findings_added, out.findings_resolved, out.findings_set_aside) = raised(&fa, &fb);
+    out.names = undotted(&out, &union, before);
     out
+}
+
+/// The nodes `c` lists whose id says no dotted name (`model::dotted`), by the name Atlas says each by in the union
+/// (`model::said`), as the page that draws the union names them: a node only A has, as A has it.
+fn undotted(c: &Changes, union: &Graph, before: &[Graph]) -> BTreeMap<String, String> {
+    let mut nodes: HashMap<&str, &Node> = HashMap::new();
+    for n in union.nodes.iter().chain(before.iter().flat_map(|g| &g.nodes)) {
+        nodes.entry(n.id.as_str()).or_insert(n);
+    }
+    let shared = crate::model::shared_names(&union.nodes);
+    fn changed(s: &StepChange) -> impl Iterator<Item = &String> {
+        std::iter::once(&s.id).chain(&s.renamed_from)
+    }
+    let e = &c.elsewhere;
+    let listed = c
+        .routes
+        .iter()
+        .flat_map(|r| {
+            let bodies = r.compositions_changed.iter().flat_map(|b| {
+                std::iter::once(&b.function).chain([&b.before, &b.after].into_iter().flat_map(|x| x.steps().into_iter().map(|s| &s.to)))
+            });
+            r.steps_added.iter().chain(&r.steps_removed).chain(r.steps_changed.iter().flat_map(changed)).chain(bodies)
+        })
+        .chain(e.added.iter().chain(&e.removed).chain(e.changed.iter().flat_map(changed)));
+    listed
+        .filter(|id| crate::model::dotted(id).is_none())
+        .map(|id| (id.clone(), crate::model::said(id, |x| nodes.get(x).copied(), &shared)))
+        .collect()
 }
 
 /// The places a graph's touches rest at, by id, with the names the picture gives them; a coarser
@@ -439,14 +483,14 @@ pub fn report(c: &Changes) -> String {
         return format!("nothing changed in the routes, their places or the findings, {span}\n");
     }
     out.push_str(&format!("{span}\n"));
-    // a node changed, by its id from its part's root, renamed or not, and what it was
+    // a node changed, by the name it is listed by (`Changes::listed`), renamed or not, and what it was
     let step = |short: &dyn Fn(&str) -> String, s: &StepChange| {
         let renamed = s.renamed_from.as_deref().map(|old| format!("renamed from {} · ", short(old))).unwrap_or_default();
         format!("{}: {renamed}was {}", short(&s.id), s.was)
     };
     for r in &c.routes {
         out.push_str(&format!("\n{} {}\n", r.status.sign(), r.route));
-        let short = |id: &str| id.strip_prefix(&format!("{}.", r.root)).unwrap_or(id).to_string();
+        let short = |id: &str| c.listed(&[r.root.as_str()], id);
         let changed: Vec<String> = r.steps_changed.iter().map(|s| step(&short, s)).collect();
         let places: Vec<String> = r.places_changed.iter().map(|p| format!("{}: was {}", p.place, p.was)).collect();
         for (status, what, xs) in [
@@ -478,7 +522,8 @@ pub fn report(c: &Changes) -> String {
     let e = &c.elsewhere;
     if !e.is_empty() {
         out.push_str(&format!("\n{} on no route\n", Status::Changed.sign()));
-        let short = |id: &str| c.roots.iter().find_map(|r| id.strip_prefix(&format!("{r}."))).unwrap_or(id).to_string();
+        let roots: Vec<&str> = c.roots.iter().map(String::as_str).collect();
+        let short = |id: &str| c.listed(&roots, id);
         let changed: Vec<String> = e.changed.iter().map(|s| step(&short, s)).collect();
         let places: Vec<String> = e.places_changed.iter().map(|p| format!("{}: was {}", p.place, p.was)).collect();
         let (places_added, places_removed): (Vec<String>, Vec<String>) =

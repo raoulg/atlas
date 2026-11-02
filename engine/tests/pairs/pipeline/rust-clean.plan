@@ -34,8 +34,6 @@ step main/Trend.save/Trend.settings
 step main/Trend.save/parent                                       # `if let Some(dir) = to.parent()`
 step main/Trend.save/into_drawing_area                            # `let area = BitMapBackend::new(..).into_drawing_area()`
 step main/Trend.save/Trend.draw
-step main/Trend.save/Trend.draw/first   # `let (Some(first), Some(last)) = (series.first(), ..)`
-step main/Trend.save/Trend.draw/last
 choice main/Trend.save/Trend.draw/?1                              # `let (Some(first), Some(last)) = .. else { return Err(Error::Empty) }`: the rest runs otherwise
 step main/Trend.save/Trend.draw/?1/fold                              # `let top = series.iter()..fold(..)`
 step main/Trend.save/Trend.draw/?1/build_cartesian_2d                # `let mut chart = ChartBuilder::on(area)..`
@@ -109,12 +107,7 @@ line DrawingArea·area@main/Trend.save/into_drawing_area > main/Trend.save/Trend
 line Trend@main/Trend.new > main/Trend.save/Trend.draw value   # the body uses the instance itself, and a step inside takes it too
 line Trend@main/Trend.new > main/Trend.save/Trend.draw/?1/build_cartesian_2d value   # `self.settings.title`
 line Month·series@main/load > main/Trend.save/Trend.draw value   # `draw_series(..)`; the body uses it itself, and a step inside takes it too
-line Month·series@main/load > main/Trend.save/Trend.draw/first value
-line Month·series@main/load > main/Trend.save/Trend.draw/last value
-line main/Trend.save/Trend.draw/first > Month·first@main/Trend.save/Trend.draw/first value
-line main/Trend.save/Trend.draw/last > Month·last@main/Trend.save/Trend.draw/last value
-line Month·first@main/Trend.save/Trend.draw/first > main/Trend.save/Trend.draw/?1/build_cartesian_2d value
-line Month·last@main/Trend.save/Trend.draw/last > main/Trend.save/Trend.draw/?1/build_cartesian_2d value
+line Month·series@main/load > main/Trend.save/Trend.draw/?1/build_cartesian_2d value   # `first.date..last.date`, parts of the series (`series.first()`, `series.last()`)
 line Month·series@main/load > main/Trend.save/Trend.draw/?1/fold value
 line main/Trend.save/Trend.draw/?1/fold > _·top@main/Trend.save/Trend.draw/?1/fold value
 line _·top@main/Trend.save/Trend.draw/?1/fold > main/Trend.save/Trend.draw/?1/build_cartesian_2d value
@@ -143,8 +136,6 @@ home Trend@main/Trend.new/Trend() main/Trend.new
 home Trend@main/Trend.new main
 home Settings@main/Trend.save/Trend.settings main/Trend.save
 home DrawingArea·area@main/Trend.save/into_drawing_area main/Trend.save
-home Month·first@main/Trend.save/Trend.draw/first main/Trend.save/Trend.draw
-home Month·last@main/Trend.save/Trend.draw/last main/Trend.save/Trend.draw
 home _·top@main/Trend.save/Trend.draw/?1/fold main/Trend.save/Trend.draw/?1
 home _·chart@main/Trend.save/Trend.draw/?1/build_cartesian_2d main/Trend.save/Trend.draw   # draw's own arrow uses it (`chart.draw_series(..)`)
 

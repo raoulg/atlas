@@ -8,7 +8,6 @@
 
 route spend.main
 step main/collect                                                      # env::args().skip(1).collect()
-step main/first   # match args.first() { Some(kind) => .. }
 choice main/?1
 step main/?1/run
 step main/?1/run/load
@@ -54,9 +53,7 @@ line entry > main call
 line entry > main/collect call                                      # the arguments the human typed
 line main/collect > _·args@main/collect value
 line _·args@main/collect > main/?1/run value   # run is handed &args[1..] and looks for --open: `args.iter().any(..)` decides
-line _·args@main/collect > main/first value
-line main/first > _·kind@main/first value
-line _·kind@main/first > main/?1/run value
+line _·args@main/collect > main value   # match args.first() { Some(kind) => .. }: the match tests a part of the args, which `kind` is
 line _·args@main/collect > main/?1/run/?1/read_csv/unwrap value   # &args[0]
 line _·args@main/collect > main/?1/run/?1/unwrap_or value
 line main > Screen own                                                 # the usage, when no command is given
@@ -164,7 +161,6 @@ line main/?1/run > Screen own
 line main/?1/run > open own
 
 home _·args@main/collect main
-home _·kind@main/first main
 home _·path@main/?1/run/load/unwrap_or_else main/?1/run/load
 home _·text@main/?1/run/load/expect main/?1/run/load
 home _·config@main/?1/run/load main/?1/run

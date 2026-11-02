@@ -69,3 +69,30 @@ home Level·both@gathered/push gathered
 
 side entry left
 side Screen right
+
+# A choice's value is what its arms make of it (#366): `chosen` binds a array of the first level and changes it in one
+# arm. The change takes the array the body made where it binds the name, which stands in the route's frame and not in
+# the arm's, and makes it anew; the arm that does not run keeps it, so what the change makes is one value at the choice's
+# moment, and the step after the choice takes that value, as it would of a array a step made.
+
+route signal.chosen
+choice chosen/?1                                     # `if loud`
+step chosen/?1/push
+step chosen/show
+
+line entry > chosen call
+line Level·first > chosen value                      # `const both: Level[] = [first]`, read where it is bound
+line Level·second > chosen value
+line Level·both@chosen/~both > chosen/?1/push value  # `both.push(second)`
+line Level·second > chosen/?1/push value
+line chosen/?1/push > Level·both@chosen/?1 value     # made anew in one arm, kept in the other
+line Level·both@chosen/?1 > chosen/show value        # `show(both)`
+line chosen/show > Screen own
+
+home Level·first chosen
+home Level·second chosen
+home Level·both@chosen/~both chosen
+home Level·both@chosen/?1 chosen
+
+side entry left
+side Screen right

@@ -161,6 +161,11 @@ const REVIEWED: &[(&str, &str, &str)] = &[
     ),
     (
         "choices",
+        "atlas-engine.rust.body.library_chain",
+        "`library_chain`, `collection` and `held_root` read an expression three ways: the library value a chain of calls starts from, the collection a value is, the name a value is a part of through the lookups; tree-sitter's kind is the syntax's own sum, and each function asks it a question of its own",
+    ),
+    (
+        "choices",
         "atlas-engine.rust.body.Body.call",
         "a call among a macro's tokens (`token_tree`) has a shape of its own: `call` dispatches on it, `call_hands` reads its arguments; one shape, two questions",
     ),

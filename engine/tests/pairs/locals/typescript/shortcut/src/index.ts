@@ -57,3 +57,12 @@ export function lent(first: Level, second: Level): void {
   add(both, second);
   show(both);
 }
+
+/** The first level, and the second beside it where it is loud: an array of the first, the second pushed in one arm. */
+export function chosen(first: Level, second: Level, loud: boolean): void {
+  const both: Level[] = [first];
+  if (loud) {
+    both.push(second);
+  }
+  show(both);
+}

@@ -62,3 +62,24 @@ home Level·second gathered
 
 side entry left
 side Screen right
+
+# The array the choice gives, written out in each arm (`const both: Level[] = loud ? [first, second] : [first]`): a choice among values the body's own code makes is
+# the body's choice, and its arms run no step, so it has no frame of its own. The name holds the array the body made by
+# that choice, in its frame, which reads the two levels where it binds the name, and the step after it takes that array
+# (#366).
+
+route signal.chosen
+step chosen/show
+
+line entry > chosen call
+line Level·first > chosen value                   # read where the body binds the array
+line Level·second > chosen value
+line Level·both@chosen/~both > chosen/show value  # `show(both)`
+line chosen/show > Screen own
+
+home Level·first chosen
+home Level·second chosen
+home Level·both@chosen/~both chosen
+
+side entry left
+side Screen right

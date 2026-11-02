@@ -576,6 +576,72 @@ pub fn a_file_handed_on_keeps_its_place_in(language: &str, module: &str) {
     }
 }
 
+/// A fact of a route's plan with the route's name written as `R`, in its moments and its occurrences, so that the facts of
+/// two routes can be compared: `line Level·first > R/draw value` of `line Level·first > named/draw value`.
+#[allow(dead_code)]
+pub fn route_renamed(fact: &str, route: &str) -> String {
+    let moment = |m: &str| match m.strip_prefix(route) {
+        Some("") => "R".to_string(),
+        Some(rest) if rest.starts_with('/') => format!("R{rest}"),
+        _ => m.to_string(),
+    };
+    let token = |t: &str| match t.split_once('@') {
+        Some((value, m)) => format!("{value}@{}", moment(m)),
+        None => moment(t),
+    };
+    fact.split(' ').map(token).collect::<Vec<_>>().join(" ")
+}
+
+/// The lookups pair of `language` (`tests/pairs/lookups`, #346): a lookup the language's library writes as a method or a
+/// call (`xs.first()`, `m.get(k)`, `next(iter(xs))`, `d.get(k)`, `xs.at(0)`) is the projection its subscript is (`xs[0]`,
+/// `m[k]`, `d[k]`): no step, a part of the collection glued into the call that takes it, so that a name bound to it stands
+/// for the collection (`mathematics.md`, "A projection bound to a name first is still the projection"). Each of `twins`
+/// writes one lookup once by its subscript and once by its method, and the two are one route: each step of one is handed
+/// and gives what the same step of the other does, and the two plans are one, uncut and at every budget the plan is cut at.
+/// A list the route changes in place before it looks a part up (`pushed`) holds the value the change gave (#355), and the
+/// part looked up is a part of that value in both; a change of the part a route looks up (`added`) is the same change in
+/// both, which changes the collection as a change to a part changes the whole (#374 where a reader does not read it so
+/// yet). The clean side looks up in the collections it is handed, so nothing comes from beyond; the shortcut looks up in
+/// the collections its module keeps, which come from beyond in both twins. Where the language writes the two forms on two
+/// kinds of collection (TypeScript's record and `Map`), the shortcut's module keeps one table under two names, `tables`
+/// (the method's, the subscript's). So in every language.
+#[allow(dead_code)]
+pub fn a_lookup_is_the_projection_its_subscript_is(language: &str, twins: &[(&str, &str)], tables: &[(&str, &str)]) {
+    // a value of the method's twin by the name the subscript's twin gives its table
+    let tabled = |x: String| tables.iter().fold(x, |x, (m, s)| x.replace(&format!("·{m}"), &format!("·{s}")));
+    let p = pair(&format!("lookups/{language}"));
+    for (side, g) in [("clean", &p.clean), ("shortcut", &p.shortcut)] {
+        let at = format!("{language} {side}");
+        let node = |f: &str| g.node(&format!("signal.{f}")).unwrap_or_else(|| panic!("{at}: no node signal.{f}"));
+        let handed = |f: &str| -> Vec<(String, String, BTreeSet<String>, BTreeSet<String>)> {
+            let hand = |h: &atlas_engine::Held| tabled(format!("{}·{} {:?} {:?} {}", h.ty, h.name, h.fills, h.through, h.param));
+            let site = |s: &atlas_engine::Site| {
+                (s.to.clone(), s.op.clone(), s.hands.iter().map(hand).collect(), s.gives.iter().map(hand).collect())
+            };
+            node(f).sites.iter().map(site).collect()
+        };
+        for (subscript, method) in twins {
+            let steps = handed(subscript);
+            assert!(!steps.is_empty() && steps.iter().all(|(_, _, h, _)| !h.is_empty()), "{at}: {subscript}'s steps are handed values");
+            assert_eq!(handed(method), steps, "{at}: each step of {method} is handed and gives what the same step of {subscript} does");
+        }
+        for budget in BUDGETS {
+            let at = format!("{at}, budget {budget:?}");
+            let plans = planned(g, &format!("lookups-{language}-{side}"), budget);
+            let route = |r: &str| &plans[&format!("signal.{r}")];
+            let facts = |r: &str| -> BTreeSet<String> { route(r).iter().map(|f| tabled(route_renamed(f, r))).collect() };
+            for (subscript, method) in twins {
+                assert_eq!(facts(method), facts(subscript), "{at}: {method}'s plan is {subscript}'s");
+                let beyond = from_beyond(route(subscript), &parameters(g, &format!("signal.{subscript}")));
+                match side {
+                    "clean" => assert!(beyond.is_empty(), "{at}: {subscript} takes nothing from beyond: {beyond:?}"),
+                    _ => assert!(!beyond.is_empty(), "{at}: {subscript} looks up in a collection the module keeps"),
+                }
+            }
+        }
+    }
+}
+
 /// The locals pair of `language` (`tests/pairs/locals`), its routes `named` and `written`: `named` binds the gap between two
 /// levels and the two side by side to names before it hands each to a step (`gap = first.db - second.db; draw(gap)`, `both =
 /// [first, second]; show(both)`), and `written` writes each where its step is handed it. What the language's own code
@@ -590,19 +656,7 @@ pub fn a_file_handed_on_keeps_its_place_in(language: &str, module: &str) {
 #[allow(dead_code)]
 pub fn a_name_computed_of_names_stands_for_them(language: &str) {
     let p = pair(&format!("locals/{language}"));
-    // a fact of a route with the route's name written as `R`, so that the facts of two routes can be compared
-    let renamed = |fact: &str, route: &str| -> String {
-        let moment = |m: &str| match m.strip_prefix(route) {
-            Some("") => "R".to_string(),
-            Some(rest) if rest.starts_with('/') => format!("R{rest}"),
-            _ => m.to_string(),
-        };
-        let token = |t: &str| match t.split_once('@') {
-            Some((value, m)) => format!("{value}@{}", moment(m)),
-            None => moment(t),
-        };
-        fact.split(' ').map(token).collect::<Vec<_>>().join(" ")
-    };
+    let renamed = route_renamed;
     for (side, g, beyond) in [("clean", &p.clean, vec![]), ("shortcut", &p.shortcut, vec!["Level·QUIET".to_string()])] {
         let at = format!("{language} {side}");
         let node = |f: &str| g.node(&format!("signal.{f}")).unwrap_or_else(|| panic!("{at}: no node signal.{f}"));
@@ -814,5 +868,91 @@ pub fn a_name_a_function_changes_holds_a_value_of_its_own(language: &str, add: &
             !lent.iter().any(|f| f.starts_with("line Level·first > R/")),
             "{language}, budget {budget:?}: the list stands for nothing: {lent:#?}"
         );
+    }
+}
+
+/// The locals pair in `language`: a choice's value is what its arms make of it (#366). `chosen` gives the first level, and
+/// the second beside it where it is loud. The clean side binds the list the choice gives (`if loud { vec![first, second] }
+/// else { vec![first] }`), a choice whose arms run no step: the body's own list, in the route's frame, which the step after
+/// it takes. The shortcut binds a list of the first and pushes the second onto it in one arm: the change takes the body's
+/// own list, which stands in the route's frame and not in the arm's, and makes it anew at the choice's moment, which the
+/// step after the choice takes, never the list the change was handed. So in the finest plan and at every budget.
+#[allow(dead_code)]
+pub fn a_name_changed_in_one_arm_is_the_choices_value(language: &str) {
+    let p = pair(&format!("locals/{language}"));
+    let (route, at) = ("chosen", language.to_string());
+    let node = |g: &'_ Graph| g.node(&format!("signal.{route}")).unwrap_or_else(|| panic!("{at}: no node signal.{route}")).clone();
+    let (clean, shortcut) = (node(&p.clean), node(&p.shortcut));
+    let [shown] = &clean.sites[..] else { panic!("{at} clean: one step: {:?}", clean.sites) };
+    let [change, after] = &shortcut.sites[..] else { panic!("{at} shortcut: the change and the step after it: {:?}", shortcut.sites) };
+    assert!(change.changes && !change.arms.is_empty(), "{at} shortcut: `{}` changes the list in one arm", change.op);
+    assert!(after.arms.is_empty(), "{at} shortcut: the step after the choice is in no arm");
+    let label = |s: &atlas_engine::Site| if s.op.is_empty() { s.to.rsplit('.').next().unwrap_or("").to_string() } else { s.op.clone() };
+    let (shows, changing, showing) =
+        (format!("{route}/{}", label(shown)), format!("{route}/?1/{}", label(change)), format!("{route}/{}", label(after)));
+    let (own, chosen) = (format!("Level·both@{route}/~both"), format!("Level·both@{route}/?1"));
+    for budget in BUDGETS {
+        let at = format!("{at}, budget {budget:?}");
+        let clean = &planned(&p.clean, &format!("arm-{language}-clean"), budget)[&format!("signal.{route}")];
+        let shortcut = &planned(&p.shortcut, &format!("arm-{language}-shortcut"), budget)[&format!("signal.{route}")];
+        let into = |facts: &BTreeSet<String>, to: &str| -> BTreeSet<String> {
+            let end = format!(" > {to} value");
+            facts.iter().filter_map(|f| f.strip_prefix("line ")?.strip_suffix(&end)).map(String::from).collect()
+        };
+        let names = |xs: &[&str]| -> BTreeSet<String> { xs.iter().map(|x| x.to_string()).collect() };
+        // the clean side: the body's own choice, no frame, and the list it binds
+        assert!(!clean.iter().any(|f| f.starts_with("choice ")), "{at} clean: a choice whose arms run no step has no frame: {clean:#?}");
+        assert_eq!(into(clean, &shows), names(&[&own]), "{at} clean: {shows} takes the list the body binds");
+        assert!(clean.contains(&format!("home {own} {route}")), "{at} clean: the body's list stands in the route's frame");
+        // the shortcut: the change in the arm takes the body's own list and makes it anew at the choice's moment
+        assert!(shortcut.contains(&format!("choice {route}/?1")), "{at} shortcut: the choice is a frame of its own: {shortcut:#?}");
+        assert_eq!(
+            into(shortcut, &changing),
+            names(&[&own, "Level·second"]),
+            "{at} shortcut: {changing} takes the body's list and the level"
+        );
+        assert!(
+            shortcut.contains(&format!("line {changing} > {chosen} value")),
+            "{at} shortcut: {changing} makes the choice's value: {shortcut:#?}"
+        );
+        assert_eq!(into(shortcut, &showing), names(&[&chosen]), "{at} shortcut: {showing} takes the choice's value");
+        assert!(
+            shortcut.contains(&format!("home {own} {route}")),
+            "{at} shortcut: the body's list stands in the route's frame, not the arm's"
+        );
+        assert!(shortcut.contains(&format!("home {chosen} {route}")), "{at} shortcut: the choice's value stands in the route's frame");
+    }
+}
+
+/// The unset pair: the name of a variable of the environment is a term like any other (`docs/reference/mathematics.md`,
+/// "Paths as terms"), so a lookup whose name a caller hands is completed through the callers by the substitution that
+/// completes a path built from a parameter, never by one of its own. `keep(name, text)` writes to the file the variable
+/// `name` names, which it asks `setting(name)` for; `save_report` hands it `"REPORT"` and `save_log` `"LOG"`, and
+/// `show_report` reads the report from the file its own lookup names, the name written in it. The lookup commutes with
+/// what is handed: what `keep` writes for `save_report` and what `show_report` reads are one place, and what it writes
+/// for `save_log` is another; every place `keep` writes is one a caller names. So on both sides, the clean one asking
+/// for the variable and the shortcut falling back to the empty path, which names nothing (#248), and in every language.
+#[allow(dead_code)]
+pub fn a_variable_a_caller_names_is_that_variable(language: &str, keep: &str, save_report: &str, save_log: &str, show_report: &str) {
+    let p = pair(&format!("unset/{language}"));
+    for (side, g) in [("clean", &p.clean), ("shortcut", &p.shortcut)] {
+        // the places a function's touches of one kind reach, with the callers that make each whole
+        let touches = |id: &str, kind: &str| -> Vec<(String, BTreeSet<Both>)> {
+            let n = g.node(id).unwrap_or_else(|| panic!("{language} {side}: no node {id}"));
+            n.touches.iter().filter(|t| t.kind_name() == kind).map(|t| (t.place().id, t.by.clone())).collect()
+        };
+        let written = touches(keep, "disk_write");
+        assert!(
+            written.iter().all(|(_, b)| !b.is_empty()),
+            "{language} {side}: `{keep}` writes only where a caller names the variable: {written:?}"
+        );
+        let for_caller =
+            |caller: &str| -> BTreeSet<String> { written.iter().filter(|(_, b)| *b == by([caller])).map(|(p, _)| p.clone()).collect() };
+        let (report, log) = (for_caller(save_report), for_caller(save_log));
+        let read: BTreeSet<String> = touches(show_report, "disk_read").into_iter().map(|(p, _)| p).collect();
+        assert_eq!(read.len(), 1, "{language} {side}: `{show_report}` reads one file: {read:?}");
+        assert_eq!(report, read, "{language} {side}: what `{keep}` writes for `{save_report}` is what `{show_report}` reads");
+        assert_eq!(log.len(), 1, "{language} {side}: `{keep}` writes one file for `{save_log}`: {log:?}");
+        assert!(report.is_disjoint(&log), "{language} {side}: two variables are two places: {report:?}, {log:?}");
     }
 }

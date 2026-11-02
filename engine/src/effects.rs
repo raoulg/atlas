@@ -122,6 +122,14 @@ pub fn described(pkg: &str, from: Registry) -> bool {
     }
 }
 
+/// Whether a Python call runs on one of the program's own streams, the doors the runtime opens at
+/// the screen (`sys.stdin.readline()`, `sys.stderr.write(..)`): their traffic is the screen's, never
+/// a file's.
+pub fn on_stream(pkg: Option<&str>, parts: &[String]) -> bool {
+    let Some(pkg) = pkg else { return false };
+    parts.len() == 3 && (k::STREAMS.contains(&(pkg, parts[1].as_str())) || k::INPUT_STREAMS.contains(&(pkg, parts[1].as_str())))
+}
+
 /// Classify a call that leaves the package, by the package that defines what is called.
 ///
 /// `pkg` is that package: the library of the call's callee, or of its receiver's type, and

@@ -246,8 +246,9 @@ Three things make `F` honest, and each is an engine task:
    A path built from a function's parameters is a parameter of its arrow: `Repo::read(dir)`
    is `Disk(dir) → Repo`, and a route fixes it by composition. A path no literal makes is
    named by the value it holds where it is whole: the parameter of the function there
-   (`analyze.dir`), or of the class whose constructor takes it (`Store.path`). A helper's
-   `path` and a method's `self.path` handed the same value are one place, and two parameters
+   (`analyze.dir`, and a method's with its class, `Repo.read.dir`), or of the class whose
+   constructor takes it (`Store.path`). A helper's `path` and a method's `self.path` handed
+   the same value are one place, and two parameters
    that only share a name are two. Each place keeps the
    function whose call made it whole, and a route shows it only when it reaches that
    function: `analyze` reads the folder its user names, and `changes` also reads the
@@ -374,7 +375,8 @@ declares (`[project.scripts]`, `[project.gui-scripts]`, `[project.entry-points]`
 `[tool.poetry.scripts]`), `package.json`
 `bin` and the scripts that run a file of the package, Makefile targets (a recipe's line resolved to the program the project installs that it runs, a Python script, a crate's binary or an npm `bin`, and to the subcommand it hands that program when the program has one by that name),
 the project's scripts and notebooks at any depth (every `.py` and `.ipynb` outside the package,
-its tests, what git ignores and another package or project inside it), and what
+its tests, what git ignores and another package or project inside it, and the files a declaration
+names, which are modules of the program), and what
 a package exports (`__all__` or the public names its root `__init__.py` binds, and the
 `__all__` of each public subpackage, as `components.Serial`; the `pub` items of a library
 crate's root and of the modules it makes public with `pub mod`, as `view::hide_private`, and
@@ -384,7 +386,12 @@ where it is defined. Each is the
 start of a route; an exported class is a route whose steps are its public methods. A program a
 manifest declares is a command also where its package exports the function (a flat module's
 public `main`): the declaration says what the function is to its user, and the function is a door
-as well (`Node::exported`). An entry is an
+as well (`Node::exported`). A declaration `name = "mod:attr"` names `attr` in the module Python
+imports as `mod`, whatever Atlas calls that module: a flat layout's `ask.py` beside the package is
+`ask`, as a src layout's `src/ask.py` is. The file it names is entered through the declaration,
+not also as a script of its own, and where it runs as a program it is entered as a package's
+module is, by `python -m`. A file a `bin` names, or one run as `__main__`, is the program's start:
+its top level is its route, and a call of `main` there is a step of it. An entry is an
 arrow whose domain is what the human hands it on the command line: a command or script carries
 its options (`Entry::options`, `--raw` named, `<name>` positional) and reads as its usage line,
 and the call that parses the command line (`Site::command_line`) is the entry's, not a step of
@@ -593,17 +600,18 @@ takes and gives, what its own calls read and write, and for an entry its usage l
 gains or loses is marked itself, as added or removed. Only direct arrows count (sentence 6): a
 change upstream marks the step that changed, never what runs before or after it, and a place a
 caller makes whole is the caller's arrow. A file named by a function's own parameter (`load.path`,
-`Store.path` for what a constructor takes) waits for what the function is handed: it is named so
-whoever calls the function, and is no arrow of the function that hands the parameter on.
+`Store.path` for what a constructor takes, `Repo.read.dir` for what a method takes) waits for what the
+function is handed: it is named so whoever calls the function, and is no arrow of the function that
+hands the parameter on.
 
 *Renames.* A node B no longer has and a node B adds whose direct relations are isomorphic (the same
 typed arrows in and out, the node itself and what is named under it counting as the same) are one
 node, renamed: it is changed, and reads `old → new`. A function's typed arrow is among its
 relations (`list[float] → float` is no `str → str`, and a parameter more is another arrow), and a
-place named by its value (`plot.out`) is named under it. A node named under a renamed one (a method
-of a renamed class) keeps its own name, and is changed only when its own arrow is. Only a match that
-is the only one either way counts; two that could match either way are removed and added, since
-Atlas never guesses.
+place named by its value (`plot.out`, `Repo.read.dir`) is named under it. A node named under a
+renamed one (a method of a renamed class) keeps its own name, and is changed only when its own arrow
+is. Only a match that is the only one either way counts; two that could match either way are removed
+and added, since Atlas never guesses.
 
 The engine marks the nodes, the edges, the steps and touches of a node both readings hold (by
 index), and the places, by the calls that touch them. In a picture a value stands at its moments,

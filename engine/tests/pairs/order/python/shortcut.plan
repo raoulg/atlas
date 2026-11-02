@@ -1,0 +1,48 @@
+# `main` runs `review`, which keeps its report on the shelf `open_shelf` sets up, then sets the drafts up and reads the
+# report from them, where it never kept one. A set-up counts for what runs after it (composition is call order, #359):
+# the drafts are set up after the report is kept, so the write under `keep_report` writes `out/report.txt` alone, and
+# nothing the route runs writes `drafts/report.txt`. The read under `report` runs on the drafts and reads
+# `drafts/report.txt`, which the route takes from beyond it: it stands in the domain, and the closed `review` reads it.
+# `out/report.txt` is only written.
+
+route shelf.cli.main
+step main/review
+step main/review/open_shelf
+step main/review/open_shelf/Shelf()
+step main/review/Shelf.keep_report
+step main/review/Shelf.keep_report/write
+step main/review/open_drafts
+step main/review/open_drafts/Shelf()
+step main/review/Shelf.report
+step main/review/Shelf.report/read
+
+line entry > main call
+line main/review/open_shelf/Shelf() > Shelf@main/review/open_shelf/Shelf() value
+line Shelf@main/review/open_shelf/Shelf() > main/review/open_shelf value              # the shelf built goes back
+line main/review/open_shelf > Shelf·shelf@main/review/open_shelf value
+line Shelf·shelf@main/review/open_shelf > main/review/Shelf.keep_report/write value    # `write(self.root / "report.txt", text)`
+line main/review/Shelf.keep_report/write > File(out/report.txt) own
+line main/review/open_drafts/Shelf() > Shelf@main/review/open_drafts/Shelf() value
+line Shelf@main/review/open_drafts/Shelf() > main/review/open_drafts value
+line main/review/open_drafts > Shelf·drafts@main/review/open_drafts value
+line Shelf·drafts@main/review/open_drafts > main/review/Shelf.report/read value        # `read(self.root / "report.txt")` on the drafts
+line File(drafts/report.txt) > main/review/Shelf.report/read own
+line main/review/Shelf.report/read > main/review/Shelf.report back                     # the text read goes back
+line main/review/Shelf.report > main/review back
+line main/review > main back
+line main > Screen own                                                                  # `print(review())`
+# the shelf `open_shelf` set up ran before the read too, and the read counts it, though it runs on the drafts: it reads
+# back inside `review` what the write left
+known #368 extra line main/review/Shelf.keep_report/write > File(out/report.txt) in main/review value
+known #368 extra line File(out/report.txt) in main/review > main/review/Shelf.report/read value
+known #368 extra home File(out/report.txt) in main/review main/review
+
+home Shelf@main/review/open_shelf/Shelf() main/review/open_shelf
+home Shelf·shelf@main/review/open_shelf main/review
+home Shelf@main/review/open_drafts/Shelf() main/review/open_drafts
+home Shelf·drafts@main/review/open_drafts main/review
+
+side entry left
+side File(drafts/report.txt) left
+side File(out/report.txt) right
+side Screen right

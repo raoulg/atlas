@@ -56,3 +56,10 @@ pub fn gathered(first: &Level, second: &Level) {
     let both = vec![first, second];
     list(&both);
 }
+
+/// The first level, and the second beside it where it is loud: the vector the choice gives, written out in each arm, and
+/// listed.
+pub fn chosen(first: &Level, second: &Level, loud: bool) {
+    let both = if loud { vec![first, second] } else { vec![first] };
+    list(&both);
+}

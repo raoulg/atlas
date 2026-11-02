@@ -1423,12 +1423,26 @@ const bound = (P, k, nm = (P.dn && P.dn.get(k)) || "", within = false) => {
   if (!declared) return null;
   return bodyMade(k, f, nm);
 };
-// the value of `k`'s kind the body of frame `f` holds by the name `nm`, made there by no step
+// the value of `k`'s kind the body of frame `f` holds by the name `nm`, made there by no step. It is made where the body
+// binds the name: in the body's frame, or in the innermost choice whose arm binds it (`except E as error:`)
 const bodyMade = (k, f, nm) => {
-  const b = version(k, `${k}@${f}/~${nm}`);
-  Object.assign(places.get(b), {at: `${f}/~${nm}`, bound: f});
+  const b = version(k, `${k}@${f}/~${nm}`), arms = (byId.get(stepOf(frames.get(f)?.step ?? ""))?.binds || []).find(x => x.name === nm)?.arms || [];
+  const within = arms.map(([c]) => `${f}~c${c}`).filter(c => frames.has(c)).sort((x, y) => planChain(y).length - planChain(x).length);
+  Object.assign(places.get(b), {at: `${f}/~${nm}`, bound: within[0] || f});
   return b;
 };
+// a name a body binds by its own code, outside its choices, holds the value the body made there, in its frame, for every
+// step after the binding until a step makes it anew: in an arm, in a loop and straight on alike, so a change in one arm
+// makes anew a value named before the choice (#366). A parameter the body binds anew is what its call hands it (#237). The
+// value is made where a step first reads it
+for (const [fid, F] of frames) if (F.step && !F.synthetic) {
+  const id = stepOf(F.step), params = new Set((byId.get(id)?.params || []).map(p => p.name));
+  for (const b of byId.get(id)?.binds || []) if (b.type && !b.arms?.length && !params.has(b.name)) {
+    const key = "t:" + (b.type === V.route ? V.route : kindOf(b.type)) + "|" + b.name;
+    if (!latest.has(key)) latest.set(key, []);
+    latest.get(key).push({get v() { return bodyMade(addPlace({...typePlace(b.type), id: `t:${b.type}~${b.name}`, name: b.name}), fid, b.name); }, scope: fid, arms: new Map(), param: false, also: []});
+  }
+}
 // the value of `k`'s kind made before the choice of one arm that made `v` in its arm, inside the frame of the own arrow `P`
 const passedOn = (P, k, v) => {
   const e = (latest.get(kindKey(k) + "|") || []).find(x => x.v === v), at = places.get(v)?.at;
@@ -1870,11 +1884,15 @@ if (!fine) for (const P of pills.values()) { P.D = toShown(P.D); P.C = toShown(P
 // them into one box. A value a step planned by itself takes by a name its caller holds (`condOf`) is the caller's to say:
 // from beyond where the caller's value is, made in a frame where that is made there (#319). `splitBy` keeps, of each step,
 // the values of each kind it takes from beyond or from its caller: each by its key in this plan, its name and whether it is
-// its caller's
+// its caller's. It is a set of such groups, each held once: which kinds are split is a function of the groups there are,
+// and so is what a caller makes of them, never of how often one occurs. A step beyond the cut brings the groups of its body
+// unfolded to its leaves, where a function its body reaches by many calls brings one group for each call; held once, they
+// are as many as the groups that differ, not as many as the body has occurrences (#379)
 const split = new Set(), splitBy = [];
 if (fine) {
   const unmade = k => k.startsWith("t:") && !!places.get(k)?.name && !places.get(k).at;
   const entry = k => (unmade(k) ? [k, places.get(k).name, !!places.get(k).cond] : null);
+  const groups = new Set();
   for (const P of pills.values()) {
     // a step beyond the cut takes what the steps of its body take, each by itself: they decide, in its plan, and here is
     // what its caller holds of those that are its caller's
@@ -1886,6 +1904,9 @@ if (fine) {
           return [...by];
         });
     for (const [t, es] of takes) {
+      const g = JSON.stringify([t, es]);
+      if (groups.has(g)) continue;
+      groups.add(g);
       splitBy.push([t, es]);
       if (new Set(es.filter(e => !e[2]).map(e => e[1])).size > 1) split.add(t);
     }
@@ -2082,7 +2103,7 @@ const imageOf = (F, opened, folded, {fineKeys = false} = {}) => {
   const chainOf = fid => { const c = []; for (let f = fid; f; f = fFrames.get(f)?.parent) c.unshift(f); return c; };
   const stepFrame = f => !fFrames.get(f).synthetic && !fFrames.get(f).anchor;
   const homeOf = (ids, world) => {
-    const cs = ids.flatMap(i => users.get(i) || []).map(chainOf), mk = ids.flatMap(i => makers.get(i) || []).map(chainOf);
+    const cs = ids.flatMap(i => [...(users.get(i) || []), ...(makers.get(i) || [])]).map(chainOf), mk = ids.flatMap(i => makers.get(i) || []).map(chainOf);
     if (!cs.length || cs.some(c => !c.length)) return null;
     let common = cs[0];
     for (const c of cs.slice(1)) { let i = 0; while (i < common.length && i < c.length && common[i] === c[i]) i++; common = common.slice(0, i); }

@@ -6,8 +6,8 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use indexmap::IndexMap;
 
 use crate::model::{
-    ext, Bucket, Dir, Edge, EdgeKind, Entry, EntryKind, Graph, Held, Lang, Node, NodeKind, Signature, Site, Slot, Stats, Touch, Unresolved,
-    World,
+    ext, sum, type_name, Bucket, Dir, Edge, EdgeKind, Entry, EntryKind, Graph, Held, Lang, Node, NodeKind, Signature, Site, Slot, Stats,
+    Touch, Unresolved, World,
 };
 
 /// Per-class facts that only matter during resolution.
@@ -107,12 +107,18 @@ pub struct GraphBuilder {
     pub files: BTreeMap<String, String>,
     /// Module id -> local name -> fully qualified target, kept for re-export lookups.
     pub bindings: HashMap<String, HashMap<String, String>>,
+    /// The id of a module read outside the packages, by the name its language imports it by,
+    /// where an entry point names it so: a flat layout's `ask.py` is imported as `ask` and read as
+    /// `_root.ask`.
+    pub imported: HashMap<String, String>,
     /// Methods that change their receiver in place.
     pub mutating: HashSet<String>,
     /// Calls whose caller uses what they give back, as (caller, callee).
     pub used: HashSet<(String, String)>,
     /// The bodies linked so far: the program's, and those of the libraries' code read.
     pub linked: [usize; 2],
+    /// The libraries read as code, by the id of each one's root.
+    pub libraries: BTreeMap<String, crate::model::Dependency>,
 }
 
 impl GraphBuilder {
@@ -185,7 +191,7 @@ impl GraphBuilder {
         if let Some((id, _)) = known {
             return id.to_string();
         }
-        let id = format!("({})", key.join(" | "));
+        let id = sum::of(&key);
         self.add_node(Node {
             id: id.clone(),
             kind: NodeKind::Class,
@@ -284,16 +290,9 @@ impl GraphBuilder {
         }
     }
 
-    /// The name a function goes by in the names of its values: a constructor's is its class's
-    /// (`Store`), a method's its class's and its own (`Repo.read`), any other function's its own.
+    /// The name the function `id` goes by in the names of its values (`model::owner`).
     pub fn owner(&self, id: &str) -> Option<String> {
-        let n = self.nodes.get(id)?;
-        let class = n.cls.as_deref().map(|c| c.rsplit('.').next().unwrap_or(c));
-        Some(match (n.ctor, class) {
-            (true, Some(c)) => c.to_string(),
-            (false, Some(c)) => format!("{c}.{}", n.name),
-            _ => n.name.clone(),
-        })
+        self.nodes.get(id).map(|f| crate::model::owner(f, |c| self.nodes.get(c)))
     }
 
     /// A function's own touch of a file the code names only by a name of the function's
@@ -390,6 +389,7 @@ impl GraphBuilder {
             project_root: project_root.map(crate::tree::path_str).unwrap_or_default(),
             nodes: nodes.into_values().collect(),
             edges,
+            libraries: self.libraries,
             files: self.files,
             stats: Stats {
                 unresolved_calls_total: self.unresolved.values().sum(),
@@ -449,17 +449,15 @@ impl GraphBuilder {
         if self.nodes.contains_key(eid) {
             return;
         }
-        // a shaped type keeps its shape in the name: `jaxtyping` / `Float[Tensor, batch dim]`
-        let cut = full.find('[').unwrap_or(full.len());
-        let (module, name) = match full[..cut].rsplit_once('.') {
-            Some((module, name)) => (module, format!("{name}{}", &full[cut..])),
-            None => ("", full.to_string()),
-        };
+        // its name is the type's own, a shape kept in it, and its module what stands before that name:
+        // `jaxtyping` / `Float[Tensor, batch dim]`
+        let name = type_name(eid);
+        let module = full[..full.len() - name.len()].strip_suffix('.').unwrap_or("");
         let package = module.split(['.', ':']).next().unwrap_or("");
         self.add_node(Node {
             id: eid.into(),
             kind: NodeKind::External,
-            name,
+            name: name.into(),
             module: module.into(),
             door: crate::effects::library_place(package),
             ..Default::default()
@@ -694,6 +692,13 @@ fn parsed(nodes: &IndexMap<String, Node>, id: &str, seen: &mut HashSet<String>, 
     }
 }
 
+/// The name a handler catches an error by: its class's own name (`type_name`). A handler's names are read as the code
+/// writes them (`except errors.Missing`), not resolved, so a handler that names a class catches every class of that
+/// name, wherever it is defined.
+fn caught_by(class: &str) -> &str {
+    type_name(class)
+}
+
 /// The error each call hands on to its body's border where the language hands on every error a call
 /// fails with (`Site::fails`), settled once every body is read, since it needs what the callee's body
 /// does: what the callee's body ends with uncaught, as a `raise` propagates. A body ends with what it
@@ -701,17 +706,16 @@ fn parsed(nodes: &IndexMap<String, Node>, id: &str, seen: &mut HashSet<String>, 
 /// around it catches it. A handler catches the classes it names and those below them, and one that
 /// names none catches whatever is raised. A call that `?` hands on fails as its reader said (`Steps`).
 fn settle_fails(nodes: &mut IndexMap<String, Node>, edges: &[Edge]) {
-    let bare = |id: &str| ext::name(id).rsplit(['.', ':']).next().unwrap_or("").to_string();
     let mut bases: HashMap<&str, Vec<&str>> = HashMap::new();
     for e in edges.iter().filter(|e| e.kind == EdgeKind::Inherits) {
         bases.entry(e.src.as_str()).or_default().push(e.dst.as_str());
     }
-    // the classes an error is of, itself first: what a handler that names one of them catches
+    // the classes an error is of, itself first, by the names a handler catches them by
     let kinds = |error: &str| -> Vec<String> {
-        let (mut out, mut todo) = (vec![], vec![error]);
+        let (mut out, mut todo): (Vec<String>, _) = (vec![], vec![error]);
         while let Some(k) = todo.pop() {
-            if !out.contains(&bare(k)) {
-                out.push(bare(k));
+            if !out.iter().any(|o| o == caught_by(k)) {
+                out.push(caught_by(k).to_string());
                 todo.extend(bases.get(k).into_iter().flatten());
             }
         }
@@ -719,7 +723,7 @@ fn settle_fails(nodes: &mut IndexMap<String, Node>, edges: &[Edge]) {
     };
     let caught = |handlers: &[Vec<String>], error: &str| {
         let of = kinds(error);
-        handlers.iter().any(|h| h.is_empty() || h.iter().any(|n| of.contains(&bare(n))))
+        handlers.iter().any(|h| h.is_empty() || h.iter().any(|n| of.iter().any(|k| k == caught_by(n))))
     };
     // the functions a call may run, one of which runs (`flow::Runs`)
     let runs = crate::flow::Runs::new(nodes, edges);
