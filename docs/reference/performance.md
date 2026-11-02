@@ -99,7 +99,8 @@ counting nights is guessing; a slowdown is reported when it is reproduced.
   0.5 s or 50 MB. A suspect measure says nothing yet: it is a reason to measure again.
 - **Reproduced**: in the same run, the last commit on which the measure lay within its baseline (A) and
   the commit measured (B) are built and measured interleaved, A B A B, five rounds (two for a clean build), the
-  readings of one subject taken together from one round of readings, as the night takes them,
+  readings of one subject taken together from one round of readings, as the night takes them, the test
+  binaries of both built alike without debug information,
   on this runner: what the machine does to one it does to the other. The slowdown is reproduced when every
   round of B is slower than every round of A, and the medians differ by more than the floor. Five rounds
   each, all of B past all of A, happens by chance once in 252.

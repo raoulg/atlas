@@ -951,19 +951,19 @@ class Bench:
 
     def test_binaries(self, side: Side) -> dict[str, tuple[Path, Path]]:
         """The test binaries of `side`, built once and moved out of the shared target directory, so that
-        the next commit's build takes their place without a second copy on the disk. The incremental
-        state goes too: a debug build of the workspace keeps tens of GB of it, and no measure reads it."""
+        the next commit's build takes their place without a second copy on the disk. They are built
+        without debug information and incremental state, which no measure reads and which take tens of
+        GB for two commits of the workspace; both sides of a comparison are built alike."""
         if side.commit not in self.tests:
             keep_dir = self.scratch / f"tests-{side.commit[:12]}"
             keep_dir.mkdir(exist_ok=True)
             target = self.scratch / "target-tests"
-            env = {**os.environ, "CARGO_TARGET_DIR": str(target)}
+            env = {**os.environ, "CARGO_TARGET_DIR": str(target), "CARGO_PROFILE_DEV_DEBUG": "0", "CARGO_INCREMENTAL": "0"}
             kept = {}
             for name, executable, manifest in test_binaries(side.tree, [], env):
                 moved = keep_dir / name.replace("/", "-")
                 os.replace(executable, moved)
                 kept[name] = (moved, manifest)
-            shutil.rmtree(target / "debug" / "incremental", ignore_errors=True)
             self.tests[side.commit] = kept
         return self.tests[side.commit]
 
