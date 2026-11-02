@@ -1065,3 +1065,52 @@ export function opener(): number {
     let handed = g.node("descriptors.count").expect("count").touches.iter().filter(|t| t.by.contains(&Both::one("descriptors.opener")));
     assert_eq!(handed.map(|t| (t.kind_name(), t.artifact.as_str())).collect::<Vec<_>>(), [("disk_read", "in.txt")]);
 }
+
+/// The program of `a_call_is_read_alike_however_many_stand_beside_it`: `main` binds a chain of `depth` names, each an array
+/// of the one before twice (`const a1 = [a0, a0]`), so that the last stands for `first` along 2^depth occurrences, hands it
+/// to `calls` calls, and hands `show` an array it changes in place.
+fn chained(depth: usize, calls: usize) -> String {
+    let mut code = String::from(
+        "export class Level {\n  constructor(readonly db: number) {}\n}\n\nexport function show(levels: Level[]): void {\n  console.log(levels.length);\n}\n\nexport function main(first: Level): void {\n  const a0 = [first, first];\n",
+    );
+    for k in 1..=depth {
+        code += &format!("  const a{k} = [a{}, a{}];\n", k - 1, k - 1);
+    }
+    code += "  const rows: Level[] = [];\n  rows.push(first);\n";
+    code += &format!("  show(a{depth});\n").repeat(calls);
+    code += "  show(rows);\n}\n";
+    code
+}
+
+/// Whether a binding is changed in place is a fact of the body, which no call changes (`mathematics.md`, "One fine plan"):
+/// what a call hands is read the same however many calls stand beside it in the body. The subject hands a name that stands
+/// for `first` along 2^8 occurrences to many calls, and an array it changes in place to one: each call hands what it hands
+/// in the body with one such call. A reader that asks the whole body again, for every occurrence of every call, whether a
+/// name is changed in place cannot read it in reasonable time (#389); one that finds what the body changes in place once
+/// reads it at once.
+#[test]
+fn a_call_is_read_alike_however_many_stand_beside_it() {
+    const DEPTH: usize = 8;
+    let hands = |calls: usize| -> Vec<String> {
+        let g = written(
+            &format!("chained-{calls}"),
+            &[("package.json", "{\n  \"name\": \"chained\",\n  \"version\": \"0.1.0\"\n}\n"), ("src/main.ts", &chained(DEPTH, calls))],
+        );
+        let main = g.nodes.iter().find(|n| n.id.ends_with(".main") && n.kind == NodeKind::Function).expect("main is read");
+        let shown: Vec<String> = main
+            .sites
+            .iter()
+            .filter(|s| s.to.ends_with(".show"))
+            .map(|s| serde_json::to_string(&s.hands).expect("hands serialize"))
+            .collect();
+        assert_eq!(shown.len(), calls + 1, "every call of show is a site of main");
+        shown
+    };
+    let one = hands(1);
+    let many = hands(1500);
+    assert_ne!(one[0], "[]", "the chain hands what it stands for");
+    for (i, h) in many.iter().enumerate() {
+        let alone = if i + 1 == many.len() { &one[1] } else { &one[0] };
+        assert_eq!(h, alone, "call {i} hands what it hands beside one call");
+    }
+}

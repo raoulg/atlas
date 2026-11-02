@@ -1,6 +1,7 @@
 //! A function's body as TypeScript reads it: its steps in the order they run, what its calls touch,
 //! the values its names hold and what made them, and the syntax of its choices and comparisons.
 
+use std::cell::OnceCell;
 use std::collections::{HashMap, HashSet};
 
 use indexmap::IndexMap;
@@ -567,6 +568,8 @@ pub(super) struct Body<'a, 't> {
     /// The calls that keep the command line the program is run with under a name (`command_line`).
     pub(super) keeps_command_line: HashSet<usize>,
     pub(super) read: Read<'t>,
+    /// The bindings the body's calls change in place (`changed_bindings`), found once the body is set up.
+    in_place: OnceCell<HashSet<(String, Option<usize>)>>,
 }
 
 const STRINGS: &[&str] = &["string", "template_string"];
@@ -611,6 +614,7 @@ impl<'a, 't> Body<'a, 't> {
             sites: vec![],
             keeps_command_line: HashSet::new(),
             read: Read::default(),
+            in_place: OnceCell::new(),
         };
         b.typed(n);
         for a in walk(body, &["assignment_expression"]) {
@@ -628,6 +632,8 @@ impl<'a, 't> Body<'a, 't> {
         .into_iter()
         .filter(|x| b.mine(*x))
         .collect();
+        // what the body changes in place is asked of the body set up whole
+        b.in_place = OnceCell::new();
         b
     }
 
@@ -1484,25 +1490,38 @@ impl<'a, 't> Body<'a, 't> {
     /// it whose parameter it changes (`add(both, second)`), where the part may be one a subscript or a lookup picks and a
     /// name may be bound to it (`rows[0]!.push(second)`, `const row = rows.at(0)!; row.push(second)`, `changed_binding`).
     /// Such a name holds a value of its own, which each change makes anew (`mathematics.md`, "One fine plan").
-    fn changed_in_place(&self, i: TsNode<'t>) -> bool {
-        let (name, binding) = (text(i, self.src), self.locals.which(i, self.src));
-        let looked = |c: TsNode<'t>| self.lookup(c).map(|on| vec![on]);
-        let this = |o: TsNode<'t>| {
-            let through = || {
-                changed_binding(self.body, self.src, &BINDS, &looked, text(o, self.src), o.start_byte())
-                    .is_some_and(|(w, at)| w == name && self.locals.0.which(w, at) == binding)
-            };
-            o.kind() == "identifier"
-                && match text(o, self.src) == name {
-                    true => self.locals.which(o, self.src) == binding,
-                    // a name of the body's own may be bound to a part of the value
-                    false => self.locals.bound(o, self.src) && through(),
-                }
-        };
-        binding.is_some()
-            && walk(self.body, &["call_expression"])
+    fn changed_in_place(&self, i: TsNode) -> bool {
+        let binding = self.locals.which(i, self.src);
+        binding.is_some() && self.changed_bindings().contains(&(text(i, self.src).to_string(), binding))
+    }
+
+    /// The bindings the body's calls change in place, each by its name and the binding `Locals::which` names, found once for
+    /// the body: the name, or `this`, `held_root` reads a value or part a call changes of (`changed_by`), and a name of the
+    /// body's own may be bound to a part of another name's value, whose binding a change through it changes as well
+    /// (`changed_binding`).
+    fn changed_bindings(&self) -> &HashSet<(String, Option<usize>)> {
+        self.in_place.get_or_init(|| {
+            let looked = |c: TsNode<'t>| self.lookup(c).map(|on| vec![on]);
+            let mut changed = HashSet::new();
+            let roots = walk(self.body, &["call_expression"])
                 .into_iter()
-                .any(|c| self.changed_by(c).into_iter().any(|x| self.held_root(beneath(x, WRAPPERS)).is_some_and(this)))
+                .flat_map(|c| self.changed_by(c))
+                .filter_map(|x| self.held_root(beneath(x, WRAPPERS)))
+                .filter(|o| o.kind() == "identifier");
+            for o in roots {
+                let name = text(o, self.src);
+                changed.insert((name.to_string(), self.locals.which(o, self.src)));
+                if !self.locals.bound(o, self.src) {
+                    continue;
+                }
+                if let Some((w, at)) =
+                    changed_binding(self.body, self.src, &BINDS, &looked, name, o.start_byte()).filter(|(w, _)| *w != name)
+                {
+                    changed.insert((w.to_string(), self.locals.0.which(w, at)));
+                }
+            }
+            changed
+        })
     }
 
     /// What a call gives back, by the name the body keeps it by. Its type is one a step gives: what
