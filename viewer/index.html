@@ -1055,11 +1055,14 @@ async function renderPlaat(mine) {
   // quotient of the plan's steps, so it is the same whatever else is open, and each of its lines stands for the
   // lines of all of them. In a union, only siblings that both readings, or the same one, hold, and that changed alike.
   // A step the reader opened stands on its own: opening the pill refines the quotient into its members
-  const merged = new Map();
+  // A call is a line of the plan as data is, so siblings are one pill only where they call and are called alike, and a
+  // call to a member is a call to the pill it joined
+  const merged = new Map(), joinedTo = new Map(), callers = new Map();
+  for (const P of pills.values()) for (const b of P.calls || []) { if (!callers.has(b)) callers.set(b, []); callers.get(b).push(P.id); }
   const counts = (P, n) => P[n] || new Map([...(n[0] === "D" ? P.D : P.C)].filter(([, r]) => n[1] === "n" || r).map(([k]) => [k, 1]));
   for (const P of [...pills.values()]) {
     if (P.own || P.hue || P.steps[0].startsWith("part:") || P.steps[0].startsWith("unit:") || P.steps.some(st => V.open.steps.has(st))) continue;
-    const lines = P.fine ?? [...P.D.keys()].sort() + ">" + [...P.C.keys()].sort();
+    const lines = (P.fine ?? [...P.D.keys()].sort() + ">" + [...P.C.keys()].sort()) + "|" + [...(P.calls || [])].sort() + "<" + (callers.get(P.id) || []).sort();
     const key = (P.parent || "") + "|" + lines + "|" + (P.backTo || "") + "|" + [...(P.sides || [])].sort() + "|" + stepChanged(P.steps);
     const Q = merged.get(key);
     if (!Q) { merged.set(key, P); continue; }
@@ -1067,9 +1070,15 @@ async function renderPlaat(mine) {
     for (const n of ["aDn", "aCn", "aDr", "aCr"]) if (Q[n] && P[n]) P[n].forEach((c, k) => Q[n].set(k, (Q[n].get(k) || 0) + c));
     Q.steps.push(...P.steps); P.D.forEach((r, k) => Q.D.set(k, Q.D.get(k) && r)); P.C.forEach((r, k) => Q.C.set(k, Q.C.get(k) && r)); joinGoes(Q.goes, P.goes);
     for (const [qs, ps] of [[Q.Ds, P.Ds], [Q.Cs, P.Cs]]) ps?.forEach((s, k) => qs.set(k, new Set([...(qs.get(k) || []), ...s])));
+    joinedTo.set(P.id, Q);
     pills.delete(P.id);
   }
-  for (const P of pills.values()) if (P.steps.length > 1) P.id = "n:" + P.steps.join("+");
+  for (const P of pills.values()) if (P.steps.length > 1) { joinedTo.set(P.id, P); P.id = "n:" + P.steps.join("+"); }
+  const callee = b => joinedTo.get(b)?.id ?? b;
+  for (const P of pills.values()) {
+    if (P.calls) P.calls = new Set([...P.calls].map(callee));
+    if (P.Ks) { const Ks = new Map(); P.Ks.forEach((s, b) => Ks.set(callee(b), new Set([...(Ks.get(callee(b)) || []), ...s]))); P.Ks = Ks; }
+  }
   // a value with no name and no type of the code's is a wire, not a place where data rests: the step
   // that makes it points at the steps that take it
   const wires = [];
