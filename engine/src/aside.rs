@@ -19,7 +19,7 @@ use std::path::{Component, Path, PathBuf};
 use ignore::gitignore::{Gitignore, GitignoreBuilder};
 use serde::Serialize;
 
-use crate::model::{Graph, NodeKind};
+use crate::model::{Graph, NodeKind, Shared};
 use crate::principles::{Aside, Finding, Ink, Look, Principle};
 
 /// The file of decisions by path, at the top of what is read.
@@ -62,7 +62,20 @@ enum Covers {
 /// Every finding of `g` (`principles::check`), each one a decision covers with that decision: the
 /// first in the code, else the first of a `.atlasignore`.
 pub fn check(g: &Graph) -> Vec<Finding> {
-    let mut findings = crate::principles::check(g);
+    check_among(g, &Shared::among(&g.nodes))
+}
+
+/// The findings of each of a repository's parts (`check`), each function and type in their words as Atlas says it in
+/// the picture of the parts together (`model::Shared`).
+pub fn check_all(parts: &[Graph]) -> Vec<Vec<Finding>> {
+    let shared = Shared::among(parts.iter().flat_map(|g| &g.nodes));
+    parts.iter().map(|g| check_among(g, &shared)).collect()
+}
+
+/// The findings of `g` (`check`), each function and type in their words as Atlas says it in the picture they are
+/// shown with, whose types share the names `shared` (`principles::check_among`).
+pub fn check_among(g: &Graph, shared: &Shared) -> Vec<Finding> {
+    let mut findings = crate::principles::check_among(g, shared);
     let decisions = decisions(g);
     for f in &mut findings {
         f.aside = covering(g, &decisions, f).map(|i| Aside { by: shown(g, &decisions[i]), reason: decisions[i].reason.clone() });

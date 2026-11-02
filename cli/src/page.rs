@@ -83,9 +83,13 @@ impl Reading {
     /// What the principles still ask of the parts drawn, each part checked in its own language, and,
     /// where two readings are drawn as one, how many findings the later raises and resolves.
     pub(crate) fn findings(&self) -> Findings {
-        let found: Vec<Finding> = self.parts.iter().flat_map(atlas_engine::aside::check).collect();
+        // each function and type in their words as the page draws it: the parts together, of both readings where it draws two
+        let before = self.since.as_ref().map_or(&[][..], |s| s.parts.as_slice());
+        let shared = atlas_engine::model::Shared::among(self.parts.iter().chain(before).flat_map(|g| &g.nodes));
+        let checked = |gs: &[Graph]| -> Vec<Finding> { gs.iter().flat_map(|g| atlas_engine::aside::check_among(g, &shared)).collect() };
+        let found = checked(&self.parts);
         let changed = self.since.as_ref().map(|s| {
-            let before: Vec<Finding> = s.parts.iter().flat_map(atlas_engine::aside::check).collect();
+            let before = checked(&s.parts);
             let (raised, resolved, _) = changes::raised(&before, &found);
             Changed { raised: raised.len(), resolved: resolved.len() }
         });

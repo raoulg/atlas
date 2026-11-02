@@ -25,8 +25,10 @@ for (const e of D.edges) { const k = `${e.src}>${e.dst}>${e.kind}`; if (!edgesBy
 const edgeOn = (src, dst, kind) => { const es = edgesBy.get(`${src}>${dst}>${kind}`); return !es || es.some(has); };
 // a type's id as its module and its own name; a shaped array's shape is part of its name (`ext:jaxtyping.Float[Tensor, ... d]`)
 const idName = id => { const s = id.replace(/^ext:/, ""), cut = s.includes("[") ? s.indexOf("[") : s.length, head = s.slice(0, cut).split("."); return {module: head.slice(0, -1).join("."), name: head.pop() + s.slice(cut)}; };
-// a node by the name it has in the reading drawn: one B renamed has its old name in A
-const nameOf = n => SIDE === "a" && DIFF?.renamed[n.id] ? DIFF.renamed[n.id].split(".").pop() : n.name;
+// a node by the name it has in the reading drawn: one B renamed has in A the name A's reader gave it (`Diff::names`)
+const nameOf = n => SIDE === "a" && DIFF?.names[n.id] || n.name;
+// the ids of the variants of a sum written in place, in the order its id holds them (`model::sum`); null for any other id
+const sumVariants = id => id.startsWith("(") && id.endsWith(")") ? id.slice(1, -1).split(" | ") : null;
 // a step of a body as the reading drawn has it: in A, a step both readings hold is handed what A hands it
 const siteRead = (n, i) => { const s = n?.sites?.[i], h = SIDE === "a" && DIFF?.hands[n.id]?.[i]; return h ? {...s, hands: h} : s; };
 // the sums of the code by their variants: a value of `A | B` is one value, whatever the reader lists of it
@@ -424,8 +426,26 @@ const folds = k => kindsOf(k).length + (here(k) ? 1 : 0) > 1;
 const opens = t => folds(t) || partsOf(t).length > 0 || sharedOf(t).length > 0;
 const opensInto = t => kindsOf(t).length + partsOf(t).length + sharedOf(t).length + (here(t) ? 1 : 0);
 const bare = id => byId.has(id) ? nameOf(byId.get(id)) : idName(id).name;
-const nameCount = new Map(); for (const n of D.nodes) if (n.kind === "class" || n.kind === "external") nameCount.set(bare(n.id), (nameCount.get(bare(n.id)) || 0) + 1);
-const typeLabel = id => { const b = bare(id); if ((nameCount.get(b) || 0) > 1) { const mod = (byId.get(id)?.module || idName(id).module).split(".").pop(); return mod ? `${mod}.${b}` : b; } return b; };
+// the types that go by each name two or more of them share, each by the modules its id says it stands in, a sum written in
+// place by none (`model::Shared`)
+const NAMED = new Map();
+for (const n of D.nodes) if (n.kind === "class" || n.kind === "external") { const b = bare(n.id); if (!NAMED.has(b)) NAMED.set(b, []); NAMED.get(b).push(sumVariants(n.id) ? null : idName(n.id).module.split(".").filter(Boolean)); }
+// a type as Atlas says it (`model::type_label`): its own name; where another type goes by it too, with the fewest of the last
+// modules it stands in that no other type of the name stands in last (`orders.model.Frame` beside `billing.model.Frame`), all
+// of them where every tail is another's; a sum written in place, which stands in none, as its variants
+const typeLabel = id => {
+  const b = bare(id), named = NAMED.get(b);
+  if (!named || named.length < 2) return b;
+  const vs = sumVariants(id);
+  if (vs) return vs.map(typeLabel).join(" | ");
+  const parts = idName(id).module.split(".").filter(Boolean), others = named.filter(Boolean);
+  const self = others.findIndex(o => o.length === parts.length && o.every((m, i) => m === parts[i]));
+  if (self >= 0) others.splice(self, 1);
+  const ends = (o, k) => o.length >= k && o.slice(o.length - k).every((m, i) => m === parts[parts.length - k + i]);
+  let k = parts.length;
+  for (let j = 1; j <= parts.length; j++) if (!others.some(o => ends(o, j))) { k = j; break; }
+  return [...parts.slice(parts.length - k), b].join(".");
+};
 const entryTitle = id => { const n = byId.get(id); return n.entry ? `${KIND_LABEL[n.entry.kind]} ${n.entry.label}` : short(id); };
 // what a step changes in place is in its codomain too: `T -> T`
 
@@ -811,14 +831,15 @@ const typePlace = t => {
   // a family no type of the code's is (a rank of shaped arrays, `Float Tensor · 2D`) is of the library its members are
   return {id: "t:" + t, label: typeLabel(t) + (closedFam ? ` (${opensInto(t)})` : ""), kind: (n ? n.kind === "external" : t.startsWith("ext:")) ? "ext" : "type", hue: hueOf(n), type: t};
 };
-const stepName = id => { if (id.startsWith("part:")) { const p = PARTS.find(x => x.id === id.slice(5)) || {}; return `${p.id} · ${p.language}`; } if (id.startsWith("unit:")) return unitLabel(id.slice(5)); const n = byId.get(id); if (!V.route && n.entry) return entryLabel(n); if (n.kind === "class") return nameOf(n) + "()"; if (n.make) return n.name; if (isCtor(n) && !n.on_class) return typeLabel(n.cls) + "()"; return n.cls ? `${typeLabel(n.cls)}.${nameOf(n)}` : nameOf(n); };
+const stepName = id => { if (id.startsWith("part:")) { const p = PARTS.find(x => x.id === id.slice(5)) || {}; return `${p.id} · ${p.language}`; } if (id.startsWith("unit:")) return unitLabel(id.slice(5)); const n = byId.get(id); if (!V.route && n.entry) return entryLabel(n); if (n.kind === "class") return typeLabel(n.id) + "()"; if (n.make) return n.name; if (isCtor(n) && !n.on_class) return typeLabel(n.cls) + "()"; return n.cls ? `${typeLabel(n.cls)}.${nameOf(n)}` : nameOf(n); };
 // the call names the method it runs, through a class (`Section.show(s, h)`) or through `super()`: the call's own site,
 // or for what a call may run instead, the site of that call
 const namesItsMethod = key => {
   const i = treeInfo.get(key), s = (i?.dispatch != null ? treeInfo.get(i.dispatch) : i)?.site;
   return !!s && (!!s.named || !!s.after);
 };
-// a step's name: a method run on a class it is known to run on is that class's (`D.f`, `mathematics.md`, "Method
+// a step's name (`model::step_label`): an initializer is the call to its own class wherever it runs; any other method run on a
+// class it is known to run on is that class's (`D.f`, `mathematics.md`, "Method
 // resolution order"), one its call names is its own class's, a library's operation is its own name
 const stepLabel = key => {
   const info = treeInfo.get(key);
@@ -826,7 +847,7 @@ const stepLabel = key => {
   if (info.step.startsWith("op:")) return info.step.slice(3);
   if (info.built) return typeLabel(info.built) + "()";
   const n = byId.get(info.step);
-  return info.on && !namesItsMethod(key) && n && n.cls && !isCtor(n) ? `${typeLabel(info.on)}.${nameOf(n)}` : stepName(info.step);
+  return info.on && !namesItsMethod(key) && n && n.cls && !(isCtor(n) && !n.on_class) ? `${typeLabel(info.on)}.${nameOf(n)}` : stepName(info.step);
 };
 // how many functions the call at a step may run, one of them: the one it reaches, unless an interface, a protocol, a
 // trait or an abstract class only declares it, and each it may run instead; 0 where it runs one function
