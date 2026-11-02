@@ -139,7 +139,7 @@ section li{margin:4px 0}
 .b-cells{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,220px),1fr));gap:12px 22px}
 .b-cell .l{font-size:13px;color:var(--ink-2);margin:0 0 4px}
 .b-bar{display:grid;grid-template-columns:56px 1fr;gap:8px;align-items:center;font-family:var(--mono);font-size:12px;color:var(--ink-3);margin:3px 0}
-.b-bar .v{height:14px;min-width:2px;position:relative}
+.b-bar .v{height:14px;min-width:2px;position:relative}.b-bar .v.none{min-width:0}
 .b-bar .v span{position:absolute;left:calc(100% + 6px);top:-1px;white-space:nowrap;color:var(--ink)}
 .b-bar.before .v{background:var(--ink-3)}.b-bar.after .v{background:var(--key)}
 .b-ratio{font-family:var(--mono);font-size:12px;color:var(--ink-3);margin:2px 0 0}
@@ -385,7 +385,7 @@ def bench(spec: str) -> str:
         for c in row["cells"]:
             top = max([v for v in (c["before"], c["after"]) if v is not None] or [0]) or 1
             pair = "".join(
-                f'<div class="b-bar {side}"><span>{name}</span><div class="v" style="width:{0 if c[side] is None else max(1.0, 70 * c[side] / top):.1f}%">'
+                f'<div class="b-bar {side}"><span>{name}</span><div class="v{" none" if c[side] is None else ""}" style="width:{0 if c[side] is None else max(1.0, 70 * c[side] / top):.1f}%">'
                 f'<span>{measured(c[side], c["unit"])}</span></div></div>'
                 for side, name in (("before", before), ("after", after))
             )
