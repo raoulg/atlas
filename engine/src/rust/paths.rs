@@ -14,7 +14,11 @@ use crate::model::{ext, Node, NodeKind, Resolved};
 use crate::paths::{bound as named_by, cross, each, environment_named, held_by, hole, lit, or_else, parent, substitute, union, Built, Seg};
 use crate::tree::{beneath, named_children, text, unquote, walk};
 
-const DEPTH: u32 = 12;
+/// How deep an expression is followed, into the functions it calls and the values they read: a
+/// path a field keeps, made by a function the constructor calls, read in a closure of a method
+/// another method calls (`self.root.join(d.strip_prefix(&self.here)?)` with `here: Repo::real(&root)`),
+/// is some twenty expressions deep.
+const DEPTH: u32 = 20;
 
 /// Evaluates paths and statements in the crates of one workspace.
 pub(super) struct Eval<'a> {
@@ -864,6 +868,7 @@ impl<'a> Eval<'a> {
             Some(PathFn::Environment) => vec![environment_named(&arg(0)).unwrap_or_else(|| hole("call"))],
             Some(PathFn::Relative) if args.len() > 1 => cross(&arg(1).iter().map(parent).collect::<Vec<_>>(), &arg(0), "/"),
             Some(PathFn::Relative) => arg(0),
+            Some(PathFn::Within) => crate::paths::within_each(&arg(1), &arg(0)),
             None => self.given(at, f, &args, depth).unwrap_or_else(|| vec![hole("call")]),
         }
     }
@@ -1298,6 +1303,7 @@ fn path_made(k: PathMethod, on: Vec<Built>, first: Vec<Built>) -> Vec<Built> {
         PathMethod::Same => on,
         PathMethod::Extension => on.iter().flat_map(|b| first.iter().map(move |x| with_extension(b, x))).collect(),
         PathMethod::Sibling => cross(&on.iter().map(parent).collect::<Vec<_>>(), &first, "/"),
+        PathMethod::Within => crate::paths::within_each(&on, &first),
     }
 }
 

@@ -841,6 +841,7 @@ impl<'a> Eval<'a> {
                     receiver().iter().map(|b| crate::paths::with_suffix(b, &lit(&suffix))).collect()
                 }
                 PathMethod::Sibling => cross(&receiver().iter().map(parent).collect::<Vec<_>>(), &joined(&positional), "/"),
+                PathMethod::Within => crate::paths::within_each(&receiver(), &joined(&positional)),
             };
         }
         // a variable read from the environment's mapping, as ty types it: `os.environ.get(..)`

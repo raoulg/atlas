@@ -2070,6 +2070,9 @@ pub enum PathFn {
     /// URL is resolved against its base (`new URL("../data", import.meta.url)`); else its first
     /// argument as it is.
     Relative,
+    /// Its second argument as it lies within its first, the path that joined to the first is the
+    /// second (`paths::within`): Node's `path.relative(from, to)`.
+    Within,
 }
 
 impl PathFn {
@@ -2082,7 +2085,7 @@ impl PathFn {
         match self {
             PathFn::Join | PathFn::Parent | PathFn::Same => Some(0),
             PathFn::Relative => Some(usize::from(args > 1)),
-            PathFn::Home | PathFn::Here | PathFn::Temp | PathFn::Environment => None,
+            PathFn::Home | PathFn::Here | PathFn::Temp | PathFn::Environment | PathFn::Within => None,
         }
     }
 }
@@ -2178,6 +2181,7 @@ pub const PATH_FUNCTIONS: &[(&str, &str, PathFn)] = &[
     ("path", "join", PathFn::Join),
     ("path", "resolve", PathFn::Join),
     ("path", "dirname", PathFn::Parent),
+    ("path", "relative", PathFn::Within),
     ("url", "fileURLToPath", PathFn::Same),
     ("os", "homedir", PathFn::Home),
     ("os", "tmpdir", PathFn::Temp),
@@ -2199,9 +2203,10 @@ pub const RUST_PATH_FUNCTIONS: &[(&str, &str, PathFn)] = &[
     ("OsStr", "new", PathFn::Same),
     ("OsString", "from", PathFn::Same),
     ("String", "from", PathFn::Same),
-    // a path made absolute, or written with its `.` and `..` taken out (`a/./b/../c` is `a/c`):
-    // the same place, written another way
+    // a path made absolute, resolved as the file system resolves it, or written with its `.` and
+    // `..` taken out (`a/./b/../c` is `a/c`): the same place, written another way
     ("path", "absolute", PathFn::Same),
+    ("fs", "canonicalize", PathFn::Same),
     ("path_clean", "clean", PathFn::Same),
     ("env", "current_dir", PathFn::Here),
     ("env", "home_dir", PathFn::Home),
@@ -2255,6 +2260,7 @@ pub const PYTHON_PATH_METHODS: &[(&str, &str, PathMethod)] = &[
     ("importlib", "joinpath", PathMethod::Join),
     ("pathlib", "with_suffix", PathMethod::Extension),
     ("pathlib", "with_name", PathMethod::Sibling),
+    ("pathlib", "relative_to", PathMethod::Within),
     ("pathlib", "resolve", PathMethod::Same),
     ("pathlib", "absolute", PathMethod::Same),
     ("pathlib", "expanduser", PathMethod::Same),
@@ -2303,6 +2309,9 @@ pub enum PathMethod {
     Extension,
     /// Its first argument, in the directory the path is in.
     Sibling,
+    /// The path as it lies within its first argument, the path that joined to the argument is the
+    /// path (`paths::within`): `b.strip_prefix(a)`, `b.relative_to(a)`.
+    Within,
 }
 
 /// Rust's methods of a path and of a string, by name.
@@ -2311,6 +2320,7 @@ pub const RUST_PATH_METHODS: &[(&str, PathMethod)] = &[
     ("parent", PathMethod::Parent),
     ("with_extension", PathMethod::Extension),
     ("with_file_name", PathMethod::Sibling),
+    ("strip_prefix", PathMethod::Within),
     ("to_path_buf", PathMethod::Same),
     ("as_path", PathMethod::Same),
     ("into_os_string", PathMethod::Same),

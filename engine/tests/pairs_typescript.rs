@@ -2101,10 +2101,15 @@ fn places_a_name_bound_once_is_one_value() {
     common::a_name_bound_once_is_one_value("typescript", "export.exportStock");
 }
 
-/// The trees pair: a recursion over `readdirSync` is one place at every depth (#325).
+/// The trees pair: a recursion over `readdirSync` is one place at every depth, through one function and through two that call
+/// each other (#325, #345).
 #[test]
 fn places_a_walk_of_a_tree_is_one_place_at_every_depth() {
-    common::a_walk_of_a_tree_is_one_place_at_every_depth("typescript", "backup.copyTree", "backup.main");
+    common::a_walk_of_a_tree_is_one_place_at_every_depth(
+        "typescript",
+        &[("backup.copyTree", "data", "backup"), ("backup.mirrorEntry", "photos", "archive")],
+        "backup.main",
+    );
 }
 
 /// The handles pair (#353): a `FileHandle` handed on (`count(f: FileHandle)`, made by `open` of `node:fs/promises`) is read
@@ -2159,6 +2164,13 @@ fn a_lookup_is_the_projection_its_subscript_is() {
         &[("indexed", "lookedUp"), ("keyed", "got"), ("pushed", "pushedLookedUp"), ("added", "addedLookedUp"), ("grown", "grownLookedUp")],
         &[("NAMED", "BY_NAME")],
     );
+}
+
+/// The keys pair: a key taken with `relative(root, note)` and joined back to its folder names the note it was taken from; one cut
+/// out of the path's text is a name of its own (#352).
+#[test]
+fn places_a_key_joined_back_to_its_root_is_the_note() {
+    common::a_key_joined_back_to_its_root_is_the_note("typescript");
 }
 
 /// The lookups pair: a `push` to a row a subscript or a lookup picks changes the rows (#374): the row of rows written

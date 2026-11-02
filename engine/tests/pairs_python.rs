@@ -3060,11 +3060,16 @@ fn places_a_name_bound_once_is_one_value() {
     common::a_name_bound_once_is_one_value("python", "export.export");
 }
 
-/// The trees pair: a recursion over `iterdir` is one place at every depth (#325). It is the walk `rglob("*")` makes,
+/// The trees pair: a recursion over `iterdir` is one place at every depth, through one function and through two that call
+/// each other (#325, #345). It is the walk `rglob("*")` makes,
 /// so the clean copy reads what `size` reads ("Isomorphic is the same"); the shortcut's copy stops at the top.
 #[test]
 fn places_a_walk_of_a_tree_is_one_place_at_every_depth() {
-    common::a_walk_of_a_tree_is_one_place_at_every_depth("python", "backup.copy_tree", "backup.main");
+    common::a_walk_of_a_tree_is_one_place_at_every_depth(
+        "python",
+        &[("backup.copy_tree", "data", "backup"), ("backup.mirror_entry", "photos", "archive")],
+        "backup.main",
+    );
     let p = common::pair("trees/python");
     let read = |g: &Graph, id: &str| -> BTreeSet<String> {
         let n = g.node(id).unwrap_or_else(|| panic!("no node {id}"));
@@ -3211,6 +3216,13 @@ fn a_lookup_is_the_projection_its_subscript_is() {
         ],
         &[],
     );
+}
+
+/// The keys pair: a key taken with `note.relative_to(root)` and joined back to its folder names the note it was taken from; one cut
+/// out of the path's text is a name of its own (#352).
+#[test]
+fn places_a_key_joined_back_to_its_root_is_the_note() {
+    common::a_key_joined_back_to_its_root_is_the_note("python");
 }
 
 /// The lookups pair: an `append` to a row a subscript or a lookup picks changes the rows (#374): of rows the function is

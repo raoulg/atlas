@@ -209,6 +209,21 @@ const REVIEWED: &[(&str, &str, &str)] = &[
     ),
     (
         "places",
+        "atlas-engine.changes.envisioned",
+        "a vision stands beside the repository's environment, `.venv`, where uv keeps a project's: the name is the convention's, the directory it is in the caller's (`{repo}/.venv`); `.venv` alone is the command line run in `.`",
+    ),
+    (
+        "places",
+        "atlas-engine.python.parse",
+        "wrong, #395: the files a test's pair holds are credited to `parse`, where the listing's file made the place whole, and not to the test that built the `Repo` whose root it is",
+    ),
+    (
+        "places",
+        "atlas-engine.typescript.parse",
+        "wrong, #395: the files a test's pair holds are credited to `parse`, where the listing's file made the place whole, and not to the test that built the `Repo` whose root it is",
+    ),
+    (
+        "places",
         "atlas-code.serve.serve",
         "the page shows the repository's code, so `serve` listens on this machine alone: the loopback host is its own to fix, never a caller's; the port is the caller's (`--port`), else the repository's own, else one the system picks",
     ),

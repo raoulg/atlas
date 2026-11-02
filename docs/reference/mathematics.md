@@ -208,7 +208,15 @@ parameter (`copy_tree(src / name)` for each `name` of `read_dir(src)`) extends t
 recursion it holds the least fixpoint of the extension, `X`, `X/*`, `X/*/*`, …, which is `X/**`, any number of parts
 below what the first call hands (`**` holds none as well). An extension by a part the code does not decide (a pattern,
 a hole) is held exactly; one written out (`sub`) is held by `**` too, the least pattern of the algebra that holds
-`sub/sub/…`; a recursive call that hands the parameter itself adds nothing. The parts of a term are what lies between the `/`s it
+`sub/sub/…`; a recursive call that hands the parameter itself adds nothing. A recursion is a cycle of the call graph, a
+strongly connected component of it: a function that calls itself, or several that call each other in turn (`mirror`
+lists a folder and hands each entry to `mirror_entry`, which hands a folder back to `mirror`). A walk around the cycle out
+through the callers that hands each parameter of the value that parameter or a path below it extends the parameter as a
+call of the function itself does, so over the cycle the parameter of each of its functions holds the least fixpoint below
+what the first call into that function hands. The extension is the whole walk's: held exactly where each walk around the
+cycle extends the parameter by one part the code does not decide, and by `**` where it extends it by more parts or by a
+name written out. A run of parts each of which holds any one part (`*`) or any number (`**`) holds as many as its `*`s, or
+more: `*/**` and `**/*` are one term, `**/*`, and `**/**` is `**`. The parts of a term are what lies between the `/`s it
 writes, so a value between two of them is one part; `parent` drops exactly the last part
 (`~/data/{name}` is in `~/data`), and of a term that is one value not said yet it is that value's
 directory, `{p}/..`, taken once `p` is substituted: `parent` commutes with substitution (#284). A pattern below a directory (`D.glob("*/IO-*")`) is
@@ -231,6 +239,13 @@ changes in place is the term it holds after each change, as a name bound anew is
 union of the term before and after the change, and a change it repeats (in a loop) as many times as
 the code does not say: a join leaves it below the term before (`p/{…}`), a change of its extension or
 name one of the two, since doing it again changes nothing more, and any other change a value not said.
+A path taken within a base (`b.strip_prefix(a)`, `b.relative_to(a)`, `path.relative(a, b)`) is the left quotient of
+the join: the term `b ⧵ a` for which `a.join(b ⧵ a) = b`. Where `b` is written as `a` with parts below it, `b ⧵ a` is
+those parts (`notes/*` within `notes` is `*`); where `b` is `a`, the empty path; else it stays a quotient, a term of its
+own with `b` and `a` in it, which substitution writes into as into any term and which is decided once its base is at
+the front of `b`. A join at the same base cancels it, wherever the two meet: where the code writes the join, and where
+a caller says the base and the path only after it was written (`{A}/{B ⧵ C}` with `a` said for both `A` and `C` is `b`).
+A value with itself to fall back to is the value (`p.canonicalize().unwrap_or(p)` is `p`).
 **In Atlas.** A place on the disk the code names only through a variable is drawn as the term it
 evaluates to (`assets/regelingen/*/IO-*`), not as the variable (`m`). The root is traced to a
 default or to a parameter wherever the code says it; what it cannot trace stays a hole in the
@@ -258,11 +273,14 @@ the callers hand once that is written in, so one binding a call hands in two arg
 (`for p in ps`) ranges over every term the caller hands. Each binding is a variable of its own: two loops over one list
 pair every element with every other, as their runs do, and two values the code keeps in step only by an index it
 counts (`dirs[i]`, `names[i]`) are two variables, every combination a place. What a choice binds a name to
-(`d = a if c else b`) is kept as its alternatives where the name stands. A recursion is completed to its fixpoint: the
-recursive call that extends the parameter is written in once, as `{p}/**`, and the term goes on through the calls that
-are not the recursion, so a walk of a tree is one place at every depth (`data/**/*`, each file in any folder at any
-depth in `data/`), never one place per level down to a limit; a recursion through more than one function (`f` calls `g`
-calls `f`) is followed to the depth limit. A call is no
+(`d = a if c else b`) is kept as its alternatives where the name stands. A recursion is completed to its fixpoint: where
+the walk out through the callers goes into a cycle, a parameter a walk around the cycle extends is written in once, as
+`{p}/**`, and the term goes on through the calls that leave the cycle and through the cycle's other functions, each met
+once, never around the cycle again; so a walk of a tree is one place at every depth (`data/**/*`, each file in any
+folder at any depth in `data/`), whether one function walks it or several in turn, never one place per level down to a
+limit. A path taken within the folder it came from and joined back to that folder is the path it was taken from
+(`root / note.relative_to(root)` reads the note listed), whichever function takes it and whichever joins it back; one
+cut out of the path's text by its length is a value Atlas does not follow, a name of its own below the folder. A call is no
 name of what it gives: a callee names an operation (`trim`, `new`, `TemporaryDirectory`), so a
 call no name holds is `{}` in every language. A suffix a path is given (`with_suffix`,
 `with_extension`) is part of the term, applied to what a caller hands once the caller says it,
@@ -298,10 +316,11 @@ is one in the same way, by what it serves: a set of methods at a path. `methods=
 (`app.all`) is the top of the set. Its label, `GET|POST /items`, writes the set in the order of
 `knowledge::REQUEST_WAYS`; a request meets a route whose set holds its method, at its path.
 **Where.** `paths.rs` (`Seg`, `join`, `place`, `folders`, `bound`, `each`, `chosen`, `substitute`, `with_suffix`,
-`environment_named`, `looked_up`, `Callers`, `served`, `serving`), `model.rs` (`Route`, `Methods`, `Request`),
-the readers' `paths.rs` (`Eval::of`; Rust's `Eval::changed`), `flow.rs` (`Touch::place`), `plan.js` (`pathWords`),
-`knowledge.rs` (`PathFn`, `ELEMENT_NAMES`, `LISTING_ENTRIES`); the pairs `python/paths`, `places`, `kept`, `workbench`,
-`unset`, `opened`, `twice` (#324) and `trees` (#325).
+`environment_named`, `looked_up`, `or_else`, `within`, `Seg::Within`, `Callers`, `Cycles`, `wildcards`, `served`, `serving`),
+`model.rs` (`Route`, `Methods`, `Request`), the readers' `paths.rs` (`Eval::of`; Rust's `Eval::changed`), `flow.rs`
+(`Touch::place`), `plan.js` (`pathWords`), `knowledge.rs` (`PathFn`, `PathMethod::Within`, `ELEMENT_NAMES`,
+`LISTING_ENTRIES`); the pairs `python/paths`, `places`, `kept`, `workbench`, `unset`, `opened`, `twice` (#324), `trees`
+(#325, #345) and `keys` (#352).
 
 ### Places by the type that holds them
 **What.** A quotient of the places by the program's type whose code builds each place's path: the

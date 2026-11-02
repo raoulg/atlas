@@ -899,34 +899,65 @@ fn holds(pattern: &[&str], p: &[&str]) -> bool {
     }
 }
 
-/// The trees pair: a recursion that lists a directory and hands itself each entry below it walks the tree, and over the
-/// recursion its parameter is the least fixpoint of the extension, `D/**` (#325). The clean side copies every file below
-/// `data` to the same place below `backup`, going into each folder it lists; the shortcut copies the files at the top alone.
-/// What `main` makes the clean copy read and write holds a file at every depth below `data` and below `backup`, and nothing
-/// outside them; the shortcut's holds the top alone. So in every language.
+/// The trees pair: a recursion that lists a directory and hands each entry below it back to the walk walks the tree, and
+/// over the recursion its parameter is the least fixpoint of the extension, `D/**`: through one function that calls itself
+/// (#325, `copy_tree`), and through two that call each other in turn, a cycle of the call graph (#345, `mirror` lists a
+/// folder and hands each entry to `mirror_entry`, which hands a folder back to `mirror`). The clean side copies every file
+/// below `data` to the same place below `backup`, and mirrors every file below `photos` into `archive`, going into each
+/// folder it lists; the shortcut copies the files at the top alone, and its `mirror_entry` passes a folder over. `walks`
+/// names, for each walk, the function that copies a file and the folders it copies from and to. What `main` makes the
+/// clean copy read and write holds a file at every depth below the one folder and below the other, and nothing outside
+/// them; the shortcut's holds the top alone. So in every language.
 #[allow(dead_code)]
-pub fn a_walk_of_a_tree_is_one_place_at_every_depth(language: &str, id: &str, main: &str) {
+pub fn a_walk_of_a_tree_is_one_place_at_every_depth(language: &str, walks: &[(&str, &str, &str)], main: &str) {
     let p = pair(&format!("trees/{language}"));
     for (side, g) in [("clean", &p.clean), ("shortcut", &p.shortcut)] {
-        let n = g.node(id).unwrap_or_else(|| panic!("{language}: no node {id}"));
-        // the files a copy reads or writes as `main` hands the copy its folders, each alternative a pattern
-        let patterns = |kind: &str| -> Vec<&str> {
-            n.touches
-                .iter()
-                .filter(|t| t.kind_name() == kind && t.by.contains(&Both::one(main)) && !t.what.ends_with('/'))
-                .flat_map(|t| t.what.split('|'))
-                .collect()
-        };
-        for (kind, root) in [("disk_read", "data"), ("disk_write", "backup")] {
-            let patterns = patterns(kind);
-            let held = |path: &[&str]| patterns.iter().any(|t| holds(&t.split('/').collect::<Vec<_>>(), path));
-            for depth in 1..=20 {
-                let file: Vec<&str> = std::iter::once(root).chain(std::iter::repeat_n("sub", depth - 1)).chain(["f.csv"]).collect();
-                assert_eq!(held(&file), side == "clean" || depth == 1, "{language} {side}: {kind} {file:?} by {patterns:?}");
-                let outside: Vec<&str> = ["elsewhere"].into_iter().chain(file[1..].iter().copied()).collect();
-                assert!(!held(&outside), "{language} {side}: {kind} {outside:?}, outside {root}, by {patterns:?}");
+        for (id, from, to) in walks {
+            let n = g.node(id).unwrap_or_else(|| panic!("{language}: no node {id}"));
+            // the files a copy reads or writes as `main` hands the copy its folders, each alternative a pattern
+            let patterns = |kind: &str| -> Vec<&str> {
+                n.touches
+                    .iter()
+                    .filter(|t| t.kind_name() == kind && t.by.contains(&Both::one(main)) && !t.what.ends_with('/'))
+                    .flat_map(|t| t.what.split('|'))
+                    .collect()
+            };
+            for (kind, root) in [("disk_read", *from), ("disk_write", *to)] {
+                let patterns = patterns(kind);
+                let held = |path: &[&str]| patterns.iter().any(|t| holds(&t.split('/').collect::<Vec<_>>(), path));
+                for depth in 1..=20 {
+                    let file: Vec<&str> = std::iter::once(root).chain(std::iter::repeat_n("sub", depth - 1)).chain(["f.csv"]).collect();
+                    assert_eq!(held(&file), side == "clean" || depth == 1, "{language} {side} {id}: {kind} {file:?} by {patterns:?}");
+                    let outside: Vec<&str> = ["elsewhere"].into_iter().chain(file[1..].iter().copied()).collect();
+                    assert!(!held(&outside), "{language} {side} {id}: {kind} {outside:?}, outside {root}, by {patterns:?}");
+                }
             }
         }
+    }
+}
+
+/// The keys pair of `language`: `main` lists the notes in `notes` and reads each back by its key, where it lies within the
+/// folder. The clean side takes the key with the language's own operation (`relative_to`, `strip_prefix`, `path.relative`)
+/// and `read` joins it back to the folder: `root.join(note.strip_prefix(root))` is `note` (#352, `mathematics.md`, "Paths as
+/// terms"), so what `main` makes `read` read is the notes it listed. The shortcut cuts the key out of the path's text by its
+/// length, a value Atlas does not follow, so what it reads is a name of its own below the folder, never the notes it listed.
+/// So in every language.
+#[allow(dead_code)]
+pub fn a_key_joined_back_to_its_root_is_the_note(language: &str) {
+    let p = pair(&format!("keys/{language}"));
+    for (side, g) in [("clean", &p.clean), ("shortcut", &p.shortcut)] {
+        let main = g.node("notes.main").unwrap_or_else(|| panic!("{language} {side}: no node notes.main"));
+        let listed: BTreeSet<String> =
+            main.touches.iter().filter(|t| t.kind_name() == "disk_read").map(|t| format!("{}*", t.what)).collect();
+        assert_eq!(listed, BTreeSet::from(["notes/*".to_string()]), "{language} {side}: what main lists");
+        let read = g.node("notes.read").unwrap_or_else(|| panic!("{language} {side}: no node notes.read"));
+        let by_main: BTreeSet<String> = read
+            .touches
+            .iter()
+            .filter(|t| t.kind_name() == "disk_read" && t.by.contains(&Both::one("notes.main")))
+            .map(|t| t.what.clone())
+            .collect();
+        assert_eq!(by_main == listed, side == "clean", "{language} {side}: read by main {by_main:?}, listed {listed:?}");
     }
 }
 

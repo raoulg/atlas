@@ -1832,10 +1832,15 @@ fn places_a_name_bound_once_is_one_value() {
     common::a_name_bound_once_is_one_value("rust", "export.export");
 }
 
-/// The trees pair: a recursion over `read_dir` is one place at every depth (#325).
+/// The trees pair: a recursion over `read_dir` is one place at every depth, through one function and through two that call
+/// each other (#325, #345).
 #[test]
 fn places_a_walk_of_a_tree_is_one_place_at_every_depth() {
-    common::a_walk_of_a_tree_is_one_place_at_every_depth("rust", "backup.copy_tree", "backup.main");
+    common::a_walk_of_a_tree_is_one_place_at_every_depth(
+        "rust",
+        &[("backup.copy_tree", "data", "backup"), ("backup.mirror_entry", "photos", "archive")],
+        "backup.main",
+    );
 }
 
 /// The locals pair: a vector a step changes in place (`both.push(second)`) holds a value of its own and stands for nothing,
@@ -1880,6 +1885,13 @@ fn a_lookup_is_the_projection_its_subscript_is() {
         ],
         &[],
     );
+}
+
+/// The keys pair: a key taken with `note.strip_prefix(root)` and joined back to its folder names the note it was taken from; one cut
+/// out of the path's text is a name of its own (#352).
+#[test]
+fn places_a_key_joined_back_to_its_root_is_the_note() {
+    common::a_key_joined_back_to_its_root_is_the_note("rust");
 }
 
 /// The lookups pair: a `push` to a row a subscript or a lookup picks changes the rows (#374): the row `&mut rows[0]`
