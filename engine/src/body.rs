@@ -2,7 +2,7 @@
 //! edges they make, and what its calls touch. A reader says what each call is and how its
 //! language writes a string and a choice; the rest is read here.
 
-use std::cell::OnceCell;
+use std::cell::{OnceCell, RefCell};
 use std::collections::{HashMap, HashSet};
 
 use tree_sitter::Node as TsNode;
@@ -342,6 +342,9 @@ pub struct Steps<'t, 's> {
     lookups: Vec<(TsNode<'t>, TsNode<'t>)>,
     /// The body read once, when a question first climbs it or follows a name through it.
     index: OnceCell<Index<'t, 's>>,
+    /// Of each name asked, where the climb from it to the body says it is read (`Steps::climb`). The climb reads the
+    /// body's tree and its lookups, so a lookup the body adds asks again.
+    climbs: RefCell<HashMap<usize, Read>>,
 }
 
 /// A body read once: the node each of its nodes stands in, the named nodes each holds, and the names written in it in
@@ -381,6 +384,41 @@ impl<'t, 's> Index<'t, 's> {
         }
         Index { parents, named, names, written }
     }
+
+    /// Whether `n` is `body` or stands in it, so that the index holds it.
+    fn holds(&self, body: TsNode<'t>, n: TsNode<'t>) -> bool {
+        n.id() == body.id() || self.parents.contains_key(&n.id())
+    }
+
+    /// The named nodes `n` holds, in source order, as tree-sitter gives them.
+    fn named_of(&self, body: TsNode<'t>, n: TsNode<'t>) -> std::borrow::Cow<'_, [TsNode<'t>]> {
+        if self.holds(body, n) {
+            std::borrow::Cow::Borrowed(self.named.get(&n.id()).map_or(&[][..], |all| &all[..]))
+        } else {
+            std::borrow::Cow::Owned(named_children(n))
+        }
+    }
+
+    /// Whether a name written in `n`, or `n` itself, writes `name`: one of `walk(n, names)` does.
+    fn writes(&self, body: TsNode<'t>, n: TsNode<'t>, name: &str, names: &[&str], src: &[u8]) -> bool {
+        if !self.holds(body, n) {
+            return walk(n, names).iter().any(|x| text(*x, src) == name);
+        }
+        let within = |x: &TsNode<'t>| {
+            let mut at = *x;
+            loop {
+                if at.id() == n.id() {
+                    return true;
+                }
+                match self.parents.get(&at.id()) {
+                    Some((p, _)) => at = *p,
+                    None => return false,
+                }
+            }
+        };
+        let inside = |x: &&TsNode<'t>| n.start_byte() <= x.start_byte() && x.end_byte() <= n.end_byte();
+        self.written.get(name).into_iter().flatten().filter(inside).any(within)
+    }
 }
 
 impl<'t, 's> Steps<'t, 's> {
@@ -406,6 +444,7 @@ impl<'t, 's> Steps<'t, 's> {
             stood: HashSet::new(),
             lookups: vec![],
             index: OnceCell::new(),
+            climbs: RefCell::new(HashMap::new()),
         }
     }
 
@@ -419,6 +458,16 @@ impl<'t, 's> Steps<'t, 's> {
             Some((p, _)) => Some(*p),
             None => parent(n),
         }
+    }
+
+    /// The named nodes `n` holds, in source order (`Index::named_of`).
+    fn named(&self, n: TsNode<'t>) -> std::borrow::Cow<'_, [TsNode<'t>]> {
+        self.index().named_of(self.body, n)
+    }
+
+    /// Whether a name written in `n`, or `n` itself, writes `name` (`Index::writes`).
+    fn writes(&self, n: TsNode<'t>, name: &str) -> bool {
+        self.index().writes(self.body, n, name, self.uses.names, self.src)
     }
 
     /// The named nodes before `n` in the node it stands in, the nearest first.
@@ -646,7 +695,7 @@ impl<'t, 's> Steps<'t, 's> {
                     }
                 }
             }
-            stack.extend(named_children(n).into_iter().rev());
+            stack.extend(self.named(n).iter().rev().copied());
         }
         // a name a step gave holds what the step gave, where the reader knows no type for it where it is read, or one of a
         // library's: the value is the step's, of no type of the code's where the step gives none (`fig, ax = plt.subplots()`)
@@ -1123,6 +1172,17 @@ impl<'t, 's> Steps<'t, 's> {
         if self.stood.contains(&n.id()) {
             return Read::There;
         }
+        if let Some(r) = self.climbs.borrow().get(&n.id()) {
+            return *r;
+        }
+        let r = self.climb(n);
+        self.climbs.borrow_mut().insert(n.id(), r);
+        r
+    }
+
+    /// Where the name `n` is read, by the nodes between it and the body (`Steps::reading`).
+    fn climb(&self, n: TsNode<'t>) -> Read {
+        let u = self.uses;
         let name = text(n, self.src);
         // `chain`: what lies between `n` and `child` takes a part of what `n` holds, or hands it on
         let (mut child, mut through, mut chain) = (n, false, true);
@@ -1130,8 +1190,8 @@ impl<'t, 's> Steps<'t, 's> {
             if (u.binders)(p, child).is_some() {
                 return Read::Not;
             }
-            let own = |c: &TsNode| c.id() != child.id() && (u.binders)(p, *c) == Some(true);
-            if named_children(p).into_iter().filter(own).any(|c| walk(c, u.names).iter().any(|x| text(*x, self.src) == name)) {
+            let own = |c: &TsNode<'t>| c.id() != child.id() && self.writes(*c, name) && (u.binders)(p, *c) == Some(true);
+            if self.named(p).iter().any(own) {
                 return Read::Not;
             }
             if let Some((targets, value)) = (u.binds)(p) {
@@ -1173,7 +1233,7 @@ impl<'t, 's> Steps<'t, 's> {
             if (u.names.contains(&n.kind()) || u.reads.contains(&n.kind())) && self.reading(n) != Read::Not {
                 out.extend(stands(n).into_iter().map(|x| x.id()));
             }
-            stack.extend(named_children(n).into_iter().rev());
+            stack.extend(self.named(n).iter().rev().copied());
         }
         out
     }
@@ -1391,6 +1451,7 @@ impl<'t, 's> Steps<'t, 's> {
     /// element left out (`Steps::projection`): a name bound to it stands for the part of the collection.
     pub fn looks_up(&mut self, c: TsNode<'t>, of: TsNode<'t>) {
         self.lookups.push((c, of));
+        self.climbs.get_mut().clear();
     }
 
     /// The collection the lookup `c` looks a part up in (`Steps::looks_up`), beneath what hands its value on.
@@ -2133,7 +2194,8 @@ mod tests {
     }
 
     /// A body's index answers as its tree does: the node each node stands in is tree-sitter's parent, the named nodes
-    /// before it are its previous named siblings, and the names it keeps are the walk's, also by what each writes.
+    /// before it are its previous named siblings, the named nodes it holds are its named children, and the names it keeps
+    /// are the walk's, also by what each writes, under each of its nodes as under the body.
     #[test]
     fn the_index_of_a_body_answers_as_its_tree_does() {
         let ids = |ns: &[TsNode]| ns.iter().map(|n| n.id()).collect::<Vec<_>>();
@@ -2149,6 +2211,13 @@ mod tests {
                     let children: Vec<TsNode> = n.children(&mut cursor).collect();
                     under.extend(children.iter().copied());
                     stack.extend(children);
+                }
+                for n in under.iter().copied().chain([body]) {
+                    assert_eq!(ids(&index.named_of(body, n)), ids(&named_children(n)), "{code}: {}", n.kind());
+                    for name in index.written.keys() {
+                        let walked = walk(n, &names).iter().any(|x| text(*x, src) == *name);
+                        assert_eq!(index.writes(body, n, name, &names, src), walked, "{code}: {name} in {}", n.kind());
+                    }
                 }
                 for n in under {
                     let (p, at) = index.parents[&n.id()];
