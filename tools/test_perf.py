@@ -177,6 +177,18 @@ class Series(unittest.TestCase):
 
 
 class Page(unittest.TestCase):
+    def test_bars_that_compare_versions_are_drawn_as_pairs(self):
+        """Labels `measure, version` or `measure before/after` form a group per measure with a side each; a list of
+        parts that names no side stays a bar per label."""
+        page = release_page.bars("Cold, 0.70.0 = 20 s; Cold, 0.71.0 = 18 s; Warm, 0.70.0 = 1.2 s; Warm, 0.71.0 = 0.8 s | c")
+        self.assertEqual(page.count('class="gbar"'), 2)
+        self.assertIn("b-legend", page)
+        self.assertEqual(page.count('class="v s1'), 2)
+        parts = release_page.bars("Linking = 22 s; Flow = 2.7 s; Everything else = 0.1 s")
+        self.assertNotIn("gbar", parts)
+        self.assertEqual(parts.count('class="bar"'), 3)
+
+
     def test_the_page_draws_every_number_and_no_private_name(self):
         programs = [perf.Program("public-x", "https://example.org/x", SHA, ("perf",)), perf.Program("hidden-y", "private", SHA, ("perf",))]
         card = {"languages": ["python", "typescript"], "files": 3, "lines": 61000, "modules": 3, "functions": 9}

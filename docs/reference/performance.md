@@ -98,7 +98,8 @@ counting nights is guessing; a slowdown is reported when it is reproduced.
   spreads of the window (its median absolute deviation, scaled to a standard deviation), and a floor of
   0.5 s or 50 MB. A suspect measure says nothing yet: it is a reason to measure again.
 - **Reproduced**: in the same run, the last commit on which the measure lay within its baseline (A) and
-  the commit measured (B) are built and measured interleaved, A B A B, five rounds (two for a clean build),
+  the commit measured (B) are built and measured interleaved, A B A B, five rounds (two for a clean build), the
+  readings of one subject taken together from one round of readings, as the night takes them,
   on this runner: what the machine does to one it does to the other. The slowdown is reproduced when every
   round of B is slower than every round of A, and the medians differ by more than the floor. Five rounds
   each, all of B past all of A, happens by chance once in 252.
@@ -168,8 +169,9 @@ drawn as bars throughout.
   other, on the same side, and the medians lie apart by more than the floor (0.5 s, 50 MB). A measure taken from
   two nights has no rounds to judge, and is grey.
 - **The table**: a row per program of the corpus that `perf` reads, named by its card, with its cold read, warm
-  read, serve to the complete picture and peak memory (that of the cold read); and a row of Atlas's clean release
-  build and its test suite. Each measure is a pair of bars, the release before and this one, from the interleaved
+  read, read again after a file no reader asks about, serve from a cold start to the first and to the complete
+  picture, serve drawing again after that file, and peak memory (that of the cold read); and a row of Atlas's
+  clean release build and its test suite. Each measure is a pair of bars, the release before and this one, from the interleaved
   run of the two where it measured it, both on one runner (`mode: weekly`, `to` the release branch), and else from
   each release's night. Two nights ran on two runners, often of other CPUs, and say less than one interleaved run.
   A program that joined the corpus after both releases were measured has no row yet.

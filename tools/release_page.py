@@ -133,6 +133,16 @@ section li{margin:4px 0}
 .bar .v{height:22px;background:var(--key);min-width:2px;position:relative}
 .bar .v span{position:absolute;left:calc(100% + 8px);top:1px;font-family:var(--mono);font-size:13px;color:var(--ink);white-space:nowrap}
 .bars .cap{font-size:13.5px;color:var(--ink-2);margin-top:10px}
+.b-legend{display:flex;flex-wrap:wrap;gap:6px 18px;font-size:13px;color:var(--ink-2);margin:0 0 10px}
+.b-legend i{display:inline-block;width:12px;height:12px;margin-right:6px;vertical-align:-1px}
+.gbar{display:grid;grid-template-columns:minmax(120px,30%) 1fr;gap:12px;align-items:center;margin:10px 0}
+.gbar .l{font-size:14px;color:var(--ink-2)}
+.gpair{display:grid;gap:3px}
+.gbar:has(> .l:empty){grid-template-columns:1fr}
+.gpair .v{height:14px;min-width:2px;position:relative}
+.gpair .v.none{min-width:0}
+.gpair .v span{position:absolute;left:calc(100% + 8px);top:-1px;font-family:var(--mono);font-size:12.5px;color:var(--ink);white-space:nowrap}
+.s0{background:var(--ink-3)}.s1{background:var(--key)}.s2{background:var(--edit)}.s3{background:var(--add)}
 .bench{margin:22px 0;background:var(--panel);border:1px solid var(--line);padding:16px 18px}
 .b-row{border-top:1px solid var(--line);padding:14px 0 6px}
 .b-row:first-child{border-top:0;padding-top:0}
@@ -361,8 +371,39 @@ def svg(path: pathlib.Path) -> str:
     return re.sub(r"(<svg[^>]*>)", lambda m: m.group(1) + head, text, count=1)
 
 
+SIDE = re.compile(r"^(.*?)(?:,\s*|\s+|^)(before|after|now|v?\d+\.\d+(?:\.\d+)?)$", re.IGNORECASE)
+
+
+def sides_of(labels: list[str]) -> list[tuple[str, str]] | None:
+    """Labels that compare versions, `measure, 0.70.0` / `measure, 0.71.0` or `measure before` / `measure after`, as
+    (measure, side); None where any label names no side or there is one side alone: then each label is a bar of its own."""
+    split = [SIDE.match(label.strip()) for label in labels]
+    if not all(split) or len({m.group(2) for m in split}) < 2:
+        return None
+    return [(m.group(1).strip(), m.group(2)) for m in split]
+
+
+def legend(sides: list[str]) -> str:
+    """The colour of each side of a comparison, in the order of the pairs."""
+    keys = "".join(f'<span><i class="s{i}"></i>{inline(side)}</span>' for i, side in enumerate(sides))
+    return f'<p class="b-legend">{keys}</p>'
+
+
+def pairs(groups: list[tuple[str, list[tuple[int, str, float | None]]]], top: float) -> str:
+    """Grouped bars of one scale: a group per measure, its sides side by side, each in its side's colour."""
+    out = []
+    for measure, members in groups:
+        rows = "".join(
+            f'<div class="v s{i}{" none" if n is None else ""}" style="width:{0 if n is None else max(0.4, 78 * n / top):.2f}%"><span>{html.escape(said)}</span></div>'
+            for i, said, n in members
+        )
+        out.append(f'<div class="gbar"><span class="l">{inline(measure)}</span><div class="gpair">{rows}</div></div>')
+    return "".join(out)
+
+
 def bars(spec: str) -> str:
-    """`label = 18.9 s; label = 0.14 s | caption` as bars of one scale."""
+    """`label = 18.9 s; label = 0.14 s | caption` as bars of one scale. Labels that compare versions or before and
+    after (`sides_of`) are drawn as pairs: a group per measure, one colour per side, with a legend."""
     data, _, caption = spec.partition("|")
     rows = []
     for item in [i for i in data.split(";") if "=" in i]:
@@ -370,11 +411,19 @@ def bars(spec: str) -> str:
         number = float(re.match(r"[\d.]+", value).group(0))
         rows.append((label, value, number))
     top = max(n for _, _, n in rows) or 1
+    said = f'<p class="cap">{inline(caption.strip())}</p>' if caption.strip() else ""
+    split = sides_of([label for label, _, _ in rows])
+    if split:
+        sides = list(dict.fromkeys(side for _, side in split))
+        groups: dict[str, list[tuple[int, str, float | None]]] = {}
+        for (measure, side), (_, value, number) in zip(split, rows):
+            groups.setdefault(measure, []).append((sides.index(side), value, number))
+        return f'<div class="bars">{legend(sides)}{pairs(list(groups.items()), top)}{said}</div>'
     out = "".join(
         f'<div class="bar"><span class="l">{inline(label)}</span><div class="v" style="width:{max(0.4, 82 * n / top):.2f}%"><span>{html.escape(value)}</span></div></div>'
         for label, value, n in rows
     )
-    return f'<div class="bars">{out}' + (f'<p class="cap">{inline(caption.strip())}</p>' if caption.strip() else "") + "</div>"
+    return f'<div class="bars">{out}{said}</div>'
 
 
 def measured(value: float | None, unit: str) -> str:
@@ -402,21 +451,20 @@ def bench(spec: str) -> str:
     path, _, caption = (x.strip() for x in spec.partition("|"))
     data = json.loads((DOCS / path).read_text())
     before, after = html.escape(data["before"]), html.escape(data["after"])
-    parts = [summary(data)]
+    parts = [summary(data), legend([before, after])]
     for row in data["rows"]:
-        cells = []
+        groups = []
         for c in row["cells"]:
-            top = max([v for v in (c["before"], c["after"]) if v is not None] or [0]) or 1
-            pair = "".join(
-                f'<div class="b-bar {side}"><span>{name}</span><div class="v{" none" if c[side] is None else ""}" style="width:{0 if c[side] is None else max(1.0, 70 * c[side] / top):.1f}%">'
-                f'<span>{measured(c[side], c["unit"])}</span></div></div>'
-                for side, name in (("before", before), ("after", after))
-            )
+            values = [v for v in (c["before"], c["after"]) if v is not None]
             ratio = f"×{c['after'] / c['before']:.2f}" if c["before"] and c["after"] is not None else "not measured on both"
-            cells.append(f'<div class="b-cell"><p class="l">{html.escape(c["label"])}</p>{pair}<p class="b-ratio">{ratio}</p></div>')
+            groups.append((f"{html.escape(c['label'])} <span class=\"b-ratio\">{ratio}</span>", c, max(values or [0]) or 1))
+        cells = "".join(
+            pairs([(label, [(0, measured(c["before"], c["unit"]), c["before"]), (1, measured(c["after"], c["unit"]), c["after"])])], peak)
+            for label, c, peak in groups
+        )
         name = f"<code>{html.escape(row['name'])}</code>" if row.get("name") else html.escape(row.get("title") or "A private program")
         said = f'<p class="b-card">{html.escape(row["said"])}</p>' if row.get("said") else ""
-        parts.append(f'<div class="b-row"><p class="b-name">{name}</p>{said}<div class="b-cells">{"".join(cells)}</div></div>')
+        parts.append(f'<div class="b-row"><p class="b-name">{name}</p>{said}{cells}</div>')
     over = "".join(releases_bars(data["releases"], s, data["rows"][s["row"]].get("short", "")) for s in data["series"])
     if over:
         parts.append(f'<p class="b-head">Every release since the series began, on its night</p><div class="b-lines">{over}</div>')
@@ -460,18 +508,17 @@ def summary(data: dict) -> str:
 
 
 def releases_bars(releases: list[str], series: dict, short: str) -> str:
-    """One measure over the releases: a bar per release whose night measured it, from zero."""
+    """One measure over the releases, as grouped bars are drawn: the releases side by side from zero, the newest in
+    this release's colour and the ones before in the colour of the release before."""
     shown = {p[0]: p for p in series["points"]}
     top = max(p[1] for p in series["points"]) or 1
-    rows = "".join(
-        f'<div class="b-bar after"><span>{html.escape(r)}</span><div class="v" style="width:{max(1.0, 70 * shown[r][1] / top):.1f}%">'
-        f'<span title="{html.escape(shown[r][2])} on {html.escape(shown[r][3])}">{measured(shown[r][1], series["unit"])}</span></div></div>'
-        if r in shown
-        else f'<div class="b-bar after"><span>{html.escape(r)}</span><div class="v none" style="width:0"><span>–</span></div></div>'
-        for r in releases
-    )
+    last = len(releases) - 1
+    members = [
+        (1 if i == last else 0, f"{r}: {measured(shown[r][1], series['unit'])}" if r in shown else f"{r}: –", shown[r][1] if r in shown else None)
+        for i, r in enumerate(releases)
+    ]
     title = f"{html.escape(short)}, {html.escape(series['label'])}" if short else html.escape(series["label"])
-    return f'<figure><figcaption>{title}</figcaption>{rows}</figure>'
+    return f"<figure><figcaption>{title}</figcaption>{pairs([('', members)], top)}</figure>"
 
 
 def report_of(release: dict) -> dict:

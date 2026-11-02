@@ -962,19 +962,34 @@ class Bench:
             self.tests[side.commit] = kept
         return self.tests[side.commit]
 
+    def sample(self, side: Side, measures: list[str]) -> dict[str, float]:
+        """One sample of each of `measures` on `side`: the readings of one subject from one round of readings, as the
+        night reads them, anything else one at a time."""
+        if all(m.startswith("read/") for m in measures) and len({m.split("/")[1] for m in measures}) == 1:
+            name = measures[0].split("/")[1]
+            kinds = {m.split("/")[2] for m in measures}
+            if kinds - set(KINDS):
+                raise SystemExit(f"no reading {', '.join(sorted(kinds - set(KINDS)))} to measure of {name}")
+            with tempfile.TemporaryDirectory(dir=self.scratch) as scratch:
+                scratch = Path(scratch)
+                reports: dict[str, list[dict]] = {}
+                order = tuple(k for k in KINDS if k in kinds)
+                got = read_round(side.atlas, name, self.subject(side, name), self.libraries, scratch, scratch / "cache", order, reports)
+            out = {}
+            for m in measures:
+                _, _, kind, *rest = m.split("/")
+                self.reports.setdefault(m, {}).setdefault(side.commit, []).extend(reports.get(kind, []))
+                out[m] = got[kind]["/".join(rest)]
+            return out
+        return {m: self.measure(side, m) for m in measures}
+
     def measure(self, side: Side, measure: str) -> float:
         """One sample of `measure` on `side`."""
         parts = measure.split("/")
+        if parts[0] == "read":
+            return self.sample(side, [measure])[measure]
         with tempfile.TemporaryDirectory(dir=self.scratch) as scratch:
             scratch = Path(scratch)
-            if parts[0] == "read":
-                _, name, kind, *rest = parts
-                if kind not in KINDS:
-                    raise SystemExit(f"no reading {kind} to measure {measure}")
-                reports: dict[str, list[dict]] = {}
-                got = read_round(side.atlas, name, self.subject(side, name), self.libraries, scratch, scratch / "cache", (kind,), reports)
-                self.reports.setdefault(measure, {}).setdefault(side.commit, []).extend(reports.get(kind, []))
-                return got[kind]["/".join(rest)]
             if parts[0] == "build":
                 seconds, peak = self.built(side.tree, scratch / "clean", scratch / "build.log")
                 return peak if parts[-1] == "peak_rss" else seconds
@@ -987,14 +1002,21 @@ class Bench:
     def interleaved(self, commits: list[str], measure: str, rounds: int) -> list[list[float]]:
         """`rounds` samples of `measure` on each commit, the order turned every round so that a machine
         that slows down over the run slows each commit alike."""
+        return [got[measure] for got in self.interleaved_together(commits, [measure], rounds)]
+
+    def interleaved_together(self, commits: list[str], measures: list[str], rounds: int) -> list[dict[str, list[float]]]:
+        """`rounds` samples of each of `measures` on each commit, taken together (`sample`), interleaved as
+        `interleaved` does: per commit, each measure's samples."""
         sides = [self.side(c) for c in commits]
-        samples: list[list[float]] = [[] for _ in sides]
+        samples: list[dict[str, list[float]]] = [{m: [] for m in measures} for _ in sides]
         for r in range(rounds):
             order = list(range(len(sides)))
             order = order[r % len(order) :] + order[: r % len(order)]
             for i in order:
-                samples[i].append(self.measure(sides[i], measure))
-            print(f"{measure} round {r + 1}/{rounds}: " + ", ".join(f"{s.commit[:7]} {samples[i][-1]:.2f}" for i, s in enumerate(sides)))
+                for m, value in self.sample(sides[i], measures).items():
+                    samples[i][m].append(value)
+            for m in measures:
+                print(f"{m} round {r + 1}/{rounds}: " + ", ".join(f"{s.commit[:7]} {samples[i][m][-1]:.2f}" for i, s in enumerate(sides)))
         return samples
 
     def close(self) -> None:
@@ -1090,7 +1112,10 @@ def bench_of(args: argparse.Namespace, scratch: Path) -> Bench:
 TABLE = (
     ("cold/seconds", "cold read"),
     ("warm/seconds", "warm read"),
-    ("serve/seconds", "served, to the complete picture"),
+    ("unasked/seconds", "read again after a file no reader asks about"),
+    ("serve/first/seconds", "served from a cold start, to the first picture"),
+    ("serve/seconds", "served from a cold start, to the complete picture"),
+    ("serve/redraw/seconds", "served, drawing again after that file"),
     ("cold/peak_rss", "peak memory"),
 )
 OF_ATLAS = (("build/release/seconds", "release build, clean"), ("tests/total/seconds", "test suite"))
@@ -1115,11 +1140,16 @@ def command_reproduce(args: argparse.Namespace) -> None:
     with tempfile.TemporaryDirectory(prefix="atlas-perf-ab-") as scratch:
         bench = bench_of(args, Path(scratch))
         try:
+            # the readings of one subject are taken from one round of readings, as the night takes them
+            together: dict[str, list[str]] = {}
             for measure in measures:
-                sa, sb = bench.interleaved([a, b], measure, rounds_for(measure, args.rounds))
-                result["measures"][measure] = compared(measure, sa, sb)
-                got = result["measures"][measure]
-                print(f"{measure}: {amount(got['median_a'], got['unit'])} → {amount(got['median_b'], got['unit'])}, {got['grade']}")
+                together.setdefault(f"read/{measure.split('/')[1]}" if measure.startswith("read/") else measure, []).append(measure)
+            for group in together.values():
+                sa, sb = bench.interleaved_together([a, b], group, rounds_for(group[0], args.rounds))
+                for measure in group:
+                    result["measures"][measure] = compared(measure, sa[measure], sb[measure])
+                    got = result["measures"][measure]
+                    print(f"{measure}: {amount(got['median_a'], got['unit'])} → {amount(got['median_b'], got['unit'])}, {got['grade']}")
             large = [m for m, g in result["measures"].items() if g["grade"] == "large"]
             if large and args.bisect_large:
                 worst = max(large, key=lambda m: result["measures"][m]["ratio"])
