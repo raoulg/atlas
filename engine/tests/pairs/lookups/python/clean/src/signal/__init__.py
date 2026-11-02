@@ -1,10 +1,22 @@
 """The levels of a signal, each looked up in the collection it is handed: by a subscript, or by the call that looks it
-up. `pushed` and `pushed_looked_up` look up in a list they change in place first; `added` and `added_looked_up` change
-the row they look up, and so the rows."""
+up. `pushed` and `pushed_looked_up` look up in a list they change in place first. `added` and `added_looked_up` change
+the row they look up, and so the rows they are handed; `grown` and `grown_looked_up` the row of rows they make, and so
+those rows: a change of a part is a change of the whole, which gives the rows anew to what shows them."""
 
 from dataclasses import dataclass
 
-__all__ = ["indexed", "looked_up", "keyed", "got", "pushed", "pushed_looked_up", "added", "added_looked_up"]
+__all__ = [
+    "indexed",
+    "looked_up",
+    "keyed",
+    "got",
+    "pushed",
+    "pushed_looked_up",
+    "added",
+    "added_looked_up",
+    "grown",
+    "grown_looked_up",
+]
 
 
 @dataclass
@@ -71,4 +83,20 @@ def added_looked_up(rows: list[list[Level]], level: Level) -> None:
     """A level added to the first row, the first the rows hand out."""
     row = next(iter(rows))
     row.append(level)
+    _show(rows)
+
+
+def grown(first: Level, second: Level) -> None:
+    """A second level added to the first row of rows that start at the first, by its place."""
+    rows = [[first]]
+    row = rows[0]
+    row.append(second)
+    _show(rows)
+
+
+def grown_looked_up(first: Level, second: Level) -> None:
+    """A second level added to the first row of rows that start at the first, the first the rows hand out."""
+    rows = [[first]]
+    row = next(iter(rows))
+    row.append(second)
     _show(rows)

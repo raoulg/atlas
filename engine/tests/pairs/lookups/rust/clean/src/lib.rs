@@ -1,6 +1,7 @@
 //! The levels of a signal, each looked up in the collection it is handed: by a subscript, or by the method that looks it
-//! up. `pushed` and `pushed_looked_up` look up in a list they change in place first; `added` and `added_looked_up` change
-//! the row they look up, and so the rows.
+//! up. `pushed` and `pushed_looked_up` look up in a list they change in place first. `added` and `added_looked_up` change
+//! the row they look up, and so the rows they are handed; `grown` and `grown_looked_up` the row of rows they make, and so
+//! those rows: a change of a part is a change of the whole, which gives the rows anew to what shows them.
 use std::collections::HashMap;
 
 /// A level of a signal.
@@ -96,5 +97,23 @@ pub fn added_looked_up(rows: &mut [Vec<Level>], level: Level) -> Option<()> {
     let row = rows.first_mut()?;
     row.push(level);
     show(rows);
+    Some(())
+}
+
+/// A second level added to the first row of rows that start at the first, by its place.
+pub fn grown(first: Level, second: Level) -> Option<()> {
+    let mut rows = vec![vec![first]];
+    let row = &mut rows[0];
+    row.push(second);
+    show(&rows);
+    Some(())
+}
+
+/// A second level added to the first row of rows that start at the first, the rows' first.
+pub fn grown_looked_up(first: Level, second: Level) -> Option<()> {
+    let mut rows = vec![vec![first]];
+    let row = rows.first_mut()?;
+    row.push(second);
+    show(&rows);
     Some(())
 }

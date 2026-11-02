@@ -1123,6 +1123,9 @@ fn globals(
                     note(&mut writes, module_value(text(t, src)), text(t, src), line(a));
                 }
             }
+            // a change through a name bound to a part of another value changes that value (`Body::changed_whole`): `ROWS`
+            // of `row.push(level)` after `const row = ROWS[0]`, as of `ROWS[0].push(level)`
+            let whole = |name, at| b.changed_whole(name, at).unwrap_or(name);
             // a method of the language's own that changes its receiver, on a value no package made
             let language: &dyn Fn(TsNode) -> Vec<TsNode> = &|c| {
                 let Some(f) = function_of(c).filter(|f| f.kind() == "member_expression") else { return vec![] };
@@ -1131,7 +1134,10 @@ fn globals(
                     return vec![];
                 }
                 let Some(o) = f.child_by_field_name("object") else { return vec![] };
-                let made = chain_root(o, src).and_then(module_value).map_or(false, |k| package_value(modules, &k));
+                let made = chain_root(o, src)
+                    .map(|r| whole(r, o.start_byte()))
+                    .and_then(module_value)
+                    .map_or(false, |k| package_value(modules, &k));
                 if made {
                     vec![]
                 } else {
@@ -1139,6 +1145,7 @@ fn globals(
                 }
             };
             for (at, name) in changes_in(body, src, language).into_iter().filter(|(x, _)| mine(x)) {
+                let name = whole(name, at.start_byte());
                 note(&mut writes, module_value(name), name, line(at));
             }
             let mut reads: Vec<Use> = vec![];

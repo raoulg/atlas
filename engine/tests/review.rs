@@ -161,6 +161,11 @@ const REVIEWED: &[(&str, &str, &str)] = &[
     ),
     (
         "choices",
+        "atlas-engine.typescript.body.Body.holds_container",
+        "`holds_container`, `collection`, `written`, `picked`, `picked_literal_at` and `roots_through` read an expression six ways: whether it holds a container, the collection it is, the type it is written with, the type of the part it picks, the element of an array it picks from, the names it may be a part of; tree-sitter's kind is the syntax's own sum, and each function asks it a question of its own",
+    ),
+    (
+        "choices",
         "atlas-engine.rust.body.library_chain",
         "`library_chain`, `collection` and `held_root` read an expression three ways: the library value a chain of calls starts from, the collection a value is, the name a value is a part of through the lookups; tree-sitter's kind is the syntax's own sum, and each function asks it a question of its own",
     ),

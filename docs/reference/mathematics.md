@@ -804,7 +804,11 @@ open:
   the change is handed that list and `second` and makes the list anew, and `show` takes what the change made, never
   `first`. Where the change runs in one arm or in a loop, the name stands for nothing either, as a path changed there
   is no longer the term before alone (#327): the binding is a value, the change makes it anew, and what the arms make
-  of it is one value at the choice's moment, as it is of a value a step made (#355). A choice among them is the body's
+  of it is one value at the choice's moment, as it is of a value a step made (#355). A change of a part is a change of
+  the whole, a lens's put, so a change of a part a subscript or a lookup picks changes the collection in place, also
+  through a name bound to the part (`row = rows[0]; row.append(level)`, `let row = &mut rows[0]; row.push(level)`): the
+  change is handed the collection and makes it anew, and where the collection is a value its module keeps, the change
+  is a write of that value (#374). A choice among them is the body's
   choice, and a part a call makes (`samples.abs()`) is that call's value, which the name keeps (#328). What an
   opened step changes of a value it was handed goes out at its border as what its steps made of it;
 - a step that can fail has the codomain `T + E`: the error is a value its constructor makes in the arm
@@ -969,9 +973,16 @@ holds is what its type holds as its language reads it, never a name its type mer
 Plan>` is a value of Plans from beyond, as `PLANS: dict[Mode, Plan]` is, and `const out: Where[] = []` holds Wheres. So is
 what a function gives back: one that returns `Vec<(String, Vec<Where>)>` gives back pairs, and none of the Wheres its steps
 make. A value declared as the language's container is one, a field as a name (`n.touches: Touch[]` is an array), so a method
-called on it is the language's operation.
+called on it is the language's operation. So is a part a subscript or a lookup picks of a collection, of the type of what
+the collection holds as written: `rows[0]` and `rows.at(0)!` of `rows: Level[][]` are arrays, `&mut rows[0]` and
+`rows.first_mut()?` of `rows: &mut [Vec<Level>]` vectors, through what holds one value and is read as it (the guard
+`ROWS.lock()` of a `Mutex<Vec<Vec<Level>>>`). Where the code writes no type, a literal says what each element is
+(`[[first]]` holds arrays), and Rust says which places a method may change: a name bound `mut`, a part picked of one,
+and a name bound to a `&mut` borrow of such a part.
 **Where.** `knowledge.rs`: `python_container`, `TYPESCRIPT_CONTAINERS`, `RUST_CONTAINERS`, the maps `PYTHON_MAPS`,
-`TYPESCRIPT_MAPS`, `RUST_MAPS`; `Param::holds`, read by `writesType` in `viewer/plan.js` and by the principles, and
+`TYPESCRIPT_MAPS`, `RUST_MAPS`; `body::element_written`, with each reader's `written_as` (`rust/body.rs`,
+`typescript/body.rs`), and the readers' `Body::picked`, `mutable_place` (Rust) and `picked_literal` (TypeScript);
+`Param::holds`, read by `writesType` in `viewer/plan.js` and by the principles, and
 `Returns::holds`, read by `flow::made_from`; the Rust reader's
 signatures (`rust/passes.rs`, `fixed_by_implementations`; `rust/module.rs`, `type_names`, with `RUST_COLLECTIONS`); `typescript/module.rs`, `type_names`, with `TYPESCRIPT_COLLECTIONS`, and `typescript/body.rs`, `typed` and `world`; `python/module.rs`, `type_names`, and `pytypes::outer_classes`, with `python_collection`.
 

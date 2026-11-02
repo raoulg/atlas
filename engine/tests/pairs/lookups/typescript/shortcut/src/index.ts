@@ -1,7 +1,9 @@
 /**
  * The levels of a signal, each looked up in a collection the module keeps: by a subscript, or by the method that looks
  * it up. `pushed` and `pushedLookedUp` look up in a list they change in place first, which starts at the module's quiet
- * level; `added` and `addedLookedUp` change the row they look up, and so the module's rows.
+ * level. `added` and `addedLookedUp` change the row they look up, and so the module's rows: a write of what the module
+ * keeps, as a change of the rows themselves is; `grown` and `grownLookedUp` the row of rows they make, which start at the
+ * module's quiet level.
  */
 
 /** A level of a signal. */
@@ -66,7 +68,7 @@ export function pushedLookedUp(second: Level): void {
 
 /** A level added to the module's first row, by its place. */
 export function added(level: Level): void {
-  const row = ROWS[0];
+  const row = ROWS[0]!;
   row.push(level);
   show(ROWS);
 }
@@ -76,4 +78,20 @@ export function addedLookedUp(level: Level): void {
   const row = ROWS.at(0)!;
   row.push(level);
   show(ROWS);
+}
+
+/** A second level added to the first row of rows that start at the module's quiet level, by its place. */
+export function grown(second: Level): void {
+  const rows = [[QUIET]];
+  const row = rows[0]!;
+  row.push(second);
+  show(rows);
+}
+
+/** A second level added to the first row of rows that start at the module's quiet level, at its place. */
+export function grownLookedUp(second: Level): void {
+  const rows = [[QUIET]];
+  const row = rows.at(0)!;
+  row.push(second);
+  show(rows);
 }
