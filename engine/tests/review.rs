@@ -128,6 +128,9 @@ fn atlas_view_reads_as_its_algebra() {
 
 /// What `atlas check` asks of Atlas, each finding read: its principle, the node it is about, and
 /// why it stands (a fault of Atlas's code, tracked in an issue, or a fault of the rule).
+/// A finding is held by its principle and node, not its words: they name each function and type as the picture
+/// does (`model::said`), so they move where another type comes to share a name with one they name
+/// (`rust.body.Body.call`, `flow.Ix.step_of`), and why the finding stands does not.
 const REVIEWED: &[(&str, &str, &str)] = &[
     (
         "nothing",
