@@ -1,13 +1,13 @@
 //! What a picture has in sight: the fibers it keeps and the boxes it opens (`design.md` §1, "A
-//! view is data"). The fibers are the route, the kind of route, the part and the packages in focus;
-//! the boxes opened are an order ideal of each forest the code is read into (parts into packages,
+//! view is data"). The fibers are the route, the kind of route, the part, the packages in focus
+//! and, in the overview, the code that is no test code unless `tests` keeps it; the boxes opened are an order ideal of each forest the code is read into (parts into packages,
 //! a route's steps into their bodies, families into their members, a place into the places it
 //! stands for, a directory into its files). The page applies the fibers first, then the quotients
 //! by the ideals' cuts (`view`), and writes its sight to its address after every drawing, so that a
 //! picture is a link; `atlas-code view --view`, `atlas-code mcp`'s `view` and `look` hand a page the sight an
 //! agent wrote.
 //!
-//! Its serde form is the page's: `{route, kind, part, focus, open: {parts, units, steps,
+//! Its serde form is the page's: `{route, kind, part, focus, tests, open: {parts, units, steps,
 //! functions, families, places, dirs}}`, every member optional, an empty one left out. A member the
 //! page does not know is refused, so that a sight misspelt is said, not drawn as no sight at all.
 
@@ -34,6 +34,10 @@ pub struct Sight {
     /// The packages in focus, by their ids.
     #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
     pub focus: BTreeSet<String>,
+    /// The overview keeps the test code. Without it, the overview is the fiber of the code that is no
+    /// test code: no test, no code a reader marks as test code, no code in a test module.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub tests: bool,
     #[serde(default, skip_serializing_if = "Opened::is_empty")]
     pub open: Opened,
 }

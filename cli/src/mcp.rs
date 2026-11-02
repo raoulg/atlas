@@ -193,7 +193,7 @@ fn tools() -> Value {
         },
         {
             "name": "view",
-            "description": "Draw a repository's Flowchart in a view of your choosing and write it as a page the human can open: the same picture `atlas-code view` draws, opened where you point. A view is JSON: `route` (an entry id from `routes`), and `open.functions` (the steps that run these functions are opened, as `route` lists them); also `kind` (all routes of one kind: cli, export, script, notebook, route, mcp, make), `part`, `focus` (package ids), and the opened `parts`, `units` (packages), `families` (type ids) and `places`. Gives the file the page is in.",
+            "description": "Draw a repository's Flowchart in a view of your choosing and write it as a page the human can open: the same picture `atlas-code view` draws, opened where you point. A view is JSON: `route` (an entry id from `routes`), and `open.functions` (the steps that run these functions are opened, as `route` lists them); also `kind` (all routes of one kind: cli, export, script, notebook, route, mcp, make), `part`, `focus` (package ids), `tests` (true: the overview keeps the test code, which it leaves out otherwise), and the opened `parts`, `units` (packages), `families` (type ids) and `places`. Gives the file the page is in.",
             "inputSchema": { "type": "object", "properties": {
                 "path": path,
                 "view": { "type": "object", "description": "The view, e.g. `{\"route\": \"pkg.cli.build\", \"open\": {\"functions\": [\"pkg.build.Pipeline.run\"]}}`." },
@@ -219,7 +219,7 @@ fn tools() -> Value {
         },
         {
             "name": "look",
-            "description": "Point the page of `atlas-code serve` at something: \"look here, this box\". Give a view to go to (JSON as `view` takes it: `route`, `open.functions`, `kind`, `part`, `focus`, the opened `parts`, `units`, `families`, `places`), a box or a line to point at, or both. The open page goes there within a second, selects what it points at and makes it light up.",
+            "description": "Point the page of `atlas-code serve` at something: \"look here, this box\". Give a view to go to (JSON as `view` takes it: `route`, `open.functions`, `kind`, `part`, `focus`, `tests`, the opened `parts`, `units`, `families`, `places`), a box or a line to point at, or both. The open page goes there within a second, selects what it points at and makes it light up.",
             "inputSchema": { "type": "object", "properties": {
                 "path": local,
                 "view": { "type": "object", "description": "The view, e.g. `{\"route\": \"pkg.cli.build\", \"open\": {\"functions\": [\"pkg.build.Pipeline.run\"]}}`. Without it the page keeps its view." },
@@ -517,7 +517,7 @@ fn sight(args: &Value) -> Result<Option<Sight>, String> {
         .filter(|v| !v.is_null())
         .map(Sight::deserialize)
         .transpose()
-        .map_err(|e| format!("`view` is not a view the page knows ({e}): it holds `route`, `kind`, `part`, `focus` and `open`."))
+        .map_err(|e| format!("`view` is not a view the page knows ({e}): it holds `route`, `kind`, `part`, `focus`, `tests` and `open`."))
 }
 
 /// The page of the repository at `path` in `sight`, written to `out`, else to `.atlas/<project>.view.html`

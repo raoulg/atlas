@@ -21,7 +21,9 @@ overview of every program is asked the same of its own fine plan, the functions 
 place and the calls between functions: for every set of open packages and parts, each line counts the fine lines it
 stands for, a type internal to a closed package draws none, each call goes between the blocks of its ends, opening one
 more box refines the picture, and the picture is a function of the set of open boxes (`overview-packages` holds a type
-internal to a package and one a package makes, takes and hands to another).
+internal to a package and one a package makes, takes and hands to another). The same is asked of the overview without
+the test code, whose fine plan must be the fiber of the one with it, taken on that plan, for every set of open packages
+(`overview-tests` holds, in each language, a store with its tests beside it and a package of tests alone).
 
 ```bash
 cargo test -p atlas-engine --test plans -- --nocapture                              # every program

@@ -24,7 +24,7 @@ const D = JSON.parse(fs.readFileSync(dataJson, "utf8"));
 // `ATLAS_FINE_BUDGET=n` cuts the plan as a large program's is cut (`plan.js`, `FINE_BUDGET`)
 const window = process.env.ATLAS_FINE_BUDGET ? {ATLAS_FINE_BUDGET: Number(process.env.ATLAS_FINE_BUDGET)} : {};
 const M = new Function("D", "window", fs.readFileSync(planJs, "utf8") + `
-return {V, plan, imageOf, checkOpenings, overviewOpen, treeInfo, stepLabel, oneOf, typeLabel, sideOfRoles, familyOf, kindOf, byId, ordersOn, stepOf, opens, frameOf, valueBox, foldDirs, filePath, valuesOf, closedFamily, typesIn, lightOf, cutBy, familyFrames, here, kindsOf};`)(D, window);
+return {V, plan, imageOf, coarsen, checkOpenings, overviewOpen, inUnit, partOf, MAKEFILES, treeInfo, stepLabel, oneOf, typeLabel, sideOfRoles, familyOf, kindOf, byId, ordersOn, stepOf, opens, frameOf, valueBox, foldDirs, filePath, valuesOf, closedFamily, typesIn, lightOf, cutBy, familyFrames, here, kindsOf};`)(D, window);
 const {V} = M;
 
 const SIDES = {in: "left", out: "right", mid: "between", both: "both"};
@@ -417,24 +417,17 @@ function quotient(F, view, set, homes, occ, valueName) {
 // outermost closed package, a type is internal to a closed package that holds every function that makes or takes it, and
 // each other line counts the fine lines it stands for, none of them reached; a call goes between the blocks of its two ends,
 // and is internal to one that holds both. Opening one more box refines the picture (the oracle, `checkOpenings`), and the
-// picture is a function of the set of open boxes, not of the order they were opened in
-function overviewFaults() {
-  V.route = null; V.kind = null; V.part = null; V.focus = new Set();
+// picture is a function of the set of open boxes, not of the order they were opened in. All of it is asked twice: of the
+// overview with the test code, and of the overview without it, whose fine plan is the fiber of the first (`testFaults`)
+function overviewFaults(tests) {
+  V.route = null; V.kind = null; V.part = null; V.focus = new Set(); V.tests = tests;
   for (const k of Object.keys(V.open)) V.open[k] = new Set();
   M.plan();
-  const F = window.atlasPlan.fine, out = [];
-  const boxes = [...F.frames.values()].map(f => f.step);
-  const sets = boxes.length <= ALL_SUBSETS
-    ? [...Array(1 << boxes.length).keys()].map(m => boxes.filter((_, i) => m & (1 << i)))
-    : [[], ...boxes.map(b => [b]), ...boxes.flatMap((a, i) => boxes.slice(i + 1).map(b => [a, b])), boxes];
-  const openAs = set => {
-    V.open.units = new Set(set.filter(s => s.startsWith("unit:")).map(s => s.slice(5)));
-    V.open.parts = new Set(set.filter(s => s.startsWith("part:")).map(s => s.slice(5)));
-  };
+  const F = window.atlasPlan.fine, out = [], sets = openings(F), pre = tests ? "" : "without the test code, ";
   const first = new Map();
   for (const set of sets) {
     openAs(set);
-    const at = set.length ? `the overview with ${set.join(", ")} open` : "the overview closed";
+    const at = pre + (set.length ? `the overview with ${set.join(", ")} open` : "the overview closed");
     const view = M.imageOf(F, M.overviewOpen, false);
     for (const f of M.checkOpenings(F, view, false, M.overviewOpen)) out.push(`${at}: ${f}`);
     // the block of a fine occurrence: its outermost closed frame, else itself
@@ -466,7 +459,7 @@ function overviewFaults() {
   }
   for (const set of [...sets].reverse()) {
     openAs(set);
-    if (drawnOf(M.plan()) !== first.get(set)) out.push(`the overview with ${set.join(", ")} open: drawn again after the other sets, the picture differs`);
+    if (drawnOf(M.plan()) !== first.get(set)) out.push(`${pre}the overview with ${set.join(", ")} open: drawn again after the other sets, the picture differs`);
   }
   for (const k of Object.keys(V.open)) V.open[k] = new Set();
   return out;
@@ -474,10 +467,108 @@ function overviewFaults() {
 function drawnOf(C) {
   return JSON.stringify([drawn(C), [...C.pills.values()].map(P => [P.id, [...(P.calls || [])].sort()]).sort()]);
 }
+// the sets of open boxes an overview's plan is asked at: each subset while there are few, else each alone, each pair and all
+function openings(F) {
+  const boxes = [...F.frames.values()].map(f => f.step);
+  return boxes.length <= ALL_SUBSETS
+    ? [...Array(1 << boxes.length).keys()].map(m => boxes.filter((_, i) => m & (1 << i)))
+    : [[], ...boxes.map(b => [b]), ...boxes.flatMap((a, i) => boxes.slice(i + 1).map(b => [a, b])), boxes];
+}
+function openAs(set) {
+  V.open.units = new Set(set.filter(s => s.startsWith("unit:")).map(s => s.slice(5)));
+  V.open.parts = new Set(set.filter(s => s.startsWith("part:")).map(s => s.slice(5)));
+}
 
-// with no route named, every route of the program but its tests; `--overview` asks the overview
+// Test code, as mathematics.md names the predicate ("A filter: the program without its test code"), restated here from the
+// graph: a test, code a reader marks as test code, or code in a test module
+const testCode = n => !!n && (!!n.test || n.entry?.kind === "test" || !!M.byId.get(n.kind === "module" ? n.id : n.module)?.test);
+// The fiber of the overview's fine plan `F₀` where the code is no test code, taken on the plan: the occurrences of functions
+// that are no test code, of their lines those whose formula (`whole`: who makes the touch's path whole) holds with the test
+// code false, the calls between two of them, the packages and parts that hold a module of the program, and of the places
+// those that a line kept touches, a type's home the smallest package that holds every occurrence kept that makes or takes
+// it, as `F₀` defines it
+function fiberOf(F) {
+  const lineKept = (P, k) => { const w = P.whole?.get(k); return w == null || w.some(c => c.every(g => !testCode(M.byId.get(g)))); };
+  const kept = [...F.pills].filter(([, P]) => !testCode(M.byId.get(P.steps[0])));
+  // a type is a joint where the code kept both makes and takes it
+  const joint = k => !("home" in F.places.get(k)) || ["C", "D"].every(way => kept.some(([, P]) => P[way].has(k)));
+  const pills = new Map();
+  for (const [id, P] of kept) {
+    const only = m => new Map([...m].filter(([k]) => lineKept(P, k) && joint(k)));
+    const D = only(P.D), C = only(P.C);
+    pills.set(id, {...P, D, C, goes: new Map([...P.goes].filter(([k]) => D.has(k) || C.has(k)))});
+  }
+  const program = [...M.byId.values()].filter(n => n.kind === "module" && !n.library && !testCode(n));
+  const holds = step =>
+    step.startsWith("part:") ? program.some(m => M.partOf(m) === step.slice(5)) : M.MAKEFILES.has(step.slice(5)) || program.some(m => M.inUnit(m.id, step.slice(5)));
+  const frames = new Map([...F.frames].filter(([, f]) => holds(f.step)));
+  const chainOf = fid => { const c = []; for (let f = fid; f; f = frames.get(f)?.parent) c.unshift(f); return c; };
+  const places = new Map();
+  for (const [k, pl] of F.places) {
+    const by = [...pills.values()].filter(P => P.D.has(k) || P.C.has(k));
+    if (!by.length) continue;
+    if (!("home" in pl)) { places.set(k, pl); continue; }
+    let common = null;
+    for (const c of by.map(P => chainOf(P.parent))) {
+      if (!common) { common = c; continue; }
+      let i = 0;
+      while (i < common.length && i < c.length && common[i] === c[i]) i++;
+      common = common.slice(0, i);
+    }
+    places.set(k, {...pl, home: common?.length ? common[common.length - 1] : undefined});
+  }
+  const calls = F.calls.filter(([a, b]) => pills.has("n:" + a) && pills.has("n:" + b));
+  // an occurrence stands where it draws a line or a call
+  const called = new Set(calls.flat().map(f => "n:" + f));
+  for (const [id, P] of pills) if (!P.D.size && !P.C.size && !called.has(id)) pills.delete(id);
+  return {...F, places, pills, frames, calls};
+}
+// a fine plan of the overview as data that does not depend on the order it was built in
+function planOf(F) {
+  const keys = m => [...m.keys()].sort();
+  return JSON.stringify({
+    pills: [...F.pills.values()].map(P => [P.id, P.parent || "", keys(P.D), keys(P.C)]).sort(),
+    places: [...F.places.values()].map(p => [p.id, p.home || ""]).sort(),
+    frames: [...F.frames.values()].map(f => [f.id, f.parent || ""]).sort(),
+    calls: F.calls.map(c => c.join(">")).sort(),
+    found: [...F.found].filter(k => F.places.has(k)).sort(),
+    updated: [...F.updated].filter(k => F.places.has(k)).sort(),
+  });
+}
+// A filter is a fiber (sentence 5): the overview without the test code is the image of the fiber of `F₀` where the code is no
+// test code, the fiber taken first and the quotient taken of what is left. Its fine plan is the fiber of the plan with the test
+// code, and for every set of open boxes its picture is the image of that fiber. A package that holds test code and ordinary
+// code side by side is a class the predicate cuts in two: a box both pictures draw, whose lines differ, is a counterexample to
+// taking the quotient first, which keeps or drops a box whole (the fact `cut BOX`)
+function testFaults() {
+  const out = [], facts = new Set();
+  V.route = null; V.kind = null; V.part = null; V.focus = new Set();
+  for (const k of Object.keys(V.open)) V.open[k] = new Set();
+  V.tests = true; M.plan();
+  const fiber = fiberOf(window.atlasPlan.fine), sets = openings(window.atlasPlan.fine);
+  V.tests = false; M.plan();
+  const kept = window.atlasPlan.fine;
+  if (planOf(kept) !== planOf(fiber)) out.push(`without the test code, the fine plan is not the fiber of the one with it: ${planOf(kept)} against ${planOf(fiber)}`);
+  const lines = B => JSON.stringify([[...(B.Dn || [])].sort(), [...(B.Cn || [])].sort(), [...(B.calls || [])].sort()]);
+  for (const set of sets) {
+    openAs(set);
+    const at = set.length ? `the overview with ${set.join(", ")} open` : "the overview closed";
+    V.tests = true;
+    const withTests = M.plan();
+    V.tests = false;
+    const without = M.plan();
+    if (drawnOf(M.coarsen(fiber, M.overviewOpen, () => false)) !== drawnOf(M.coarsen(window.atlasPlan.fine, M.overviewOpen, () => false)))
+      out.push(`without the test code, ${at}: the picture is not the image of the fiber`);
+    for (const [id, B] of without.pills) if (withTests.pills.has(id) && /^n:(unit|part):/.test(id) && lines(B) !== lines(withTests.pills.get(id))) facts.add(`cut ${id.slice(2)}`);
+  }
+  for (const k of Object.keys(V.open)) V.open[k] = new Set();
+  return {facts: [...facts].sort(), faults: out};
+}
+
+// with no route named, every route of the program but its tests; `--overview` asks the overview, with the test code and without
 if (routes[0] === "--overview") {
-  process.stdout.write(JSON.stringify({"@overview": {facts: [], faults: overviewFaults()}}));
+  const fiber = testFaults();
+  process.stdout.write(JSON.stringify({"@overview": {facts: fiber.facts, faults: [...overviewFaults(true), ...overviewFaults(false), ...fiber.faults]}}));
   process.exit(0);
 }
 const named = routes.length ? routes : [...M.byId.values()].filter(n => n.entry && n.entry.kind !== "test").map(n => n.id);

@@ -139,24 +139,26 @@ pub fn parse(repo: &Repo, opts: &crate::Options) -> Result<(GraphBuilder, String
         repo.files_under(&base, EXTENSIONS).into_iter().filter(|p| is_code(p) && !made(p)).map(|p| clean(&p)).collect();
     paths.sort();
     let files: HashMap<PathBuf, String> = paths.iter().map(|p| (p.clone(), module_id(&root, &base, p))).collect();
-    // every directory is a package module, so the module quotient follows the folders
-    let mut dirs: Vec<String> = vec![root.clone()];
+    // every directory is a package module, so the module quotient follows the folders; a directory the
+    // test runners keep for tests (`__tests__`) is test code, as every file below it is
+    let mut dirs: Vec<(String, bool)> = vec![(root.clone(), false)];
     for p in &paths {
         let mut cur = p.parent();
         while let Some(d) = cur.filter(|d| d.starts_with(&base) && *d != base.as_path()) {
-            dirs.push(module_id(&root, &base, &d.join("index.ts")));
+            dirs.push((module_id(&root, &base, &d.join("index.ts")), knowledge::TYPESCRIPT_TEST_FILES.holds(d)));
             cur = d.parent();
         }
     }
     dirs.sort();
     dirs.dedup();
-    for d in &dirs {
+    for (d, test) in &dirs {
         store.add_node(Node {
             id: d.clone(),
             kind: NodeKind::Module,
             name: d.rsplit('.').next().unwrap_or(d).to_string(),
             module: d.clone(),
             is_pkg: true,
+            test: *test,
             ..Default::default()
         });
     }

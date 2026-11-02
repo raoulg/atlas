@@ -321,7 +321,10 @@ fn every_picture_of_a_cut_plan_is_its_image() {
 /// plan, every picture its image"; #69): for every set of open packages and parts of every program, each line of the picture
 /// counts the fine lines it stands for, a type internal to a closed package draws none, a call goes between the blocks of its
 /// ends, opening one more box refines the picture (the oracle), and the picture is a function of the set of open boxes. The
-/// faults known of a program are known here too.
+/// faults known of a program are known here too. All of it holds of the overview without the test code as well, which is the
+/// image of the fiber of the plan where the code is no test code (mathematics.md, "A filter: the program without its test
+/// code"; #400): its fine plan, built from the code without its test code, is the fiber of the fine plan with it, taken on
+/// that plan, and for every set of open packages its picture is the image of that fiber.
 #[test]
 fn every_package_view_is_the_image_of_its_plan() {
     let (tests, all) = all_programs();
@@ -346,6 +349,23 @@ fn every_package_view_is_the_image_of_its_plan() {
     });
     let fails = fails.into_inner().unwrap();
     assert!(fails.is_empty(), "{} faults of the overviews:\n{}", fails.len(), fails.join("\n"));
+}
+
+/// Test code is not saturated by the package quotient, so the fiber and the quotient do not commute (mathematics.md,
+/// "Saturation"): in each language, a package that holds test code beside ordinary code (`plans/overview-tests`: a pytest
+/// file, a `#[cfg(test)] mod tests`, a `*.test.ts` beside the store) is a box both overviews draw, with other lines. A filter
+/// taken on the quotient keeps or drops a box whole, and so cannot draw the fiber's picture: this box is the counterexample.
+#[test]
+fn test_code_cuts_a_package_in_two() {
+    let tests = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests");
+    let mut all = vec![];
+    programs(&tests.join("plans/overview-tests"), &mut all);
+    assert_eq!(all.len(), 3, "a program in each language");
+    for program in &all {
+        let asked = asked(program, &data(program), None, &["--overview"]);
+        let facts = asked.values().flat_map(|(facts, _)| facts.iter()).collect::<Vec<_>>();
+        assert!(facts.iter().any(|f| f.starts_with("cut unit:")), "{}: no package is cut in two by the test code", program.display());
+    }
 }
 
 /// How many levels the route of `a_step_beyond_the_cut_is_made_without_unfolding_its_body` calls down, each twice.
