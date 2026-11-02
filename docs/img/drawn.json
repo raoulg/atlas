@@ -1471,7 +1471,7 @@
    ],
    [
     "atlas-engine.parts.graph_of",
-    "\u25b8 graph_of \u00b7 +17 types7"
+    "\u25b8 graph_of \u00b7 +27 types13"
    ],
    [
     "e:atlas-engine.analyze",
@@ -1486,6 +1486,10 @@
     "CliFramework (2)"
    ],
    [
+    "t:atlas-engine.knowledge.SocketOp",
+    "SocketOp (2)"
+   ],
+   [
     "t:atlas-engine.model.Crossing~DISK_READ",
     "Crossing (3) \u00b7 DISK_READ"
    ],
@@ -1495,11 +1499,11 @@
    ],
    [
     "t:atlas-engine.model.Graph@n:atlas-engine.analyze",
-    "Graph (8)"
+    "Graph (9)"
    ],
    [
     "t:atlas-engine.model.Graph@n:atlas-engine.analyze/1",
-    "Graph (8)"
+    "Graph (9)"
    ],
    [
     "t:atlas-engine.options.Options",
@@ -1507,11 +1511,31 @@
    ],
    [
     "t:atlas-engine.repo.Repo~repo@n:atlas-engine.analyze/0",
-    "Repo (3) \u00b7 repo"
+    "Repo (4) \u00b7 repo"
    ],
    [
     "w:Disk:in",
     "from disk"
+   ],
+   [
+    "w:Disk:{root}/",
+    "Disk({root}/)"
+   ],
+   [
+    "w:Global:atlas-engine.clock.CLOCK",
+    "from Global(atlas-engine.clock.CLOCK) \u21c4the same place, on the other side"
+   ],
+   [
+    "w:Global:atlas-engine.clock.CLOCK \u21c4",
+    "into Global(atlas-engine.clock.CLOCK) \u21c4the same place, on the other side"
+   ],
+   [
+    "w:Global:atlas-engine.tree.INDEXED",
+    "from Global(atlas-engine.tree.INDEXED) \u21c4the same place, on the other side"
+   ],
+   [
+    "w:Global:atlas-engine.tree.INDEXED \u21c4",
+    "into Global(atlas-engine.tree.INDEXED) \u21c4the same place, on the other side"
    ],
    [
     "w:Global:ruff_db.panic.CAPTURE_PANIC_INFO",
@@ -1561,6 +1585,14 @@
    ],
    [
     "n:atlas-engine.analyze/1",
+    "w:Global:atlas-engine.clock.CLOCK \u21c4"
+   ],
+   [
+    "n:atlas-engine.analyze/1",
+    "w:Global:atlas-engine.tree.INDEXED \u21c4"
+   ],
+   [
+    "n:atlas-engine.analyze/1",
     "w:Global:ruff_db.panic.CAPTURE_PANIC_INFO \u21c4"
    ],
    [
@@ -1577,6 +1609,10 @@
    ],
    [
     "t:atlas-engine.knowledge.CliFramework",
+    "n:atlas-engine.analyze/1"
+   ],
+   [
+    "t:atlas-engine.knowledge.SocketOp",
     "n:atlas-engine.analyze/1"
    ],
    [
@@ -1609,6 +1645,18 @@
    ],
    [
     "w:Disk:in",
+    "n:atlas-engine.analyze/1"
+   ],
+   [
+    "w:Disk:{root}/",
+    "n:atlas-engine.analyze/1"
+   ],
+   [
+    "w:Global:atlas-engine.clock.CLOCK",
+    "n:atlas-engine.analyze/1"
+   ],
+   [
+    "w:Global:atlas-engine.tree.INDEXED",
     "n:atlas-engine.analyze/1"
    ],
    [
