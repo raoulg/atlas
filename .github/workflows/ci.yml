@@ -51,6 +51,15 @@ jobs:
           ref: ${{ inputs.ref }}
       - run: python3 tools/test_tap.py
 
+  # the benchmark's corpus, its cards and a release's table, as perf.yml and the release pages read them
+  bench:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.ref }}
+      - run: python3 tools/test_perf.py
+
   fmt:
     runs-on: ubuntu-latest
     steps:

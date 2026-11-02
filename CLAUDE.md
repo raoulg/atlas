@@ -173,8 +173,9 @@ else is a short-lived topic branch.
    point without a picture) and stops before the push. That a point has a picture is the floor: each is
    as visual as 0.68.0's, an `Example:` that both releases draw, a `Compare:` of Atlas's pictures, `Bars:`
    of numbers, or a drawing that carries the point, never a table of text. One point says how fast the
-   release is against the one before: `uv run tools/perf.py release-bars` gives its `Bars:` from the
-   nightly series (`docs/reference/performance.md`).
+   release is against the one before: `uv run tools/perf.py release-bars` gives its `Bench:`, the fixed
+   corpus measured on both releases with its one number, from a `perf.yml` run and the nightly series
+   (`docs/reference/performance.md`).
    The release machinery (`release.yml`, `install.sh`, `install.ps1`, the tap job, `tools/tap_formula.py`, `tools/tap_cask.py`)
    runs only on a `v*` tag, so a change to it on `next` is not exercised until the first tag after a
    promotion, and a fault in it breaks the formula for every stable user. A promotion that carries
