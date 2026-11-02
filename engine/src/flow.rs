@@ -1347,12 +1347,23 @@ pub enum Item {
     Step(Step),
     /// The arms of one choice that hold steps, each a branch, and what decides each branch, by
     /// branch, as the code writes it. A choice with one such arm is still a choice: its steps run
-    /// when it holds, and nothing runs otherwise.
+    /// when it holds, and nothing runs otherwise. An arm that runs no step but those of one choice
+    /// inside it is that choice (`A + (B + C) = A + B + C`), so its arms are branches of this one,
+    /// each decided by the arms on its path. A choice inside an arm beside other steps of it is a
+    /// coproduct inside that arm, an item of its own `within` the branch it stands in.
     Choice {
         choice: u32,
+        /// The steps of its branches that stand in no choice inside them.
         members: Vec<Member>,
         #[serde(skip_serializing_if = "Vec::is_empty")]
         when: Vec<String>,
+        /// The arms each branch runs in, by branch, as `Site::arms` names them: from the body's
+        /// outermost choice in, through this choice to the branch's last arm.
+        arms: Vec<Vec<(u32, u32)>>,
+        /// The choice of the body this one stands in an arm of, and the branch of that choice's
+        /// item it stands in.
+        #[serde(skip_serializing_if = "Option::is_none")]
+        within: Option<(u32, usize)>,
     },
 }
 
@@ -1376,15 +1387,18 @@ impl Body {
         self.alts.is_empty() && self.items.is_empty()
     }
 
-    /// Every step, branches included, in order.
+    /// Every step, branches included, in call order: by the site of each, else as the items list them.
     pub fn steps(&self) -> Vec<&Step> {
-        self.items
+        let mut steps: Vec<&Step> = self
+            .items
             .iter()
             .flat_map(|it| match it {
                 Item::Step(s) => vec![s],
                 Item::Choice { members, .. } => members.iter().map(|m| &m.step).collect(),
             })
-            .collect()
+            .collect();
+        steps.sort_by_key(|s| s.site);
+        steps
     }
 }
 
@@ -1807,38 +1821,92 @@ impl<'g> Ix<'g> {
 }
 
 /// The steps in call order, the steps of each choice together, by branch, with what decides each
-/// branch (`whens`, as `Node::whens` holds them).
+/// branch (`whens`, as `Node::whens` holds them). A choice is a coproduct of its arms
+/// (`docs/reference/mathematics.md`, "Coproducts"), and the arms each step sits in (`Site::arms`)
+/// are the path to it through the choices of the body. Where an arm runs no step but those of one
+/// choice inside it, the arm is that choice, and its arms are branches of the choice around it, each
+/// run where every arm on its path holds (`A + (B + C) = A + B + C`: an `else` whose only statement
+/// is an `if`, or an `except` inside an `if`). A choice inside an arm beside other steps of that arm
+/// is a coproduct inside the arm: an item of its own, within the branch it stands in, after the
+/// item it stands in.
 fn grouped(steps: Vec<(Step, Vec<(u32, u32)>)>, whens: &[(u32, u32, String)]) -> Vec<Item> {
-    let choice_of = |arms: &Vec<(u32, u32)>| arms.first().map(|a| a.0);
-    let mut items = vec![];
-    let mut placed = HashSet::new();
+    // the arm a path reaches, and whether every step that runs in it runs in the one choice `c` inside it
+    let only = |arm: &[(u32, u32)], c: u32| {
+        steps.iter().filter(|(_, a)| a.starts_with(arm)).all(|(_, a)| a.get(arm.len()).is_some_and(|x| x.0 == c))
+    };
+    struct Group {
+        branches: Vec<Vec<(u32, u32)>>,
+        depth: usize,
+        members: Vec<Member>,
+        within: Option<(u32, Vec<(u32, u32)>)>,
+    }
+    let mut groups: IndexMap<u32, Group> = IndexMap::new();
+    let branch = |g: &mut Group, p: &[(u32, u32)]| match g.branches.iter().position(|b| b == p) {
+        Some(i) => i,
+        None => {
+            g.branches.push(p.to_vec());
+            g.branches.len() - 1
+        }
+    };
+    // a top-level item: a step, or the choice by its number
+    let mut order: Vec<Result<Step, u32>> = vec![];
     for (step, arms) in &steps {
-        let Some(k) = choice_of(arms) else {
-            items.push(Item::Step(step.clone()));
+        if arms.is_empty() {
+            order.push(Ok(step.clone()));
             continue;
-        };
-        let group: Vec<&(Step, Vec<(u32, u32)>)> = steps.iter().filter(|(_, a)| choice_of(a) == Some(k)).collect();
-        let mut paths: Vec<&Vec<(u32, u32)>> = vec![];
-        for (_, a) in &group {
-            if !paths.contains(&a) {
-                paths.push(a);
+        }
+        // the depth on the path of the choice whose item each choice on it is in
+        let mut own = vec![0usize; arms.len()];
+        for j in 1..arms.len() {
+            own[j] = if only(&arms[..j], arms[j].0) { own[j - 1] } else { j };
+        }
+        for j in (0..arms.len()).filter(|&j| own[j] == j) {
+            let k = arms[j].0;
+            if !groups.contains_key(&k) {
+                let within = (j > 0).then(|| (arms[own[j - 1]].0, arms[..j].to_vec()));
+                groups.insert(k, Group { branches: vec![], depth: j, members: vec![], within });
+                if j == 0 {
+                    order.push(Err(k));
+                }
+            }
+            if j > 0 {
+                branch(&mut groups[&arms[own[j - 1]].0], &arms[..j]);
             }
         }
-        if placed.insert(k) {
-            let members =
-                group.iter().map(|(s, a)| Member { step: s.clone(), branch: paths.iter().position(|p| *p == a).unwrap_or(0) }).collect();
-            // a branch runs when every arm on its path does: an `except` inside an `if`
-            let when: Vec<String> = paths
-                .iter()
-                .map(|p| {
-                    p.iter()
-                        .filter_map(|(c, a)| whens.iter().find(|w| w.0 == *c && w.1 == *a).map(|w| w.2.as_str()))
-                        .collect::<Vec<_>>()
-                        .join(" · ")
-                })
-                .collect();
-            let when = if when.iter().all(String::is_empty) { vec![] } else { when };
-            items.push(Item::Choice { choice: k, members, when });
+        let g = &mut groups[&arms[own[arms.len() - 1]].0];
+        let b = branch(g, arms);
+        g.members.push(Member { step: step.clone(), branch: b });
+    }
+    // what decides a branch, from its choice in: every arm on its path, an `except` inside an `if`
+    let words = |p: &[(u32, u32)]| {
+        p.iter().filter_map(|(c, a)| whens.iter().find(|w| w.0 == *c && w.1 == *a).map(|w| w.2.as_str())).collect::<Vec<_>>().join(" · ")
+    };
+    let item = |k: u32| {
+        let g = &groups[&k];
+        let when: Vec<String> = g.branches.iter().map(|p| words(&p[g.depth..])).collect();
+        let within = g.within.as_ref().map(|(c, p)| (*c, groups[c].branches.iter().position(|b| b == p).unwrap_or(0)));
+        Item::Choice {
+            choice: k,
+            members: g.members.clone(),
+            when: if when.iter().all(String::is_empty) { vec![] } else { when },
+            arms: g.branches.clone(),
+            within,
+        }
+    };
+    // a choice inside an arm comes after the item it stands in
+    let mut items = vec![];
+    for o in order {
+        match o {
+            Ok(s) => items.push(Item::Step(s)),
+            Err(k) => {
+                let mut todo = vec![k];
+                while let Some(c) = todo.pop() {
+                    items.push(item(c));
+                    let inner: Vec<u32> =
+                        groups.iter().filter(|(_, g)| g.within.as_ref().is_some_and(|w| w.0 == c)).map(|(k, _)| *k).collect();
+                    todo.extend(inner.into_iter().rev());
+                }
+            }
         }
     }
     items
@@ -2020,6 +2088,47 @@ mod tests {
     /// A place one arm of a choice writes and another reads is found and changed: the write never runs before
     /// the read. Written in an arm and read after the choice, it is made sure of; written in one choice and read
     /// in a later one, the write may run first. Neither of those changes what was found.
+    /// A choice is a coproduct of its arms (mathematics.md, "Coproducts"), and coproducts are associative: an arm that runs
+    /// nothing but one choice inside it is that choice, `A + (B + C) = A + B + C`, so `if a: x() else: (if b: y() else: z())`
+    /// is the one item `if a: x() elif b: y() else: z()` is, three branches decided alike. A choice beside another step of
+    /// its arm is a coproduct inside that arm, `x ; (y + 1)`, an item within the branch it stands in, never another branch
+    /// beside it (#357).
+    #[test]
+    fn a_choice_that_is_an_arm_is_one_coproduct_with_the_one_around_it() {
+        let step = |i: usize| Step { site: Some(i), ..Step::of(&format!("f{i}")) };
+        let shape = |items: &[Item]| -> Vec<(Vec<(String, usize)>, Vec<String>, Option<(u32, usize)>)> {
+            items
+                .iter()
+                .map(|it| match it {
+                    Item::Step(s) => (vec![(s.to.clone(), 0)], vec![], None),
+                    Item::Choice { members, when, within, .. } => {
+                        (members.iter().map(|m| (m.step.to.clone(), m.branch)).collect(), when.clone(), *within)
+                    }
+                })
+                .collect()
+        };
+        let w = |c: u32, a: u32, t: &str| (c, a, t.to_string());
+        let nested = grouped(
+            vec![(step(0), vec![(0, 0)]), (step(1), vec![(0, 1), (1, 0)]), (step(2), vec![(0, 1), (1, 1)])],
+            &[w(0, 0, "a"), w(0, 1, "otherwise"), w(1, 0, "b"), w(1, 1, "otherwise")],
+        );
+        let elif = grouped(
+            vec![(step(0), vec![(0, 0)]), (step(1), vec![(0, 1)]), (step(2), vec![(0, 2)])],
+            &[w(0, 0, "a"), w(0, 1, "otherwise · b"), w(0, 2, "otherwise · otherwise")],
+        );
+        assert_eq!(shape(&nested), shape(&elif));
+        assert_eq!(nested.len(), 1);
+        // `if a: x(); if b: y()`: the choice of `b` stands in the arm of `a`, beside `x`
+        let inside = grouped(vec![(step(0), vec![(0, 0)]), (step(1), vec![(0, 0), (1, 0)])], &[w(0, 0, "a"), w(1, 0, "b")]);
+        assert_eq!(
+            shape(&inside),
+            [
+                (vec![("f0".to_string(), 0)], vec!["a".to_string()], None),
+                (vec![("f1".to_string(), 0)], vec!["b".to_string()], Some((0, 0)))
+            ]
+        );
+    }
+
     #[test]
     fn arms_of_one_choice_never_run_one_after_the_other() {
         let updated = |arms: Vec<((u32, u32), u32)>, read: u32| {

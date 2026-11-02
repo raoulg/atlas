@@ -271,7 +271,8 @@ const bodyOf = (id, on) => {
   const ck = `${SIDE}|${k}`;
   if (!bodyCache.has(ck)) {
     const n = byId.get(id), runs = s => has(byId.get(s.to)) && (s.site == null || has(n?.sites?.[s.site]));
-    const items = b.items.flatMap(it => { if (!it.members) return runs(it) ? [it] : []; const ms = it.members.filter(runs); return ms.length ? [{...it, members: ms}] : []; });
+    // a choice stays while a choice inside it has steps: the route drops a frame that holds none
+    const items = b.items.flatMap(it => (!it.members ? (runs(it) ? [it] : []) : [{...it, members: it.members.filter(runs)}]));
     bodyCache.set(ck, {...b, items, alts: (b.alts || []).filter(a => has(byId.get(keyed(a)[0])))});
   }
   return bodyCache.get(ck);
@@ -648,7 +649,7 @@ const ranInside = (n, b) => {
   const site = x => (x.s.site != null ? siteIn(n, x.s.site) : null);
   // the order of the calls is the body's, as its sites list them; a body that lists none runs its items in order
   const at = x => x.s.site ?? x.i;
-  const armsOf = x => site(x)?.arms ?? (x.it ? [[x.it.choice, x.s.branch]] : []);
+  const armsOf = x => site(x)?.arms ?? (x.it ? x.it.arms?.[x.s.branch] || [] : []);
   const apart = (x, y) => armsOf(x).some(([c, a]) => armsOf(y).some(([d, e]) => c === d && a !== e));
   const looped = (x, y) => { const [l, m] = [site(x)?.line, site(y)?.line]; return l != null && m != null && (n?.loop_lines || []).some(([a, z]) => a <= Math.min(l, m) && Math.max(l, m) <= z); };
   const runs = steps.map(x => ranAfter(NONE, x.s)), out = new Map();
@@ -735,19 +736,32 @@ function routeTree() {
       return k;
     };
     // what ran before each step: what ran before this one, and what ran before it in its body (`ranBefore`)
-    for (const it of body.items) {
-      if (!it.members) { const k = call(it, hue, ranBefore(n, body, before, it)); if (k) node.kids.push(k); continue; }
-      // the arm of the choice a member stands in, as its call says (`arms`): a choice nested in an arm is drawn in it
-      const armIn = m => (m.site != null && (siteIn(n, m.site)?.arms || []).find(([c]) => c === it.choice)?.[1]) ?? m.branch;
-      const kids = it.members.map(m => {
+    // a choice is a frame of its own, its branches inside, each in its own colour; a choice inside an arm beside other steps
+    // of it is a coproduct inside that arm, a frame in the branch it stands in (`within`), among the arm's steps in call order
+    const inner = new Map();
+    for (const it of body.items) if (it.members && it.within) { if (!inner.has(it.within[0])) inner.set(it.within[0], []); inner.get(it.within[0]).push(it); }
+    const at = (x, i) => x.site ?? 1e9 + i;
+    const first = it => Math.min(...it.members.map(at), ...(inner.get(it.choice) || []).map(first));
+    // the arms each step of a branch runs in, as its call says (`Site::arms`), else as the choice's item says
+    const armsIn = (it, m) => (m.site != null ? siteIn(n, m.site)?.arms : null) ?? it.arms?.[m.branch] ?? [];
+    const choiceNode = (it, h, branch, arms) => {
+      const parts = [...it.members.map((m, i) => [at(m, i), () => {
         const k = call(m, m.branch % 8 + 1, ranBefore(n, body, before, m));
-        if (k) k.branch = armIn(m);
+        if (k) Object.assign(k, {branch: m.branch, arms: armsIn(it, m)});
         return k;
-      }).filter(Boolean);
+      }]), ...(inner.get(it.choice) || []).map(c => [first(c), () => choiceNode(c, c.within[1] % 8 + 1, c.within[1], it.arms?.[c.within[1]] || [])])];
+      const kids = parts.sort((a, b) => a[0] - b[0]).map(([, k]) => k()).filter(Boolean);
+      if (!kids.length) return null;
       // what decides each branch, in the branch's colour; a choice of one branch runs it only when that holds
-      const branches = [...new Set(it.members.map(m => m.branch))].sort((a, b) => a - b);
+      const branches = [...new Set(kids.map(k => k.branch))].sort((a, b) => a - b);
       const when = branches.map(b => [b % 8 + 1, (it.when || [])[b] || ""]);
-      if (kids.length) node.kids.push({id: `${key}~c${it.choice}`, open: true, synthetic: true, choice: true, kids, hue, when});
+      return {id: `${key}~c${it.choice}`, open: true, synthetic: true, choice: true, kids, hue: h, when, paths: it.arms || [], branch, arms};
+    };
+    for (const it of body.items) {
+      if (!it.members) { const k = call(it, hue, ranBefore(n, body, before, it)); if (k) node.kids.push(Object.assign(k, {arms: []})); continue; }
+      if (it.within) continue;
+      const k = choiceNode(it, hue, undefined, []);
+      if (k) node.kids.push(k);
     }
     return node;
   };
@@ -1161,11 +1175,21 @@ const stepMorphism = (key, own, isAnchor, leaf) => {
 };
 // build the nested picture: frames for open steps, pills for closed ones (siblings with the same places are one pill)
 const pills = new Map(), frames = new Map();  // id -> {...}
+// the arms of every choice a box stands in, up to the route, each by its choice's frame (`n:STEP~cN`, as a frame of the
+// body's choices is named) and the arm, as `Site::arms` numbers them: two boxes that stand in different arms of one choice
+// never run in one run, also where the arm's choice is one coproduct with the choice around it and has no frame of its own
+const rawOf = (parent, arms) => {
+  let f = parent;
+  while (f && frames.get(f)?.synthetic) f = frames.get(f).parent;
+  const F = frames.get(f), out = new Map(F?.raw || []);
+  for (const [c, a] of arms || []) if (F?.step) out.set(`n:${F.step}~c${c}`, a);
+  return out;
+};
 const build = (node, parent, caller) => {
   if (node.synthetic) {
     const fid = "n:" + node.id, one = node.when.length === 1;
     const w = one ? node.when[0][1] : "", title = !one ? "one of" : !w ? "only sometimes" : w === "otherwise" ? "only otherwise" : `only when ${w}`;
-    frames.set(fid, {id: fid, step: null, parent, hue: node.hue, choice: true, synthetic: true, title, whens: one ? [] : node.when.filter(w => w[1]), ...(one ? {one: true} : {})});
+    frames.set(fid, {id: fid, step: null, parent, hue: node.hue, branch: node.branch, paths: node.paths, raw: rawOf(parent, node.arms), choice: true, synthetic: true, title, whens: one ? [] : node.when.filter(w => w[1]), ...(one ? {one: true} : {})});
     return node.kids.flatMap(k => build(k, fid, caller));
   }
   // in the finest plan a call without calls of its own is a pill; an open step has a frame and its own arrow
@@ -1173,7 +1197,7 @@ const build = (node, parent, caller) => {
     const fid = "n:" + node.id, kids = [];
     // what the step shows closed, kept for the places it shows: opening it refines the code and leaves them where they stood
     const shut = fine || node.id === V.route || libraryClass(stepOf(node.id)) ? null : stepMorphism(node.id, false, false);
-    frames.set(fid, {id: fid, step: node.id, parent, hue: node.hue, branch: node.branch, choice: node.choice, anchor: node.id === V.route, ...(node.parse ? {parse: true} : {}), closed: shut && {goes: shut.goes, cod: shut.cod, hb: !!parent && !caller && !/^(part|unit|op):/.test(node.id) && goesBack(node.id, shut.cod, shut.errs)}, title: (node.id === V.route ? entryTitle(node.id) : stepLabel(node.id)) + (node.choice ? ` · one of ${oneOf(node.id)}` : "")});
+    frames.set(fid, {id: fid, step: node.id, parent, hue: node.hue, branch: node.branch, raw: rawOf(parent, node.arms), choice: node.choice, anchor: node.id === V.route, ...(node.parse ? {parse: true} : {}), closed: shut && {goes: shut.goes, cod: shut.cod, hb: !!parent && !caller && !/^(part|unit|op):/.test(node.id) && goesBack(node.id, shut.cod, shut.errs)}, title: (node.id === V.route ? entryTitle(node.id) : stepLabel(node.id)) + (node.choice ? ` · one of ${oneOf(node.id)}` : "")});
     const lib = libraryClass(stepOf(node.id));
     // a library class that is the route starts at its public methods; met inside a route it is a call like another, with its own arrow
     const own = (lib && node.id === V.route) || node.id.startsWith("unit:") ? {dom: new Map(), cod: new Map(), goes: new Map()} : stepMorphism(node.id, true, node.id === V.route);
@@ -1218,7 +1242,7 @@ const build = (node, parent, caller) => {
   if (caller) m.dom.set(addPlace(entryPlace(caller)), false);
   // a unit stands even when nothing crosses its edge, so that it can be opened
   if (!m.dom.size && !m.cod.size && !hb && !node.id.startsWith("unit:")) return [];
-  const pill = {id: "n:" + node.id, steps: [node.id], D: m.dom, C: m.cod, dn: m.dn, cn: m.cn, goes: m.goes || new Map(), parent, hue: node.hue, branch: node.branch, ...(said ? {said} : {}), ...(m.keep?.size ? {keep: m.keep} : {}), ...(m.errs?.size ? {errs: m.errs} : {}), ...(m.raised?.size ? {raised: m.raised} : {}), ...(m.kept?.size ? {kept: m.kept} : {}), ...(m.uses?.length ? {uses: m.uses} : {}), ...(node.parse ? {parse: true} : {}), ...(cut ? {cut: true, mult: m.mult, split: m.split, holds: m.holds, types: m.types} : {})};
+  const pill = {id: "n:" + node.id, steps: [node.id], D: m.dom, C: m.cod, dn: m.dn, cn: m.cn, goes: m.goes || new Map(), parent, hue: node.hue, branch: node.branch, raw: rawOf(parent, node.arms), ...(said ? {said} : {}), ...(m.keep?.size ? {keep: m.keep} : {}), ...(m.errs?.size ? {errs: m.errs} : {}), ...(m.raised?.size ? {raised: m.raised} : {}), ...(m.kept?.size ? {kept: m.kept} : {}), ...(m.uses?.length ? {uses: m.uses} : {}), ...(node.parse ? {parse: true} : {}), ...(cut ? {cut: true, mult: m.mult, split: m.split, holds: m.holds, types: m.types} : {})};
   pills.set(pill.id, pill);
   return hb ? [pill] : [];
 };
@@ -1293,54 +1317,80 @@ let armsMaking = null;
 // the arms of a coproduct make one value however its variants differ: `Node::Bron(..)` in one arm, `Node::Begrip(..)` in the other
 const valueOfArm = (c, k, names) => { const t = places.get(k)?.type, sum = t && SUM_OF.get(t); const nm = (names && names.get(k)) || ""; return `${c}|${sum ? "t:" + sum : kindKey(k)}|${nm.startsWith("#") ? "" : nm}`; };
 const chainOf = P => planChain(P.parent);
+// the choices of its body a box stands in, the innermost first, each with the branch of it the box stands in: a choice inside
+// an arm stands in that arm as a step of it does, so what it makes is made in the arm
+const levels = P => {
+  const out = [];
+  for (let F = P.own ? frames.get(P.parent) : P; F && frames.get(F.parent)?.synthetic; F = frames.get(F.parent)) out.push({choice: F.parent, branch: F.branch});
+  return out;
+};
+// two boxes never run in one run where they stand in different arms of one choice
+const apartArms = (x, y) => [...x].some(([c, a]) => y.has(c) && y.get(c) !== a);
+// the frame of the body a choice is in
+const bodyOfChoice = c => { let h = frames.get(c).parent; while (h && frames.get(h)?.synthetic) h = frames.get(h).parent; return h; };
 const armsOf = () => {
   if (armsMaking) return armsMaking;
   armsMaking = new Map();
   const order = [...pills.values()], last = new Map();
-  order.forEach((Q, i) => { const b = armOf(Q); if (b && frames.get(b.choice).synthetic) last.set(b.choice, i); });
+  order.forEach((Q, i) => { for (const l of levels(Q)) last.set(l.choice, i); });
   const making = v => { if (!armsMaking.has(v)) armsMaking.set(v, {arms: new Set(), on: false, last: new Map()}); return armsMaking.get(v); };
   order.forEach(Q => {
-    const b = armOf(Q);
-    if (b && frames.get(b.choice).synthetic) for (const x of Q.C.keys()) if (isMem(x)) {
-      const m = making(valueOfArm(b.choice, x, Q.cn));
-      m.arms.add(b.branch);
-      m.last.set(b.branch, Q);
+    for (const l of levels(Q)) for (const x of Q.C.keys()) if (isMem(x)) {
+      const m = making(valueOfArm(l.choice, x, Q.cn));
+      m.arms.add(l.branch);
+      m.last.set(l.branch, Q);
     }
   });
   // an arm that binds a name by the body's own code makes its value as an arm whose step gives it does (`Node::binds`, #158):
   // `let out = match f { "csv" => String::from(..), _ => format!(..) }`. A choice whose arms run no step has no frame: what
-  // they bind is the body's own
+  // they bind is the body's own. The binding stands in each branch whose arms it runs in, and in an arm that runs no step in
+  // an arm of its own
   const named = (t, nm) => (t ? addPlace({...typePlace(t), id: `t:${t}~${nm}`, name: nm}) : "v:" + nm);
-  for (const [fid, F] of frames) if (F.step && !F.synthetic) for (const b of byId.get(stepOf(F.step))?.binds || []) for (const [c, a] of b.arms || []) {
-    const cid = `${fid}~c${c}`, k = named(b.type, b.name);
-    if (frames.get(cid)?.synthetic) making(valueOfArm(cid, k, new Map([[k, b.name]]))).arms.add(a);
+  const along = (p, q) => p.every((x, i) => i >= q.length || (x[0] === q[i][0] && x[1] === q[i][1]));
+  for (const [fid, F] of frames) if (F.step && !F.synthetic) for (const b of byId.get(stepOf(F.step))?.binds || []) {
+    const R = b.arms || [], k = named(b.type, b.name);
+    R.forEach(([c], depth) => {
+      const cid = `${fid}~c${c}`, C = frames.get(cid);
+      if (!C?.synthetic) return;
+      const m = making(valueOfArm(cid, k, new Map([[k, b.name]]))), ins = (C.paths || []).flatMap((p, i) => (along(p, R) ? [i] : []));
+      if (ins.length) for (const i of ins) m.arms.add(i);
+      else m.arms.add("arm:" + R.slice(depth).map(x => x.join(":")).join("/"));
+    });
   }
-  // what a step after the choice, in the body that holds it, takes of it
+  // what a step after the choice, in the body that holds it and in no other arm of a choice around it, takes of it
   order.forEach((Q, i) => {
     const ch = chainOf(Q);
-    for (const [c, j] of last) if (i > j && !ch.includes(c) && ch.includes(frames.get(c).parent)) for (const x of Q.D.keys()) armsMaking.get(valueOfArm(c, x, Q.dn)) && (armsMaking.get(valueOfArm(c, x, Q.dn)).on = true);
+    for (const [c, j] of last) if (i > j && !ch.includes(c) && ch.includes(bodyOfChoice(c)) && !apartArms(armsAbove(Q), frames.get(c).raw || new Map())) for (const x of Q.D.keys()) armsMaking.get(valueOfArm(c, x, Q.dn)) && (armsMaking.get(valueOfArm(c, x, Q.dn)).on = true);
   });
   // and what the body's own code uses of it outside the choice (`fs::write(&path, out)` after the `match`)
   for (const Q of order) if (Q.own) for (const u of Q.uses || []) if (u.name) for (const c of last.keys()) {
-    let h = frames.get(c).parent; while (h && frames.get(h)?.synthetic) h = frames.get(h).parent;
-    if (h !== Q.parent || (u.arms || []).some(([x]) => `${h}~c${x}` === c)) continue;
+    const h = bodyOfChoice(c), at = new Map([...armsAbove(Q), ...(u.arms || []).map(([x, b]) => [`${h}~c${x}`, b])]);
+    if (h !== Q.parent || (u.arms || []).some(([x]) => `${h}~c${x}` === c) || apartArms(at, frames.get(c).raw || new Map())) continue;
     const k = named(u.type, u.name), m = armsMaking.get(valueOfArm(c, k, new Map([[k, u.name]])));
     if (m) m.on = true;
   }
   return armsMaking;
 };
+// the moment of what `P` makes of `k`: its own, or that of the choice it goes on past. Of what one arm makes of a value,
+// the last is what it hands on past the choice, where two arms make it or it is made anew of a value named before the choice
+// and kept by the other arms (`kept`, asked of each choice); a choice inside an arm is a maker in it, so what it hands on goes
+// on past the choice around it by the same rule
 const madeAt = (P, k, kept) => {
   const a = armOf(P);
   if (!a) return ownMoment(P);
   if (!frames.get(a.choice).synthetic) return choiceMoment(a.choice);
-  // an error an arm hands on or raises goes past the choice, whichever step of the arm fails or builds it: the errors of a
+  const ls = levels(P);
+  // an error an arm hands on or raises goes past the choices, whichever step of the arm fails or builds it: the errors of a
   // choice are one value. One a step's border hands on that its call does not (`rates::fetch(..)` handed, as the `Result` it
   // gives, to a step of the arm) stays the step's
   const key = P.own ? frames.get(P.parent)?.step : P.steps[0];
-  if ((P.errs?.has(k) && treeInfo.get(key)?.site?.fails?.length) || P.raised?.has(k)) return choiceMoment(a.choice);
-  // of what one arm makes of a value, the last is what it hands on past the choice; what it makes first is made inside it
-  const m = armsOf().get(valueOfArm(a.choice, k, P.cn));
-  return kept || (m && m.on && m.arms.size > 1 && m.last.get(a.branch) === P) ? choiceMoment(a.choice) : ownMoment(P);
+  if ((P.errs?.has(k) && treeInfo.get(key)?.site?.fails?.length) || P.raised?.has(k)) return choiceMoment(ls[ls.length - 1].choice);
+  let at = null;
+  for (const l of ls) {
+    const m = armsOf().get(valueOfArm(l.choice, k, P.cn)), q = m?.last.get(l.branch);
+    if (kept(l.choice) || (m && m.on && m.arms.size > 1 && (q === P || (!!at && !!q && chainOf(q).includes(at))))) at = l.choice;
+  }
+  return at ? choiceMoment(at) : ownMoment(P);
 };
 // in A, a value B makes by another step (`remade`) is one value: it stands at the moment of the step that makes it in B
 const remadeAt = at => {
@@ -1357,7 +1407,7 @@ const scopeOf = P => {
   let f = P.own ? frames.get(P.parent)?.parent : P.parent; while (f && frames.get(f)?.synthetic) f = frames.get(f).parent; return f || null;
 };
 // the arms of the choices in a body a step stands in: what one arm makes, no step of another arm of that choice takes
-const armsAbove = P => { const out = new Map(); for (let F = P.own ? frames.get(P.parent) : P; F; F = frames.get(F.parent)) if (frames.get(F.parent)?.synthetic) out.set(F.parent, F.branch); return out; };
+const armsAbove = P => new Map((P.own ? frames.get(P.parent) : P)?.raw || []);
 // a name holds `NONE` where its call fills its parameter with no value of the plan, and a parameter more than one value fills
 // holds the others beside the first (`also`)
 const NONE = "∅";
@@ -1818,10 +1868,12 @@ for (const P of pills.values()) {
     const nm = name(P.cn, k), a = armOf(P);
     // a value of that name from before the choice, kept by the arms that do not make it anew; an opened step's arrow hands
     // on in its caller's scope
-    const kept = !!a && !!nm && !nm.startsWith("#") && (() => { const was = latestGet(kindKey(k) + "|" + nm, P.own ? frames.get(P.parent) : P); return !!was && !madeIn.get(a.choice)?.has(was); })();
-    const at = remadeAt(madeAt(P, k, kept)), v = version(k, `${k}@${at}`);
-    if (a) { if (!madeIn.has(a.choice)) madeIn.set(a.choice, new Set()); madeIn.get(a.choice).add(v); }
-    if (a && at === choiceMoment(a.choice)) { const ak = valueOfArm(a.choice, k, P.cn); armKey.set(v, ak); if (!armValues.has(ak)) armValues.set(ak, []); if (!armValues.get(ak).includes(v)) armValues.get(ak).push(v); }
+    const was = !!a && !!nm && !nm.startsWith("#") && latestGet(kindKey(k) + "|" + nm, P.own ? frames.get(P.parent) : P);
+    const kept = c => !!was && !madeIn.get(c)?.has(was);
+    const at = remadeAt(madeAt(P, k, kept)), v = version(k, `${k}@${at}`), ls = a ? levels(P) : [];
+    for (const l of a && frames.get(a.choice).synthetic ? ls : a ? [a] : []) { if (!madeIn.has(l.choice)) madeIn.set(l.choice, new Set()); madeIn.get(l.choice).add(v); }
+    const to = a && [a, ...ls].find(l => at === choiceMoment(l.choice));
+    if (to) { const ak = valueOfArm(to.choice, k, P.cn); armKey.set(v, ak); if (!armValues.has(ak)) armValues.set(ak, []); if (!armValues.get(ak).includes(v)) armValues.get(ak).push(v); }
     if (mult && P.mult.C.has(k)) mult.C.set(v, P.mult.C.get(k));
     Object.assign(places.get(v), {at}, P.errs?.has(k) || P.raised?.has(k) ? {err: true} : {});
     if (nm && !nm.startsWith("#") && !k.startsWith("v:")) Object.assign(places.get(v), {label: `${places.get(k).label} · ${nm}`, held: nm});

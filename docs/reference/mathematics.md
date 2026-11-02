@@ -108,7 +108,12 @@ are that step with a choice of what it is handed, no choice of where the value c
 coproduct of its arms, each injected by what decides it as the code writes it (`when not
 raw.exists()`, a `match` pattern, `otherwise`). A choice of one arm is a coproduct with the
 identity, `f + 1`: its steps run when the condition holds and nothing runs otherwise, so it is
-drawn as a choice too. In `x ?? y`, `x || y` and `x && y` (Python's `or` and `and`, Rust's
+drawn as a choice too. An arm is the composite of what it runs, so a choice inside an arm beside other steps of it
+is a coproduct inside that arm (`if keep: open_shelf(); if report: keep_report()` is `(open_shelf ; (keep_report + 1)) + 1`),
+a frame in the arm's branch, never another branch beside it: one run takes one branch of each frame it enters, and a run
+through both is one run. Coproducts are associative, `A + (B + C) = A + B + C`: an arm that runs nothing but one choice
+inside it is that choice, whose arms are branches of the one around it, each decided by the arms on its path (an `else`
+whose only statement is an `if` is an `elif`, as a chain of guards with nothing between them is) (#357). In `x ?? y`, `x || y` and `x && y` (Python's `or` and `and`, Rust's
 `x.unwrap_or_else(..)`) the left always runs and its value goes on where it holds, so it is no arm; the right is
 the one arm. What goes on past them is the left's value where the arm does not run and the arm's where it does, as
 in `match x { Some(v) => v, None => y }`: a body that gives back `x ?? y` gives back both. A guard, a choice none of whose arms runs on past its end and that has no arm for when none
@@ -631,7 +636,7 @@ image.
 | a place of the world is no part of the code's hierarchy and stays outside a package, part or step that shows it | a place is an object, a package is a block of the partition of functions; `q` moves functions only |
 | memory made and used inside a step lives inside its frame | an object between two arrows of a composite is internal to it |
 | what a step takes from beyond it stands outside its frame | the domain of a composite is the domain of its first arrow |
-| a choice is a frame of its own, its branches inside | a coproduct is one object whose arms are its injections |
+| a choice is a frame of its own, its branches inside; a choice inside an arm beside other steps is a frame in that branch, one that is the whole arm is branches of the frame around it | a coproduct is one object whose arms are its injections; an arm is a composite, and `A + (B + C) = A + B + C` (`alternatives` in `engine/tests/plans.mjs`) |
 | files fold into the directories that hold them, one box per side their files stand on; directories nested in one another that hold the same files are one box, drawn as the deepest, and opening it opens them all; opening a directory refines the fold | the disk is a tree, and a fold is its quotient by directory, met with the side; directories with the same files are one block of that quotient, so the box is one class and opens as one (`foldDirs`, held by `plans.mjs` and `pictures.py topology`) |
 | a dotted line joins the packages whose code calls each other, whatever data also joins them; opened, it refines to what inside is called, down to the function's own box | the calls are a relation, and a quotient of a relation keeps its image; a line drawn only where another is absent is no relation and would come back on opening |
 | a type with parts is a family frame; its parts stand inside it opened | zoom by composition is a quotient by the relation "is a part of" |
@@ -852,7 +857,9 @@ parse the command line to the entry. The closed picture is `F/q`:
   step or by the body's own code (`let out = match f { "csv" => String::from(..), _ => format!(..) }`;
   the variants of a sum are one value of it), or what one arm makes anew of a value named before the
   choice, which the other arms keep. What one arm makes and uses itself is its maker's, and no step of
-  another arm takes it: a run goes through one arm. A step that is itself a choice (a call into a family, which runs
+  another arm takes it: a run goes through one arm. A choice inside an arm is a maker in that arm, as a step of it is:
+  what it hands on past itself goes on past the choice around it by the same rule, and an error goes on past every choice of
+  the body (#357). A step that is itself a choice (a call into a family, which runs
   one of the overrides) makes it at a moment inside the step, and hands on a value of its own at its
   own moment, so what its overrides make is internal to it and what it hands on is not;
 - the families are taken on the route's fiber, the types its plan holds (saturation: the fiber first,
