@@ -680,14 +680,15 @@ fn a_read_into_a_buffer_is_used_alike_through_unwrap_and_try() {
 }
 
 /// A change of a part is a change of the whole it is picked of, and the index that picks it is only read: `rows[at].push(x)`
-/// changes `rows` as `rows[0].push(x)` does, never `at` (`docs/reference/mathematics.md`, "One fine plan"; #374).
+/// changes `rows` as `rows[0].push(x)` does, never `at`, and where a macro built `rows` as `rows.push(x)` does
+/// (`docs/reference/mathematics.md`, "One fine plan"; #374).
 #[test]
 fn the_index_a_changed_part_is_picked_by_is_only_read() {
     let g = written(
         "picked",
         &[(
             "src/lib.rs",
-            "pub struct Level {\n    pub db: f32,\n}\n\npub fn by_name(mut rows: Vec<Vec<Level>>, at: usize, x: Level) -> Vec<Vec<Level>> {\n    rows[at].push(x);\n    rows\n}\n\npub fn by_place(mut rows: Vec<Vec<Level>>, x: Level) -> Vec<Vec<Level>> {\n    rows[0].push(x);\n    rows\n}\n",
+            "pub struct Level {\n    pub db: f32,\n}\n\npub fn by_name(mut rows: Vec<Vec<Level>>, at: usize, x: Level) -> Vec<Vec<Level>> {\n    rows[at].push(x);\n    rows\n}\n\npub fn by_place(mut rows: Vec<Vec<Level>>, x: Level) -> Vec<Vec<Level>> {\n    rows[0].push(x);\n    rows\n}\n\npub fn made_by_name(at: usize, x: Level) -> Vec<Vec<Level>> {\n    let mut rows = vec![vec![]];\n    rows[at].push(x);\n    rows\n}\n\npub fn made_whole(x: Level) -> Vec<Level> {\n    let mut rows = vec![];\n    rows.push(x);\n    rows\n}\n",
         )],
     );
     let changed = |f: &str| -> Vec<String> {
@@ -696,4 +697,7 @@ fn the_index_a_changed_part_is_picked_by_is_only_read() {
     };
     assert_eq!(changed("by_place"), ["rows"], "{:#?}", g.node("picked.by_place").map(|n| &n.sites));
     assert_eq!(changed("by_name"), changed("by_place"), "{:#?}", g.node("picked.by_name").map(|n| &n.sites));
+    // a collection a macro builds holds what is put into it, through a part of it as through itself
+    assert_eq!(changed("made_whole"), ["rows"], "{:#?}", g.node("picked.made_whole").map(|n| &n.sites));
+    assert_eq!(changed("made_by_name"), changed("made_whole"), "{:#?}", g.node("picked.made_by_name").map(|n| &n.sites));
 }

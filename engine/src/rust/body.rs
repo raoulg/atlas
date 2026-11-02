@@ -2409,16 +2409,18 @@ impl<'a, 't> Body<'a, 't> {
         if own.is_none() && self.changes_library_value(value, &method) {
             let hands = self.call_hands(c, Some(value), &steps.kept);
             // what changes is the name the part is picked of, never the index that picks it (`fills` of `fills[k].push(..)`)
-            let mut changed = self.hands(&[Some(self.held_root(value).unwrap_or(value))], &steps.kept);
-            // a name no step made, a collection a macro built (`vec![]`), holds what is put into it
-            if changed.is_empty() && value.kind() == "identifier" {
+            let whole = self.held_root(value).unwrap_or(value);
+            let mut changed = self.hands(&[Some(whole)], &steps.kept);
+            // a name no step made, a collection a macro built (`vec![]`), holds what is put into it, also through a part
+            // of it (`out[i].insert(..)` as `out.insert(..)`)
+            if changed.is_empty() && whole.kind() == "identifier" {
                 let put = c
                     .child_by_field_name("arguments")
                     .map(named_children)
                     .unwrap_or_default()
                     .into_iter()
                     .find_map(|a| self.value_class(a));
-                changed.push(Held::new(put.unwrap_or_default(), text(value, src)));
+                changed.push(Held::new(put.unwrap_or_default(), text(whole, src)));
             }
             steps.changes(c, &method, hands, self.gives(c, None), changed);
             return;
