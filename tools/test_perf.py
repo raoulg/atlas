@@ -129,12 +129,29 @@ class Series(unittest.TestCase):
 
     def test_a_pair_from_one_runner_goes_before_two_nights(self):
         measure = "read/x/cold/seconds"
-        result = {"measures": {measure: {"median_a": 2.0, "median_b": 1.0}}}
+        result = {"measures": {measure: {"median_a": 2.0, "median_b": 1.0, "a": [2.0], "b": [1.0]}}}
         night = {"metrics": {measure: {"value": 9.0}}}
         got = perf.cell(measure, "cold read", result, night, night)
         self.assertEqual((got["before"], got["after"], got["source"]), (2.0, 1.0, "interleaved"))
         got = perf.cell(measure, "cold read", None, night, None)
         self.assertEqual((got["before"], got["after"], got["source"]), (9.0, None, "nights"))
+
+    def test_the_summary_is_scale_free_and_symmetric(self):
+        """The release's one number: twice as fast and twice as slow cancel, and 0.04 → 0.05 s weighs what 40 → 50 s weighs."""
+
+        def cells(*pairs: tuple[float, float]) -> list[dict]:
+            return [{"before": b, "after": a} for b, a in pairs]
+
+        self.assertAlmostEqual(perf.summary_of(cells((1.0, 2.0), (2.0, 1.0)))["ratio"], 1.0)
+        self.assertAlmostEqual(perf.summary_of(cells((0.04, 0.05)))["ratio"], perf.summary_of(cells((40.0, 50.0)))["ratio"])
+        self.assertAlmostEqual(perf.summary_of(cells((0.04, 0.05)))["ratio"], 1.25)
+
+    def test_a_change_is_told_from_noise_either_way(self):
+        """A change by the rule of a reproduction, faster as well as slower: every round past every round, by more than the floor."""
+        self.assertTrue(perf.changed_between([22.5, 22.6, 22.4], [20.4, 20.3, 20.4], "s"))
+        self.assertTrue(perf.changed_between([20.4, 20.3, 20.4], [22.5, 22.6, 22.4], "s"))
+        self.assertFalse(perf.changed_between([22.5, 20.2, 22.4], [20.4, 20.3, 20.4], "s"))
+        self.assertFalse(perf.changed_between([1.23, 1.22, 1.24], [0.74, 0.75, 0.76], "s"))
 
     def test_a_releases_night_lies_after_the_release_before(self):
         """A release no night measured since the release before has no night: it never borrows that release's."""

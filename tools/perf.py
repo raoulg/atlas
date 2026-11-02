@@ -48,10 +48,11 @@ into the history's last run, the summary and the text of the tracking issue (`--
 reproduced), or the standing of `next` against a release (`--standing`). `bisect` finds the landing in a
 range that made a measure slower, or gives each landing's share where no single one did. `reproduce --table`
 measures the release's table: of each program of the corpus TABLE, of Atlas OF_ATLAS, with the cards of B's
-readings. `release-bars` writes a release's table and lines (`docs/releases/<version>/bench.json`, the `Bench:`
-line of its notes): each measure of the release before beside this one, from the interleaved run of the two
-where it measured it, else from each release's night in the series, and each measure on the night of every
-release since the series began. Any failure to measure ends with an error.
+readings. `release-bars` writes a release's speed (`docs/releases/<version>/bench.json`, the `Bench:` line of its
+notes): each measure of the release before beside this one, from the interleaved run of the two where it measured
+it, else from each release's night in the series; their geometric mean ratio, with whether each changed beyond
+noise; and each measure on the night of every release since the series began. Any failure to measure ends with an
+error.
 
 `--timings FILE`, given to `read`, `reproduce` or `bisect`, keeps what Atlas reported of each reading it
 measured (`atlas-code view --timings`: the phases, the bodies linked, and the reading's stages per part and per
@@ -69,6 +70,7 @@ import contextlib
 import datetime
 import html
 import json
+import math
 import os
 import platform
 import re
@@ -1387,14 +1389,33 @@ def releases(repo: Path, after: str, version: str) -> list[tuple[str, str]]:
 def cell(measure: str, label: str, result: dict | None, before: dict | None, after: dict | None) -> dict:
     """A measure of the table, the release before against this one: from the interleaved run where it measured
     it, both on one runner; else from each release's night."""
-    out = {"measure": measure, "label": label, "unit": unit_of(measure), "before": None, "after": None, "source": None}
+    out = {"measure": measure, "label": label, "unit": unit_of(measure), "before": None, "after": None, "source": None, "changed": None}
     if result and measure in result["measures"]:
         got = result["measures"][measure]
-        return {**out, "before": got["median_a"], "after": got["median_b"], "source": "interleaved"}
+        changed = changed_between(got["a"], got["b"], out["unit"])
+        return {**out, "before": got["median_a"], "after": got["median_b"], "source": "interleaved", "changed": changed}
     b, a = ((n or {}).get("metrics", {}).get(measure) for n in (before, after))
     if a or b:
         out.update(before=b and b["value"], after=a and a["value"], source="nights")
     return out
+
+
+def changed_between(a: list[float], b: list[float], unit: str) -> bool:
+    """Whether interleaved rounds show a change, either way, by the rule of a reproduction: every round of B past every
+    round of A, on the same side, and the medians apart by more than the floor."""
+    apart = abs(statistics.median(b) - statistics.median(a)) > FLOOR.get(unit, 0.0)
+    return apart and (min(b) > max(a) or max(b) < min(a))
+
+
+def summary_of(cells: list[dict]) -> dict | None:
+    """The release's one number: the geometric mean of after / before over every measure both releases have, the
+    exponent of the mean log ratio. Scale-free (a warm read of 0.04 s weighs what a cold one of 20 s weighs) and
+    symmetric (twice as fast and twice as slow cancel)."""
+    ratios = [c["after"] / c["before"] for c in cells if c["before"] and c["after"]]
+    if not ratios:
+        return None
+    mean = sum(math.log(r) for r in ratios) / len(ratios)
+    return {"ratio": round(math.exp(mean), 4), "measures": len(ratios), "changed": sum(1 for c in cells if c.get("changed"))}
 
 
 def bench_data(
@@ -1439,7 +1460,15 @@ def bench_data(
     measured = [i for i, row in enumerate(rows) if any(c["before"] is not None or c["after"] is not None for c in row["cells"])]
     series = [{**s, "row": measured.index(s["row"])} for s in series if s["row"] in measured]
     rows = [rows[i] for i in measured]
-    return {"before": before, "after": after, "releases": [r for r, n in nights.items() if n], "rows": rows, "series": series}
+    summary = summary_of([c for row in rows for c in row["cells"]])
+    return {
+        "before": before,
+        "after": after,
+        "summary": summary,
+        "releases": [r for r, n in nights.items() if n],
+        "rows": rows,
+        "series": series,
+    }
 
 
 def command_release_bars(args: argparse.Namespace) -> None:
@@ -1470,8 +1499,10 @@ def command_release_bars(args: argparse.Namespace) -> None:
     if "nights" in sources:
         named = ", ".join(f"`{nights[r]['commit'][:7]}`" for r in (before, version) if nights.get(r))
         said.append(f"{'where that run lacks a measure' if said else 'Each pair'}: the nightly measure of `next` on each release's night ({named})")
-    said.append("The lines: every release's night since the series began, each on its night's runner (`docs/reference/performance.md`).")
+    said.append("Over the releases: each release's night since the series began, on its night's runner (`docs/reference/performance.md`).")
     print(f"Bench: releases/{version}/bench.json | " + "; ".join(said[:-1]) + (". " if said[:-1] else "") + said[-1])
+    if s := data["summary"]:
+        print(f"summary: ×{s['ratio']:.4f} over {s['measures']} measures, {s['changed']} changed beyond noise", file=sys.stderr)
     print(f"wrote {out}", file=sys.stderr)
 
 
@@ -1556,7 +1587,7 @@ def main() -> None:
     p.add_argument("--reproduced", type=Path, help="the reproduction the readings were measured in: A and B side by side")
     p.set_defaults(func=command_stages)
 
-    p = commands.add_parser("release-bars", help="the release's table and lines (`Bench:`), from an interleaved run and the series")
+    p = commands.add_parser("release-bars", help="a release's speed (`Bench:`), from an interleaved run and the series")
     p.add_argument("--data", type=Path, help="the series: the night of each release")
     p.add_argument("--reproduced", type=Path, help="an interleaved run of the two releases (`reproduce --table`), before as A")
     p.add_argument("--run", help="the link of that run, for the caption")

@@ -153,28 +153,38 @@ takes `subject` as well, so that a range is bisected for the reader alone (`meas
 
 ## In every release
 
-Every release's notes carry the same speed point: one table and one set of lines, the same measures on the same
-programs, release after release.
+Every release's notes carry the same speed point, the same measures on the same programs, release after release,
+drawn as bars throughout.
 
+- **One number**: per measure the ratio after / before, and over every measure of the table the geometric mean of
+  those ratios, the exponent of the mean log ratio, as SPEC and rustc-perf summarise. It is scale-free (a warm read
+  from 0.04 to 0.05 s counts as +25 %, a cold one from 0.69 to 0.68 s as −1.4 %, whatever their seconds) and
+  symmetric (twice as fast and twice as slow cancel). A mean of squared differences would lose the sign and be
+  ruled by the largest seconds.
+- **Every ratio**, beside it: a bar per measure on a log scale from the middle, faster to the left and slower to
+  the right, so that twice as fast and twice as slow are bars of one length; an outlier shows as one long bar, a
+  uniform shift as all bars to one side. A measure whose change is within noise is grey, *no change*, by the rule
+  of a reproduction made symmetric: it changed when every round of the one release lies past every round of the
+  other, on the same side, and the medians lie apart by more than the floor (0.5 s, 50 MB). A measure taken from
+  two nights has no rounds to judge, and is grey.
 - **The table**: a row per program of the corpus that `perf` reads, named by its card, with its cold read, warm
   read, serve to the complete picture and peak memory (that of the cold read); and a row of Atlas's clean release
-  build and its test suite. Each measure is the release before beside this one, from the interleaved run of the
-  two where it measured it, both on one runner (`mode: weekly`, `to` the release branch), and else from each
-  release's night. Two nights ran on two runners, often of other CPUs, and say less than one interleaved run.
+  build and its test suite. Each measure is a pair of bars, the release before and this one, from the interleaved
+  run of the two where it measured it, both on one runner (`mode: weekly`, `to` the release branch), and else from
+  each release's night. Two nights ran on two runners, often of other CPUs, and say less than one interleaved run.
   A program that joined the corpus after both releases were measured has no row yet.
-- **The lines**: each of those measures on the night of every release since the series began. A release's
-  night is the last night that measured a commit of the release and none of the release before; a release no
-  night measured between the two has no point, and borrows none.
+- **Every release**: each of those measures on the night of every release since the series began, a bar per
+  release. A release's night is the last night that measured a commit of the release and none of the release
+  before; a release no night measured between the two has no bar, and borrows none.
 
 ```sh
 uv run tools/perf.py release-bars --data <a checkout of perf-data> --reproduced weekly.json --run <its url> \
   --repo . --before v0.70.0 --after origin/release-0.71 --version 0.71.0
 ```
 
-writes `docs/releases/0.71.0/bench.json` and prints the notes' line, `Bench: releases/0.71.0/bench.json | caption`,
-whose caption says where each number comes from; `tools/release_page.py` draws it: per row a pair of bars per
-measure with the ratio, and a small line chart per measure. An ad hoc number (a stage that a change made faster, a
-subject of an issue) stays on its issue and its point.
+writes `docs/releases/0.71.0/bench.json`, prints the notes' line, `Bench: releases/0.71.0/bench.json | caption`, whose
+caption says where each number comes from, and says the summary on its error output; `tools/release_page.py` draws
+it. An ad hoc number (a stage that a change made faster, a subject of an issue) stays on its issue and its point.
 
 ## The series
 
