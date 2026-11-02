@@ -99,7 +99,10 @@ The rigorous half and the visual half are the same structure. Read `docs/referen
   decisions and their reasons on the issue that made them (label `decision`). Every issue is a
   sub-issue of the epic of its theme (label `epic`; the pinned issue "Roadmap: the epics" holds the
   epics, each numbered in its title, `E1 · Speed`) and carries one priority label, `P1` (the round in
-  progress) to `P4` (later); a new theme becomes an epic under the roadmap, with the next number. Every
+  progress) to `P4` (later), and one kind label that says what a user feels of it: `kind: speed` (a user waits),
+  `kind: wrong` (Atlas says or draws something wrong, mathematics it does not follow included), `kind: ui/ux`,
+  `kind: extension` (something new, nice to have), `kind: distribution` (Studio, installing, releasing) or `kind: internal`
+  (Atlas's own code and tests). Speed and what is wrong go before extensions; a new theme becomes an epic under the roadmap, with the next number. Every
   issue but an epic stands on the board, the project "Atlas" (https://github.com/users/raoulg/projects/1):
   a column per Status, a row per epic. The board adds a new issue itself (as Todo) and moves a closed
   one to Done. Older commits name issues by an id of the form `PTT-…`; an open
