@@ -132,6 +132,7 @@ dependencies = [
  "serde_json",
  "serde_yaml",
  "sqlparser",
+ "stacker",
  "toml",
  "tree-sitter",
  "tree-sitter-python",

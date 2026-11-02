@@ -13,10 +13,14 @@ use super::module::{
 };
 use crate::knowledge::{self, PathFn};
 use crate::paths::{
-    bound as named_by, cross, each, environment, environment_named, held_by, hole, lit, or_else, parent, substitute, union, Built, Seg,
+    applied, bound as named_by, cross, each, environment, environment_named, held_by, hole, lit, or_else, parent, union, Built, Seg,
+    Summaries,
 };
 use crate::tree::{beneath, named_children, outermost, path_str, text, unquote, walk};
 
+/// How deep one frame's own expression is followed: a function's, the value a constructor gives a
+/// field, a module's. What another frame gives is that frame's summary (`Summaries`), followed from
+/// its own start, so a path built through helpers is followed as far as the same path written in place.
 const DEPTH: u32 = 12;
 
 /// Evaluates paths and URLs in the modules of one package.
@@ -25,6 +29,9 @@ pub(super) struct Eval<'a> {
     root: &'a Path,
     /// The program's classes each class extends, by id, in the order it declares them.
     bases: HashMap<String, Vec<String>>,
+    /// What each expression read in a frame of its own gives (a function's returns, the value a constructor gives a
+    /// field, a constant's), a term of that frame's parameters, made once in that frame.
+    summaries: Summaries,
 }
 
 /// Where an expression is evaluated: its module, and the function it is in with that function's
@@ -75,7 +82,7 @@ pub(super) fn param_names(f: TsNode, src: &[u8]) -> Vec<String> {
 
 impl<'a> Eval<'a> {
     pub fn new(modules: &'a IndexMap<String, Module>, root: &'a Path, bases: HashMap<String, Vec<String>>) -> Self {
-        Eval { modules, root, bases }
+        Eval { modules, root, bases, summaries: Summaries::default() }
     }
 
     /// The module's file, relative to the package root.
@@ -192,7 +199,7 @@ impl<'a> Eval<'a> {
         // what an object holds: a field its constructor sets from what it is handed
         if let [this, name] = parts.as_slice() {
             if this == "this" {
-                if let Some(v) = self.held(at, e, name, depth) {
+                if let Some(v) = self.held(at, e, name) {
                     return v;
                 }
             }
@@ -202,7 +209,7 @@ impl<'a> Eval<'a> {
             if let Some(Bound::Own(target)) = at.m.bindings.get(head) {
                 if let Some(home) = self.modules.get(target) {
                     if let Some(v) = top_value(home, name) {
-                        return named_by(name, self.of(At { m: home, scope: None, params: &[] }, v, depth + 1));
+                        return named_by(name, self.top(home, v));
                     }
                 }
             }
@@ -329,7 +336,7 @@ impl<'a> Eval<'a> {
 
     /// The field `name` of the value `e` is read on, the body's own receiver: the field the first
     /// class that sets it sets, along the order of the class `e` is written in and its bases.
-    fn held<'t>(&self, at: At<'_, 't>, e: TsNode<'t>, name: &str, depth: u32) -> Option<Vec<Built>> {
+    fn held<'t>(&self, at: At<'_, 't>, e: TsNode<'t>, name: &str) -> Option<Vec<Built>> {
         let src = &at.m.src;
         let mut class = e.parent();
         while let Some(c) = class.filter(|c| !matches!(c.kind(), "class_declaration" | "class" | "abstract_class_declaration")) {
@@ -337,7 +344,7 @@ impl<'a> Eval<'a> {
         }
         let class = class?;
         let first = format!("{}.{}", at.m.id, text(class.child_by_field_name("name")?, src));
-        if let Some(held) = self.set_by(at.m, class, &first, name, depth) {
+        if let Some(held) = self.set_by(at.m, class, &first, name) {
             return Some(held);
         }
         let mut todo: Vec<String> = self.bases.get(&first).into_iter().flatten().rev().cloned().collect();
@@ -352,7 +359,7 @@ impl<'a> Eval<'a> {
             }) else {
                 continue;
             };
-            if let Some(held) = self.set_by(m, class, &id, name, depth) {
+            if let Some(held) = self.set_by(m, class, &id, name) {
                 return Some(held);
             }
             todo.extend(self.bases.get(&id).into_iter().flatten().rev().cloned());
@@ -363,7 +370,7 @@ impl<'a> Eval<'a> {
     /// The field `name` as class `class` (`id`, in module `m`) sets it: a parameter property of its
     /// constructor (`constructor(private dir: string)`) or `this.dir = ..` in the constructor's body,
     /// from what the constructor's callers hand it; else the field's own initializer.
-    fn set_by<'t>(&self, m: &'t Module, class: TsNode<'t>, id: &str, name: &str, depth: u32) -> Option<Vec<Built>> {
+    fn set_by<'t>(&self, m: &'t Module, class: TsNode<'t>, id: &str, name: &str) -> Option<Vec<Built>> {
         let src = &m.src;
         let members = named_children(class.child_by_field_name("body")?);
         let ctor = members
@@ -382,14 +389,20 @@ impl<'a> Eval<'a> {
             });
             if let Some(right) = set.and_then(|a| a.child_by_field_name("right")) {
                 let names = param_names(*ctor, src);
-                let vals = self.of(At { m, scope: Some(*ctor), params: &names }, right, depth + 1);
+                let vals = self.summaries.of(right.id(), || self.of(At { m, scope: Some(*ctor), params: &names }, right, 0));
                 return Some(vals.into_iter().map(|b| held_by(&format!("{id}.constructor"), b)).collect());
             }
         }
         let field = members
             .iter()
             .find(|x| x.kind() == "public_field_definition" && x.child_by_field_name("name").map(|n| text(n, src)) == Some(name))?;
-        field.child_by_field_name("value").map(|v| self.of(At { m, scope: None, params: &[] }, v, depth + 1))
+        field.child_by_field_name("value").map(|v| self.top(m, v))
+    }
+
+    /// The value an expression written at the top of module `m` has (a constant, a field's initializer): made once,
+    /// in the module's own frame.
+    fn top(&self, m: &Module, v: TsNode) -> Vec<Built> {
+        self.summaries.of(v.id(), || self.of(At { m, scope: None, params: &[] }, v, 0))
     }
 
     fn name<'t>(&self, at: At<'_, 't>, e: TsNode<'t>, depth: u32) -> Vec<Built> {
@@ -422,11 +435,11 @@ impl<'a> Eval<'a> {
             }
         }
         if let Some(v) = top_value(at.m, &name) {
-            return named_by(&name, self.of(At { m: at.m, scope: None, params: &[] }, v, depth + 1));
+            return named_by(&name, self.top(at.m, v));
         }
         // a constant another module of the package exports
         if let Some((home, n, v)) = self.exported(at.m, &name) {
-            return named_by(&n, self.of(At { m: home, scope: None, params: &[] }, v, depth + 1));
+            return named_by(&n, self.top(home, v));
         }
         vec![hole(&name)]
     }
@@ -743,14 +756,7 @@ impl<'a> Eval<'a> {
         let def = named_children(class.child_by_field_name("body")?)
             .into_iter()
             .find(|x| x.kind() == "method_definition" && x.child_by_field_name("name").map(|n| text(n, &home.src)) == Some(name))?;
-        let names = param_names(def, &home.src);
-        let inner = At { m: home, scope: Some(def), params: &names };
-        let gives = returns(def).into_iter().fold(vec![], |acc, x| union(acc, self.of(inner, x, depth + 1)));
-        if gives.is_empty() {
-            return None;
-        }
-        let handed: HashMap<&str, Vec<Built>> = names.iter().zip(args).map(|(p, a)| (p.as_str(), self.of(at, *a, depth + 1))).collect();
-        Some(gives.iter().flat_map(|b| substitute(b, |p| handed.get(p).cloned().unwrap_or_else(|| vec![hole(p)]))).collect())
+        self.handed_to(at, home, def, args, depth)
     }
 
     /// The program's class a name is, where `e` names one: declared in the module, or imported from
@@ -825,14 +831,22 @@ impl<'a> Eval<'a> {
             bound = home.bindings.get(n).cloned();
         }
         let (home, def) = found?;
+        self.handed_to(at, home, def, args, depth)
+    }
+
+    /// What the function `def` of `home` gives back where `at` hands it `args`: its summary, made once in its own
+    /// frame, with each parameter replaced by what the call hands it; none where it gives back no value.
+    fn handed_to<'t>(&self, at: At<'_, 't>, home: &Module, def: TsNode, args: &[TsNode<'t>], depth: u32) -> Option<Vec<Built>> {
         let names = param_names(def, &home.src);
-        let inner = At { m: home, scope: Some(def), params: &names };
-        let gives = returns(def).into_iter().fold(vec![], |acc, x| union(acc, self.of(inner, x, depth + 1)));
-        if gives.is_empty() {
+        let summary = self.summaries.of(def.id(), || {
+            let inner = At { m: home, scope: Some(def), params: &names };
+            returns(def).into_iter().fold(vec![], |acc, x| union(acc, self.of(inner, x, 0)))
+        });
+        if summary.is_empty() {
             return None;
         }
         let handed: HashMap<&str, Vec<Built>> = names.iter().zip(args).map(|(p, a)| (p.as_str(), self.of(at, *a, depth + 1))).collect();
-        Some(gives.iter().flat_map(|b| substitute(b, |p| handed.get(p).cloned().unwrap_or_else(|| vec![hole(p)]))).collect())
+        Some(applied(&summary, |p| handed.get(p).cloned().unwrap_or_else(|| vec![hole(p)])))
     }
 
     /// The Node socket a function or a class `f` opens (`knowledge::NODE_DOORS`), by the package

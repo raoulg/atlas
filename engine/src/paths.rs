@@ -10,6 +10,7 @@
 //! statement whose verb and tables are written out is whole where it is built; the values it is
 //! built from name no place.
 
+use std::cell::RefCell;
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::sync::OnceLock;
 
@@ -1098,6 +1099,46 @@ pub fn substitute(b: &Built, mut value: impl FnMut(&str) -> Vec<Built>) -> Vec<B
         Seg::Param(p) => Some(value(p)),
         _ => None,
     })
+}
+
+/// What a call gives back: the callee's summary with each of its parameters replaced by what `value` says the call
+/// hands it.
+pub fn applied(summary: &[Built], mut value: impl FnMut(&str) -> Vec<Built>) -> Vec<Built> {
+    summary.iter().flat_map(|b| substitute(b, &mut value)).collect()
+}
+
+/// The values of the expressions a reader evaluates in a frame of their own, each once, by the expression (the node of a
+/// function whose returns it gives, a field's value in the constructor that sets it, a constant's value): its summary,
+/// a term of the frame's parameters, which every use writes into with what it hands
+/// (`docs/reference/mathematics.md`, "A function's return is its summary"). How deep a reader follows an expression is
+/// counted from the frame it is written in, so a value reached through other functions is the value written in place.
+/// A summary asked for while it is being made (a recursion) is a value not followed there.
+pub struct Summaries {
+    made: RefCell<HashMap<usize, Vec<Built>>>,
+    making: RefCell<HashSet<usize>>,
+}
+
+impl Default for Summaries {
+    fn default() -> Self {
+        Summaries { made: RefCell::new(HashMap::new()), making: RefCell::new(HashSet::new()) }
+    }
+}
+
+impl Summaries {
+    /// The summary of the expression whose node has the id `node`, made by `make` the first time it is asked for. A
+    /// frame entered from another may run deeper than the stack the reader started on, which grows as it needs.
+    pub fn of(&self, node: usize, make: impl FnOnce() -> Vec<Built>) -> Vec<Built> {
+        if let Some(made) = self.made.borrow().get(&node) {
+            return made.clone();
+        }
+        if !self.making.borrow_mut().insert(node) {
+            return vec![hole("…")];
+        }
+        let made = stacker::maybe_grow(256 * 1024, 4 * 1024 * 1024, make);
+        self.making.borrow_mut().remove(&node);
+        self.made.borrow_mut().insert(node, made.clone());
+        made
+    }
 }
 
 /// Where a value built from parameters becomes whole: a conjunction of conditions on a route
