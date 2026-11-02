@@ -2408,7 +2408,8 @@ impl<'a, 't> Body<'a, 't> {
         }
         if own.is_none() && self.changes_library_value(value, &method) {
             let hands = self.call_hands(c, Some(value), &steps.kept);
-            let mut changed = self.hands(&[Some(value)], &steps.kept);
+            // what changes is the name the part is picked of, never the index that picks it (`fills` of `fills[k].push(..)`)
+            let mut changed = self.hands(&[Some(self.held_root(value).unwrap_or(value))], &steps.kept);
             // a name no step made, a collection a macro built (`vec![]`), holds what is put into it
             if changed.is_empty() && value.kind() == "identifier" {
                 let put = c
