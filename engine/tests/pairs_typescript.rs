@@ -2087,6 +2087,13 @@ fn a_name_computed_of_names_stands_for_them() {
     common::a_name_computed_of_names_stands_for_them("typescript");
 }
 
+/// The locals pair without its annotations: `const both: Level[] = ..` names a type, and the body reads no `Level` by it
+/// (#356), as in Python and Rust.
+#[test]
+fn an_annotation_is_no_read() {
+    common::an_annotation_is_no_read("typescript");
+}
+
 /// The twice pair: `kind` in `join(root, kind, `${kind}.csv`)` is one value, so the loop writes two places, never four
 /// (#324).
 #[test]

@@ -816,11 +816,7 @@ impl<'a> Seen<'a> {
                 continue;
             }
             // a name, not the attribute a projection reads (`.width`) or the keyword an argument is handed by
-            let label = x.parent().is_some_and(|p| {
-                let field = |f: &str| p.child_by_field_name(f).is_some_and(|n| n.id() == x.id());
-                (p.kind() == "attribute" && field("attribute")) || (p.kind() == "keyword_argument" && field("name"))
-            });
-            if x.kind() == "identifier" && !label && !lambda_binds(x, e, src) {
+            if x.kind() == "identifier" && !(USES.label)(x, src) && !lambda_binds(x, e, src) {
                 names.extend(self.projected(x, made, !changed));
             }
             stack.extend(named_children(x).into_iter().rev());
@@ -2508,11 +2504,16 @@ const USES: UseSyntax = UseSyntax {
     },
     nested: &["function_definition", "class_definition", "decorated_definition"],
     reads: &[],
+    // an annotation names a type, never a value the body reads (`both: list[Level] = ..`)
     label: |n, _| {
-        n.parent().is_some_and(|p| {
-            let is = |f: &str| p.child_by_field_name(f).is_some_and(|x| x.id() == n.id());
-            (p.kind() == "attribute" && is("attribute")) || (p.kind() == "keyword_argument" && is("name"))
-        })
+        let annotated = std::iter::successors(n.parent(), |p| p.parent())
+            .take_while(|p| !matches!(p.kind(), "block" | "module"))
+            .any(|p| p.kind() == "type");
+        annotated
+            || n.parent().is_some_and(|p| {
+                let is = |f: &str| p.child_by_field_name(f).is_some_and(|x| x.id() == n.id());
+                (p.kind() == "attribute" && is("attribute")) || (p.kind() == "keyword_argument" && is("name"))
+            })
     },
     binders: |n, child| {
         let is = |f: &str| n.child_by_field_name(f).is_some_and(|x| x.id() == child.id());

@@ -3047,6 +3047,13 @@ fn a_name_computed_of_names_stands_for_them() {
     common::a_name_computed_of_names_stands_for_them("python");
 }
 
+/// The locals pair without its annotations: `both: list[Level] = ..` names a type, and the body reads no `Level` by it (#356),
+/// as in Rust and TypeScript.
+#[test]
+fn an_annotation_is_no_read() {
+    common::an_annotation_is_no_read("python");
+}
+
 /// The twice pair: `kind` in `root / kind / f"{kind}.csv"` is one value, so the loop writes two places, never four (#324).
 #[test]
 fn places_a_name_bound_once_is_one_value() {

@@ -768,6 +768,10 @@ pub fn a_name_computed_of_names_stands_for_them(language: &str) {
         let named = handed("named");
         assert!(named.len() == 2 && named.iter().all(|(_, h)| !h.is_empty()), "{at}: each step of named is handed values: {named:?}");
         assert_eq!(named, handed("written"), "{at}: a step handed a name is handed what the value written in its place hands");
+        let uses = |f: &str| -> BTreeSet<String> {
+            node(f).uses.iter().map(|u| format!("{}·{} {:?} {}", u.ty, u.name, u.arms, u.param)).collect()
+        };
+        assert_eq!(uses("named"), uses("written"), "{at}: the body reads what the value written in its place reads");
         let want: BTreeSet<String> = beyond.into_iter().collect();
         for budget in BUDGETS {
             let at = format!("{at}, budget {budget:?}");
@@ -794,6 +798,58 @@ pub fn a_name_computed_of_names_stands_for_them(language: &str) {
                 assert_eq!(taken, every, "{at}: {r}'s steps take from beyond");
             }
         }
+    }
+}
+
+/// The line `line` of a body with the annotation of the local it binds taken out: `both: list[Level] = v` as `both = v`, `let
+/// both: Vec<Level> = v` as `let both = v`, `const both: Level[] = v` as `const both = v`. A line that binds no annotated local
+/// (a signature, a field, a parameter's default) is kept.
+fn unannotated(line: &str) -> String {
+    let body = line.trim_start();
+    let indent = &line[..line.len() - body.len()];
+    let binder = ["let mut ", "let ", "const "].into_iter().find(|b| body.starts_with(b)).unwrap_or("");
+    let rest = &body[binder.len()..];
+    let name = rest.split(|c: char| !(c.is_alphanumeric() || c == '_')).next().unwrap_or("");
+    let local = !indent.is_empty() && !name.is_empty() && !["def", "fn", "function", "pub", "readonly"].contains(&name);
+    match (local, rest[name.len()..].starts_with(": "), rest.find(" = ")) {
+        (true, true, Some(eq)) => format!("{indent}{binder}{name}{}", &rest[eq..]),
+        _ => line.to_string(),
+    }
+}
+
+/// An annotation names a type, never a value the body reads (#356): a function's uses are the same with and without the
+/// annotations of its locals. Each side of the locals pair of `language` is read as written and read again with every
+/// local's annotation taken out (`unannotated`), and every function's `Node::uses` of one reading is the other's.
+#[allow(dead_code)]
+pub fn an_annotation_is_no_read(language: &str) {
+    for side in ["clean", "shortcut"] {
+        let at = format!("{language} {side}");
+        let pair = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/pairs/locals").join(language).join(side);
+        let copy = std::env::temp_dir().join(format!("atlas-unannotated-{language}-{side}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&copy);
+        copy_tree(&pair, &copy);
+        let file = copy.join(match language {
+            "python" => "src/signal/__init__.py",
+            "rust" => "src/lib.rs",
+            _ => "src/index.ts",
+        });
+        let text = std::fs::read_to_string(&file).expect("reads the source");
+        let bare: Vec<String> = text.lines().map(unannotated).collect();
+        assert!(text.lines().zip(&bare).any(|(a, b)| a != b), "{at}: the pair annotates a local");
+        std::fs::write(&file, bare.join("\n") + "\n").expect("writes the source");
+        let annotated = analyze(&pair, &Options::default()).expect("reads the pair");
+        let without = analyze(&copy, &Options::default()).expect("reads the copy");
+        let _ = std::fs::remove_dir_all(&copy);
+        let uses = |g: &Graph| -> BTreeMap<String, Vec<String>> {
+            g.nodes
+                .iter()
+                .filter(|n| !n.uses.is_empty())
+                .map(|n| (n.id.clone(), n.uses.iter().map(|u| format!("{}·{} {:?} {}", u.ty, u.name, u.arms, u.param)).collect()))
+                .collect()
+        };
+        let (with, bare) = (uses(&annotated), uses(&without));
+        assert!(!with.is_empty(), "{at}: the pair's functions use values");
+        assert_eq!(with, bare, "{at}: a function's uses are the same with and without the annotations of its locals");
     }
 }
 
