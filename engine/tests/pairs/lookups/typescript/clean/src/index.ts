@@ -1,7 +1,8 @@
 /**
  * The levels of a signal, each looked up in the collection it is handed: by a subscript, or by the method that looks it
- * up. `pushed` and `pushedLookedUp` look up in a list they change in place first; `added` and `addedLookedUp` change the
- * row they look up, and so the rows.
+ * up. `pushed` and `pushedLookedUp` look up in a list they change in place first. `added` and `addedLookedUp` change the
+ * row they look up, and so the rows they are handed; `grown` and `grownLookedUp` the row of rows they make, and so those
+ * rows: a change of a part is a change of the whole, which gives the rows anew to what shows them.
  */
 
 /** A level of a signal. */
@@ -57,7 +58,7 @@ export function pushedLookedUp(first: Level, second: Level): void {
 
 /** A level added to the first row, by its place. */
 export function added(rows: Level[][], level: Level): void {
-  const row = rows[0];
+  const row = rows[0]!;
   row.push(level);
   show(rows);
 }
@@ -66,5 +67,21 @@ export function added(rows: Level[][], level: Level): void {
 export function addedLookedUp(rows: Level[][], level: Level): void {
   const row = rows.at(0)!;
   row.push(level);
+  show(rows);
+}
+
+/** A second level added to the first row of rows that start at the first, by its place. */
+export function grown(first: Level, second: Level): void {
+  const rows = [[first]];
+  const row = rows[0]!;
+  row.push(second);
+  show(rows);
+}
+
+/** A second level added to the first row of rows that start at the first, at its place. */
+export function grownLookedUp(first: Level, second: Level): void {
+  const rows = [[first]];
+  const row = rows.at(0)!;
+  row.push(second);
   show(rows);
 }

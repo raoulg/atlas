@@ -12,7 +12,7 @@ use super::module::{
     written, Module, Own, WRAPPERS,
 };
 use super::paths::{self, At, Built, Eval};
-use crate::body::{changed_through, BindSyntax, Crosses, Lookups, Range, Step, Steps, UseSyntax};
+use crate::body::{changed_binding, changed_through, BindSyntax, Crosses, Lookups, Range, Step, Steps, UseSyntax};
 use crate::builder::{foreign_type, GraphBuilder};
 use crate::effects::{self, Crossing};
 use crate::knowledge::{self, OwnTypes};
@@ -291,7 +291,7 @@ fn matched_by<'t>(at: TsNode<'t>, name: &str, src: &[u8]) -> Option<TsNode<'t>> 
 }
 
 /// The name a chain like `self.items[0].x` starts from.
-fn root_name<'a>(n: TsNode, src: &'a [u8]) -> Option<&'a str> {
+pub(super) fn root_name<'a>(n: TsNode, src: &'a [u8]) -> Option<&'a str> {
     root_of(n).map(|r| text(r, src))
 }
 
@@ -316,10 +316,22 @@ pub(super) fn changed_roots<'a, 't>(
     changes: &dyn Fn(TsNode<'t>) -> Vec<TsNode<'t>>,
     looked: Lookups<'_, 't>,
 ) -> std::collections::BTreeSet<&'a str> {
-    changed(body, changes)
-        .into_iter()
-        .filter_map(|x| changed_through(body, src, &BINDS, looked, root_name(x, src)?, x.start_byte()))
-        .collect()
+    changed(body, changes).into_iter().filter_map(|x| changed_whole(body, src, looked, x)).collect()
+}
+
+/// The name whose value the change `x` makes changes, where `x` is written (`changed_through`): the root of what it
+/// changes (`root_through`), followed through the names it is changed by and the lookups `looked` finds: `ROWS` of
+/// `row.append(level)` after `row = ROWS[0]` or `row = next(iter(ROWS))`, as of `ROWS[0].append(level)` and of
+/// `next(iter(ROWS)).append(level)`; none for a value the body made.
+pub(super) fn changed_whole<'a, 't>(body: TsNode<'t>, src: &'a [u8], looked: Lookups<'_, 't>, x: TsNode<'t>) -> Option<&'a str> {
+    let root = root_through(x, looked)?;
+    changed_through(body, src, &BINDS, looked, text(root, src), x.start_byte())
+}
+
+/// The name a chain a change is made to starts from, where it is written (`root_of`), through the lookups `looked` finds,
+/// each a part of the collection it looks in as a subscript is: `rows` of `next(iter(rows)).append(level)`.
+fn root_through<'t>(x: TsNode<'t>, looked: Lookups<'_, 't>) -> Option<TsNode<'t>> {
+    root_of(x).or_else(|| projections_through(x, looked).into_iter().next().flatten())
 }
 
 /// The parameters each function and method of the package changes in place, by name, each with
@@ -389,17 +401,30 @@ pub(super) fn changed_by<'t>(seen: &Seen, changing: &Changing, c: TsNode<'t>, cl
     library_change(seen.facts, c, src).into_iter().collect()
 }
 
-/// The bindings whose value a step of the body changes in place, by their nodes: of each name a call changes
-/// (`changed_by`: `both.append(second)` as `knowledge::MUTATORS` says, `random.shuffle(both)`, a function of the package
-/// that changes what it is handed), the assignments that reach the name there. Such a binding holds a value of its own
-/// wherever it reaches, which each change makes anew (`mathematics.md`, "One fine plan").
-pub(super) fn changed_bindings(seen: &Seen, changing: &Changing, body: TsNode, cls: Option<&str>) -> HashSet<usize> {
+/// The bindings whose value a step of the body changes in place, by their nodes: of each name a call changes, or a part
+/// of which it changes (`changed_by`: `both.append(second)` as `knowledge::MUTATORS` says, `random.shuffle(both)`, a
+/// function of the package that changes what it is handed, `rows[0].append(second)`), and of each name a part of which
+/// a name the call changes is bound to (`row = rows[0]; row.append(second)`, `changed_binding`), the assignments that
+/// reach the name there. Such a binding holds a value of its own wherever it reaches, which each change makes anew
+/// (`mathematics.md`, "One fine plan").
+pub(super) fn changed_bindings<'t>(seen: &Seen, changing: &Changing, body: TsNode<'t>, cls: Option<&str>) -> HashSet<usize> {
     let src = &seen.m.src;
+    let looked = |c: TsNode<'t>| seen.lookup(c).map(|l| l.parts());
+    // the binding a change reaches: of the name it is made through, or of the value a part of which that name is bound
+    // to, where the change of the part changes the whole (`rows` of `row.append(second)` after `row = rows[0]`)
+    let whole = |x: TsNode<'t>| -> Option<(TsNode<'t>, &str)> {
+        let root = root_through(x, &looked)?;
+        let (name, at) = changed_binding(body, src, &BINDS, &looked, text(root, src), x.start_byte())?;
+        match name == text(root, src) {
+            true => Some((root, name)),
+            false => Some((body.descendant_for_byte_range(at, at)?, name)),
+        }
+    };
     walk(body, &["call"])
         .into_iter()
         .flat_map(|c| changed_by(seen, changing, c, cls))
-        .filter(|n| n.kind() == "identifier")
-        .flat_map(|n| reaching(n, text(n, src), src))
+        .filter_map(whole)
+        .flat_map(|(n, name)| reaching(n, name, src))
         .map(|b| b.id())
         .collect()
 }
@@ -496,7 +521,7 @@ pub(super) struct Looked<'t> {
 
 impl<'t> Looked<'t> {
     /// What the value the lookup gives is a part of, or is: the collection, and the default.
-    fn parts(&self) -> Vec<TsNode<'t>> {
+    pub(super) fn parts(&self) -> Vec<TsNode<'t>> {
         std::iter::once(self.of).chain(self.default).collect()
     }
 }

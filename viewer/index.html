@@ -1871,7 +1871,7 @@ function select(id, extra) {
   const eb = html("div", "eyebrow"); eb.appendChild(html("span", null, n.kind)); eb.appendChild(packageChip(n)); insp.appendChild(eb);
   insp.appendChild(html("h1", "name", n.name));
   // in a union: what B did to it, and what it was
-  if (DIFF && n.ds) insp.appendChild(html("div", "dwas " + n.ds, n.ds !== "changed" ? `${n.ds} in B` : (DIFF.renamed[id] ? `renamed from ${short(DIFF.renamed[id])} · ` : "") + `was ${DIFF.was[id] || ""}`));
+  if (DIFF && n.ds) insp.appendChild(html("div", "dwas " + n.ds, n.ds !== "changed" ? `${n.ds} in B` : (DIFF.renamed[id] ? `renamed from ${sumVariants(DIFF.renamed[id]) ? DIFF.names[id] : short(DIFF.renamed[id])} · ` : "") + `was ${DIFF.was[id] || ""}`));
   insp.appendChild(html("div", "path", n.kind === "external" ? "external: " + id.slice(4) : `${short(n.kind === "module" ? n.id : n.module)}${n.span ? " · line " + n.span[0] + "–" + n.span[1] : ""}`));
   const es = [...(out.get(id) || []), ...(inn.get(id) || [])];
   const outK = k => es.filter(e => e.src === id && e.kind === k).map(e => e.dst), inK = k => es.filter(e => e.dst === id && e.kind === k).map(e => e.src);

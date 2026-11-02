@@ -11,8 +11,8 @@ use crate::builder::GraphBuilder;
 use crate::effects::{self, Facts};
 use crate::model::{ext, Crossing, Dir, EdgeKind, Held, NodeKind, Set, Site, Slot, Test, Touch, Use, World};
 use crate::tree::{
-    beneath, guarded_by, guards, named_children, number_choices, payload_of, starts_at_literal, text, walk, walk_all, what_of, wrapped,
-    wraps, ChoiceSyntax, Part, Wrappers,
+    beneath, guarded_by, guards, named_children, number_choices, parent, payload_of, starts_at_literal, text, walk, walk_all, what_of,
+    wrapped, wraps, ChoiceSyntax, Part, Wrappers,
 };
 
 /// The touches each call of a body made, by where the call is written: the touches made now, and
@@ -417,7 +417,7 @@ impl<'t, 's> Steps<'t, 's> {
     fn up(&self, n: TsNode<'t>) -> Option<TsNode<'t>> {
         match self.index().parents.get(&n.id()) {
             Some((p, _)) => Some(*p),
-            None => n.parent(),
+            None => parent(n),
         }
     }
 
@@ -1066,7 +1066,7 @@ impl<'t, 's> Steps<'t, 's> {
             return Some(n);
         }
         let mut t = self.body.descendant_for_byte_range(b.saturating_sub(1), b)?;
-        while let Some(p) = t.parent().filter(|p| a <= p.start_byte() && p.end_byte() == b) {
+        while let Some(p) = parent(t).filter(|p| a <= p.start_byte() && p.end_byte() == b) {
             t = p;
         }
         Some(t)
@@ -1794,18 +1794,96 @@ impl<'t, 's> Steps<'t, 's> {
 /// The error type a written result names apart from its value, where it names one: the second
 /// argument of `Result<T, E>`, as written.
 pub fn error_written(written: &str) -> Option<&str> {
+    let (_, args) = generic_written(written)?;
+    args.get(1).and(args.last().copied())
+}
+
+/// A generic type as written, by what is written before its arguments and the arguments, each as written (`HashMap` and
+/// `String`, `Level` of `HashMap<String, Level>`); none for a type written with no arguments.
+pub fn generic_written(written: &str) -> Option<(&str, Vec<&str>)> {
     let open = written.find('<')?;
     let inner = written[open + 1..].trim_end().strip_suffix('>')?;
-    let (mut depth, mut at) = (0, None);
+    let (mut depth, mut from, mut args) = (0, 0, vec![]);
     for (i, c) in inner.char_indices() {
         match c {
-            '<' | '(' | '[' => depth += 1,
-            '>' | ')' | ']' => depth -= 1,
-            ',' if depth == 0 => at = Some(i),
+            '<' | '(' | '[' | '{' => depth += 1,
+            // the arrow of a function type (`Fn(u8) -> u8`) closes nothing
+            '>' if inner[..i].ends_with('-') => {}
+            '>' | ')' | ']' | '}' => depth -= 1,
+            ',' if depth == 0 => {
+                args.push(inner[from..i].trim());
+                from = i + 1;
+            }
             _ => {}
         }
     }
-    at.map(|i| inner[i + 1..].trim())
+    args.push(inner[from..].trim());
+    Some((written[..open].trim(), args.into_iter().filter(|a| !a.is_empty()).collect()))
+}
+
+/// A type as a language writes it, as far as what a value of it holds is read off it (`element_written`).
+pub enum Written<'a> {
+    /// A type written through what refers to it or marks it read-only, which is the type beneath (`&mut T`, `readonly T`).
+    Through(&'a str),
+    /// A collection the language writes by brackets around the type of its elements, by that type (`[T]`, `[T; 3]`, `T[]`).
+    Listed(&'a str),
+    /// A type named by a path, by the last name of it and the arguments it is written with, as written (`HashMap` and
+    /// `K`, `V` of `collections::HashMap<K, V>`, `Level` and none of `Level`).
+    Named(&'a str, Vec<&'a str>),
+    /// Any other type: a primitive, a tuple, a function, a union.
+    Other,
+}
+
+/// What a language's types hold, as far as what a subscript or a lookup picks of a value is read off its type
+/// (`element_written`).
+pub struct Holders<'k> {
+    /// How the language writes a type (`Written`).
+    pub written: fn(&str) -> Written<'_>,
+    /// Whether a generic named so is the language's or its library's whose arguments are the values it holds or stands
+    /// for (`knowledge::rust_container`, `knowledge::TYPESCRIPT_CONTAINERS`), not a type of the program's by that name.
+    pub holds: &'k dyn Fn(&str) -> bool,
+    /// The holders among them that hold many values, each of the type of their first argument.
+    pub collections: &'k [&'k str],
+    /// The collections that hold their values by their keys, the first argument, each of the type of their last.
+    pub maps: &'k [&'k str],
+}
+
+/// The type of what a subscript or a lookup picks of a value of the type `written` (`rows[0]`, `rows.first()`,
+/// `levels[name]`), as the language writes it: the element of a collection written by brackets (`Vec<Level>` of
+/// `[Vec<Level>]`, `Level[]` of `Level[][]`), a map's value, the key choosing it (`Level` of `HashMap<String, Level>` and of
+/// `Record<string, Level>`), any other collection's first argument (`Level` of `Vec<Level>`), through what refers to the
+/// value and what holds one value and is read as it (`&mut [Vec<Level>]`, `LazyLock<Mutex<Vec<Level>>>`, `readonly
+/// Level[]`: `mathematics.md`, "Containers and type parameters"). None for a type that holds no collection.
+pub fn element_written<'a>(written: &'a str, of: &Holders) -> Option<&'a str> {
+    let mut t = written.trim();
+    for _ in 0..16 {
+        t = match (of.written)(t) {
+            Written::Through(beneath) => beneath.trim(),
+            Written::Listed(element) => return Some(element.trim()),
+            Written::Named(head, args) if (of.holds)(head) => match () {
+                _ if of.maps.contains(&head) => return args.last().copied(),
+                _ if of.collections.contains(&head) => return args.first().copied(),
+                _ => args.first()?.trim(),
+            },
+            _ => return None,
+        };
+    }
+    None
+}
+
+/// The type a value of the type `written` is read as where a method is called on it: through what refers to it and what
+/// holds one value and is read as it (`Vec<Level>` of `&mut Box<Vec<Level>>`), up to a collection or a type that holds
+/// nothing (`Holders`).
+pub fn held_written<'a>(written: &'a str, of: &Holders) -> &'a str {
+    let mut t = written.trim();
+    for _ in 0..16 {
+        t = match (of.written)(t) {
+            Written::Through(beneath) => beneath.trim(),
+            Written::Named(head, args) if !of.collections.contains(&head) && (of.holds)(head) && !args.is_empty() => args[0].trim(),
+            _ => return t,
+        };
+    }
+    t
 }
 
 /// What a call the reader finds to look a part of a collection up is a part of (`Steps::looks_up`): the collection, and
@@ -1826,15 +1904,16 @@ pub struct BindSyntax {
 }
 
 /// What a change made through `name` at byte `at` of `body` changes: the name whose value that
-/// is when the change runs, or none when it is a value the body made. A loop binds the name to an
-/// element of what it goes over, so inside the loop a change through it changes that value (`for
-/// node in graph.nodes: node.status = ..` changes `graph`). A statement of the body's own, which
-/// runs whenever the body does, decides what the name holds after it: another name or a part of
-/// one makes it that value (`g = graph`), a value that may be what the name held keeps that, and
-/// a new value makes a change after it one to the new value, not to what the name held before
-/// (`graph = copy.copy(graph)`). A binding in a branch or a loop may not have run, so the name
-/// holds what it held before it: the change may be one to that. A lookup (`looked`) is the
-/// projection its subscript is: a change through `row = rows.get(0)` changes `rows`.
+/// is when the change runs, or none when it is a value the body made (`changed_binding` names the
+/// binding that holds it). A loop binds the name to an element of what it goes over, so inside
+/// the loop a change through it changes that value (`for node in graph.nodes: node.status = ..`
+/// changes `graph`). A statement of the body's own, which runs whenever the body does, decides
+/// what the name holds after it: another name or a part of one makes it that value (`g = graph`),
+/// a value that may be what the name held keeps that, and a new value makes a change after it one
+/// to the new value, not to what the name held before (`graph = copy.copy(graph)`). A binding in a
+/// branch or a loop may not have run, so the name holds what it held before it: the change may be
+/// one to that. A lookup (`looked`) is the projection its subscript is: a change through `row =
+/// rows.get(0)` changes `rows`.
 pub fn changed_through<'a, 't>(
     body: TsNode<'t>,
     src: &'a [u8],
@@ -1843,12 +1922,40 @@ pub fn changed_through<'a, 't>(
     name: &'a str,
     at: usize,
 ) -> Option<&'a str> {
+    followed(body, src, syn, looked, name, at).filter(|(.., made)| !made).map(|(name, ..)| name)
+}
+
+/// The binding whose value a change made through `name` at byte `at` of `body` changes, as
+/// `changed_through` follows it, where the body made that value too: its name, and a byte where
+/// that binding is the one visible (`rows` of `row.append(second)` after `rows = [[first]]` and
+/// `row = rows[0]`). None for a change to an element of a value no name holds (`for x in [a, b]`).
+pub fn changed_binding<'a, 't>(
+    body: TsNode<'t>,
+    src: &'a [u8],
+    syn: &BindSyntax,
+    looked: Lookups<'_, 't>,
+    name: &'a str,
+    at: usize,
+) -> Option<(&'a str, usize)> {
+    followed(body, src, syn, looked, name, at).map(|(name, at, _)| (name, at))
+}
+
+/// Where `changed_through` follows a change made through `name` at byte `at`: the name, a byte
+/// where its binding is the one visible, and whether the body made that binding's value anew.
+fn followed<'a, 't>(
+    body: TsNode<'t>,
+    src: &'a [u8],
+    syn: &BindSyntax,
+    looked: Lookups<'_, 't>,
+    name: &'a str,
+    at: usize,
+) -> Option<(&'a str, usize, bool)> {
     let nodes = walk_all(body);
     let binds: Vec<(TsNode, &str, Vec<&str>)> =
         nodes.iter().filter_map(|n| (syn.binds)(*n, src, looked).map(|(x, v)| (*n, x, v))).collect();
     let loops: Vec<(TsNode, &str, Option<&str>, TsNode)> =
         nodes.iter().filter_map(|n| (syn.loops)(*n, src).map(|(x, v, b)| (*n, x, v, b))).collect();
-    let own = |s: TsNode| s.parent().into_iter().chain(s.parent().and_then(|p| p.parent())).any(|p| p.id() == body.id());
+    let own = |s: TsNode| parent(s).into_iter().chain(parent(s).and_then(|p| parent(p))).any(|p| p.id() == body.id());
     let (mut name, mut at) = (name, at);
     // each step goes back to where a loop or a statement before `at` binds the name, so it ends
     'follow: loop {
@@ -1873,11 +1980,12 @@ pub fn changed_through<'a, 't>(
             if held.contains(&name) {
                 continue;
             }
-            name = *held.first()?;
+            let Some(whole) = held.first() else { return Some((name, at, true)) };
+            name = *whole;
             at = s.start_byte();
             continue 'follow;
         }
-        return Some(name);
+        return Some((name, at, false));
     }
 }
 

@@ -22,7 +22,7 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 use serde::Serialize;
 
-use crate::model::{function_label, name_of, owner, said, shared_names, Both, EdgeKind, Entry, Graph, Held, Node, NodeKind, Site, Touch};
+use crate::model::{function_label, name_of, owner, said, Both, EdgeKind, Entry, Graph, Held, Node, NodeKind, Shared, Site, Touch};
 
 /// How a thing of the union stands to the two readings: B adds it, B no longer has it, or both
 /// hold it and its own arrows differ.
@@ -52,6 +52,9 @@ pub struct Diff {
     pub nodes: BTreeMap<String, Status>,
     /// The id a renamed node has in B, against the id it had in A.
     pub renamed: BTreeMap<String, String>,
+    /// The name a renamed node has in A (`model::name_of`), by its id in B: the name its reader gave it, which its id in A
+    /// does not say where that is no dotted name (a sum written in place, `model::sum`).
+    pub names: BTreeMap<String, String>,
     /// The edges of the union, by their index in it.
     pub edges: BTreeMap<usize, Status>,
     /// For a node in both readings, the steps of its body (`sites`) by index: B's steps and the
@@ -92,9 +95,9 @@ pub fn union(name: &str, before: Vec<Graph>, after: Vec<Graph>) -> (Graph, Diff)
     apart(&mut a);
     let mut renames = renames(&a, &b);
     // the types of the union, A's renamed ones under their names in B: two of them that go by one name are each said with
-    // their module, as the page that draws the union says them (`model::shared_names`)
+    // their module, as the page that draws the union says them (`model::Shared`)
     let in_b: HashSet<&str> = b.nodes.iter().map(|n| n.id.as_str()).collect();
-    let shared = shared_names(b.nodes.iter().chain(a.nodes.iter().filter(|n| !in_b.contains(renames.map(&n.id).as_str()))));
+    let shared = Shared::among(b.nodes.iter().chain(a.nodes.iter().filter(|n| !in_b.contains(renames.map(&n.id).as_str()))));
     let ib = Index::new(&b, &shared);
     let types = renames.types(&a, &ib);
     // what a node was is said as A has it, before A's renamed nodes take their names in B
@@ -110,6 +113,9 @@ pub fn union(name: &str, before: Vec<Graph>, after: Vec<Graph>) -> (Graph, Diff)
     for (old, new) in &renames.all {
         if ib.nodes.contains_key(new.as_str()) {
             diff.renamed.insert(new.clone(), old.clone());
+            if let Some(n) = ir.as_ref().and_then(|ir| ir.nodes.get(old.as_str())) {
+                diff.names.insert(new.clone(), n.name.clone());
+            }
         }
     }
     // a node is renamed itself when its own name is another; one named under a renamed node keeps
@@ -317,9 +323,13 @@ struct Renames {
 
 impl Renames {
     /// The id `id` of A has in B: its own new name, or that of the nearest node it is named under.
+    /// A sum written in place is its variants (`model::sum`): it is renamed with them.
     fn map(&self, id: &str) -> String {
         if let Some(n) = self.direct.get(id) {
             return n.clone();
+        }
+        if crate::model::sum::is(id) {
+            return crate::model::sum::of(&crate::model::sum::variants(id).map(|v| self.map(v)).collect::<Vec<_>>());
         }
         let mut cut = id.len();
         while let Some(i) = id[..cut].rfind('.') {
@@ -400,7 +410,7 @@ impl Renames {
 fn renames(a: &Graph, b: &Graph) -> Renames {
     let mut r = Renames::default();
     // what a node is to the rest of its graph holds no words
-    let none = HashSet::new();
+    let none = Shared::default();
     let (ia, ib) = (Index::new(a, &none), Index::new(b, &none));
     let named = |n: &&Node| n.kind != NodeKind::External;
     loop {
@@ -437,15 +447,19 @@ fn renames(a: &Graph, b: &Graph) -> Renames {
 /// `Repo.read.dir`: `model::owner`).
 fn relations(ix: &Index, n: &Node, map: &dyn Fn(&str) -> String, types: &[(String, String)]) -> Vec<String> {
     let under = format!("{}.", n.id);
-    let other = |o: &str| {
-        if o == n.id {
+    fn other(o: &str, n: &str, under: &str, map: &dyn Fn(&str) -> String) -> String {
+        if o == n {
             "·".to_string()
-        } else if let Some(rest) = o.strip_prefix(&under) {
+        } else if let Some(rest) = o.strip_prefix(under) {
             format!("·.{rest}")
+        } else if crate::model::sum::is(o) {
+            // a sum written in place is its variants, the node among them too
+            crate::model::sum::of(&crate::model::sum::variants(o).map(|v| other(v, n, under, map)).collect::<Vec<_>>())
         } else {
             map(o)
         }
-    };
+    }
+    let other = |o: &str| other(o, &n.id, &under, map);
     let mut out = vec![format!("{:?}", n.kind)];
     if matches!(n.kind, NodeKind::Function | NodeKind::Method) {
         out.push(typed_arrow(n, types));
@@ -911,11 +925,11 @@ struct Index<'g> {
     out: HashMap<&'g str, Vec<&'g crate::model::Edge>>,
     into: HashMap<&'g str, Vec<&'g crate::model::Edge>>,
     made: HashMap<&'g str, Vec<&'g Touch>>,
-    shared: &'g HashSet<String>,
+    shared: &'g Shared,
 }
 
 impl<'g> Index<'g> {
-    fn new(g: &'g Graph, shared: &'g HashSet<String>) -> Self {
+    fn new(g: &'g Graph, shared: &'g Shared) -> Self {
         let (mut out, mut into): (HashMap<&str, Vec<_>>, HashMap<&str, Vec<_>>) = (HashMap::new(), HashMap::new());
         for e in &g.edges {
             out.entry(e.src.as_str()).or_default().push(e);

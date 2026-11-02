@@ -108,7 +108,12 @@ are that step with a choice of what it is handed, no choice of where the value c
 coproduct of its arms, each injected by what decides it as the code writes it (`when not
 raw.exists()`, a `match` pattern, `otherwise`). A choice of one arm is a coproduct with the
 identity, `f + 1`: its steps run when the condition holds and nothing runs otherwise, so it is
-drawn as a choice too. In `x ?? y`, `x || y` and `x && y` (Python's `or` and `and`, Rust's
+drawn as a choice too. An arm is the composite of what it runs, so a choice inside an arm beside other steps of it
+is a coproduct inside that arm (`if keep: open_shelf(); if report: keep_report()` is `(open_shelf ; (keep_report + 1)) + 1`),
+a frame in the arm's branch, never another branch beside it: one run takes one branch of each frame it enters, and a run
+through both is one run. Coproducts are associative, `A + (B + C) = A + B + C`: an arm that runs nothing but one choice
+inside it is that choice, whose arms are branches of the one around it, each decided by the arms on its path (an `else`
+whose only statement is an `if` is an `elif`, as a chain of guards with nothing between them is) (#357). In `x ?? y`, `x || y` and `x && y` (Python's `or` and `and`, Rust's
 `x.unwrap_or_else(..)`) the left always runs and its value goes on where it holds, so it is no arm; the right is
 the one arm. What goes on past them is the left's value where the arm does not run and the arm's where it does, as
 in `match x { Some(v) => v, None => y }`: a body that gives back `x ?? y` gives back both. A guard, a choice none of whose arms runs on past its end and that has no arm for when none
@@ -480,10 +485,12 @@ step put in before another (`double(add_one(x))` where A had `double(x)`) is the
 marked: the step after it is handed in each reading what that reading gives it. A place a caller
 makes whole is the caller's arrow; a file named by a function's own parameter (`load.path`) is
 named so whoever calls the function. A rename is an isomorphism of the typed arrows in and out:
-`list[float] → float` is no `str → str`. `atlas-code changes` reads the same union along each route,
+`list[float] → float` is no `str → str`. A sum written in place is its variants, so it is renamed with them. `atlas-code changes` reads the same union along each route,
 so the picture and the list hold the same marks, and it says each construct by the name the picture gives it
 (`model::said`): a method with its class, an initializer as the call to its class, a type whose name another type of
-the union shares with its module. One name said of two constructs points at neither.
+the union shares with the fewest of its last modules that no other of that name stands in last (`orders.model.Frame`
+beside `billing.model.Frame`), a sum written in place by its variants. `route`'s text and a finding say the same names.
+One name said of two constructs points at neither.
 **Where.** `atlas-code history`, `atlas-code changes A..B`, a vision beside the working tree (`atlas
 mcp`'s `vision`); `diff::union`, `diff::reading`, `changes::between`; `design.md` §4, L5. Held by `engine/tests/arrows.rs`:
 on two readings of the same nodes, the marks are those of the direct arrows, and a node renamed is one node; and by
@@ -648,7 +655,7 @@ image.
 | a place of the world is no part of the code's hierarchy and stays outside a package, part or step that shows it | a place is an object, a package is a block of the partition of functions; `q` moves functions only |
 | memory made and used inside a step lives inside its frame | an object between two arrows of a composite is internal to it |
 | what a step takes from beyond it stands outside its frame | the domain of a composite is the domain of its first arrow |
-| a choice is a frame of its own, its branches inside | a coproduct is one object whose arms are its injections |
+| a choice is a frame of its own, its branches inside; a choice inside an arm beside other steps is a frame in that branch, one that is the whole arm is branches of the frame around it | a coproduct is one object whose arms are its injections; an arm is a composite, and `A + (B + C) = A + B + C` (`alternatives` in `engine/tests/plans.mjs`) |
 | files fold into the directories that hold them, one box per side their files stand on; directories nested in one another that hold the same files are one box, drawn as the deepest, and opening it opens them all; opening a directory refines the fold | the disk is a tree, and a fold is its quotient by directory, met with the side; directories with the same files are one block of that quotient, so the box is one class and opens as one (`foldDirs`, held by `plans.mjs` and `pictures.py topology`) |
 | a dotted line joins the packages whose code calls each other, whatever data also joins them; opened, it refines to what inside is called, down to the function's own box | the calls are a relation, and a quotient of a relation keeps its image; a line drawn only where another is absent is no relation and would come back on opening |
 | a type with parts is a family frame; its parts stand inside it opened | zoom by composition is a quotient by the relation "is a part of" |
@@ -835,7 +842,11 @@ open:
   the change is handed that list and `second` and makes the list anew, and `show` takes what the change made, never
   `first`. Where the change runs in one arm or in a loop, the name stands for nothing either, as a path changed there
   is no longer the term before alone (#327): the binding is a value, the change makes it anew, and what the arms make
-  of it is one value at the choice's moment, as it is of a value a step made (#355). A choice among them is the body's
+  of it is one value at the choice's moment, as it is of a value a step made (#355). A change of a part is a change of
+  the whole, a lens's put, so a change of a part a subscript or a lookup picks changes the collection in place, also
+  through a name bound to the part (`row = rows[0]; row.append(level)`, `let row = &mut rows[0]; row.push(level)`): the
+  change is handed the collection and makes it anew, and where the collection is a value its module keeps, the change
+  is a write of that value (#374). A choice among them is the body's
   choice, and a part a call makes (`samples.abs()`) is that call's value, which the name keeps (#328). What an
   opened step changes of a value it was handed goes out at its border as what its steps made of it;
 - a step that can fail has the codomain `T + E`: the error is a value its constructor makes in the arm
@@ -869,7 +880,9 @@ parse the command line to the entry. The closed picture is `F/q`:
   step or by the body's own code (`let out = match f { "csv" => String::from(..), _ => format!(..) }`;
   the variants of a sum are one value of it), or what one arm makes anew of a value named before the
   choice, which the other arms keep. What one arm makes and uses itself is its maker's, and no step of
-  another arm takes it: a run goes through one arm. A step that is itself a choice (a call into a family, which runs
+  another arm takes it: a run goes through one arm. A choice inside an arm is a maker in that arm, as a step of it is:
+  what it hands on past itself goes on past the choice around it by the same rule, and an error goes on past every choice of
+  the body (#357). A step that is itself a choice (a call into a family, which runs
   one of the overrides) makes it at a moment inside the step, and hands on a value of its own at its
   own moment, so what its overrides make is internal to it and what it hands on is not;
 - the families are taken on the route's fiber, the types its plan holds (saturation: the fiber first,
@@ -1000,9 +1013,16 @@ holds is what its type holds as its language reads it, never a name its type mer
 Plan>` is a value of Plans from beyond, as `PLANS: dict[Mode, Plan]` is, and `const out: Where[] = []` holds Wheres. So is
 what a function gives back: one that returns `Vec<(String, Vec<Where>)>` gives back pairs, and none of the Wheres its steps
 make. A value declared as the language's container is one, a field as a name (`n.touches: Touch[]` is an array), so a method
-called on it is the language's operation.
+called on it is the language's operation. So is a part a subscript or a lookup picks of a collection, of the type of what
+the collection holds as written: `rows[0]` and `rows.at(0)!` of `rows: Level[][]` are arrays, `&mut rows[0]` and
+`rows.first_mut()?` of `rows: &mut [Vec<Level>]` vectors, through what holds one value and is read as it (the guard
+`ROWS.lock()` of a `Mutex<Vec<Vec<Level>>>`). Where the code writes no type, a literal says what each element is
+(`[[first]]` holds arrays), and Rust says which places a method may change: a name bound `mut`, a part picked of one,
+and a name bound to a `&mut` borrow of such a part.
 **Where.** `knowledge.rs`: `python_container`, `TYPESCRIPT_CONTAINERS`, `RUST_CONTAINERS`, the maps `PYTHON_MAPS`,
-`TYPESCRIPT_MAPS`, `RUST_MAPS`; `Param::holds`, read by `writesType` in `viewer/plan.js` and by the principles, and
+`TYPESCRIPT_MAPS`, `RUST_MAPS`; `body::element_written`, with each reader's `written_as` (`rust/body.rs`,
+`typescript/body.rs`), and the readers' `Body::picked`, `mutable_place` (Rust) and `picked_literal` (TypeScript);
+`Param::holds`, read by `writesType` in `viewer/plan.js` and by the principles, and
 `Returns::holds`, read by `flow::made_from`; the Rust reader's
 signatures (`rust/passes.rs`, `fixed_by_implementations`; `rust/module.rs`, `type_names`, with `RUST_COLLECTIONS`); `typescript/module.rs`, `type_names`, with `TYPESCRIPT_COLLECTIONS`, and `typescript/body.rs`, `typed` and `world`; `python/module.rs`, `type_names`, and `pytypes::outer_classes`, with `python_collection`.
 

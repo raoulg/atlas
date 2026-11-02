@@ -67,6 +67,12 @@ pub mod sum {
     pub fn is(id: &str) -> bool {
         id.starts_with('(') && id.ends_with(')')
     }
+
+    /// The ids of the variants of the sum written in place whose id is `id`, in the order its id holds them; none for
+    /// any other id.
+    pub fn variants(id: &str) -> impl Iterator<Item = &str> {
+        is(id).then(|| id[1..id.len() - 1].split(" | ")).into_iter().flatten()
+    }
 }
 
 /// The dotted name a reader finds a node by, the path its id says (`ext::name`): an id of the code's is that name
@@ -610,28 +616,72 @@ pub fn name_of<'a>(node: Option<&'a Node>, id: &'a str) -> &'a str {
     node.map_or_else(|| type_name(id), |n| n.name.as_str())
 }
 
-/// The names two or more types among `nodes` go by (`name_of`). Where one of them names a type, Atlas says the type with
-/// its module (`type_label`), so that one name says one construct; the view counts them among the nodes of the graph it
-/// draws, for a page of changes the union of the two readings.
-pub fn shared_names<'a>(nodes: impl IntoIterator<Item = &'a Node>) -> HashSet<String> {
-    let mut seen: HashMap<&str, usize> = HashMap::new();
-    for n in nodes.into_iter().filter(|n| matches!(n.kind, NodeKind::Class | NodeKind::External)) {
-        *seen.entry(n.name.as_str()).or_default() += 1;
+/// The types that go by a name two or more of them share (`name_of`), by that name: each by the modules its id says it
+/// stands in (`type_path`), a sum written in place, whose id says none (`dotted`), by none. Where one of these names says a
+/// type, Atlas says the type with as much of its path as tells it apart from the others (`type_label`), so that one name
+/// says one construct. The view counts them among the nodes of the graph it draws, for a page of changes the union of the
+/// two readings, for the findings the parts of the repository together.
+#[derive(Clone, Debug, Default)]
+pub struct Shared(HashMap<String, Vec<Option<String>>>);
+
+impl Shared {
+    /// The shared names among the types of `nodes`, each node counted once however often it is given.
+    pub fn among<'a>(nodes: impl IntoIterator<Item = &'a Node>) -> Shared {
+        let mut seen: HashSet<&str> = HashSet::new();
+        let mut by: HashMap<String, Vec<Option<String>>> = HashMap::new();
+        for n in nodes.into_iter().filter(|n| matches!(n.kind, NodeKind::Class | NodeKind::External)) {
+            if seen.insert(n.id.as_str()) {
+                by.entry(n.name.clone()).or_default().push(dotted(&n.id).map(|_| type_path(&n.id).0.to_string()));
+            }
+        }
+        by.retain(|_, types| types.len() > 1);
+        Shared(by)
     }
-    seen.into_iter().filter(|(_, k)| *k > 1).map(|(n, _)| n.to_string()).collect()
+
+    /// Whether two or more types go by `name`.
+    pub fn contains(&self, name: &str) -> bool {
+        self.0.contains_key(name)
+    }
+
+    /// The modules of a type of the shared `name` that stands in `module` (`orders.model`) that tell it apart from every
+    /// other type of that name: the fewest of the last that no other has as its last, so `orders.model` beside
+    /// `billing.model`, `model` beside `view`; all of them where every tail is another's, the whole dotted name being
+    /// that of another type too.
+    fn apart<'m>(&self, name: &str, module: &'m str) -> &'m str {
+        let parts: Vec<&str> = module.split('.').filter(|m| !m.is_empty()).collect();
+        let mut others: Vec<Vec<&str>> =
+            self.0.get(name).into_iter().flatten().flatten().map(|m| m.split('.').filter(|m| !m.is_empty()).collect()).collect();
+        if let Some(i) = others.iter().position(|o| *o == parts) {
+            others.remove(i);
+        }
+        // whether another type stands in modules whose last `k` are those of this one
+        let ends = |o: &[&str], k: usize| o.len() >= k && o[o.len() - k..] == parts[parts.len() - k..];
+        let k = (1..=parts.len()).find(|&k| !others.iter().any(|o| ends(o, k))).unwrap_or(parts.len());
+        let skipped: usize = parts[..parts.len() - k].iter().map(|m| m.len() + 1).sum();
+        &module[skipped..]
+    }
 }
 
-/// A type as Atlas says it, in the view (`typeLabel` in `viewer/plan.js`) and in words: its own name (`name_of`), with
-/// the last part of its module before it where another type goes by that name too (`shared`): `model.Frame`.
-pub fn type_label(node: Option<&Node>, id: &str, shared: &HashSet<String>) -> String {
-    let name = name_of(node, id);
+/// A type as Atlas says it, in the view (`typeLabel` in `viewer/plan.js`) and in words: its own name (`name_of`); where
+/// another type goes by that name too (`shared`), with as much of its module before it as tells it apart (`Shared`):
+/// `orders.model.Frame` beside `billing.model.Frame`, `dense.Rows` beside `sparse.Rows`. A sum written in place has no
+/// module (`sum`): where its name is shared, it is said as its variants, each as Atlas says it (`orders.model.Frame |
+/// Missing`). `node` gives the nodes of its reading by id.
+pub fn type_label<'n>(id: &str, node: impl Fn(&str) -> Option<&'n Node>, shared: &Shared) -> String {
+    label(id, &node, shared)
+}
+
+fn label<'n>(id: &str, node: &dyn Fn(&str) -> Option<&'n Node>, shared: &Shared) -> String {
+    let name = name_of(node(id), id);
     if !shared.contains(name) {
         return name.to_string();
     }
-    let module = node.map(|n| n.module.as_str()).filter(|m| !m.is_empty()).unwrap_or_else(|| type_path(id).0);
-    match module.rsplit('.').next().filter(|m| !m.is_empty()) {
-        Some(m) => format!("{m}.{name}"),
-        None => name.to_string(),
+    if sum::is(id) {
+        return sum::variants(id).map(|v| label(v, node, shared)).collect::<Vec<_>>().join(" | ");
+    }
+    match shared.apart(name, type_path(id).0) {
+        "" => name.to_string(),
+        module => format!("{module}.{name}"),
     }
 }
 
@@ -639,21 +689,34 @@ pub fn type_label(node: Option<&Node>, id: &str, shared: &HashSet<String>) -> St
 /// its class (`type_label`) and its own name (`Block.scaled`); an initializer, which fills in the value a call to its
 /// class makes, as that call (`Block()`: Python's `__init__` and TypeScript's `constructor` are one construct); any other
 /// function by its own name. `node` gives the nodes of the function's reading by id.
-pub fn function_label<'n>(f: &Node, node: impl Fn(&str) -> Option<&'n Node>, shared: &HashSet<String>) -> String {
+pub fn function_label<'n>(f: &Node, node: impl Fn(&str) -> Option<&'n Node>, shared: &Shared) -> String {
     match f.cls.as_deref() {
-        Some(c) if f.ctor && !f.on_class => format!("{}()", type_label(node(c), c, shared)),
-        Some(c) => format!("{}.{}", type_label(node(c), c, shared), f.name),
+        Some(c) if f.ctor && !f.on_class => format!("{}()", type_label(c, &node, shared)),
+        Some(c) => format!("{}.{}", type_label(c, &node, shared), f.name),
         None => f.name.clone(),
+    }
+}
+
+/// A step of a route as Atlas says it (`stepLabel` in `viewer/plan.js`): building a class as the call to it
+/// (`Frame()`); a method run on a class it is known to run on, `on`, by that class (`Kept.first`, `mathematics.md`,
+/// "Method resolution order"); any other function as `function_label` says it. `on` is empty where the class is not
+/// known or the call names the method it runs. An initializer is the call to its class wherever it runs.
+pub fn step_label<'n>(f: &Node, on: &str, node: impl Fn(&str) -> Option<&'n Node>, shared: &Shared) -> String {
+    let initializer = f.ctor && !f.on_class;
+    match f.cls.as_deref() {
+        _ if f.kind == NodeKind::Class => format!("{}()", type_label(&f.id, &node, shared)),
+        Some(_) if !on.is_empty() && !initializer => format!("{}.{}", type_label(on, &node, shared), f.name),
+        _ => function_label(f, &node, shared),
     }
 }
 
 /// A node as Atlas says it, wherever it says it: a function as `function_label` says it, a module by its name, a type as
 /// `type_label` says it. `node` gives the nodes of its reading by id; `shared` the names two types of the graph share.
-pub fn said<'n>(id: &str, node: impl Fn(&str) -> Option<&'n Node>, shared: &HashSet<String>) -> String {
+pub fn said<'n>(id: &str, node: impl Fn(&str) -> Option<&'n Node>, shared: &Shared) -> String {
     match node(id) {
         Some(f) if matches!(f.kind, NodeKind::Function | NodeKind::Method) => function_label(f, &node, shared),
         Some(m) if m.kind == NodeKind::Module => m.name.clone(),
-        n => type_label(n, id, shared),
+        _ => type_label(id, &node, shared),
     }
 }
 

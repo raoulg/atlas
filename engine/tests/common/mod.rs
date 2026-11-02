@@ -599,10 +599,11 @@ pub fn route_renamed(fact: &str, route: &str) -> String {
 /// writes one lookup once by its subscript and once by its method, and the two are one route: each step of one is handed
 /// and gives what the same step of the other does, and the two plans are one, uncut and at every budget the plan is cut at.
 /// A list the route changes in place before it looks a part up (`pushed`) holds the value the change gave (#355), and the
-/// part looked up is a part of that value in both; a change of the part a route looks up (`added`) is the same change in
-/// both, which changes the collection as a change to a part changes the whole (#374 where a reader does not read it so
-/// yet). The clean side looks up in the collections it is handed, so nothing comes from beyond; the shortcut looks up in
-/// the collections its module keeps, which come from beyond in both twins. Where the language writes the two forms on two
+/// part looked up is a part of that value in both; a change of the part a route looks up (`added`, `grown`) is the same
+/// change in both, which changes the collection as a change to a part changes the whole (#374,
+/// `a_change_of_a_part_changes_the_whole`). The clean side looks up in the collections it is handed, so nothing comes
+/// from beyond; the shortcut looks up in the collections its module keeps, which come from beyond in both twins, or from
+/// the module's place where the route changes them, a write of that place. Where the language writes the two forms on two
 /// kinds of collection (TypeScript's record and `Map`), the shortcut's module keeps one table under two names, `tables`
 /// (the method's, the subscript's). So in every language.
 #[allow(dead_code)]
@@ -622,7 +623,11 @@ pub fn a_lookup_is_the_projection_its_subscript_is(language: &str, twins: &[(&st
         };
         for (subscript, method) in twins {
             let steps = handed(subscript);
-            assert!(!steps.is_empty() && steps.iter().all(|(_, _, h, _)| !h.is_empty()), "{at}: {subscript}'s steps are handed values");
+            // a step that reads what the module keeps, where the route writes it, reads its place (`ROWS.lock()`)
+            let place = node(subscript).touches.iter().any(|t| t.kind == atlas_engine::World::Global);
+            let values = |(_, _, h, _): &(String, String, BTreeSet<String>, BTreeSet<String>)| !h.is_empty();
+            let all = if place { steps.iter().any(values) } else { steps.iter().all(values) };
+            assert!(!steps.is_empty() && all, "{at}: {subscript}'s steps are handed values");
             assert_eq!(handed(method), steps, "{at}: each step of {method} is handed and gives what the same step of {subscript} does");
         }
         for budget in BUDGETS {
@@ -633,9 +638,103 @@ pub fn a_lookup_is_the_projection_its_subscript_is(language: &str, twins: &[(&st
             for (subscript, method) in twins {
                 assert_eq!(facts(method), facts(subscript), "{at}: {method}'s plan is {subscript}'s");
                 let beyond = from_beyond(route(subscript), &parameters(g, &format!("signal.{subscript}")));
+                let place = route(subscript).iter().any(|f| f.starts_with("line Global("));
                 match side {
-                    "clean" => assert!(beyond.is_empty(), "{at}: {subscript} takes nothing from beyond: {beyond:?}"),
-                    _ => assert!(!beyond.is_empty(), "{at}: {subscript} looks up in a collection the module keeps"),
+                    "clean" => assert!(beyond.is_empty() && !place, "{at}: {subscript} takes nothing from beyond: {beyond:?}"),
+                    _ => assert!(!beyond.is_empty() || place, "{at}: {subscript} looks up in a collection the module keeps"),
+                }
+            }
+        }
+    }
+}
+
+/// The lookups pair of `language` (`tests/pairs/lookups`, #374): a change of a part a subscript or a lookup picks is a
+/// change of the collection it is picked from, also where a name is bound to the part (`row = rows[0];
+/// row.append(level)`), as a lens puts the part back into its whole (`mathematics.md`, "Lenses"). Each of `routes`
+/// changes the row it picks and then shows the rows: the step that changes the row is handed the rows and what it adds,
+/// and gives the rows anew, which the step after it is handed. In the plan, uncut and at every budget, the change takes
+/// what the graph hands it, and the step after it takes what the change gave and nothing else. The routes of `kept`
+/// change, on the shortcut, rows the module keeps: the change is a write of the module's value, which the route's own
+/// arrow writes and reads, and the change takes the rows from there or from the step that hands them on (a guard on a
+/// `Mutex`); no other route touches a value of the module. So in every language.
+#[allow(dead_code)]
+pub fn a_change_of_a_part_changes_the_whole(language: &str, routes: &[&str], kept: &[&str]) {
+    let p = pair(&format!("lookups/{language}"));
+    let named = |hs: &[atlas_engine::Held]| -> BTreeSet<String> { hs.iter().map(|h| h.name.clone()).collect() };
+    for (side, g) in [("clean", &p.clean), ("shortcut", &p.shortcut)] {
+        let mut steps: BTreeMap<&str, (String, String, BTreeSet<String>, BTreeSet<String>)> = BTreeMap::new();
+        for r in routes {
+            let at = format!("{language} {side} {r}");
+            let n = g.node(&format!("signal.{r}")).unwrap_or_else(|| panic!("{at}: no node signal.{r}"));
+            let changing: Vec<usize> = (0..n.sites.len()).filter(|i| n.sites[*i].changes).collect();
+            let [c] = changing[..] else { panic!("{at}: one step changes the row: {:?}", n.sites) };
+            let (change, after) =
+                (&n.sites[c], n.sites.get(c + 1).unwrap_or_else(|| panic!("{at}: a step shows the rows after the change")));
+            let (hands, gives) = (named(&change.hands), named(&change.gives));
+            assert!(
+                !gives.is_empty() && gives.is_subset(&hands),
+                "{at}: `{}` gives anew what it is handed: {hands:?}, {gives:?}",
+                change.op
+            );
+            assert!(hands.len() > gives.len(), "{at}: `{}` is handed what it adds besides the rows: {hands:?}", change.op);
+            assert_eq!(named(&after.hands), gives, "{at}: the step after `{}` is handed the rows it gave", change.op);
+            let module: BTreeSet<(String, Option<atlas_engine::Dir>)> =
+                n.touches.iter().filter(|t| t.kind == atlas_engine::World::Global).map(|t| (t.artifact.clone(), t.dir)).collect();
+            match side == "shortcut" && kept.contains(r) {
+                true => {
+                    let written: BTreeSet<&String> =
+                        module.iter().filter(|(_, d)| *d == Some(atlas_engine::Dir::Write)).map(|(a, _)| a).collect();
+                    assert_eq!(written.len(), 1, "{at}: the change writes the rows the module keeps: {module:?}");
+                    assert!(module.iter().all(|(a, _)| written.contains(a)), "{at}: the route touches the module's rows alone: {module:?}");
+                }
+                false => assert!(module.is_empty(), "{at}: the route touches no value of the module: {module:?}"),
+            }
+            let label =
+                |s: &atlas_engine::Site| if s.op.is_empty() { s.to.rsplit('.').next().unwrap_or("").to_string() } else { s.op.clone() };
+            let adds: BTreeSet<String> = hands.difference(&gives).cloned().collect();
+            steps.insert(r, (format!("{r}/{}", label(change)), format!("{r}/{}", label(after)), hands, adds));
+        }
+        for budget in BUDGETS {
+            let plans = planned(g, &format!("parts-{language}-{side}"), budget);
+            for r in routes {
+                let at = format!("{language} {side} {r}, budget {budget:?}");
+                let facts = &plans[&format!("signal.{r}")];
+                let (changing, showing, hands, adds) = &steps[r];
+                let into = |to: &str| -> BTreeSet<String> {
+                    let end = format!(" > {to} value");
+                    facts.iter().filter_map(|f| f.strip_prefix("line ")?.strip_suffix(&end)).map(String::from).collect()
+                };
+                let out = |from: &str| -> BTreeSet<String> {
+                    let start = format!("{from} > ");
+                    facts
+                        .iter()
+                        .filter_map(|f| f.strip_prefix("line ")?.strip_prefix(&start)?.strip_suffix(" value"))
+                        .map(String::from)
+                        .collect()
+                };
+                // a value of the plan by the name it holds: `rows` of `Level·rows@grown/~rows`
+                let name = |v: &String| v.split('@').next().and_then(|t| t.rsplit('·').next()).unwrap_or("").to_string();
+                let taken: BTreeSet<String> = into(changing).iter().map(name).collect();
+                // the module's rows come in at the route's own arrow, from the module's place, unless a step hands them on
+                match side == "shortcut" && kept.contains(r) {
+                    true => assert!(
+                        adds.is_subset(&taken) && taken.is_subset(hands),
+                        "{at}: {changing} takes what it adds, and nothing it is not handed: {facts:#?}"
+                    ),
+                    false => assert_eq!(&taken, hands, "{at}: {changing} takes what it is handed: {facts:#?}"),
+                }
+                let made = out(changing);
+                assert!(
+                    !made.is_empty() && made.iter().all(|v| v.ends_with(&format!("@{changing}"))),
+                    "{at}: {changing} gives the rows anew: {made:?}"
+                );
+                assert_eq!(into(showing), made, "{at}: {showing} takes the rows {changing} gave");
+                let module = facts.iter().any(|f| f.contains("Global("));
+                let both = facts.iter().any(|f| f.starts_with(&format!("line {r} > Global(")))
+                    && facts.iter().any(|f| f.starts_with("line Global("));
+                match side == "shortcut" && kept.contains(r) {
+                    true => assert!(both, "{at}: the route's own arrow writes and reads the module's rows: {facts:#?}"),
+                    false => assert!(!module, "{at}: no value of the module: {facts:#?}"),
                 }
             }
         }

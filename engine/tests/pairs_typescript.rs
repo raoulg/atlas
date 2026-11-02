@@ -2149,13 +2149,12 @@ fn a_name_changed_in_one_arm_is_the_choices_value() {
 
 /// The lookups pair: `levels.at(0)` is the projection `levels[0]` is and a `Map`'s `levels.get(name)` the one a record's
 /// `levels[name]` is, no step, also of an array changed in place first (#346, #355), and a `push` to the row `rows.at(0)!`
-/// picks is the step a `push` to `rows[0]` is, as in Python and Rust. That step is a call not followed that gives nothing,
-/// in both: the row of a `Level[][]` is not read as an array (#374).
+/// picks is the step a `push` to `rows[0]!` is, as in Python and Rust (#374).
 #[test]
 fn a_lookup_is_the_projection_its_subscript_is() {
     common::a_lookup_is_the_projection_its_subscript_is(
         "typescript",
-        &[("indexed", "lookedUp"), ("keyed", "got"), ("pushed", "pushedLookedUp"), ("added", "addedLookedUp")],
+        &[("indexed", "lookedUp"), ("keyed", "got"), ("pushed", "pushedLookedUp"), ("added", "addedLookedUp"), ("grown", "grownLookedUp")],
         &[("NAMED", "BY_NAME")],
     );
 }
@@ -2165,4 +2164,16 @@ fn a_lookup_is_the_projection_its_subscript_is() {
 #[test]
 fn places_a_key_joined_back_to_its_root_is_the_note() {
     common::a_key_joined_back_to_its_root_is_the_note("typescript");
+}
+
+/// The lookups pair: a `push` to a row a subscript or a lookup picks changes the rows (#374): the row of rows written
+/// `Level[][]`, of an array of arrays the function writes, and of the array of arrays the module keeps, which the change
+/// writes; as in Python and Rust.
+#[test]
+fn a_change_of_a_part_changes_the_whole() {
+    common::a_change_of_a_part_changes_the_whole(
+        "typescript",
+        &["added", "addedLookedUp", "grown", "grownLookedUp"],
+        &["added", "addedLookedUp"],
+    );
 }

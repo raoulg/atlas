@@ -12,7 +12,8 @@ use std::path::Path;
 use serde::Serialize;
 
 use crate::model::{
-    Compare, Dir, Edge, EdgeKind, EntryKind, Graph, Held, Leaves, Node, NodeKind, Param, Part, Returns, Signature, Site, Touch, World,
+    Compare, Dir, Edge, EdgeKind, EntryKind, Graph, Held, Leaves, Node, NodeKind, Param, Part, Returns, Shared, Signature, Site, Touch,
+    World,
 };
 use crate::shapes::Array;
 
@@ -398,9 +399,16 @@ pub fn summary(parts: &[(&str, &[Finding])], asked: &[Principle], look: &Look) -
     out
 }
 
-/// Every finding, by principle in the order of `Principle::ALL`, then by place in the code.
+/// Every finding, by principle in the order of `Principle::ALL`, then by place in the code, each function and type in its
+/// words as Atlas says it in a picture of `g` (`model::said`).
 pub fn check(g: &Graph) -> Vec<Finding> {
-    let ix = Index::new(g);
+    check_among(g, &Shared::among(&g.nodes))
+}
+
+/// Every finding of `g`, each function and type in its words as Atlas says it in the picture it is shown with, whose
+/// types share the names `shared` (`model::Shared`): the parts of a repository together, the union of two readings.
+pub fn check_among(g: &Graph, shared: &Shared) -> Vec<Finding> {
+    let ix = Index::new(g, shared);
     let answers = ix.answers();
     let mut out = vec![];
     for p in Principle::ALL {
@@ -436,17 +444,19 @@ struct Index<'g> {
     into: HashMap<&'g str, Vec<&'g Edge>>,
     /// Each class's method resolution order, worked out once.
     mro: RefCell<HashMap<&'g str, Vec<&'g str>>>,
+    /// The names two types of the picture the findings are shown with share (`model::Shared`).
+    shared: &'g Shared,
 }
 
 impl<'g> Index<'g> {
-    fn new(g: &'g Graph) -> Self {
+    fn new(g: &'g Graph, shared: &'g Shared) -> Self {
         let mut out: HashMap<&str, Vec<&Edge>> = HashMap::new();
         let mut into: HashMap<&str, Vec<&Edge>> = HashMap::new();
         for e in &g.edges {
             out.entry(e.src.as_str()).or_default().push(e);
             into.entry(e.dst.as_str()).or_default().push(e);
         }
-        Index { g, nodes: g.nodes.iter().map(|n| (n.id.as_str(), n)).collect(), out, into, mro: RefCell::default() }
+        Index { g, nodes: g.nodes.iter().map(|n| (n.id.as_str(), n)).collect(), out, into, mro: RefCell::default(), shared }
     }
 
     fn node(&self, id: &str) -> Option<&'g Node> {
@@ -461,13 +471,10 @@ impl<'g> Index<'g> {
         self.into.get(id).into_iter().flatten().filter(|e| e.kind == kind).map(|e| e.src.as_str()).collect()
     }
 
-    /// `BasePlot.plot` for a method, the plain name for anything else.
+    /// A node as Atlas says it, in the picture and in a finding's words (`model::said`): `BasePlot.plot` for a method,
+    /// `BasePlot()` for an initializer, `model.Frame` for a type whose name another type shares.
     fn label(&self, id: &str) -> String {
-        let Some(n) = self.node(id) else { return id.rsplit('.').next().unwrap_or(id).to_string() };
-        match n.cls.as_deref().and_then(|c| self.node(c)) {
-            Some(c) => format!("{}.{}", c.name, n.name),
-            None => n.name.clone(),
-        }
+        crate::model::said(id, |x| self.node(x), self.shared)
     }
 
     /// Whether a node is sketch code that is not built: a prophecy, or a member of one.
@@ -757,16 +764,16 @@ fn sums(ix: &Index) -> Vec<Finding> {
             producers.iter().filter(|p| !p.private).map(|p| format!("returned by {} ({})", ix.label(&p.id), ix.at(p))).collect();
         evidence.extend(consumers.iter().map(|c| format!("taken by {} ({})", ix.label(&c.id), ix.at(c))));
         let taken_by: Vec<String> = consumers.iter().map(|c| ix.label(&c.id)).collect();
+        let named = ix.label(&s.id);
         let choose = match variants.as_slice() {
-            [one] => format!("Each of them looks again whether it holds a {one}. Could the code that makes a {} hand on only the {one}?", s.name),
+            [one] => format!("Each of them looks again whether it holds a {one}. Could the code that makes a {named} hand on only the {one}?"),
             _ => format!(
-                "Each of them chooses again between {}. Does each need all of them, or could the code that makes a {} hand on only what each one uses?",
+                "Each of them chooses again between {}. Does each need all of them, or could the code that makes a {named} hand on only what each one uses?",
                 list(&variants),
-                s.name
             ),
         };
         // a union written in place says its variants in its name
-        let sum = if s.name.contains('|') { s.name.clone() } else { format!("{} ({})", s.name, variants.join(" | ")) };
+        let sum = if crate::model::sum::is(&s.id) { named.clone() } else { format!("{named} ({})", variants.join(" | ")) };
         let variant_ids = ix.targets(&s.id, EdgeKind::Variant);
         out.push(
             ix.finding(
@@ -1797,14 +1804,14 @@ fn lens<'g>(ix: &Index<'g>) -> Vec<Finding> {
     };
     let classes: Vec<&'g Node> = ix.g.nodes.iter().filter(|n| n.kind == NodeKind::Class && !n.library).collect();
     // what each class's operations get from each place, as it is or inside what they give:
-    // (place, type) -> `Class.method`
-    let mut got_from: BTreeMap<(String, &str), Vec<String>> = BTreeMap::new();
+    // (place, type) -> the class of each method and `Class.method`
+    let mut got_from: BTreeMap<(String, &str), Vec<(&str, String)>> = BTreeMap::new();
     for c in &classes {
         for (m, _, gets) in operations(c) {
             for place in gets.keys() {
                 let held: BTreeSet<&str> = given(c, m).into_iter().flat_map(|t| holds(ix, t)).collect();
                 for t in held {
-                    got_from.entry((place.clone(), t)).or_default().push(ix.label(&m.id));
+                    got_from.entry((place.clone(), t)).or_default().push((m.cls.as_deref().unwrap_or_default(), ix.label(&m.id)));
                 }
             }
         }
@@ -1871,8 +1878,8 @@ fn lens<'g>(ix: &Index<'g>) -> Vec<Finding> {
                     .get(&(place.clone(), *t))
                     .into_iter()
                     .flatten()
-                    .filter(|m| !m.starts_with(&format!("{}.", c.name)))
-                    .map(|m| format!("`{m}`"))
+                    .filter(|(by, _)| *by != c.id)
+                    .map(|(_, m)| format!("`{m}`"))
                     .collect();
                 if !elsewhere.is_empty() {
                     evidence.push(format!("{} is got from {label} by {}", ix.label(t), elsewhere.join(", ")));

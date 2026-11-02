@@ -38,7 +38,7 @@ line cli.ts/main/parseArgs > _·values@cli.ts/main/parseArgs value
 
 line _·values@cli.ts/main/parseArgs > cli.ts/main/monthsOf value         # `values.months`, checked
 line _·values@cli.ts/main/parseArgs > cli.ts/main/monthsOf/?1/Number value   # `Number(option)`: `option` holds what fills it, `{"at": 0}`
-line _·values@cli.ts/main/parseArgs > cli.ts/main/monthsOf/?1/Error() value   # the error's message names the option, `${option}`
+line _·values@cli.ts/main/parseArgs > cli.ts/main/monthsOf/?1/?1/Error() value   # the error's message names the option, `${option}`
 line Settings·DEFAULT_SETTINGS > cli.ts/main/monthsOf value   # `return DEFAULT_SETTINGS.months`: the body's own use of a module's value
 line cli.ts/main/monthsOf/?1/Number > _·months@cli.ts/main/monthsOf/?1/Number value
 line _·months@cli.ts/main/monthsOf/?1/Number > cli.ts/main/monthsOf value   # `return months`
@@ -137,7 +137,8 @@ line _·fields@cli.ts/main/load/parse/parseLine/map > cli.ts/main/load/parse/par
 choice cli.ts/main/?1/download/?1                                        # if (!response.ok) throw ..
 step cli.ts/main/?1/download/?1/Error()
 step cli.ts/main/load/parse/parseLine/?1/Error()
-step cli.ts/main/monthsOf/?1/Error()
+choice cli.ts/main/monthsOf/?1/?1      # `if (!Number.isInteger(months) || ..) throw ..`, after `Number(option)` in the arm (#357)
+step cli.ts/main/monthsOf/?1/?1/Error()
 step cli.ts/main/trend/?1/Error()
 line _·response@cli.ts/main/?1/download/fetch > cli.ts/main/?1/download/?1/Error() value   # `${response.status} ..`
 line cli.ts/main/?1/download/?1/Error() > Error@cli.ts/main/?1/download/?1 value
@@ -158,7 +159,7 @@ home Error@cli.ts/main/load/parse cli.ts/main/load
 line cli.ts/main/load > Error@cli.ts/main/load value
 line Error@cli.ts/main/load > cli.ts/main value
 home Error@cli.ts/main/load cli.ts/main
-line cli.ts/main/monthsOf/?1/Error() > Error@cli.ts/main/monthsOf/?1 value
+line cli.ts/main/monthsOf/?1/?1/Error() > Error@cli.ts/main/monthsOf/?1 value   # the inner choice's error goes on past the one around it
 line Error@cli.ts/main/monthsOf/?1 > cli.ts/main/monthsOf value
 home Error@cli.ts/main/monthsOf/?1 cli.ts/main/monthsOf
 line cli.ts/main/monthsOf > Error@cli.ts/main/monthsOf value

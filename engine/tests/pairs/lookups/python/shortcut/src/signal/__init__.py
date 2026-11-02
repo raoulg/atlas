@@ -1,10 +1,23 @@
 """The levels of a signal, each looked up in a collection the module keeps: by a subscript, or by the call that looks it
-up. `pushed` and `pushed_looked_up` look up in a list they change in place first, which starts at the module's quiet level;
-`added` and `added_looked_up` change the row they look up, and so the module's rows."""
+up. `pushed` and `pushed_looked_up` look up in a list they change in place first, which starts at the module's quiet level.
+`added` and `added_looked_up` change the row they look up, and so the module's rows: a write of what the module keeps, as
+a change of the rows themselves is; `grown` and `grown_looked_up` the row of rows they make, which start at the module's
+quiet level."""
 
 from dataclasses import dataclass
 
-__all__ = ["indexed", "looked_up", "keyed", "got", "pushed", "pushed_looked_up", "added", "added_looked_up"]
+__all__ = [
+    "indexed",
+    "looked_up",
+    "keyed",
+    "got",
+    "pushed",
+    "pushed_looked_up",
+    "added",
+    "added_looked_up",
+    "grown",
+    "grown_looked_up",
+]
 
 
 @dataclass
@@ -78,3 +91,20 @@ def added_looked_up(level: Level) -> None:
     row = next(iter(ROWS))
     row.append(level)
     _show(ROWS)
+
+
+def grown(second: Level) -> None:
+    """A second level added to the first row of rows that start at the module's quiet level, by its place."""
+    rows = [[QUIET]]
+    row = rows[0]
+    row.append(second)
+    _show(rows)
+
+
+def grown_looked_up(second: Level) -> None:
+    """A second level added to the first row of rows that start at the module's quiet level, the first the rows hand
+    out."""
+    rows = [[QUIET]]
+    row = next(iter(rows))
+    row.append(second)
+    _show(rows)

@@ -426,21 +426,22 @@ pub fn between(a: &str, b: Option<&str>, before: &[Graph], after: &[Graph]) -> C
             Status::Changed => e.places_changed.push(place_changed(id)),
         }
     }
-    let (fa, fb): (Vec<Finding>, Vec<Finding>) =
-        (before.iter().flat_map(crate::aside::check).collect(), after.iter().flat_map(crate::aside::check).collect());
-    (out.findings_added, out.findings_resolved, out.findings_set_aside) = raised(&fa, &fb);
-    out.names = undotted(&out, &union, before);
+    // the findings of both readings say each type as the picture of the union does, in one set of shared names: a finding
+    // both readings ask is not raised and resolved because another type came to share a name with one it names
+    let shared = crate::model::Shared::among(&union.nodes);
+    let found = |gs: &[Graph]| -> Vec<Finding> { gs.iter().flat_map(|g| crate::aside::check_among(g, &shared)).collect() };
+    (out.findings_added, out.findings_resolved, out.findings_set_aside) = raised(&found(before), &found(after));
+    out.names = undotted(&out, &union, before, &shared);
     out
 }
 
 /// The nodes `c` lists whose id says no dotted name (`model::dotted`), by the name Atlas says each by in the union
 /// (`model::said`), as the page that draws the union names them: a node only A has, as A has it.
-fn undotted(c: &Changes, union: &Graph, before: &[Graph]) -> BTreeMap<String, String> {
+fn undotted(c: &Changes, union: &Graph, before: &[Graph], shared: &crate::model::Shared) -> BTreeMap<String, String> {
     let mut nodes: HashMap<&str, &Node> = HashMap::new();
     for n in union.nodes.iter().chain(before.iter().flat_map(|g| &g.nodes)) {
         nodes.entry(n.id.as_str()).or_insert(n);
     }
-    let shared = crate::model::shared_names(&union.nodes);
     fn changed(s: &StepChange) -> impl Iterator<Item = &String> {
         std::iter::once(&s.id).chain(&s.renamed_from)
     }
@@ -457,7 +458,7 @@ fn undotted(c: &Changes, union: &Graph, before: &[Graph]) -> BTreeMap<String, St
         .chain(e.added.iter().chain(&e.removed).chain(e.changed.iter().flat_map(changed)));
     listed
         .filter(|id| crate::model::dotted(id).is_none())
-        .map(|id| (id.clone(), crate::model::said(id, |x| nodes.get(x).copied(), &shared)))
+        .map(|id| (id.clone(), crate::model::said(id, |x| nodes.get(x).copied(), shared)))
         .collect()
 }
 

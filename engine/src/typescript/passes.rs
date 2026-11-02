@@ -840,6 +840,7 @@ fn express_segment(s: &str) -> String {
 /// Types, signatures and bodies into edges: the program's, and the functions of the library's code
 /// read.
 pub(super) fn link(modules: &IndexMap<String, Module>, store: &mut GraphBuilder, repo: &Path) {
+    let signatures = crate::clock::stage("signatures");
     // a union of two or more known types is a sum; any other alias stands for what it names
     for m in modules.values() {
         let mut names: Vec<&String> = m.aliases.keys().collect();
@@ -1031,17 +1032,22 @@ pub(super) fn link(modules: &IndexMap<String, Module>, store: &mut GraphBuilder,
                 || (n.kind == NodeKind::Module && !n.library && modules.contains_key(*id))
         })
         .partition(|id| !store.nodes[*id].library);
+    drop(signatures);
     for id in own.into_iter().chain(library) {
         let Some(m) = store.nodes.get(id).and_then(|n| modules.get(&n.module)) else { continue };
+        let _body = crate::clock::of("body", m.id.split('.').next().unwrap_or(&m.id), store.nodes[id].library);
         link_calls(m, modules, store, id, &returned, &eval, &changing, &mut linked);
         store.count_linked(id);
     }
+    let callers = crate::clock::stage("callers");
     let handing: Vec<paths::Evaluated> = linked.args.iter().map(|arg| paths::Evaluated { arg, eval: &eval }).collect();
     let entry = |f: &str| store.nodes.get(f).map_or(false, |n| n.entry.is_some());
     let family = store.family();
     let completed = crate::paths::complete(linked.calls, &handing, &family, &|_, _| vec![], &entry);
     // a page's request without a host goes to the page's own origin
     crate::paths::place_calls(store, completed, true);
+    drop(callers);
+    let _globals = crate::clock::stage("globals");
     globals(modules, store, &returned, &eval, &changing);
 }
 
@@ -1123,6 +1129,9 @@ fn globals(
                     note(&mut writes, module_value(text(t, src)), text(t, src), line(a));
                 }
             }
+            // a change through a name bound to a part of another value changes that value (`Body::changed_whole`): `ROWS`
+            // of `row.push(level)` after `const row = ROWS[0]`, as of `ROWS[0].push(level)`
+            let whole = |name, at| b.changed_whole(name, at).unwrap_or(name);
             // a method of the language's own that changes its receiver, on a value no package made
             let language: &dyn Fn(TsNode) -> Vec<TsNode> = &|c| {
                 let Some(f) = function_of(c).filter(|f| f.kind() == "member_expression") else { return vec![] };
@@ -1131,7 +1140,10 @@ fn globals(
                     return vec![];
                 }
                 let Some(o) = f.child_by_field_name("object") else { return vec![] };
-                let made = chain_root(o, src).and_then(module_value).map_or(false, |k| package_value(modules, &k));
+                let made = chain_root(o, src)
+                    .map(|r| whole(r, o.start_byte()))
+                    .and_then(module_value)
+                    .map_or(false, |k| package_value(modules, &k));
                 if made {
                     vec![]
                 } else {
@@ -1139,6 +1151,7 @@ fn globals(
                 }
             };
             for (at, name) in changes_in(body, src, language).into_iter().filter(|(x, _)| mine(x)) {
+                let name = whole(name, at.start_byte());
                 note(&mut writes, module_value(name), name, line(at));
             }
             let mut reads: Vec<Use> = vec![];
