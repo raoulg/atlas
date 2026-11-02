@@ -179,6 +179,13 @@ pub enum Seg {
     /// collection, `for ext in ["js", "mts"]`), by the name the code binds it to, with those terms.
     /// Every occurrence of one variable in a term is the same value (`chosen`).
     Var(String, Vec<Built>),
+    /// What the environment holds for the variable whose name is a term not said where the lookup
+    /// is written, with the default the code takes where the variable is not set, if it takes one:
+    /// `os.environ[name]`, `env::var(name)`, `process.env[name] ?? ""` of a parameter `name`. The
+    /// name is a term like any other, so what a caller hands it is written in as it is in a path
+    /// (`written_in`); once it is said, the lookup is that variable (`looked_up`), `{$STORE}` for the
+    /// name `"STORE"`.
+    Env(Built, Option<Built>),
 }
 
 pub type Built = Vec<Seg>;
@@ -203,30 +210,53 @@ pub fn each(values: Vec<Built>) -> Vec<Built> {
     }
     terms.truncate(MAX);
     match terms.as_slice() {
-        [one] if !matches!(one.as_slice(), [Seg::Param(_) | Seg::Held(..) | Seg::Option(..)]) => terms,
+        [one] if !matches!(one.as_slice(), [Seg::Param(_) | Seg::Held(..) | Seg::Option(..) | Seg::Env(..)]) => terms,
         _ => vec![vec![Seg::Var(String::new(), terms)]],
     }
 }
 
-/// Whether a parameter stands in `b`, also among the values of its variables.
+/// Whether a parameter stands in `b`, also among the values of its variables and in the name of a
+/// variable of the environment it looks up.
 fn takes(b: &Built) -> bool {
     b.iter().any(|s| match s {
         Seg::Param(_) | Seg::Held(..) => true,
         Seg::Var(_, vs) => vs.iter().any(takes),
+        Seg::Env(name, _) => takes(name),
         _ => false,
     })
 }
 
-/// The segments of `b` in the order they stand, also those among the values of its variables.
+/// The segments of `b` in the order they stand, also those among the values of its variables and
+/// in the name of a variable of the environment it looks up.
 fn visit(b: &Built, f: &mut dyn FnMut(&Seg)) {
     for s in b {
         f(s);
-        if let Seg::Var(_, vs) = s {
-            for v in vs {
-                visit(v, f);
+        match s {
+            Seg::Var(_, vs) => {
+                for v in vs {
+                    visit(v, f);
+                }
             }
+            Seg::Env(name, _) => visit(name, f),
+            _ => {}
         }
     }
+}
+
+/// Whether the segment `s` stands in `b` itself, or in the name of a variable of the environment
+/// `b` looks up: one value in each term `b` gives, as a segment of `b` is, never a variable's.
+fn stands(b: &Built, s: &Seg) -> bool {
+    b.iter().any(|x| x == s || matches!(x, Seg::Env(name, _) if stands(name, s)))
+}
+
+/// The variable of `b` `chosen` takes a value for first: one that stands in `b` or in the name of a
+/// variable of the environment `b` looks up, where `open` is true or one of its values is whole.
+fn first_var(b: &Built, open: bool) -> Option<(String, Vec<Built>)> {
+    b.iter().find_map(|s| match s {
+        Seg::Var(n, vs) if open || !vs.iter().all(takes) => Some((n.clone(), vs.clone())),
+        Seg::Env(name, _) => first_var(name, open),
+        _ => None,
+    })
 }
 
 /// The terms `b` is, one value chosen for each of its variables: every occurrence of one variable,
@@ -240,11 +270,7 @@ pub fn chosen(b: &Built) -> Vec<Built> {
 /// variable ranges over those of them what the callers hand makes, once that is written in, and each
 /// of its other values is chosen.
 fn choose(b: &Built, open: bool, depth: u32) -> Vec<Built> {
-    let var = b.iter().find_map(|s| match s {
-        Seg::Var(n, vs) if open || !vs.iter().all(takes) => Some((n.clone(), vs.clone())),
-        _ => None,
-    });
-    let Some((name, values)) = var.filter(|_| depth <= DEPTH) else { return vec![b.clone()] };
+    let Some((name, values)) = first_var(b, open).filter(|_| depth <= DEPTH) else { return vec![b.clone()] };
     let (taking, whole): (Vec<Built>, Vec<Built>) = values.into_iter().partition(|v| !open && takes(v));
     let mut terms: Vec<Built> = whole.iter().map(|v| put_var(b, &name, v)).collect();
     if !taking.is_empty() {
@@ -266,6 +292,7 @@ fn narrowed(b: &Built, name: &str, values: &[Built]) -> Built {
         .map(|s| match s {
             Seg::Var(n, _) if n == name => Seg::Var(n.clone(), values.to_vec()),
             Seg::Var(n, vs) => Seg::Var(n.clone(), vs.iter().map(|v| narrowed(v, name, values)).collect()),
+            Seg::Env(var, default) => Seg::Env(narrowed(var, name, values), default.clone()),
             s => s.clone(),
         })
         .collect()
@@ -292,6 +319,7 @@ fn put_var(b: &Built, name: &str, v: &Built) -> Built {
                 }
                 out.push(Seg::Var(n.clone(), values));
             }
+            Seg::Env(var, default) => out = join(&out, &looked_up(put_var(var, name, v), default.clone()), ""),
             s => out = join(&out, &vec![s.clone()], ""),
         }
         said = false;
@@ -319,11 +347,37 @@ pub fn environment(name: &str) -> Built {
     hole(&format!("${name}"))
 }
 
-/// What the environment holds for the variable a call names, where the code names it as text.
+/// What the environment holds for the variable a call names: where the code names it as text, that
+/// variable; where the name is a term still to be said (what a caller hands, an element of a
+/// collection the code binds), the lookup of the variable that term names, which is that variable
+/// once a caller or the binding says it (`Seg::Env`). None where no code says the name.
 pub fn environment_named(names: &[Built]) -> Option<Built> {
     match names {
         [b] if known(b) => Some(environment(&render(b))),
+        [b] if takes(b) || first_var(b, true).is_some() => Some(vec![Seg::Env(b.clone(), None)]),
         _ => None,
+    }
+}
+
+/// What the environment holds for the variable `name` names, with the default the code takes where
+/// it is not set: the variable, once its name is said as text, an input with that default where
+/// there is one (`os.environ.get("STORE", "out.csv")`); still the lookup where the name is still to
+/// be said; and where no code says it, a value the code gives no name, since a lookup whose name
+/// the code does not decide names no variable.
+fn looked_up(name: Built, default: Option<Built>) -> Built {
+    if known(&name) {
+        let var = render(&name);
+        return match default {
+            Some(d) => vec![Seg::Option(format!("${var}"), d)],
+            None => environment(&var),
+        };
+    }
+    if takes(&name) || first_var(&name, true).is_some() {
+        return vec![Seg::Env(name, default)];
+    }
+    match default {
+        Some(d) => vec![Seg::Option("value".into(), d)],
+        None => hole("value"),
     }
 }
 
@@ -337,6 +391,29 @@ pub fn environment_named(names: &[Built]) -> Option<Built> {
 /// its default, which a run reads or writes whatever the input says. What a caller hands is
 /// followed to the caller, so it stays beside the default.
 pub fn or_else(value: Vec<Built>, fallback: Vec<Built>) -> Vec<Built> {
+    // a variable of the environment whose name is still to be said is an input with the default,
+    // the variable once the name is (`os.environ.get(name, "")` handed `"REPORT"` is
+    // `os.environ.get("REPORT", "")`)
+    let unsaid: Option<Vec<&Built>> = value
+        .iter()
+        .map(|b| match b.as_slice() {
+            [Seg::Env(name, None)] => Some(name),
+            _ => None,
+        })
+        .collect();
+    if let Some(names) = unsaid.filter(|n| !n.is_empty() && !fallback.is_empty()) {
+        let mut out: Vec<Built> = vec![];
+        for name in names {
+            for d in fallback.iter().flat_map(chosen) {
+                let b = looked_up(name.clone(), Some(d));
+                if !out.contains(&b) {
+                    out.push(b);
+                }
+            }
+        }
+        out.truncate(MAX);
+        return out;
+    }
     let input = |b: &Built| match b.as_slice() {
         [Seg::Param(x) | Seg::Held(_, x) | Seg::Option(x, _) | Seg::Hole(x)] => Some(x.clone()),
         _ => None,
@@ -354,7 +431,7 @@ pub fn or_else(value: Vec<Built>, fallback: Vec<Built>) -> Vec<Built> {
 pub fn known(b: &Built) -> bool {
     b.iter().all(|s| match s {
         Seg::Lit(_) | Seg::Package(_) => true,
-        Seg::Option(_, d) => known(d),
+        Seg::Option(_, d) | Seg::Env(_, Some(d)) => known(d),
         _ => false,
     })
 }
@@ -364,7 +441,7 @@ pub fn known(b: &Built) -> bool {
 pub fn last_lit(b: &mut Built) -> Option<&mut String> {
     match b.last_mut()? {
         Seg::Lit(s) | Seg::Package(s) => Some(s),
-        Seg::Option(_, d) => last_lit(d),
+        Seg::Option(_, d) | Seg::Env(_, Some(d)) => last_lit(d),
         _ => None,
     }
 }
@@ -491,7 +568,7 @@ pub fn parent(b: &Built) -> Built {
         ([Seg::Package(_)], _) => vec![Seg::Package(".".into())],
         // a path a caller hands, an option or the environment names: its directory, once the path
         // is said (`{to}/..`)
-        (_, [.., Seg::Param(_) | Seg::Held(..) | Seg::Option(..)]) => [b[..name].to_vec(), lit("/..")].concat(),
+        (_, [.., Seg::Param(_) | Seg::Held(..) | Seg::Option(..) | Seg::Env(..)]) => [b[..name].to_vec(), lit("/..")].concat(),
         (_, [.., Seg::Hole(h)]) if !anonymous(h) => [b[..name].to_vec(), lit("/..")].concat(),
         // the directory of a value the code gives no name is no more named
         _ => hole("parent"),
@@ -521,8 +598,9 @@ fn written_in(b: &Built, mut value: impl FnMut(&Seg) -> Option<Vec<Built>>) -> V
             }
         }
     });
-    // the segments `b` itself says, each one of its values in a term
-    let top: Vec<&(Seg, Vec<Built>)> = said.iter().filter(|(s, _)| b.contains(s)).collect();
+    // the segments `b` itself says, each one of its values in a term, also in the name of a
+    // variable of the environment it looks up
+    let top: Vec<&(Seg, Vec<Built>)> = said.iter().filter(|(s, _)| stands(b, s)).collect();
     if top.iter().any(|(_, v)| v.is_empty()) {
         return vec![];
     }
@@ -578,6 +656,8 @@ fn put(b: &Built, one: &[(Seg, Built)], all: &[(Seg, Vec<Built>)]) -> Built {
                 values.truncate(MAX);
                 out.push(Seg::Var(n.clone(), values));
             }
+            // the variable whose name is written in: a lookup commutes with what is handed
+            Seg::Env(name, default) => out = join(&out, &looked_up(put(name, one, all), default.clone()), ""),
             s => out = join(&out, &vec![s.clone()], ""),
         }
         said = false;
@@ -629,14 +709,16 @@ fn unsuffixed(p: String) -> String {
 }
 
 /// A path with its unknown parts written as `{name}`, a variable by its name as well, and an option
-/// as its default.
+/// as its default; a variable of the environment whose name is still to be said is no variable the
+/// code names yet, so a value it gives no name (`{value}`), or its default where it has one.
 pub fn render(b: &Built) -> String {
     unsuffixed(
         b.iter()
             .map(|s| match s {
                 Seg::Lit(x) | Seg::Package(x) => x.clone(),
                 Seg::Param(x) | Seg::Held(_, x) | Seg::Hole(x) | Seg::Var(x, _) => format!("{{{x}}}"),
-                Seg::Option(_, d) => render(d),
+                Seg::Option(_, d) | Seg::Env(_, Some(d)) => render(d),
+                Seg::Env(_, None) => "{value}".into(),
             })
             .collect(),
     )
@@ -648,6 +730,7 @@ fn inputs(b: &Built) -> String {
     b.iter()
         .map(|s| match s {
             Seg::Option(x, _) => format!("{{{x}}}"),
+            Seg::Env(..) => "{value}".into(),
             s => render(&vec![s.clone()]),
         })
         .collect()
@@ -1131,6 +1214,7 @@ pub fn held_by(g: &str, b: Built) -> Built {
         .map(|s| match s {
             Seg::Param(x) => Seg::Held(g.to_string(), x),
             Seg::Var(n, vs) => Seg::Var(n, vs.into_iter().map(|v| held_by(g, v)).collect()),
+            Seg::Env(name, default) => Seg::Env(held_by(g, name), default),
             s => s,
         })
         .collect()
@@ -1551,6 +1635,23 @@ mod tests {
         assert_eq!(place(&shipped, "read_text").as_deref(), Some("src/pages/template.html"));
     }
 
+    /// A lookup whose name is still to be said is the variable its name is once it is said: by a
+    /// caller, also where the lookup falls back to the empty path (#248), and by a binding of each
+    /// element of a collection of names, one variable for each. Where no code says the name, the
+    /// lookup names no variable.
+    #[test]
+    fn a_lookup_is_the_variable_its_name_is_once_said() {
+        let name = vec![Seg::Param("name".into())];
+        let unset = or_else(vec![environment_named(&[name.clone()]).expect("a name a caller hands")], vec![lit("")]);
+        let handed: Vec<Built> = unset.iter().flat_map(|b| substitute(b, |_| vec![lit("REPORT")])).collect();
+        assert_eq!(handed, or_else(vec![environment("REPORT")], vec![lit("")]));
+        let names = environment_named(&each(vec![lit("ALPHA"), lit("BETA")])).expect("an element of a collection of names");
+        assert_eq!(chosen(&names), [environment("ALPHA"), environment("BETA")]);
+        let unsaid = environment_named(&[name]).expect("a name a caller hands");
+        assert_eq!(substitute(&unsaid, |p| vec![hole(p)]), [hole("value")], "a name no caller says names no variable");
+        assert_eq!(environment_named(&[hole("name")]), None);
+    }
+
     /// A part no code decides stays a hole in the term, by the name the code gives it: a file whose
     /// name is known is that name under that directory, wherever the unknown part stands; a hole the
     /// code gives no name is `{}`, never a wildcard; a pattern is one place, the fiber below its
@@ -1701,6 +1802,37 @@ mod tests {
             let hand = |x: &str| if x == "P" { vec![v.clone()] } else { vec![vec![Seg::Param(x.into())]] };
             let written = rest.iter().fold(v.clone(), |b, q| join(&b, q, "/"));
             proptest::prop_assert_eq!(substitute(&t, hand), vec![written]);
+        }
+
+        /// Law: a lookup of the environment commutes with what is handed. The variable a name built
+        /// from `{P}` names, `v` written in for `{P}`, is the variable the lookup that writes `v`
+        /// names: also with a default the code takes where it is not set, with a path going on below
+        /// it, and one step up from that.
+        #[test]
+        fn a_lookup_commutes_with_what_is_handed(
+            prefix in proptest::option::of("[A-Z]{1,3}_"),
+            v in "[A-Z]{1,4}",
+            default in proptest::option::of(a_path()),
+            rest in proptest::collection::vec(a_part(), 0..3),
+            up in proptest::prelude::any::<bool>(),
+        ) {
+            let named = |x: Built| prefix.as_ref().map_or(x.clone(), |s| join(&lit(s), &x, ""));
+            let looked = |name: Built| -> Vec<Built> {
+                let var = vec![environment_named(&[name]).expect("a name a caller hands or the code writes")];
+                let var = match &default {
+                    Some(d) => or_else(var, vec![d.clone()]),
+                    None => var,
+                };
+                var.into_iter()
+                    .map(|b| {
+                        let t = rest.iter().fold(b, |b, q| join(&b, q, "/"));
+                        if up { parent(&t) } else { t }
+                    })
+                    .collect()
+            };
+            let hand = |x: &str| if x == "P" { vec![lit(&v)] } else { vec![vec![Seg::Param(x.into())]] };
+            let handed: Vec<Built> = looked(named(vec![Seg::Param("P".into())])).iter().flat_map(|t| substitute(t, hand)).collect();
+            proptest::prop_assert_eq!(handed, looked(named(lit(&v))));
         }
 
         /// Law: where two callers meet a path, the meet keeps every condition of both, the

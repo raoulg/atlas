@@ -2793,6 +2793,19 @@ fn places_a_parent_drops_the_last_part_of_a_path() {
     common::a_parent_drops_the_last_part_of_a_path("python", "shelf.summary.summarise", "shelf.summary.log");
 }
 
+/// The unset pair: `os.environ[name]` and `os.environ.get(name, "")` of the name a caller hands are the variable that
+/// caller names, as `os.environ["REPORT"]` is (#348).
+#[test]
+fn places_a_variable_a_caller_names_is_that_variable() {
+    common::a_variable_a_caller_names_is_that_variable(
+        "python",
+        "notes.keep.keep",
+        "notes.keep.save_report",
+        "notes.keep.save_log",
+        "notes.keep.show_report",
+    );
+}
+
 // ---------- handing: a helper writes, under each caller, that caller's file ----------
 
 /// The handing pair (#279): `main` sets up the shelf's folder, and each of the shelf's methods

@@ -1,10 +1,123 @@
 //! Small helpers over tree-sitter nodes, shared by the language modules.
 
+use std::cell::RefCell;
 use std::path::Path;
 
-use tree_sitter::Node as TsNode;
+use rustc_hash::FxHashMap;
+use tree_sitter::{ffi, Node as TsNode};
 
 use crate::knowledge::PathFn;
+
+thread_local! {
+    /// What is known of the functions read now (`indexed`), each by its tree.
+    static INDEXED: RefCell<Vec<Index>> = const { RefCell::new(Vec::new()) };
+}
+
+/// What is known of the nodes of one tree under a node: each one's parent, found in one walk, with
+/// the parents above it as they are asked; and the named nodes under it in the order `walk` visits
+/// them, each with where the nodes under it end.
+struct Index {
+    tree: *const ffi::TSTree,
+    parents: FxHashMap<usize, Option<ffi::TSNode>>,
+    order: Vec<ffi::TSNode>,
+    ends: Vec<usize>,
+    at: FxHashMap<usize, usize>,
+}
+
+/// `f`, while the parent of every node under `top`, and the nodes `walk` finds under each, are known
+/// without a search. tree-sitter finds a node's parent by going down from the root of its tree, past
+/// every item before it in its file, so that a reader that asks it often of a long file pays for the
+/// file each time; and a reader that walks a body for one kind of node after another walks all of it
+/// each time. Under `top` both are found in one walk of it, and `parent` and `walk` answer from them
+/// with the nodes `TsNode::parent` and a walk give.
+pub fn indexed<'t, R>(top: TsNode<'t>, f: impl FnOnce() -> R) -> R {
+    let mut parents = FxHashMap::default();
+    // `walk`'s nodes: `top` and the named nodes under it it goes down to through named nodes only
+    let (mut order, mut ends) = (vec![top.into_raw()], vec![1]);
+    // the nodes the walk is under, each with its place in `order` where it is one of `walk`'s
+    let mut above: Vec<(TsNode<'t>, Option<usize>)> = vec![];
+    let mut c = top.walk();
+    let mut down = c.goto_first_child();
+    if down {
+        above.push((top, Some(0)));
+    }
+    while let Some(&(p, in_order)) = above.last() {
+        if down {
+            let n = c.node();
+            // tree-sitter finds the parent of a node that spans no bytes by where it ends, which a walk does not ask
+            if n.start_byte() < n.end_byte() {
+                parents.insert(n.id(), Some(p.into_raw()));
+            }
+            let at = (in_order.is_some() && n.is_named()).then(|| {
+                order.push(n.into_raw());
+                ends.push(order.len());
+                order.len() - 1
+            });
+            if c.goto_first_child() {
+                above.push((n, at));
+                continue;
+            }
+        }
+        down = c.goto_next_sibling();
+        if !down {
+            c.goto_parent();
+            if let Some((_, Some(i))) = above.pop() {
+                ends[i] = order.len();
+            }
+        }
+    }
+    let at = order.iter().enumerate().map(|(i, n)| (n.id as usize, i)).collect();
+    INDEXED.with(|x| x.borrow_mut().push(Index { tree: top.into_raw().tree, parents, order, ends, at }));
+    // what is known leaves with `f`, before the tree it points into can
+    struct Leave;
+    impl Drop for Leave {
+        fn drop(&mut self) {
+            INDEXED.with(|x| x.borrow_mut().pop());
+        }
+    }
+    let _leave = Leave;
+    f()
+}
+
+/// The parent of `n`: what `n.parent()` gives, from what `indexed` found where it is known.
+pub fn parent<'t>(n: TsNode<'t>) -> Option<TsNode<'t>> {
+    let raw = n.into_raw();
+    let known = INDEXED.with(|x| x.borrow().iter().rev().find(|i| i.tree == raw.tree)?.parents.get(&n.id()).copied());
+    match known {
+        Some(found) => {
+            // SAFETY: `found` is a node of the tree `n` is a node of (the index is that tree's), which
+            // lives as long as `n` does; an index is gone once `indexed` returns, before its tree
+            let found = found.map(|f| unsafe { TsNode::from_raw(f) });
+            debug_assert_eq!(
+                found.map(|f| (f.id(), f.kind_id(), f.byte_range())),
+                n.parent().map(|f| (f.id(), f.kind_id(), f.byte_range()))
+            );
+            found
+        }
+        None => {
+            let found = n.parent();
+            INDEXED.with(|x| {
+                if let Some(index) = x.borrow_mut().iter_mut().rev().find(|i| i.tree == raw.tree) {
+                    index.parents.insert(n.id(), found.map(|f| f.into_raw()));
+                }
+            });
+            found
+        }
+    }
+}
+
+/// `n` and the named nodes under it that `preorder` visits and `keep` keeps, from what `indexed`
+/// found, where it knows `n`.
+fn known_walk<'t>(n: TsNode<'t>, mut keep: impl FnMut(TsNode<'t>) -> bool) -> Option<Vec<TsNode<'t>>> {
+    let raw = n.into_raw();
+    INDEXED.with(|x| {
+        let x = x.borrow();
+        let index = x.iter().rev().find(|i| i.tree == raw.tree)?;
+        let &at = index.at.get(&n.id())?;
+        // SAFETY: as in `parent`: each is a node of the tree of `n`, which lives as long as `n` does
+        Some(index.order[at..index.ends[at]].iter().map(|r| unsafe { TsNode::from_raw(*r) }).filter(|m| keep(*m)).collect())
+    })
+}
 
 /// A path as the graph writes it: `/` between its parts on every system, so a graph reads the
 /// same wherever it was made.
@@ -67,7 +180,7 @@ pub fn beneath<'t>(n: TsNode<'t>, wrappers: Wrappers) -> TsNode<'t> {
 /// The outermost wrapper an expression stands in, or the expression itself: `(x as T)!` of `x`.
 pub fn outermost<'t>(n: TsNode<'t>, wrappers: Wrappers) -> TsNode<'t> {
     let mut n = n;
-    while let Some(p) = n.parent().filter(|p| wraps(wrappers, *p) && wrapped(*p).map(|x| x.id()) == Some(n.id())) {
+    while let Some(p) = parent(n).filter(|p| wraps(wrappers, *p) && wrapped(*p).map(|x| x.id()) == Some(n.id())) {
         n = p;
     }
     n
@@ -132,6 +245,16 @@ pub fn holds(body: TsNode, src: &[u8], is: fn(TsNode, &[u8]) -> bool, nested: &[
 /// `n` and the named nodes under it that are of one of `kinds`, pre-order, source order.
 pub fn walk<'t>(n: TsNode<'t>, kinds: &[&str]) -> Vec<TsNode<'t>> {
     let mut of = Kinds::new(kinds);
+    if let Some(found) = known_walk(n, |x| of.holds(x)) {
+        debug_assert_eq!(found, walked(n, kinds));
+        return found;
+    }
+    walked(n, kinds)
+}
+
+/// `walk`, by a cursor over the tree.
+fn walked<'t>(n: TsNode<'t>, kinds: &[&str]) -> Vec<TsNode<'t>> {
+    let mut of = Kinds::new(kinds);
     let mut out = vec![];
     preorder(n, |x| {
         if of.holds(x) {
@@ -143,6 +266,9 @@ pub fn walk<'t>(n: TsNode<'t>, kinds: &[&str]) -> Vec<TsNode<'t>> {
 
 /// Every named node under `n`, pre-order, source order.
 pub fn walk_all<'t>(n: TsNode<'t>) -> Vec<TsNode<'t>> {
+    if let Some(found) = known_walk(n, |_| true) {
+        return found;
+    }
     let mut out = vec![];
     preorder(n, |x| out.push(x));
     out
@@ -258,7 +384,7 @@ fn choice_of<'t>(s: TsNode<'t>, ids: &std::collections::HashMap<usize, u32>) -> 
 
 /// The statement of its block a choice stands as: itself, or the statement made of it alone.
 fn statement_of(g: TsNode) -> TsNode {
-    match g.parent() {
+    match parent(g) {
         Some(p) if p.named_child_count() == 1 && p.start_byte() == g.start_byte() => p,
         _ => g,
     }
@@ -292,7 +418,7 @@ pub fn guards<'t>(
     for g in walk_all(body).into_iter().filter(|g| ids.contains_key(&g.id()) && (syn.guards)(*g, src)) {
         let s = statement_of(g);
         let (Some(first), Some(last)) =
-            (s.next_named_sibling(), s.parent().and_then(|p| p.named_child(p.named_child_count().saturating_sub(1))))
+            (s.next_named_sibling(), parent(s).and_then(|p| p.named_child(p.named_child_count().saturating_sub(1))))
         else {
             continue;
         };
@@ -328,7 +454,7 @@ pub fn number_choices(body: TsNode, src: &[u8], syn: &ChoiceSyntax) -> std::coll
 pub fn decides(n: TsNode, body: TsNode, src: &[u8], ids: &std::collections::HashMap<usize, u32>, syn: &ChoiceSyntax) -> Option<u32> {
     let mut child = n;
     while child.id() != body.id() {
-        let p = child.parent()?;
+        let p = parent(child)?;
         if let Some(&c) = ids.get(&p.id()) {
             match (syn.part)(p, child, src) {
                 Part::Decides => return Some(c),
@@ -426,7 +552,7 @@ fn stand_ins(body: TsNode, src: &[u8], cmp: &CompareSyntax) -> std::collections:
             for i in walk(target, &["identifier"]) {
                 let (mut p, mut kept) = (i, false);
                 while p.id() != target.id() {
-                    let Some(up) = p.parent() else { break };
+                    let Some(up) = parent(p) else { break };
                     kept = (cmp.place)(up).is_some();
                     if kept {
                         break;
@@ -647,7 +773,7 @@ pub fn head_literal(e: TsNode, src: &[u8], string_kinds: &[&str], path_function:
 pub fn payload_of(call: TsNode, src: &[u8], what: &str, arg_field: &str, locals: &std::collections::HashMap<String, String>) -> String {
     let Some(args) = call.child_by_field_name(arg_field) else { return String::new() };
     for id in walk(args, &["identifier"]) {
-        let bad_parent = id.parent().map_or(false, |p| {
+        let bad_parent = parent(id).map_or(false, |p| {
             matches!(
                 p.kind(),
                 "scoped_identifier"
@@ -808,6 +934,48 @@ pub(crate) mod tests {
                     let of: Vec<TsNode> = under.iter().copied().filter(|x| kinds.contains(&x.kind())).collect();
                     assert_eq!(ids(&walk(*n, kinds)), ids(&of), "{code} {kinds:?}");
                 }
+            }
+        }
+    }
+
+    /// What `indexed` knows of a function is what tree-sitter says: under it and outside it, each node's parent is the one
+    /// `TsNode::parent` gives, and a walk the named nodes in pre-order as above; also where the program is written wrong,
+    /// with nodes that span no bytes.
+    #[test]
+    fn what_is_indexed_is_what_the_tree_says() {
+        fn preorder<'t>(n: TsNode<'t>, out: &mut Vec<TsNode<'t>>) {
+            out.push(n);
+            for c in named_children(n) {
+                preorder(c, out);
+            }
+        }
+        fn every<'t>(n: TsNode<'t>, out: &mut Vec<TsNode<'t>>) {
+            out.push(n);
+            let mut c = n.walk();
+            for k in n.children(&mut c) {
+                every(k, out);
+            }
+        }
+        let ids = |ns: &[TsNode]| ns.iter().map(|n| n.id()).collect::<Vec<_>>();
+        let lists: [&[&str]; 3] = [&["identifier"], &["identifier", "call_expression", "call", "comment", "ERROR", "("], &[]];
+        for (tree, code) in trees() {
+            let mut all = vec![];
+            every(tree.root_node(), &mut all);
+            let mut tops = vec![];
+            preorder(tree.root_node(), &mut tops);
+            for top in tops {
+                indexed(top, || {
+                    for n in &all {
+                        assert_eq!(parent(*n).map(|p| p.id()), n.parent().map(|p| p.id()), "{code} {}", n.kind());
+                        let mut under = vec![];
+                        preorder(*n, &mut under);
+                        assert_eq!(ids(&walk_all(*n)), ids(&under), "{code} {}", n.kind());
+                        for kinds in lists {
+                            let of: Vec<TsNode> = under.iter().copied().filter(|x| kinds.contains(&x.kind())).collect();
+                            assert_eq!(ids(&walk(*n, kinds)), ids(&of), "{code} {kinds:?}");
+                        }
+                    }
+                });
             }
         }
     }

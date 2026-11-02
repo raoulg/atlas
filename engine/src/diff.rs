@@ -22,7 +22,7 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 use serde::Serialize;
 
-use crate::model::{name_of, owner, Both, EdgeKind, Entry, Graph, Held, Node, NodeKind, Site, Touch};
+use crate::model::{function_label, name_of, owner, said, shared_names, Both, EdgeKind, Entry, Graph, Held, Node, NodeKind, Site, Touch};
 
 /// How a thing of the union stands to the two readings: B adds it, B no longer has it, or both
 /// hold it and its own arrows differ.
@@ -90,14 +90,18 @@ pub fn union(name: &str, before: Vec<Graph>, after: Vec<Graph>) -> (Graph, Diff)
     let mut a = crate::parts::joined(name, before);
     let b = crate::parts::joined(name, after);
     apart(&mut a);
-    let ib = Index::new(&b);
     let mut renames = renames(&a, &b);
+    // the types of the union, A's renamed ones under their names in B: two of them that go by one name are each said with
+    // their module, as the page that draws the union says them (`model::shared_names`)
+    let in_b: HashSet<&str> = b.nodes.iter().map(|n| n.id.as_str()).collect();
+    let shared = shared_names(b.nodes.iter().chain(a.nodes.iter().filter(|n| !in_b.contains(renames.map(&n.id).as_str()))));
+    let ib = Index::new(&b, &shared);
     let types = renames.types(&a, &ib);
     // what a node was is said as A has it, before A's renamed nodes take their names in B
     let read = (!renames.direct.is_empty()).then(|| a.clone());
     renames.relabel(&mut a, &ib);
-    let ia = Index::new(&a);
-    let ir = read.as_ref().map(Index::new);
+    let ia = Index::new(&a, &shared);
+    let ir = read.as_ref().map(|r| Index::new(r, &shared));
     let was_in_a = |id: &str, na: &Node| match ir.as_ref().and_then(|ir| Some((ir, *ir.nodes.get(old_id(&renames, id).as_str())?))) {
         Some((ir, n)) => was(ir, n, &|x| x.to_string()),
         None => was(&ia, na, &|x| old_id(&renames, x)),
@@ -395,7 +399,9 @@ impl Renames {
 /// the only match of the other. A rename found lets the nodes around it match in the next round.
 fn renames(a: &Graph, b: &Graph) -> Renames {
     let mut r = Renames::default();
-    let (ia, ib) = (Index::new(a), Index::new(b));
+    // what a node is to the rest of its graph holds no words
+    let none = HashSet::new();
+    let (ia, ib) = (Index::new(a, &none), Index::new(b, &none));
     let named = |n: &&Node| n.kind != NodeKind::External;
     loop {
         let in_a: HashSet<String> = a.nodes.iter().map(|n| r.map(&n.id)).collect();
@@ -520,7 +526,7 @@ fn arrow(ix: &Index, n: &Node, types: &[(String, String)]) -> (String, Vec<Strin
     let gives = n.returns.as_ref().map(|r| renamed(&r.written, types)).unwrap_or_default();
     let mut parts = vec![format!("({}){}", params.join(", "), if gives.is_empty() { String::new() } else { format!(" → {gives}") })];
     let changes: Vec<String> =
-        ix.out(&n.id).filter(|e| e.kind == EdgeKind::Mutates).map(|e| e.via.clone().unwrap_or_else(|| ix.name(&e.dst))).collect();
+        ix.out(&n.id).filter(|e| e.kind == EdgeKind::Mutates).map(|e| e.via.clone().unwrap_or_else(|| ix.said(&e.dst))).collect();
     if !changes.is_empty() {
         parts.push(format!("changes {}", changes.join(", ")));
     }
@@ -564,10 +570,11 @@ fn typed(ix: &Index, id: &str) -> Vec<String> {
     out
 }
 
-/// A node's own arrow in A, in words, each node under the name it had there (`as_in_a` gives the
-/// id in A of a node B renamed).
+/// A node's own arrow in A, in words, each node as Atlas says it (`model::said`: a method with its class, a type whose
+/// name another type shares with its module) under the name it had there (`as_in_a` gives the id in A of a node B
+/// renamed).
 fn was(ix: &Index, n: &Node, as_in_a: &dyn Fn(&str) -> String) -> String {
-    let name = |id: &str| ix.name(&as_in_a(id));
+    let name = |id: &str| ix.said(&as_in_a(id));
     match n.kind {
         NodeKind::Function | NodeKind::Method => arrow(ix, n, &[]).0,
         _ => {
@@ -609,7 +616,7 @@ fn was(ix: &Index, n: &Node, as_in_a: &dyn Fn(&str) -> String) -> String {
                     format!("{w} {}{}", xs.join(", "), if more > 0 { format!(" +{more}") } else { String::new() })
                 })
                 .collect();
-            format!("{}: {}", n.name, text.join(" · "))
+            format!("{}: {}", ix.said(&n.id), text.join(" · "))
         }
     }
 }
@@ -897,17 +904,18 @@ fn old_id(r: &Renames, id: &str) -> String {
     r.all.iter().find(|(_, new)| new.as_str() == id).map_or_else(|| id.to_string(), |(old, _)| old.clone())
 }
 
-/// A graph's nodes by id, its edges by their ends, and the touches each function makes whole by
-/// what its calls hand.
+/// A graph's nodes by id, its edges by their ends, the touches each function makes whole by
+/// what its calls hand, and the names two types of the union share, which its words say with their module.
 struct Index<'g> {
     nodes: HashMap<&'g str, &'g Node>,
     out: HashMap<&'g str, Vec<&'g crate::model::Edge>>,
     into: HashMap<&'g str, Vec<&'g crate::model::Edge>>,
     made: HashMap<&'g str, Vec<&'g Touch>>,
+    shared: &'g HashSet<String>,
 }
 
 impl<'g> Index<'g> {
-    fn new(g: &'g Graph) -> Self {
+    fn new(g: &'g Graph, shared: &'g HashSet<String>) -> Self {
         let (mut out, mut into): (HashMap<&str, Vec<_>>, HashMap<&str, Vec<_>>) = (HashMap::new(), HashMap::new());
         for e in &g.edges {
             out.entry(e.src.as_str()).or_default().push(e);
@@ -924,7 +932,7 @@ impl<'g> Index<'g> {
                 }
             }
         }
-        Index { nodes, out, into, made }
+        Index { nodes, out, into, made, shared }
     }
 
     /// The touches of a function's own arrow: those its own calls make, whole in its body or as
@@ -935,9 +943,14 @@ impl<'g> Index<'g> {
         own.chain(self.made.get(n.id.as_str()).into_iter().flatten().copied()).collect()
     }
 
-    /// A node by the name Atlas says it by (`model::name_of`).
+    /// A node by its own name (`model::name_of`), the name a signature writes a type by.
     fn name(&self, id: &str) -> String {
         name(&self.nodes, id)
+    }
+
+    /// A node as Atlas says it, in the picture and in words (`model::said`).
+    fn said(&self, id: &str) -> String {
+        said(id, |c| self.nodes.get(c).copied(), self.shared)
     }
 
     /// The name the function `f` goes by in the names of its values (`model::owner`).
@@ -945,12 +958,9 @@ impl<'g> Index<'g> {
         owner(f, |c| self.nodes.get(c).copied())
     }
 
-    /// A function by the name a picture gives it: a method with its class (`Trend.save`).
+    /// A function by the name a picture gives it (`model::function_label`): a method with its class (`Trend.save`).
     fn function(&self, n: &Node) -> String {
-        match n.cls.as_deref() {
-            Some(c) => format!("{}.{}", self.name(c), n.name),
-            None => n.name.clone(),
-        }
+        function_label(n, |c| self.nodes.get(c).copied(), self.shared)
     }
 
     fn out(&self, id: &str) -> impl Iterator<Item = &'g crate::model::Edge> + '_ {
@@ -967,7 +977,7 @@ fn by_id(g: &Graph) -> HashMap<&str, &Node> {
     g.nodes.iter().map(|n| (n.id.as_str(), n)).collect()
 }
 
-/// A node by the name Atlas says it by (`model::name_of`), among the nodes of its reading by id.
+/// A node by its own name (`model::name_of`), among the nodes of its reading by id.
 fn name(nodes: &HashMap<&str, &Node>, id: &str) -> String {
     name_of(nodes.get(id).copied(), id).to_string()
 }

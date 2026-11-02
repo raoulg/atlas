@@ -156,9 +156,12 @@ code: `plotkit.data.load`), or a name past the fiber the graph keeps of a librar
 (`ext:plotkit.data.load` at `--libraries 0`). The tag of the second injection is a prism: `of` makes a name past the
 code an id, `path` takes it back, `path(of(p)) = Some(p)`, `of(p) = id` wherever `path(id) = Some(p)`, and an id of
 the code's has no path. What a reader resolves a name to is a value of the coproduct (`Resolved`); the graph keeps its
-id, the key its edges, its indexes and the page share.
-**Where.** Principle `lens`; `design.md` §1; `model::ext` and `model::Resolved`, held by `engine/tests/readers.rs`
-(the tag is spelled once).
+id, the key its edges, its indexes and the page share. Either injection says a dotted name a reader finds the node by
+(`model::dotted`). A sum written in place says none: it is one object however and wherever it is written ("Coproducts"),
+so no module or place that writes it is part of its id, which is the set of its variants' ids (`model::sum`); a list
+names it as Atlas says it everywhere, by its own name (`model::said`).
+**Where.** Principle `lens`; `design.md` §1; `model::ext`, `model::sum`, `model::dotted` and `model::Resolved`, held by
+`engine/tests/readers.rs` (the tag is spelled once) and `engine/tests/one_name.rs`.
 
 ### Pullback: a filter
 **What.** The pullback of `true` along a predicate `p: G → Bool` is the part of G where p holds.
@@ -277,14 +280,20 @@ identity on terms: made absolute (`std::path::absolute`, `pathlib`'s `absolute` 
 said. A database opened on a file is named by that file's term, as any file is,
 however the code builds its path (`Path("data") / kind / "counts.db"` and `f"data/{kind}/counts.db"`
 are one place). A variable of the environment is one place however its lookup names it
-(`os.environ["STORE"]`, `os.getenv(NAME)`, `process.env.STORE`, `process.env[NAME]` of a constant);
-a lookup whose name the code does not decide names no variable. A route
+(`os.environ["STORE"]`, `os.getenv(NAME)`, `process.env.STORE`, `process.env[NAME]` of a constant).
+Its name is a term like any other, and the lookup a function of it that commutes with substitution,
+as `parent` does: a lookup whose name a caller hands (`os.environ[name]`, `env::var(name)`,
+`process.env[name]`) is the variable that caller names, written in by the substitution that completes
+a path built from a parameter, never by one of its own, and with a default the code takes where the
+variable is not set it is that input with its default once the name is said; a lookup whose name is an
+element the code binds (`for name in ["REPORT", "LOG"]`) is each variable the collection names. A lookup
+whose name no code decides names no variable. A route
 is one in the same way, by what it serves: a set of methods at a path. `methods=["POST", "GET"]`,
 `["GET", "POST"]` and `{"GET", "POST"}` are one set, and a registration for every method
 (`app.all`) is the top of the set. Its label, `GET|POST /items`, writes the set in the order of
 `knowledge::REQUEST_WAYS`; a request meets a route whose set holds its method, at its path.
 **Where.** `paths.rs` (`Seg`, `join`, `place`, `folders`, `bound`, `each`, `chosen`, `substitute`, `with_suffix`,
-`Callers`, `served`, `serving`), `model.rs` (`Route`, `Methods`, `Request`),
+`environment_named`, `looked_up`, `Callers`, `served`, `serving`), `model.rs` (`Route`, `Methods`, `Request`),
 the readers' `paths.rs` (`Eval::of`; Rust's `Eval::changed`), `flow.rs` (`Touch::place`), `plan.js` (`pathWords`),
 `knowledge.rs` (`PathFn`, `ELEMENT_NAMES`, `LISTING_ENTRIES`); the pairs `python/paths`, `places`, `kept`, `workbench`,
 `unset`, `opened`, `twice` (#324) and `trees` (#325).
@@ -453,10 +462,13 @@ marked: the step after it is handed in each reading what that reading gives it. 
 makes whole is the caller's arrow; a file named by a function's own parameter (`load.path`) is
 named so whoever calls the function. A rename is an isomorphism of the typed arrows in and out:
 `list[float] → float` is no `str → str`. `atlas-code changes` reads the same union along each route,
-so the picture and the list hold the same marks.
+so the picture and the list hold the same marks, and it says each construct by the name the picture gives it
+(`model::said`): a method with its class, an initializer as the call to its class, a type whose name another type of
+the union shares with its module. One name said of two constructs points at neither.
 **Where.** `atlas-code history`, `atlas-code changes A..B`, a vision beside the working tree (`atlas
 mcp`'s `vision`); `diff::union`, `diff::reading`, `changes::between`; `design.md` §4, L5. Held by `engine/tests/arrows.rs`:
-on two readings of the same nodes, the marks are those of the direct arrows, and a node renamed is one node.
+on two readings of the same nodes, the marks are those of the direct arrows, and a node renamed is one node; and by
+`engine/tests/one_name.rs`: the list names each construct as the page's model draws it.
 
 ### Partial morphisms: a prophecy
 **What.** A partial map is defined on part of its domain; a graph with some objects and arrows
@@ -906,7 +918,7 @@ Each law is then a theorem of the construction, or it is not yet, and says which
 | Closing | `q` is a function of the set of open boxes | `topology` (closing draws the picture it was) |
 | Reading | the own arrow of an opened step is its border | `topology` |
 | Endpoints | every image of a place or an occurrence is a box | `pictures.py walk` |
-| Across the cut | a cut step's arrow is the image of its body, made by the same construction (`cutArrow`) | `plans.rs` at the budgets 1, 2 and 3 (`ATLAS_FINE_BUDGET`), which cut the small programs as a large one is cut: each line of a cut step counts the fine lines its body draws there, and each cut step of the closed picture, opened and planned anew, refines the picture it was cut in (`cutOpenings` in `plans.mjs`); `topology` with a small budget |
+| Across the cut | a cut step's arrow is the image of its body, made by the same construction (`cutArrow`) | `plans.rs` at the budgets 1, 2 and 3 (`ATLAS_FINE_BUDGET`), which cut the small programs as a large one is cut: each line of a cut step counts the fine lines its body draws there, and each cut step of the closed picture, opened and planned anew, refines the picture it was cut in (`cutOpenings` in `plans.mjs`); at the same budgets a route whose body, unfolded, has 2^40 occurrences, which only an arrow made without unfolding the body can plan (`a_step_beyond_the_cut_is_made_without_unfolding_its_body`); `topology` with a small budget |
 | The overview | not built on a finest plan: the packages' pictures are drawn by their own construction, one box per type (#69) | `walk` only |
 
 The oracle holds the pictures to one another, not to the program. Whether `F` says what the code

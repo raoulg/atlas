@@ -1884,11 +1884,15 @@ if (!fine) for (const P of pills.values()) { P.D = toShown(P.D); P.C = toShown(P
 // them into one box. A value a step planned by itself takes by a name its caller holds (`condOf`) is the caller's to say:
 // from beyond where the caller's value is, made in a frame where that is made there (#319). `splitBy` keeps, of each step,
 // the values of each kind it takes from beyond or from its caller: each by its key in this plan, its name and whether it is
-// its caller's
+// its caller's. It is a set of such groups, each held once: which kinds are split is a function of the groups there are,
+// and so is what a caller makes of them, never of how often one occurs. A step beyond the cut brings the groups of its body
+// unfolded to its leaves, where a function its body reaches by many calls brings one group for each call; held once, they
+// are as many as the groups that differ, not as many as the body has occurrences (#379)
 const split = new Set(), splitBy = [];
 if (fine) {
   const unmade = k => k.startsWith("t:") && !!places.get(k)?.name && !places.get(k).at;
   const entry = k => (unmade(k) ? [k, places.get(k).name, !!places.get(k).cond] : null);
+  const groups = new Set();
   for (const P of pills.values()) {
     // a step beyond the cut takes what the steps of its body take, each by itself: they decide, in its plan, and here is
     // what its caller holds of those that are its caller's
@@ -1900,6 +1904,9 @@ if (fine) {
           return [...by];
         });
     for (const [t, es] of takes) {
+      const g = JSON.stringify([t, es]);
+      if (groups.has(g)) continue;
+      groups.add(g);
       splitBy.push([t, es]);
       if (new Set(es.filter(e => !e[2]).map(e => e[1])).size > 1) split.add(t);
     }
