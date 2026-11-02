@@ -138,12 +138,14 @@ on the boxes the view draws: a step takes a value by the name that holds it, els
 its kind (an override runs on the value its call runs on); two values with names of their own
 are two values, also when they have one type (`Serial([a, b])` takes both).
 
-A view is its fibers and its ideals: `{route, kind, part, focus, open: {parts, units, steps,
+A view is its fibers and its ideals: `{route, kind, part, focus, tests, open: {parts, units, steps,
 functions, families, places, dirs}}`. The page writes it to its address after every drawing, so
 a picture is a link, and `atlas-code view --view` and the MCP tool `view` draw a page in a view an
 agent wrote. A step opens by its path through the route (`pkg.cli.build/2`, the third call of
 `build`) or, for whoever names functions rather than calls, every step of a function at once
-(`open.functions`). The page applies the fibers first, then the quotients by the ideals' cuts.
+(`open.functions`). The overview leaves the test code out, a fiber `tests: true` lets go of
+(`mathematics.md`, "A filter: the program without its test code"). The page applies the fibers
+first, then the quotients by the ideals' cuts.
 
 A storage quotient groups only places in the current fiber. A symbolic disk place used both
 ways stands as one place, rather than belonging to both directional groups. A single member stands as itself,

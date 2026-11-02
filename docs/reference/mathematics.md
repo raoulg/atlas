@@ -174,6 +174,34 @@ names it as Atlas says it everywhere, by its own name (`model::said`).
 nodes and the edges between them.
 **Where.** `design.md` §1, "Fibers".
 
+### A filter: the program without its test code
+**What.** The predicate *test code* on the functions of the graph: a function is test code when it
+is a test (an entry of kind `test`), when a reader marks it as test code (`Node::test`), or when it
+stands in a module that is. Each language says what it compiles or collects only to test: Rust's
+`#[test]`, an item under `#[cfg(test)]` and a crate's `tests/`; pytest's `test_*.py`, `*_test.py`
+and `conftest.py`; a `*.test.ts`, a `*.spec.ts` and what lies below `__tests__`. The readers hold
+it; no project declares it.
+**In Atlas.** The overview is drawn on the fiber where the code is no test code, unless the reader
+keeps the test code (the sight's `tests`). The fiber is the full subgraph on the functions of the
+program: their own arrows, the calls between two of them, the packages and parts that hold a module
+of the program, and of the types and places what those functions make, take and touch. A touch
+whose path its callers make whole is a line where one conjunction of its formula holds (Who makes a
+path whole), read with the test code false: a function that reads the path a test hands it reads
+nothing of the program's there. A package holds tests beside the code they test, so the predicate is
+not saturated by the package quotient (Saturation): the fiber is taken first, on the code, and the
+overview is the quotient of what is left. The default leaves the test code out because the overview
+answers what the program does, and test code is not the program: Cargo builds it only to test the
+crate, pytest collects it, and a test is a way in from outside the program (the principles' reading).
+The test code stays in the graph: its tests are routes of their own, and one click keeps it.
+**Where.** `testCode` and `overviewBase` (`kept`, `whole`) in `viewer/plan.js`; the principles'
+`test` in `principles.rs`, the same predicate; the readers: `rust/passes.rs` (`cfg_test`),
+`rust.rs`, `python.rs` with `knowledge::python_test_file`, `typescript.rs` with
+`knowledge::TYPESCRIPT_TEST_FILES`. Held by `engine/tests/plans.rs`
+(`every_package_view_is_the_image_of_its_plan`: the fine plan without the test code is the fiber,
+taken on the plan, of the one with it, and every picture is the image of that fiber, for every set
+of open packages; `test_code_cuts_a_package_in_two`: the counterexample to taking the quotient
+first, in each language), on `engine/tests/plans/overview-tests`; issue #400.
+
 ### Coequalizer: a quotient
 **What.** A coequalizer identifies what an equivalence relates.
 **In Atlas.** Zooming out identifies the nodes of a class (by base class, by package, by
@@ -954,7 +982,10 @@ lines it stands for, all of them its own. A call goes from the caller's block to
 internal to a block that holds both. So a package that makes a type another package takes, and takes
 it itself, draws both lines: the line into it is the image of its own taking, and a picture without
 it would gain the line when the package is opened. A closed package with no line still stands, so
-that it can be opened.
+that it can be opened. Without the test code, `F₀` is built on the fiber of the code where it is no
+test code (A filter: the program without its test code), and is the fiber of the `F₀` with it: each
+line of a touch carries the formula of who makes its path whole, so the fiber can be taken on the
+plan too, and both ways give one plan.
 
 On the image the page then does only what is a quotient of `F` or a way of drawing it: the merge of
 siblings, the storage quotient and the fold (above); a value with no name and no type of the code's
@@ -974,7 +1005,7 @@ Each law is then a theorem of the construction, or it is not yet, and says which
 | Reading | the own arrow of an opened step is its border | `topology` |
 | Endpoints | every image of a place or an occurrence is a box | `pictures.py walk` |
 | Across the cut | a cut step's arrow is the image of its body, made by the same construction (`cutArrow`) | `plans.rs` at the budgets 1, 2 and 3 (`ATLAS_FINE_BUDGET`), which cut the small programs as a large one is cut: each line of a cut step counts the fine lines its body draws there, and each cut step of the closed picture, opened and planned anew, refines the picture it was cut in (`cutOpenings` in `plans.mjs`); at the same budgets a route whose body, unfolded, has 2^40 occurrences, which only an arrow made without unfolding the body can plan (`a_step_beyond_the_cut_is_made_without_unfolding_its_body`); `topology` with a small budget |
-| The overview | `F₀/q` maps onto `F₀/q′` along the blocks, as a route's pictures do, the calls a channel among them | the oracle; `plans.rs` (`every_package_view_is_the_image_of_its_plan`), for every set of open packages and parts of every program: each line counts the fine lines it stands for and none is reached, a type internal to a closed package draws none, each call goes between the blocks of its ends, and the picture is a function of the set of open boxes |
+| The overview | `F₀/q` maps onto `F₀/q′` along the blocks, as a route's pictures do, the calls a channel among them | the oracle; `plans.rs` (`every_package_view_is_the_image_of_its_plan`), for every set of open packages and parts of every program: each line counts the fine lines it stands for and none is reached, a type internal to a closed package draws none, each call goes between the blocks of its ends, and the picture is a function of the set of open boxes; all of it again without the test code, whose plan is the fiber of the plan with it |
 
 The oracle holds the pictures to one another, not to the program. Whether `F` says what the code
 does is a test of its own, `engine/tests/plans.rs`: beside a small program a `.plan` file writes down
@@ -1005,7 +1036,10 @@ locals pairs (`common::a_recursive_call_takes_what_its_call_hands_it`, `common::
 **What.** A set is saturated by an equivalence when it never cuts a class in two.
 **In Atlas.** A filter and a quotient commute exactly when the filter's predicate is saturated by
 the quotient's equivalence. Otherwise the order of a view is meaning, and Atlas takes the filter
-first, so the reader decides what exists before the quotient decides how it groups. A type picked
+first, so the reader decides what exists before the quotient decides how it groups. Test code is
+such a predicate: a package holds tests beside the code they test, so the overview without the test
+code is the quotient of the fiber, and a package that holds both is a box both overviews draw with
+other lines (A filter: the program without its test code). A type picked
 in the Type lattice is the set of its values, the type and every type below it (a class below its base, a type
 below the family `kind` puts it in, a shape below its rank family: the lattice draws both orders as one), and the Flowchart
 lights its fiber in a route: a box is lit by what it is, so a closed family the pick cuts in two
