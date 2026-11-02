@@ -19,6 +19,9 @@ paragraphs (code in fences), an `Issues:` line, and the point's pictures:
   structure, inline, so that they take the page's colours in the light and the dark, each with what it
   shows beneath it.
 - `Bars: label = 18.9 s; label = 0.14 s | caption`: a bar chart of measured numbers.
+- `Bench: releases/<version>/bench.json | caption`: the release's speed, the same measures every release
+  (`tools/perf.py release-bars` writes the file): per program of the corpus, named by its card, each measure of
+  the release before beside this one, and a line per measure over every release since the series began.
 - `Pictures: changes/x.jpg`: screenshots, from the notes each issue leaves in `docs/changes/`.
 - `Example: name | code`: the small program `fixtures/<name>` drawn by the release before and by this one, beneath
   the code the point is about; `Example: name` shows the program's own code, `Example: name |` the pictures alone.
@@ -33,6 +36,7 @@ documentation has it, at `https://atlas.pttrn.io/next/releases/<version>/`, whic
 """
 
 import html
+import json
 import pathlib
 import re
 import sys
@@ -127,6 +131,23 @@ section li{margin:4px 0}
 .bar .v{height:22px;background:var(--key);min-width:2px;position:relative}
 .bar .v span{position:absolute;left:calc(100% + 8px);top:1px;font-family:var(--mono);font-size:13px;color:var(--ink);white-space:nowrap}
 .bars .cap{font-size:13.5px;color:var(--ink-2);margin-top:10px}
+.bench{margin:22px 0;background:var(--panel);border:1px solid var(--line);padding:16px 18px}
+.b-row{border-top:1px solid var(--line);padding:14px 0 6px}
+.b-row:first-child{border-top:0;padding-top:0}
+.b-name{margin:0;font-weight:500;color:var(--ink)}
+.b-card{margin:2px 0 10px;font-family:var(--mono);font-size:12px;color:var(--ink-3)}
+.b-cells{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,220px),1fr));gap:12px 22px}
+.b-cell .l{font-size:13px;color:var(--ink-2);margin:0 0 4px}
+.b-bar{display:grid;grid-template-columns:56px 1fr;gap:8px;align-items:center;font-family:var(--mono);font-size:12px;color:var(--ink-3);margin:3px 0}
+.b-bar .v{height:14px;min-width:2px;position:relative}
+.b-bar .v span{position:absolute;left:calc(100% + 6px);top:-1px;white-space:nowrap;color:var(--ink)}
+.b-bar.before .v{background:var(--ink-3)}.b-bar.after .v{background:var(--key)}
+.b-ratio{font-family:var(--mono);font-size:12px;color:var(--ink-3);margin:2px 0 0}
+.b-lines{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,230px),1fr));gap:14px 22px;margin-top:18px;border-top:1px solid var(--line);padding-top:14px}
+.b-lines figure{margin:0}
+.b-lines svg{display:block;width:100%;height:auto}
+.b-lines figcaption{font-size:12.5px;color:var(--ink-2);margin-top:2px}
+.bench .cap{font-size:13.5px;color:var(--ink-2);margin:14px 0 0}
 .pager{display:flex;justify-content:space-between;gap:16px;border-top:1px solid var(--line);margin-top:48px;padding-top:20px;font-family:var(--mono);font-size:14px}
 .pager a{text-decoration:none;color:var(--ink-2)}
 .pager a:hover{color:var(--accent)}
@@ -201,7 +222,7 @@ def read(path: pathlib.Path) -> dict:
             fields[m.group(1).lower()] = " ".join(m.group(2).split())
             return ""
 
-        keys = "Issues|Pictures|Draw|Atlas|Diagram|Bars|Hero|Example|Compare"
+        keys = "Issues|Pictures|Draw|Atlas|Diagram|Bars|Bench|Hero|Example|Compare"
         rest = re.sub(rf"(?ms)^({keys}): (.*?)(?=\n\s*\n|\n(?:{keys}): |\Z)", field, rest)
         points.append({"title": re.sub(r"^\d+\.\s*", "", title.strip()), "text": rest, **fields})
     release = {"version": head.get("version", path.stem), "date": head.get("date", ""), "lede": parts[0].strip(), "points": points}
@@ -242,6 +263,8 @@ def page(release: dict, older: dict | None = None, newer: dict | None = None) ->
             body.append(f'<figure class="diagram">{svg(DOCS / diagram.strip())}{said}</figure>')
         if point.get("bars"):
             body.append(bars(point["bars"]))
+        if point.get("bench"):
+            body.append(bench(point["bench"]))
         for n in re.findall(r"#(\d+)", point.get("atlas", "")):
             body.append(card(release, int(n)))
         pictures = [p.strip() for p in point.get("pictures", "").split(",") if p.strip()]
@@ -338,6 +361,72 @@ def bars(spec: str) -> str:
         for label, value, n in rows
     )
     return f'<div class="bars">{out}' + (f'<p class="cap">{inline(caption.strip())}</p>' if caption.strip() else "") + "</div>"
+
+
+def measured(value: float | None, unit: str) -> str:
+    """A measured number as the page says it."""
+    if value is None:
+        return "–"
+    if unit == "MB":
+        return f"{value:,.0f} MB"
+    return f"{value:.2f} s" if value < 1 else f"{value:.1f} s" if value < 100 else f"{value:,.0f} s"
+
+
+def bench(spec: str) -> str:
+    """`releases/<version>/bench.json | caption`: the release's speed. A row per program, named by its card (a private
+    one by its card alone), each measure as two bars, the release before and this one, on a scale of their own; then a
+    line per measure, its value on the night of each release since the series began, from zero."""
+    path, _, caption = (x.strip() for x in spec.partition("|"))
+    data = json.loads((DOCS / path).read_text())
+    before, after = html.escape(data["before"]), html.escape(data["after"])
+    rows = []
+    for row in data["rows"]:
+        cells = []
+        for c in row["cells"]:
+            top = max([v for v in (c["before"], c["after"]) if v is not None] or [0]) or 1
+            pair = "".join(
+                f'<div class="b-bar {side}"><span>{name}</span><div class="v" style="width:{0 if c[side] is None else max(1.0, 70 * c[side] / top):.1f}%">'
+                f'<span>{measured(c[side], c["unit"])}</span></div></div>'
+                for side, name in (("before", before), ("after", after))
+            )
+            ratio = f"×{c['after'] / c['before']:.2f}" if c["before"] and c["after"] is not None else "not measured on both"
+            cells.append(f'<div class="b-cell"><p class="l">{html.escape(c["label"])}</p>{pair}<p class="b-ratio">{ratio}</p></div>')
+        name = f"<code>{html.escape(row['name'])}</code>" if row.get("name") else html.escape(row.get("title") or "A private program")
+        said = f'<p class="b-card">{html.escape(row["said"])}</p>' if row.get("said") else ""
+        rows.append(f'<div class="b-row"><p class="b-name">{name}</p>{said}<div class="b-cells">{"".join(cells)}</div></div>')
+    lines = "".join(line(data["releases"], s, data["rows"][s["row"]].get("short", "")) for s in data["series"])
+    lines = f'<div class="b-lines">{lines}</div>' if lines else ""
+    said = f'<p class="cap">{inline(caption)}</p>' if caption else ""
+    return f'<div class="bench">{"".join(rows)}{lines}{said}</div>'
+
+
+def line(releases: list[str], series: dict, short: str) -> str:
+    """One measure over the releases, from zero: a dot per release whose night measured it, with its value."""
+    width, height, left, pad = 230, 92, 8, 14
+    shown = {p[0]: p for p in series["points"]}
+    top = max(p[1] for p in series["points"]) * 1.15 or 1
+
+    def x(i: int) -> float:
+        return left + (width - 2 * left) * (i + 0.5) / len(releases)
+
+    def y(v: float) -> float:
+        return height - pad - (height - 2 * pad - 8) * v / top
+
+    at = [(x(i), y(shown[r][1]), shown[r]) for i, r in enumerate(releases) if r in shown]
+    parts = [f'<line class="d-axis" x1="{left}" y1="{height - pad}" x2="{width - left}" y2="{height - pad}"/>']
+    if len(at) > 1:
+        parts.append(f'<polyline class="d-curve" style="stroke-width:2" points="{" ".join(f"{a:.1f},{b:.1f}" for a, b, _ in at)}"/>')
+    for a, b, (release, value, night, cpu) in at:
+        said = measured(value, series["unit"])
+        parts.append(
+            f'<circle class="d-dot" cx="{a:.1f}" cy="{b:.1f}" r="3"><title>{html.escape(release)}: {said}, '
+            f"{html.escape(night)} on {html.escape(cpu)}</title></circle>"
+            f'<text class="d-label" style="font-size:11px" x="{a:.1f}" y="{b - 7:.1f}" text-anchor="middle">{said}</text>'
+        )
+    for i, r in enumerate(releases):
+        parts.append(f'<text class="d-label" style="font-size:11px" x="{x(i):.1f}" y="{height - 1}" text-anchor="middle">{html.escape(r)}</text>')
+    title = f"{html.escape(short)}, {html.escape(series['label'])}" if short else html.escape(series["label"])
+    return f'<figure><svg viewBox="0 0 {width} {height}" role="img" aria-label="{title}">{"".join(parts)}</svg><figcaption>{title}</figcaption></figure>'
 
 
 def report_of(release: dict) -> dict:
