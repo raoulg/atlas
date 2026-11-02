@@ -115,7 +115,7 @@ fn atlas_view_reads_as_its_algebra() {
     let call = |target| first_call_path(g, "atlas-code.view", target).unwrap_or_else(|| panic!("atlas-code.view reaches {target}"));
     let read = call("atlas-engine.repo.Repo.read");
     let parse = call("atlas-engine.language.Language.parse");
-    let findings = call("atlas-engine.principles.check");
+    let findings = call("atlas-engine.principles.check_among");
     let flow = call("atlas-engine.flow.of");
     let page = call("atlas-code.page.Html.of");
     let write = call("atlas-code.page.Html.write");
