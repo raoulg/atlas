@@ -1,10 +1,12 @@
 name: nightly
 
-# The nightly build of `next`, made when `next` has moved and `ci`'s tests, run here on three platforms
-# for exactly that commit, are green: the CLI for five platforms and Atlas Studio for macOS and Windows
+# The nightly build of `next`, made when it has moved and `ci`'s tests, run here on three platforms for
+# exactly that commit, are green: the CLI for five platforms and Atlas Studio for macOS and Windows
 # (`studio.yml`). A failing test is a red nightly and no new build; the last one stays. A push to `next`
-# runs no `ci` of its own, so this is where `next` is tested on Linux and Windows; while a stable release
-# is prepared, a nightly is started by hand whenever a build is wanted. Every
+# runs no `ci` of its own, so this is where `next` is tested on Linux and Windows. While a release branch
+# `release-X.Y` is open, the nightly builds it instead: the nightly channel is then the release candidate,
+# what is tested before it is promoted to stable, and `next` reaches the nightly again once the branch is
+# merged into `main` and removed. `ref` builds another branch by hand. Every
 # build is its own immutable pre-release, `nightly-<yyyymmddHHMM>`, which the tap's formula names
 # with its checksums; the newest seven are kept. The pre-release `nightly` is the moving pointer
 # `install.sh` reads: its assets are replaced in place and its tag moved to the build. A
@@ -17,9 +19,13 @@ on:
   workflow_dispatch:
     inputs:
       force:
-        description: "Build even when next has not moved since the last nightly"
+        description: "Build even when the branch has not moved since the last nightly"
         type: boolean
         default: false
+      ref:
+        description: "The branch to build; empty: the open release branch, else next"
+        type: string
+        default: ""
 
 permissions:
   contents: write
@@ -32,10 +38,20 @@ jobs:
       build: ${{ steps.pick.outputs.build }}
       sha: ${{ steps.pick.outputs.sha }}
       stamp: ${{ steps.pick.outputs.stamp }}
+      ref: ${{ steps.branch.outputs.ref }}
     steps:
+      - id: branch
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REF: ${{ inputs.ref }}
+        run: |
+          if [ -z "$REF" ]; then
+            REF=$(gh api "repos/$GITHUB_REPOSITORY/branches" --paginate -q '.[].name' | { grep -E '^release-[0-9]+\.[0-9]+$' || true; } | sort -V | tail -1)
+          fi
+          echo "ref=${REF:-next}" >> "$GITHUB_OUTPUT"
       - uses: actions/checkout@v7
         with:
-          ref: next
+          ref: ${{ steps.branch.outputs.ref }}
       - id: pick
         env:
           GH_TOKEN: ${{ github.token }}
@@ -48,7 +64,7 @@ jobs:
           if [ "$FORCE" = true ]; then
             echo "build=true" >> "$GITHUB_OUTPUT"
           elif [ "$last" = "$sha" ]; then
-            echo "next has not moved since the last nightly ($sha)"
+            echo "${{ steps.branch.outputs.ref }} has not moved since the last nightly ($sha)"
             echo "build=false" >> "$GITHUB_OUTPUT"
           else
             echo "build=true" >> "$GITHUB_OUTPUT"
@@ -118,8 +134,9 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           SHA: ${{ needs.decide.outputs.sha }}
           STAMP: ${{ needs.decide.outputs.stamp }}
+          REF: ${{ needs.decide.outputs.ref }}
         run: |
-          notes="The nightly build of next at ${SHA:0:7}, ${STAMP}. Not a release: install it with ATLAS_CHANNEL=nightly, or with brew install raoulg/tap/atlas-code-nightly."
+          notes="The nightly build of ${REF} at ${SHA:0:7}, ${STAMP}. Not a release: install it with ATLAS_CHANNEL=nightly, or with brew install raoulg/tap/atlas-code-nightly."
           gh release create "nightly-$STAMP" dist/* --repo "$GITHUB_REPOSITORY" --prerelease --target "$SHA" \
             --title "nightly $STAMP" --notes "$notes"
           if gh release view nightly --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
