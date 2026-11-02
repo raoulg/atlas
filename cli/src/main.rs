@@ -446,7 +446,8 @@ fn local(arg: PathBuf, opts: &mut Options) -> Result<(PathBuf, Option<remote::Cl
 fn check(repo: &std::path::Path, opts: &Options, json: bool, all: bool) -> Result<bool> {
     // each part in its own language: what a Python package declares, a crate's compiler checks
     let graphs = parts::analyze_parts(&[repo.to_path_buf()], opts)?;
-    let parts: Vec<(&str, Vec<principles::Finding>)> = graphs.iter().map(|g| (g.root.as_str(), atlas_engine::aside::check(g))).collect();
+    let parts: Vec<(&str, Vec<principles::Finding>)> =
+        graphs.iter().map(|g| g.root.as_str()).zip(atlas_engine::aside::check_all(&graphs)).collect();
     let stale = atlas_engine::aside::stale(&graphs.iter().zip(&parts).map(|(g, (_, f))| (g, f.as_slice())).collect::<Vec<_>>());
     if json {
         let reports: Vec<serde_json::Value> =
