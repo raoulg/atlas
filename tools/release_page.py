@@ -494,6 +494,14 @@ def bench(spec: str) -> str:
 SCALE = 2
 LANGUAGE = {"python": "Python", "rust": "Rust", "typescript": "TypeScript"}
 
+def shape(card: dict) -> str:
+    """A program as a reader can lay it beside their own: its languages and its lines, `Python, 4.4k lines`. Its name says
+    nothing to whoever does not know it; its card, nodes and edges included, stands in the fold."""
+    n = card.get("lines") or 0
+    lines = f"{n} lines" if n < 1000 else f"{n / 1000:.1f}k lines" if n < 10000 else f"{round(n / 1000)}k lines"
+    return f"{' + '.join(LANGUAGE.get(x, x) for x in card.get('languages') or [])}, {lines}"
+
+
 def summary(data: dict) -> str:
     """The release's one number, then a line per measure: its bar the geometric mean of after / before over the
     programs, on a log scale (twice as fast and twice as slow are bars of one length, on either side of the middle),
@@ -505,10 +513,7 @@ def summary(data: dict) -> str:
         return ""
     measures: dict[str, list[tuple[str, float, bool]]] = {}
     for row in data["rows"]:
-        who = (row.get("short") or row.get("name") or "").split(",")[0]
-        tongues = (row.get("card") or {}).get("languages") or []
-        if tongues and row.get("name"):
-            who += f" ({' + '.join(LANGUAGE.get(x, x) for x in tongues)})"
+        who = shape(row["card"]) if row.get("card") else row.get("short") or row.get("name") or ""
         for c in row["cells"]:
             if c["before"] and c["after"] is not None:
                 measures.setdefault(c["label"], []).append((who, c["after"] / c["before"], bool(c.get("changed"))))
@@ -533,7 +538,7 @@ def summary(data: dict) -> str:
             for who, r, changed in ms
         )
         said = " · ".join(
-            f'<b class="{("faster" if r < 1 else "slower") if changed else "same"}">{html.escape(who)} {change(r) if r else "to 0"}</b>'
+            f'<b class="{("faster" if r < 1 else "slower") if changed else "same"}">{html.escape(who)}: {change(r) if r else "to 0"}</b>'
             for who, r, changed in sorted(ms, key=lambda m: m[1])
         )
         lines.append(
