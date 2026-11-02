@@ -24,7 +24,7 @@ const D = JSON.parse(fs.readFileSync(dataJson, "utf8"));
 // `ATLAS_FINE_BUDGET=n` cuts the plan as a large program's is cut (`plan.js`, `FINE_BUDGET`)
 const window = process.env.ATLAS_FINE_BUDGET ? {ATLAS_FINE_BUDGET: Number(process.env.ATLAS_FINE_BUDGET)} : {};
 const M = new Function("D", "window", fs.readFileSync(planJs, "utf8") + `
-return {V, plan, imageOf, checkOpenings, treeInfo, stepLabel, oneOf, typeLabel, sideOfRoles, familyOf, kindOf, byId, ordersOn, stepOf, opens, frameOf, valueBox, foldDirs, filePath, valuesOf, closedFamily, typesIn, lightOf, cutBy, familyFrames, here, kindsOf};`)(D, window);
+return {V, plan, imageOf, checkOpenings, overviewOpen, treeInfo, stepLabel, oneOf, typeLabel, sideOfRoles, familyOf, kindOf, byId, ordersOn, stepOf, opens, frameOf, valueBox, foldDirs, filePath, valuesOf, closedFamily, typesIn, lightOf, cutBy, familyFrames, here, kindsOf};`)(D, window);
 const {V} = M;
 
 const SIDES = {in: "left", out: "right", mid: "between", both: "both"};
@@ -410,7 +410,76 @@ function quotient(F, view, set, homes, occ, valueName) {
   return out;
 }
 
-// with no route named, every route of the program but its tests
+// The overview is the image of one fine plan `F₀` of generators (mathematics.md, "One fine plan, every picture its image"):
+// the functions of the code, each with its own arrow, a type as one place, the places of the world, and the calls between
+// functions, a channel of their own. For every set of open packages and parts (each subset while there are few, else each
+// alone, each pair and all), the picture is asked of the quotient as the definition takes it: a function goes to its
+// outermost closed package, a type is internal to a closed package that holds every function that makes or takes it, and
+// each other line counts the fine lines it stands for, none of them reached; a call goes between the blocks of its two ends,
+// and is internal to one that holds both. Opening one more box refines the picture (the oracle, `checkOpenings`), and the
+// picture is a function of the set of open boxes, not of the order they were opened in
+function overviewFaults() {
+  V.route = null; V.kind = null; V.part = null; V.focus = new Set();
+  for (const k of Object.keys(V.open)) V.open[k] = new Set();
+  M.plan();
+  const F = window.atlasPlan.fine, out = [];
+  const boxes = [...F.frames.values()].map(f => f.step);
+  const sets = boxes.length <= ALL_SUBSETS
+    ? [...Array(1 << boxes.length).keys()].map(m => boxes.filter((_, i) => m & (1 << i)))
+    : [[], ...boxes.map(b => [b]), ...boxes.flatMap((a, i) => boxes.slice(i + 1).map(b => [a, b])), boxes];
+  const openAs = set => {
+    V.open.units = new Set(set.filter(s => s.startsWith("unit:")).map(s => s.slice(5)));
+    V.open.parts = new Set(set.filter(s => s.startsWith("part:")).map(s => s.slice(5)));
+  };
+  const first = new Map();
+  for (const set of sets) {
+    openAs(set);
+    const at = set.length ? `the overview with ${set.join(", ")} open` : "the overview closed";
+    const view = M.imageOf(F, M.overviewOpen, false);
+    for (const f of M.checkOpenings(F, view, false, M.overviewOpen)) out.push(`${at}: ${f}`);
+    // the block of a fine occurrence: its outermost closed frame, else itself
+    const block = id => {
+      let top = null;
+      for (let f = F.pills.get(id).parent; f; f = F.frames.get(f)?.parent) if (!M.overviewOpen(F.frames.get(f).step)) top = f;
+      return top || id;
+    };
+    const inside = (home, S) => { for (let f = home; f; f = F.frames.get(f)?.parent) if (f === S) return true; return false; };
+    const want = new Map();
+    for (const P of F.pills.values()) for (const [way, m] of [["D", P.D], ["C", P.C]]) for (const k of m.keys()) {
+      const b = block(P.id), pl = F.places.get(k);
+      if (b !== P.id && inside(pl?.home, b)) continue;
+      const key = JSON.stringify([b, way, view.q(k)]);
+      want.set(key, (want.get(key) || 0) + 1);
+    }
+    const drawn = new Map();
+    for (const B of view.pills.values()) for (const [way, n, r] of [["D", B.Dn, B.Dr], ["C", B.Cn, B.Cr]]) for (const [c, k] of n || []) {
+      drawn.set(JSON.stringify([B.id, way, c]), k);
+      if (r?.get(c)) out.push(`${at}: ${B.id} reaches ${c}, a line of its own code`);
+    }
+    for (const [k, n] of want) if (drawn.get(k) !== n) out.push(`${at}: the line ${k} counts ${drawn.get(k) ?? "nothing"}, the fine lines ${n}`);
+    for (const k of drawn.keys()) if (!want.has(k)) out.push(`${at}: the line ${k} stands for no fine line`);
+    const calls = new Set(F.calls.map(([a, b]) => [block("n:" + a), block("n:" + b)]).filter(([x, y]) => x !== y).map(([x, y]) => `${x}>${y}`));
+    const drawnCalls = new Set([...view.pills.values()].flatMap(P => [...(P.calls || [])].map(b => `${P.id}>${b}`)));
+    for (const c of calls) if (!drawnCalls.has(c)) out.push(`${at}: no call ${c}`);
+    for (const c of drawnCalls) if (!calls.has(c)) out.push(`${at}: the call ${c} stands for no call of the code`);
+    first.set(set, drawnOf(M.plan()));
+  }
+  for (const set of [...sets].reverse()) {
+    openAs(set);
+    if (drawnOf(M.plan()) !== first.get(set)) out.push(`the overview with ${set.join(", ")} open: drawn again after the other sets, the picture differs`);
+  }
+  for (const k of Object.keys(V.open)) V.open[k] = new Set();
+  return out;
+}
+function drawnOf(C) {
+  return JSON.stringify([drawn(C), [...C.pills.values()].map(P => [P.id, [...(P.calls || [])].sort()]).sort()]);
+}
+
+// with no route named, every route of the program but its tests; `--overview` asks the overview
+if (routes[0] === "--overview") {
+  process.stdout.write(JSON.stringify({"@overview": {facts: [], faults: overviewFaults()}}));
+  process.exit(0);
+}
 const named = routes.length ? routes : [...M.byId.values()].filter(n => n.entry && n.entry.kind !== "test").map(n => n.id);
 const result = {};
 for (const r of named) {

@@ -906,6 +906,33 @@ parse the command line to the entry. The closed picture is `F/q`:
   changes how much of `F` is held, never its picture, and opening a cut step refines as opening any step
   does: the picture it opens to, planned anew, maps onto the one it was cut in.
 
+The overview, a view with no route, is the image of a fine plan `F₀` of its own, built by the same
+`imageOf`. It has no route, so no order between its arrows and no moments: a value's identity is its
+type, drawn once. `F₀` is the graph of generators:
+
+- every function of the code is an occurrence with its own arrow (sentence 6: a package shows what its
+  own code does, not what it reaches through another package), in the package that holds it, the
+  smallest the overview opens to (a module); its frames are the code's hierarchy, parts, packages and
+  subpackages;
+- a type of data that the code both makes and takes is one place, from each function that makes it
+  (gives it back, builds it, changes it) to each that takes it; its home is the smallest package that
+  holds all of them;
+- every place of the world is at its concrete place, from or to each function whose own code touches
+  it; between parts, a route served over HTTP comes in through its part's place and a request to
+  another part's routes goes out to that part's;
+- a call from one function to another is a line of its own channel (rule 3). Building a class is a
+  call of its initializer; a class built from its fields runs no code, and building it is the line to
+  the type it makes.
+
+What is open is the map `q`, as on a route: a function goes to its outermost closed package or part.
+A type whose home is a closed package, or lies inside it, is internal to it and on no border; any
+other line between a function and a type or a place is one line of its block, counting the fine
+lines it stands for, all of them its own. A call goes from the caller's block to the callee's, and is
+internal to a block that holds both. So a package that makes a type another package takes, and takes
+it itself, draws both lines: the line into it is the image of its own taking, and a picture without
+it would gain the line when the package is opened. A closed package with no line still stands, so
+that it can be opened.
+
 On the image the page then does only what is a quotient of `F` or a way of drawing it: the merge of
 siblings, the storage quotient and the fold (above); a value with no name and no type of the code's
 drawn as a wire from its maker to its takers, a vertex between two arrows contracted (a homotopy, as
@@ -924,7 +951,7 @@ Each law is then a theorem of the construction, or it is not yet, and says which
 | Reading | the own arrow of an opened step is its border | `topology` |
 | Endpoints | every image of a place or an occurrence is a box | `pictures.py walk` |
 | Across the cut | a cut step's arrow is the image of its body, made by the same construction (`cutArrow`) | `plans.rs` at the budgets 1, 2 and 3 (`ATLAS_FINE_BUDGET`), which cut the small programs as a large one is cut: each line of a cut step counts the fine lines its body draws there, and each cut step of the closed picture, opened and planned anew, refines the picture it was cut in (`cutOpenings` in `plans.mjs`); at the same budgets a route whose body, unfolded, has 2^40 occurrences, which only an arrow made without unfolding the body can plan (`a_step_beyond_the_cut_is_made_without_unfolding_its_body`); `topology` with a small budget |
-| The overview | not built on a finest plan: the packages' pictures are drawn by their own construction, one box per type (#69) | `walk` only |
+| The overview | `F₀/q` maps onto `F₀/q′` along the blocks, as a route's pictures do, the calls a channel among them | the oracle; `plans.rs` (`every_package_view_is_the_image_of_its_plan`), for every set of open packages and parts of every program: each line counts the fine lines it stands for and none is reached, a type internal to a closed package draws none, each call goes between the blocks of its ends, and the picture is a function of the set of open boxes |
 
 The oracle holds the pictures to one another, not to the program. Whether `F` says what the code
 does is a test of its own, `engine/tests/plans.rs`: beside a small program a `.plan` file writes down
@@ -935,7 +962,8 @@ test runs the viewer's own model in node, the function every picture is drawn fr
 the pairs and of its programs.
 **Where.** `plan`, `sitesOf`, `figureOf`, `FIGURE_FIELDS`, `FIGURE_SLOTS` and `figurePart`, `setsAt` and `resolveWhole`, `throughOf` and `partIn`,
 `changedThrough` and `changesOwner`,
-`coarsen`, `cutArrow` and `typesOf`, `handTo` and `checkOpenings` in `viewer/plan.js`, `cutOpenings` in `engine/tests/plans.mjs`;
+`coarsen`, `cutArrow` and `typesOf`, `handTo` and `checkOpenings`, `overviewBase` and `overview` in `viewer/plan.js`, `cutOpenings` and
+`overviewFaults` in `engine/tests/plans.mjs`;
 the field an argument reads, `Steps::fills` and `Steps::read_of` (`body.rs`); the class each field of a class holds, `Node::holds`;
 which parameters of no type of the code's hold a value, `builder::settle_parameters`; the fields a condition tests,
 `Steps::tests` (`body.rs`), and whether a figure is made sure of, `guarded` in `viewer/plan.js`; the names a body binds

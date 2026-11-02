@@ -16,7 +16,12 @@ the light its closed box had to its frame and kinds (#296), and every box of fil
 open, in one step, to the files it held or to directories below it, leaving every other file where it stood. They are asked again with the plan cut as a large
 program's is cut, at the budgets 1, 2 and 3 (`ATLAS_FINE_BUDGET`), where a step beyond the cut is the image of its body
 and each of its lines counts the fine lines its body draws there, and where each step beyond the cut, opened as the page
-opens it and planned anew, must refine the picture it was cut in; the facts are asked of the finest plan only.
+opens it and planned anew, must refine the picture it was cut in; the facts are asked of the finest plan only. The
+overview of every program is asked the same of its own fine plan, the functions with their own arrows, a type as one
+place and the calls between functions: for every set of open packages and parts, each line counts the fine lines it
+stands for, a type internal to a closed package draws none, each call goes between the blocks of its ends, opening one
+more box refines the picture, and the picture is a function of the set of open boxes (`overview-packages` holds a type
+internal to a package and one a package makes, takes and hands to another).
 
 ```bash
 cargo test -p atlas-engine --test plans -- --nocapture                              # every program
