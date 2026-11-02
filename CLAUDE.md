@@ -278,6 +278,10 @@ else is a short-lived topic branch.
   box at a time in each route and must report no box that takes a line away, draws a line the closed box did not
   (`more`: by rule 1 a fault of the closed picture), moves a box into or out of a frame that is not the one opened, or
   does not close to the picture it was (`docs/reference/mathematics.md`, "Refinement keeps what it does not refine").
+  It is a sample, never a proof, so it runs within a budget: `ATLAS_TOPOLOGY_SECONDS=600` per subject takes the routes in
+  an order drawn from a printed seed (`ATLAS_SEED` asks again) and stops at the budget. Every route of a large program
+  (Atlas has some 450, about fifteen page loads each) proves no more than a sample, and the program changes meanwhile.
+  `walk` opens one page per view and runs whole (on Atlas some 600 views).
 - `atlas-code check` is a signal to look critically at the code and at what the check claims, never an
   oracle and never a target. Zero findings on Atlas is no goal: never change Atlas's code, or bend a
   rule, to keep `atlas-code check .` quiet. Where a finding is wrong, repair the rule and let Atlas carry
