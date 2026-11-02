@@ -781,6 +781,31 @@ pub fn a_walk_of_a_tree_is_one_place_at_every_depth(language: &str, walks: &[(&s
     }
 }
 
+/// The keys pair of `language`: `main` lists the notes in `notes` and reads each back by its key, where it lies within the
+/// folder. The clean side takes the key with the language's own operation (`relative_to`, `strip_prefix`, `path.relative`)
+/// and `read` joins it back to the folder: `root.join(note.strip_prefix(root))` is `note` (#352, `mathematics.md`, "Paths as
+/// terms"), so what `main` makes `read` read is the notes it listed. The shortcut cuts the key out of the path's text by its
+/// length, a value Atlas does not follow, so what it reads is a name of its own below the folder, never the notes it listed.
+/// So in every language.
+#[allow(dead_code)]
+pub fn a_key_joined_back_to_its_root_is_the_note(language: &str) {
+    let p = pair(&format!("keys/{language}"));
+    for (side, g) in [("clean", &p.clean), ("shortcut", &p.shortcut)] {
+        let main = g.node("notes.main").unwrap_or_else(|| panic!("{language} {side}: no node notes.main"));
+        let listed: BTreeSet<String> =
+            main.touches.iter().filter(|t| t.kind_name() == "disk_read").map(|t| format!("{}*", t.what)).collect();
+        assert_eq!(listed, BTreeSet::from(["notes/*".to_string()]), "{language} {side}: what main lists");
+        let read = g.node("notes.read").unwrap_or_else(|| panic!("{language} {side}: no node notes.read"));
+        let by_main: BTreeSet<String> = read
+            .touches
+            .iter()
+            .filter(|t| t.kind_name() == "disk_read" && t.by.contains(&Both::one("notes.main")))
+            .map(|t| t.what.clone())
+            .collect();
+        assert_eq!(by_main == listed, side == "clean", "{language} {side}: read by main {by_main:?}, listed {listed:?}");
+    }
+}
+
 /// The locals pair of `language`, its route `gathered`: the clean side writes the two levels out once in the list it shows
 /// (`both = [first, second]`), the shortcut writes the first and pushes the second onto the list it named (`both = [first];
 /// both.append(second)`, `both.push(second)`). A change in place is the name bound anew by a step (#327: `p.push(x)` is `p =

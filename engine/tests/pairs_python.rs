@@ -3204,3 +3204,10 @@ fn a_lookup_is_the_projection_its_subscript_is() {
         &[],
     );
 }
+
+/// The keys pair: a key taken with `note.relative_to(root)` and joined back to its folder names the note it was taken from; one cut
+/// out of the path's text is a name of its own (#352).
+#[test]
+fn places_a_key_joined_back_to_its_root_is_the_note() {
+    common::a_key_joined_back_to_its_root_is_the_note("python");
+}

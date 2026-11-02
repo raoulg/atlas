@@ -665,6 +665,7 @@ impl<'a> Eval<'a> {
             PathFn::Environment => vec![environment_named(&arg(0)).unwrap_or_else(|| hole("call"))],
             PathFn::Relative if args.len() > 1 => cross(&arg(1).iter().map(parent).collect::<Vec<_>>(), &arg(0), "/"),
             PathFn::Relative => arg(0),
+            PathFn::Within => crate::paths::within_each(&arg(1), &arg(0)),
         }
     }
 

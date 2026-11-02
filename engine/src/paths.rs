@@ -186,9 +186,79 @@ pub enum Seg {
     /// (`written_in`); once it is said, the lookup is that variable (`looked_up`), `{$STORE}` for the
     /// name `"STORE"`.
     Env(Built, Option<Built>),
+    /// A path as it lies within a base, where neither is said far enough to take the base off its front
+    /// (`within`): `b.strip_prefix(a)`, `b.relative_to(a)`, `path.relative(a, b)`, by the name the code
+    /// binds it to (empty where it binds none), the path, and the base. A join after it at the base is
+    /// the path again.
+    Within(String, Built, Built),
 }
 
 pub type Built = Vec<Seg>;
+
+/// `path` as it lies within `base`: the path `r` such that `base` joined with `r` is `path`, the left
+/// quotient of the join (`b.strip_prefix(a)`, `b.relative_to(a)`, `path.relative(a, b)`). Where `base`
+/// is written at the front of `path`, it is what follows it (`data/raw/x.csv` within `data` is
+/// `raw/x.csv`, `{root}/**/*` within `{root}` is `**/*`), and the empty path where the two are one;
+/// the empty path is the unit of a join, so everything lies within it. Else the quotient is kept, until
+/// what is written in decides it or a join at `base` undoes it.
+pub fn within(path: &Built, base: &Built) -> Built {
+    if known(base) && render(base).is_empty() {
+        return path.clone();
+    }
+    if path == base {
+        return lit("");
+    }
+    if let Some(rest) = after(path, base) {
+        return rest;
+    }
+    vec![Seg::Within(String::new(), path.clone(), base.clone())]
+}
+
+/// Each of `paths` as it lies within each of `bases` (`within`).
+pub fn within_each(paths: &[Built], bases: &[Built]) -> Vec<Built> {
+    let mut out: Vec<Built> = vec![];
+    for b in bases {
+        for p in paths {
+            let w = within(p, b);
+            if !out.contains(&w) {
+                out.push(w);
+            }
+        }
+    }
+    out.truncate(MAX);
+    out
+}
+
+/// `w` with the name `n` a binding gave the quotient it was, where it is still one.
+fn named_within(n: &str, w: Built) -> Built {
+    match w.as_slice() {
+        [Seg::Within(m, path, base)] if m.is_empty() && !n.is_empty() => vec![Seg::Within(n.to_string(), path.clone(), base.clone())],
+        _ => w,
+    }
+}
+
+/// What follows `base` in `path` after a `/`, where `path` starts with `base`, part for part.
+fn after(path: &Built, base: &Built) -> Option<Built> {
+    let (last, head) = base.split_last()?;
+    if path.len() < base.len() || path[..head.len()] != *head {
+        return None;
+    }
+    let rest = &path[head.len()..];
+    let (first, tail) = match (last, &rest[0]) {
+        (Seg::Lit(b), Seg::Lit(p)) => {
+            let after = p.strip_prefix(b.as_str())?;
+            (if b.ends_with('/') { after } else { after.strip_prefix('/')? }.to_string(), &rest[1..])
+        }
+        (b, p) if b == p => match rest.get(1) {
+            Some(Seg::Lit(t)) => (t.strip_prefix('/')?.to_string(), &rest[2..]),
+            _ => return None,
+        },
+        _ => return None,
+    };
+    let mut out = if first.is_empty() { vec![] } else { lit(&first) };
+    out.extend(tail.iter().cloned());
+    Some(out)
+}
 
 /// The values an input with a default holds: its default, each as reached through the input; no
 /// value where it declares none.
@@ -210,7 +280,7 @@ pub fn each(values: Vec<Built>) -> Vec<Built> {
     }
     terms.truncate(MAX);
     match terms.as_slice() {
-        [one] if !matches!(one.as_slice(), [Seg::Param(_) | Seg::Held(..) | Seg::Option(..) | Seg::Env(..)]) => terms,
+        [one] if !matches!(one.as_slice(), [Seg::Param(_) | Seg::Held(..) | Seg::Option(..) | Seg::Env(..) | Seg::Within(..)]) => terms,
         _ => vec![vec![Seg::Var(String::new(), terms)]],
     }
 }
@@ -222,6 +292,7 @@ fn takes(b: &Built) -> bool {
         Seg::Param(_) | Seg::Held(..) => true,
         Seg::Var(_, vs) => vs.iter().any(takes),
         Seg::Env(name, _) => takes(name),
+        Seg::Within(_, path, base) => takes(path) || takes(base),
         _ => false,
     })
 }
@@ -238,6 +309,10 @@ fn visit(b: &Built, f: &mut dyn FnMut(&Seg)) {
                 }
             }
             Seg::Env(name, _) => visit(name, f),
+            Seg::Within(_, path, base) => {
+                visit(path, f);
+                visit(base, f);
+            }
             _ => {}
         }
     }
@@ -246,7 +321,14 @@ fn visit(b: &Built, f: &mut dyn FnMut(&Seg)) {
 /// Whether the segment `s` stands in `b` itself, or in the name of a variable of the environment
 /// `b` looks up: one value in each term `b` gives, as a segment of `b` is, never a variable's.
 fn stands(b: &Built, s: &Seg) -> bool {
-    b.iter().any(|x| x == s || matches!(x, Seg::Env(name, _) if stands(name, s)))
+    b.iter().any(|x| {
+        x == s
+            || match x {
+                Seg::Env(name, _) => stands(name, s),
+                Seg::Within(_, path, base) => stands(path, s) || stands(base, s),
+                _ => false,
+            }
+    })
 }
 
 /// The variable of `b` `chosen` takes a value for first: one that stands in `b` or in the name of a
@@ -255,6 +337,7 @@ fn first_var(b: &Built, open: bool) -> Option<(String, Vec<Built>)> {
     b.iter().find_map(|s| match s {
         Seg::Var(n, vs) if open || !vs.iter().all(takes) => Some((n.clone(), vs.clone())),
         Seg::Env(name, _) => first_var(name, open),
+        Seg::Within(_, path, base) => first_var(path, open).or_else(|| first_var(base, open)),
         _ => None,
     })
 }
@@ -293,6 +376,7 @@ fn narrowed(b: &Built, name: &str, values: &[Built]) -> Built {
             Seg::Var(n, _) if n == name => Seg::Var(n.clone(), values.to_vec()),
             Seg::Var(n, vs) => Seg::Var(n.clone(), vs.iter().map(|v| narrowed(v, name, values)).collect()),
             Seg::Env(var, default) => Seg::Env(narrowed(var, name, values), default.clone()),
+            Seg::Within(n, path, base) => Seg::Within(n.clone(), narrowed(path, name, values), narrowed(base, name, values)),
             s => s.clone(),
         })
         .collect()
@@ -320,6 +404,7 @@ fn put_var(b: &Built, name: &str, v: &Built) -> Built {
                 out.push(Seg::Var(n.clone(), values));
             }
             Seg::Env(var, default) => out = join(&out, &looked_up(put_var(var, name, v), default.clone()), ""),
+            Seg::Within(n, path, base) => out = join(&out, &named_within(n, within(&put_var(path, name, v), &put_var(base, name, v))), ""),
             s => out = join(&out, &vec![s.clone()], ""),
         }
         said = false;
@@ -391,6 +476,12 @@ fn looked_up(name: Built, default: Option<Built>) -> Built {
 /// its default, which a run reads or writes whatever the input says. What a caller hands is
 /// followed to the caller, so it stays beside the default.
 pub fn or_else(value: Vec<Built>, fallback: Vec<Built>) -> Vec<Built> {
+    // a fallback that is the value itself says nothing besides it: `fs::canonicalize(p).ok().unwrap_or(p)`
+    // is a path of the place `p` is
+    let fallback: Vec<Built> = fallback.into_iter().filter(|f| !value.contains(f)).collect();
+    if fallback.is_empty() && !value.is_empty() {
+        return value;
+    }
     // a variable of the environment whose name is still to be said is an input with the default,
     // the variable once the name is (`os.environ.get(name, "")` handed `"REPORT"` is
     // `os.environ.get("REPORT", "")`)
@@ -489,6 +580,12 @@ pub fn hole(s: &str) -> Built {
 /// of a path's join, in every language (`Path("") / "x"`, `join("", "x")`, `PathBuf::from("").join("x")`
 /// are `x`), so nothing stands between it and what is joined to it.
 pub fn join(a: &Built, b: &Built, sep: &str) -> Built {
+    // a path within a base, joined at that base, is the path (`a.join(b.strip_prefix(a))` is `b`),
+    // also where the `/` between them is already written (a value said for an input of `{a}/{w}`),
+    // and for each value of a variable that is one (`.map(|r| a.join(r))`)
+    if let Some(at) = rejoined(a, b, sep) {
+        return at;
+    }
     let mut out = a.clone();
     let empty = sep == "/" && known(a) && render(a).is_empty();
     let rest: Vec<Seg> =
@@ -500,6 +597,33 @@ pub fn join(a: &Built, b: &Built, sep: &str) -> Built {
         }
     }
     out
+}
+
+/// `a` joined to `b` where `b` starts with a path within a base that is `a`, or with a variable
+/// every value of which does: the path, joined to the rest of `b`.
+fn rejoined(a: &Built, b: &Built, sep: &str) -> Option<Built> {
+    let mut at = a.clone();
+    if sep.is_empty() {
+        match at.last_mut() {
+            Some(Seg::Lit(s)) if s.len() > 1 && s.ends_with('/') => {
+                s.pop();
+            }
+            Some(Seg::Lit(s)) if s == "/" && a.len() > 1 => {
+                at.pop();
+            }
+            _ => {}
+        }
+    }
+    let one = |v: &Built| match v.first() {
+        Some(Seg::Within(_, path, base)) if *base == at => Some(join(path, &v[1..].to_vec(), "")),
+        _ => None,
+    };
+    let first = match b.first()? {
+        Seg::Within(..) => one(&b[..1].to_vec())?,
+        Seg::Var(n, vs) if !vs.is_empty() => vec![Seg::Var(n.clone(), vs.iter().map(one).collect::<Option<Vec<Built>>>()?)],
+        _ => return None,
+    };
+    Some(join(&first, &b[1..].to_vec(), ""))
 }
 
 pub fn cross(xs: &[Built], ys: &[Built], sep: &str) -> Vec<Built> {
@@ -568,7 +692,9 @@ pub fn parent(b: &Built) -> Built {
         ([Seg::Package(_)], _) => vec![Seg::Package(".".into())],
         // a path a caller hands, an option or the environment names: its directory, once the path
         // is said (`{to}/..`)
-        (_, [.., Seg::Param(_) | Seg::Held(..) | Seg::Option(..) | Seg::Env(..)]) => [b[..name].to_vec(), lit("/..")].concat(),
+        (_, [.., Seg::Param(_) | Seg::Held(..) | Seg::Option(..) | Seg::Env(..) | Seg::Within(..)]) => {
+            [b[..name].to_vec(), lit("/..")].concat()
+        }
         (_, [.., Seg::Hole(h)]) if !anonymous(h) => [b[..name].to_vec(), lit("/..")].concat(),
         // the directory of a value the code gives no name is no more named
         _ => hole("parent"),
@@ -654,10 +780,12 @@ fn put(b: &Built, one: &[(Seg, Built)], all: &[(Seg, Vec<Built>)]) -> Built {
                     }
                 }
                 values.truncate(MAX);
-                out.push(Seg::Var(n.clone(), values));
+                out = join(&out, &vec![Seg::Var(n.clone(), values)], "");
             }
             // the variable whose name is written in: a lookup commutes with what is handed
             Seg::Env(name, default) => out = join(&out, &looked_up(put(name, one, all), default.clone()), ""),
+            // a path within a base, both written in: decided where the base is now at its front
+            Seg::Within(n, path, base) => out = join(&out, &named_within(n, within(&put(path, one, all), &put(base, one, all))), ""),
             s => out = join(&out, &vec![s.clone()], ""),
         }
         said = false;
@@ -746,6 +874,8 @@ pub fn render(b: &Built) -> String {
                 Seg::Param(x) | Seg::Held(_, x) | Seg::Hole(x) | Seg::Var(x, _) => format!("{{{x}}}"),
                 Seg::Option(_, d) | Seg::Env(_, Some(d)) => render(d),
                 Seg::Env(_, None) => "{value}".into(),
+                Seg::Within(n, ..) if n.is_empty() => "{value}".into(),
+                Seg::Within(n, ..) => format!("{{{n}}}"),
             })
             .collect(),
     ))
@@ -814,6 +944,7 @@ pub fn bound(name: &str, values: Vec<Built>) -> Vec<Built> {
         .map(|b| match b.as_slice() {
             [Seg::Hole(h)] if anonymous(h) => hole(name),
             [Seg::Var(n, vs)] if n.is_empty() => vec![Seg::Var(name.to_string(), vs.clone())],
+            [Seg::Within(n, path, base)] if n.is_empty() => vec![Seg::Within(name.to_string(), path.clone(), base.clone())],
             _ => b,
         })
         .collect()
@@ -1436,6 +1567,7 @@ pub fn held_by(g: &str, b: Built) -> Built {
             Seg::Param(x) => Seg::Held(g.to_string(), x),
             Seg::Var(n, vs) => Seg::Var(n, vs.into_iter().map(|v| held_by(g, v)).collect()),
             Seg::Env(name, default) => Seg::Env(held_by(g, name), default),
+            Seg::Within(n, path, base) => Seg::Within(n, held_by(g, path), held_by(g, base)),
             s => s,
         })
         .collect()
@@ -1851,6 +1983,9 @@ mod tests {
             "what a caller hands is followed"
         );
         assert_eq!(or_else(vec![lit("a.csv")], vec![lit("b.csv")]), [lit("a.csv"), lit("b.csv")], "two literals are alternatives");
+        let p = vec![Seg::Param("path".into())];
+        assert_eq!(or_else(vec![p.clone()], vec![p.clone()]), [p.clone()], "a value with itself to fall back to is the value");
+        assert_eq!(or_else(vec![lit("a.csv")], vec![lit("a.csv")]), [lit("a.csv")], "a value with itself to fall back to is the value");
         let (read, write) = (Touch::new(World::Disk, Some(Dir::Read)), Touch::new(World::Disk, Some(Dir::Write)));
         assert!(fallback.iter().all(|b| !decided(b, &write)), "{fallback:?}");
         let shipped = vec![Seg::Package("src/pages".into()), Seg::Lit("/template.html".into())];
@@ -2025,6 +2160,48 @@ mod tests {
             let hand = |x: &str| if x == "P" { vec![v.clone()] } else { vec![vec![Seg::Param(x.into())]] };
             let written = rest.iter().fold(v.clone(), |b, q| join(&b, q, "/"));
             proptest::prop_assert_eq!(substitute(&t, hand), vec![written]);
+        }
+
+        /// Law: a join after a path taken within the same base is the identity, `a.join(b.strip_prefix(a))`
+        /// is `b` (#352), whether or not `b` is written below `a`, and whether the two are written out or
+        /// handed: the quotient `{B}` within `{A}`, joined at `{A}`, is `{B}`, and with `a` and `b` written
+        /// in for them it is `b`. Where `b` is `a` with parts below it, the path within `a` is those parts.
+        #[test]
+        fn a_join_after_a_path_within_its_base_is_the_path(
+            a in a_path(),
+            rest in proptest::collection::vec(a_part(), 1..3),
+            other in a_path(),
+        ) {
+            let below = rest.iter().fold(a.clone(), |b, q| join(&b, q, "/"));
+            let parts = rest.iter().skip(1).fold(rest[0].clone(), |b, q| join(&b, q, "/"));
+            proptest::prop_assert_eq!(within(&below, &a), parts);
+            for b in [below.clone(), other.clone()] {
+                proptest::prop_assert_eq!(join(&a, &within(&b, &a), "/"), b.clone());
+            }
+            let (pa, pb) = (vec![Seg::Param("A".into())], vec![Seg::Param("B".into())]);
+            let term = join(&pa, &within(&pb, &pa), "/");
+            proptest::prop_assert_eq!(&term, &pb);
+            for b in [below, other] {
+                let hand = |x: &str| match x {
+                    "A" => vec![a.clone()],
+                    "B" => vec![b.clone()],
+                    _ => vec![vec![Seg::Param(x.into())]],
+                };
+                proptest::prop_assert_eq!(substitute(&within(&pb, &pa), hand).iter().map(|w| join(&a, w, "/")).collect::<Vec<_>>(), vec![b.clone()]);
+                // the join written before its base is said: `{A}/{B within C}`, `a` said for both `A` and `C`,
+                // also where the quotient is the value of a variable (what a closure is handed)
+                let hand = |x: &str| match x {
+                    "A" | "C" => vec![a.clone()],
+                    "B" => vec![b.clone()],
+                    _ => vec![vec![Seg::Param(x.into())]],
+                };
+                let pc = vec![Seg::Param("C".into())];
+                let late = join(&pa, &within(&pb, &pc), "/");
+                proptest::prop_assert_eq!(substitute(&late, hand), vec![b.clone()]);
+                let each_of = join(&pa, &vec![Seg::Var("r".into(), vec![within(&pb, &pc)])], "/");
+                let values: Vec<Built> = substitute(&each_of, hand).iter().flat_map(chosen).collect();
+                proptest::prop_assert_eq!(values, vec![b.clone()]);
+            }
         }
 
         /// Law: a lookup of the environment commutes with what is handed. The variable a name built
