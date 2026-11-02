@@ -3,7 +3,7 @@
 //! Everything between `parse` and `layout` is `Graph -> Graph`. The JSON shape is the
 //! contract with the frontend; `ts-rs` generates the TypeScript side from these types.
 
-use std::collections::{BTreeMap, BTreeSet, HashMap, VecDeque};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
 
 use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
@@ -48,6 +48,32 @@ pub mod ext {
     pub fn name(id: &str) -> &str {
         path(id).unwrap_or(id)
     }
+}
+
+/// The id of a sum written in place (`x: Fit | Failed` in a signature, with no name of its own): the set of its variants'
+/// ids, `(ext:torch.Tensor | pkg.Fit)`. A union written in place is one object however and wherever it is written
+/// (`mathematics.md`, "Coproducts"), so its id is no dotted name a reader finds it by (`dotted`): no module, no function
+/// and no parameter that writes it is part of it. Its spelling stands here and nowhere else.
+pub mod sum {
+    /// The id of the sum of `variants`, each once.
+    pub fn of(variants: &[String]) -> String {
+        let mut key = variants.to_vec();
+        key.sort();
+        key.dedup();
+        format!("({})", key.join(" | "))
+    }
+
+    /// Whether an id is that of a sum written in place.
+    pub fn is(id: &str) -> bool {
+        id.starts_with('(') && id.ends_with(')')
+    }
+}
+
+/// The dotted name a reader finds a node by, the path its id says (`ext::name`): an id of the code's is that name
+/// (`blocks.Block.scaled`), a name past the code its path past the code, the engine's tag taken off (`torch.Tensor`).
+/// A sum written in place says none (`sum`).
+pub fn dotted(id: &str) -> Option<&str> {
+    (!sum::is(id)).then(|| ext::name(id))
 }
 
 /// What a reader resolves a name to, a value of `Code ⊔ Beyond` (`ext`): one of the code's ids, which carries no tag, or a
@@ -559,20 +585,76 @@ impl Param {
     }
 }
 
-/// A type's own name: its id without the library or module it is in (`ext:pandas.DataFrame` is `DataFrame`). A
-/// shaped array keeps its shape, a dot in it too: `ext:jaxtyping.Float[Tensor, batch {self.size}]` is
-/// `Float[Tensor, batch {self.size}]`.
-pub fn type_name(id: &str) -> &str {
+/// A type's id as the library or module it is in and its own name (`idName` in `viewer/plan.js`): `ext:pandas.DataFrame`
+/// is `pandas` and `DataFrame`. A shaped array keeps its shape in its name, a dot in it too:
+/// `ext:jaxtyping.Float[Tensor, batch {self.size}]` is `jaxtyping` and `Float[Tensor, batch {self.size}]`.
+fn type_path(id: &str) -> (&str, &str) {
     let s = ext::name(id);
     let head = &s[..s.find('[').unwrap_or(s.len())];
-    &s[head.rfind('.').map_or(0, |i| i + 1)..]
+    match head.rfind('.') {
+        Some(i) => (&s[..i], &s[i + 1..]),
+        None => ("", s),
+    }
 }
 
-/// The name Atlas says a node by, wherever it says it: the name its reader gave it, which the view draws (`bare` in
-/// `viewer/plan.js`), or for an id the reading holds no node of, the type's own name the id says (`type_name`). A sum
-/// is named as the code writes it (`Fit | Failed`), a shaped array with its shape (`Float[Tensor, ... dim]`).
+/// A type's own name: its id without the library or module it is in (`type_path`).
+pub fn type_name(id: &str) -> &str {
+    type_path(id).1
+}
+
+/// A node's own name: the name its reader gave it, which the view draws (`bare` in `viewer/plan.js`), or for an id the
+/// reading holds no node of, the type's own name the id says (`type_name`). A sum is named as the code writes it
+/// (`Fit | Failed`), a shaped array with its shape (`Float[Tensor, ... dim]`). What Atlas says a node by, wherever it
+/// says it, is this name with what the view adds to it (`said`).
 pub fn name_of<'a>(node: Option<&'a Node>, id: &'a str) -> &'a str {
     node.map_or_else(|| type_name(id), |n| n.name.as_str())
+}
+
+/// The names two or more types among `nodes` go by (`name_of`). Where one of them names a type, Atlas says the type with
+/// its module (`type_label`), so that one name says one construct; the view counts them among the nodes of the graph it
+/// draws, for a page of changes the union of the two readings.
+pub fn shared_names<'a>(nodes: impl IntoIterator<Item = &'a Node>) -> HashSet<String> {
+    let mut seen: HashMap<&str, usize> = HashMap::new();
+    for n in nodes.into_iter().filter(|n| matches!(n.kind, NodeKind::Class | NodeKind::External)) {
+        *seen.entry(n.name.as_str()).or_default() += 1;
+    }
+    seen.into_iter().filter(|(_, k)| *k > 1).map(|(n, _)| n.to_string()).collect()
+}
+
+/// A type as Atlas says it, in the view (`typeLabel` in `viewer/plan.js`) and in words: its own name (`name_of`), with
+/// the last part of its module before it where another type goes by that name too (`shared`): `model.Frame`.
+pub fn type_label(node: Option<&Node>, id: &str, shared: &HashSet<String>) -> String {
+    let name = name_of(node, id);
+    if !shared.contains(name) {
+        return name.to_string();
+    }
+    let module = node.map(|n| n.module.as_str()).filter(|m| !m.is_empty()).unwrap_or_else(|| type_path(id).0);
+    match module.rsplit('.').next().filter(|m| !m.is_empty()) {
+        Some(m) => format!("{m}.{name}"),
+        None => name.to_string(),
+    }
+}
+
+/// A function as Atlas says it, in the view (`stepName` in `viewer/plan.js`, a step of a route) and in words: a method by
+/// its class (`type_label`) and its own name (`Block.scaled`); an initializer, which fills in the value a call to its
+/// class makes, as that call (`Block()`: Python's `__init__` and TypeScript's `constructor` are one construct); any other
+/// function by its own name. `node` gives the nodes of the function's reading by id.
+pub fn function_label<'n>(f: &Node, node: impl Fn(&str) -> Option<&'n Node>, shared: &HashSet<String>) -> String {
+    match f.cls.as_deref() {
+        Some(c) if f.ctor && !f.on_class => format!("{}()", type_label(node(c), c, shared)),
+        Some(c) => format!("{}.{}", type_label(node(c), c, shared), f.name),
+        None => f.name.clone(),
+    }
+}
+
+/// A node as Atlas says it, wherever it says it: a function as `function_label` says it, a module by its name, a type as
+/// `type_label` says it. `node` gives the nodes of its reading by id; `shared` the names two types of the graph share.
+pub fn said<'n>(id: &str, node: impl Fn(&str) -> Option<&'n Node>, shared: &HashSet<String>) -> String {
+    match node(id) {
+        Some(f) if matches!(f.kind, NodeKind::Function | NodeKind::Method) => function_label(f, &node, shared),
+        Some(m) if m.kind == NodeKind::Module => m.name.clone(),
+        n => type_label(n, id, shared),
+    }
 }
 
 /// The name a function goes by in the names of its values (`Store.path`, `Repo.read.dir`, `main.out`): a constructor's

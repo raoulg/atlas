@@ -156,9 +156,12 @@ code: `plotkit.data.load`), or a name past the fiber the graph keeps of a librar
 (`ext:plotkit.data.load` at `--libraries 0`). The tag of the second injection is a prism: `of` makes a name past the
 code an id, `path` takes it back, `path(of(p)) = Some(p)`, `of(p) = id` wherever `path(id) = Some(p)`, and an id of
 the code's has no path. What a reader resolves a name to is a value of the coproduct (`Resolved`); the graph keeps its
-id, the key its edges, its indexes and the page share.
-**Where.** Principle `lens`; `design.md` §1; `model::ext` and `model::Resolved`, held by `engine/tests/readers.rs`
-(the tag is spelled once).
+id, the key its edges, its indexes and the page share. Either injection says a dotted name a reader finds the node by
+(`model::dotted`). A sum written in place says none: it is one object however and wherever it is written ("Coproducts"),
+so no module or place that writes it is part of its id, which is the set of its variants' ids (`model::sum`); a list
+names it as Atlas says it everywhere, by its own name (`model::said`).
+**Where.** Principle `lens`; `design.md` §1; `model::ext`, `model::sum`, `model::dotted` and `model::Resolved`, held by
+`engine/tests/readers.rs` (the tag is spelled once) and `engine/tests/one_name.rs`.
 
 ### Pullback: a filter
 **What.** The pullback of `true` along a predicate `p: G → Bool` is the part of G where p holds.
@@ -468,10 +471,13 @@ marked: the step after it is handed in each reading what that reading gives it. 
 makes whole is the caller's arrow; a file named by a function's own parameter (`load.path`) is
 named so whoever calls the function. A rename is an isomorphism of the typed arrows in and out:
 `list[float] → float` is no `str → str`. `atlas-code changes` reads the same union along each route,
-so the picture and the list hold the same marks.
+so the picture and the list hold the same marks, and it says each construct by the name the picture gives it
+(`model::said`): a method with its class, an initializer as the call to its class, a type whose name another type of
+the union shares with its module. One name said of two constructs points at neither.
 **Where.** `atlas-code history`, `atlas-code changes A..B`, a vision beside the working tree (`atlas
 mcp`'s `vision`); `diff::union`, `diff::reading`, `changes::between`; `design.md` §4, L5. Held by `engine/tests/arrows.rs`:
-on two readings of the same nodes, the marks are those of the direct arrows, and a node renamed is one node.
+on two readings of the same nodes, the marks are those of the direct arrows, and a node renamed is one node; and by
+`engine/tests/one_name.rs`: the list names each construct as the page's model draws it.
 
 ### Partial morphisms: a prophecy
 **What.** A partial map is defined on part of its domain; a graph with some objects and arrows

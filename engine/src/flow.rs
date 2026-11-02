@@ -17,15 +17,19 @@ use serde::Serialize;
 use crate::model::{Both, Db, Dir, Edge, EdgeKind, Graph, Held, Leaves, Node, NodeKind, Site, Touch, World};
 
 /// Wire the steps of every body: a call written inside another call hands it its result, under
-/// the name the body gives it or, without one, under the step's own (`#n`, unique in the graph);
+/// the name the body gives it or, without one, under the step's own (`#n`, counted in its body);
 /// a library's operation that only turns a value of one type into a value of the same type is an
 /// identity, and the value it names is the one the step before it makes.
+///
+/// The name a step gives its result is a fact of its body alone, as every fact of the body's own
+/// arrow is: the bodies read beside it, and the order they are read in, name none of its values.
+/// The name is unique within its body, and the graph never relates two bodies' values by it: a
+/// value no name holds goes only to the step written around the one that makes it.
 pub fn wire(nodes: &mut IndexMap<String, Node>, edges: &[Edge]) {
     let gives_class = classes_given(nodes, edges);
-    let mut next = 0;
     for id in nodes.keys().cloned().collect::<Vec<_>>() {
         let mut sites = std::mem::take(&mut nodes[&id].sites);
-        nest(&mut sites, &gives_class, &mut next);
+        nest(&mut sites, &gives_class);
         drop_identities(&mut sites);
         nodes[&id].sites = sites;
     }
@@ -55,8 +59,10 @@ fn written(s: &Site) -> bool {
 }
 
 /// Each step written inside another hands it its result; the outer step is no longer handed what
-/// the inner one is.
-fn nest(sites: &mut [Site], gives_class: &HashMap<String, String>, next: &mut usize) {
+/// the inner one is. A result without a name is named by its step: `#n` for the `n`th step of the
+/// body written inside another.
+fn nest(sites: &mut [Site], gives_class: &HashMap<String, String>) {
+    let mut next = 0;
     // the call each step is written in: the smallest other step around it
     let around: Vec<Option<usize>> = (0..sites.len())
         .map(|i| {
@@ -69,7 +75,7 @@ fn nest(sites: &mut [Site], gives_class: &HashMap<String, String>, next: &mut us
         let Some(outer) = around[i] else { continue };
         // the result without a name is named by its step
         let name = format!("#{next}");
-        *next += 1;
+        next += 1;
         let s = &mut sites[i];
         if !s.gives.iter().any(|g| !g.name.is_empty()) {
             if s.gives.is_empty() {
@@ -1974,7 +1980,7 @@ mod tests {
             site("", "ok_or_else", (10, 40), vec![at("Options", "opts", 17)], vec![Held::new("Language", "lang")]),
         ];
         let gives_class = HashMap::from([("detect".to_string(), "Language".to_string())]);
-        nest(&mut sites, &gives_class, &mut 0);
+        nest(&mut sites, &gives_class);
         assert_eq!(sites[1].hands, [Held::new("Language", "#0")], "the outer call is handed the inner one's result, not its arguments");
         drop_identities(&mut sites);
         assert_eq!(sites.len(), 1, "an identity is not drawn");
@@ -1991,7 +1997,7 @@ mod tests {
             site("g", "", (2, 6), vec![at("X", "x", 4)], vec![]),
             site("f", "", (0, 10), vec![at("X", "x", 4), at("Y", "y", 8)], vec![]),
         ];
-        nest(&mut sites, &HashMap::from([("g".to_string(), "Z".to_string())]), &mut 0);
+        nest(&mut sites, &HashMap::from([("g".to_string(), "Z".to_string())]));
         assert_eq!(sites[0].gives, [Held::new("Z", "#0")]);
         assert_eq!(sites[1].hands, [Held::new("Y", "y"), Held::new("Z", "#0")]);
     }
@@ -2141,7 +2147,7 @@ mod tests {
             site("detect", "", (10, 22), vec![at("Options", "opts", 17)], vec![Held::new("Language", "lang")]),
             site("", "unwrap", (10, 31), vec![at("Options", "opts", 17)], vec![Held::new("Language", "lang")]),
         ];
-        nest(&mut sites, &HashMap::new(), &mut 0);
+        nest(&mut sites, &HashMap::new());
         drop_identities(&mut sites);
         assert_eq!(sites.iter().map(|s| s.to.as_str()).collect::<Vec<_>>(), ["detect"]);
     }
@@ -2219,7 +2225,7 @@ mod tests {
             site("make", "", (10, 22), vec![], vec![Held::new("Board", "board")]),
             site("", "copy", (40, 56), vec![at("Board", "board", 50)], vec![Held::new("Board", "board")]),
         ];
-        nest(&mut sites, &HashMap::new(), &mut 0);
+        nest(&mut sites, &HashMap::new());
         drop_identities(&mut sites);
         assert_eq!(sites.iter().map(|s| s.op.as_str()).collect::<Vec<_>>(), ["", "copy"]);
     }
