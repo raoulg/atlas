@@ -146,6 +146,13 @@ class Series(unittest.TestCase):
         self.assertAlmostEqual(perf.summary_of(cells((0.04, 0.05)))["ratio"], perf.summary_of(cells((40.0, 50.0)))["ratio"])
         self.assertAlmostEqual(perf.summary_of(cells((0.04, 0.05)))["ratio"], 1.25)
 
+    def test_a_measure_that_falls_to_zero_stays_out_of_the_mean(self):
+        """A redraw the release no longer starts has no finite log ratio: the mean is that of the other measures, and
+        the zero is counted beside it."""
+        with_zero = perf.summary_of([{"before": 1.0, "after": 2.0}, {"before": 3.0, "after": 0.0}])
+        without = perf.summary_of([{"before": 1.0, "after": 2.0}])
+        self.assertEqual((with_zero["ratio"], with_zero["measures"], with_zero["zero"]), (without["ratio"], 1, 1))
+
     def test_a_change_is_told_from_noise_either_way(self):
         """A change by the rule of a reproduction, faster as well as slower: every round past every round, by more than the floor."""
         self.assertTrue(perf.changed_between([22.5, 22.6, 22.4], [20.4, 20.3, 20.4], "s"))

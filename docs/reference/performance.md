@@ -162,7 +162,8 @@ drawn as bars throughout.
   those ratios, the exponent of the mean log ratio, as SPEC and rustc-perf summarise. It is scale-free (a warm read
   from 0.04 to 0.05 s counts as +25 %, a cold one from 0.69 to 0.68 s as −1.4 %, whatever their seconds) and
   symmetric (twice as fast and twice as slow cancel). A mean of squared differences would lose the sign and be
-  ruled by the largest seconds.
+  ruled by the largest seconds. A measure that falls to 0, a redraw the release no longer starts, has no finite
+  log ratio: it stays out of the mean, counted beside it, and its bar runs to the faster edge, said as *to 0*.
 - **Every ratio**, beside it: a bar per measure on a log scale from the middle, faster to the left and slower to
   the right, so that twice as fast and twice as slow are bars of one length; an outlier shows as one long bar, a
   uniform shift as all bars to one side. A measure whose change is within noise is grey, *no change*, by the rule

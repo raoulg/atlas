@@ -155,7 +155,7 @@ section li{margin:4px 0}
 .b-bar .v span{position:absolute;left:calc(100% + 6px);top:-1px;white-space:nowrap;color:var(--ink)}
 .b-bar.before .v{background:var(--ink-3)}.b-bar.after .v{background:var(--key)}
 .b-ratio{font-family:var(--mono);font-size:12px;color:var(--ink-3);margin:2px 0 0}
-.b-lines{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,230px),1fr));gap:14px 22px}
+.b-lines{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,260px),1fr));gap:14px 22px}
 .b-lines figure{margin:0}
 .b-lines figcaption{font-size:12.5px;color:var(--ink-2);margin:0 0 2px}
 .b-head{border-top:1px solid var(--line);padding-top:14px;margin:18px 0 10px;font-weight:500;color:var(--ink)}
@@ -389,15 +389,16 @@ def legend(sides: list[str]) -> str:
     return f'<p class="b-legend">{keys}</p>'
 
 
-def pairs(groups: list[tuple[str, list[tuple[int, str, float | None]]]], top: float) -> str:
-    """Grouped bars of one scale: a group per measure, its sides side by side, each in its side's colour."""
+def pairs(groups: list[tuple[str, list[tuple[int, str, float | None]]]], top: float, longest: float = 78) -> str:
+    """Grouped bars of one scale: a group per measure (its label as HTML), its sides side by side, each in its side's
+    colour; the longest bar takes `longest` percent of the width, the rest is room for its number."""
     out = []
     for measure, members in groups:
         rows = "".join(
-            f'<div class="v s{i}{" none" if n is None else ""}" style="width:{0 if n is None else max(0.4, 78 * n / top):.2f}%"><span>{html.escape(said)}</span></div>'
+            f'<div class="v s{i}{" none" if n is None else ""}" style="width:{0 if n is None else max(0.4, longest * n / top):.2f}%"><span>{html.escape(said)}</span></div>'
             for i, said, n in members
         )
-        out.append(f'<div class="gbar"><span class="l">{inline(measure)}</span><div class="gpair">{rows}</div></div>')
+        out.append(f'<div class="gbar"><span class="l">{measure}</span><div class="gpair">{rows}</div></div>')
     return "".join(out)
 
 
@@ -418,7 +419,7 @@ def bars(spec: str) -> str:
         groups: dict[str, list[tuple[int, str, float | None]]] = {}
         for (measure, side), (_, value, number) in zip(split, rows):
             groups.setdefault(measure, []).append((sides.index(side), value, number))
-        return f'<div class="bars">{legend(sides)}{pairs(list(groups.items()), top)}{said}</div>'
+        return f'<div class="bars">{legend(sides)}{pairs([(inline(m), g) for m, g in groups.items()], top)}{said}</div>'
     out = "".join(
         f'<div class="bar"><span class="l">{inline(label)}</span><div class="v" style="width:{max(0.4, 82 * n / top):.2f}%"><span>{html.escape(value)}</span></div></div>'
         for label, value, n in rows
@@ -456,7 +457,11 @@ def bench(spec: str) -> str:
         groups = []
         for c in row["cells"]:
             values = [v for v in (c["before"], c["after"]) if v is not None]
-            ratio = f"×{c['after'] / c['before']:.2f}" if c["before"] and c["after"] is not None else "not measured on both"
+            ratio = (
+                ("to 0" if c["after"] == 0 else f"×{c['after'] / c['before']:.2f}")
+                if c["before"] and c["after"] is not None
+                else "not measured on both"
+            )
             groups.append((f"{html.escape(c['label'])} <span class=\"b-ratio\">{ratio}</span>", c, max(values or [0]) or 1))
         cells = "".join(
             pairs([(label, [(0, measured(c["before"], c["unit"]), c["before"]), (1, measured(c["after"], c["unit"]), c["after"])])], peak)
@@ -475,7 +480,8 @@ def bench(spec: str) -> str:
 
 def summary(data: dict) -> str:
     """The release's one number and every measure's ratio, on a log scale: a bar's length is |log ratio|, so twice as
-    fast and twice as slow are bars of one length, on either side of the middle."""
+    fast and twice as slow are bars of one length, on either side of the middle. A measure that fell to 0 has no
+    finite log ratio: its bar runs to the faster edge, said as `to 0`, and it stays out of the mean."""
     s = data.get("summary")
     if not s:
         return ""
@@ -483,25 +489,27 @@ def summary(data: dict) -> str:
     for row in data["rows"]:
         who = row.get("short") or row.get("name") or ""
         for c in row["cells"]:
-            if c["before"] and c["after"]:
+            if c["before"] and c["after"] is not None:
                 ratios.append((f"{who}, {c['label']}", c["after"] / c["before"], c.get("changed")))
-    top = max(abs(math.log(r)) for _, r, _ in ratios) or 1
+    top = max((abs(math.log(r)) for _, r, _ in ratios if r), default=1) or 1
     bars_ = []
     for label, r, changed in ratios:
         side = "faster" if r < 1 else "slower"
         kind = side if changed else "same"
-        width = 48 * abs(math.log(r)) / top
+        width = 48 * abs(math.log(r)) / top if r else 50
         place = f"right:50%;width:{width:.1f}%" if r < 1 else f"left:50%;width:{width:.1f}%"
-        word = change(r) + ("" if changed else ", no change")
+        word = (change(r) if r else "to 0") + ("" if changed else ", no change")
         bars_.append(
             f'<div class="b-div"><span class="l">{html.escape(label)}</span><div class="t"><i class="m"></i>'
             f'<i class="d {kind}" style="{place}"></i></div><span class="n {kind}">{word}</span></div>'
         )
     word = "faster" if s["ratio"] < 1 else "slower"
+    gone = s.get("zero", 0)
+    zero = f" {gone} more fell to 0, work the release no longer does, and stand outside the mean." if gone else ""
     head = (
         f'<div class="b-sum"><span class="b-big">{change(s["ratio"])}</span><span>{html.escape(data["after"])} against '
         f'{html.escape(data["before"])}: the geometric mean of after / before over {s["measures"]} measures, '
-        f'{abs(s["ratio"] - 1) * 100:.1f} % {word}; {s["changed"]} of them changed beyond noise.</span></div>'
+        f'{abs(s["ratio"] - 1) * 100:.1f} % {word}; {s["changed"]} of them changed beyond noise.{zero}</span></div>'
     )
     legend = '<p class="b-scale"><span>← faster</span><span>log scale</span><span>slower →</span></p>'
     return f'<div class="b-row">{head}{legend}{"".join(bars_)}</div>'
@@ -518,7 +526,7 @@ def releases_bars(releases: list[str], series: dict, short: str) -> str:
         for i, r in enumerate(releases)
     ]
     title = f"{html.escape(short)}, {html.escape(series['label'])}" if short else html.escape(series["label"])
-    return f"<figure><figcaption>{title}</figcaption>{pairs([('', members)], top)}</figure>"
+    return f"<figure><figcaption>{title}</figcaption>{pairs([('', members)], top, longest=45)}</figure>"
 
 
 def report_of(release: dict) -> dict:

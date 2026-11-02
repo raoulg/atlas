@@ -1445,12 +1445,15 @@ def changed_between(a: list[float], b: list[float], unit: str) -> bool:
 def summary_of(cells: list[dict]) -> dict | None:
     """The release's one number: the geometric mean of after / before over every measure both releases have, the
     exponent of the mean log ratio. Scale-free (a warm read of 0.04 s weighs what a cold one of 20 s weighs) and
-    symmetric (twice as fast and twice as slow cancel)."""
+    symmetric (twice as fast and twice as slow cancel). A measure that falls to 0 (a redraw the release no longer
+    starts) has no finite log ratio: it stays out of the mean and is counted as `zero`."""
     ratios = [c["after"] / c["before"] for c in cells if c["before"] and c["after"]]
+    zero = sum(1 for c in cells if c["before"] and c["after"] == 0)
     if not ratios:
         return None
     mean = sum(math.log(r) for r in ratios) / len(ratios)
-    return {"ratio": round(math.exp(mean), 4), "measures": len(ratios), "changed": sum(1 for c in cells if c.get("changed"))}
+    changed = sum(1 for c in cells if c["before"] and c["after"] and c.get("changed"))
+    return {"ratio": round(math.exp(mean), 4), "measures": len(ratios), "zero": zero, "changed": changed}
 
 
 def bench_data(
@@ -1537,7 +1540,7 @@ def command_release_bars(args: argparse.Namespace) -> None:
     said.append("Over the releases: each release's night since the series began, on its night's runner (`docs/reference/performance.md`).")
     print(f"Bench: releases/{version}/bench.json | " + "; ".join(said[:-1]) + (". " if said[:-1] else "") + said[-1])
     if s := data["summary"]:
-        print(f"summary: ×{s['ratio']:.4f} over {s['measures']} measures, {s['changed']} changed beyond noise", file=sys.stderr)
+        print(f"summary: ×{s['ratio']:.4f} over {s['measures']} measures, {s['changed']} changed beyond noise, {s['zero']} fell to 0", file=sys.stderr)
     print(f"wrote {out}", file=sys.stderr)
 
 
