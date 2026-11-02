@@ -118,12 +118,14 @@ TOPOLOGY = """async (spec) => {
     const keys = new Map();
     for (const id of coarse.boxes.keys()) if (/^n:/.test(id)) for (const k of keyOf(id).split("+")) keys.set(k, id);
     const under = k => { let best = null; for (const [kc, id] of keys) if ((k === kc || k.startsWith(kc + "/") || k.startsWith(kc + "~") || k.startsWith(kc + "|")) && (!best || kc.length > best[0].length)) best = [kc, id]; return best && best[1]; };
-    // a file, or a directory below one, lies in the folded box of the directory that holds it, on its side where it splits
+    // a file, or a directory below one, lies in the folded box of the directory that holds it, on its side where it splits;
+    // the twin `X ⇄`, where a place the route uses and changes is changed, lies in the folded box's twin
     const folders = [...coarse.boxes.keys()].filter(b => coarse.dirs.has(b));
     const inFolder = id => {
-      const path = id.slice(7).replace(/~[a-z]+$/, ""), side = id.match(/~([a-z]+)$/)?.[1] || fine.sides.get(id);
+      const twin = id.endsWith(" ⇄") ? " ⇄" : "", plain = twin ? id.slice(0, -2) : id;
+      const path = plain.slice(7).replace(/~[a-z]+$/, ""), side = plain.match(/~([a-z]+)$/)?.[1] || fine.sides.get(plain);
       const at = folders.filter(b => { const d = coarse.dirs.get(b); return path.startsWith(d) && path !== d; });
-      return at.find(b => b.endsWith("~" + side)) || at[0];
+      return at.find(b => b.endsWith("~" + side + twin)) || at.find(b => b.endsWith("~" + side)) || at[0];
     };
     return id => {
       if (coarse.boxes.has(id)) return id;
