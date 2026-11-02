@@ -1380,11 +1380,11 @@ impl<'a, 't> Body<'a, 't> {
             for n in values.iter().filter(|v| self.stepless(**v)).flat_map(|v| self.names_of(*v)) {
                 self.held(n, kept, depth + 1, &mut put);
             }
-            // a literal of no type of the code's is no value (`const lines: string[] = []`)
+            // a literal of no type of the code's is no value (`const lines: string[] = []`): the name holds what it is bound
+            // to, as any other does
             if let Some(ty) = put.first().map(|h| h.ty.clone()).filter(|t| !t.is_empty() && put.iter().all(|h| h.ty == *t)) {
-                out.push(Held::new(ty, name));
+                return out.push(Held::new(ty, name));
             }
-            return;
         }
         if depth > 8 || element {
             return;
