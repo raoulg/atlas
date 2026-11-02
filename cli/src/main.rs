@@ -248,8 +248,8 @@ enum Cmd {
         /// `parts`, `units`, `steps`, `families`, `places`, `dirs`, as the page's address writes them.
         #[arg(long, value_name = "JSON")]
         view: Option<Sight>,
-        /// Write how long each phase took (read, check, flow, page), in seconds, and how many bodies the
-        /// reading linked, as JSON to this file
+        /// Write how long each phase took (read, check, flow, page), in seconds, how many bodies the
+        /// reading linked, and where the reading's time went, stage by stage, as JSON to this file
         #[arg(long, value_name = "FILE", hide = true)]
         timings: Option<PathBuf>,
     },
@@ -336,7 +336,7 @@ enum Cmd {
 /// The page of `repos`, or of one of them `since` a revision (`until` another), written to `out`,
 /// else beside `home`, the folder of the first of them when it is not a clone. It opens in `sight`,
 /// and on the route of a file named on the command line. How long each phase took goes to `timings`, as
-/// JSON, where one is named.
+/// JSON, where one is named, with the stages of the reading (`atlas_engine::clock`).
 fn view(
     repos: &[PathBuf],
     opts: &Options,
@@ -346,6 +346,9 @@ fn view(
     sight: Option<Sight>,
     timings: Option<&Path>,
 ) -> Result<()> {
+    if timings.is_some() {
+        atlas_engine::clock::start();
+    }
     let mut phases = Phases::new();
     let read = page::reading(repos, opts, since, until)?;
     phases.done("read");
@@ -363,6 +366,7 @@ fn view(
         let s = &graph.stats;
         let linked = serde_json::json!({ "program": s.linked_bodies - s.linked_library_bodies, "library": s.linked_library_bodies });
         phases.took.insert("linked".into(), linked);
+        phases.took.insert("stages".into(), serde_json::to_value(atlas_engine::clock::taken())?);
         std::fs::write(timings, serde_json::to_string(&phases.took)?)?;
     }
     eprintln!("{} · wrote {}", page::summary(&graph), out.display());
@@ -372,9 +376,10 @@ fn view(
     Ok(())
 }
 
-/// How long each phase of a command took, in seconds, in the order they ran, and how many bodies the
-/// reading linked, the program's and the libraries' (`linked`): what `--timings` writes, for a
-/// benchmark to read (`tools/perf.py`).
+/// How long each phase of a command took, in seconds, in the order they ran, how many bodies the
+/// reading linked, the program's and the libraries' (`linked`), and the reading's stages, per part
+/// and per crate or package (`stages`): what `--timings` writes, for a benchmark to read
+/// (`tools/perf.py`).
 struct Phases {
     last: std::time::Instant,
     took: serde_json::Map<String, serde_json::Value>,

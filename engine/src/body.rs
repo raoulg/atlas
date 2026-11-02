@@ -11,8 +11,8 @@ use crate::builder::GraphBuilder;
 use crate::effects::{self, Facts};
 use crate::model::{ext, Crossing, Dir, EdgeKind, Held, NodeKind, Set, Site, Slot, Test, Touch, Use, World};
 use crate::tree::{
-    beneath, guarded_by, guards, named_children, number_choices, payload_of, starts_at_literal, text, walk, walk_all, what_of, wrapped,
-    wraps, ChoiceSyntax, Part, Wrappers,
+    beneath, guarded_by, guards, named_children, number_choices, parent, payload_of, starts_at_literal, text, walk, walk_all, what_of,
+    wrapped, wraps, ChoiceSyntax, Part, Wrappers,
 };
 
 /// The touches each call of a body made, by where the call is written: the touches made now, and
@@ -417,7 +417,7 @@ impl<'t, 's> Steps<'t, 's> {
     fn up(&self, n: TsNode<'t>) -> Option<TsNode<'t>> {
         match self.index().parents.get(&n.id()) {
             Some((p, _)) => Some(*p),
-            None => n.parent(),
+            None => parent(n),
         }
     }
 
@@ -1066,7 +1066,7 @@ impl<'t, 's> Steps<'t, 's> {
             return Some(n);
         }
         let mut t = self.body.descendant_for_byte_range(b.saturating_sub(1), b)?;
-        while let Some(p) = t.parent().filter(|p| a <= p.start_byte() && p.end_byte() == b) {
+        while let Some(p) = parent(t).filter(|p| a <= p.start_byte() && p.end_byte() == b) {
             t = p;
         }
         Some(t)
@@ -1848,7 +1848,7 @@ pub fn changed_through<'a, 't>(
         nodes.iter().filter_map(|n| (syn.binds)(*n, src, looked).map(|(x, v)| (*n, x, v))).collect();
     let loops: Vec<(TsNode, &str, Option<&str>, TsNode)> =
         nodes.iter().filter_map(|n| (syn.loops)(*n, src).map(|(x, v, b)| (*n, x, v, b))).collect();
-    let own = |s: TsNode| s.parent().into_iter().chain(s.parent().and_then(|p| p.parent())).any(|p| p.id() == body.id());
+    let own = |s: TsNode| parent(s).into_iter().chain(parent(s).and_then(|p| parent(p))).any(|p| p.id() == body.id());
     let (mut name, mut at) = (name, at);
     // each step goes back to where a loop or a statement before `at` binds the name, so it ends
     'follow: loop {
