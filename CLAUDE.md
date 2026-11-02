@@ -128,8 +128,8 @@ else is a short-lived topic branch.
 
 | Branch | Holds | Version | Built as | Who moves it |
 | --- | --- | --- | --- | --- |
-| `next` | integration: everything finished | the next minor, `X.Y.0` | nightly, `X.Y.0-nightly.<timestamp>` | the integrating agent, by merging the topic branches of a round and testing what they touched |
-| `release-X.Y` | the release being finished, cut from `next` | `X.Y.0` | nothing; `ci` runs on it | the agent that prepares the promotion |
+| `next` | integration: everything finished | the next minor, `X.Y.0` | nightly, `X.Y.0-nightly.<timestamp>`, while no release branch is open | the integrating agent, by merging the topic branches of a round and testing what they touched |
+| `release-X.Y` | the release being finished, cut from `next` | `X.Y.0` | nightly: the candidate Raoul tests before he promotes it | the agent that prepares the promotion |
 | `main` | what is released | the released `X.Y.Z` | stable, tag `vX.Y.Z` | Raoul only |
 | `<topic>` | one piece of work | none | nothing | its owner |
 
@@ -160,8 +160,9 @@ else is a short-lived topic branch.
    moves before the push, merge it again and run again only the test files its new commits touch:
    documentation and CI touch none.
 3. **Cut, then promote**: once what a release carries is on `next`, the agent that prepares it cuts
-   `release-X.Y` from `next` (`git push origin <commit>:refs/heads/release-X.Y`), and new work keeps
-   landing on `next`. Only the release's own finishing lands on `release-X.Y`: its notes and pictures, and
+   `release-X.Y` from `next` (`git push origin <commit>:refs/heads/release-X.Y`). From the cut until Raoul has
+   promoted it, the nightly builds `release-X.Y`: it is the candidate he tests for stable, and new work waits on its
+   topic branches, landing on `next` once the release is promoted. Only the release's own finishing lands on `release-X.Y`: its notes and pictures, and
    a fix of something it carries, landed as on `next` (from a detached `origin/release-X.Y`) and merged
    into `next` in the same turn, so `next` never lacks what the release has. When Raoul says so,
    `release-X.Y` is merged into `main` (a merge commit), `main` is tagged `vX.Y.0` and pushed, and the
@@ -199,7 +200,7 @@ else is a short-lived topic branch.
 | Channel | Source | Install |
 | --- | --- | --- |
 | stable | tags `v*` on `main` | `brew install raoulg/tap/atlas-code`, `install.sh` |
-| nightly | `next`, built at 03:30 when it changed and its tests pass on three platforms, or by hand | `brew install raoulg/tap/atlas-code-nightly`, `ATLAS_CHANNEL=nightly install.sh` |
+| nightly | the open release branch, else `next`, built at 03:30 when it changed and its tests pass on three platforms, or by hand | `brew install raoulg/tap/atlas-code-nightly`, `ATLAS_CHANNEL=nightly install.sh` |
 
 ## Practical
 
