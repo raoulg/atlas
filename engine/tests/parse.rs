@@ -489,7 +489,7 @@ fn an_arm_says_what_decides_it() {
         .items
         .iter()
         .find_map(|it| match it {
-            atlas_engine::flow::Item::Choice { choice: 0, members, when } => {
+            atlas_engine::flow::Item::Choice { choice: 0, members, when, .. } => {
                 Some(members.iter().map(|m| (m.branch, m.step.to.as_str(), when[m.branch].as_str())).collect())
             }
             _ => None,

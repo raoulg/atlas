@@ -11,7 +11,7 @@
 //! doors, each called by the entry with no order between them; `orders` reads each door as a function of its own, never
 //! the class as one body.) Its subjects are the `setup` pair, where the step that sets the shelf up runs beside the
 //! methods that keep files on it, the `order` pair, where the route sets a second shelf up after it kept its report, and
-//! two programs made for the order in a loop and in a nested arm (`plans/setup-in-a-loop`, `plans/setup-in-an-arm`).
+//! two programs made for the order in a loop and in a nested arm (`plans/setup-in-a-loop`, and `plans/setup-in-an-arm` in Python, Rust and TypeScript).
 //!
 //! A function's arrow (`flow::arrows`) reads back what it does in the contexts it is called in, one of them the route
 //! that starts at it. The second law: what a function does at places holds what that route, written out occurrence by
@@ -76,13 +76,15 @@ fn differences(engine: &Reading, page: &Reading) -> Vec<String> {
 }
 
 /// The subjects: the pairs and programs where a step sets up the object a later call runs on.
-const SUBJECTS: [&str; 6] = [
+const SUBJECTS: [&str; 8] = [
     "pairs/setup/python/clean",
     "pairs/setup/python/shortcut",
     "pairs/order/python/clean",
     "pairs/order/python/shortcut",
     "plans/setup-in-a-loop",
-    "plans/setup-in-an-arm",
+    "plans/setup-in-an-arm/python",
+    "plans/setup-in-an-arm/rust",
+    "plans/setup-in-an-arm/typescript",
 ];
 
 /// The engine and the page read every route of each subject alike, occurrence by occurrence, and a route of each opens

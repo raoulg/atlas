@@ -131,9 +131,26 @@ function read(route) {
     const w = C.fine.ways.get(k), s = M.sideOfRoles([C.roles.get(k)].filter(Boolean), () => (w?.size === 1 ? [...w][0] : "mid"));
     facts.push(`side ${placeName(k)} ${SIDES[s]}`);
   }
-  const faults = [...pictures(F, open, occ, homes, valueName), ...familyOpenings(), ...pickings(), ...folderOpenings([...C.fine.ways.keys()].map(M.filePath).filter(Boolean))];
+  const faults = [...alternatives(F, occ), ...pictures(F, open, occ, homes, valueName), ...familyOpenings(), ...pickings(), ...folderOpenings([...C.fine.ways.keys()].map(M.filePath).filter(Boolean))];
   if (window.ATLAS_FINE_BUDGET) faults.push(...cutOpenings(F, occ));
   return {facts: [...new Set(facts)].sort(), faults};
+}
+
+// A choice in a body is a coproduct of its arms (mathematics.md, "Coproducts"): its frame holds alternatives, and one run takes
+// one of them (#357). Of the boxes a choice's frame holds, two in different branches stand in different arms of a choice, as the
+// calls say (`Site::arms`), so no run runs both; and every box it holds stands in the arms the frame stands in, so a choice
+// inside an arm lies in that arm's frame, and a run through both arms is one run. Asked of the finest plan of every route
+function alternatives(F, occ) {
+  const out = [], apart = (x, y) => [...x].some(([c, a]) => y.has(c) && y.get(c) !== a);
+  const boxes = [...F.frames.values(), ...[...F.pills.values()].filter(P => !P.own)];
+  for (const C of F.frames.values()) if (C.synthetic) {
+    const kids = boxes.filter(X => X.parent === C.id), raw = C.raw || new Map();
+    for (const X of kids) if ([...raw].some(([c, a]) => X.raw?.get(c) !== a)) out.push(`${occ(X.id)} stands in ${occ(C.id)} outside the arms it stands in`);
+    kids.forEach((X, i) => kids.slice(i + 1).forEach(Y => {
+      if (X.branch !== Y.branch && !apart(X.raw || new Map(), Y.raw || new Map())) out.push(`${occ(X.id)} and ${occ(Y.id)} are two branches of ${occ(C.id)} that run in one run`);
+    }));
+  }
+  return out;
 }
 
 // The walk's rule, held where the picture is drawn from: a closed family opens, for each value it stood for, into a frame with

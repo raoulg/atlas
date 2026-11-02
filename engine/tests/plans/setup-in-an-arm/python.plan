@@ -1,0 +1,29 @@
+# What ran before a step in an arm is what ran before its choice and what ran before it in its own arm (#329): the
+# shelf is set up in the arm that keeps anything, and the report is kept in an arm of a choice inside that arm. A choice
+# is a coproduct of its arms, and the arm `KEEP` is the composite `open_shelf ; (keep_report + 1)`: the choice of
+# `REPORT` is a coproduct inside that arm, a frame of its own in it, never another arm beside it (#357). Both calls run
+# in one run where `REPORT` holds: the set-up stands before the report in the arm both are in. It ran before
+# `keep_report`, and `write` under it writes the report in `out`, the folder the set-up decides. The shelf is made in the
+# outer arm and taken in the inner one, so it stands in the outer choice's frame. The plans of the same program in Rust
+# and TypeScript say the same (`rust.plan`, `typescript.plan`).
+
+route arms.main
+choice main/?1                                     # `if KEEP:`
+step main/?1/open_shelf
+step main/?1/open_shelf/Shelf()
+choice main/?1/?1                                  # `if REPORT:`, inside the arm of `KEEP`
+step main/?1/?1/Shelf.keep_report
+step main/?1/?1/Shelf.keep_report/write
+
+line entry > main call
+line main/?1/open_shelf/Shelf() > Shelf@main/?1/open_shelf/Shelf() value
+line Shelf@main/?1/open_shelf/Shelf() > main/?1/open_shelf value
+line main/?1/open_shelf > Shelf·shelf@main/?1/open_shelf value
+line Shelf·shelf@main/?1/open_shelf > main/?1/?1/Shelf.keep_report/write value     # `write(self.root / "report.txt", text)`
+line main/?1/?1/Shelf.keep_report/write > File(out/report.txt) own
+
+home Shelf@main/?1/open_shelf/Shelf() main/?1/open_shelf
+home Shelf·shelf@main/?1/open_shelf main/?1
+
+side entry left
+side File(out/report.txt) right
