@@ -3195,7 +3195,24 @@ fn a_name_changed_in_one_arm_is_the_choices_value() {
 fn a_lookup_is_the_projection_its_subscript_is() {
     common::a_lookup_is_the_projection_its_subscript_is(
         "python",
-        &[("indexed", "looked_up"), ("keyed", "got"), ("pushed", "pushed_looked_up"), ("added", "added_looked_up")],
+        &[
+            ("indexed", "looked_up"),
+            ("keyed", "got"),
+            ("pushed", "pushed_looked_up"),
+            ("added", "added_looked_up"),
+            ("grown", "grown_looked_up"),
+        ],
         &[],
+    );
+}
+
+/// The lookups pair: an `append` to a row a subscript or a lookup picks changes the rows (#374): of rows the function is
+/// handed, of rows it makes, and of the module's rows, which the change writes; as in Rust and TypeScript.
+#[test]
+fn a_change_of_a_part_changes_the_whole() {
+    common::a_change_of_a_part_changes_the_whole(
+        "python",
+        &["added", "added_looked_up", "grown", "grown_looked_up"],
+        &["added", "added_looked_up"],
     );
 }

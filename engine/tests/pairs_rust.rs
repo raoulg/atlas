@@ -1856,9 +1856,8 @@ fn a_name_changed_in_one_arm_is_the_choices_value() {
 /// The lookups pair: `levels.first()?` and `levels.get(0)?` are the projection `&levels[0]` is and `levels.get(name)?` the
 /// one `&levels[name]` is, no step, also of a vector changed in place first and of a map a `LazyLock` keeps (#346, #355),
 /// as in Python and TypeScript; a tuple a tuple pattern takes apart binds each name as a `let` of its element would, so
-/// `let (first, second) = (levels.first()?, levels.get(1)?)` is `(&levels[0], &levels[1])` (`paired`). The twins `added`
-/// and `added_looked_up` are not one route yet: a `push` to the row `rows.first_mut()?` picks changes the rows, one to the
-/// row `&mut rows[0]` borrows is no step (known #374).
+/// `let (first, second) = (levels.first()?, levels.get(1)?)` is `(&levels[0], &levels[1])` (`paired`). A `push` to the
+/// row `rows.first_mut()?` picks is the step a `push` to the row `&mut rows[0]` borrows is (#374).
 #[test]
 fn a_lookup_is_the_projection_its_subscript_is() {
     common::a_lookup_is_the_projection_its_subscript_is(
@@ -1869,7 +1868,21 @@ fn a_lookup_is_the_projection_its_subscript_is() {
             ("paired", "paired_looked_up"),
             ("keyed", "got"),
             ("pushed", "pushed_looked_up"),
+            ("added", "added_looked_up"),
+            ("grown", "grown_looked_up"),
         ],
         &[],
+    );
+}
+
+/// The lookups pair: a `push` to a row a subscript or a lookup picks changes the rows (#374): the row `&mut rows[0]`
+/// borrows of rows the function is handed as `&mut`, of rows it makes and binds `mut`, and of the module's rows a guard on
+/// its `Mutex` hands on, which the change writes; as in Python and TypeScript.
+#[test]
+fn a_change_of_a_part_changes_the_whole() {
+    common::a_change_of_a_part_changes_the_whole(
+        "rust",
+        &["added", "added_looked_up", "grown", "grown_looked_up"],
+        &["added", "added_looked_up"],
     );
 }

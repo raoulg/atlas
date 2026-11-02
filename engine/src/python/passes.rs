@@ -9,8 +9,8 @@ use indexmap::IndexMap;
 use tree_sitter::Node as TsNode;
 
 use super::body::{
-    by_name, changed, changed_params, field_default, handed, library_change, link_calls, positional, sites, Arg, Changing, Evaluated, Seen,
-    OWN,
+    by_name, changed, changed_params, changed_whole, field_default, handed, library_change, link_calls, positional, root_name, sites, Arg,
+    Changing, Evaluated, Seen, OWN,
 };
 use super::module::{
     call_path, declared, def_node, defined, dotted, first_docline, iter_defs, lib_of, package_of, private, resolve, signature,
@@ -589,7 +589,7 @@ pub(super) fn link(modules: &IndexMap<String, Module>, store: &mut GraphBuilder,
     crate::paths::place_calls(store, completed, false);
     drop(callers);
     let _globals = crate::clock::stage("globals");
-    globals(modules, store, types);
+    globals(modules, store, types, &sites, own);
     // the work handed to a managed transaction (`session.execute_read(work)`) goes its way
     for (work, kind, dir) in handed {
         if let Some(n) = store.nodes.get_mut(&work) {
@@ -602,16 +602,24 @@ pub(super) fn link(modules: &IndexMap<String, Module>, store: &mut GraphBuilder,
 
 /// The values a module keeps between calls, which its functions change: a name a module binds at
 /// its top level that a function rebinds (`global df`) or changes in place (`df.drop(..,
-/// inplace=True)`, `LATEST[k] = v`), in its own module or where another imports it. Every
-/// function that changes one writes it and every one that uses it reads it: a place,
-/// `Global(module.name)`. A name no function changes is a constant of the code, and no place.
-fn globals(modules: &IndexMap<String, Module>, store: &mut GraphBuilder, types: &Types) {
+/// inplace=True)`, `LATEST[k] = v`, also through a name bound to a part of it: `row = ROWS[0];
+/// row.append(level)`), in its own module or where another imports it. Every function that
+/// changes one writes it and every one that uses it reads it: a place, `Global(module.name)`. A
+/// name no function changes is a constant of the code, and no place.
+fn globals(
+    modules: &IndexMap<String, Module>,
+    store: &mut GraphBuilder,
+    types: &Types,
+    sites: &HashMap<(String, usize), String>,
+    program: &Own,
+) {
     // per function: what it writes, reads, and tests for a key, each kept value by name and line
     type Named = Vec<(String, String, u32)>;
     type Uses = (String, Named, Named, Named);
     let mut uses: Vec<Uses> = vec![];
     for m in modules.values() {
         let src = &m.src;
+        let seen = Seen::new(m, types, sites, modules, store, program);
         let top: HashSet<String> = named_children(m.tree.root_node())
             .into_iter()
             .filter(|s| s.kind() == "expression_statement")
@@ -695,7 +703,15 @@ fn globals(modules: &IndexMap<String, Module>, store: &mut GraphBuilder, types: 
                 }
             }
             for x in changed(body, &|c| library_change(facts, c, src).into_iter().collect()) {
-                if let Some((k, n)) = held(x).filter(|(k, _)| !writes.iter().any(|(w, _, _)| w == k)) {
+                // a change through a name bound to a part of another value changes that value: a change to a part changes
+                // the whole (`changed_whole`)
+                let whole = changed_whole(body, src, &|c| seen.lookup(c).map(|l| l.parts()), x).filter(|w| Some(*w) != root_name(x, src));
+                let at = match whole {
+                    Some(w) if !own.contains(w) && !imported.contains(w) => kept(w).map(|k| (k, w.to_string())),
+                    Some(_) => None,
+                    None => held(x),
+                };
+                if let Some((k, n)) = at.filter(|(k, _)| !writes.iter().any(|(w, _, _)| w == k)) {
                     writes.push((k, n, line(x)));
                 }
             }

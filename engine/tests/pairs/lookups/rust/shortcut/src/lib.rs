@@ -1,6 +1,8 @@
 //! The levels of a signal, each looked up in a collection the module keeps: by a subscript, or by the method that looks
 //! it up. `pushed` and `pushed_looked_up` look up in a list they change in place first, which starts at the module's quiet
-//! level; `added` and `added_looked_up` change the row they look up, and so the module's rows.
+//! level. `added` and `added_looked_up` change the row they look up, and so the module's rows: a write of what the module
+//! keeps, as a change of the rows themselves is; `grown` and `grown_looked_up` the row of rows they make, which start at
+//! the module's quiet level.
 use std::collections::HashMap;
 use std::sync::{LazyLock, Mutex};
 
@@ -104,6 +106,24 @@ pub fn added_looked_up(level: Level) -> Option<()> {
     let mut rows = ROWS.lock().ok()?;
     let row = rows.first_mut()?;
     row.push(level);
+    show(&rows);
+    Some(())
+}
+
+/// A second level added to the first row of rows that start at the module's quiet level, by its place.
+pub fn grown(second: Level) -> Option<()> {
+    let mut rows = vec![vec![Level { db: QUIET.db }]];
+    let row = &mut rows[0];
+    row.push(second);
+    show(&rows);
+    Some(())
+}
+
+/// A second level added to the first row of rows that start at the module's quiet level, the rows' first.
+pub fn grown_looked_up(second: Level) -> Option<()> {
+    let mut rows = vec![vec![Level { db: QUIET.db }]];
+    let row = rows.first_mut()?;
+    row.push(second);
     show(&rows);
     Some(())
 }
