@@ -19,6 +19,10 @@ paragraphs (code in fences), an `Issues:` line, and the point's pictures:
   structure, inline, so that they take the page's colours in the light and the dark, each with what it
   shows beneath it.
 - `Bars: label = 18.9 s; label = 0.14 s | caption`: a bar chart of measured numbers.
+- `Bench: releases/<version>/bench.json | caption`: the release's speed, the same measures every release
+  (`tools/perf.py release-bars` writes the file): its one number, the geometric mean of the ratios after / before,
+  beside each ratio on a log scale; per program of the corpus, named by its card, each measure of the release before
+  beside this one; and each measure over every release since the series began, a bar per release.
 - `Pictures: changes/x.jpg`: screenshots, from the notes each issue leaves in `docs/changes/`.
 - `Example: name | code`: the small program `fixtures/<name>` drawn by the release before and by this one, beneath
   the code the point is about; `Example: name` shows the program's own code, `Example: name |` the pictures alone.
@@ -33,6 +37,8 @@ documentation has it, at `https://atlas.pttrn.io/next/releases/<version>/`, whic
 """
 
 import html
+import json
+import math
 import pathlib
 import re
 import sys
@@ -127,6 +133,45 @@ section li{margin:4px 0}
 .bar .v{height:22px;background:var(--key);min-width:2px;position:relative}
 .bar .v span{position:absolute;left:calc(100% + 8px);top:1px;font-family:var(--mono);font-size:13px;color:var(--ink);white-space:nowrap}
 .bars .cap{font-size:13.5px;color:var(--ink-2);margin-top:10px}
+.b-legend{display:flex;flex-wrap:wrap;gap:6px 18px;font-size:13px;color:var(--ink-2);margin:0 0 10px}
+.b-legend i{display:inline-block;width:12px;height:12px;margin-right:6px;vertical-align:-1px}
+.gbar{display:grid;grid-template-columns:minmax(120px,30%) 1fr;gap:12px;align-items:center;margin:10px 0}
+.gbar .l{font-size:14px;color:var(--ink-2)}
+.gpair{display:grid;gap:3px}
+.gbar:has(> .l:empty){grid-template-columns:1fr}
+.gpair .v{height:14px;min-width:2px;position:relative}
+.gpair .v.none{min-width:0}
+.gpair .v span{position:absolute;left:calc(100% + 8px);top:-1px;font-family:var(--mono);font-size:12.5px;color:var(--ink);white-space:nowrap}
+.s0{background:var(--ink-3)}.s1{background:var(--key)}.s2{background:var(--edit)}.s3{background:var(--add)}
+.bench{margin:22px 0;background:var(--panel);border:1px solid var(--line);padding:16px 18px}
+.b-row{border-top:1px solid var(--line);padding:14px 0 6px}
+.b-row:first-child{border-top:0;padding-top:0}
+.b-name{margin:0;font-weight:500;color:var(--ink)}
+.b-card{margin:2px 0 10px;font-family:var(--mono);font-size:12px;color:var(--ink-3)}
+.b-cells{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,220px),1fr));gap:12px 22px}
+.b-cell .l{font-size:13px;color:var(--ink-2);margin:0 0 4px}
+.b-bar{display:grid;grid-template-columns:56px 1fr;gap:8px;align-items:center;font-family:var(--mono);font-size:12px;color:var(--ink-3);margin:3px 0}
+.b-bar .v{height:14px;min-width:2px;position:relative}.b-bar .v.none{min-width:0}
+.b-bar .v span{position:absolute;left:calc(100% + 6px);top:-1px;white-space:nowrap;color:var(--ink)}
+.b-bar.before .v{background:var(--ink-3)}.b-bar.after .v{background:var(--key)}
+.b-ratio{font-family:var(--mono);font-size:12px;color:var(--ink-3);margin:2px 0 0}
+.b-lines{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,260px),1fr));gap:14px 22px}
+.b-lines figure{margin:0}
+.b-lines figcaption{font-size:12.5px;color:var(--ink-2);margin:0 0 2px}
+.b-head{border-top:1px solid var(--line);padding-top:14px;margin:18px 0 10px;font-weight:500;color:var(--ink)}
+.b-sum{display:flex;gap:16px;align-items:baseline;flex-wrap:wrap;margin:0 0 12px}
+.b-sum span{font-size:14px;color:var(--ink-2);max-width:60ch}
+.b-sum .b-big{font-family:var(--mono);font-size:30px;color:var(--ink);max-width:none}
+.b-scale{display:flex;justify-content:space-between;font-family:var(--mono);font-size:11.5px;color:var(--ink-3);margin:0 0 4px;padding:0 120px 0 calc(min(40%,260px) + 10px)}
+.b-div{display:grid;grid-template-columns:min(40%,260px) 1fr 110px;gap:10px;align-items:center;margin:3px 0;font-size:12.5px}
+.b-div .l{color:var(--ink-2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.b-div .t{position:relative;height:12px}
+.b-div .m{position:absolute;left:50%;top:-3px;bottom:-3px;border-left:1px solid var(--ink-3)}
+.b-div .d{position:absolute;top:0;height:12px;min-width:1px}
+.b-div .d.faster{background:var(--add)}.b-div .d.slower{background:var(--del)}.b-div .d.same{background:var(--line)}
+.b-div .n{font-family:var(--mono);font-size:12px}
+.b-div .n.faster{color:var(--add)}.b-div .n.slower{color:var(--del)}.b-div .n.same{color:var(--ink-3)}
+.bench .cap{font-size:13.5px;color:var(--ink-2);margin:14px 0 0}
 .pager{display:flex;justify-content:space-between;gap:16px;border-top:1px solid var(--line);margin-top:48px;padding-top:20px;font-family:var(--mono);font-size:14px}
 .pager a{text-decoration:none;color:var(--ink-2)}
 .pager a:hover{color:var(--accent)}
@@ -201,7 +246,7 @@ def read(path: pathlib.Path) -> dict:
             fields[m.group(1).lower()] = " ".join(m.group(2).split())
             return ""
 
-        keys = "Issues|Pictures|Draw|Atlas|Diagram|Bars|Hero|Example|Compare"
+        keys = "Issues|Pictures|Draw|Atlas|Diagram|Bars|Bench|Hero|Example|Compare"
         rest = re.sub(rf"(?ms)^({keys}): (.*?)(?=\n\s*\n|\n(?:{keys}): |\Z)", field, rest)
         points.append({"title": re.sub(r"^\d+\.\s*", "", title.strip()), "text": rest, **fields})
     release = {"version": head.get("version", path.stem), "date": head.get("date", ""), "lede": parts[0].strip(), "points": points}
@@ -242,6 +287,8 @@ def page(release: dict, older: dict | None = None, newer: dict | None = None) ->
             body.append(f'<figure class="diagram">{svg(DOCS / diagram.strip())}{said}</figure>')
         if point.get("bars"):
             body.append(bars(point["bars"]))
+        if point.get("bench"):
+            body.append(bench(point["bench"]))
         for n in re.findall(r"#(\d+)", point.get("atlas", "")):
             body.append(card(release, int(n)))
         pictures = [p.strip() for p in point.get("pictures", "").split(",") if p.strip()]
@@ -324,8 +371,40 @@ def svg(path: pathlib.Path) -> str:
     return re.sub(r"(<svg[^>]*>)", lambda m: m.group(1) + head, text, count=1)
 
 
+SIDE = re.compile(r"^(.*?)(?:,\s*|\s+|^)(before|after|now|v?\d+\.\d+(?:\.\d+)?)$", re.IGNORECASE)
+
+
+def sides_of(labels: list[str]) -> list[tuple[str, str]] | None:
+    """Labels that compare versions, `measure, 0.70.0` / `measure, 0.71.0` or `measure before` / `measure after`, as
+    (measure, side); None where any label names no side or there is one side alone: then each label is a bar of its own."""
+    split = [SIDE.match(label.strip()) for label in labels]
+    if not all(split) or len({m.group(2) for m in split}) < 2:
+        return None
+    return [(m.group(1).strip(), m.group(2)) for m in split]
+
+
+def legend(sides: list[str]) -> str:
+    """The colour of each side of a comparison, in the order of the pairs."""
+    keys = "".join(f'<span><i class="s{i}"></i>{inline(side)}</span>' for i, side in enumerate(sides))
+    return f'<p class="b-legend">{keys}</p>'
+
+
+def pairs(groups: list[tuple[str, list[tuple[int, str, float | None]]]], top: float, longest: float = 78) -> str:
+    """Grouped bars of one scale: a group per measure (its label as HTML), its sides side by side, each in its side's
+    colour; the longest bar takes `longest` percent of the width, the rest is room for its number."""
+    out = []
+    for measure, members in groups:
+        rows = "".join(
+            f'<div class="v s{i}{" none" if n is None else ""}" style="width:{0 if n is None else max(0.4, longest * n / top):.2f}%"><span>{html.escape(said)}</span></div>'
+            for i, said, n in members
+        )
+        out.append(f'<div class="gbar"><span class="l">{measure}</span><div class="gpair">{rows}</div></div>')
+    return "".join(out)
+
+
 def bars(spec: str) -> str:
-    """`label = 18.9 s; label = 0.14 s | caption` as bars of one scale."""
+    """`label = 18.9 s; label = 0.14 s | caption` as bars of one scale. Labels that compare versions or before and
+    after (`sides_of`) are drawn as pairs: a group per measure, one colour per side, with a legend."""
     data, _, caption = spec.partition("|")
     rows = []
     for item in [i for i in data.split(";") if "=" in i]:
@@ -333,11 +412,121 @@ def bars(spec: str) -> str:
         number = float(re.match(r"[\d.]+", value).group(0))
         rows.append((label, value, number))
     top = max(n for _, _, n in rows) or 1
+    said = f'<p class="cap">{inline(caption.strip())}</p>' if caption.strip() else ""
+    split = sides_of([label for label, _, _ in rows])
+    if split:
+        sides = list(dict.fromkeys(side for _, side in split))
+        groups: dict[str, list[tuple[int, str, float | None]]] = {}
+        for (measure, side), (_, value, number) in zip(split, rows):
+            groups.setdefault(measure, []).append((sides.index(side), value, number))
+        return f'<div class="bars">{legend(sides)}{pairs([(inline(m), g) for m, g in groups.items()], top)}{said}</div>'
     out = "".join(
         f'<div class="bar"><span class="l">{inline(label)}</span><div class="v" style="width:{max(0.4, 82 * n / top):.2f}%"><span>{html.escape(value)}</span></div></div>'
         for label, value, n in rows
     )
-    return f'<div class="bars">{out}' + (f'<p class="cap">{inline(caption.strip())}</p>' if caption.strip() else "") + "</div>"
+    return f'<div class="bars">{out}{said}</div>'
+
+
+def measured(value: float | None, unit: str) -> str:
+    """A measured number as the page says it."""
+    if value is None:
+        return "–"
+    if unit == "MB":
+        return f"{value:,.0f} MB"
+    return f"{value:.2f} s" if value < 1 else f"{value:.1f} s" if value < 100 else f"{value:,.0f} s"
+
+
+def change(ratio: float) -> str:
+    """A ratio after / before as a change: ×1.25 is `+25 %`, ×0.986 is `−1.4 %`."""
+    percent = (ratio - 1) * 100
+    said = f"{abs(percent):.1f}" if abs(percent) < 10 else f"{abs(percent):.0f}"
+    return f"{'+' if percent > 0 else '−' if percent < 0 else '±'}{said} %"
+
+
+def bench(spec: str) -> str:
+    """`releases/<version>/bench.json | caption`: the release's speed. First its one number, the geometric mean of
+    after / before over every measure, beside every measure's ratio on a log scale (faster to the left, slower to the
+    right, a change within noise grey); then a row per program, named by its card (a private one by its card alone),
+    each measure as two bars, the release before and this one; then each measure on the night of every release since
+    the series began, a bar per release."""
+    path, _, caption = (x.strip() for x in spec.partition("|"))
+    data = json.loads((DOCS / path).read_text())
+    before, after = html.escape(data["before"]), html.escape(data["after"])
+    parts = [summary(data), legend([before, after])]
+    for row in data["rows"]:
+        groups = []
+        for c in row["cells"]:
+            values = [v for v in (c["before"], c["after"]) if v is not None]
+            ratio = (
+                ("to 0" if c["after"] == 0 else f"×{c['after'] / c['before']:.2f}")
+                if c["before"] and c["after"] is not None
+                else "not measured on both"
+            )
+            groups.append((f"{html.escape(c['label'])} <span class=\"b-ratio\">{ratio}</span>", c, max(values or [0]) or 1))
+        cells = "".join(
+            pairs([(label, [(0, measured(c["before"], c["unit"]), c["before"]), (1, measured(c["after"], c["unit"]), c["after"])])], peak)
+            for label, c, peak in groups
+        )
+        name = f"<code>{html.escape(row['name'])}</code>" if row.get("name") else html.escape(row.get("title") or "A private program")
+        said = f'<p class="b-card">{html.escape(row["said"])}</p>' if row.get("said") else ""
+        parts.append(f'<div class="b-row"><p class="b-name">{name}</p>{said}{cells}</div>')
+    over = "".join(releases_bars(data["releases"], s, data["rows"][s["row"]].get("short", "")) for s in data["series"])
+    if over:
+        parts.append(f'<p class="b-head">Every release since the series began, on its night</p><div class="b-lines">{over}</div>')
+    if caption:
+        parts.append(f'<p class="cap">{inline(caption)}</p>')
+    return f'<div class="bench">{"".join(parts)}</div>'
+
+
+def summary(data: dict) -> str:
+    """The release's one number and every measure's ratio, on a log scale: a bar's length is |log ratio|, so twice as
+    fast and twice as slow are bars of one length, on either side of the middle. A measure that fell to 0 has no
+    finite log ratio: its bar runs to the faster edge, said as `to 0`, and it stays out of the mean."""
+    s = data.get("summary")
+    if not s:
+        return ""
+    ratios = []
+    for row in data["rows"]:
+        who = row.get("short") or row.get("name") or ""
+        for c in row["cells"]:
+            if c["before"] and c["after"] is not None:
+                ratios.append((f"{who}, {c['label']}", c["after"] / c["before"], c.get("changed")))
+    top = max((abs(math.log(r)) for _, r, _ in ratios if r), default=1) or 1
+    bars_ = []
+    for label, r, changed in ratios:
+        side = "faster" if r < 1 else "slower"
+        kind = side if changed else "same"
+        width = 48 * abs(math.log(r)) / top if r else 50
+        place = f"right:50%;width:{width:.1f}%" if r < 1 else f"left:50%;width:{width:.1f}%"
+        word = (change(r) if r else "to 0") + ("" if changed else ", no change")
+        bars_.append(
+            f'<div class="b-div"><span class="l">{html.escape(label)}</span><div class="t"><i class="m"></i>'
+            f'<i class="d {kind}" style="{place}"></i></div><span class="n {kind}">{word}</span></div>'
+        )
+    word = "faster" if s["ratio"] < 1 else "slower"
+    gone = s.get("zero", 0)
+    zero = f" {gone} more fell to 0, work the release no longer does, and stand outside the mean." if gone else ""
+    head = (
+        f'<div class="b-sum"><span class="b-big">{change(s["ratio"])}</span><span>{html.escape(data["after"])} against '
+        f'{html.escape(data["before"])}: the geometric mean of after / before over {s["measures"]} measures, '
+        f'{abs(s["ratio"] - 1) * 100:.1f} % {word}; {s["changed"]} of them changed beyond noise.{zero}</span></div>'
+    )
+    legend = '<p class="b-scale"><span>← faster</span><span>log scale</span><span>slower →</span></p>'
+    return f'<div class="b-row">{head}{legend}{"".join(bars_)}</div>'
+
+
+def releases_bars(releases: list[str], series: dict, short: str) -> str:
+    """One measure over the releases, as grouped bars are drawn: the releases side by side from zero, the newest in
+    this release's colour and the ones before in the colour of the release before."""
+    shown = {p[0]: p for p in series["points"]}
+    top = max(p[1] for p in series["points"]) or 1
+    last = len(releases) - 1
+    members = [
+        (1 if i == last else 0, f"{r}: {measured(shown[r][1], series['unit'])}" if r in shown else f"{r}: –", shown[r][1] if r in shown else None)
+        for i, r in enumerate(releases)
+    ]
+    title = f"{html.escape(short)}, {html.escape(series['label'])}" if short else html.escape(series["label"])
+    return f"<figure><figcaption>{title}</figcaption>{pairs([('', members)], top, longest=45)}</figure>"
 
 
 def report_of(release: dict) -> dict:

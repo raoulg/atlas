@@ -3,15 +3,22 @@
 # ///
 """How fast Atlas builds, reads and tests, kept as a series per measure, and a signal when one gets slower.
 
+    uv run tools/perf.py corpus (fetch | paths) --into DIR --for (perf | laws)
     uv run tools/perf.py time NAME --out RUN -- COMMAND...
-    uv run tools/perf.py read --atlas ATLAS --subject NAME=PATH ... [--rounds N] [--timings FILE] --out RUN
+    uv run tools/perf.py read --atlas ATLAS [--subject NAME=PATH ...] [--programs DIR] [--rounds N] [--timings FILE] --out RUN
     uv run tools/perf.py tests --workspace DIR --out RUN [-- CARGO_TEST_ARGS...]
     uv run tools/perf.py record --data DIR --run RUN --commit SHA [--url URL] [--summary FILE] [--suspects FILE]
-    uv run tools/perf.py reproduce --repo DIR --a SHA --b SHA (--suspects FILE | --measure M ...) [--subject NAME=PATH ...] [--timings FILE] --out FILE
+    uv run tools/perf.py reproduce --repo DIR --a SHA --b SHA (--suspects FILE | --measure M ... | --table) [--subject NAME=PATH ...] [--programs DIR] [--timings FILE] --out FILE
     uv run tools/perf.py stages --timings FILE [--reproduced FILE]
     uv run tools/perf.py conclude --data DIR --reproduced FILE [--summary FILE] [--alert FILE] [--standing FILE]
     uv run tools/perf.py bisect --repo DIR --from SHA --to SHA --measure M [--subject NAME=PATH ...] --out FILE
-    uv run tools/perf.py release-bars (--data DIR --repo DIR | --reproduced FILE) --before REF --after REF [--measure M=LABEL ...]
+    uv run tools/perf.py release-bars [--data DIR] [--reproduced FILE] --repo DIR --before TAG --after REF [--version V] [--out FILE]
+
+`corpus` reads the corpus, `tools/corpus.txt`: the programs Atlas is measured on (`perf`) and its laws are sampled on
+(`laws`), each at a fixed revision. `fetch` checks those of one reader out in DIR, one folder per name, a private one
+with the secrets CORPUS_PRIVATE and CORPUS_TOKEN; `paths` names the folders. `--programs DIR` gives `read`,
+`reproduce` and `bisect` the programs `perf` reads as subjects. Nothing printed or written of a private program
+names its code: a reading that fails says so without Atlas's words, and its stages name only its libraries.
 
 `time`, `read` and `tests` measure and add their measures to the run file RUN (JSON):
 
@@ -21,12 +28,14 @@
   from a cold start, once a night (`--rounds` more for a median): the wall time, peak memory and the phases Atlas
   reports (read, check, flow, page), with how many bodies the reading linked, the program's and the libraries';
   of serve, the time to its first drawing, to its complete one, and what it spends drawing again after the same
-  file.
+  file. Each subject gets its card, from the graph `atlas-code analyze` reads of it: languages, files, lines,
+  modules, functions, nodes, edges and library bodies linked, with the revision read.
 - `tests` builds the test binaries once (`cargo test --no-run`), then runs each on its own as `cargo test`
   would, and times it: libtest's own timings are not stable Rust.
 
 `record` holds a run to the history in DIR (`history.jsonl`, one line per run with its commit), adds it,
-and draws DIR/README.md with its charts. A measure is suspect when it lies past its baseline, the median
+and draws DIR/README.md with the subjects' cards and its charts; a program of the corpus keeps its revision
+under its name. A measure is suspect when it lies past its baseline, the median
 of its last runs (those on the same CPU where there are enough), by more than the larger of a share of
 the baseline, three spreads of the window and a floor. A suspect measure says nothing yet: `--suspects`
 names each with the last commit that measured it within its baseline, for `reproduce`.
@@ -37,9 +46,13 @@ than every round of A by more than the floor. Its size grades it: small below LA
 there; a large one is bisected on the spot, so that it names its commit. `conclude` writes the grades
 into the history's last run, the summary and the text of the tracking issue (`--alert`, only for what was
 reproduced), or the standing of `next` against a release (`--standing`). `bisect` finds the landing in a
-range that made a measure slower, or gives each landing's share where no single one did. `release-bars`
-gives a release's notes their `Bars:` line from the series, or from an interleaved run of the two releases
-where the series did not measure the one before. Any failure to measure ends with an error.
+range that made a measure slower, or gives each landing's share where no single one did. `reproduce --table`
+measures the release's table: of each program of the corpus TABLE, of Atlas OF_ATLAS, with the cards of B's
+readings. `release-bars` writes a release's speed (`docs/releases/<version>/bench.json`, the `Bench:` line of its
+notes): each measure of the release before beside this one, from the interleaved run of the two where it measured
+it, else from each release's night in the series; their geometric mean ratio, with whether each changed beyond
+noise; and each measure on the night of every release since the series began. Any failure to measure ends with an
+error.
 
 `--timings FILE`, given to `read`, `reproduce` or `bisect`, keeps what Atlas reported of each reading it
 measured (`atlas-code view --timings`: the phases, the bodies linked, and the reading's stages per part and per
@@ -52,12 +65,15 @@ by the time reading them took, with the stages of each; of A and B side by side,
 from __future__ import annotations
 
 import argparse
+import base64
 import contextlib
 import datetime
 import html
 import json
+import math
 import os
 import platform
+import re
 import shutil
 import socket
 import statistics
@@ -66,6 +82,7 @@ import sys
 import tempfile
 import tomllib
 import time
+import urllib.parse
 import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
@@ -82,14 +99,129 @@ LARGE = 1.5  # a reproduced measure this many times A is large: bisected on the 
 PER_LANDING = 12  # a range of at most this many landings is measured landing by landing; a longer one is halved
 
 
+# the corpus
+
+CORPUS = Path(__file__).resolve().parent / "corpus.txt"
+READERS = ("perf", "laws")
+
+
+@dataclass(frozen=True)
+class Program:
+    """A program of the corpus: its name, its repository (a URL, or `private`), the commit it is read at, and
+    what reads it (`perf`, `laws`)."""
+
+    name: str
+    repository: str
+    revision: str
+    readers: tuple[str, ...]
+
+    @property
+    def private(self) -> bool:
+        return self.repository == "private"
+
+
+def corpus(file: Path = CORPUS) -> list[Program]:
+    """The programs of the corpus list `file`, each checked: a full commit, readers it knows, a private program
+    read by `perf` alone, and a name for one program only."""
+    programs: list[Program] = []
+    for number, line in enumerate(file.read_text().splitlines(), 1):
+        line = line.split(" #", 1)[0].strip()
+        if not line or line.startswith("#"):
+            continue
+        where = f"{file.name}:{number}"
+        name, repository, revision, *readers = line.split()
+        if not re.fullmatch(r"[0-9a-f]{40}", revision):
+            raise SystemExit(f"{where}: {name} is read at {revision}: write the full commit, so that its series measures one program")
+        if not readers or set(readers) - set(READERS):
+            raise SystemExit(f"{where}: {name} is read by {' '.join(readers) or 'nothing'}: write {' and/or '.join(READERS)}")
+        if repository == "private" and "laws" in readers:
+            raise SystemExit(f"{where}: {name} is private, and the laws' report names the sites it samples: laws never reads it")
+        if repository != "private" and not repository.startswith("https://"):
+            raise SystemExit(f"{where}: {name}'s repository is {repository}: write its https URL, or private")
+        if any(p.name == name for p in programs):
+            raise SystemExit(f"{where}: {name} is named twice")
+        programs.append(Program(name, repository, revision, tuple(readers)))
+    return programs
+
+
+def private(name: str) -> bool:
+    """Whether `name` is a private program of the corpus: nothing this script prints or writes shows its code."""
+    return any(p.name == name and p.private for p in corpus())
+
+
+def secret_urls(text: str) -> dict[str, str]:
+    """The secret CORPUS_PRIVATE: a line `NAME URL` per private program."""
+    out = {}
+    for line in text.splitlines():
+        if line.strip() and not line.lstrip().startswith("#"):
+            name, _, url = line.strip().partition(" ")
+            out[name] = url.strip()
+    return out
+
+
+def fetch(program: Program, into: Path, urls: dict[str, str], token: str | None) -> Path:
+    """`program` checked out at its revision in `into/<name>`, with its crates fetched where it has a Cargo.lock
+    (Atlas reads a Rust program's libraries where Cargo keeps them). A private program is fetched with `token`, sent
+    as a header to its host alone; what fails is said without its repository or git's words."""
+    tree = into / program.name
+    url, env = program.repository, dict(os.environ, GIT_TERMINAL_PROMPT="0")
+    if program.private:
+        url = urls.get(program.name, "")
+        if not url or not token:
+            lacking = " and ".join(s for s, has in (("CORPUS_PRIVATE (its line)", url), ("CORPUS_TOKEN", token)) if not has)
+            raise SystemExit(
+                f"{program.name} is private: its repository is its line in the secret CORPUS_PRIVATE, fetched with the "
+                f"read-only token CORPUS_TOKEN, and this run lacks {lacking}"
+            )
+        parts = urllib.parse.urlsplit(url)
+        header = base64.b64encode(f"x-access-token:{token}".encode()).decode()
+        env |= {"GIT_CONFIG_COUNT": "1", "GIT_CONFIG_KEY_0": f"http.{parts.scheme}://{parts.netloc}/.extraheader"}
+        env["GIT_CONFIG_VALUE_0"] = f"AUTHORIZATION: basic {header}"
+    steps = [
+        ["git", "init", "-q", str(tree)],
+        ["git", "-C", str(tree), "fetch", "-q", "--depth", "1", url, program.revision],
+        ["git", "-C", str(tree), "checkout", "-q", "FETCH_HEAD"],
+    ]
+    for step in steps:
+        done = subprocess.run(step, env=env, capture_output=True, text=True, check=False)
+        if done.returncode:
+            said = "" if program.private else f": {done.stderr.strip()}"
+            raise SystemExit(f"{program.name} could not be fetched at {program.revision[:12]}{said}")
+    if (tree / "Cargo.lock").exists():
+        done = subprocess.run(["cargo", "fetch", "--locked"], cwd=tree, capture_output=True, text=True, check=False)
+        if done.returncode:
+            said = "" if program.private else f": {done.stderr.strip()[-2000:]}"
+            raise SystemExit(f"the crates of {program.name} could not be fetched{said}")
+    return tree
+
+
+def command_corpus(args: argparse.Namespace) -> None:
+    programs = [p for p in corpus(args.corpus) if args.reader in p.readers]
+    into = args.into.resolve()
+    if args.action == "paths":
+        print(":".join(str(into / p.name) for p in programs))
+        return
+    into.mkdir(parents=True, exist_ok=True)
+    urls = secret_urls(os.environ.get("CORPUS_PRIVATE", ""))
+    for p in programs:
+        fetch(p, into, urls, os.environ.get("CORPUS_TOKEN") or None)
+        print(f"{p.name}: {p.revision[:12]}" + (", private" if p.private else ""))
+
+
+def programs_in(folder: Path | None, file: Path = CORPUS) -> list[tuple[str, Path]]:
+    """The subjects of the corpus that `perf` reads, as `corpus fetch` lays them out in `folder`."""
+    return [(p.name, folder / p.name) for p in corpus(file) if "perf" in p.readers] if folder else []
+
+
 # measuring
 
 
 def measured(
-    command: list[str], *, cwd: Path | None = None, env: dict[str, str] | None = None, log: Path | None = None
+    command: list[str], *, cwd: Path | None = None, env: dict[str, str] | None = None, log: Path | None = None, quiet: bool = False
 ) -> tuple[float, float]:
     """Run `command` to its end: its wall time in seconds and the peak resident memory of its largest
-    process in MB. Its output goes to `log`, else to this script's; a command that fails raises."""
+    process in MB. Its output goes to `log`, else to this script's; a command that fails raises, with the end
+    of its log unless `quiet` (a private program's log names its code)."""
     with open(log, "w") if log else contextlib.nullcontext() as out:
         start = time.perf_counter()
         process = subprocess.Popen(command, cwd=cwd, env=env, stdout=out, stderr=subprocess.STDOUT if out else None)
@@ -97,7 +229,7 @@ def measured(
         _, status, usage = os.wait4(process.pid, 0)
         elapsed = time.perf_counter() - start
     if code := os.waitstatus_to_exitcode(status):
-        tail = log.read_text(errors="replace")[-4000:] if log else ""
+        tail = log.read_text(errors="replace")[-4000:] if log and not quiet else ""
         raise SystemExit(f"{' '.join(command)} failed with {code}\n{tail}")
     # Linux counts the peak in KiB, macOS in bytes
     peak = usage.ru_maxrss / (1024 if sys.platform.startswith("linux") else 1024 * 1024)
@@ -118,10 +250,12 @@ def runner() -> dict:
     return {"os": f"{platform.system()} {platform.release()}", "cpu": cpu, "cores": os.cpu_count()}
 
 
-def add(run: Path, metrics: dict[str, dict]) -> None:
-    """Add `metrics` to the run file `run`, made when missing."""
+def add(run: Path, metrics: dict[str, dict], cards: dict[str, dict] | None = None) -> None:
+    """Add `metrics`, and the cards of the subjects they read, to the run file `run`, made when missing."""
     data = json.loads(run.read_text()) if run.exists() else {"runner": runner(), "metrics": {}}
     data["metrics"].update(metrics)
+    if cards:
+        data.setdefault("cards", {}).update(cards)
     run.write_text(json.dumps(data, indent=1, sort_keys=True))
 
 
@@ -176,10 +310,13 @@ def view(
     timings.unlink(missing_ok=True)
     command = [str(atlas), "--libraries", str(libraries), "view", "--no-open"]
     command += ["--out", str(scratch / "page.html"), "--timings", str(timings), str(subject)]
-    seconds, peak = measured(command, env=env, log=scratch / "log.txt")
+    hidden = private(name)
+    seconds, peak = measured(command, env=env, log=scratch / "log.txt", quiet=hidden)
     if not timings.exists():
         raise SystemExit(f"{atlas} wrote no --timings for {name}")
     reported = json.loads(timings.read_text())
+    if hidden:
+        reported["stages"] = unnamed(reported.get("stages", []))
     if reports is not None:
         reports.append(dict(reported))
     linked = reported.pop("linked", {})
@@ -190,6 +327,12 @@ def view(
         **{f"phase/{p}": t for p, t in reported.items()},
         **{f"linked/{side}": float(n) for side, n in linked.items()},
     }
+
+
+def unnamed(stages: list[dict]) -> list[dict]:
+    """A private program's stages as they may be shown: the libraries' crates and packages by name, its own parts and
+    its own code by none."""
+    return [{**s, "part": "", "of": s.get("of") if s.get("library") else None} for s in stages]
 
 
 def served(atlas: Path, name: str, subject: Path, libraries: int, scratch: Path, env: dict[str, str]) -> dict[str, float]:
@@ -214,17 +357,20 @@ def served(atlas: Path, name: str, subject: Path, libraries: int, scratch: Path,
                 ended.append(usage)
         return bool(ended)
 
+    hidden = private(name)
+
     def said() -> dict | None:
         """What the server says it has drawn; None while it does not listen yet."""
         if gone():
-            raise SystemExit(f"atlas-code serve of {name} ended on its own\n{log.read_text(errors='replace')[-4000:]}")
+            tail = "" if hidden else "\n" + log.read_text(errors="replace")[-4000:]
+            raise SystemExit(f"atlas-code serve of {name} ended on its own{tail}")
         try:
             with direct.open(url, timeout=30) as answer:
                 state = json.loads(answer.read())
         except (OSError, ValueError):
             return None
         if state.get("error"):
-            raise SystemExit(f"atlas-code serve of {name} could not draw: {state['error']}")
+            raise SystemExit(f"atlas-code serve of {name} could not draw" + ("" if hidden else f": {state['error']}"))
         return state
 
     def stop() -> None:
@@ -310,6 +456,71 @@ def read_round(
     return got
 
 
+LANGUAGES = {"python": "Python", "rust": "Rust", "typescript": "TypeScript"}
+
+
+def card_of(graph: dict, root: Path) -> dict:
+    """A program's shape, from the graph Atlas read of it (`atlas-code analyze`): its languages, the files of its
+    own modules and their lines that are not blank, its modules and functions (methods among them), and of the
+    whole graph, the libraries' fiber in it, the nodes, the edges and the library bodies linked. Counts alone:
+    the card of a private program names nothing of it."""
+    program = [n for n in graph["nodes"] if not n.get("library")]
+    files = sorted({n["file"] for n in program if n["kind"] == "module" and n.get("file")})
+    languages = {p["language"] for p in graph.get("parts", []) if p.get("language")}
+    if not languages and isinstance(graph.get("language"), str):
+        languages = {graph["language"]}
+    lines = 0
+    for file in files:
+        path = Path(file) if Path(file).is_absolute() else root / file
+        with contextlib.suppress(OSError):
+            lines += sum(1 for line in path.read_text(errors="replace").splitlines() if line.strip())
+    return {
+        "languages": sorted(languages),
+        "files": len(files),
+        "lines": lines,
+        "modules": sum(1 for n in program if n["kind"] == "module"),
+        "functions": sum(1 for n in program if n["kind"] in ("function", "method")),
+        "nodes": len(graph["nodes"]),
+        "edges": len(graph["edges"]),
+        "library_bodies": graph.get("stats", {}).get("linked_library_bodies", 0),
+    }
+
+
+def card_text(card: dict) -> str:
+    """A card as a line: `Rust · 123 files · 31,092 lines · …`."""
+    languages = " + ".join(LANGUAGES.get(x, x) for x in card.get("languages", [])) or "no language"
+    counts = [(card[k], one, more) for k, one, more in CARD_WORDS if card.get(k) is not None]
+    return " · ".join([languages, *(f"{n:,} {one if n == 1 else more}" for n, one, more in counts)])
+
+
+CARD_WORDS = (
+    ("files", "file", "files"),
+    ("lines", "line", "lines"),
+    ("modules", "module", "modules"),
+    ("functions", "function", "functions"),
+    ("nodes", "node", "nodes"),
+    ("edges", "edge", "edges"),
+    ("library_bodies", "library body", "library bodies"),
+)
+
+
+def card(atlas: Path, name: str, subject: Path, libraries: int, scratch: Path, env: dict[str, str], revision: str | None) -> dict:
+    """The card of `subject` as `atlas` reads it at `libraries`, with the revision it was read at and whether the
+    corpus pins it there."""
+    graph = scratch / "graph.json"
+    command = [str(atlas), "--libraries", str(libraries), "analyze", "--out", str(graph), str(subject)]
+    measured(command, env=env, log=scratch / "analyze.txt", quiet=private(name))
+    got = card_of(json.loads(graph.read_text()), subject)
+    graph.unlink()
+    pinned = next((p.revision for p in corpus() if p.name == name), None)
+    return {**got, "revision": pinned or revision, "pinned": bool(pinned)}
+
+
+def revision_of(subject: Path) -> str | None:
+    done = subprocess.run(["git", "-C", str(subject), "rev-parse", "HEAD"], capture_output=True, text=True, check=False)
+    return done.stdout.strip() or None
+
+
 def subjects(given: list[str]) -> list[tuple[str, Path]]:
     out = []
     for g in given:
@@ -323,10 +534,14 @@ def subjects(given: list[str]) -> list[tuple[str, Path]]:
 def command_read(args: argparse.Namespace) -> None:
     atlas = args.atlas.resolve(strict=True)
     readings: dict[str, dict] = {}
+    cards: dict[str, dict] = {}
     reports: dict[str, dict[str, list[dict]]] = {}
+    given = subjects(args.subject or []) + programs_in(args.programs)
+    if not given:
+        raise SystemExit("read: give --subject NAME=PATH or --programs DIR")
     with tempfile.TemporaryDirectory(prefix="atlas-perf-") as scratch:
         scratch = Path(scratch)
-        for name, path in subjects(args.subject):
+        for name, path in given:
             subject = path.resolve(strict=True)
             samples: dict[str, dict[str, list[float]]] = {kind: {} for kind in KINDS}
             for round_ in range(args.rounds):
@@ -339,7 +554,10 @@ def command_read(args: argparse.Namespace) -> None:
             for kind, got in samples.items():
                 for measure, values in got.items():
                     readings[f"read/{name}/{kind}/{measure}"] = metric(values, unit_of(measure))
-    add(args.out, readings)
+            env = {**os.environ, "XDG_CACHE_HOME": str(scratch / f"cache-{name}"), "ATLAS_NO_UPDATE_CHECK": "1"}
+            cards[name] = card(atlas, name, subject, args.libraries, scratch, env, revision_of(subject))
+            print(f"{name}: {card_text(cards[name])}")
+    add(args.out, readings, cards)
     if args.timings:
         args.timings.write_text(json.dumps(reports, indent=1))
 
@@ -438,6 +656,8 @@ def judged(run: dict, past: list[dict]) -> list[Verdict]:
 def amount(value: float | None, unit: str) -> str:
     if value is None:
         return "–"
+    if unit == "bodies":
+        return f"{value:,.0f}"
     return f"{value:.0f} MB" if unit == "MB" else f"{value:.2f} s" if value < 100 else f"{value:.0f} s"
 
 
@@ -559,6 +779,23 @@ def readme(runs: list[dict], verdicts: list[Verdict], data: Path) -> str:
         "",
         f"Last run: {last['date']}, `{last['commit'][:7]}`, {r['cpu']}, {r['cores']} cores. Runs kept: {len(runs)}.",
     ]
+    cards = last.get("cards", {})
+    if cards:
+        lines += [
+            "",
+            "## What is read",
+            "",
+            "Each subject by its card, as the last run read it: the files of its own modules and their lines that are",
+            "not blank, its modules and functions, and of the graph with the libraries' part in it, the nodes, the",
+            "edges and the library bodies linked. The programs of `tools/corpus.txt` are read at a fixed revision;",
+            "`atlas` is Atlas at the commit measured.",
+            "",
+            "| subject | revision | card |",
+            "| --- | --- | --- |",
+        ]
+        for name, c in sorted(cards.items()):
+            revision = f"`{str(c.get('revision'))[:7]}`" + ("" if c.get("pinned") else ", the commit measured")
+            lines.append(f"| `{name}` | {revision} | {card_text(c)} |")
     for title, vs in groups.items():
         lines += ["", f"## {title}", "", "| measure | last | baseline | change | runs |", "| --- | ---: | ---: | ---: | --- |"]
         for v in vs:
@@ -576,12 +813,35 @@ def readme(runs: list[dict], verdicts: list[Verdict], data: Path) -> str:
     return "\n".join(lines) + "\n"
 
 
+def one_revision(cards: dict[str, dict], past: list[dict]) -> None:
+    """A name of the corpus is one revision: a series that went on under the same name at another commit would
+    measure two programs as one."""
+    for name, c in cards.items():
+        if not c.get("pinned"):
+            continue
+        before = next((r["cards"][name] for r in reversed(past) if name in r.get("cards", {})), None)
+        if before and before.get("revision") != c.get("revision"):
+            raise SystemExit(
+                f"{name} was read at {str(before.get('revision'))[:12]} and now at {str(c.get('revision'))[:12]}: "
+                "a program read at another commit gets another name in tools/corpus.txt"
+            )
+
+
+def last_cards(runs: list[dict]) -> dict[str, dict]:
+    """The latest card of each subject the runs read."""
+    out: dict[str, dict] = {}
+    for r in runs:
+        out.update(r.get("cards", {}))
+    return out
+
+
 def command_record(args: argparse.Namespace) -> None:
     run = json.loads(args.run.read_text())
     if not run.get("metrics"):
         raise SystemExit(f"{args.run} holds no measure")
     args.data.mkdir(parents=True, exist_ok=True)
     past = history(args.data)
+    one_revision(run.get("cards", {}), past)
     verdicts = judged(run, past)
     suspect = [v.measure for v in verdicts if v.suspect]
     # a measure reproduced slower on the run before is known: it stays marked, and is neither measured again
@@ -593,6 +853,7 @@ def command_record(args: argparse.Namespace) -> None:
         "url": args.url,
         "runner": run["runner"],
         "metrics": run["metrics"],
+        "cards": run.get("cards", {}),
         "suspect": suspect,
         "reproduced": known,
         "large": [m for m in known if m in past[-1].get("large", [])],
@@ -689,31 +950,51 @@ class Bench:
         return (path if path.is_absolute() else side.tree / path).resolve(strict=True)
 
     def test_binaries(self, side: Side) -> dict[str, tuple[Path, Path]]:
+        """The test binaries of `side`, built once and moved out of the shared target directory, so that
+        the next commit's build takes their place without a second copy on the disk. They are built
+        without debug information and incremental state, which no measure reads and which take tens of
+        GB for two commits of the workspace; both sides of a comparison are built alike."""
         if side.commit not in self.tests:
             keep_dir = self.scratch / f"tests-{side.commit[:12]}"
             keep_dir.mkdir(exist_ok=True)
-            env = {**os.environ, "CARGO_TARGET_DIR": str(self.scratch / "target-tests")}
+            target = self.scratch / "target-tests"
+            env = {**os.environ, "CARGO_TARGET_DIR": str(target), "CARGO_PROFILE_DEV_DEBUG": "0", "CARGO_INCREMENTAL": "0"}
             kept = {}
             for name, executable, manifest in test_binaries(side.tree, [], env):
-                copy = keep_dir / name.replace("/", "-")
-                shutil.copy2(executable, copy)
-                kept[name] = (copy, manifest)
+                moved = keep_dir / name.replace("/", "-")
+                os.replace(executable, moved)
+                kept[name] = (moved, manifest)
             self.tests[side.commit] = kept
         return self.tests[side.commit]
+
+    def sample(self, side: Side, measures: list[str]) -> dict[str, float]:
+        """One sample of each of `measures` on `side`: the readings of one subject from one round of readings, as the
+        night reads them, anything else one at a time."""
+        if all(m.startswith("read/") for m in measures) and len({m.split("/")[1] for m in measures}) == 1:
+            name = measures[0].split("/")[1]
+            kinds = {m.split("/")[2] for m in measures}
+            if kinds - set(KINDS):
+                raise SystemExit(f"no reading {', '.join(sorted(kinds - set(KINDS)))} to measure of {name}")
+            with tempfile.TemporaryDirectory(dir=self.scratch) as scratch:
+                scratch = Path(scratch)
+                reports: dict[str, list[dict]] = {}
+                order = tuple(k for k in KINDS if k in kinds)
+                got = read_round(side.atlas, name, self.subject(side, name), self.libraries, scratch, scratch / "cache", order, reports)
+            out = {}
+            for m in measures:
+                _, _, kind, *rest = m.split("/")
+                self.reports.setdefault(m, {}).setdefault(side.commit, []).extend(reports.get(kind, []))
+                out[m] = got[kind]["/".join(rest)]
+            return out
+        return {m: self.measure(side, m) for m in measures}
 
     def measure(self, side: Side, measure: str) -> float:
         """One sample of `measure` on `side`."""
         parts = measure.split("/")
+        if parts[0] == "read":
+            return self.sample(side, [measure])[measure]
         with tempfile.TemporaryDirectory(dir=self.scratch) as scratch:
             scratch = Path(scratch)
-            if parts[0] == "read":
-                _, name, kind, *rest = parts
-                if kind not in KINDS:
-                    raise SystemExit(f"no reading {kind} to measure {measure}")
-                reports: dict[str, list[dict]] = {}
-                got = read_round(side.atlas, name, self.subject(side, name), self.libraries, scratch, scratch / "cache", (kind,), reports)
-                self.reports.setdefault(measure, {}).setdefault(side.commit, []).extend(reports.get(kind, []))
-                return got[kind]["/".join(rest)]
             if parts[0] == "build":
                 seconds, peak = self.built(side.tree, scratch / "clean", scratch / "build.log")
                 return peak if parts[-1] == "peak_rss" else seconds
@@ -726,14 +1007,21 @@ class Bench:
     def interleaved(self, commits: list[str], measure: str, rounds: int) -> list[list[float]]:
         """`rounds` samples of `measure` on each commit, the order turned every round so that a machine
         that slows down over the run slows each commit alike."""
+        return [got[measure] for got in self.interleaved_together(commits, [measure], rounds)]
+
+    def interleaved_together(self, commits: list[str], measures: list[str], rounds: int) -> list[dict[str, list[float]]]:
+        """`rounds` samples of each of `measures` on each commit, taken together (`sample`), interleaved as
+        `interleaved` does: per commit, each measure's samples."""
         sides = [self.side(c) for c in commits]
-        samples: list[list[float]] = [[] for _ in sides]
+        samples: list[dict[str, list[float]]] = [{m: [] for m in measures} for _ in sides]
         for r in range(rounds):
             order = list(range(len(sides)))
             order = order[r % len(order) :] + order[: r % len(order)]
             for i in order:
-                samples[i].append(self.measure(sides[i], measure))
-            print(f"{measure} round {r + 1}/{rounds}: " + ", ".join(f"{s.commit[:7]} {samples[i][-1]:.2f}" for i, s in enumerate(sides)))
+                for m, value in self.sample(sides[i], measures).items():
+                    samples[i][m].append(value)
+            for m in measures:
+                print(f"{m} round {r + 1}/{rounds}: " + ", ".join(f"{s.commit[:7]} {samples[i][m][-1]:.2f}" for i, s in enumerate(sides)))
         return samples
 
     def close(self) -> None:
@@ -821,35 +1109,77 @@ def bisected(bench: Bench, frm: str, to: str, measure: str, rounds: int) -> dict
 
 
 def bench_of(args: argparse.Namespace, scratch: Path) -> Bench:
-    return Bench(args.repo.resolve(strict=True), scratch, args.build, subjects(args.subject or []), args.libraries)
+    given = subjects(args.subject or []) + programs_in(args.programs)
+    return Bench(args.repo.resolve(strict=True), scratch, args.build, given, args.libraries)
+
+
+# the release's table: per program of the corpus, these readings; of Atlas, its build and its tests
+TABLE = (
+    ("cold/seconds", "cold read"),
+    ("warm/seconds", "warm read"),
+    ("unasked/seconds", "read again after a file no reader asks about"),
+    ("serve/first/seconds", "served from a cold start, to the first picture"),
+    ("serve/seconds", "served from a cold start, to the complete picture"),
+    ("serve/redraw/seconds", "served, drawing again after that file"),
+    ("cold/peak_rss", "peak memory"),
+)
+OF_ATLAS = (("build/release/seconds", "release build, clean"), ("tests/total/seconds", "test suite"))
+
+
+def table_measures(programs: list[str]) -> list[str]:
+    """The measures of the release's table, of `programs`."""
+    return [f"read/{p}/{m}" for p in programs for m, _ in TABLE] + [m for m, _ in OF_ATLAS]
 
 
 def command_reproduce(args: argparse.Namespace) -> None:
     given = json.loads(args.suspects.read_text()) if args.suspects else {}
     a, b = args.a or given.get("a"), args.b or given.get("b")
-    measures = args.measure or given.get("measures", [])
+    measures = list(args.measure or given.get("measures", []))
+    if args.table:
+        measures += [m for m in table_measures([name for name, _ in programs_in(args.programs)]) if m not in measures]
     if not (a and b and measures):
-        raise SystemExit("reproduce: give --a, --b and the measures (--measure or --suspects)")
+        raise SystemExit("reproduce: give --a, --b and the measures (--measure, --table or --suspects)")
     repo = args.repo.resolve(strict=True)
     a, b = git(repo, "rev-parse", a), git(repo, "rev-parse", b)
     result: dict = {"a": a, "b": b, "measures": {}}
     with tempfile.TemporaryDirectory(prefix="atlas-perf-ab-") as scratch:
         bench = bench_of(args, Path(scratch))
         try:
+            # the readings of one subject are taken from one round of readings, as the night takes them
+            together: dict[str, list[str]] = {}
             for measure in measures:
-                sa, sb = bench.interleaved([a, b], measure, rounds_for(measure, args.rounds))
-                result["measures"][measure] = compared(measure, sa, sb)
-                got = result["measures"][measure]
-                print(f"{measure}: {amount(got['median_a'], got['unit'])} → {amount(got['median_b'], got['unit'])}, {got['grade']}")
+                together.setdefault(f"read/{measure.split('/')[1]}" if measure.startswith("read/") else measure, []).append(measure)
+            for group in together.values():
+                sa, sb = bench.interleaved_together([a, b], group, rounds_for(group[0], args.rounds))
+                for measure in group:
+                    result["measures"][measure] = compared(measure, sa[measure], sb[measure])
+                    got = result["measures"][measure]
+                    print(f"{measure}: {amount(got['median_a'], got['unit'])} → {amount(got['median_b'], got['unit'])}, {got['grade']}")
             large = [m for m, g in result["measures"].items() if g["grade"] == "large"]
             if large and args.bisect_large:
                 worst = max(large, key=lambda m: result["measures"][m]["ratio"])
                 result["bisect"] = bisected(bench, a, b, worst, args.rounds)
+            if args.table:
+                result["cards"] = cards_of(bench, b, sorted({m.split("/")[1] for m in measures if m.startswith("read/")}))
         finally:
             bench.close()
     args.out.write_text(json.dumps(result, indent=1))
     if args.timings:
         args.timings.write_text(json.dumps(bench.reports, indent=1))
+
+
+def cards_of(bench: Bench, commit: str, names: list[str]) -> dict[str, dict]:
+    """The card of each subject `names` as `commit`'s build reads it."""
+    side = bench.side(commit)
+    out = {}
+    for name in names:
+        with tempfile.TemporaryDirectory(dir=bench.scratch) as scratch:
+            scratch = Path(scratch)
+            env = {**os.environ, "XDG_CACHE_HOME": str(scratch / "cache"), "ATLAS_NO_UPDATE_CHECK": "1"}
+            subject = bench.subject(side, name)
+            out[name] = card(side.atlas, name, subject, bench.libraries, scratch, env, revision_of(subject))
+            print(f"{name}: {card_text(out[name])}")
+    return out
 
 
 def command_bisect(args: argparse.Namespace) -> None:
@@ -1066,63 +1396,152 @@ def command_stages(args: argparse.Namespace) -> None:
 
 # the release's notes
 
-RELEASE_BARS = [("read/atlas/cold/seconds", "Atlas reading itself, cold"), ("read/atlas/warm/seconds", "Atlas reading itself, warm")]
+
+def is_ancestor(repo: Path, commit: str, ref: str) -> bool:
+    return subprocess.run(["git", "-C", str(repo), "merge-base", "--is-ancestor", commit, ref], capture_output=True, check=False).returncode == 0
 
 
-def night_of(runs: list[dict], repo: Path, ref: str) -> dict | None:
-    """The latest night that measured `ref` or a commit before it."""
+def night_of(runs: list[dict], repo: Path, ref: str, earlier: str | None = None) -> dict | None:
+    """The night of a release: the latest that measured `ref` or a commit before it, and neither `earlier`, the
+    release before, nor a commit before that. A release no night measured between the two has none."""
     for r in reversed(runs):
-        if subprocess.run(["git", "-C", str(repo), "merge-base", "--is-ancestor", r["commit"], ref], capture_output=True).returncode == 0:
+        if is_ancestor(repo, r["commit"], ref) and not (earlier and is_ancestor(repo, r["commit"], earlier)):
             return r
     return None
 
 
-def bar(label: str, ref: str, value: float, unit: str) -> str:
-    said = f"{value:.0f} MB" if unit == "MB" else f"{value:.1f} s" if value >= 1 or value == 0 else f"{value:.2f} s"
-    return f"{label}, {ref.removeprefix('v')} = {said}"
+def version_of(ref: str) -> tuple[int, ...] | None:
+    m = re.fullmatch(r"v?(\d+)\.(\d+)\.(\d+)", ref)
+    return tuple(map(int, m.groups())) if m else None
 
 
-def release_measures(given: list[str] | None) -> list[tuple[str, str]]:
-    out = []
-    for g in given or []:
-        measure, _, label = g.partition("=")
-        if not label:
-            raise SystemExit(f"--measure {g}: write MEASURE=LABEL")
-        out.append((measure, label))
-    return out or RELEASE_BARS
+def releases(repo: Path, after: str, version: str) -> list[tuple[str, str]]:
+    """Every stable release before `version`, oldest first, then `version` at the ref `after`: (name, ref)."""
+    stable = sorted((t for t in git(repo, "tag", "-l", "v*").split() if version_of(t)), key=version_of)
+    return [(t[1:], t) for t in stable if version_of(t) < version_of(version)] + [(version, after)]
+
+
+def cell(measure: str, label: str, result: dict | None, before: dict | None, after: dict | None) -> dict:
+    """A measure of the table, the release before against this one: from the interleaved run where it measured
+    it, both on one runner; else from each release's night."""
+    out = {"measure": measure, "label": label, "unit": unit_of(measure), "before": None, "after": None, "source": None, "changed": None}
+    if result and measure in result["measures"]:
+        got = result["measures"][measure]
+        changed = changed_between(got["a"], got["b"], out["unit"])
+        return {**out, "before": got["median_a"], "after": got["median_b"], "source": "interleaved", "changed": changed}
+    b, a = ((n or {}).get("metrics", {}).get(measure) for n in (before, after))
+    if a or b:
+        out.update(before=b and b["value"], after=a and a["value"], source="nights")
+    return out
+
+
+def changed_between(a: list[float], b: list[float], unit: str) -> bool:
+    """Whether interleaved rounds show a change, either way, by the rule of a reproduction: every round of B past every
+    round of A, on the same side, and the medians apart by more than the floor."""
+    apart = abs(statistics.median(b) - statistics.median(a)) > FLOOR.get(unit, 0.0)
+    return apart and (min(b) > max(a) or max(b) < min(a))
+
+
+def summary_of(cells: list[dict]) -> dict | None:
+    """The release's one number: the geometric mean of after / before over every measure both releases have, the
+    exponent of the mean log ratio. Scale-free (a warm read of 0.04 s weighs what a cold one of 20 s weighs) and
+    symmetric (twice as fast and twice as slow cancel). A measure that falls to 0 (a redraw the release no longer
+    starts) has no finite log ratio: it stays out of the mean and is counted as `zero`."""
+    ratios = [c["after"] / c["before"] for c in cells if c["before"] and c["after"]]
+    zero = sum(1 for c in cells if c["before"] and c["after"] == 0)
+    if not ratios:
+        return None
+    mean = sum(math.log(r) for r in ratios) / len(ratios)
+    changed = sum(1 for c in cells if c["before"] and c["after"] and c.get("changed"))
+    return {"ratio": round(math.exp(mean), 4), "measures": len(ratios), "zero": zero, "changed": changed}
+
+
+def bench_data(
+    programs: list[Program], runs: list[dict], nights: dict[str, dict | None], before: str, after: str, result: dict | None
+) -> dict:
+    """The release's speed, as `tools/release_page.py` draws it: a row per program of the corpus that `perf` reads, named
+    by its card (a private one by its card alone), each measure of TABLE the release before beside this one, a row of
+    Atlas's build and tests (OF_ATLAS); and each of those measures on the night of every release since the series began.
+    `nights` maps each release, oldest first, to its night."""
+    cards = {**last_cards(runs), **(result or {}).get("cards", {})}
+    rows = []
+    for p in programs:
+        c = cards.get(p.name)
+        languages = " + ".join(LANGUAGES.get(x, x) for x in (c or {}).get("languages", []))
+        rows.append(
+            {
+                "name": None if p.private else p.name,
+                "title": None if not p.private else f"A private {languages or ''} program".replace("  ", " "),
+                "short": f"{languages}, {c['lines']:,} lines" if p.private and c else "a private program" if p.private else p.name,
+                "card": c and {k: v for k, v in c.items() if k != "revision" or not p.private},
+                "said": card_text(c) if c else None,
+                "cells": [cell(f"read/{p.name}/{m}", label, result, nights.get(before), nights.get(after)) for m, label in TABLE],
+            }
+        )
+    whole = [cell(m, label, result, nights.get(before), nights.get(after)) for m, label in OF_ATLAS]
+    rows.append({"name": None, "title": "Atlas, built and tested", "short": "Atlas", "card": None, "said": None, "cells": whole})
+    series = []
+    for row in rows:
+        for c in row["cells"]:
+            points = [
+                [release, night["metrics"][c["measure"]]["value"], night["commit"][:7], night["runner"].get("cpu", "")]
+                for release, night in nights.items()
+                if night and c["measure"] in night["metrics"]
+            ]
+            if points:
+                series.append({"row": rows.index(row), "label": c["label"], "unit": c["unit"], "points": points})
+    # a private program is known by its card alone: not even its label in the corpus goes to the page's data
+    for row, p in zip(rows, programs):
+        if p.private:
+            row["cells"] = [{k: v for k, v in c.items() if k != "measure"} for c in row["cells"]]
+    # a program that joined the corpus after both releases were measured has no row yet
+    measured = [i for i, row in enumerate(rows) if any(c["before"] is not None or c["after"] is not None for c in row["cells"])]
+    series = [{**s, "row": measured.index(s["row"])} for s in series if s["row"] in measured]
+    rows = [rows[i] for i in measured]
+    summary = summary_of([c for row in rows for c in row["cells"]])
+    return {
+        "before": before,
+        "after": after,
+        "summary": summary,
+        "releases": [r for r, n in nights.items() if n],
+        "rows": rows,
+        "series": series,
+    }
 
 
 def command_release_bars(args: argparse.Namespace) -> None:
-    measures = release_measures(args.measure)
-    if args.reproduced:
-        # an interleaved run of the two releases (`reproduce`, as the weekly job makes it): A is before, B after
-        result = json.loads(args.reproduced.read_text())
-        if missing := [m for m, _ in measures if m not in result["measures"]]:
-            raise SystemExit(f"{args.reproduced} did not measure {', '.join(missing)}")
-        bars = []
-        for measure, label in measures:
-            got = result["measures"][measure]
-            bars += [bar(label, args.before, got["median_a"], got["unit"]), bar(label, args.after, got["median_b"], got["unit"])]
-        rounds = sorted({len(result["measures"][m]["a"]) for m, _ in measures})
-        print(
-            f"Bars: {'; '.join(bars)} | `{result['a'][:7]}` and `{result['b'][:7]}` built and measured interleaved on one runner, the median of {' or '.join(map(str, rounds))} rounds each (`docs/reference/performance.md`)."
-        )
-        return
-    runs = history(args.data)
     repo = args.repo.resolve(strict=True)
-    nights = {ref: night_of(runs, repo, ref) for ref in (args.before, args.after)}
-    if missing := [ref for ref, n in nights.items() if not n]:
-        raise SystemExit(f"no night measured {', '.join(missing)} or a commit before it")
-    bars = []
-    for measure, label in measures:
-        for ref in (args.before, args.after):
-            got = nights[ref]["metrics"].get(measure)
-            if got:
-                bars.append(bar(label, ref, got["value"], got["unit"]))
-    nb, na = nights[args.before], nights[args.after]
-    print(
-        f"Bars: {'; '.join(bars)} | The nightly measure of `next` on the night before each release (`{nb['commit'][:7]}`, `{na['commit'][:7]}`), one reading a night (`docs/reference/performance.md`)."
-    )
+    version = args.version or args.after.removeprefix("v")
+    before = args.before.removeprefix("v")
+    result = json.loads(args.reproduced.read_text()) if args.reproduced else None
+    runs = history(args.data) if args.data else []
+    shown = releases(repo, args.after, version)
+    if (before, args.before) not in shown:
+        raise SystemExit(f"{args.before} is no stable release before {version}")
+    nights: dict[str, dict | None] = {}
+    for i, (name, ref) in enumerate(shown):
+        nights[name] = night_of(runs, repo, ref, shown[i - 1][1] if i else None)
+    data = bench_data([p for p in corpus() if "perf" in p.readers], runs, nights, before, version, result)
+    out = args.out or repo / "docs" / "releases" / version / "bench.json"
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(json.dumps(data, indent=1) + "\n")
+    sources = {c["source"] for row in data["rows"] for c in row["cells"]}
+    said = []
+    if "interleaved" in sources:
+        rounds = sorted({len(g["a"]) for g in result["measures"].values()})
+        run = f" ([the run]({args.run}))" if args.run else ""
+        said.append(
+            f"Each pair: `{result['a'][:7]}` ({before}) and `{result['b'][:7]}` ({version}) built and measured interleaved on one runner, "
+            f"the median of {' or '.join(map(str, rounds))} rounds each{run}"
+        )
+    if "nights" in sources:
+        named = ", ".join(f"`{nights[r]['commit'][:7]}`" for r in (before, version) if nights.get(r))
+        said.append(f"{'where that run lacks a measure' if said else 'Each pair'}: the nightly measure of `next` on each release's night ({named})")
+    said.append("Over the releases: each release's night since the series began, on its night's runner (`docs/reference/performance.md`).")
+    print(f"Bench: releases/{version}/bench.json | " + "; ".join(said[:-1]) + (". " if said[:-1] else "") + said[-1])
+    if s := data["summary"]:
+        print(f"summary: ×{s['ratio']:.4f} over {s['measures']} measures, {s['changed']} changed beyond noise, {s['zero']} fell to 0", file=sys.stderr)
+    print(f"wrote {out}", file=sys.stderr)
 
 
 def main() -> None:
@@ -1136,7 +1555,8 @@ def main() -> None:
 
     p = commands.add_parser("read", help="time atlas-code view (cold, warm, unasked) and serve's cold start on subjects")
     p.add_argument("--atlas", type=Path, required=True)
-    p.add_argument("--subject", action="append", required=True, help="NAME=PATH")
+    p.add_argument("--subject", action="append", help="NAME=PATH")
+    p.add_argument("--programs", type=Path, help="the corpus's programs perf reads, as `corpus fetch` laid them out here")
     p.add_argument("--rounds", type=int, default=1)
     p.add_argument("--libraries", type=int, default=1)
     p.add_argument("--timings", type=Path, help="keep what Atlas reported of each reading here, its stages among it")
@@ -1166,6 +1586,7 @@ def main() -> None:
         p = commands.add_parser(name, help=text)
         p.add_argument("--repo", type=Path, default=Path("."))
         p.add_argument("--subject", action="append", help="NAME=PATH: relative, in each commit's tree; absolute, one for both")
+        p.add_argument("--programs", type=Path, help="the corpus's programs perf reads, as `corpus fetch` laid them out here")
         p.add_argument("--rounds", type=int, default=ROUNDS)
         p.add_argument("--libraries", type=int, default=1)
         p.add_argument(
@@ -1181,6 +1602,7 @@ def main() -> None:
             p.add_argument("--b")
             p.add_argument("--measure", action="append")
             p.add_argument("--suspects", type=Path)
+            p.add_argument("--table", action="store_true", help="the measures of the release's table, with the cards of B's readings")
             p.add_argument("--bisect-large", action="store_true", help="bisect the largest reproduced measure on the spot")
         else:
             p.add_argument("--from", required=True)
@@ -1203,14 +1625,23 @@ def main() -> None:
     p.add_argument("--reproduced", type=Path, help="the reproduction the readings were measured in: A and B side by side")
     p.set_defaults(func=command_stages)
 
-    p = commands.add_parser("release-bars", help="the Bars: line of a release's notes, from the series or an interleaved run")
-    p.add_argument("--data", type=Path, help="the series: its nights before each release")
-    p.add_argument("--reproduced", type=Path, help="an interleaved run of the two instead, before as A and after as B")
+    p = commands.add_parser("release-bars", help="a release's speed (`Bench:`), from an interleaved run and the series")
+    p.add_argument("--data", type=Path, help="the series: the night of each release")
+    p.add_argument("--reproduced", type=Path, help="an interleaved run of the two releases (`reproduce --table`), before as A")
+    p.add_argument("--run", help="the link of that run, for the caption")
     p.add_argument("--repo", type=Path, default=Path("."))
-    p.add_argument("--before", required=True)
-    p.add_argument("--after", required=True)
-    p.add_argument("--measure", action="append", help="MEASURE=LABEL, a bar for each release; default: Atlas reading itself, cold and warm")
+    p.add_argument("--before", required=True, help="the release before, its tag (v0.70.0)")
+    p.add_argument("--after", required=True, help="this release: its tag, or the ref it is cut at")
+    p.add_argument("--version", help="this release's version, where --after is no tag")
+    p.add_argument("--out", type=Path, help="where to write the data; default docs/releases/<version>/bench.json")
     p.set_defaults(func=command_release_bars)
+
+    p = commands.add_parser("corpus", help="fetch the corpus's programs, or name where they are")
+    p.add_argument("action", choices=["fetch", "paths"])
+    p.add_argument("--into", type=Path, required=True)
+    p.add_argument("--for", dest="reader", choices=READERS, required=True)
+    p.add_argument("--corpus", type=Path, default=CORPUS)
+    p.set_defaults(func=command_corpus)
 
     # what follows `--` is the command `time` runs, or the arguments `tests` gives cargo
     argv = sys.argv[1:]
