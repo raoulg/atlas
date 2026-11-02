@@ -1435,6 +1435,10 @@ def bench_data(
     for row, p in zip(rows, programs):
         if p.private:
             row["cells"] = [{k: v for k, v in c.items() if k != "measure"} for c in row["cells"]]
+    # a program that joined the corpus after both releases were measured has no row yet
+    measured = [i for i, row in enumerate(rows) if any(c["before"] is not None or c["after"] is not None for c in row["cells"])]
+    series = [{**s, "row": measured.index(s["row"])} for s in series if s["row"] in measured]
+    rows = [rows[i] for i in measured]
     return {"before": before, "after": after, "releases": [r for r, n in nights.items() if n], "rows": rows, "series": series}
 
 

@@ -19,9 +19,44 @@ branch [`perf-data`](https://github.com/raoulg/atlas/tree/perf-data), whose READ
 | `read/<subject>/serve/redraw/seconds` | then, in the same session, `docs/x.svg` added: the seconds serve spends drawing again, from the first answer that says it draws to the first that says it is done (at least the 20 ms between two answers); 0 when it starts no drawing within 5 s, which its watch, looking every second, would have. |
 | `tests/<package>/<binary>/seconds`, `tests/total/seconds` | each test binary of `cargo test --no-run`, run on its own in its package's directory, as `cargo test` runs it. libtest's own timings (`--format json`, `--report-time`) need nightly Rust, so a binary is timed from outside. Ignored tests and doc tests are not run. |
 
-The subjects are Atlas itself, at the commit measured, and the public programs `laws.yml` reads, at
-the same fixed revisions; a new revision is a change to both workflows, and starts that subject's series
-again. All readings use Atlas's defaults (`--libraries 1`).
+The subjects are Atlas itself, at the commit measured, and the corpus. All readings use Atlas's defaults
+(`--libraries 1`).
+
+## The corpus
+
+A benchmark measures the same programs every time, at revisions that do not move, so that a series measures
+the reader and not a growing subject. The corpus is one list, `tools/corpus.txt`, that `perf.yml` and `laws.yml`
+both read (`tools/perf.py corpus fetch --into DIR --for perf|laws`): a line per program, its name, its
+repository, the full commit it is read at, and what reads it.
+
+```text
+atlas-0.70.0    https://github.com/raoulg/atlas          4ebbbae0a877ef3609de15befe577897c3bec69b   perf
+goad_toolkit    https://github.com/raoulg/goad_toolkit   929d37cc588b27f599b7fbe2e4f5d9733619f897   perf laws
+```
+
+Adding a program is that one line. A name is one revision: a program read at another commit gets another name
+(`atlas-0.70.0`, then `atlas-0.75.0`), so that its series starts afresh, and `record` refuses a night that reads
+a name at another revision than the series has it at. Atlas is in the corpus at the commit of v0.70.0, beside
+`atlas`, Atlas at the commit measured: the first measures the reader on a subject that does not move, the second
+what a user of `next` sees on Atlas's own code. A program with a `Cargo.lock` has its crates fetched with it
+(`cargo fetch --locked`): Atlas reads a Rust program's libraries where Cargo keeps them, and without them the
+reading would depend on which crates the runner happened to hold. A Python or TypeScript program is read as
+cloned, without an environment or `node_modules`, as the laws read it.
+
+A program can be private. Its line says `private` where the repository stands; its repository is its line
+`NAME URL` in the secret `CORPUS_PRIVATE`, fetched with the read-only token in the secret `CORPUS_TOKEN`, sent
+as a header to its host alone. A run without them fails, as a program that could not be fetched does. A private
+program is measured by `perf.yml` only, never sampled by `laws.yml`, whose report names the functions it samples,
+and nothing public names it or shows its code: its measures carry its label in the corpus, a reading that fails
+says so without Atlas's output, its stages name its libraries and never its own parts or packages, and the release
+page knows it by its card alone.
+
+Each subject has a **card**, computed from the reading, never typed: `atlas-code analyze` of the subject after
+its readings, with the same build. The card counts the program's own modules and the files they are in, the
+lines of those files that are not blank, its functions (methods among them), and of the whole graph, the
+libraries' part in it included, the nodes, the edges and the library bodies linked; with its languages and the
+revision read. The night keeps the cards with its measures, the series' README shows them, and the release page
+names each program by its card.
 
 `--timings FILE` is a hidden option of `atlas-code view`: a JSON object of each phase's seconds, in the order
 they ran, and under `linked` the number of bodies the reading of the graph linked (`program`, `library`). The time before the first phase (parsing the command, cloning a URL) is in the wall time only.
@@ -86,10 +121,12 @@ about the runner, or about the measure.
 A slowdown of a few percent per landing never makes one night suspect. Every Monday the job `weekly`
 measures `next` against the last release tag the same way, interleaved on one runner: Atlas reading itself
 cold, warm and after a file no reader asks about, its peak memory, serve's cold start on Atlas (to its first
-drawing, to its complete one, and its redraw after the file), two of the programs cold, and the clean release
-build. The standing goes, one line per measure, to the issue *Atlas's performance against the last release*.
-Run by hand (`mode: weekly`) from a branch, the job takes that branch's `tools/perf.py` and still measures
-`next`: a new measure is measured on the runner before it lands.
+drawing, to its complete one, and its redraw after the file), and the release's table (below): each program of
+the corpus cold, warm, served and its peak memory, the clean release build and the test suite, with the cards of
+`next`'s readings. The standing goes, one line per measure, to the issue *Atlas's performance against the last
+release*. Run by hand (`mode: weekly`) from a branch, the job takes that branch's `tools/perf.py` and
+`tools/corpus.txt` and measures `next`, or the ref `to` names (`origin/release-0.71`): a new measure is measured on
+the runner before it lands, and a release is measured against the one before.
 
 ## Looking back
 
@@ -116,45 +153,57 @@ takes `subject` as well, so that a range is bisected for the reader alone (`meas
 
 ## In every release
 
-A release's notes carry the main measures against the release before, from the series, so that a release
-cannot get slower without its page saying so:
+Every release's notes carry the same speed point: one table and one set of lines, the same measures on the same
+programs, release after release.
+
+- **The table**: a row per program of the corpus that `perf` reads, named by its card, with its cold read, warm
+  read, serve to the complete picture and peak memory (that of the cold read); and a row of Atlas's clean release
+  build and its test suite. Each measure is the release before beside this one, from the interleaved run of the
+  two where it measured it, both on one runner (`mode: weekly`, `to` the release branch), and else from each
+  release's night. Two nights ran on two runners, often of other CPUs, and say less than one interleaved run.
+  A program that joined the corpus after both releases were measured has no row yet.
+- **The lines**: each of those measures on the night of every release since the series began. A release's
+  night is the last night that measured a commit of the release and none of the release before; a release no
+  night measured between the two has no point, and borrows none.
 
 ```sh
-uv run tools/perf.py release-bars --data <a checkout of perf-data> --repo . --before v0.69.3 --after next
+uv run tools/perf.py release-bars --data <a checkout of perf-data> --reproduced weekly.json --run <its url> \
+  --repo . --before v0.70.0 --after origin/release-0.71 --version 0.71.0
 ```
 
-prints the `Bars:` line for the release's point on performance (`tools/release_page.py` draws it). A measure
-the series did not have yet on the night of the release before is taken from an interleaved run of the two
-instead, the `weekly.json` of the job `weekly`, with a bar per measure named:
-
-```sh
-uv run tools/perf.py release-bars --reproduced weekly.json --before v0.70.0 --after 0.71.0 \
-  --measure "read/atlas/serve/seconds=Cold serve start to the complete picture"
-```
+writes `docs/releases/0.71.0/bench.json` and prints the notes' line, `Bench: releases/0.71.0/bench.json | caption`,
+whose caption says where each number comes from; `tools/release_page.py` draws it: per row a pair of bars per
+measure with the ratio, and a small line chart per measure. An ad hoc number (a stage that a change made faster, a
+subject of an issue) stays on its issue and its point.
 
 ## The series
 
 `perf-data` is an orphan branch that holds `history.jsonl`, one line per run (its commit, date, run,
-runner, every measure with its samples, and which measures were suspect and slower), and `README.md`,
-which `tools/perf.py record` draws from it: a table per kind of measure, with a chart of the last 90 runs
+runner, every measure with its samples, the cards of the subjects it read, and which measures were suspect and
+slower), and `README.md`, which `tools/perf.py record` draws from it: the subjects by their cards, a table per kind
+of measure, with a chart of the last 90 runs
 for the build, each reading's wall time and memory, the tests' total, and any measure while it is suspect.
 GitHub shows that README at the branch; the documentation site is not touched.
 
 ## Cost
 
 One `ubuntu-24.04` runner a night, about 25 minutes when nothing is suspect: the clean build, a cold, a warm
-and an unasked reading and a cold serve start of each of five subjects, the tests' build (from the cache of
-this job) and one run of every test binary. A suspect night adds the reproduction (two builds and five
-interleaved rounds of what is suspect) and, for a large slowdown, the bisection; the job's timeout is 150
-minutes. The weekly job builds two commits and measures ten things interleaved, within the same timeout.
+and an unasked reading, a cold serve start and the card of Atlas and of each program of the corpus, the tests'
+build (from the cache of this job) and one run of every test binary. A suspect night adds the reproduction (two
+builds and five interleaved rounds of what is suspect) and, for a large slowdown, the bisection; the job's
+timeout is 150 minutes. The weekly job builds two commits with their tests and measures the table and Atlas's
+own readings interleaved, within 240 minutes. Each job first removes toolchains the runner holds and no job uses,
+so that two builds and their tests fit on its disk.
 
 ## Running it by hand
 
 ```sh
+uv run tools/perf.py corpus fetch --into programs --for perf
 uv run tools/perf.py read --atlas target/release/atlas-code --subject pairs=engine/tests/pairs --out run.json
 uv run tools/perf.py tests --workspace . --out run.json -- -p atlas-code --test help
 uv run tools/perf.py record --data perf-data --run run.json --commit "$(git rev-parse HEAD)"
 ```
 
 `record` without `--summary` prints the summary. A history made on a laptop says nothing about the
-runner's: keep it apart from `perf-data`.
+runner's: keep it apart from `perf-data`. `python3 tools/test_perf.py` holds the laws of the corpus, the cards and
+the release's table.

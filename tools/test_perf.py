@@ -169,6 +169,8 @@ class Page(unittest.TestCase):
         night = {"commit": "c" * 40, "runner": {"cpu": "cpu"}, "metrics": {"read/public-x/cold/seconds": {"value": 4.0}}}
         data = perf.bench_data(programs, [], {"0.1.0": night, "0.2.0": night}, "0.1.0", "0.2.0", result)
         self.assertEqual(len(data["rows"]), len(programs) + 1)
+        unmeasured = {"a": "a" * 40, "b": "b" * 40, "measures": {m: g for m, g in measures.items() if "hidden-y" not in m}}
+        self.assertEqual(len(perf.bench_data(programs, [], {}, "0.1.0", "0.2.0", unmeasured)["rows"]), len(programs))
         with tempfile.TemporaryDirectory() as d:
             (Path(d) / "bench.json").write_text(json.dumps(data))
             docs, release_page.DOCS = release_page.DOCS, Path(d)
