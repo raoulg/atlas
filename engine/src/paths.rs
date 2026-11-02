@@ -708,11 +708,38 @@ fn unsuffixed(p: String) -> String {
     out
 }
 
+/// A path's text with each run of parts that hold any one part (`*`) or any number of parts (`**`)
+/// written with its `**` first and once: a run with a `**` holds as many parts as it has `*`s, or more,
+/// so `*/**` and `**/*` are one term, `**/*`, and `**/**` is `**`.
+fn wildcards(p: String) -> String {
+    if !p.contains("**") {
+        return p;
+    }
+    let parts: Vec<&str> = p.split('/').collect();
+    let wild = |x: &str| matches!(x, "*" | "**");
+    let (mut out, mut i): (Vec<&str>, usize) = (vec![], 0);
+    while i < parts.len() {
+        let run = parts[i..].iter().take_while(|x| wild(x)).count();
+        if run == 0 {
+            out.push(parts[i]);
+            i += 1;
+            continue;
+        }
+        let stars = &parts[i..i + run];
+        if stars.contains(&"**") {
+            out.push("**");
+        }
+        out.extend(stars.iter().filter(|x| **x == "*"));
+        i += run;
+    }
+    out.join("/")
+}
+
 /// A path with its unknown parts written as `{name}`, a variable by its name as well, and an option
 /// as its default; a variable of the environment whose name is still to be said is no variable the
 /// code names yet, so a value it gives no name (`{value}`), or its default where it has one.
 pub fn render(b: &Built) -> String {
-    unsuffixed(
+    wildcards(unsuffixed(
         b.iter()
             .map(|s| match s {
                 Seg::Lit(x) | Seg::Package(x) => x.clone(),
@@ -721,7 +748,7 @@ pub fn render(b: &Built) -> String {
                 Seg::Env(_, None) => "{value}".into(),
             })
             .collect(),
-    )
+    ))
 }
 
 /// A path with what is given to the function written as `{name}`: what a caller hands, what the
@@ -1001,6 +1028,8 @@ impl Whole {
 pub struct Callers<'c, H> {
     pub home: &'c str,
     pub calls: &'c [H],
+    /// The cycles the calls make.
+    pub cycles: &'c Cycles,
     pub family: &'c crate::builder::Family,
     pub default: &'c dyn Fn(&str, &str) -> Vec<Built>,
     pub entry: &'c dyn Fn(&str) -> bool,
@@ -1021,7 +1050,7 @@ pub struct Completion {
     pub set_up_in: Option<String>,
 }
 
-impl<H: Handing> Callers<'_, H> {
+impl<'c, H: Handing> Callers<'c, H> {
     /// What a value built from the parameters of `f` is at each call that hands them, followed out
     /// through the callers' parameters in turn, with where it is whole: the URL
     /// `request(method, path)` fetches is `/api/customers` where `api.get("/customers")` is
@@ -1032,20 +1061,61 @@ impl<H: Handing> Callers<'_, H> {
     /// through the callers, in whose own code it decides: `default_rows` for `read_rows(path)`
     /// called as `read_rows(Path("data/rows.csv"))`.
     pub fn at(&self, f: &str, b: &Built, depth: u32) -> Vec<Completion> {
-        self.of(f, b, None, None, depth)
+        self.of(f, b, None, None, &[], depth)
+    }
+
+    /// The parameters among `params` of the value in `f` that a recursion extends: a walk out through
+    /// the callers around `f`'s cycle, from `f` back to it through none of the functions `met`, that hands
+    /// each of `params` that parameter or a path below it, and some a path below.
+    fn grows(&self, f: &str, params: &[String], met: &[Met<'c, H>]) -> BTreeSet<String> {
+        let mut grown = BTreeSet::new();
+        let start: Walk = params.iter().map(|p| (p.clone(), false)).collect();
+        let mut seen: HashSet<(String, Walk)> = HashSet::new();
+        let mut todo: Vec<(String, Walk)> = vec![(f.to_string(), start)];
+        while let Some((h, at)) = todo.pop() {
+            for a in self.cycles.within.get(&h).into_iter().flatten().map(|i| &self.calls[*i]) {
+                if a.caller() != f && met.iter().any(|m| m.function == a.caller()) {
+                    continue;
+                }
+                let Some(next) = step(a, &at) else { continue };
+                if a.caller() == f && returns(&next, params) {
+                    grown.extend(next.iter().filter(|(_, g)| *g).map(|(p, _)| p.clone()));
+                }
+                if seen.len() < WALKS && seen.insert((a.caller().to_string(), next.clone())) {
+                    todo.push((a.caller().to_string(), next));
+                }
+            }
+        }
+        grown
+    }
+
+    /// Whether the call `a` of `f`, made by `f` itself or by a function the walk met in `f`'s cycle,
+    /// closes a recursion: the walk from there through `a` hands each parameter of the value there that
+    /// parameter or a path below it. The fixpoint written in there holds what it hands.
+    fn closes(&self, f: &str, params: &[String], met: &[Met<'c, H>], a: &H) -> bool {
+        let start = |ps: &[String]| -> Walk { ps.iter().map(|p| (p.clone(), false)).collect() };
+        if a.caller() == f {
+            return step(a, &start(params)).is_some_and(|at| returns(&at, params));
+        }
+        met.iter().enumerate().filter(|(_, m)| m.function == a.caller()).any(|(j, m)| {
+            let walked = met[j..].iter().try_fold(start(&m.params), |at, x| step(x.by, &at));
+            walked.and_then(|at| step(a, &at)).is_some_and(|at| returns(&at, &m.params))
+        })
     }
 
     /// `at`, keeping to the calls of `f` that hand its parameter `only.0` a value that is an
     /// `only.1`, or one the code does not say: the member of a family a call on that parameter
     /// runs. `decided` is the function that decides the value, where a callee's code already did.
-    fn of(&self, f: &str, b: &Built, only: Option<(&str, &str)>, decided: Option<&str>, depth: u32) -> Vec<Completion> {
+    /// `met` are the functions of `f`'s cycle the walk out through the callers met before `f`, since it
+    /// went into the cycle.
+    fn of(&self, f: &str, b: &Built, only: Option<(&str, &str)>, decided: Option<&str>, met: &[Met<'c, H>], depth: u32) -> Vec<Completion> {
         // a variable is each of its values that is whole, the value once for each, and ranges over
         // the others as the callers make them
         let terms = choose(b, false, 0);
         if terms.len() != 1 || terms[0] != *b {
             let mut out = vec![];
             for t in terms {
-                out.extend(self.of(f, &t, only, decided, depth));
+                out.extend(self.of(f, &t, only, decided, met, depth));
                 if out.len() >= COMPLETIONS {
                     break;
                 }
@@ -1073,7 +1143,7 @@ impl<H: Handing> Callers<'_, H> {
                 for x in fill(b, &g, &p, &object.term) {
                     // a value that what the object holds decides is decided where the object was built
                     let by = here.clone().or_else(|| (self.decides)(&x).then_some(object.decided_in.clone()).flatten());
-                    for rest in self.of(f, &x, None, by.as_deref(), depth + 1) {
+                    for rest in self.of(f, &x, None, by.as_deref(), met, depth + 1) {
                         // whole where both are: every condition of the one that built the object and
                         // of the one that handed `f` the rest
                         let both = rest.whole.and(&object.whole, self.home);
@@ -1111,7 +1181,7 @@ impl<H: Handing> Callers<'_, H> {
                 Some(named) => named.iter().find(|(own, _)| own == p).map(|(_, theirs)| theirs.clone()),
             }
         };
-        let sites: Vec<(&H, Option<&Vec<(String, String)>>)> = calls
+        let sites: Vec<(&'c H, Option<&Vec<(String, String)>>)> = calls
             .iter()
             .filter(|a| a.callee() == f)
             .map(|a| (a, None))
@@ -1128,35 +1198,17 @@ impl<H: Handing> Callers<'_, H> {
                 None => true,
             })
             .collect();
-        // a call of `f` in `f` itself that hands each parameter of the value that parameter or a
-        // path below it is a recursion: over it a parameter it extends holds the least fixpoint of
-        // the extension, any number of parts below what the first call hands (`{p}/**`), written
-        // in once, and the value goes on through the calls that are not the recursion
-        let mut grows: Vec<&str> = vec![];
-        let mut others = vec![];
-        for (a, named) in sites {
-            let extends: Option<Vec<bool>> = (named.is_none() && a.caller() == f)
-                .then(|| {
-                    params
-                        .iter()
-                        .map(|p| {
-                            let handed = a.hands(p).filter(|v| !v.is_empty())?;
-                            let below: Option<Vec<bool>> = handed.iter().flat_map(chosen).map(|h| below(&h, p)).collect();
-                            below.map(|by| by.contains(&true))
-                        })
-                        .collect()
-                })
-                .flatten();
-            match extends {
-                Some(by) => grows.extend(params.iter().zip(by).filter(|(_, x)| *x).map(|(p, _)| p.as_str())),
-                None => others.push((a, named)),
-            }
-        }
-        let sites = others;
+        // a walk around a cycle of the call graph (`f` calls itself, or `f` calls `g` calls `f`) that
+        // hands each parameter of the value that parameter or a path below it is a recursion: over it
+        // a parameter it extends holds the least fixpoint of the extension, any number of parts below
+        // what the first call hands (`{p}/**`), written in once where the walk went into the cycle, and
+        // the value goes on through the calls that are not the recursion, out of the cycle from each
+        // of its functions the walk meets, each met once
+        let grows = self.grows(f, &params, met);
         let closed = match grows.is_empty() {
             true => b.clone(),
             false => {
-                let fixpoint = |p: &str| match grows.contains(&p) {
+                let fixpoint = |p: &str| match grows.contains(p) {
                     true => vec![join(&vec![Seg::Param(p.into())], &lit("**"), "/")],
                     false => vec![vec![Seg::Param(p.into())]],
                 };
@@ -1164,22 +1216,48 @@ impl<H: Handing> Callers<'_, H> {
             }
         };
         let b = &closed;
-        if sites.is_empty() || depth > DEPTH {
+        // each call that is no recursion, with the functions of the cycle the walk has met after it: a
+        // call from a function of `f`'s cycle not met yet goes on in the cycle, any other call out of it,
+        // or into it again where it is no recursion, and meets nothing yet
+        let mut onward: Vec<(&'c H, Option<&Vec<(String, String)>>, Vec<Met<'c, H>>)> = vec![];
+        for (a, named) in sites {
+            let cycle = named.is_none() && self.cycles.same(f, a.caller());
+            let again = a.caller() == f || met.iter().any(|m| m.function == a.caller());
+            if cycle && again && self.closes(f, &params, met, a) {
+                continue;
+            }
+            let next = match cycle && !again {
+                true => met
+                    .iter()
+                    .map(|m| Met { function: m.function.clone(), params: m.params.clone(), by: m.by })
+                    .chain([Met { function: f.to_string(), params: params.clone(), by: a }])
+                    .collect(),
+                false => vec![],
+            };
+            onward.push((a, named, next));
+        }
+        // where no call is left to follow the value is whole here; within a cycle only where the walk went
+        // into it, since the functions met after that hand the value on to there
+        if (onward.is_empty() && met.is_empty()) || depth > DEPTH {
             return given(b, Whole::at(f));
         }
         let mut out: Vec<Completion> = if (self.entry)(f) { given(b, Whole::users(f)) } else { vec![] };
-        for (a, named) in sites {
+        for (a, named, next_met) in onward {
             let hands = |p: &str| theirs(named, p).and_then(|q| a.hands(&q));
             // through a base's method called on a parameter, the callers that hand that parameter
             // decide which member runs: the one `f` is a method of
             let class = f.rsplit_once('.').map_or("", |(c, _)| c);
             let next = named.and(a.on()).map(|q| (q, class));
             for x in substitute(b, |p| hands(p).filter(|v| !v.is_empty()).unwrap_or_else(|| unknown(p))) {
-                out.extend(self.of(a.caller(), &x, next, here.as_deref(), depth + 1));
+                out.extend(self.of(a.caller(), &x, next, here.as_deref(), &next_met, depth + 1));
                 if out.len() >= COMPLETIONS {
                     return out;
                 }
             }
+        }
+        // a cycle nothing outside calls, nor its users: whole where the walk went into it
+        if out.is_empty() && met.is_empty() {
+            return given(b, Whole::at(f));
         }
         out
     }
@@ -1193,18 +1271,161 @@ fn fill(b: &Built, g: &str, p: &str, v: &Built) -> Vec<Built> {
     })
 }
 
-/// Whether what a call hands the parameter `p` is `p` itself (`false`) or a path below it
-/// (`true`): `{p}` and parts after a `/` that never step up. None for any other value.
-fn below(h: &Built, p: &str) -> Option<bool> {
+/// The parameter a value a call hands is, or is a path below, and which (`true` for below): `{p}`
+/// is `p` itself, and `{p}` with parts after a `/` that never step up is below it. None for any other
+/// value.
+fn rooted(h: &Built) -> Option<(&str, bool)> {
     match h.as_slice() {
-        [Seg::Param(q)] if q == p => Some(false),
-        [Seg::Param(q), Seg::Lit(t), ..] if q == p && t.starts_with('/') => {
+        [Seg::Param(q)] => Some((q, false)),
+        [Seg::Param(q), Seg::Lit(t), ..] if t.starts_with('/') => {
             let rest = render(&h[1..].to_vec());
             let parts: Vec<&str> = rest.split('/').filter(|x| !x.is_empty()).collect();
-            (!parts.contains(&"..")).then_some(!parts.is_empty())
+            (!parts.contains(&"..")).then_some((q, !parts.is_empty()))
         }
         _ => None,
     }
+}
+
+/// Where a walk out through the callers stands, for each parameter of the value it started with:
+/// the parameter of the function it has reached that the parameter is handed as, and whether a path
+/// below it was handed on the way.
+type Walk = Vec<(String, bool)>;
+
+/// The walk `at` one call further, out to the caller of `a`: each parameter it stands at handed by `a`
+/// that parameter of `a`'s caller or a path below it, every alternative the same parameter. None
+/// where `a` leaves one out or hands it anything else.
+fn step<H: Handing>(a: &H, at: &[(String, bool)]) -> Option<Walk> {
+    at.iter()
+        .map(|(p, grown)| {
+            let handed = a.hands(p).filter(|v| !v.is_empty())?;
+            let mut to: Option<(String, bool)> = None;
+            for h in handed.iter().flat_map(chosen) {
+                let (q, below) = rooted(&h)?;
+                match &mut to {
+                    None => to = Some((q.to_string(), *grown || below)),
+                    Some((r, g)) if r == q => *g |= below,
+                    Some(_) => return None,
+                }
+            }
+            to
+        })
+        .collect()
+}
+
+/// Whether a walk that started at `params` stands at each of them again: around a cycle, a recursion.
+fn returns(at: &[(String, bool)], params: &[String]) -> bool {
+    at.len() == params.len() && at.iter().zip(params).all(|((r, _), p)| r == p)
+}
+
+/// The cycles of the program's call graph: its strongly connected components that hold one, a function
+/// that calls itself or several that call each other in turn (`f` calls `g` calls `f`), and the calls
+/// made within each. A value handed around a cycle comes back to the function it started in.
+#[derive(Default)]
+pub struct Cycles {
+    /// The cycle each function in one is in.
+    cycle: HashMap<String, usize>,
+    /// The calls made of each function within its cycle, by their place among the calls.
+    within: HashMap<String, Vec<usize>>,
+}
+
+impl Cycles {
+    /// The cycles of the graph the program's calls make, each call an arrow from its caller to its callee.
+    pub fn of<H: Handing>(calls: &[H]) -> Cycles {
+        let mut index: HashMap<&str, usize> = HashMap::new();
+        let mut names: Vec<&str> = vec![];
+        for a in calls {
+            for f in [a.caller(), a.callee()] {
+                if !index.contains_key(f) {
+                    index.insert(f, names.len());
+                    names.push(f);
+                }
+            }
+        }
+        let n = names.len();
+        let mut arrows: Vec<Vec<usize>> = vec![vec![]; n];
+        let mut itself = vec![false; n];
+        for a in calls {
+            let (from, to) = (index[a.caller()], index[a.callee()]);
+            arrows[from].push(to);
+            itself[from] |= from == to;
+        }
+        // Tarjan's components, without recursion: a function's component is closed where nothing it
+        // reaches reaches further back than it
+        const NONE: usize = usize::MAX;
+        let (mut order, mut low, mut on, mut component) = (vec![NONE; n], vec![0; n], vec![false; n], vec![NONE; n]);
+        let (mut stack, mut counter, mut components) = (vec![], 0, 0);
+        for root in 0..n {
+            if order[root] != NONE {
+                continue;
+            }
+            order[root] = counter;
+            low[root] = counter;
+            counter += 1;
+            stack.push(root);
+            on[root] = true;
+            let mut work: Vec<(usize, usize)> = vec![(root, 0)];
+            while let Some(&(v, i)) = work.last() {
+                if let Some(&w) = arrows[v].get(i) {
+                    work.last_mut().expect("the function being walked").1 += 1;
+                    if order[w] == NONE {
+                        order[w] = counter;
+                        low[w] = counter;
+                        counter += 1;
+                        stack.push(w);
+                        on[w] = true;
+                        work.push((w, 0));
+                    } else if on[w] {
+                        low[v] = low[v].min(order[w]);
+                    }
+                    continue;
+                }
+                work.pop();
+                if let Some(&(u, _)) = work.last() {
+                    low[u] = low[u].min(low[v]);
+                }
+                if low[v] == order[v] {
+                    while let Some(w) = stack.pop() {
+                        on[w] = false;
+                        component[w] = components;
+                        if w == v {
+                            break;
+                        }
+                    }
+                    components += 1;
+                }
+            }
+        }
+        let mut size = vec![0usize; components];
+        for c in &component {
+            size[*c] += 1;
+        }
+        let cycle: HashMap<String, usize> =
+            (0..n).filter(|v| size[component[*v]] > 1 || itself[*v]).map(|v| (names[v].to_string(), component[v])).collect();
+        let mut within: HashMap<String, Vec<usize>> = HashMap::new();
+        for (i, a) in calls.iter().enumerate() {
+            if cycle.get(a.caller()).is_some_and(|c| cycle.get(a.callee()) == Some(c)) {
+                within.entry(a.callee().to_string()).or_default().push(i);
+            }
+        }
+        Cycles { cycle, within }
+    }
+
+    /// Whether `f` and `g` are in one cycle; `f` with itself where it is in one.
+    pub fn same(&self, f: &str, g: &str) -> bool {
+        self.cycle.get(f).is_some_and(|c| self.cycle.get(g) == Some(c))
+    }
+}
+
+/// The most places of a walk around a cycle `Callers::grows` keeps apart.
+const WALKS: usize = 256;
+
+/// A function a walk out through the callers met in the cycle it is in, before the one it has reached:
+/// the function, the parameters of the value there, and the call it went on by, made of the function
+/// by the next.
+pub struct Met<'c, H> {
+    function: String,
+    params: Vec<String>,
+    by: &'c H,
 }
 
 /// `b` as the object the function `g` sets up holds it, built there from `g`'s parameters: each
@@ -1278,11 +1499,12 @@ pub fn complete<H: Handing>(
     default: &dyn Fn(&str, &str) -> Vec<Built>,
     entry: &dyn Fn(&str) -> bool,
 ) -> Vec<Completed> {
+    let cycles = Cycles::of(handing);
     calls
         .into_iter()
         .map(|(f, t, built)| {
             let decides = |b: &Built| decided(b, &t);
-            let callers = Callers { home: &f, calls: handing, family, default, entry, decides: &decides };
+            let callers = Callers { home: &f, calls: handing, cycles: &cycles, family, default, entry, decides: &decides };
             let found = built
                 .iter()
                 .flat_map(|b| choose(b, false, 0))
@@ -1575,7 +1797,8 @@ mod tests {
         let t = crate::model::Touch::new(crate::model::World::Disk, Some(dir));
         let decides = |b: &Built| decided(b, &t);
         let family = crate::builder::Family::default();
-        let callers = Callers { home: "read", calls, family: &family, default, entry: &|_| false, decides: &decides };
+        let cycles = Cycles::of(calls);
+        let callers = Callers { home: "read", calls, cycles: &cycles, family: &family, default, entry: &|_| false, decides: &decides };
         callers.at("read", &vec![Seg::Param("path".into())], 0)
     }
 
@@ -1980,7 +2203,9 @@ mod tests {
         let family = crate::builder::Family::default();
         let none = |_: &str, _: &str| vec![];
         let calls = [Call("main", "read", vec![("path", lit("data"))]), Call("other", "read", vec![("path", hole("asked"))])];
-        let callers = Callers { home: "read", calls: &calls, family: &family, default: &none, entry: &|_| false, decides: &decides };
+        let cycles = Cycles::of(&calls);
+        let callers =
+            Callers { home: "read", calls: &calls, cycles: &cycles, family: &family, default: &none, entry: &|_| false, decides: &decides };
         let handed = join(&vec![Seg::Param("path".into())], &lit("rows.csv"), "/");
         let held = |c: &[Completion]| -> BTreeSet<String> { c.iter().map(|c| format!("{:?} {}", c.whole, render(&c.term))).collect() };
         for values in
@@ -2040,6 +2265,165 @@ mod tests {
             let itself = Call("read", "read", vec![("path", path())]);
             let recursion = Call("read", "read", vec![("path", join(&path(), &extension, "/"))]);
             assert_eq!(completed(&[recursion, itself, main()], &none, Dir::Read), completions, "{extension:?}: handed itself");
+        }
+    }
+
+    /// What `b`, a value of `f`, is wherever the calls make it whole, each call followed out through the
+    /// callers as often as it runs, no recursion recognised: the unrolling, to as many parts as `parts`.
+    fn unrolled(calls: &[Call], f: &str, b: &Built, parts: usize) -> BTreeSet<String> {
+        let (mut out, mut seen) = (BTreeSet::new(), BTreeSet::new());
+        let mut todo = vec![(f.to_string(), b.clone())];
+        while let Some((g, t)) = todo.pop() {
+            let rendered = render(&t);
+            if rendered.split('/').count() > parts || !seen.insert((g.clone(), rendered.clone())) {
+                continue;
+            }
+            let callers: Vec<&Call> = calls.iter().filter(|c| c.1 == g).collect();
+            if !takes(&t) || callers.is_empty() {
+                out.extend(substitute(&t, |p| vec![hole(p)]).iter().map(render));
+                continue;
+            }
+            for c in callers {
+                for x in substitute(&t, |p| c.hands(p).unwrap_or_else(|| vec![hole(p)])) {
+                    todo.push((c.0.to_string(), x));
+                }
+            }
+        }
+        out
+    }
+
+    /// Law: a recursion through more than one function reaches every depth, as one through one function
+    /// does (#345). The cycle is a strongly connected component of the call graph: `read(path)` calls
+    /// `walk(path / e)` and `walk(dir)` calls `read(dir)`, or the extension stands in the other call or in
+    /// both, the cycle runs through three functions or holds a cycle of its own, and the program goes into
+    /// it at one of its functions or at two. What the completions of `read`'s path hold is what the
+    /// unrolling holds, at every depth: exactly where each walk around the cycle extends the path by one
+    /// part the code does not decide (a pattern, a hole), and at least where it extends it by a name
+    /// written out (`sub`) or by more than one part.
+    #[test]
+    fn a_recursion_through_a_cycle_reaches_every_depth() {
+        use crate::model::Dir;
+        let none = |_: &str, _: &str| vec![];
+        let p = |name: &str| vec![Seg::Param(name.into())];
+        let probes: Vec<Vec<String>> = (0..=20)
+            .flat_map(|k| {
+                let below: Vec<String> = std::iter::repeat_n("sub".to_string(), k).collect();
+                [[vec!["data".to_string()], below.clone()].concat(), [vec!["other".to_string()], below.clone()].concat()]
+            })
+            .chain([vec!["a".to_string(), "data".to_string()], vec!["dat".to_string(), "a".to_string()]])
+            .collect();
+        let by = |patterns: &BTreeSet<String>, p: &[String]| {
+            let p: Vec<&str> = p.iter().map(String::as_str).collect();
+            patterns.iter().any(|t| holds(&t.split('/').collect::<Vec<_>>(), &p))
+        };
+        for (extension, one_part) in [(lit("*"), true), (hole("entry"), true), (lit("sub"), false)] {
+            let below = |name: &str| join(&p(name), &extension, "/");
+            // each program, and whether each walk around its cycle extends the path by one part
+            let programs: Vec<(&str, Vec<Call>, bool)> = vec![
+                (
+                    "the extension in read's call",
+                    vec![
+                        Call("read", "walk", vec![("dir", below("path"))]),
+                        Call("walk", "read", vec![("path", p("dir"))]),
+                        Call("main", "walk", vec![("dir", lit("data"))]),
+                    ],
+                    one_part,
+                ),
+                (
+                    "the extension in walk's call",
+                    vec![
+                        Call("read", "walk", vec![("dir", p("path"))]),
+                        Call("walk", "read", vec![("path", below("dir"))]),
+                        Call("main", "walk", vec![("dir", lit("data"))]),
+                    ],
+                    one_part,
+                ),
+                (
+                    "an extension in both calls",
+                    vec![
+                        Call("read", "walk", vec![("dir", below("path"))]),
+                        Call("walk", "read", vec![("path", below("dir"))]),
+                        Call("main", "walk", vec![("dir", lit("data"))]),
+                    ],
+                    false,
+                ),
+                (
+                    "into the cycle where the path is read",
+                    vec![
+                        Call("read", "walk", vec![("dir", below("path"))]),
+                        Call("walk", "read", vec![("path", p("dir"))]),
+                        Call("main", "read", vec![("path", lit("data"))]),
+                    ],
+                    one_part,
+                ),
+                (
+                    "into the cycle at two functions",
+                    vec![
+                        Call("read", "walk", vec![("dir", below("path"))]),
+                        Call("walk", "read", vec![("path", p("dir"))]),
+                        Call("main", "walk", vec![("dir", lit("data"))]),
+                        Call("other", "read", vec![("path", lit("other"))]),
+                    ],
+                    one_part,
+                ),
+                (
+                    "through three functions",
+                    vec![
+                        Call("read", "walk", vec![("dir", below("path"))]),
+                        Call("walk", "list", vec![("at", p("dir"))]),
+                        Call("list", "read", vec![("path", p("at"))]),
+                        Call("main", "list", vec![("at", lit("data"))]),
+                    ],
+                    one_part,
+                ),
+                (
+                    "a cycle within the cycle",
+                    vec![
+                        Call("read", "walk", vec![("dir", p("path"))]),
+                        Call("walk", "read", vec![("path", p("dir"))]),
+                        Call("walk", "walk", vec![("dir", below("dir"))]),
+                        Call("main", "walk", vec![("dir", lit("data"))]),
+                    ],
+                    one_part,
+                ),
+            ];
+            for (name, calls, exact) in programs {
+                let held: BTreeSet<String> = completed(&calls, &none, Dir::Read).iter().map(|c| render(&c.term)).collect();
+                let unrolling = unrolled(&calls, "read", &p("path"), 64);
+                for probe in &probes {
+                    let (fixpoint, unrolled) = (by(&held, probe), by(&unrolling, probe));
+                    assert!(fixpoint || !unrolled, "{name}, {extension:?}: the unrolling holds {probe:?}, {held:?} does not");
+                    assert!(!exact || fixpoint == unrolled, "{name}, {extension:?}: {held:?} holds {probe:?}, the unrolling does not");
+                }
+            }
+        }
+    }
+
+    proptest::proptest! {
+        /// Law: two functions are in one cycle of the call graph exactly where each reaches the other
+        /// through calls, and a function is in a cycle exactly where it reaches itself (#345).
+        #[test]
+        fn a_cycle_is_where_functions_reach_each_other(arrows in proptest::collection::vec((0..6usize, 0..6usize), 0..14)) {
+            let name = |i: usize| ["a", "b", "c", "d", "e", "f"][i];
+            let calls: Vec<Call> = arrows.iter().map(|(x, y)| Call(name(*x), name(*y), vec![])).collect();
+            let cycles = Cycles::of(&calls);
+            // what each function reaches through one call or more
+            let mut reach = [[false; 6]; 6];
+            for (x, y) in &arrows {
+                reach[*x][*y] = true;
+            }
+            for k in 0..6 {
+                for i in 0..6 {
+                    for j in 0..6 {
+                        reach[i][j] |= reach[i][k] && reach[k][j];
+                    }
+                }
+            }
+            for i in 0..6 {
+                for j in 0..6 {
+                    proptest::prop_assert_eq!(cycles.same(name(i), name(j)), reach[i][j] && reach[j][i], "{} and {}", name(i), name(j));
+                }
+            }
         }
     }
 }

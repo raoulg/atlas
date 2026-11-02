@@ -1825,10 +1825,15 @@ fn places_a_name_bound_once_is_one_value() {
     common::a_name_bound_once_is_one_value("rust", "export.export");
 }
 
-/// The trees pair: a recursion over `read_dir` is one place at every depth (#325).
+/// The trees pair: a recursion over `read_dir` is one place at every depth, through one function and through two that call
+/// each other (#325, #345).
 #[test]
 fn places_a_walk_of_a_tree_is_one_place_at_every_depth() {
-    common::a_walk_of_a_tree_is_one_place_at_every_depth("rust", "backup.copy_tree", "backup.main");
+    common::a_walk_of_a_tree_is_one_place_at_every_depth(
+        "rust",
+        &[("backup.copy_tree", "data", "backup"), ("backup.mirror_entry", "photos", "archive")],
+        "backup.main",
+    );
 }
 
 /// The locals pair: a vector a step changes in place (`both.push(second)`) holds a value of its own and stands for nothing,

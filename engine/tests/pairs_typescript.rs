@@ -2094,10 +2094,15 @@ fn places_a_name_bound_once_is_one_value() {
     common::a_name_bound_once_is_one_value("typescript", "export.exportStock");
 }
 
-/// The trees pair: a recursion over `readdirSync` is one place at every depth (#325).
+/// The trees pair: a recursion over `readdirSync` is one place at every depth, through one function and through two that call
+/// each other (#325, #345).
 #[test]
 fn places_a_walk_of_a_tree_is_one_place_at_every_depth() {
-    common::a_walk_of_a_tree_is_one_place_at_every_depth("typescript", "backup.copyTree", "backup.main");
+    common::a_walk_of_a_tree_is_one_place_at_every_depth(
+        "typescript",
+        &[("backup.copyTree", "data", "backup"), ("backup.mirrorEntry", "photos", "archive")],
+        "backup.main",
+    );
 }
 
 /// The handles pair (#353): a `FileHandle` handed on (`count(f: FileHandle)`, made by `open` of `node:fs/promises`) is read

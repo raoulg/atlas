@@ -744,32 +744,38 @@ fn holds(pattern: &[&str], p: &[&str]) -> bool {
     }
 }
 
-/// The trees pair: a recursion that lists a directory and hands itself each entry below it walks the tree, and over the
-/// recursion its parameter is the least fixpoint of the extension, `D/**` (#325). The clean side copies every file below
-/// `data` to the same place below `backup`, going into each folder it lists; the shortcut copies the files at the top alone.
-/// What `main` makes the clean copy read and write holds a file at every depth below `data` and below `backup`, and nothing
-/// outside them; the shortcut's holds the top alone. So in every language.
+/// The trees pair: a recursion that lists a directory and hands each entry below it back to the walk walks the tree, and
+/// over the recursion its parameter is the least fixpoint of the extension, `D/**`: through one function that calls itself
+/// (#325, `copy_tree`), and through two that call each other in turn, a cycle of the call graph (#345, `mirror` lists a
+/// folder and hands each entry to `mirror_entry`, which hands a folder back to `mirror`). The clean side copies every file
+/// below `data` to the same place below `backup`, and mirrors every file below `photos` into `archive`, going into each
+/// folder it lists; the shortcut copies the files at the top alone, and its `mirror_entry` passes a folder over. `walks`
+/// names, for each walk, the function that copies a file and the folders it copies from and to. What `main` makes the
+/// clean copy read and write holds a file at every depth below the one folder and below the other, and nothing outside
+/// them; the shortcut's holds the top alone. So in every language.
 #[allow(dead_code)]
-pub fn a_walk_of_a_tree_is_one_place_at_every_depth(language: &str, id: &str, main: &str) {
+pub fn a_walk_of_a_tree_is_one_place_at_every_depth(language: &str, walks: &[(&str, &str, &str)], main: &str) {
     let p = pair(&format!("trees/{language}"));
     for (side, g) in [("clean", &p.clean), ("shortcut", &p.shortcut)] {
-        let n = g.node(id).unwrap_or_else(|| panic!("{language}: no node {id}"));
-        // the files a copy reads or writes as `main` hands the copy its folders, each alternative a pattern
-        let patterns = |kind: &str| -> Vec<&str> {
-            n.touches
-                .iter()
-                .filter(|t| t.kind_name() == kind && t.by.contains(&Both::one(main)) && !t.what.ends_with('/'))
-                .flat_map(|t| t.what.split('|'))
-                .collect()
-        };
-        for (kind, root) in [("disk_read", "data"), ("disk_write", "backup")] {
-            let patterns = patterns(kind);
-            let held = |path: &[&str]| patterns.iter().any(|t| holds(&t.split('/').collect::<Vec<_>>(), path));
-            for depth in 1..=20 {
-                let file: Vec<&str> = std::iter::once(root).chain(std::iter::repeat_n("sub", depth - 1)).chain(["f.csv"]).collect();
-                assert_eq!(held(&file), side == "clean" || depth == 1, "{language} {side}: {kind} {file:?} by {patterns:?}");
-                let outside: Vec<&str> = ["elsewhere"].into_iter().chain(file[1..].iter().copied()).collect();
-                assert!(!held(&outside), "{language} {side}: {kind} {outside:?}, outside {root}, by {patterns:?}");
+        for (id, from, to) in walks {
+            let n = g.node(id).unwrap_or_else(|| panic!("{language}: no node {id}"));
+            // the files a copy reads or writes as `main` hands the copy its folders, each alternative a pattern
+            let patterns = |kind: &str| -> Vec<&str> {
+                n.touches
+                    .iter()
+                    .filter(|t| t.kind_name() == kind && t.by.contains(&Both::one(main)) && !t.what.ends_with('/'))
+                    .flat_map(|t| t.what.split('|'))
+                    .collect()
+            };
+            for (kind, root) in [("disk_read", *from), ("disk_write", *to)] {
+                let patterns = patterns(kind);
+                let held = |path: &[&str]| patterns.iter().any(|t| holds(&t.split('/').collect::<Vec<_>>(), path));
+                for depth in 1..=20 {
+                    let file: Vec<&str> = std::iter::once(root).chain(std::iter::repeat_n("sub", depth - 1)).chain(["f.csv"]).collect();
+                    assert_eq!(held(&file), side == "clean" || depth == 1, "{language} {side} {id}: {kind} {file:?} by {patterns:?}");
+                    let outside: Vec<&str> = ["elsewhere"].into_iter().chain(file[1..].iter().copied()).collect();
+                    assert!(!held(&outside), "{language} {side} {id}: {kind} {outside:?}, outside {root}, by {patterns:?}");
+                }
             }
         }
     }
