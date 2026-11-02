@@ -123,14 +123,24 @@ section li{margin:4px 0}
 .b-sum{display:flex;gap:16px;align-items:baseline;flex-wrap:wrap;margin:0 0 12px}
 .b-sum span{font-size:14px;color:var(--ink-2);max-width:60ch}
 .b-sum .b-big{font-family:var(--mono);font-size:30px;color:var(--ink);max-width:none}
-.b-scale{display:flex;justify-content:space-between;font-family:var(--mono);font-size:11.5px;color:var(--ink-3);margin:0 0 4px;padding:0 120px 0 calc(min(40%,260px) + 10px)}
-.b-div{display:grid;grid-template-columns:min(40%,260px) 1fr 110px;gap:10px;align-items:center;margin:3px 0;font-size:12.5px}
-.b-div .l{color:var(--ink-2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.b-scale{font-family:var(--mono);font-size:11.5px;color:var(--ink-3);margin:0 0 4px}
+.b-scale .t{display:flex;justify-content:space-between;gap:6px;height:auto;white-space:nowrap}
+.b-who{margin:10px 0 2px;font-size:13px;font-weight:500;color:var(--ink)}
+.b-div{display:grid;grid-template-columns:min(36%,240px) 1fr 64px;gap:10px;align-items:center;margin:3px 0;font-size:12.5px}
+.b-div .l{color:var(--ink-2)}
 .b-div .t{position:relative;height:12px}
 .b-div .m{position:absolute;left:50%;top:-3px;bottom:-3px;border-left:1px solid var(--ink-3)}
 .b-div .d{position:absolute;top:0;height:12px;min-width:1px}
 .b-div .d.faster{background:var(--add)}.b-div .d.slower{background:var(--del)}.b-div .d.same{background:var(--line)}
-.b-div .n{font-family:var(--mono);font-size:12px}
+.b-div .n{font-family:var(--mono);font-size:12px;white-space:nowrap}
+.b-div .w{grid-column:1/-1;font-size:11.5px;color:var(--ink-3);margin:-2px 0 8px}
+.b-div .w b{font-weight:400;white-space:nowrap}.b-div .w b.faster{color:var(--add)}.b-div .w b.slower{color:var(--del)}
+.b-div .p{position:absolute;top:1px;width:9px;height:9px;margin-left:-4.5px;border-radius:50%;border:1.5px solid var(--panel)}
+.b-div .p.faster{background:var(--add)}.b-div .p.slower{background:var(--del)}.b-div .p.same{background:var(--ink-3)}
+.b-div .d{opacity:.45}
+.b-kept{font-size:13px;color:var(--ink-3);margin:10px 0 0}
+.b-more{border-top:1px solid var(--line);margin-top:14px;padding-top:10px}
+.b-more summary{cursor:pointer;font-weight:500;color:var(--ink);margin-bottom:8px}
 .b-div .n.faster{color:var(--add)}.b-div .n.slower{color:var(--del)}.b-div .n.same{color:var(--ink-3)}
 .bench .cap{font-size:13.5px;color:var(--ink-2);margin:14px 0 0}
 .pager{display:flex;justify-content:space-between;gap:16px;border-top:1px solid var(--line);margin-top:48px;padding-top:20px;font-family:var(--mono);font-size:14px}

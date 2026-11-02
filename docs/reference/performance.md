@@ -164,20 +164,24 @@ drawn as bars throughout.
   symmetric (twice as fast and twice as slow cancel). A mean of squared differences would lose the sign and be
   ruled by the largest seconds. A measure that falls to 0, a redraw the release no longer starts, has no finite
   log ratio: it stays out of the mean, counted beside it, and its bar runs to the faster edge, said as *to 0*.
-- **Every ratio**, beside it: a bar per measure on a log scale from the middle, faster to the left and slower to
-  the right, so that twice as fast and twice as slow are bars of one length; an outlier shows as one long bar, a
-  uniform shift as all bars to one side. A measure whose change is within noise is grey, *no change*, by the rule
-  of a reproduction made symmetric: it changed when every round of the one release lies past every round of the
-  other, on the same side, and the medians lie apart by more than the floor (0.5 s, 50 MB). A measure taken from
-  two nights has no rounds to judge, and is grey.
-- **The table**: a row per program of the corpus that `perf` reads, named by its card, with its cold read, warm
+- **A line per measure**, beneath it: the measure's mean ratio over the programs as a bar on a log scale from the
+  middle, faster to the left and slower to the right, from twice as fast to twice as slow in every release (a ratio
+  past it stands at the edge), so that twice as fast and twice as slow are bars of one length; a dot per program
+  where its own ratio lies, and beneath the line every program with its change. Whether a change is the release's or
+  one program's is read off the dots: all on one side is a shift, one apart is that program. A program's change
+  within noise is grey, by the rule of a reproduction made symmetric: it changed when every round of the one release
+  lies past every round of the other, on the same side, and the medians lie apart by more than the floor (0.5 s,
+  50 MB). A measure taken from two nights has no rounds to judge, and is grey. The floor judges one program; several
+  small programs that move alike, each grey, are a shift all the same, and the line shows them so. A measure no
+  program changed beyond noise draws no line: those are named in one sentence.
+- **The table**, folded: a row per program of the corpus that `perf` reads, named by its card, with its cold read, warm
   read, read again after a file no reader asks about, serve from a cold start to the first and to the complete
   picture, serve drawing again after that file, and peak memory (that of the cold read); and a row of Atlas's
   clean release build and its test suite. Each measure is a pair of bars, the release before and this one, from the interleaved
   run of the two where it measured it, both on one runner (`mode: weekly`, `to` the release branch), and else from
   each release's night. Two nights ran on two runners, often of other CPUs, and say less than one interleaved run.
   A program that joined the corpus after both releases were measured has no row yet.
-- **Every release**: each of those measures on the night of every release since the series began, a bar per
+- **Every release**, folded: each of those measures on the night of every release since the series began, a bar per
   release. A release's night is the last night that measured a commit of the release and none of the release
   before; a release no night measured between the two has no bar, and borrows none.
 

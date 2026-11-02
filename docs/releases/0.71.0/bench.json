@@ -1,0 +1,672 @@
+{
+ "before": "0.70.0",
+ "after": "0.71.0",
+ "summary": {
+  "ratio": 0.6124,
+  "measures": 32,
+  "zero": 5,
+  "changed": 14
+ },
+ "releases": [
+  "0.70.0",
+  "0.71.0"
+ ],
+ "rows": [
+  {
+   "name": "atlas-0.70.0",
+   "title": null,
+   "short": "atlas-0.70.0",
+   "card": {
+    "languages": [
+     "rust"
+    ],
+    "files": 117,
+    "lines": 60291,
+    "modules": 117,
+    "functions": 2986,
+    "nodes": 3753,
+    "edges": 15637,
+    "library_bodies": 3700,
+    "revision": "4ebbbae0a877ef3609de15befe577897c3bec69b",
+    "pinned": true
+   },
+   "said": "Rust \u00b7 117 files \u00b7 60,291 lines \u00b7 117 modules \u00b7 2,986 functions \u00b7 3,753 nodes \u00b7 15,637 edges \u00b7 3,700 library bodies",
+   "cells": [
+    {
+     "measure": "read/atlas-0.70.0/cold/seconds",
+     "label": "cold read",
+     "unit": "s",
+     "before": 24.4991,
+     "after": 21.8605,
+     "source": "interleaved",
+     "changed": true
+    },
+    {
+     "measure": "read/atlas-0.70.0/warm/seconds",
+     "label": "warm read",
+     "unit": "s",
+     "before": 1.3794,
+     "after": 0.6946,
+     "source": "interleaved",
+     "changed": true
+    },
+    {
+     "measure": "read/atlas-0.70.0/unasked/seconds",
+     "label": "read again after a file no reader asks about",
+     "unit": "s",
+     "before": 24.0441,
+     "after": 0.6985,
+     "source": "interleaved",
+     "changed": true
+    },
+    {
+     "measure": "read/atlas-0.70.0/serve/first/seconds",
+     "label": "served from a cold start, to the first picture",
+     "unit": "s",
+     "before": 14.0612,
+     "after": 22.5299,
+     "source": "interleaved",
+     "changed": true
+    },
+    {
+     "measure": "read/atlas-0.70.0/serve/seconds",
+     "label": "served from a cold start, to the complete picture",
+     "unit": "s",
+     "before": 38.9217,
+     "after": 22.5299,
+     "source": "interleaved",
+     "changed": true
+    },
+    {
+     "measure": "read/atlas-0.70.0/serve/redraw/seconds",
+     "label": "served, drawing again after that file",
+     "unit": "s",
+     "before": 37.9394,
+     "after": 0.0,
+     "source": "interleaved",
+     "changed": true
+    },
+    {
+     "measure": "read/atlas-0.70.0/cold/peak_rss",
+     "label": "peak memory",
+     "unit": "MB",
+     "before": 388.8438,
+     "after": 393.4336,
+     "source": "interleaved",
+     "changed": false
+    }
+   ]
+  },
+  {
+   "name": "goad_toolkit",
+   "title": null,
+   "short": "goad_toolkit",
+   "card": {
+    "languages": [
+     "python"
+    ],
+    "files": 12,
+    "lines": 4382,
+    "modules": 12,
+    "functions": 169,
+    "nodes": 276,
+    "edges": 772,
+    "library_bodies": 0,
+    "revision": "929d37cc588b27f599b7fbe2e4f5d9733619f897",
+    "pinned": true
+   },
+   "said": "Python \u00b7 12 files \u00b7 4,382 lines \u00b7 12 modules \u00b7 169 functions \u00b7 276 nodes \u00b7 772 edges \u00b7 0 library bodies",
+   "cells": [
+    {
+     "measure": "read/goad_toolkit/cold/seconds",
+     "label": "cold read",
+     "unit": "s",
+     "before": 0.9115,
+     "after": 1.1939,
+     "source": "interleaved",
+     "changed": false
+    },
+    {
+     "measure": "read/goad_toolkit/warm/seconds",
+     "label": "warm read",
+     "unit": "s",
+     "before": 0.0413,
+     "after": 0.0418,
+     "source": "interleaved",
+     "changed": false
+    },
+    {
+     "measure": "read/goad_toolkit/unasked/seconds",
+     "label": "read again after a file no reader asks about",
+     "unit": "s",
+     "before": 0.9107,
+     "after": 0.041,
+     "source": "interleaved",
+     "changed": true
+    },
+    {
+     "measure": "read/goad_toolkit/serve/first/seconds",
+     "label": "served from a cold start, to the first picture",
+     "unit": "s",
+     "before": 0.9212,
+     "after": 1.2153,
+     "source": "interleaved",
+     "changed": false
+    },
+    {
+     "measure": "read/goad_toolkit/serve/seconds",
+     "label": "served from a cold start, to the complete picture",
+     "unit": "s",
+     "before": 1.8176,
+     "after": 1.2153,
+     "source": "interleaved",
+     "changed": true
+    },
+    {
+     "measure": "read/goad_toolkit/serve/redraw/seconds",
+     "label": "served, drawing again after that file",
+     "unit": "s",
+     "before": 1.7803,
+     "after": 0.0,
+     "source": "interleaved",
+     "changed": true
+    },
+    {
+     "measure": "read/goad_toolkit/cold/peak_rss",
+     "label": "peak memory",
+     "unit": "MB",
+     "before": 78.4492,
+     "after": 79.6406,
+     "source": "interleaved",
+     "changed": false
+    }
+   ]
+  },
+  {
+   "name": "vectormesh",
+   "title": null,
+   "short": "vectormesh",
+   "card": {
+    "languages": [
+     "python"
+    ],
+    "files": 35,
+    "lines": 11096,
+    "modules": 35,
+    "functions": 238,
+    "nodes": 391,
+    "edges": 989,
+    "library_bodies": 0,
+    "revision": "201a85048dc872bfc3115d09542529302b45a3ec",
+    "pinned": true
+   },
+   "said": "Python \u00b7 35 files \u00b7 11,096 lines \u00b7 35 modules \u00b7 238 functions \u00b7 391 nodes \u00b7 989 edges \u00b7 0 library bodies",
+   "cells": [
+    {
+     "measure": "read/vectormesh/cold/seconds",
+     "label": "cold read",
+     "unit": "s",
+     "before": 1.3,
+     "after": 1.5896,
+     "source": "interleaved",
+     "changed": false
+    },
+    {
+     "measure": "read/vectormesh/warm/seconds",
+     "label": "warm read",
+     "unit": "s",
+     "before": 0.0528,
+     "after": 0.0499,
+     "source": "interleaved",
+     "changed": false
+    },
+    {
+     "measure": "read/vectormesh/unasked/seconds",
+     "label": "read again after a file no reader asks about",
+     "unit": "s",
+     "before": 1.3087,
+     "after": 0.0518,
+     "source": "interleaved",
+     "changed": true
+    },
+    {
+     "measure": "read/vectormesh/serve/first/seconds",
+     "label": "served from a cold start, to the first picture",
+     "unit": "s",
+     "before": 1.313,
+     "after": 1.6061,
+     "source": "interleaved",
+     "changed": false
+    },
+    {
+     "measure": "read/vectormesh/serve/seconds",
+     "label": "served from a cold start, to the complete picture",
+     "unit": "s",
+     "before": 2.5558,
+     "after": 1.6061,
+     "source": "interleaved",
+     "changed": true
+    },
+    {
+     "measure": "read/vectormesh/serve/redraw/seconds",
+     "label": "served, drawing again after that file",
+     "unit": "s",
+     "before": 2.5468,
+     "after": 0.0,
+     "source": "interleaved",
+     "changed": true
+    },
+    {
+     "measure": "read/vectormesh/cold/peak_rss",
+     "label": "peak memory",
+     "unit": "MB",
+     "before": 92.0547,
+     "after": 93.8359,
+     "source": "interleaved",
+     "changed": false
+    }
+   ]
+  },
+  {
+   "name": "ordash",
+   "title": null,
+   "short": "ordash",
+   "card": {
+    "languages": [
+     "rust"
+    ],
+    "files": 1,
+    "lines": 317,
+    "modules": 1,
+    "functions": 5,
+    "nodes": 19,
+    "edges": 35,
+    "library_bodies": 119,
+    "revision": "1b4942228b1b22a91c065e1093a14a106fab9f2b",
+    "pinned": true
+   },
+   "said": "Rust \u00b7 1 file \u00b7 317 lines \u00b7 1 module \u00b7 5 functions \u00b7 19 nodes \u00b7 35 edges \u00b7 119 library bodies",
+   "cells": [
+    {
+     "measure": "read/ordash/cold/seconds",
+     "label": "cold read",
+     "unit": "s",
+     "before": 0.2387,
+     "after": 0.2066,
+     "source": "interleaved",
+     "changed": false
+    },
+    {
+     "measure": "read/ordash/warm/seconds",
+     "label": "warm read",
+     "unit": "s",
+     "before": 0.0188,
+     "after": 0.0189,
+     "source": "interleaved",
+     "changed": false
+    },
+    {
+     "measure": "read/ordash/unasked/seconds",
+     "label": "read again after a file no reader asks about",
+     "unit": "s",
+     "before": 0.2388,
+     "after": 0.019,
+     "source": "interleaved",
+     "changed": false
+    },
+    {
+     "measure": "read/ordash/serve/first/seconds",
+     "label": "served from a cold start, to the first picture",
+     "unit": "s",
+     "before": 0.0637,
+     "after": 0.2104,
+     "source": "interleaved",
+     "changed": false
+    },
+    {
+     "measure": "read/ordash/serve/seconds",
+     "label": "served from a cold start, to the complete picture",
+     "unit": "s",
+     "before": 0.2938,
+     "after": 0.2104,
+     "source": "interleaved",
+     "changed": false
+    },
+    {
+     "measure": "read/ordash/serve/redraw/seconds",
+     "label": "served, drawing again after that file",
+     "unit": "s",
+     "before": 0.272,
+     "after": 0.0,
+     "source": "interleaved",
+     "changed": false
+    },
+    {
+     "measure": "read/ordash/cold/peak_rss",
+     "label": "peak memory",
+     "unit": "MB",
+     "before": 40.1523,
+     "after": 40.1523,
+     "source": "interleaved",
+     "changed": false
+    }
+   ]
+  },
+  {
+   "name": null,
+   "title": "A private Python + TypeScript program",
+   "short": "Python + TypeScript, 44,696 lines",
+   "card": {
+    "languages": [
+     "python",
+     "typescript"
+    ],
+    "files": 279,
+    "lines": 44696,
+    "modules": 297,
+    "functions": 1385,
+    "nodes": 2030,
+    "edges": 5873,
+    "library_bodies": 0,
+    "pinned": true
+   },
+   "said": "Python + TypeScript \u00b7 279 files \u00b7 44,696 lines \u00b7 297 modules \u00b7 1,385 functions \u00b7 2,030 nodes \u00b7 5,873 edges \u00b7 0 library bodies",
+   "cells": [
+    {
+     "label": "cold read",
+     "unit": "s",
+     "before": 10.4204,
+     "after": 12.6759,
+     "source": "interleaved",
+     "changed": true
+    },
+    {
+     "label": "warm read",
+     "unit": "s",
+     "before": 0.2602,
+     "after": 0.228,
+     "source": "interleaved",
+     "changed": false
+    },
+    {
+     "label": "read again after a file no reader asks about",
+     "unit": "s",
+     "before": 6.8643,
+     "after": 0.2316,
+     "source": "interleaved",
+     "changed": true
+    },
+    {
+     "label": "served from a cold start, to the first picture",
+     "unit": "s",
+     "before": 10.6633,
+     "after": 12.9804,
+     "source": "interleaved",
+     "changed": true
+    },
+    {
+     "label": "served from a cold start, to the complete picture",
+     "unit": "s",
+     "before": 21.246,
+     "after": 12.9804,
+     "source": "interleaved",
+     "changed": true
+    },
+    {
+     "label": "served, drawing again after that file",
+     "unit": "s",
+     "before": 13.9345,
+     "after": 0.0,
+     "source": "interleaved",
+     "changed": true
+    },
+    {
+     "label": "peak memory",
+     "unit": "MB",
+     "before": 212.4727,
+     "after": 213.543,
+     "source": "interleaved",
+     "changed": false
+    }
+   ]
+  },
+  {
+   "name": null,
+   "title": "Atlas, built and tested",
+   "short": "Atlas",
+   "card": null,
+   "said": null,
+   "cells": [
+    {
+     "measure": "build/release/seconds",
+     "label": "release build, clean",
+     "unit": "s",
+     "before": 294.9228,
+     "after": 297.0386,
+     "source": "interleaved",
+     "changed": false
+    },
+    {
+     "measure": "tests/total/seconds",
+     "label": "test suite",
+     "unit": "s",
+     "before": 241.1962,
+     "after": 354.644,
+     "source": "interleaved",
+     "changed": true
+    }
+   ]
+  }
+ ],
+ "series": [
+  {
+   "row": 1,
+   "label": "cold read",
+   "unit": "s",
+   "points": [
+    [
+     "0.70.0",
+     0.6913,
+     "f5bb2b2",
+     "AMD EPYC 9V74 80-Core Processor"
+    ],
+    [
+     "0.71.0",
+     0.6778,
+     "842b999",
+     "Intel(R) Xeon(R) 6973P-C"
+    ]
+   ]
+  },
+  {
+   "row": 1,
+   "label": "warm read",
+   "unit": "s",
+   "points": [
+    [
+     "0.70.0",
+     0.0319,
+     "f5bb2b2",
+     "AMD EPYC 9V74 80-Core Processor"
+    ],
+    [
+     "0.71.0",
+     0.0422,
+     "842b999",
+     "Intel(R) Xeon(R) 6973P-C"
+    ]
+   ]
+  },
+  {
+   "row": 1,
+   "label": "peak memory",
+   "unit": "MB",
+   "points": [
+    [
+     "0.70.0",
+     78.75,
+     "f5bb2b2",
+     "AMD EPYC 9V74 80-Core Processor"
+    ],
+    [
+     "0.71.0",
+     78.1914,
+     "842b999",
+     "Intel(R) Xeon(R) 6973P-C"
+    ]
+   ]
+  },
+  {
+   "row": 2,
+   "label": "cold read",
+   "unit": "s",
+   "points": [
+    [
+     "0.70.0",
+     0.9428,
+     "f5bb2b2",
+     "AMD EPYC 9V74 80-Core Processor"
+    ],
+    [
+     "0.71.0",
+     0.9373,
+     "842b999",
+     "Intel(R) Xeon(R) 6973P-C"
+    ]
+   ]
+  },
+  {
+   "row": 2,
+   "label": "warm read",
+   "unit": "s",
+   "points": [
+    [
+     "0.70.0",
+     0.0418,
+     "f5bb2b2",
+     "AMD EPYC 9V74 80-Core Processor"
+    ],
+    [
+     "0.71.0",
+     0.0464,
+     "842b999",
+     "Intel(R) Xeon(R) 6973P-C"
+    ]
+   ]
+  },
+  {
+   "row": 2,
+   "label": "peak memory",
+   "unit": "MB",
+   "points": [
+    [
+     "0.70.0",
+     92.75,
+     "f5bb2b2",
+     "AMD EPYC 9V74 80-Core Processor"
+    ],
+    [
+     "0.71.0",
+     92.5195,
+     "842b999",
+     "Intel(R) Xeon(R) 6973P-C"
+    ]
+   ]
+  },
+  {
+   "row": 3,
+   "label": "cold read",
+   "unit": "s",
+   "points": [
+    [
+     "0.70.0",
+     0.0505,
+     "f5bb2b2",
+     "AMD EPYC 9V74 80-Core Processor"
+    ],
+    [
+     "0.71.0",
+     0.0498,
+     "842b999",
+     "Intel(R) Xeon(R) 6973P-C"
+    ]
+   ]
+  },
+  {
+   "row": 3,
+   "label": "warm read",
+   "unit": "s",
+   "points": [
+    [
+     "0.70.0",
+     0.0145,
+     "f5bb2b2",
+     "AMD EPYC 9V74 80-Core Processor"
+    ],
+    [
+     "0.71.0",
+     0.0147,
+     "842b999",
+     "Intel(R) Xeon(R) 6973P-C"
+    ]
+   ]
+  },
+  {
+   "row": 3,
+   "label": "peak memory",
+   "unit": "MB",
+   "points": [
+    [
+     "0.70.0",
+     33.875,
+     "f5bb2b2",
+     "AMD EPYC 9V74 80-Core Processor"
+    ],
+    [
+     "0.71.0",
+     34.0977,
+     "842b999",
+     "Intel(R) Xeon(R) 6973P-C"
+    ]
+   ]
+  },
+  {
+   "row": 5,
+   "label": "release build, clean",
+   "unit": "s",
+   "points": [
+    [
+     "0.70.0",
+     224.2874,
+     "f5bb2b2",
+     "AMD EPYC 9V74 80-Core Processor"
+    ],
+    [
+     "0.71.0",
+     242.2109,
+     "842b999",
+     "Intel(R) Xeon(R) 6973P-C"
+    ]
+   ]
+  },
+  {
+   "row": 5,
+   "label": "test suite",
+   "unit": "s",
+   "points": [
+    [
+     "0.70.0",
+     194.6886,
+     "f5bb2b2",
+     "AMD EPYC 9V74 80-Core Processor"
+    ],
+    [
+     "0.71.0",
+     192.2647,
+     "842b999",
+     "Intel(R) Xeon(R) 6973P-C"
+    ]
+   ]
+  }
+ ]
+}

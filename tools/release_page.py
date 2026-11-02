@@ -20,9 +20,11 @@ paragraphs (code in fences), an `Issues:` line, and the point's pictures:
   shows beneath it.
 - `Bars: label = 18.9 s; label = 0.14 s | caption`: a bar chart of measured numbers.
 - `Bench: releases/<version>/bench.json | caption`: the release's speed, the same measures every release
-  (`tools/perf.py release-bars` writes the file): its one number, the geometric mean of the ratios after / before,
-  beside each ratio on a log scale; per program of the corpus, named by its card, each measure of the release before
-  beside this one; and each measure over every release since the series began, a bar per release.
+  (`tools/perf.py release-bars` writes the file): its one number, the geometric mean of the ratios after / before;
+  a line per measure, its mean over the programs on a log scale from twice as fast to twice as slow, a dot and a
+  change per program, and the measures no program changed beyond noise named in one sentence; folded beneath, per
+  program of the corpus, named by its card, each measure of the release before beside this one, and each measure
+  over every release since the series began, a bar per release.
 - `Pictures: changes/x.jpg`: screenshots, from the notes each issue leaves in `docs/changes/`.
 - `Example: name | code`: the small program `fixtures/<name>` drawn by the release before and by this one, beneath
   the code the point is about; `Example: name` shows the program's own code, `Example: name |` the pictures alone.
@@ -162,14 +164,24 @@ section li{margin:4px 0}
 .b-sum{display:flex;gap:16px;align-items:baseline;flex-wrap:wrap;margin:0 0 12px}
 .b-sum span{font-size:14px;color:var(--ink-2);max-width:60ch}
 .b-sum .b-big{font-family:var(--mono);font-size:30px;color:var(--ink);max-width:none}
-.b-scale{display:flex;justify-content:space-between;font-family:var(--mono);font-size:11.5px;color:var(--ink-3);margin:0 0 4px;padding:0 120px 0 calc(min(40%,260px) + 10px)}
-.b-div{display:grid;grid-template-columns:min(40%,260px) 1fr 110px;gap:10px;align-items:center;margin:3px 0;font-size:12.5px}
-.b-div .l{color:var(--ink-2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.b-scale{font-family:var(--mono);font-size:11.5px;color:var(--ink-3);margin:0 0 4px}
+.b-scale .t{display:flex;justify-content:space-between;gap:6px;height:auto;white-space:nowrap}
+.b-who{margin:10px 0 2px;font-size:13px;font-weight:500;color:var(--ink)}
+.b-div{display:grid;grid-template-columns:min(36%,240px) 1fr 64px;gap:10px;align-items:center;margin:3px 0;font-size:12.5px}
+.b-div .l{color:var(--ink-2)}
 .b-div .t{position:relative;height:12px}
 .b-div .m{position:absolute;left:50%;top:-3px;bottom:-3px;border-left:1px solid var(--ink-3)}
 .b-div .d{position:absolute;top:0;height:12px;min-width:1px}
 .b-div .d.faster{background:var(--add)}.b-div .d.slower{background:var(--del)}.b-div .d.same{background:var(--line)}
-.b-div .n{font-family:var(--mono);font-size:12px}
+.b-div .n{font-family:var(--mono);font-size:12px;white-space:nowrap}
+.b-div .w{grid-column:1/-1;font-size:11.5px;color:var(--ink-3);margin:-2px 0 8px}
+.b-div .w b{font-weight:400;white-space:nowrap}.b-div .w b.faster{color:var(--add)}.b-div .w b.slower{color:var(--del)}
+.b-div .p{position:absolute;top:1px;width:9px;height:9px;margin-left:-4.5px;border-radius:50%;border:1.5px solid var(--panel)}
+.b-div .p.faster{background:var(--add)}.b-div .p.slower{background:var(--del)}.b-div .p.same{background:var(--ink-3)}
+.b-div .d{opacity:.45}
+.b-kept{font-size:13px;color:var(--ink-3);margin:10px 0 0}
+.b-more{border-top:1px solid var(--line);margin-top:14px;padding-top:10px}
+.b-more summary{cursor:pointer;font-weight:500;color:var(--ink);margin-bottom:8px}
 .b-div .n.faster{color:var(--add)}.b-div .n.slower{color:var(--del)}.b-div .n.same{color:var(--ink-3)}
 .bench .cap{font-size:13.5px;color:var(--ink-2);margin:14px 0 0}
 .pager{display:flex;justify-content:space-between;gap:16px;border-top:1px solid var(--line);margin-top:48px;padding-top:20px;font-family:var(--mono);font-size:14px}
@@ -445,14 +457,13 @@ def change(ratio: float) -> str:
 
 def bench(spec: str) -> str:
     """`releases/<version>/bench.json | caption`: the release's speed. First its one number, the geometric mean of
-    after / before over every measure, beside every measure's ratio on a log scale (faster to the left, slower to the
-    right, a change within noise grey); then a row per program, named by its card (a private one by its card alone),
-    each measure as two bars, the release before and this one; then each measure on the night of every release since
-    the series began, a bar per release."""
+    after / before over every measure, and a line per measure across the programs (`summary`); then, folded, a row per
+    program, named by its card (a private one by its card alone), each measure as two bars, the release before and this
+    one; then, folded, each measure on the night of every release since the series began, a bar per release."""
     path, _, caption = (x.strip() for x in spec.partition("|"))
     data = json.loads((DOCS / path).read_text())
     before, after = html.escape(data["before"]), html.escape(data["after"])
-    parts = [summary(data), legend([before, after])]
+    parts, rows = [summary(data)], []
     for row in data["rows"]:
         groups = []
         for c in row["cells"]:
@@ -469,39 +480,66 @@ def bench(spec: str) -> str:
         )
         name = f"<code>{html.escape(row['name'])}</code>" if row.get("name") else html.escape(row.get("title") or "A private program")
         said = f'<p class="b-card">{html.escape(row["said"])}</p>' if row.get("said") else ""
-        parts.append(f'<div class="b-row"><p class="b-name">{name}</p>{said}{cells}</div>')
+        rows.append(f'<div class="b-row"><p class="b-name">{name}</p>{said}{cells}</div>')
+    parts.append(f'<details class="b-more"><summary>Every measure, per program</summary>{legend([before, after])}{"".join(rows)}</details>')
     over = "".join(releases_bars(data["releases"], s, data["rows"][s["row"]].get("short", "")) for s in data["series"])
     if over:
-        parts.append(f'<p class="b-head">Every release since the series began, on its night</p><div class="b-lines">{over}</div>')
+        parts.append(f'<details class="b-more"><summary>Every release since the series began, on its night</summary><div class="b-lines">{over}</div></details>')
     if caption:
         parts.append(f'<p class="cap">{inline(caption)}</p>')
     return f'<div class="bench">{"".join(parts)}</div>'
 
 
+# The ratio chart's edge: twice as fast and twice as slow, the same in every release; a ratio beyond it stands at the edge.
+SCALE = 2
+LANGUAGE = {"python": "Python", "rust": "Rust", "typescript": "TypeScript"}
+
 def summary(data: dict) -> str:
-    """The release's one number and every measure's ratio, on a log scale: a bar's length is |log ratio|, so twice as
-    fast and twice as slow are bars of one length, on either side of the middle. A measure that fell to 0 has no
-    finite log ratio: its bar runs to the faster edge, said as `to 0`, and it stays out of the mean."""
+    """The release's one number, then a line per measure: its bar the geometric mean of after / before over the
+    programs, on a log scale (twice as fast and twice as slow are bars of one length, on either side of the middle),
+    a dot per program where its own ratio lies, and beneath it which programs changed beyond noise. A measure no
+    program changed beyond noise draws no line: the measures every program kept are named together. A ratio that
+    fell to 0 has no finite log: its dot stands at the faster edge, said as `to 0`, and it stays out of the mean."""
     s = data.get("summary")
     if not s:
         return ""
-    ratios = []
+    measures: dict[str, list[tuple[str, float, bool]]] = {}
     for row in data["rows"]:
-        who = row.get("short") or row.get("name") or ""
+        who = (row.get("short") or row.get("name") or "").split(",")[0]
+        tongues = (row.get("card") or {}).get("languages") or []
+        if tongues and row.get("name"):
+            who += f" ({' + '.join(LANGUAGE.get(x, x) for x in tongues)})"
         for c in row["cells"]:
             if c["before"] and c["after"] is not None:
-                ratios.append((f"{who}, {c['label']}", c["after"] / c["before"], c.get("changed")))
-    top = max((abs(math.log(r)) for _, r, _ in ratios if r), default=1) or 1
-    bars_ = []
-    for label, r, changed in ratios:
-        side = "faster" if r < 1 else "slower"
-        kind = side if changed else "same"
-        width = 48 * abs(math.log(r)) / top if r else 50
-        place = f"right:50%;width:{width:.1f}%" if r < 1 else f"left:50%;width:{width:.1f}%"
-        word = (change(r) if r else "to 0") + ("" if changed else ", no change")
-        bars_.append(
-            f'<div class="b-div"><span class="l">{html.escape(label)}</span><div class="t"><i class="m"></i>'
-            f'<i class="d {kind}" style="{place}"></i></div><span class="n {kind}">{word}</span></div>'
+                measures.setdefault(c["label"], []).append((who, c["after"] / c["before"], bool(c.get("changed"))))
+    top = math.log(SCALE)
+
+    def at(r: float) -> float:
+        return 50 + 48 * max(-1, min(1, math.log(r) / top)) if r else 2
+
+    lines, kept = [], []
+    for label, ms in measures.items():
+        if not any(changed for _, _, changed in ms):
+            kept.append(label)
+            continue
+        finite = [r for _, r, _ in ms if r]
+        mean = math.exp(sum(math.log(r) for r in finite) / len(finite)) if finite else 0
+        side = "faster" if mean < 1 else "slower"
+        width = abs(at(mean) - 50)
+        place = f"right:50%;width:{width:.1f}%" if mean < 1 else f"left:50%;width:{width:.1f}%"
+        dots = "".join(
+            f'<i class="p {("faster" if r < 1 else "slower") if changed else "same"}" style="left:{at(r):.1f}%" '
+            f'title="{html.escape(who)}: {change(r) if r else "to 0"}"></i>'
+            for who, r, changed in ms
+        )
+        said = " · ".join(
+            f'<b class="{("faster" if r < 1 else "slower") if changed else "same"}">{html.escape(who)} {change(r) if r else "to 0"}</b>'
+            for who, r, changed in sorted(ms, key=lambda m: m[1])
+        )
+        lines.append(
+            f'<div class="b-div"><span class="l">{html.escape(label)}</span>'
+            f'<div class="t"><i class="m"></i><i class="d {side}" style="{place}"></i>{dots}</div>'
+            f'<span class="n {side}">{change(mean) if mean else "to 0"}</span><small class="w">{said}</small></div>'
         )
     word = "faster" if s["ratio"] < 1 else "slower"
     gone = s.get("zero", 0)
@@ -511,8 +549,12 @@ def summary(data: dict) -> str:
         f'{html.escape(data["before"])}: the geometric mean of after / before over {s["measures"]} measures, '
         f'{abs(s["ratio"] - 1) * 100:.1f} % {word}; {s["changed"]} of them changed beyond noise.{zero}</span></div>'
     )
-    legend = '<p class="b-scale"><span>← faster</span><span>log scale</span><span>slower →</span></p>'
-    return f'<div class="b-row">{head}{legend}{"".join(bars_)}</div>'
+    legend = (
+        '<div class="b-div b-scale"><span class="l">bar: the mean over the programs; dot: one program, grey within noise</span>'
+        f'<div class="t"><span>← ×1/{SCALE:g} faster</span><span>slower ×{SCALE:g} →</span></div><span></span></div>'
+    )
+    same = f'<p class="b-kept">Within noise on every program: {html.escape(", ".join(kept))}.</p>' if kept else ""
+    return f'<div class="b-row">{head}{legend}{"".join(lines)}{same}</div>'
 
 
 def releases_bars(releases: list[str], series: dict, short: str) -> str:
