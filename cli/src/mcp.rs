@@ -291,7 +291,7 @@ fn call(name: &str, args: &Value, opts: &Options) -> Option<Result<String, Strin
                 None => Principle::ALL.to_vec(),
                 Some(id) => vec![Principle::parse(id).ok_or_else(|| unknown_principle(id))?],
             };
-            let found: Vec<Vec<principles::Finding>> = gs.iter().map(atlas_engine::aside::check).collect();
+            let found: Vec<Vec<principles::Finding>> = atlas_engine::aside::check_all(&gs);
             // whether a decision sets anything aside is asked of every finding, whichever are shown
             let stale = atlas_engine::aside::stale(&gs.iter().zip(&found).map(|(g, f)| (g, f.as_slice())).collect::<Vec<_>>());
             let parts: Vec<(String, Vec<principles::Finding>)> = gs

@@ -461,10 +461,12 @@ step put in before another (`double(add_one(x))` where A had `double(x)`) is the
 marked: the step after it is handed in each reading what that reading gives it. A place a caller
 makes whole is the caller's arrow; a file named by a function's own parameter (`load.path`) is
 named so whoever calls the function. A rename is an isomorphism of the typed arrows in and out:
-`list[float] → float` is no `str → str`. `atlas-code changes` reads the same union along each route,
+`list[float] → float` is no `str → str`. A sum written in place is its variants, so it is renamed with them. `atlas-code changes` reads the same union along each route,
 so the picture and the list hold the same marks, and it says each construct by the name the picture gives it
 (`model::said`): a method with its class, an initializer as the call to its class, a type whose name another type of
-the union shares with its module. One name said of two constructs points at neither.
+the union shares with the fewest of its last modules that no other of that name stands in last (`orders.model.Frame`
+beside `billing.model.Frame`), a sum written in place by its variants. `route`'s text and a finding say the same names.
+One name said of two constructs points at neither.
 **Where.** `atlas-code history`, `atlas-code changes A..B`, a vision beside the working tree (`atlas
 mcp`'s `vision`); `diff::union`, `diff::reading`, `changes::between`; `design.md` §4, L5. Held by `engine/tests/arrows.rs`:
 on two readings of the same nodes, the marks are those of the direct arrows, and a node renamed is one node; and by

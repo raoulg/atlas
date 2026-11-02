@@ -8,7 +8,7 @@
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 use crate::flow::{self, Body, Item, Step};
-use crate::model::{Edge, EdgeKind, Entry, EntryKind, Graph, Held, Node, NodeKind, Site, Touch, World};
+use crate::model::{self, Edge, EdgeKind, Entry, EntryKind, Graph, Held, Node, NodeKind, Shared, Site, Touch, World};
 
 /// Every route into the program: its kind, its label and the id of the node it starts at.
 pub fn entries(g: &Graph) -> Vec<(EntryKind, &str, &str)> {
@@ -212,6 +212,8 @@ struct Story<'g> {
     reached: HashSet<String>,
     /// The route is run from the command line: its parses of the command line are the entry's.
     parses: bool,
+    /// The names two types of the graph share, which the text says with as much of their modules as tells them apart.
+    shared: Shared,
 }
 
 /// A route as told so far: its text, the steps it told, the label each reading of a body was first shown under, and
@@ -264,6 +266,7 @@ impl<'g> Story<'g> {
             entry: String::new(),
             reached: Default::default(),
             parses: false,
+            shared: Shared::among(&g.nodes),
         }
     }
 
@@ -409,7 +412,7 @@ impl<'g> Story<'g> {
         }
         t.tell(num, at, &runner.id, &touches, None);
         let effects = effects(&touches);
-        let mut line = format!("{indent}{num}  {}{}", self.step_name(st), self.signature(n));
+        let mut line = format!("{indent}{num}  {}", self.call(st, n));
         if !effects.is_empty() {
             line.push_str(&format!("   ·   {effects}"));
         }
@@ -433,19 +436,20 @@ impl<'g> Story<'g> {
         self.name(&st.to, if st.named { "" } else { &st.on })
     }
 
-    /// `Graph()` for a type built in place, `BasePlot` for its constructor (the signature
-    /// follows), `BasePlot.plot`, `ComparePlot.plot` for a method run on a subclass, `analyze`.
+    /// A step as the picture names it (`model::step_label`): `Graph()` for a type built in place, `BasePlot()` for its
+    /// initializer, `BasePlot.plot`, `ComparePlot.plot` for a method run on a subclass, `analyze`.
     fn name(&self, id: &str, on: &str) -> String {
-        let n = self.nodes[id];
-        if n.kind == NodeKind::Class {
-            return format!("{}()", n.name);
-        }
-        let class = |c: &str| self.nodes.get(c).map_or_else(|| c.rsplit('.').next().unwrap_or(c).to_string(), |c| c.name.clone());
-        match n.cls.as_deref() {
-            Some(c) if n.ctor && !n.on_class => class(c),
-            Some(_) if !on.is_empty() => format!("{}.{}", class(on), n.name),
-            Some(c) => format!("{}.{}", class(c), n.name),
-            None => n.name.clone(),
+        model::step_label(self.nodes[id], on, |c| self.nodes.get(c).copied(), &self.shared)
+    }
+
+    /// A step written as the call it is: its name with what its signature takes in the parentheses of a call
+    /// (`BasePlot()` and `(fig, data)` are `BasePlot(fig, data)`), any other name followed by its signature
+    /// (`Store.has(key) → bool`).
+    fn call(&self, st: &Step, n: &Node) -> String {
+        let (name, signature) = (self.step_name(st), self.signature(n));
+        match name.strip_suffix("()") {
+            Some(callee) if signature.starts_with('(') => format!("{callee}{signature}"),
+            _ => format!("{name}{signature}"),
         }
     }
 
@@ -455,14 +459,16 @@ impl<'g> Story<'g> {
             return String::new();
         }
         let names: Vec<&str> = n.params.iter().filter(|p| !p.receiver).map(|p| p.name.as_str()).collect();
-        let class = n.cls.as_deref().and_then(|c| self.nodes.get(c)).map(|c| c.name.clone());
+        // a type the code writes is quoted as written; one Atlas says, the class it gives or what it changes, as Atlas says it
+        let said = |t: &str| model::type_label(t, |c| self.nodes.get(c).copied(), &self.shared);
+        let class = n.cls.as_deref().filter(|c| self.nodes.contains_key(c)).map(said);
         let ret = match &n.returns {
             Some(r) if r.own => class.unwrap_or_default(),
             Some(r) => r.value.clone(),
             None => String::new(),
         };
         let mut changes: Vec<String> = vec![];
-        for t in self.edges(&n.id, EdgeKind::Mutates).filter_map(|e| self.nodes.get(e.dst.as_str()).map(|t| t.name.clone())) {
+        for t in self.edges(&n.id, EdgeKind::Mutates).filter(|e| self.nodes.contains_key(e.dst.as_str())).map(|e| said(&e.dst)) {
             if !changes.contains(&t) {
                 changes.push(t);
             }
