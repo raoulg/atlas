@@ -350,6 +350,24 @@ is one in the same way, by what it serves: a set of methods at a path. `methods=
 `LISTING_ENTRIES`); the pairs `python/paths`, `places`, `kept`, `workbench`, `unset`, `opened`, `twice` (#324), `trees`
 (#325, #345) and `keys` (#352).
 
+### A function's return is its summary
+**What.** What a function gives back is a term of its parameters, the same for every caller: its summary, the union of
+the terms its `return`s evaluate to in its own frame. A call gives the summary with each parameter replaced by the term
+the call hands it, and substitution composes: the summary of `g(f(x))` is `g`'s summary with `f`'s written in, which is
+the term the two bodies make written as one expression. So how the code is factored moves no place: a path built through
+a chain of helpers is the path built in place. The same holds for every expression written in a frame other than the one
+that reads it: the value a constructor gives a field (a term of the constructor's parameters, which its callers complete),
+a parameter's default, a constant a module keeps. A reader follows one frame's own expression to a bound of its own; a
+value another frame gives is that frame's summary, followed from that frame's start, so the bound is a property of one
+expression and never of how many functions a value passes through. A call back into a function whose summary is being
+made (a recursion of returns) gives a value not followed there, a hole: the least fixpoint of a return through its own
+function is not a term of the algebra (`root(p) = p ∪ root(p/..)` is every ancestor of `p`), and Atlas does not guess it.
+**In Atlas.** A function's summary is made once per reading, the first time a call needs it, and every call writes into
+it; reading a program costs each function's returns once, never once per caller.
+**Where.** `paths.rs` (`Summaries`, `applied`), the readers' `paths.rs` (`Eval::handed_to` in Rust and TypeScript,
+`Eval::given` in Python; the fields, defaults and constants each reads); the law `a_path_through_helpers_is_the_path_in_place`
+(`engine/tests/common/mod.rs`, held in `pairs_python`, `pairs_rust` and `pairs_typescript`) (#396).
+
 ### Places by the type that holds them
 **What.** A quotient of the places by the program's type whose code builds each place's path: the
 type a value of which holds its root (its field, `self.root`, also of a value whose type the code

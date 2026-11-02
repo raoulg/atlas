@@ -1142,3 +1142,109 @@ pub fn a_variable_a_caller_names_is_that_variable(language: &str, keep: &str, sa
         assert!(report.is_disjoint(&log), "{language} {side}: two variables are two places: {report:?}, {log:?}");
     }
 }
+
+/// A program in `language` that writes a report to `data/reports/report.txt`, the path written in the writer itself
+/// (`helpers` none) or through `helpers` functions, each of which hands its parameter to the next and gives back what
+/// that gives (every other one through a name it binds first). The program is written to a directory of its own, which
+/// the caller removes.
+fn factored(language: &str, helpers: Option<usize>) -> PathBuf {
+    let dir = std::env::temp_dir().join(format!("atlas-factored-{language}-{helpers:?}-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    let step = |k: usize| format!("step{k}");
+    let mut files: Vec<(&str, String)> = vec![];
+    match language {
+        "rust" => {
+            let mut code = "use std::path::{Path, PathBuf};\n\n".to_string();
+            let place = match helpers {
+                None => r#"Path::new("data").join("reports").join("report.txt")"#.to_string(),
+                Some(n) => {
+                    code += "fn step0(root: &Path) -> PathBuf {\n    root.join(\"reports\").join(\"report.txt\")\n}\n\n";
+                    for k in 1..=n {
+                        let body =
+                            if k % 2 == 1 { format!("let p = {}(root);\n    p", step(k - 1)) } else { format!("{}(root)", step(k - 1)) };
+                        code += &format!("fn {}(root: &Path) -> PathBuf {{\n    {body}\n}}\n\n", step(k));
+                    }
+                    format!(r#"{}(Path::new("data"))"#, step(n))
+                }
+            };
+            code += &format!("pub fn save(text: &str) -> std::io::Result<()> {{\n    std::fs::write({place}, text)\n}}\n");
+            files.push(("Cargo.toml", "[package]\nname = \"archive\"\nversion = \"0.1.0\"\nedition = \"2021\"\n\n[workspace]\n".into()));
+            files.push(("src/lib.rs", code));
+        }
+        "python" => {
+            let mut code = "from pathlib import Path\n\n\n".to_string();
+            let place = match helpers {
+                None => r#"Path("data") / "reports" / "report.txt""#.to_string(),
+                Some(n) => {
+                    code += "def step0(root: Path) -> Path:\n    return root / \"reports\" / \"report.txt\"\n\n\n";
+                    for k in 1..=n {
+                        let body = if k % 2 == 1 {
+                            format!("p = {}(root)\n    return p", step(k - 1))
+                        } else {
+                            format!("return {}(root)", step(k - 1))
+                        };
+                        code += &format!("def {}(root: Path) -> Path:\n    {body}\n\n\n", step(k));
+                    }
+                    format!(r#"{}(Path("data"))"#, step(n))
+                }
+            };
+            code += &format!("def save(text: str) -> None:\n    with open({place}, \"w\") as out:\n        out.write(text)\n");
+            files.push(("pyproject.toml", "[project]\nname = \"archive\"\nversion = \"0.1.0\"\nrequires-python = \">=3.12\"\n".into()));
+            files.push(("src/archive/__init__.py", String::new()));
+            files.push(("src/archive/report.py", code));
+        }
+        "typescript" => {
+            let mut code = "import { writeFileSync } from \"node:fs\";\nimport { join } from \"node:path\";\n\n".to_string();
+            let place = match helpers {
+                None => r#"join("data", "reports", "report.txt")"#.to_string(),
+                Some(n) => {
+                    code += "function step0(root: string): string {\n  return join(root, \"reports\", \"report.txt\");\n}\n\n";
+                    for k in 1..=n {
+                        let body = if k % 2 == 1 {
+                            format!("const p = {}(root);\n  return p;", step(k - 1))
+                        } else {
+                            format!("return {}(root);", step(k - 1))
+                        };
+                        code += &format!("function {}(root: string): string {{\n  {body}\n}}\n\n", step(k));
+                    }
+                    format!(r#"{}("data")"#, step(n))
+                }
+            };
+            code += &format!("export function save(text: string): void {{\n  writeFileSync({place}, text);\n}}\n");
+            files.push((
+                "package.json",
+                "{\n  \"name\": \"archive\",\n  \"version\": \"0.1.0\",\n  \"private\": true,\n  \"type\": \"module\"\n}\n".into(),
+            ));
+            files.push(("src/index.ts", code));
+        }
+        _ => panic!("no program written in {language}"),
+    }
+    for (file, text) in files {
+        let at = dir.join(file);
+        std::fs::create_dir_all(at.parent().expect("has a parent")).expect("makes the directory");
+        std::fs::write(at, text).expect("writes the file");
+    }
+    dir
+}
+
+/// A function's return is a term of its parameters, evaluated once as its summary and written into at each call with
+/// what the call hands (`docs/reference/mathematics.md`, "A function's return is its summary"), so how the code is
+/// factored does not move a place (#396): the report a function writes through a path it builds in place and the same
+/// path built through a chain of helpers, of every length here, are one place, the place the code says.
+#[allow(dead_code)]
+pub fn a_path_through_helpers_is_the_path_in_place(language: &str) {
+    let written = |helpers: Option<usize>| -> BTreeSet<String> {
+        let dir = factored(language, helpers);
+        let g = analyze(&dir, &Options::default()).unwrap_or_else(|e| panic!("{language}: reads {}: {e}", dir.display()));
+        let _ = std::fs::remove_dir_all(&dir);
+        g.nodes.iter().flat_map(|n| n.touches.iter()).filter(|t| t.kind_name() == "disk_write").map(|t| t.artifact.clone()).collect()
+    };
+    let in_place = written(None);
+    assert!(
+        in_place.iter().any(|p| p.ends_with("data/reports/report.txt")),
+        "{language}: the report written in place is at the place the code says: {in_place:?}"
+    );
+    for helpers in [1, 2, 5, 13, 34] {
+        assert_eq!(written(Some(helpers)), in_place, "{language}: the report through {helpers} helpers is the report written in place");
+    }
+}

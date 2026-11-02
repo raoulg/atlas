@@ -194,6 +194,11 @@ const REVIEWED: &[(&str, &str, &str)] = &[
     ),
     (
         "choices",
+        "atlas-engine.tests.common.mod.an_annotation_is_no_read",
+        "a pair test is handed the language it reads by the name its test file gives it, and each helper asks that name a question of its own: `an_annotation_is_no_read` the file of the locals pair it rewrites, `factored` the program it writes; the language is the subject a law is held in, never a sum of the engine's",
+    ),
+    (
+        "choices",
         "atlas-engine.typescript.libraries.Libraries.follow_in",
         "`\"default\"` is the language's name for the default export, read in two lines of one function",
     ),

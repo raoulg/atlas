@@ -3235,3 +3235,10 @@ fn a_change_of_a_part_changes_the_whole() {
         &["added", "added_looked_up"],
     );
 }
+
+/// A path built through helpers, however many, is the path built in place: a function's return is its summary, written
+/// into at each call (#396).
+#[test]
+fn places_a_path_through_helpers_is_the_path_in_place() {
+    common::a_path_through_helpers_is_the_path_in_place("python");
+}
