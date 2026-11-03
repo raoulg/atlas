@@ -223,6 +223,11 @@ const REVIEWED: &[(&str, &str, &str)] = &[
         "wrong, #395: the files a test's pair holds are credited to `parse`, where the listing's file made the place whole, and not to the test that built the `Repo` whose root it is",
     ),
     (
+        "nothing",
+        "atlas-engine.cache.Cache.read_anew",
+        "wrong, #417: `read_anew` raises the count its clones share through `&self` (`AtomicUsize::fetch_add`), a change of the cache's value the Rust reader does not read on a field of `self`",
+    ),
+    (
         "places",
         "atlas-code.serve.serve",
         "the page shows the repository's code, so `serve` listens on this machine alone: the loopback host is its own to fix, never a caller's; the port is the caller's (`--port`), else the repository's own, else one the system picks",
