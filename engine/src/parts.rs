@@ -281,6 +281,9 @@ fn indexed_graph(part: &Repo, opts: &Options) -> (Result<Graph>, Witness) {
         }
     }
     drop(index);
+    if let Some(cache) = &cache {
+        cache.read_anew();
+    }
     let (graph, environment) = match crate::language::of(part, opts) {
         Ok(language) => {
             let index = crate::clock::stage("index");

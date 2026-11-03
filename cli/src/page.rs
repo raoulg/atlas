@@ -277,8 +277,11 @@ mod tests {
     }
 
     /// Each phase of a drawing has its own measure: it only rises, keeps even with the time while the
-    /// phase takes what it took the last time, never fills before the phase is done, is whole once the
-    /// phase is past, and still moves when the phase takes longer than the last time.
+    /// phase takes what it took the last time, fills four fifths by then, never fills before the phase is
+    /// done, is whole once the phase is past, and still moves when the phase takes longer than the last
+    /// time. What it shows past the time expected depends on the seconds past it alone, so a time expected
+    /// that is wrong by any factor never shows a reading still going as nearly done. A phase that reads no
+    /// code shows nothing.
     #[test]
     fn progress_rises_and_waits_for_each_phase() {
         let script = format!(
@@ -293,12 +296,20 @@ const waits = at("code", "code", 1000) < 1 && at("libraries", "libraries", 1e6) 
 const past = at("code", "libraries", 0) === 1 && at("libraries", "code", 50) === 0 && at("libraries", "ready", 0) === 1;
 const moves = at("libraries", "libraries", 60) > at("libraries", "libraries", 45);
 const even = Math.abs(at("code", "code", 5) - 2 * at("code", "code", 2.5)) < 1e-9;
-console.log(JSON.stringify({rises, waits, past, moves, even, start: at("code", "code", 0)}));
+const fifths = Math.abs(at("code", "code", 10) - 0.8) < 1e-9;
+const after = (expected, over) => progressOf({phases: ["code"], phase: "code", reads: true, elapsed: expected + over, expected: {code: expected}}, "code");
+const seconds = [1, 10, 80, 600].every(e => [0, 5, 70, 300].every(over => Math.abs(after(e, over) - after(1, over)) < 1e-9));
+const slow = after(1, 70) < 0.95;
+const none = progressOf({phases: ["code"], phase: "code", reads: false, elapsed: 50, expected: {code: 10}}, "code") === 0;
+console.log(JSON.stringify({rises, waits, past, moves, even, fifths, seconds, slow, none, start: at("code", "code", 0)}));
 "#
         );
         let out = std::process::Command::new("node").args(["-e", &script]).output().expect("node runs (it is on the PATH in CI)");
         let said: serde_json::Value =
             serde_json::from_slice(&out.stdout).unwrap_or_else(|_| panic!("{}", String::from_utf8_lossy(&out.stderr)));
-        assert_eq!(said, serde_json::json!({"rises": true, "waits": true, "past": true, "moves": true, "even": true, "start": 0}));
+        assert_eq!(
+            said,
+            serde_json::json!({"rises": true, "waits": true, "past": true, "moves": true, "even": true, "fifths": true, "seconds": true, "slow": true, "none": true, "start": 0})
+        );
     }
 }

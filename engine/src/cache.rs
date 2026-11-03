@@ -29,6 +29,9 @@ pub struct Cache {
     hits: Arc<AtomicUsize>,
     /// How many complete entries it wrote, shared by its clones.
     writes: Arc<AtomicUsize>,
+    /// How many parts of a working tree it held no current graph of, so were read anew, shared by its
+    /// clones.
+    anew: Arc<AtomicUsize>,
 }
 
 impl Cache {
@@ -48,13 +51,13 @@ impl Cache {
             let stamp = std::env::current_exe().and_then(std::fs::metadata).map(|m| format!("{} {}", m.len(), modified(&m)));
             name.push_str(&format!("{EDITED}{}", &digest(stamp.unwrap_or_default().as_bytes())[..16]));
         }
-        Cache { dir: root.join(name), hits: Arc::default(), writes: Arc::default() }
+        Cache { dir: root.join(name), hits: Arc::default(), writes: Arc::default(), anew: Arc::default() }
     }
 
     /// The same build's index for the working tree containing `dir`.
     pub fn workspace(&self, dir: &Path) -> Option<Cache> {
         let build = self.dir.file_name()?;
-        Some(Cache { dir: Workbench::of(dir).index(build), hits: self.hits.clone(), writes: self.writes.clone() })
+        Some(Cache { dir: Workbench::of(dir).index(build), hits: self.hits.clone(), writes: self.writes.clone(), anew: self.anew.clone() })
     }
 
     /// Whether it keeps anything yet: a reading with a cache that keeps nothing reads everything.
@@ -79,6 +82,17 @@ impl Cache {
     /// How many complete values it has kept.
     pub fn writes(&self) -> usize {
         self.writes.load(Ordering::Relaxed)
+    }
+
+    /// Say that a part of a working tree is read anew: its index held no graph of it that still stands.
+    pub fn read_anew(&self) {
+        self.anew.fetch_add(1, Ordering::Relaxed);
+    }
+
+    /// How many parts have been read anew, while another thread reads: whether a reading is reading code
+    /// or only finding its index.
+    pub fn anew(&self) -> usize {
+        self.anew.load(Ordering::Relaxed)
     }
 
     /// Keep `value` of `kind` under `key`: written beside its place and renamed into it.

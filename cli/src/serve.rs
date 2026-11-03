@@ -66,11 +66,13 @@ impl Drawn {
 /// starts at it.
 type Facts = BTreeMap<String, Vec<Value>>;
 
-/// The phase the drawing is in, since when, and what went wrong.
+/// The phase the drawing is in, since when, and what went wrong; and how many parts the cache had read
+/// anew when it began, so that a drawing knows whether it reads code or only finds its index.
 struct Progress {
     phase: &'static str,
     error: Option<String>,
     since: Instant,
+    anew: usize,
 }
 
 struct Server {
@@ -83,11 +85,8 @@ struct Server {
     progress: Mutex<Progress>,
     /// Held while the page is drawn: it is drawn once, however many ask for it at a time.
     drawing: Mutex<()>,
-    /// How long each phase took the last few times the server started, in seconds.
+    /// How long each phase took the last few times the server started and read code, in seconds.
     timings: Mutex<shared::Timings>,
-    /// Whether this start found the index of its build of Atlas, so reads little: the times it is
-    /// expected to take are those of starts of its kind.
-    warm: bool,
 }
 
 /// Serve the page of `repo` on this machine until the process stops, at `port`, else at the
@@ -107,10 +106,9 @@ pub fn serve(repo: &Path, port: Option<u16>, opts: &Options, shown: bool) -> Res
         hosts: vec![at.to_string(), format!("localhost:{}", at.port())],
         log: Arc::clone(&log),
         kept: Mutex::new(None),
-        progress: Mutex::new(Progress { phase: READING, error: None, since: Instant::now() }),
+        progress: Mutex::new(Progress { phase: READING, error: None, since: Instant::now(), anew: 0 }),
         drawing: Mutex::new(()),
         timings: Mutex::new(shared::timings(repo)),
-        warm: opts.cache.as_ref().and_then(|c| c.workspace(repo)).is_some_and(|c| c.holds_any()),
     });
     let url = format!("http://{at}/");
     shared::set_serving(repo, &url)?;
@@ -207,15 +205,17 @@ impl Server {
         self.progress(READING, None);
         let drawn = self.draw(&now, &name(&now))?;
         let took = self.since();
+        let reads = self.reads();
         *self.kept.lock().unwrap_or_else(|e| e.into_inner()) = Some(Arc::new(drawn));
         self.progress("ready", None);
-        // what a start takes is what the bar is shown for: a drawing after a change reads most of
-        // it from the cache, and would make the next start look quick
-        if kept.is_some() {
+        // what a start that reads code takes is what the bar is shown for: a drawing after a change
+        // reads most of it from the cache, and would make the next start look quick, and a start that
+        // only finds its index shows no bar
+        if kept.is_some() || !reads {
             return Ok(());
         }
         let mut timings = self.timings.lock().unwrap_or_else(|e| e.into_inner());
-        let phases = timings.of_mut(self.warm);
+        let phases = &mut timings.cold;
         // a phase no drawing has is no measure of one
         phases.retain(|phase, _| phase == READING);
         let times = phases.entry(READING.to_string()).or_default();
@@ -265,7 +265,16 @@ impl Server {
     }
 
     fn progress(&self, phase: &'static str, error: Option<String>) {
-        *self.progress.lock().unwrap_or_else(|e| e.into_inner()) = Progress { phase, error, since: Instant::now() };
+        let anew = self.opts.cache.as_ref().map_or(0, |c| c.anew());
+        *self.progress.lock().unwrap_or_else(|e| e.into_inner()) = Progress { phase, error, since: Instant::now(), anew };
+    }
+
+    /// Whether the phase under way reads code: whether it has read a part anew, which its index did not
+    /// hold. Without a cache every part is read anew. A part's index is asked before it is read, so a
+    /// start that reads code says so within moments, and one that finds its index never does.
+    fn reads(&self) -> bool {
+        let progress = self.progress.lock().unwrap_or_else(|e| e.into_inner());
+        self.opts.cache.as_ref().map_or(true, |c| c.anew() > progress.anew)
     }
 
     /// How long the phase under way has taken so far, in seconds.
@@ -275,15 +284,17 @@ impl Server {
 
     /// Which page the server has drawn, and whether it is drawing one: the open page compares the
     /// first with its own, and follows. Beside it, the phases a drawing goes through, the one it is in,
-    /// how long it has been in it and how long each took the last time: how far the drawing is.
+    /// how long it has been in it, whether it reads code, and how long each took at the last starts
+    /// that read code: how far the drawing is.
     fn drawn(&self) -> Value {
+        let reads = self.reads();
         let progress = self.progress.lock().unwrap_or_else(|e| e.into_inner());
         let phases = [READING];
-        let expected = expected(&self.timings.lock().unwrap_or_else(|e| e.into_inner()), self.warm);
+        let expected = expected(&self.timings.lock().unwrap_or_else(|e| e.into_inner()));
         // a drawing that panicked leaves the lock poisoned, and is no longer drawing
         let drawing = matches!(self.drawing.try_lock(), Err(std::sync::TryLockError::WouldBlock));
         json!({"drawn": self.kept().map(|d| d.id.clone()), "drawing": drawing,
-            "phase": progress.phase, "error": progress.error, "phases": phases,
+            "phase": progress.phase, "error": progress.error, "phases": phases, "reads": reads,
             "elapsed": progress.since.elapsed().as_secs_f64(), "expected": expected})
     }
 
@@ -440,15 +451,16 @@ fn slashed(p: &Path) -> String {
 /// How many starts the expected time of a phase is taken from.
 const STARTS: usize = 3;
 
-/// What each phase of a start is expected to take: the longest it took at the last starts of the same
-/// kind, with the index of their build of Atlas (`warm`) or without it.
-fn expected(timings: &shared::Timings, warm: bool) -> BTreeMap<String, f64> {
-    timings.of(warm).iter().filter_map(|(phase, times)| Some((phase.clone(), slowest(times)?))).collect()
+/// What each phase of a start that reads code is expected to take: the longest it took at the last
+/// such starts.
+fn expected(timings: &shared::Timings) -> BTreeMap<String, f64> {
+    timings.cold.iter().filter_map(|(phase, times)| Some((phase.clone(), slowest(times)?))).collect()
 }
 
-/// The longest of the last `STARTS` of `times`. A bar that expects too little waits before its end and
-/// looks stuck; one that expects too much is done early, which looks like what it is. So a phase is
-/// expected to take as long as the slowest recent start, recent enough to follow a project that grows.
+/// The longest of the last `STARTS` of `times`. A bar that expects too little spends the rest of the
+/// reading in its slow last fifth; one that expects too much is done early, which looks like what it is.
+/// So a phase is expected to take as long as the slowest recent start, recent enough to follow a project
+/// that grows.
 fn slowest(times: &[f64]) -> Option<f64> {
     times[times.len().saturating_sub(STARTS)..].iter().copied().reduce(f64::max)
 }
@@ -483,19 +495,23 @@ mod tests {
         assert_eq!(slowest(&[90.0, 20.0, 22.0, 21.0]), Some(22.0));
     }
 
-    /// A start is expected to take what starts of its kind took: one that reads everything is not hurried
-    /// by the quick ones that found their index, nor a quick one held up by them. What an older file kept
-    /// of both kinds together is no kind, and is forgotten.
+    /// Whether a start reads code is what the reading does, not what lies on disk: it reads none until a
+    /// part is read anew, past its index, and then it does, with the time starts that read code took.
+    /// A file that kept the quick starts that found their index beside those keeps only the latter.
     #[test]
-    fn a_start_is_expected_to_take_what_starts_of_its_kind_took() {
-        let timings = shared::Timings {
-            cold: BTreeMap::from([("code".to_string(), vec![79.0, 81.0, 80.0])]),
-            warm: BTreeMap::from([("code".to_string(), vec![0.04, 0.003, 0.006, 0.004])]),
-        };
-        assert_eq!(expected(&timings, false)["code"], 81.0);
-        assert!(expected(&timings, true)["code"] < 0.01);
-        let older: shared::Timings = serde_json::from_str(r#"{"code": [79.4, 0.04, 0.003]}"#).unwrap();
-        assert_eq!(older, shared::Timings::default());
+    fn a_start_reads_code_once_a_part_is_read_anew() {
+        let cache = atlas_engine::cache::Cache::at(&std::env::temp_dir().join("atlas-anew"), "0.0.0 (test)");
+        let reading = Server { opts: Options { cache: Some(cache.clone()), ..Options::default() }, ..server() };
+        *reading.timings.lock().unwrap() = shared::Timings { cold: BTreeMap::from([(READING.to_string(), vec![79.0, 81.0, 80.0])]) };
+        cache.read_anew();
+        reading.progress(READING, None);
+        assert_eq!(reading.drawn()["reads"], false, "a part read anew before the drawing began is not its own");
+        cache.workspace(Path::new(".")).expect("a working tree's index").read_anew();
+        let drawn = reading.drawn();
+        assert_eq!((drawn["reads"].clone(), drawn["expected"][READING].clone()), (json!(true), json!(81.0)));
+        assert_eq!(server().drawn()["reads"], true, "without a cache every part is read anew");
+        let older: shared::Timings = serde_json::from_str(r#"{"cold": {"reading": [79.4]}, "warm": {"reading": [0.04]}}"#).unwrap();
+        assert_eq!(older.cold, BTreeMap::from([(READING.to_string(), vec![79.4])]));
     }
 
     fn server() -> Server {
@@ -505,10 +521,9 @@ mod tests {
             hosts: vec!["localhost:8797".into()],
             log: Arc::new(Log::new()),
             kept: Mutex::new(None),
-            progress: Mutex::new(Progress { phase: READING, error: None, since: Instant::now() }),
+            progress: Mutex::new(Progress { phase: READING, error: None, since: Instant::now(), anew: 0 }),
             drawing: Mutex::new(()),
             timings: Mutex::new(shared::Timings::default()),
-            warm: false,
         }
     }
 
