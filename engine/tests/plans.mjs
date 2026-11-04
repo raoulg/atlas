@@ -24,7 +24,7 @@ const D = JSON.parse(fs.readFileSync(dataJson, "utf8"));
 // `ATLAS_FINE_BUDGET=n` cuts the plan as a large program's is cut (`plan.js`, `FINE_BUDGET`)
 const window = process.env.ATLAS_FINE_BUDGET ? {ATLAS_FINE_BUDGET: Number(process.env.ATLAS_FINE_BUDGET)} : {};
 const M = new Function("D", "window", fs.readFileSync(planJs, "utf8") + `
-return {V, plan, imageOf, coarsen, checkOpenings, overviewOpen, inUnit, partOf, MAKEFILES, treeInfo, stepLabel, oneOf, typeLabel, sideOfRoles, familyOf, kindOf, byId, ordersOn, stepOf, opens, frameOf, valueBox, foldDirs, filePath, valuesOf, closedFamily, typesIn, lightOf, cutBy, familyFrames, here, kindsOf, isData};`)(D, window);
+return {V, plan, imageOf, coarsen, checkOpenings, overviewOpen, inUnit, partOf, MAKEFILES, treeInfo, stepLabel, oneOf, typeLabel, sideOfRoles, familyOf, kindOf, byId, ordersOn, stepOf, opens, frameOf, valueBox, foldDirs, filePath, valuesOf, closedFamily, typesIn, lightOf, cutBy, familyFrames, here, kindsOf, isData, worldPlaceOf};`)(D, window);
 const {V} = M;
 
 const SIDES = {in: "left", out: "right", mid: "between", both: "both"};
@@ -479,6 +479,17 @@ function arrowFaults(F, tests) {
     const P = F.pills.get("n:" + e.src);
     if (P && !leaf.has(P.parent)) continue;
     if (!P?.[way].has("t:" + e.dst)) out.push(`${pre}${M.stepLabel(e.src)} ${way === "D" ? "takes" : "makes"} ${M.typeLabel(e.dst)}, and its occurrence in the overview's fine plan does not`);
+  }
+  // a write of data whose path a caller makes whole (`Touch::fixed_by`) is the callee's own touch, at the place the caller's
+  // path names: it stands on the callee's occurrence, never on the caller's and never nowhere. A touch that only gives the
+  // place its shape (a directory made) serves the data written there, and is drawn through it
+  for (const n of M.byId.values()) {
+    if (n.library || !["function", "method"].includes(n.kind) || (!tests && testCode(n))) continue;
+    for (const t of n.touches || []) {
+      if (t.kind !== "disk_write" || t.shape || t.test || !t.artifact || !(t.fixed_by || []).length || (!tests && t.fixed_by.every(f => testCode(M.byId.get(f))))) continue;
+      const k = M.worldPlaceOf(t, true).id, P = F.pills.get("n:" + n.id);
+      if (!P?.C.has(k)) out.push(`${pre}${M.stepLabel(n.id)} writes ${k}, whose path ${t.fixed_by.join(", ")} hands it, and its occurrence in the overview's fine plan does not`);
+    }
   }
   return out;
 }

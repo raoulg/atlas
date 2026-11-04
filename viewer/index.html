@@ -1014,7 +1014,9 @@ async function renderPlaat(mine) {
     } else {
       const sides = new Set([...F.kids].flatMap(k => [...(places.get(k)?.sides || [])]));
       const glyph = placeGlyph.get(shown[0]);
-      const p = {id: F.id, label: F.label, short: F.label, glyph, kind: "world", toggleGroup: F.group, members: [...F.kids], ...(F.way ? {way: F.way} : {}), ...(DIFF ? {sides} : {})};
+      // closed, a group says how many places it stands for (`Workbench · 7`), so it never reads as the type that keeps them
+      const label = `${F.label} · ${[...F.kids].filter(k => k !== F.id).length}`;
+      const p = {id: F.id, label, short: label, glyph, kind: "world", toggleGroup: F.group, members: [...F.kids], ...(F.way ? {way: F.way} : {}), ...(DIFF ? {sides} : {})};
       placeGlyph.set(p.id, glyph);
       for (const k of F.kids) { worldShown.set(k, p); places.delete(k); }
       places.set(p.id, p);
@@ -1049,6 +1051,13 @@ async function renderPlaat(mine) {
     for (const [d, cs] of classes) for (const [s, ps] of cs) {
       const id = cs.size > 1 ? `w:File:${d}~${s}` : "w:File:" + d, k = cs.size > 1 ? ps.length : dirFold.n.get(d);
       if (standing.has(id) || [...pills.values()].some(P => P.D.has(id) || P.C.has(id))) places.set(id, {id, label: `File(${pathWords(d)}) · ${k}`, short: `${pathWords(d)} · ${k}`, kind: "world", folded: d, ...(cs.size > 1 ? {members: ps.map(p => "w:File:" + p), ...(WAY[s] ? {way: WAY[s]} : {})} : {}), ...(DIFF ? {sides: folded.get(id)} : {})});
+    }
+    // an opened group holds its files as the disk folds them (`foldGroups`)
+    const regrouped = foldGroups(new Map([...worldFrames].map(([id, F]) => [id, F.kids])), [...dirFold.to.keys()].map(p => "w:File:" + p), to, k => places.has(k));
+    for (const [id, kids] of regrouped) {
+      for (const k of worldFrames.get(id).kids) worldParent.delete(k);
+      worldFrames.get(id).kids = kids;
+      for (const k of kids) worldParent.set(k, id);
     }
   }
   // siblings that draw the same lines on the finest plan (the same places, versions and channels) are one pill: a

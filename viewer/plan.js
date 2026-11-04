@@ -572,6 +572,25 @@ function foldDirs(paths) {
   }
   return {to, n};
 }
+// The members of each opened group of places (the storage quotient, `groups`: a group's id to the places it holds) once the
+// disk folds files into directories (`to`: a place to the box it is drawn as, `files`: every file the fold takes, `drawn`:
+// whether the picture draws a box). An opened group splits into its places, and they fold further into their directories
+// (mathematics.md, "Places by the type that holds them"): a directory stands in the group where every file it folds is one
+// of the group's, and beside it where it folds files of another group or of none, so that every member is a box the
+// picture draws and no box stands in two groups
+function foldGroups(groups, files, to, drawn) {
+  const owner = new Map();
+  for (const [g, ks] of groups) for (const k of ks) owner.set(k, g);
+  const owners = new Map();
+  for (const f of files) {
+    const c = to(f);
+    if (c === f) continue;
+    if (!owners.has(c)) owners.set(c, new Set());
+    owners.get(c).add(owner.get(f) ?? null);
+  }
+  const alone = (c, g) => owners.get(c)?.size === 1 && owners.get(c).has(g);
+  return new Map([...groups].map(([g, ks]) => [g, new Set([...ks].map(k => [k, to(k)]).filter(([k, c]) => drawn(c) && (c === k || alone(c, g))).map(([, c]) => c))]));
+}
 // a path with a pattern in it said in words, from the file up: `{root}/*/*/OW-bestanden/*.xml` is "every *.xml in
 // OW-bestanden/ in each folder two levels into {root}/". A wildcard the code writes is "each" or "every", a hole the
 // code gives no name (`{}`) "an unnamed folder"; a path without either, or a bare pattern (a file known by its

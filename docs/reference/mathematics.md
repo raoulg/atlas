@@ -384,7 +384,8 @@ and their terms are the same with it closed or open, and two programs that keep 
 one through a type and one through bare paths, keep the same places (isomorphic is the same);
 only the first draws the group, since only its code says the files belong together.
 **Where.** `paths.rs` (`place_calls`, the holder of a touch), `model.rs` (`Touch::holder`),
-`flow.rs` (`Touch::place`, its coarse place), `index.html` (the storage quotient); the pair
+`flow.rs` (`Touch::place`, its coarse place), `index.html` (the storage quotient), `plan.js` (`foldGroups`: an opened
+group's places as the disk folds them); the pair
 `workbench`.
 
 ### A door keeps its place
