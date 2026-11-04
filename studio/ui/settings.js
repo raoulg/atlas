@@ -122,9 +122,18 @@
     function drawVersion(build) {
       version.replaceChildren(node('h2', '', 'Version'));
       const buttons = node('div', 'settings-buttons');
-      buttons.append(button('secondary-button', 'Check for updates', () => bridge.checkUpdates()),
-        button('secondary-button', 'What’s new', () => { hide(); bridge.whatsNew(); }));
-      version.append(node('p', '', build), buttons);
+      // the answer to a look for updates stands under the buttons while the page is open
+      const answer = node('p', 'settings-note');
+      answer.hidden = true;
+      const check = button('secondary-button', 'Check for updates', async () => {
+        check.disabled = true;
+        answer.hidden = false;
+        answer.textContent = 'Looking for a newer Studio…';
+        answer.textContent = `${await bridge.checkUpdates()} · ${new Date().toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'})}`;
+        check.disabled = false;
+      });
+      buttons.append(check, button('secondary-button', 'What’s new', () => { hide(); bridge.whatsNew(); }));
+      version.append(node('p', '', build), buttons, answer);
     }
 
     async function refresh() {
