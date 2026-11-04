@@ -3,6 +3,19 @@ const { invoke, Channel } = window.__TAURI__.core;
 const thisWindow = window.__TAURI__.webviewWindow.getCurrentWebviewWindow();
 const listen = (event, handler) => thisWindow.listen(event, handler);
 const byId = (id) => document.getElementById(id);
+// the status bar's text. An answer to what the user asked (an error, a look for a newer build) shows at
+// once and stays HELD ms; what Studio says meanwhile shows once it has been read.
+const HELD = 15000;
+let heldUntil = 0, meanwhile = null, release = 0;
+function say(text, {held = false} = {}) {
+  if (!held && Date.now() < heldUntil) { meanwhile = text; return; }
+  byId('status-text').textContent = text;
+  meanwhile = null;
+  if (!held) return;
+  heldUntil = Date.now() + HELD;
+  clearTimeout(release);
+  release = setTimeout(() => { heldUntil = 0; if (meanwhile !== null) say(meanwhile); }, HELD);
+}
 let workspace = null;
 let activeView = 'atlas';
 let currentLesson = null;
@@ -34,7 +47,7 @@ function showAppearance(next) {
 async function setAppearance(next) {
   showAppearance(next);
   try { await invoke('set_appearance', {appearance: next}); }
-  catch (error) { byId('status-text').textContent = String(error); }
+  catch (error) { say(String(error), {held: true}); }
 }
 // the other scheme, in its theme: from the system's, the one it does not show
 const toggleScheme = () => setAppearance({...appearance, theme: Themes.schemeOf(appearance) === 'dark' ? 'light' : 'dark'});
@@ -99,8 +112,8 @@ window.addEventListener('message', async (event) => {
   else if (event.data?.atlas === 'export') {
     try {
       const saved = await invoke('export_view', {view: JSON.stringify(event.data.view)});
-      if (saved) byId('status-text').textContent = `Exported ${saved}`;
-    } catch (error) { byId('status-text').textContent = String(error); }
+      if (saved) say(`Exported ${saved}`, {held: true});
+    } catch (error) { say(String(error), {held: true}); }
   }
 });
 atlasFrame.addEventListener('load', () => bar.clear());
@@ -136,7 +149,7 @@ function showDock(next) {
 async function setDock(next) {
   showDock(next);
   try { await invoke('set_terminal_dock', {dock}); }
-  catch (error) { byId('status-text').textContent = String(error); }
+  catch (error) { say(String(error), {held: true}); }
 }
 
 function showTerminal(show = byId('terminal-panel').hidden) {
@@ -169,7 +182,7 @@ function showPreviewDock(next) {
 async function setPreviewDock(next) {
   showPreviewDock(next);
   try { await invoke('set_preview_dock', {side: previewSide}); }
-  catch (error) { byId('status-text').textContent = String(error); }
+  catch (error) { say(String(error), {held: true}); }
 }
 byId('preview-grip').addEventListener('pointerdown', (event) => {
   const preview = byId('preview');
@@ -189,7 +202,7 @@ async function loadFiles() {
     if (text === listed) return;
     listed = text;
     files.load(JSON.parse(text));
-  } catch (error) { byId('status-text').textContent = String(error); }
+  } catch (error) { say(String(error), {held: true}); }
 }
 // the box the Atlas view has selected, marked in the tree
 async function followView() {
@@ -205,7 +218,7 @@ function showState(name, error = '') {
   if (name === 'welcome') workspaces.show(false);
   else if (name !== 'views' || workspace) byId('workspaces').hidden = true;
   byId('error').textContent = error;
-  byId('status-text').textContent = name === 'views' ? 'Atlas · workspace open' : name === 'loading' ? 'Opening workspace' : name === 'error' ? 'Atlas stopped' : 'Ready';
+  say(name === 'views' ? 'Atlas · workspace open' : name === 'loading' ? 'Opening workspace' : name === 'error' ? 'Atlas stopped' : 'Ready');
 }
 
 function selectView(view) {
@@ -231,7 +244,7 @@ async function openLesson(path) {
     currentLesson = path;
     byId('insert-atlas-view').hidden = false;
     selectView('lesson');
-  } catch (error) { byId('status-text').textContent = String(error); }
+  } catch (error) { say(String(error), {held: true}); }
 }
 
 async function loadLessons() {
@@ -250,7 +263,7 @@ async function loadLessons() {
       button.addEventListener('click', () => openLesson(path));
       list.append(button);
     }
-  } catch (error) { byId('status-text').textContent = String(error); }
+  } catch (error) { say(String(error), {held: true}); }
 }
 
 function displayWorkspace(next) {
@@ -281,16 +294,16 @@ function displayWorkspace(next) {
 async function opening(open) {
   const hadWorkspace = Boolean(workspace);
   if (!hadWorkspace) showState('loading');
-  else byId('status-text').textContent = 'Opening workspace…';
+  else say('Opening workspace…');
   try {
     // nothing opened: the dialog was cancelled, or the workspace is open in another window, which came
     // to the front
     const opened = await open();
     if (opened) displayWorkspace(opened);
     else if (!hadWorkspace) showState('welcome');
-    else byId('status-text').textContent = 'Atlas · workspace open';
+    else say('Atlas · workspace open');
   } catch (error) {
-    if (hadWorkspace) byId('status-text').textContent = String(error);
+    if (hadWorkspace) say(String(error), {held: true});
     else showState('error', String(error));
   }
 }
@@ -305,18 +318,19 @@ byId('insert-atlas-view').addEventListener('click', async () => {
   if (!currentLesson) return;
   await new Promise((resolve) => setTimeout(resolve, 350));
   try { await lessonPanel.insertCurrentView(); selectView('lesson'); }
-  catch (error) { byId('status-text').textContent = String(error); }
+  catch (error) { say(String(error), {held: true}); }
 });
 byId('workspace-button').addEventListener('click', showWorkspaces);
 byId('terminal-toggle').addEventListener('click', () => showTerminal());
 for (const tab of document.querySelectorAll('.side-tab')) tab.addEventListener('click', () => selectView(tab.dataset.view));
 // which build this is, at the right of the status bar: its version, and for a nightly its commit;
-// the settings name the commit of every build. A click on it shows what changed in it (What's New).
+// the settings name the commit of every build. A click on it looks for a newer build and shows it, and
+// without one shows what changed in this one (What's New).
 let buildSaid = 'Atlas Studio';
 invoke('studio_build').then((build) => {
   buildSaid = `Atlas Studio ${build.version}` + (build.nightly ? ' · nightly' : '') + (build.commit ? ` · ${build.commit}` : '');
   byId('studio-version').textContent = `Atlas Studio ${build.version}` + (build.nightly ? ` · nightly ${build.commit}` : '');
-  byId('studio-version').title = `What's new in atlas ${build.version}${build.nightly ? '-nightly' : ''}${build.commit ? ` (${build.commit})` : ''}`;
+  byId('studio-version').title = `Look for a newer build; without one, what's new in atlas ${build.version}${build.nightly ? '-nightly' : ''}${build.commit ? ` (${build.commit})` : ''}`;
 }).catch(() => {});
 
 // a newer build of Studio's channel, looked for once an hour against an answer a day old at most
@@ -329,18 +343,24 @@ listen('studio-update', ({payload}) => updates.found(payload));
 // what changed in the build that runs: its release's notes in the window, else on GitHub
 async function whatsNew() {
   if (settingsPage.isShown()) settingsPage.hide();
-  byId('status-text').textContent = 'Looking up what changed…';
-  try { updates.show(await invoke('whats_new')); byId('status-text').textContent = 'Ready'; }
-  catch (error) { byId('status-text').textContent = String(error); }
+  say('Looking up what changed…');
+  try { updates.show(await invoke('whats_new')); say('Ready'); }
+  catch (error) { say(String(error), {held: true}); }
 }
+// a look for a newer build, asked for: its answer, said in the status bar, and the newer build if there is one
 async function checkNow() {
-  byId('status-text').textContent = 'Looking for a newer Studio…';
+  say('Looking for a newer Studio…', {held: true});
   try {
     const newer = await invoke('check_update', {now: true});
     updates.found(newer);
     if (newer) updates.show();
-    byId('status-text').textContent = newer ? 'A newer Studio is out' : 'Atlas Studio is up to date';
-  } catch (error) { byId('status-text').textContent = String(error); }
+    const said = newer ? 'A newer Studio is out' : 'Atlas Studio is up to date';
+    say(said, {held: true});
+    return {newer, said};
+  } catch (error) {
+    say(String(error), {held: true});
+    return {newer: null, said: String(error), failed: true};
+  }
 }
 
 // Studio's settings (⌘,): the theme, the coding agents with Atlas, the version
@@ -352,9 +372,9 @@ const settingsPage = window.AtlasSettings.mount(byId('settings'), {
   setAppearance,
   register: (id) => invoke('register_agent', {id}),
   build: () => buildSaid,
-  checkUpdates: () => checkNow(),
+  checkUpdates: async () => (await checkNow()).said,
   whatsNew: () => whatsNew(),
-  say: (text) => { byId('status-text').textContent = text; },
+  say,
   closed: () => { if (workspace) selectView(activeView); else showState('welcome'); },
 });
 
@@ -378,7 +398,7 @@ listen('terminal-dock', ({payload}) => showDock(payload));
 listen('preview-dock', ({payload}) => showPreviewDock(payload));
 Themes.darkSystem.addEventListener('change', () => { if (appearance.theme === 'system') showAppearance(appearance); });
 byId('scheme-toggle').addEventListener('click', toggleScheme);
-byId('studio-version').addEventListener('click', () => whatsNew());
+byId('studio-version').addEventListener('click', async () => { const {newer, failed} = await checkNow(); if (!newer && !failed) whatsNew(); });
 invoke('get_settings').then((settings) => { showAppearance(settings.appearance); showDock(settings.terminal); showPreviewDock(settings.preview); })
   .catch(() => { showAppearance(appearance); showDock(dock); showPreviewDock(previewSide); });
 listen('studio-backend-stopped', () => { displayWorkspace(null); showState('error', 'Atlas stopped. Open the workspace again to restart it.'); });
