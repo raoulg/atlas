@@ -170,9 +170,12 @@ else is a short-lived topic branch.
    resolved, docs pictures drawn, `cargo test`, `walk` and `topology` run once on the release branch and
    green, the release's notes `docs/releases/<version>.md`
    gathered from `docs/changes/` and made a page by `uv run tools/release_page.py`, which must name no
-   point without a picture) and stops before the push. That a point has a picture is the floor: each is
-   as visual as 0.68.0's, an `Example:` that both releases draw, a `Compare:` of Atlas's pictures, `Bars:`
-   of numbers, or a drawing that carries the point, never a table of text. One point says how fast the
+   point without a picture) and stops before the push. The notes are read for what a user gains: each point is
+   titled by that gain, says it in a few sentences, carries a `Kind:` (drawn wrong, now right; forms drawn alike;
+   UI; speed) and at most one picture that shows it at a glance. A schema of the principle is that picture where
+   one exists, with Atlas's pictures folded beneath it; else one `Compare:` pair whose difference is plain, `Bars:`
+   of numbers, or an `Example:`; never a row of screenshots or a wall of text. Small fixes of one kind share a
+   list, and forms that are now drawn alike share one grid of equivalences. One point says how fast the
    release is against the one before: `uv run tools/perf.py release-bars` gives its `Bars:` from the
    nightly series (`docs/reference/performance.md`).
    The release machinery (`release.yml`, `install.sh`, `install.ps1`, the tap job, `tools/tap_formula.py`, `tools/tap_cask.py`)

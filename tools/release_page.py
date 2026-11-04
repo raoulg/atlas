@@ -7,9 +7,20 @@ page that lists them.
     uv run tools/release_page.py            # every docs/releases/<version>.md
     uv run tools/release_page.py 0.68.0     # one
 
-A release's notes are `docs/releases/<version>.md`: a head (`version`, `date`, empty until the tag),
-a paragraph that says what the release is, and its main points, each a `## ` heading with a few
-paragraphs (code in fences), an `Issues:` line, and the point's pictures:
+A release's notes are `docs/releases/<version>.md`: a head (`version`, `before`, `date`, empty until the tag),
+a paragraph that says what the release is, and its main points, each a `## ` heading that names what the user
+gains, a few sentences (code in fences), an `Issues:` line, and at most one picture that shows the point at a glance.
+
+A point's `Kind:` says what a user feels of it, as the issues' kind labels do: `wrong` (drawn wrong, now right),
+`alike` (forms that say the same thing, now drawn alike), `ui`, `speed`, `extension`. Where the points carry a kind,
+the page groups them by it, in that order, and opens on the release at a glance: per kind, its points' titles as links.
+A list whose every item is `form ≡ form → what they draw` is a grid of equivalences, the forms on the left.
+
+The pictures of a point:
+
+- `Compare: changes/a.png = 0.70: label; changes/b.png = 0.71: label`: pictures one above the other, each with its
+  label above it; a label that starts with its side (`Before:`, `0.70:`) shows the side as a tag in its colour.
+- `Shots: ...`: the same, folded, for a point whose `Diagram:` already shows it.
 
 - `Atlas: #147, #175`: the issue's cards of `tools/release_report.py`, its program drawn by the release
   before and by this one (what only one of them draws outlined in its colour), and Atlas's own code
@@ -184,6 +195,29 @@ section li{margin:4px 0}
 .b-more summary{cursor:pointer;font-weight:500;color:var(--ink);margin-bottom:8px}
 .b-div .n.faster{color:var(--add)}.b-div .n.slower{color:var(--del)}.b-div .n.same{color:var(--ink-3)}
 .bench .cap{font-size:13.5px;color:var(--ink-2);margin:14px 0 0}
+.glance{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,300px),1fr));gap:8px 32px;margin:-24px 0 40px;padding:18px 20px;background:var(--panel);border:1px solid var(--line)}
+.glance-head{font-family:var(--mono);font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:var(--accent);margin:4px 0 6px}
+.glance ul{margin:0 0 8px;padding-left:18px}
+.glance li{margin:3px 0;font-size:15px}
+.glance a{text-decoration:none;color:var(--ink)}
+.glance a:hover{color:var(--accent)}
+.kind{margin-top:56px}
+.kind-head{font-family:var(--mono);font-size:13px;font-weight:500;letter-spacing:.08em;text-transform:uppercase;color:var(--accent);margin:0 0 6px}
+.kind-said{color:var(--ink-2);max-width:70ch;margin:0 0 8px}
+.kind section{padding-top:28px}
+.kind section h2{font-size:24px}
+figcaption.above{font-size:15px;color:var(--ink);margin:14px 0 6px}
+figcaption.above .tag{font-size:12px;vertical-align:1px}
+.shots{margin:18px 0 8px}
+.shots summary{font-size:14px}
+.alike{display:grid;grid-template-columns:minmax(0,2fr) minmax(0,1fr);gap:0;margin:18px 0 10px;background:var(--panel);border:1px solid var(--line)}
+.alike > div{padding:10px 14px;border-top:1px solid var(--line)}
+.alike > div:nth-child(-n+2){border-top:0}
+.alike .forms{font-size:14px;line-height:2}
+.alike .forms code{overflow-wrap:anywhere}
+.alike .eq{color:var(--key);font-weight:600;margin:0 6px}
+.alike .is{font-size:14px;color:var(--ink-2)}
+@media(max-width:700px){.alike{grid-template-columns:1fr}.alike .is{border-top:0;padding-top:0}}
 .pager{display:flex;justify-content:space-between;gap:16px;border-top:1px solid var(--line);margin-top:48px;padding-top:20px;font-family:var(--mono);font-size:14px}
 .pager a{text-decoration:none;color:var(--ink-2)}
 .pager a:hover{color:var(--accent)}
@@ -229,7 +263,9 @@ def prose(text: str) -> list[str]:
         lines = [line.strip() for line in chunk.splitlines() if line.strip()]
         if not lines:
             continue
-        if all(line.startswith("- ") for line in lines):
+        if all(line.startswith("- ") and " ≡ " in line for line in lines):
+            out.append(same([line[2:] for line in lines]))
+        elif all(line.startswith("- ") for line in lines):
             out.append("<ul>" + "".join(f"<li>{inline(line[2:])}</li>" for line in lines) + "</ul>")
         elif lines[0].startswith("- "):
             head = [line for line in lines if not line.startswith("- ")]
@@ -238,6 +274,17 @@ def prose(text: str) -> list[str]:
         else:
             out.append(f"<p>{inline(' '.join(lines))}</p>")
     return out
+
+
+def same(rows: list[str]) -> str:
+    """A list whose every item is `form ≡ form → what they are` as a grid: on the left the forms that say the same
+    thing, on the right what Atlas draws of each of them."""
+    cells = []
+    for row in rows:
+        forms, _, said = row.partition(" → ")
+        joined = '<span class="eq">≡</span>'.join(inline(f.strip()) for f in forms.split(" ≡ "))
+        cells.append(f'<div class="forms">{joined}</div><div class="is">{inline(said.strip())}</div>')
+    return f'<div class="alike">{"".join(cells)}</div>'
 
 
 def read(path: pathlib.Path) -> dict:
@@ -258,10 +305,11 @@ def read(path: pathlib.Path) -> dict:
             fields[m.group(1).lower()] = " ".join(m.group(2).split())
             return ""
 
-        keys = "Issues|Pictures|Draw|Atlas|Diagram|Bars|Bench|Hero|Example|Compare"
+        keys = "Issues|Pictures|Draw|Atlas|Diagram|Bars|Bench|Hero|Example|Compare|Shots|Kind"
         rest = re.sub(rf"(?ms)^({keys}): (.*?)(?=\n\s*\n|\n(?:{keys}): |\Z)", field, rest)
         points.append({"title": re.sub(r"^\d+\.\s*", "", title.strip()), "text": rest, **fields})
-    release = {"version": head.get("version", path.stem), "date": head.get("date", ""), "lede": parts[0].strip(), "points": points}
+    release = {"version": head.get("version", path.stem), "before": head.get("before", ""), "date": head.get("date", ""),
+               "lede": parts[0].strip(), "points": points}
     report = RELEASES / release["version"] / "report" / "report.json"
     if report.is_file():
         import json
@@ -285,6 +333,8 @@ def page(release: dict, older: dict | None = None, newer: dict | None = None) ->
     """The page of one release, with links to its neighbours."""
     v = html.escape(release["version"])
     sections = []
+    kinds = [p.get("kind", "").strip() for p in release["points"]]
+    grouped = any(kinds)
     for point in release["points"]:
         body = blocks(point["text"])
         if point.get("hero"):
@@ -292,11 +342,13 @@ def page(release: dict, older: dict | None = None, newer: dict | None = None) ->
         if point.get("example"):
             body.append(example(release, point["example"]))
         if point.get("compare"):
-            body.append(compare(point["compare"]))
+            body.append(compare(point["compare"], release))
         for drawing in [d for d in point.get("diagram", "").split(";") if d.strip()]:
             diagram, _, caption = drawing.partition("|")
             said = f"<figcaption>{inline(caption.strip())}</figcaption>" if caption.strip() else ""
             body.append(f'<figure class="diagram">{svg(DOCS / diagram.strip())}{said}</figure>')
+        if point.get("shots"):
+            body.append(f'<details class="shots"><summary>In Atlas: the release before and this one</summary>{compare(point["shots"], release)}</details>')
         if point.get("bars"):
             body.append(bars(point["bars"]))
         if point.get("bench"):
@@ -312,7 +364,24 @@ def page(release: dict, older: dict | None = None, newer: dict | None = None) ->
             )
         if point.get("issues"):
             body.append(f'<p class="issues">{inline(point["issues"])}</p>')
-        sections.append(f'<section><h2>{inline(point["title"])}</h2>{"".join(body)}</section>')
+        sections.append(f'<section id="{anchor(point["title"])}"><h2>{inline(point["title"])}</h2>{"".join(body)}</section>')
+    legend_line = (
+        '<div class="legend"><span><i class="swatch" style="border-color:var(--del)"></i>only in the release before</span>'
+        f'<span><i class="swatch" style="border-color:var(--add)"></i>only in {v}</span>'
+        '<span><i class="swatch" style="border-color:var(--edit)"></i>its text changed, its arrow not</span></div>'
+    )
+    if grouped:
+        order = [k for k in KINDS if k in kinds] + [k for k in dict.fromkeys(kinds) if k not in KINDS]
+        groups = [(k, [p for p, pk in zip(release["points"], kinds) if pk == k]) for k in order]
+        parts = []
+        for kind in order:
+            title, said = KINDS.get(kind, (kind.capitalize(), ""))
+            intro = f'<p class="kind-said">{inline(said)}</p>' if said else ""
+            held = "".join(s for s, pk in zip(sections, kinds) if pk == kind)
+            parts.append(f'<div class="kind"><h2 class="kind-head">{html.escape(title)}</h2>{intro}{held}</div>')
+        top, body_html = overview(groups), "".join(parts)
+    else:
+        top, body_html = legend_line, "".join(sections)
     when = f" · {html.escape(release['date'])}" if release["date"] else ""
     return f"""<!doctype html>
 <html lang="en">
@@ -333,8 +402,8 @@ def page(release: dict, older: dict | None = None, newer: dict | None = None) ->
 <p class="eyebrow">Release {v}{when}</p>
 <h1>What changed in Atlas {v}</h1>
 <div class="lede">{"".join(blocks(release["lede"]))}</div>
-<div class="legend"><span><i class="swatch" style="border-color:var(--del)"></i>only in the release before</span><span><i class="swatch" style="border-color:var(--add)"></i>only in {v}</span><span><i class="swatch" style="border-color:var(--edit)"></i>its text changed, its arrow not</span></div>
-{"".join(sections)}
+{top}
+{body_html}
 {pager(older, newer)}
 <footer>Made by tools/release_page.py from docs/releases/{v}.md and the notes in docs/changes.</footer>
 </main>
@@ -363,16 +432,62 @@ def example(release: dict, spec: str) -> str:
     return f'<div class="example">{listing}<div class="pair">{figures}</div></div>'
 
 
-def compare(spec: str) -> str:
-    """`img = label; img = label`: pictures one above the other, each at the page's width with its label."""
+SIDE_LABEL = re.compile(r"^(before|after|now|v?\d+\.\d+(?:\.\d+)?)(?:,\s*([^:]*))?:\s*(.*)$", re.IGNORECASE | re.DOTALL)
+
+
+def compare(spec: str, release: dict | None = None) -> str:
+    """`img = label; img = label`: pictures one above the other, each at the page's width, its label above it. A label
+    that starts with its side (`Before:`, `0.70:`, `0.71, the shortcut:`) carries that side as a tag in the side's colour:
+    the release before and `before` in the colour of what only it draws, any other in the colour of what only this one draws."""
+    before = (release or {}).get("before", "")
     figures = []
     for item in [i for i in spec.split(";") if "=" in i]:
         path, label = (x.strip() for x in item.split("=", 1))
+        side = SIDE_LABEL.match(label)
+        if side:
+            name, more, said = side.groups()
+            kind = "before" if name.lower() == "before" or (before and before.startswith(name.lstrip("v"))) else "after"
+            tag = f'<span class="tag {kind}">{html.escape(name + (", " + more if more else ""))}</span>'
+        else:
+            tag, said = "", label
         figures.append(
-            f'<figure><div class="shot"><img src="../../{html.escape(path)}" alt="" loading="lazy"></div>'
-            f'<figcaption><span class="tag after">{inline(label)}</span></figcaption></figure>'
+            f'<figure><figcaption class="above">{tag}{inline(said)}</figcaption>'
+            f'<div class="shot"><img src="../../{html.escape(path)}" alt="" loading="lazy"></div></figure>'
         )
     return f'<div class="pair stack">{"".join(figures)}</div>'
+
+
+# What a user feels of a point, in the order a release page groups its points: each kind's heading, and what holds
+# for every point under it. The kinds are the issues' own (`kind: wrong`, `kind: speed`, ...).
+KINDS = {
+    "wrong": (
+        "Was drawn wrong, now drawn right",
+        "Each of these drew something your code does not do. In a picture of Atlas, a red outline is what only the "
+        "release before draws, a green one what only this release draws.",
+    ),
+    "alike": (
+        "Same meaning, same picture",
+        "Forms that say the same thing now draw the same picture, in Python, Rust and TypeScript alike.",
+    ),
+    "ui": ("Studio, the page and the agent", ""),
+    "speed": ("Speed", ""),
+    "extension": ("New", ""),
+}
+
+
+def anchor(title: str) -> str:
+    """The id of a point's section: the words of its title, lower case, joined by dashes."""
+    return "-".join(re.findall(r"[a-z0-9]+", title.lower()))[:60]
+
+
+def overview(groups: list[tuple[str, list[dict]]]) -> str:
+    """The release at a glance: per kind, the titles of its points, each a link to its section."""
+    out = []
+    for kind, points in groups:
+        title = KINDS.get(kind, (kind.capitalize(), ""))[0]
+        items = "".join(f'<li><a href="#{anchor(p["title"])}">{inline(p["title"])}</a></li>' for p in points)
+        out.append(f'<div class="glance-kind"><p class="glance-head">{html.escape(title)}</p><ul>{items}</ul></div>')
+    return f'<nav class="glance">{"".join(out)}</nav>'
 
 
 def svg(path: pathlib.Path) -> str:
