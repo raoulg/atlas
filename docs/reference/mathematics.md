@@ -384,7 +384,8 @@ and their terms are the same with it closed or open, and two programs that keep 
 one through a type and one through bare paths, keep the same places (isomorphic is the same);
 only the first draws the group, since only its code says the files belong together.
 **Where.** `paths.rs` (`place_calls`, the holder of a touch), `model.rs` (`Touch::holder`),
-`flow.rs` (`Touch::place`, its coarse place), `index.html` (the storage quotient); the pair
+`flow.rs` (`Touch::place`, its coarse place), `index.html` (the storage quotient), `plan.js` (`foldGroups`: an opened
+group's places as the disk folds them); the pair
 `workbench`.
 
 ### A door keeps its place
@@ -983,9 +984,10 @@ type, drawn once. `F₀` is the graph of generators:
   own code does, not what it reaches through another package), in the package that holds it, the
   smallest the overview opens to (a module); its frames are the code's hierarchy, parts, packages and
   subpackages;
-- a type of data that the code both makes and takes is one place, from each function that makes it
-  (gives it back, builds it, changes it) to each that takes it; its home is the smallest package that
-  holds all of them;
+- a type of data that the code makes or takes is one place, from each function that makes it (gives
+  it back, builds it, changes it) to each that takes it: a function's codomain is what it gives back
+  (sentence 2), whether or not another function of the code takes it. Its home is the smallest package
+  that holds all of them, so a type no other package uses is internal to the one that uses it;
 - every place of the world is at its concrete place, from or to each function whose own code touches
   it; between parts, a route served over HTTP comes in through its part's place and a request to
   another part's routes goes out to that part's;
@@ -1151,15 +1153,18 @@ after a run where the rank is open (`_ _`, `... _`), is an upper bound of it: ev
 **In Atlas.** Each shape the code writes is a type of its own, named by its shape: two names are two variables, so
 `batch dim` and `batch ndim` are two types, and so are `Float[..]` and `Int[..]`. A shape stands in its rank family
 as a subclass stands in its base (Coequalizer: a quotient), where the program's types hold two shapes of that rank:
-closed, `Float Tensor · 2D` stands for the rank-2 float tensors the picture holds (`· ≥1D` where the rank is open);
+closed, `Float Tensor · 2D` stands for the rank-2 float tensors the picture holds (`· ≥1D` where the rank is open,
+`· any rank` where no axis is promised);
 opened, it is a frame around the shapes themselves. The family is named by its dtype, array type and rank, never in
 the annotation's own notation: `Float[Tensor, _ _]` would read as a type the code wrote, and a box that says what the
-code does not is a guess. A shape the code writes as `_ _` is a member of its family like any other. The family is a
+code does not is a guess. A shape the code writes as `_ _` is a member of its family like any other. A run alone
+(`...`) promises no axis, and its notation says nothing a reader needs: it is named as what it says,
+`Float Tensor · any rank`, whether or not a family holds it. The family is a
 quotient of the picture, never a fact of the graph:
 the shapes, the steps and their lines are the same with it closed or open. The preorder is what an override keeps
 (Behavioural subtyping); a family is never ordered above another in the picture, since the ranks are no base the
 code names. Names are not unified across axes, so `batch batch` is read as `batch _`.
-**Where.** `shapes.rs` (`Array`, `Axis`, `Rank`, `family_id`), `families.rs` (the rank as a kind), principle
+**Where.** `shapes.rs` (`Array`, `Axis`, `Rank`, `family_id`, `name`), `families.rs` (the rank as a kind), principle
 `overrides` (`Array::fits`); the pair `shapes/python`.
 
 ### Method resolution order

@@ -450,14 +450,15 @@ impl GraphBuilder {
             return;
         }
         // its name is the type's own, a shape kept in it, and its module what stands before that name:
-        // `jaxtyping` / `Float[Tensor, batch dim]`
-        let name = type_name(eid);
-        let module = full[..full.len() - name.len()].strip_suffix('.').unwrap_or("");
+        // `jaxtyping` / `Float[Tensor, batch dim]`; a shape that promises no axis is named as that (`shapes::name`)
+        let own = type_name(eid);
+        let module = full[..full.len() - own.len()].strip_suffix('.').unwrap_or("");
+        let name = crate::shapes::name(eid).unwrap_or_else(|| own.into());
         let package = module.split(['.', ':']).next().unwrap_or("");
         self.add_node(Node {
             id: eid.into(),
             kind: NodeKind::External,
-            name: name.into(),
+            name,
             module: module.into(),
             door: crate::effects::library_place(package),
             ..Default::default()

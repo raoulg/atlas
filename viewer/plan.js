@@ -572,6 +572,25 @@ function foldDirs(paths) {
   }
   return {to, n};
 }
+// The members of each opened group of places (the storage quotient, `groups`: a group's id to the places it holds) once the
+// disk folds files into directories (`to`: a place to the box it is drawn as, `files`: every file the fold takes, `drawn`:
+// whether the picture draws a box). An opened group splits into its places, and they fold further into their directories
+// (mathematics.md, "Places by the type that holds them"): a directory stands in the group where every file it folds is one
+// of the group's, and beside it where it folds files of another group or of none, so that every member is a box the
+// picture draws and no box stands in two groups
+function foldGroups(groups, files, to, drawn) {
+  const owner = new Map();
+  for (const [g, ks] of groups) for (const k of ks) owner.set(k, g);
+  const owners = new Map();
+  for (const f of files) {
+    const c = to(f);
+    if (c === f) continue;
+    if (!owners.has(c)) owners.set(c, new Set());
+    owners.get(c).add(owner.get(f) ?? null);
+  }
+  const alone = (c, g) => owners.get(c)?.size === 1 && owners.get(c).has(g);
+  return new Map([...groups].map(([g, ks]) => [g, new Set([...ks].map(k => [k, to(k)]).filter(([k, c]) => drawn(c) && (c === k || alone(c, g))).map(([, c]) => c))]));
+}
 // a path with a pattern in it said in words, from the file up: `{root}/*/*/OW-bestanden/*.xml` is "every *.xml in
 // OW-bestanden/ in each folder two levels into {root}/". A wildcard the code writes is "each" or "every", a hole the
 // code gives no name (`{}`) "an unnamed folder"; a path without either, or a bare pattern (a file known by its
@@ -2185,8 +2204,9 @@ const imageOf = (F, opened, folded, {fineKeys = false} = {}) => {
     if (!free.has(b)) free.set(b, []);
     free.get(b).push(id);
   }
+  // a function of the overview opens to nothing, so what it takes stays drawn apart
   for (const [b, ids] of free) {
-    if (ids.length < 2 || fineKeys) continue;
+    if (ids.length < 2 || fineKeys || F.generators) continue;
     const P = pills.get(b);
     for (const id of ids) { P.D.delete(id); P.Dn?.delete(id); P.Dr?.delete(id); places.delete(id); joined.set(id, b); }
     P.folded = ids.length;
@@ -2397,8 +2417,11 @@ const overviewBase = () => {
       P.whole.set(k, w === null || !cs ? null : [...(w || []), ...cs]);
     }
   }
-  // a type of data that the code makes and takes is a joint: one place, from each function that makes it (gives it back,
-  // builds it, changes it) to each that takes it. Its home is the smallest package that holds all of them
+  // a type of data that the code makes or takes is one place, from each function that makes it (gives it back, builds
+  // it, changes it) to each that takes it: a function's codomain is what it gives back, whether or not another function
+  // of the code takes it. The picture draws a family as one box, so a type's home is the smallest package that holds
+  // every function that makes or takes a type of its family: a family no other package uses is internal to the package
+  // that uses it, and one that a package makes and another takes crosses the border between them
   const chainOf = fid => { const c = []; for (let f = fid; f; f = frames.get(f)?.parent) c.unshift(f); return c; };
   const homeOf = fids => {
     let common = null;
@@ -2406,11 +2429,16 @@ const overviewBase = () => {
     return common?.length ? common[common.length - 1] : undefined;
   };
   const {makes, takes} = usesOf();
-  for (const [t, ms] of makes) {
+  const used = new Map();
+  for (const t of new Set([...makes.keys(), ...takes.keys()])) {
     if (!isData(t)) continue;
-    const mk = [...ms].filter(x => leafOf.has(x)), tk = [...(takes.get(t) || [])].filter(x => leafOf.has(x));
-    if (!mk.length || !tk.length) continue;
-    const k = addPlace({...typePlace(t), home: homeOf([...mk, ...tk].map(x => leafOf.get(x)))});
+    const mk = [...(makes.get(t) || [])].filter(x => leafOf.has(x)), tk = [...(takes.get(t) || [])].filter(x => leafOf.has(x));
+    if (mk.length || tk.length) used.set(t, [mk, tk]);
+  }
+  const kin = new Map();
+  for (const [t, [mk, tk]] of used) { const f = familyOf(t); if (!kin.has(f)) kin.set(f, []); kin.get(f).push(...mk, ...tk); }
+  for (const [t, [mk, tk]] of used) {
+    const k = addPlace({...typePlace(t), home: homeOf(kin.get(familyOf(t)).map(x => leafOf.get(x)))});
     for (const x of mk) pillOf(x).C.set(k, false);
     for (const x of tk) pillOf(x).D.set(k, false);
   }
