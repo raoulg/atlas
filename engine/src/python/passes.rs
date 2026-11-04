@@ -549,6 +549,7 @@ pub(super) fn link(modules: &IndexMap<String, Module>, store: &mut GraphBuilder,
         .keys()
         .filter_map(|k| Some(((package_of(ext::path(k).filter(|p| !p.contains('['))?), k.rsplit('.').next()?.to_string()), k.clone())))
         .collect();
+    let shaped = shaped_returns(store);
     let mut handed = vec![];
     let mut waiting: Vec<(String, Touch, Vec<Built>)> = vec![];
     let mut args: Vec<Arg> = vec![];
@@ -556,7 +557,7 @@ pub(super) fn link(modules: &IndexMap<String, Module>, store: &mut GraphBuilder,
         if matches!(store.nodes[id].kind, NodeKind::Function | NodeKind::Method | NodeKind::Module) {
             let n = &store.nodes[id];
             let _body = crate::clock::of("body", &package_of(&n.module), n.library);
-            let linked = link_calls(modules, store, types, &sites, &ext, &eval, own, &changing, id);
+            let linked = link_calls(modules, store, types, &sites, &ext, &eval, own, &changing, &shaped, id);
             store.count_linked(id);
             handed.extend(linked.handed);
             waiting.extend(linked.waiting.into_iter().map(|(t, b)| (id.clone(), t, b)));
@@ -1164,4 +1165,21 @@ fn alias_targets(
     }
     let Some(a) = aliases.get(&full) else { return vec![] };
     a.names.iter().filter_map(|n| resolve(&modules[&a.module], n, modules, nodes, own).map(Resolved::id)).collect()
+}
+
+/// The shaped array each function returns, where its signature returns that one type and it is a
+/// shaped array (`knowledge::SHAPED_ARRAYS`): what a call of it gives, which ty reads as the array
+/// type alone.
+fn shaped_returns(store: &GraphBuilder) -> HashMap<String, String> {
+    let mut returns: HashMap<&str, Vec<&str>> = HashMap::new();
+    for e in store.edges.iter().filter(|e| e.kind == EdgeKind::Returns) {
+        returns.entry(e.src.as_str()).or_default().push(e.dst.as_str());
+    }
+    returns
+        .into_iter()
+        .filter_map(|(f, ts)| match ts.as_slice() {
+            [t] if knowledge::shaped(t).is_some() => Some((f.to_string(), t.to_string())),
+            _ => None,
+        })
+        .collect()
 }

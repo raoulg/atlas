@@ -276,6 +276,10 @@ pub struct Step {
     /// The call is made through its method's class or path, and the first argument by place is the
     /// value the method runs on (`Cached.read(self)`, `Trend::save(&t, ..)`, `C.prototype.f.call(v)`).
     pub receiver_first: bool,
+    /// Where the value called is written, where that value is what the method runs on: an instance
+    /// called as a function (`head(x)`, `self.head(x)`) runs a method of its own on itself, as
+    /// `head.forward(x)` does.
+    pub called: Option<(usize, usize)>,
     pub after: String,
     pub hands: Vec<Held>,
     pub gives: Vec<Held>,
@@ -1389,7 +1393,7 @@ impl<'t, 's> Steps<'t, 's> {
     pub fn call(&mut self, c: TsNode<'t>, to: &str, kind: EdgeKind, via: Option<String>, step: Step) {
         let arms = self.arms(c);
         self.keep(&step.gives);
-        let (args, written) = self.written(c, step.receiver_first);
+        let (args, written) = self.written(c, step.receiver_first, step.called);
         let site = Site {
             line: line(c),
             to: to.to_string(),
@@ -1509,7 +1513,7 @@ impl<'t, 's> Steps<'t, 's> {
     fn unread(&mut self, c: TsNode<'t>, name: &str, hands: Vec<Held>, gives: Vec<Held>, not_followed: bool) {
         self.keep(&gives);
         let op = name.lines().map(str::trim).collect::<String>();
-        let (args, written) = self.written(c, false);
+        let (args, written) = self.written(c, false, None);
         let site =
             Site { line: line(c), op, not_followed, hands, gives, args, written, arms: self.arms(c), span: span(c), ..Default::default() };
         let site = self.site(c, site);
@@ -1531,9 +1535,14 @@ impl<'t, 's> Steps<'t, 's> {
     }
 
     /// The arguments call `c` writes (`Site::args`), with where each is written. A method called
-    /// through its class or its path runs on the first argument it is handed by place.
-    fn written(&self, c: TsNode, receiver_first: bool) -> (Vec<Slot>, Vec<(u32, u32)>) {
+    /// through its class or its path runs on the first argument it is handed by place, and one run
+    /// by calling an instance on the instance called (`Step::called`).
+    fn written(&self, c: TsNode, receiver_first: bool, called: Option<(usize, usize)>) -> (Vec<Slot>, Vec<(u32, u32)>) {
         let mut args = (self.uses.args)(c, self.src);
+        if let Some(at) = called {
+            args.retain(|(_, s)| *s != Slot::Receiver);
+            args.insert(0, (at, Slot::Receiver));
+        }
         if receiver_first {
             args.retain(|(_, s)| *s != Slot::Receiver);
             for (_, s) in args.iter_mut() {

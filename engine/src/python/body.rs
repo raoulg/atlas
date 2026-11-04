@@ -546,6 +546,34 @@ pub(super) fn sites(modules: &IndexMap<String, Module>, store: &GraphBuilder) ->
     out
 }
 
+/// The shaped array the annotation `t` of the module `m` names, where it names one alone
+/// (`knowledge::SHAPED_ARRAYS`).
+fn annotated_shape(m: &Module, t: TsNode, seen: &Seen) -> Option<String> {
+    let [one]: [Vec<String>; 1] = type_names(Some(t), &m.src).try_into().ok()?;
+    let id = resolve(m, &one, seen.modules, &seen.store.nodes, seen.own)?.id();
+    knowledge::shaped(&id).is_some().then_some(id)
+}
+
+/// The parts of a tuple an annotation writes out, in order (`tuple[A, B]`); none for any other type,
+/// or a tuple of any length (`tuple[A, ...]`).
+fn tuple_parts<'t>(t: TsNode<'t>, src: &[u8]) -> Vec<TsNode<'t>> {
+    let t = if t.kind() == "type" { named_children(t).into_iter().next().unwrap_or(t) } else { t };
+    let (head, parts) = match t.kind() {
+        "subscript" => (t.child_by_field_name("value"), field_children(t, "subscript")),
+        "generic_type" => {
+            let kids = named_children(t);
+            let params = kids.iter().find(|k| k.kind() == "type_parameter").map(|p| named_children(*p)).unwrap_or_default();
+            (kids.first().copied(), params)
+        }
+        _ => return vec![],
+    };
+    let tuple = head.is_some_and(|h| matches!(text(h, src).rsplit('.').next(), Some("tuple" | "Tuple")));
+    if !tuple || parts.iter().any(|p| matches!(text(*p, src), "...")) {
+        return vec![];
+    }
+    parts
+}
+
 /// What ty says about one module's expressions, in the graph's terms: the node or library a
 /// call reaches, and the type a value has.
 pub(super) struct Seen<'a> {
@@ -561,6 +589,8 @@ pub(super) struct Seen<'a> {
     pub(super) class: Option<String>,
     /// The bindings whose value a step of the body changes in place, by their nodes (`changed_bindings`).
     pub(super) changed: HashSet<usize>,
+    /// The shaped array each function of the code returns, where its signature returns one (`shaped_returns`).
+    pub(super) shaped: Option<&'a HashMap<String, String>>,
 }
 
 impl<'a> Seen<'a> {
@@ -573,7 +603,7 @@ impl<'a> Seen<'a> {
         own: &'a Own,
     ) -> Self {
         let facts = types.of(&crate::tree::path_str(&m.path));
-        Seen { m, facts, sites, modules, store, own, receiver: None, class: None, changed: HashSet::new() }
+        Seen { m, facts, sites, modules, store, own, receiver: None, class: None, changed: HashSet::new(), shaped: None }
     }
 
     fn range(n: TsNode) -> (usize, usize) {
@@ -590,6 +620,84 @@ impl<'a> Seen<'a> {
             Target::Here { file, at } => self.sites.get(&(file.clone(), *at)),
             Target::Lib(_) => None,
         }
+    }
+
+    /// The shaped array a value of the body is declared as (`knowledge::SHAPED_ARRAYS`), where ty reads
+    /// it as its array type alone, as jaxtyping tells a type checker to: a name by the annotation of
+    /// the parameter or the assignment that defines it, a call of the code's own function by the
+    /// shaped array its signature returns. `tys` are the types ty's reading draws; the declared shape
+    /// stands for them only where each is the shape's array type.
+    fn declared_shape(&self, e: TsNode, tys: &[String]) -> Option<String> {
+        let shape = match e.kind() {
+            "identifier" => self.declared_at(e),
+            "call" => match self.callee(e.child_by_field_name("function")?)? {
+                Callee::Def(t) => self.shaped?.get(&t).cloned(),
+                Callee::Lib(_) => None,
+            },
+            _ => None,
+        }?;
+        self.refines(shape, tys)
+    }
+
+    /// The shape `shape` where it refines what ty draws, `tys`: each of them is its array type.
+    fn refines(&self, shape: String, tys: &[String]) -> Option<String> {
+        let array = crate::shapes::Array::of_id(&shape)?.array;
+        tys.iter().all(|t| t.rsplit('.').next() == Some(array.as_str())).then_some(shape)
+    }
+
+    /// The shaped array the name `i` is declared as where it is defined: the annotation of the
+    /// parameter, or of the assignment that binds it alone (`h: Float[Tensor, "batch dim"] = ..`),
+    /// else the shaped array the code's function it is assigned from returns (`h = encode(x)`), or,
+    /// unpacked, the part of the tuple it returns the name stands at (`a, b = batch()`).
+    fn declared_at(&self, i: TsNode) -> Option<String> {
+        let Target::Here { file, at } = self.facts?.def(Self::range(i))? else { return None };
+        if *file != crate::tree::path_str(&self.m.path) {
+            return None;
+        }
+        self.declared_by(self.m.tree.root_node().descendant_for_byte_range(*at, *at)?)
+    }
+
+    /// The shaped array the name `name`, where it is bound, is declared as (`declared_at`).
+    fn declared_by(&self, name: TsNode) -> Option<String> {
+        let p = name.parent()?;
+        let called = |a: TsNode| match self
+            .callee(a.child_by_field_name("right").filter(|r| r.kind() == "call")?.child_by_field_name("function")?)?
+        {
+            Callee::Def(t) => Some(t),
+            Callee::Lib(_) => None,
+        };
+        match p.kind() {
+            "typed_parameter" | "typed_default_parameter" => annotated_shape(self.m, p.child_by_field_name("type")?, self),
+            "assignment" if p.child_by_field_name("left").is_some_and(|l| l.id() == name.id()) => match p.child_by_field_name("type") {
+                Some(t) => annotated_shape(self.m, t, self),
+                None => self.shaped?.get(&called(p)?).cloned(),
+            },
+            "pattern_list" | "tuple_pattern" => {
+                let a =
+                    p.parent().filter(|a| a.kind() == "assignment" && a.child_by_field_name("left").is_some_and(|l| l.id() == p.id()))?;
+                let parts: Vec<TsNode> = named_children(p);
+                let k = parts.iter().position(|x| x.id() == name.id())?;
+                let f = self.store.nodes.get(&called(a)?)?;
+                let fm = self.modules.get(&f.module)?;
+                let rt = def_node(fm, f)?.child_by_field_name("return_type")?;
+                let each = tuple_parts(rt, &fm.src);
+                (each.len() == parts.len()).then(|| annotated_shape(fm, each[k], self)).flatten()
+            }
+            _ => None,
+        }
+    }
+
+    /// The shaped array an annotation of this module names, where it names one alone.
+    fn annotated_shape(&self, t: TsNode) -> Option<String> {
+        annotated_shape(self.m, t, self)
+    }
+
+    /// Whether calling `f` calls a value of the program's own class, which runs a method of it:
+    /// `__call__`, or what a library class it descends from runs (`By::Runs`). The value called is
+    /// what the method runs on, as `head.forward(x)` runs on `head`.
+    pub(super) fn calls_instance(&self, f: TsNode) -> bool {
+        let reached = self.facts.map_or(&[][..], |x| x.callees(Self::range(f)));
+        reached.first().is_some_and(|c| matches!(c.by, By::Instance | By::Runs) && self.node(&c.target).is_some())
     }
 
     /// What calling `f` reaches. ty answers first. A library's call is named by the package the
@@ -611,7 +719,7 @@ impl<'a> Seen<'a> {
                     None
                 }
                 (t, By::Instance) => self.node(t).and_then(|cls| self.store.method_of(cls, "__call__")),
-                (t, By::Call | By::Construct) => self.node(t).cloned(),
+                (t, By::Call | By::Construct | By::Runs) => self.node(t).cloned(),
                 (t, By::Name) => self
                     .node(t)
                     .filter(|id| {
@@ -688,7 +796,7 @@ impl<'a> Seen<'a> {
         let function = |id: &&String| self.store.nodes.get(*id).map_or(false, |n| n.kind == NodeKind::Function);
         for c in reached {
             let def = match c.by {
-                By::Call => self.node(&c.target).cloned(),
+                By::Call | By::Runs => self.node(&c.target).cloned(),
                 By::Instance => self.node(&c.target).and_then(|cls| self.store.method_of(cls, "__call__")),
                 By::Name => self.node(&c.target).filter(function).cloned(),
                 By::Construct => None,
@@ -725,10 +833,20 @@ impl<'a> Seen<'a> {
 
     /// What a call gives back, by the name it is assigned to: the type ty says, or, for a value
     /// whose type ty does not know, the name alone, when the call made it from what it was handed.
+    /// A shaped array the code declares stands for the array type ty reads (`declared_shape`): the
+    /// annotation of the name the call is assigned to, else what the code's function called returns.
     fn gives(&self, c: TsNode, assigned: &str, hands: &[Held], ext: &HashMap<(String, String), String>) -> Vec<Held> {
         let known = self.value(c).filter(|v| !v.is_class && !v.is_code);
-        let mut gives: Vec<Held> =
-            known.map(|v| self.drawn(v, ext)).unwrap_or_default().into_iter().map(|ty| Held::new(ty, assigned)).collect();
+        let tys = known.map(|v| self.drawn(v, ext)).unwrap_or_default();
+        let annotated = c
+            .parent()
+            .filter(|p| p.kind() == "assignment" && p.child_by_field_name("right").is_some_and(|r| r.id() == c.id()))
+            .and_then(|p| p.child_by_field_name("type"))
+            .and_then(|t| self.annotated_shape(t))
+            .and_then(|s| self.refines(s, &tys));
+        let unpacked = || (c.kind() == "identifier").then(|| self.declared_by(c)).flatten().and_then(|s| self.refines(s, &tys));
+        let tys = annotated.or_else(unpacked).or_else(|| self.declared_shape(c, &tys)).map_or(tys, |s| vec![s]);
+        let mut gives: Vec<Held> = tys.into_iter().map(|ty| Held::new(ty, assigned)).collect();
         if gives.is_empty() && known.map_or(true, |v| v.shown == "Unknown") && !assigned.is_empty() && !hands.is_empty() {
             gives.push(Held::new(String::new(), assigned));
         }
@@ -804,7 +922,8 @@ impl<'a> Seen<'a> {
         while let Some(x) = stack.pop() {
             let nested = x.kind() == "call" && self.steps_itself(x);
             if x.kind() == "call" && (nested || x.id() == e.id()) {
-                for ty in self.value(x).filter(data).map(|v| self.drawn(v, ext)).unwrap_or_default() {
+                let tys = self.value(x).filter(data).map(|v| self.drawn(v, ext)).unwrap_or_default();
+                for ty in self.declared_shape(x, &tys).map_or(tys, |s| vec![s]) {
                     match nested {
                         true => add(ty, String::new(), x.start_byte(), false),
                         false => glued.push((ty, x.start_byte())),
@@ -840,6 +959,7 @@ impl<'a> Seen<'a> {
                 continue;
             }
             let tys = v.map(|v| self.drawn(v, ext)).unwrap_or_default();
+            let tys = self.declared_shape(i, &tys).map_or(tys, |s| vec![s]);
             // a name of no type Atlas draws is still a value where an earlier step made it, and where
             // the call makes it anew; one of the function's own parameters holds what its calls fill it with,
             // which is known once every body is read (`builder::settle_parameters`)
@@ -1157,6 +1277,7 @@ pub(super) fn link_calls<'t>(
     eval: &Eval,
     own: &Own,
     changing: &Changing,
+    shaped: &HashMap<String, String>,
     id: &str,
 ) -> Linked<'t> {
     let n = store.nodes[id].clone();
@@ -1170,6 +1291,7 @@ pub(super) fn link_calls<'t>(
         seen.receiver = n.cls.clone().filter(|_| n.kind == NodeKind::Method && !n.on_class && n.params.iter().any(|p| p.receiver));
         seen.class = n.cls.clone().filter(|_| n.kind == NodeKind::Method && n.on_class);
         seen.changed = changed_bindings(&seen, changing, body, n.cls.as_deref());
+        seen.shaped = Some(shaped);
         let mut b = Body::new(seen, modules, ext, eval, changing, &n, d, body);
         for r in b.steps() {
             let c = match r {
@@ -1551,7 +1673,11 @@ impl<'a, 't> Body<'a, 't> {
     fn call(&mut self, steps: &mut Steps<'t, '_>, c: TsNode<'t>) {
         let Some(fnode) = c.child_by_field_name("function") else { return };
         let callee = self.seen.callee(fnode);
-        let receiver = (fnode.kind() == "attribute").then(|| fnode.child_by_field_name("object")).flatten();
+        let called = matches!(callee, Some(Callee::Def(_))) && self.seen.calls_instance(fnode);
+        let receiver = match called {
+            true => Some(fnode),
+            false => (fnode.kind() == "attribute").then(|| fnode.child_by_field_name("object")).flatten(),
+        };
         let hands = self.hands(c, receiver, &steps.kept);
         let assigned = kept_as(c, self.src).unwrap_or_default();
         // a lookup is the projection of its collection a subscript is, and gives the body no value of a step's
@@ -1596,7 +1722,7 @@ impl<'a, 't> Body<'a, 't> {
             self.library_values.extend(gives.iter().map(|g| g.name.clone()).filter(|n| !n.is_empty()));
         }
         match callee {
-            Some(Callee::Def(t)) => self.own(steps, c, &t, receiver, hands, gives),
+            Some(Callee::Def(t)) => self.own(steps, c, &t, receiver, called.then_some(fnode), hands, gives),
             None if on_library => {
                 // a step where the body names what it gives; else what it gives goes into the code around it
                 if !assigned.is_empty() {
@@ -1671,8 +1797,19 @@ impl<'a, 't> Body<'a, 't> {
 
     /// A call of the program's own function or class; a method called on a subclass's value is
     /// that subclass's step. A method called through a class (`Cached.read(self)`) runs on the
-    /// value it is handed first, and one called through `super()` on the body's own receiver.
-    fn own(&mut self, steps: &mut Steps<'t, '_>, c: TsNode<'t>, t: &str, receiver: Option<TsNode<'t>>, hands: Vec<Held>, gives: Vec<Held>) {
+    /// value it is handed first, one called through `super()` on the body's own receiver, and one an
+    /// instance runs when it is called (`called`) on that instance.
+    #[allow(clippy::too_many_arguments)]
+    fn own(
+        &mut self,
+        steps: &mut Steps<'t, '_>,
+        c: TsNode<'t>,
+        t: &str,
+        receiver: Option<TsNode<'t>>,
+        called: Option<TsNode<'t>>,
+        hands: Vec<Held>,
+        gives: Vec<Held>,
+    ) {
         let seen = &self.seen;
         let after = receiver.and_then(|o| self.written_in(o));
         let method = seen.store.nodes.get(t).filter(|n| n.kind == NodeKind::Method);
@@ -1748,6 +1885,7 @@ impl<'a, 't> Body<'a, 't> {
                 on_receiver,
                 named,
                 receiver_first: named && instance,
+                called: called.map(|f| (f.start_byte(), f.end_byte())),
                 after: after_class,
                 hands,
                 gives,
