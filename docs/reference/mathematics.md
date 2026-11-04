@@ -983,9 +983,10 @@ type, drawn once. `F₀` is the graph of generators:
   own code does, not what it reaches through another package), in the package that holds it, the
   smallest the overview opens to (a module); its frames are the code's hierarchy, parts, packages and
   subpackages;
-- a type of data that the code both makes and takes is one place, from each function that makes it
-  (gives it back, builds it, changes it) to each that takes it; its home is the smallest package that
-  holds all of them;
+- a type of data that the code makes or takes is one place, from each function that makes it (gives
+  it back, builds it, changes it) to each that takes it: a function's codomain is what it gives back
+  (sentence 2), whether or not another function of the code takes it. Its home is the smallest package
+  that holds all of them, so a type no other package uses is internal to the one that uses it;
 - every place of the world is at its concrete place, from or to each function whose own code touches
   it; between parts, a route served over HTTP comes in through its part's place and a request to
   another part's routes goes out to that part's;

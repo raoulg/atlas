@@ -24,7 +24,7 @@ const D = JSON.parse(fs.readFileSync(dataJson, "utf8"));
 // `ATLAS_FINE_BUDGET=n` cuts the plan as a large program's is cut (`plan.js`, `FINE_BUDGET`)
 const window = process.env.ATLAS_FINE_BUDGET ? {ATLAS_FINE_BUDGET: Number(process.env.ATLAS_FINE_BUDGET)} : {};
 const M = new Function("D", "window", fs.readFileSync(planJs, "utf8") + `
-return {V, plan, imageOf, coarsen, checkOpenings, overviewOpen, inUnit, partOf, MAKEFILES, treeInfo, stepLabel, oneOf, typeLabel, sideOfRoles, familyOf, kindOf, byId, ordersOn, stepOf, opens, frameOf, valueBox, foldDirs, filePath, valuesOf, closedFamily, typesIn, lightOf, cutBy, familyFrames, here, kindsOf};`)(D, window);
+return {V, plan, imageOf, coarsen, checkOpenings, overviewOpen, inUnit, partOf, MAKEFILES, treeInfo, stepLabel, oneOf, typeLabel, sideOfRoles, familyOf, kindOf, byId, ordersOn, stepOf, opens, frameOf, valueBox, foldDirs, filePath, valuesOf, closedFamily, typesIn, lightOf, cutBy, familyFrames, here, kindsOf, isData};`)(D, window);
 const {V} = M;
 
 const SIDES = {in: "left", out: "right", mid: "between", both: "both"};
@@ -423,7 +423,7 @@ function overviewFaults(tests) {
   V.route = null; V.kind = null; V.part = null; V.focus = new Set(); V.tests = tests;
   for (const k of Object.keys(V.open)) V.open[k] = new Set();
   M.plan();
-  const F = window.atlasPlan.fine, out = [], sets = openings(F), pre = tests ? "" : "without the test code, ";
+  const F = window.atlasPlan.fine, out = arrowFaults(window.atlasPlan.fine, tests), sets = openings(F), pre = tests ? "" : "without the test code, ";
   const first = new Map();
   for (const set of sets) {
     openAs(set);
@@ -467,6 +467,21 @@ function overviewFaults(tests) {
 function drawnOf(C) {
   return JSON.stringify([drawn(C), [...C.pills.values()].map(P => [P.id, [...(P.calls || [])].sort()]).sort()]);
 }
+// A function's own arrow in `F₀` is its morphism (sentence 2): its occurrence takes every type of data the function takes
+// and gives every one it makes (gives back, builds, changes), whether or not another function of the code makes or takes
+// that type. Asked of the program's own functions in a package the overview holds, with the test code and without it
+function arrowFaults(F, tests) {
+  const out = [], pre = tests ? "" : "without the test code, ";
+  const leaf = new Set([...F.frames.keys()]);
+  for (const e of D.edges) {
+    const way = e.kind === "takes" ? "D" : ["returns", "instantiates", "mutates"].includes(e.kind) ? "C" : null, n = M.byId.get(e.src);
+    if (!way || !n || n.library || !["function", "method"].includes(n.kind) || (!tests && testCode(n)) || !M.isData(e.dst)) continue;
+    const P = F.pills.get("n:" + e.src);
+    if (P && !leaf.has(P.parent)) continue;
+    if (!P?.[way].has("t:" + e.dst)) out.push(`${pre}${M.stepLabel(e.src)} ${way === "D" ? "takes" : "makes"} ${M.typeLabel(e.dst)}, and its occurrence in the overview's fine plan does not`);
+  }
+  return out;
+}
 // the sets of open boxes an overview's plan is asked at: each subset while there are few, else each alone, each pair and all
 function openings(F) {
   const boxes = [...F.frames.values()].map(f => f.step);
@@ -486,15 +501,13 @@ const testCode = n => !!n && (!!n.test || n.entry?.kind === "test" || !!M.byId.g
 // that are no test code, of their lines those whose formula (`whole`: who makes the touch's path whole) holds with the test
 // code false, the calls between two of them, the packages and parts that hold a module of the program, and of the places
 // those that a line kept touches, a type's home the smallest package that holds every occurrence kept that makes or takes
-// it, as `F₀` defines it
+// a type of its family, as `F₀` defines it
 function fiberOf(F) {
   const lineKept = (P, k) => { const w = P.whole?.get(k); return w == null || w.some(c => c.every(g => !testCode(M.byId.get(g)))); };
   const kept = [...F.pills].filter(([, P]) => !testCode(M.byId.get(P.steps[0])));
-  // a type is a joint where the code kept both makes and takes it
-  const joint = k => !("home" in F.places.get(k)) || ["C", "D"].every(way => kept.some(([, P]) => P[way].has(k)));
   const pills = new Map();
   for (const [id, P] of kept) {
-    const only = m => new Map([...m].filter(([k]) => lineKept(P, k) && joint(k)));
+    const only = m => new Map([...m].filter(([k]) => lineKept(P, k)));
     const D = only(P.D), C = only(P.C);
     pills.set(id, {...P, D, C, goes: new Map([...P.goes].filter(([k]) => D.has(k) || C.has(k)))});
   }
@@ -504,12 +517,15 @@ function fiberOf(F) {
   const frames = new Map([...F.frames].filter(([, f]) => holds(f.step)));
   const chainOf = fid => { const c = []; for (let f = fid; f; f = frames.get(f)?.parent) c.unshift(f); return c; };
   const places = new Map();
+  // a type's home holds every occurrence kept that makes or takes a type of its family
+  const kin = k => { const f = F.places.get(k)?.type && M.familyOf(F.places.get(k).type); return f ? [...F.places.keys()].filter(j => F.places.get(j)?.type && "home" in F.places.get(j) && M.familyOf(F.places.get(j).type) === f) : [k]; };
   for (const [k, pl] of F.places) {
     const by = [...pills.values()].filter(P => P.D.has(k) || P.C.has(k));
     if (!by.length) continue;
     if (!("home" in pl)) { places.set(k, pl); continue; }
+    const family = kin(k), all = [...pills.values()].filter(P => family.some(j => P.D.has(j) || P.C.has(j)));
     let common = null;
-    for (const c of by.map(P => chainOf(P.parent))) {
+    for (const c of all.map(P => chainOf(P.parent))) {
       if (!common) { common = c; continue; }
       let i = 0;
       while (i < common.length && i < c.length && common[i] === c[i]) i++;

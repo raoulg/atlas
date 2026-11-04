@@ -2185,8 +2185,9 @@ const imageOf = (F, opened, folded, {fineKeys = false} = {}) => {
     if (!free.has(b)) free.set(b, []);
     free.get(b).push(id);
   }
+  // a function of the overview opens to nothing, so what it takes stays drawn apart
   for (const [b, ids] of free) {
-    if (ids.length < 2 || fineKeys) continue;
+    if (ids.length < 2 || fineKeys || F.generators) continue;
     const P = pills.get(b);
     for (const id of ids) { P.D.delete(id); P.Dn?.delete(id); P.Dr?.delete(id); places.delete(id); joined.set(id, b); }
     P.folded = ids.length;
@@ -2397,8 +2398,11 @@ const overviewBase = () => {
       P.whole.set(k, w === null || !cs ? null : [...(w || []), ...cs]);
     }
   }
-  // a type of data that the code makes and takes is a joint: one place, from each function that makes it (gives it back,
-  // builds it, changes it) to each that takes it. Its home is the smallest package that holds all of them
+  // a type of data that the code makes or takes is one place, from each function that makes it (gives it back, builds
+  // it, changes it) to each that takes it: a function's codomain is what it gives back, whether or not another function
+  // of the code takes it. The picture draws a family as one box, so a type's home is the smallest package that holds
+  // every function that makes or takes a type of its family: a family no other package uses is internal to the package
+  // that uses it, and one that a package makes and another takes crosses the border between them
   const chainOf = fid => { const c = []; for (let f = fid; f; f = frames.get(f)?.parent) c.unshift(f); return c; };
   const homeOf = fids => {
     let common = null;
@@ -2406,11 +2410,16 @@ const overviewBase = () => {
     return common?.length ? common[common.length - 1] : undefined;
   };
   const {makes, takes} = usesOf();
-  for (const [t, ms] of makes) {
+  const used = new Map();
+  for (const t of new Set([...makes.keys(), ...takes.keys()])) {
     if (!isData(t)) continue;
-    const mk = [...ms].filter(x => leafOf.has(x)), tk = [...(takes.get(t) || [])].filter(x => leafOf.has(x));
-    if (!mk.length || !tk.length) continue;
-    const k = addPlace({...typePlace(t), home: homeOf([...mk, ...tk].map(x => leafOf.get(x)))});
+    const mk = [...(makes.get(t) || [])].filter(x => leafOf.has(x)), tk = [...(takes.get(t) || [])].filter(x => leafOf.has(x));
+    if (mk.length || tk.length) used.set(t, [mk, tk]);
+  }
+  const kin = new Map();
+  for (const [t, [mk, tk]] of used) { const f = familyOf(t); if (!kin.has(f)) kin.set(f, []); kin.get(f).push(...mk, ...tk); }
+  for (const [t, [mk, tk]] of used) {
+    const k = addPlace({...typePlace(t), home: homeOf(kin.get(familyOf(t)).map(x => leafOf.get(x)))});
     for (const x of mk) pillOf(x).C.set(k, false);
     for (const x of tk) pillOf(x).D.set(k, false);
   }

@@ -440,9 +440,11 @@ children of its own package, a crate's modules, an app's directories; scripts an
 notebooks beside them as one each), a package's subpackages, and at the bottom a module's
 routes and doors (the functions other packages call in it). A package closed is one step:
 the places its own code touches, not what it reaches through other packages, and the
-types that cross its edge. A type crosses where one package makes it (gives it back,
-builds it, changes it) and another takes it, and between packages it is drawn once, as
-the joint. What crosses is data: a class one of whose operations reaches a database,
+types that cross its edge. Each type of data a function makes (gives it back, builds it,
+changes it) or takes is one place, drawn once, in the smallest package that holds every
+function that makes or takes it: a type one package makes and another takes crosses
+between them as the joint, and a type no other package uses stays inside the one that
+does, there as the output or input of its functions. What crosses is data: a class one of whose operations reaches a database,
 the web, a model or a program (a sink, a repository, a client), and a library's type
 whose calls reach one (`sqlite3.Connection`), is a door to that place, and the place is
 drawn instead. A file or the screen makes no door: a value may save or show itself.
