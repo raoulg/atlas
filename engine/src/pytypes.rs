@@ -65,6 +65,9 @@ pub enum By {
     Construct,
     /// An instance is called: its class's `__call__`.
     Instance,
+    /// An instance is called, and a library class it descends from runs one of its methods: torch's
+    /// `Module` runs `forward` (`knowledge::PYTHON_CALL_RUNS`). The target is that method.
+    Runs,
     /// What the called name is defined as, when its type is neither of the above (a decorated
     /// function, a union of methods).
     Name,
@@ -278,11 +281,14 @@ struct Reached {
     typed: Option<(Place, By)>,
     named: Vec<Place>,
     instance: Option<Place>,
+    /// The method a library class runs when the instance is called (`By::Runs`).
+    #[serde(default)]
+    runs: Option<Place>,
 }
 
 impl Reached {
     fn places(&self) -> impl Iterator<Item = &Place> {
-        self.typed.iter().map(|(p, _)| p).chain(&self.named).chain(&self.instance)
+        self.typed.iter().map(|(p, _)| p).chain(&self.named).chain(&self.instance).chain(&self.runs)
     }
 }
 
@@ -339,8 +345,12 @@ impl Here<'_> {
     }
 
     /// Where calling goes: by the type of what is called when that is a function or a class,
-    /// else by where its name is defined, and for an instance also by its class.
+    /// for an instance whose library class runs one of its methods to that method, else by where
+    /// its name is defined, and for an instance also by its class.
     fn callees(&self, r: &Reached) -> Vec<Callee> {
+        if let Some(target) = r.runs.as_ref().and_then(|p| self.called(p)) {
+            return vec![Callee { target, by: By::Runs }];
+        }
         if let Some((p, by)) = &r.typed {
             if let Some(target) = self.called(p) {
                 return vec![Callee { target, by: *by }];
@@ -1260,6 +1270,50 @@ impl ProgramDb for TyDb {
 #[salsa::db]
 impl salsa::Database for TyDb {}
 
+/// How many classes a call of an instance looks through for the method a library class runs.
+const ALONG_AT_MOST: usize = 64;
+
+/// A class along the bases of an instance's class (`Reader::along`): its bases, each by its id and
+/// where its name is written where ty knows it; the methods it defines that a library class may
+/// run, by where their names are written; whether it defines `__call__`; and the method it runs
+/// when it is such a library class.
+struct Along {
+    bases: Vec<(String, Option<FileRange>)>,
+    methods: Vec<(String, FileRange)>,
+    calls: bool,
+    runs: Option<&'static str>,
+}
+
+/// A class's id along the bases: where its name is written.
+fn along_id(at: &FileRange) -> String {
+    format!("{:?}@{}", at.file(), at.range().start().to_usize())
+}
+
+/// The class whose name is written at `at`, wherever it is defined in the file.
+fn class_named_at(body: &[ast::Stmt], at: ruff_text_size::TextSize) -> Option<&ast::StmtClassDef> {
+    struct Find<'a> {
+        at: ruff_text_size::TextSize,
+        found: Option<&'a ast::StmtClassDef>,
+    }
+    impl<'a> Visitor<'a> for Find<'a> {
+        fn visit_stmt(&mut self, stmt: &'a ast::Stmt) {
+            if self.found.is_some() {
+                return;
+            }
+            if let ast::Stmt::ClassDef(c) = stmt {
+                if c.name.range.start() == self.at {
+                    self.found = Some(c);
+                    return;
+                }
+            }
+            visitor::walk_stmt(self, stmt);
+        }
+    }
+    let mut find = Find { at, found: None };
+    find.visit_body(body);
+    find.found
+}
+
 /// Walks one file and writes down what ty says of its calls and its values.
 struct Reader<'a, 'db> {
     db: &'db TyDb,
@@ -1339,8 +1393,88 @@ impl Reader<'_, '_> {
         out.named = names.iter().map(|d| self.place(d.focus_range(self.db))).collect();
         if matches!(ty, Type::NominalInstance(_)) {
             out.instance = self.place_of(ty);
+            out.runs = self.runs_on_call(ty);
         }
         out
+    }
+
+    /// The method a call of an instance of `ty` runs where a library class it descends from says
+    /// so (`knowledge::PYTHON_CALL_RUNS`): along the class's bases in Python's order (C3), the
+    /// first definition of that method before the library's class. None where a class before it
+    /// defines `__call__` itself (that class is called as any class is), and none where no class
+    /// on the way is such a library class.
+    fn runs_on_call(&self, ty: Type) -> Option<Place> {
+        let env = self.model.program_environment();
+        let start = ty.definition(self.db, &env)?.focus_range(self.db)?;
+        // the classes along the way, by where their names are written, each read once
+        let mut classes: HashMap<String, Along> = HashMap::new();
+        let mut open = VecDeque::from([start]);
+        while let Some(at) = open.pop_front() {
+            let id = along_id(&at);
+            if classes.contains_key(&id) || classes.len() >= ALONG_AT_MOST {
+                continue;
+            }
+            let Some(class) = self.along(at) else { continue };
+            open.extend(class.bases.iter().filter_map(|(_, r)| *r));
+            classes.insert(id, class);
+        }
+        let bases =
+            |c: &str| -> Vec<&str> { classes.get(c).map(|k| k.bases.iter().map(|(b, _)| b.as_str()).collect()).unwrap_or_default() };
+        let start = along_id(&start);
+        let order = crate::model::linearization(start.as_str(), &bases, &mut HashMap::new());
+        let mut found: HashMap<&str, FileRange> = HashMap::new();
+        for c in order {
+            let class = classes.get(c)?;
+            if let Some(method) = class.runs {
+                return found.get(method).map(|r| self.place(*r));
+            }
+            if class.calls {
+                return None;
+            }
+            for (name, r) in &class.methods {
+                found.entry(name.as_str()).or_insert(*r);
+            }
+        }
+        None
+    }
+
+    /// A class whose name is written at `at`, as a call of its instance needs it: its bases, the
+    /// methods it defines a library class may run, whether it defines `__call__`, and the method
+    /// it runs when it is such a library class.
+    fn along(&self, at: FileRange) -> Option<Along> {
+        let file = at.file();
+        let pf = self.db.program_file(file);
+        let parsed = parsed_module(self.db, pf.python_file(self.db)).load(self.db);
+        let class = class_named_at(parsed.suite(), at.range().start())?;
+        let module = file_to_module(self.db, pf.resolver_file(self.db)).map(|m| m.name(self.db).to_string()).unwrap_or_default();
+        let runs = crate::knowledge::python_call_runs(&module, class.name.as_str());
+        let model = SemanticModel::new(self.db, pf);
+        let env = model.program_environment();
+        let bases = class
+            .bases()
+            .iter()
+            .map(|b| {
+                let r = b.inferred_type(&model).and_then(|t| t.definition(self.db, &env)).and_then(|d| d.focus_range(self.db));
+                (r.map_or_else(|| format!("?{}", b.range().start().to_usize()), |r| along_id(&r)), r)
+            })
+            .collect();
+        let defined = |name: &str| {
+            class.body.iter().any(|s| match s {
+                ast::Stmt::FunctionDef(f) => f.name.as_str() == name,
+                ast::Stmt::Assign(a) => a.targets.iter().any(|t| matches!(t, ast::Expr::Name(n) if n.id.as_str() == name)),
+                ast::Stmt::AnnAssign(a) => matches!(&*a.target, ast::Expr::Name(n) if n.id.as_str() == name),
+                _ => false,
+            })
+        };
+        let runnable: Vec<&str> = crate::knowledge::PYTHON_CALL_RUNS.iter().map(|(_, _, m)| *m).collect();
+        let methods = class
+            .body
+            .iter()
+            .filter_map(|s| if let ast::Stmt::FunctionDef(f) = s { Some(f) } else { None })
+            .filter(|f| runnable.contains(&f.name.as_str()))
+            .map(|f| (f.name.to_string(), FileRange::new(file, f.name.range)))
+            .collect();
+        Some(Along { bases, methods, calls: defined("__call__"), runs })
     }
 
     /// The parameters of a library function, from ty's signature, each with what its

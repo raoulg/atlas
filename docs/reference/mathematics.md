@@ -1163,9 +1163,14 @@ code does not is a guess. A shape the code writes as `_ _` is a member of its fa
 quotient of the picture, never a fact of the graph:
 the shapes, the steps and their lines are the same with it closed or open. The preorder is what an override keeps
 (Behavioural subtyping); a family is never ordered above another in the picture, since the ranks are no base the
-code names. Names are not unified across axes, so `batch batch` is read as `batch _`.
+code names. Names are not unified across axes, so `batch batch` is read as `batch _`. A shape is the type of the value
+on a wire as well as of a signature, though the type checker reads it as its array type alone (jaxtyping tells it
+`Float[Tensor, "batch dim"]` is a `Tensor`): a name holds the shape its parameter or its annotated assignment declares,
+and a call of the code's own function gives the shape that function returns, or, unpacked, the part of the tuple it
+returns. The declared shape refines the checker's type and stands for it only where that type is its array type.
 **Where.** `shapes.rs` (`Array`, `Axis`, `Rank`, `family_id`, `name`), `families.rs` (the rank as a kind), principle
-`overrides` (`Array::fits`); the pair `shapes/python`.
+`overrides` (`Array::fits`); on wires `python/body.rs` (`Seen::declared_shape`) and `python/passes.rs`
+(`shaped_returns`); the pairs `shapes/python` and `modules/python`.
 
 ### Method resolution order
 **What.** A linear extension of the order of inheritance: one sequence of a class and its
@@ -1196,10 +1201,18 @@ name `Plain.show()`) is of that class alone; a declared one (a parameter, an ann
 may be that class or any below it. A Rust trait is below its supertraits (`trait Block: Named`), so a value of it
 runs their methods along its order. A call through a trait (`Language::parse(&words, text)`) names no class: the
 type it runs on is the value's it is handed first, as in `words.parse(text)`, which is the same call written another
-way.
+way. Calling an instance (`head(x)`) runs a method of its class on it, and is that method called on it
+(`head.__call__(x)`), the same call written another way: the value called is the value it runs on. Which method is
+the first `__call__` along the order, unless a library's class says otherwise: torch's `Module` runs `forward`, so a
+call of a module runs the first `forward` along its class's order that comes before `Module` (`head(x)` is
+`head.forward(x)`), and a class before `Module` that defines `__call__` itself is called through that. The library's
+word is a table (`knowledge::PYTHON_CALL_RUNS`), never a rule for every `__call__`: a class no such library class is
+above is called through its `__call__`, whatever else it names `forward`.
 **Where.** `model::linearization`, `model::initializer_along`; `principles.rs` (`Index::mro`),
 `builder.rs` (`family`, `method_of`, `initializer_of`), `flow.rs` (`method_on`, `method_after`,
 `built_from`, `Step::named`, `Ix::step_of`, `Ix::runs_below`, `Runs`: what a call runs, asked by the route and by the passes that settle parameters and errors);
+the method a called instance runs in `pytypes.rs` (`Reader::runs_on_call`, `By::Runs`) and its receiver in `body.rs`
+(`Step::called`); the pair `modules/python`;
 Rust's supertraits in `rust/passes.rs` (`collect_impls`), its unit structs and calls through a trait in `rust/body.rs`
 (`Body::unit_struct`, `Body::on_first`).
 
