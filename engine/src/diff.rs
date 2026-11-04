@@ -22,7 +22,7 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 use serde::Serialize;
 
-use crate::model::{Both, EdgeKind, Entry, Graph, Held, Node, NodeKind, Site, Touch};
+use crate::model::{function_label, name_of, owner, said, Both, EdgeKind, Entry, Graph, Held, Node, NodeKind, Shared, Site, Touch};
 
 /// How a thing of the union stands to the two readings: B adds it, B no longer has it, or both
 /// hold it and its own arrows differ.
@@ -52,6 +52,9 @@ pub struct Diff {
     pub nodes: BTreeMap<String, Status>,
     /// The id a renamed node has in B, against the id it had in A.
     pub renamed: BTreeMap<String, String>,
+    /// The name a renamed node has in A (`model::name_of`), by its id in B: the name its reader gave it, which its id in A
+    /// does not say where that is no dotted name (a sum written in place, `model::sum`).
+    pub names: BTreeMap<String, String>,
     /// The edges of the union, by their index in it.
     pub edges: BTreeMap<usize, Status>,
     /// For a node in both readings, the steps of its body (`sites`) by index: B's steps and the
@@ -91,12 +94,17 @@ pub fn union(name: &str, before: Vec<Graph>, after: Vec<Graph>) -> (Graph, Diff)
     let b = crate::parts::joined(name, after);
     apart(&mut a);
     let mut renames = renames(&a, &b);
-    let types = renames.types(&a);
+    // the types of the union, A's renamed ones under their names in B: two of them that go by one name are each said with
+    // their module, as the page that draws the union says them (`model::Shared`)
+    let in_b: HashSet<&str> = b.nodes.iter().map(|n| n.id.as_str()).collect();
+    let shared = Shared::among(b.nodes.iter().chain(a.nodes.iter().filter(|n| !in_b.contains(renames.map(&n.id).as_str()))));
+    let ib = Index::new(&b, &shared);
+    let types = renames.types(&a, &ib);
     // what a node was is said as A has it, before A's renamed nodes take their names in B
     let read = (!renames.direct.is_empty()).then(|| a.clone());
-    renames.relabel(&mut a);
-    let (ia, ib) = (Index::new(&a), Index::new(&b));
-    let ir = read.as_ref().map(Index::new);
+    renames.relabel(&mut a, &ib);
+    let ia = Index::new(&a, &shared);
+    let ir = read.as_ref().map(|r| Index::new(r, &shared));
     let was_in_a = |id: &str, na: &Node| match ir.as_ref().and_then(|ir| Some((ir, *ir.nodes.get(old_id(&renames, id).as_str())?))) {
         Some((ir, n)) => was(ir, n, &|x| x.to_string()),
         None => was(&ia, na, &|x| old_id(&renames, x)),
@@ -105,6 +113,9 @@ pub fn union(name: &str, before: Vec<Graph>, after: Vec<Graph>) -> (Graph, Diff)
     for (old, new) in &renames.all {
         if ib.nodes.contains_key(new.as_str()) {
             diff.renamed.insert(new.clone(), old.clone());
+            if let Some(n) = ir.as_ref().and_then(|ir| ir.nodes.get(old.as_str())) {
+                diff.names.insert(new.clone(), n.name.clone());
+            }
         }
     }
     // a node is renamed itself when its own name is another; one named under a renamed node keeps
@@ -203,7 +214,7 @@ pub fn union(name: &str, before: Vec<Graph>, after: Vec<Graph>) -> (Graph, Diff)
         }
     }
 
-    let (pa, pb) = (places(&a), places(&b));
+    let (pa, pb) = (places(&a, &ia), places(&b, &ib));
     for (id, touched) in &pb {
         match pa.get(id) {
             None => {
@@ -312,9 +323,13 @@ struct Renames {
 
 impl Renames {
     /// The id `id` of A has in B: its own new name, or that of the nearest node it is named under.
+    /// A sum written in place is its variants (`model::sum`): it is renamed with them.
     fn map(&self, id: &str) -> String {
         if let Some(n) = self.direct.get(id) {
             return n.clone();
+        }
+        if crate::model::sum::is(id) {
+            return crate::model::sum::of(&crate::model::sum::variants(id).map(|v| self.map(v)).collect::<Vec<_>>());
         }
         let mut cut = id.len();
         while let Some(i) = id[..cut].rfind('.') {
@@ -326,21 +341,22 @@ impl Renames {
         id.to_string()
     }
 
-    /// The names of the types A renamed, old against new, as signatures write them.
-    fn types(&self, a: &Graph) -> Vec<(String, String)> {
-        let short = |id: &str| id.rsplit('.').next().unwrap_or(id).to_string();
+    /// The names of the types A renamed, old against new, as signatures write them: each by its name in
+    /// its reading, B's as `b` holds it.
+    fn types(&self, a: &Graph, b: &Index) -> Vec<(String, String)> {
         a.nodes
             .iter()
             .filter(|n| n.kind == NodeKind::Class && self.direct.contains_key(&n.id))
-            .map(|n| (short(&n.id), short(&self.direct[&n.id])))
+            .map(|n| (n.name.clone(), b.name(&self.direct[&n.id])))
             .filter(|(o, n)| o != n)
             .collect()
     }
 
-    /// A with every renamed node under its name in B, and every id that names one: the values its
-    /// steps hand and give by their type, and a place named by the value of a renamed function or
-    /// class (`plot.out`, `Store.path`) by its new name.
-    fn relabel(&mut self, a: &mut Graph) {
+    /// A with every renamed node under its id and its name in B (`b`), and every id that names one
+    /// (`Graph::rename`): the values its steps hand and give by their type, the type that holds a
+    /// place's root (`Touch::holder`), and a place named by the value of a renamed function, method
+    /// or class (`plot.out`, `Repo.read.dir`, `Store.path`) by its new name.
+    fn relabel(&mut self, a: &mut Graph, b: &Index) {
         let ids: Vec<String> = a.nodes.iter().map(|n| n.id.clone()).collect();
         for id in ids {
             let to = self.map(&id);
@@ -351,23 +367,24 @@ impl Renames {
         if self.direct.is_empty() {
             return;
         }
-        // the name a place holds a value of a function by, old against new: the function's own,
-        // or for a constructor its class's
-        let owners: HashMap<String, (String, String)> = a
-            .nodes
-            .iter()
-            .filter(|n| matches!(n.kind, NodeKind::Function | NodeKind::Method))
-            .map(|n| {
-                let owner = match (n.ctor, n.cls.as_deref()) {
-                    (true, Some(c)) => c,
-                    _ => n.id.as_str(),
-                };
-                (n.id.clone(), (short(owner), short(&self.map(owner))))
-            })
-            .filter(|(_, (old, new))| old != new)
-            .collect();
-        let m = |s: &mut String| *s = self.map(s);
+        // the name a place holds a value of a function by, old against new, each as its reading's
+        // reader names it (`model::owner`); a function B no longer has names no value in B
+        let owners: HashMap<String, (String, String)> = {
+            let in_a = by_id(a);
+            a.nodes
+                .iter()
+                .filter(|n| matches!(n.kind, NodeKind::Function | NodeKind::Method))
+                .filter_map(|n| {
+                    let new = b.owner(b.nodes.get(self.map(&n.id).as_str())?);
+                    Some((n.id.clone(), (owner(n, |c| in_a.get(c).copied()), new)))
+                })
+                .filter(|(_, (old, new))| old != new)
+                .collect()
+        };
         for n in &mut a.nodes {
+            if let Some(new) = self.direct.get(&n.id) {
+                n.name = b.name(new);
+            }
             for t in n.touches.iter_mut().chain(n.instead.iter_mut()) {
                 // the value is one of the parameters of a function that makes the place whole (a
                 // caller or an entry of a condition), or of the touch's own where none does
@@ -384,29 +401,7 @@ impl Renames {
                 }
             }
         }
-        for n in &mut a.nodes {
-            m(&mut n.id);
-            m(&mut n.module);
-            if let Some(c) = n.cls.as_mut() {
-                m(c);
-            }
-            for s in &mut n.sites {
-                m(&mut s.to);
-                m(&mut s.on);
-                m(&mut s.after);
-                s.hands.iter_mut().chain(s.gives.iter_mut()).for_each(|h| m(&mut h.ty));
-            }
-            for t in n.touches.iter_mut().chain(n.instead.iter_mut()) {
-                t.by = t.by.iter().map(|b| b.map(|x| self.map(x))).collect();
-            }
-        }
-        for e in &mut a.edges {
-            m(&mut e.src);
-            m(&mut e.dst);
-        }
-        for t in &mut a.make {
-            t.calls.iter_mut().for_each(m);
-        }
+        a.rename(&|id| self.map(id));
     }
 }
 
@@ -414,13 +409,15 @@ impl Renames {
 /// the only match of the other. A rename found lets the nodes around it match in the next round.
 fn renames(a: &Graph, b: &Graph) -> Renames {
     let mut r = Renames::default();
-    let (ia, ib) = (Index::new(a), Index::new(b));
+    // what a node is to the rest of its graph holds no words
+    let none = Shared::default();
+    let (ia, ib) = (Index::new(a, &none), Index::new(b, &none));
     let named = |n: &&Node| n.kind != NodeKind::External;
     loop {
         let in_a: HashSet<String> = a.nodes.iter().map(|n| r.map(&n.id)).collect();
         let gone: Vec<&Node> = a.nodes.iter().filter(named).filter(|n| !ib.nodes.contains_key(r.map(&n.id).as_str())).collect();
         let new: Vec<&Node> = b.nodes.iter().filter(named).filter(|n| !in_a.contains(&n.id)).collect();
-        let types = r.types(a);
+        let types = r.types(a, &ib);
         let mut by_a: HashMap<Vec<String>, Vec<&str>> = HashMap::new();
         for n in gone {
             by_a.entry(relations(&ia, n, &|o| r.map(o), &types)).or_default().push(&n.id);
@@ -446,25 +443,30 @@ fn renames(a: &Graph, b: &Graph) -> Renames {
 /// What a node is to the rest of its graph: its kind, a function's typed arrow (the types it takes
 /// and gives, `types` naming A's renamed types as B does), the edges into and out of it by kind and
 /// by what is at their other end, and the places its own arrow touches. The node itself, and what
-/// is named under it, count as itself, also where a place is named by its value (`plot.out`).
+/// is named under it, count as itself, also where a place is named by its value (`plot.out`,
+/// `Repo.read.dir`: `model::owner`).
 fn relations(ix: &Index, n: &Node, map: &dyn Fn(&str) -> String, types: &[(String, String)]) -> Vec<String> {
     let under = format!("{}.", n.id);
-    let other = |o: &str| {
-        if o == n.id {
+    fn other(o: &str, n: &str, under: &str, map: &dyn Fn(&str) -> String) -> String {
+        if o == n {
             "·".to_string()
-        } else if let Some(rest) = o.strip_prefix(&under) {
+        } else if let Some(rest) = o.strip_prefix(under) {
             format!("·.{rest}")
+        } else if crate::model::sum::is(o) {
+            // a sum written in place is its variants, the node among them too
+            crate::model::sum::of(&crate::model::sum::variants(o).map(|v| other(v, n, under, map)).collect::<Vec<_>>())
         } else {
             map(o)
         }
-    };
+    }
+    let other = |o: &str| other(o, &n.id, &under, map);
     let mut out = vec![format!("{:?}", n.kind)];
     if matches!(n.kind, NodeKind::Function | NodeKind::Method) {
         out.push(typed_arrow(n, types));
     }
     out.extend(ix.out(&n.id).map(|e| format!("→ {:?} {} {}", e.kind, other(&e.dst), e.via.as_deref().unwrap_or(""))));
     out.extend(ix.into(&n.id).map(|e| format!("← {:?} {} {}", e.kind, other(&e.src), e.via.as_deref().unwrap_or(""))));
-    let own = format!("w:Disk:{}.", n.name);
+    let own = format!("w:Disk:{}.", ix.owner(n));
     out.extend(ix.own_touches(n).iter().map(|t| {
         let key = touch_key(t);
         format!("⇢ {}", key.strip_prefix(&own).map_or(key.clone(), |rest| format!("w:Disk:·.{rest}")))
@@ -496,14 +498,14 @@ fn renamed(text: &str, types: &[(String, String)]) -> String {
     t
 }
 
-/// The arrows into and out of each place of a graph: each function whose calls touch it, and what
-/// they do there (`plot writes`), by the place's id and by the coarser place it is drawn in.
-fn places(g: &Graph) -> BTreeMap<String, Vec<String>> {
+/// The arrows into and out of each place of a graph (`ix` its index): each function whose calls touch
+/// it, and what they do there (`plot writes`), by the place's id and by the coarser place it is drawn in.
+fn places(g: &Graph, ix: &Index) -> BTreeMap<String, Vec<String>> {
     let mut out: BTreeMap<String, Vec<String>> = BTreeMap::new();
     for n in &g.nodes {
         for t in n.touches.iter().chain(&n.instead) {
             let w = t.drawn();
-            let arrow = format!("{} {}", short_fn(&n.id, n.cls.as_deref()), w.verb);
+            let arrow = format!("{} {}", ix.function(n), w.verb);
             for id in std::iter::once(w.place.id.clone()).chain(w.place.coarse.map(|c| c.id)) {
                 out.entry(id).or_default().push(arrow.clone());
             }
@@ -514,14 +516,6 @@ fn places(g: &Graph) -> BTreeMap<String, Vec<String>> {
         touched.dedup();
     }
     out
-}
-
-/// A function by the name a picture gives it: a method with its class (`Trend.save`).
-fn short_fn(id: &str, cls: Option<&str>) -> String {
-    match cls {
-        Some(c) => format!("{}.{}", short(c), short(id)),
-        None => short(id),
-    }
 }
 
 /// A touch by where it rests and what it does there.
@@ -546,7 +540,7 @@ fn arrow(ix: &Index, n: &Node, types: &[(String, String)]) -> (String, Vec<Strin
     let gives = n.returns.as_ref().map(|r| renamed(&r.written, types)).unwrap_or_default();
     let mut parts = vec![format!("({}){}", params.join(", "), if gives.is_empty() { String::new() } else { format!(" → {gives}") })];
     let changes: Vec<String> =
-        ix.out(&n.id).filter(|e| e.kind == EdgeKind::Mutates).map(|e| e.via.clone().unwrap_or_else(|| short(&e.dst))).collect();
+        ix.out(&n.id).filter(|e| e.kind == EdgeKind::Mutates).map(|e| e.via.clone().unwrap_or_else(|| ix.said(&e.dst))).collect();
     if !changes.is_empty() {
         parts.push(format!("changes {}", changes.join(", ")));
     }
@@ -590,10 +584,11 @@ fn typed(ix: &Index, id: &str) -> Vec<String> {
     out
 }
 
-/// A node's own arrow in A, in words, each node under the name it had there (`as_in_a` gives the
-/// id in A of a node B renamed).
+/// A node's own arrow in A, in words, each node as Atlas says it (`model::said`: a method with its class, a type whose
+/// name another type shares with its module) under the name it had there (`as_in_a` gives the id in A of a node B
+/// renamed).
 fn was(ix: &Index, n: &Node, as_in_a: &dyn Fn(&str) -> String) -> String {
-    let short = |id: &str| short(&as_in_a(id));
+    let name = |id: &str| ix.said(&as_in_a(id));
     match n.kind {
         NodeKind::Function | NodeKind::Method => arrow(ix, n, &[]).0,
         _ => {
@@ -603,7 +598,7 @@ fn was(ix: &Index, n: &Node, as_in_a: &dyn Fn(&str) -> String) -> String {
                 None => groups.push((what, vec![who])),
             };
             for e in ix.into(&n.id) {
-                let who = short(&e.src);
+                let who = name(&e.src);
                 match e.kind {
                     EdgeKind::Returns => put("given by", who),
                     EdgeKind::Instantiates => put("built by", who),
@@ -616,7 +611,7 @@ fn was(ix: &Index, n: &Node, as_in_a: &dyn Fn(&str) -> String) -> String {
                 }
             }
             for e in ix.out(&n.id) {
-                let what = e.via.clone().map(|v| format!("{v}: {}", short(&e.dst))).unwrap_or_else(|| short(&e.dst));
+                let what = e.via.clone().map(|v| format!("{v}: {}", name(&e.dst))).unwrap_or_else(|| name(&e.dst));
                 match e.kind {
                     EdgeKind::Has => put("holds", what),
                     EdgeKind::Inherits => put("a kind of", what),
@@ -635,13 +630,9 @@ fn was(ix: &Index, n: &Node, as_in_a: &dyn Fn(&str) -> String) -> String {
                     format!("{w} {}{}", xs.join(", "), if more > 0 { format!(" +{more}") } else { String::new() })
                 })
                 .collect();
-            format!("{}: {}", n.name, text.join(" · "))
+            format!("{}: {}", ix.said(&n.id), text.join(" · "))
         }
     }
-}
-
-fn short(id: &str) -> String {
-    id.trim_start_matches("ext:").rsplit('.').next().unwrap_or(id).to_string()
 }
 
 /// A body's steps in both readings, as `merged_sites` unites them.
@@ -912,13 +903,11 @@ fn merged_touches(a: &[Touch], b: &[Touch], from: usize) -> (Vec<Touch>, BTreeMa
 }
 
 /// Whether a touch is of a file named by one of `h`'s own parameters, as a value is named where
-/// it is whole (`load.path`, and `Store.path` for what a constructor takes): what `h` is handed,
-/// not what it hands.
-fn holds_open(h: &Node, t: &Touch) -> bool {
-    let owner = match (h.ctor, h.cls.as_deref()) {
-        (true, Some(c)) => short(c),
-        _ => h.name.clone(),
-    };
+/// it is whole (`load.path`, `Store.path` for what a constructor takes, `Repo.read.dir` for what a
+/// method takes: `model::owner`): what `h` is handed, not what it hands. `nodes` are the nodes of
+/// `h`'s reading by id.
+fn holds_open(nodes: &HashMap<&str, &Node>, h: &Node, t: &Touch) -> bool {
+    let owner = owner(h, |c| nodes.get(c).copied());
     t.kind == crate::model::World::Disk
         && t.artifact.is_empty()
         && t.what.strip_prefix(&format!("{owner}.")).map_or(false, |p| h.params.iter().any(|q| !q.receiver && q.name == p))
@@ -929,34 +918,35 @@ fn old_id(r: &Renames, id: &str) -> String {
     r.all.iter().find(|(_, new)| new.as_str() == id).map_or_else(|| id.to_string(), |(old, _)| old.clone())
 }
 
-/// A graph's nodes by id, its edges by their ends, and the touches each function makes whole by
-/// what its calls hand.
+/// A graph's nodes by id, its edges by their ends, the touches each function makes whole by
+/// what its calls hand, and the names two types of the union share, which its words say with their module.
 struct Index<'g> {
     nodes: HashMap<&'g str, &'g Node>,
     out: HashMap<&'g str, Vec<&'g crate::model::Edge>>,
     into: HashMap<&'g str, Vec<&'g crate::model::Edge>>,
     made: HashMap<&'g str, Vec<&'g Touch>>,
+    shared: &'g Shared,
 }
 
 impl<'g> Index<'g> {
-    fn new(g: &'g Graph) -> Self {
+    fn new(g: &'g Graph, shared: &'g Shared) -> Self {
         let (mut out, mut into): (HashMap<&str, Vec<_>>, HashMap<&str, Vec<_>>) = (HashMap::new(), HashMap::new());
         for e in &g.edges {
             out.entry(e.src.as_str()).or_default().push(e);
             into.entry(e.dst.as_str()).or_default().push(e);
         }
-        let nodes: HashMap<&str, &Node> = g.nodes.iter().map(|n| (n.id.as_str(), n)).collect();
+        let nodes = by_id(g);
         let mut made: HashMap<&str, Vec<&Touch>> = HashMap::new();
         for t in g.nodes.iter().flat_map(|n| &n.touches) {
             for f in t.by.iter().flat_map(Both::members) {
                 // a file named by a value the caller is handed itself (`Store.path`) waits for the
                 // caller's own callers: the caller does not make it whole
-                if !nodes.get(f).map_or(false, |h| holds_open(h, t)) {
+                if !nodes.get(f).map_or(false, |h| holds_open(&nodes, h, t)) {
                     made.entry(f).or_default().push(t);
                 }
             }
         }
-        Index { nodes, out, into, made }
+        Index { nodes, out, into, made, shared }
     }
 
     /// The touches of a function's own arrow: those its own calls make, whole in its body or as
@@ -967,6 +957,26 @@ impl<'g> Index<'g> {
         own.chain(self.made.get(n.id.as_str()).into_iter().flatten().copied()).collect()
     }
 
+    /// A node by its own name (`model::name_of`), the name a signature writes a type by.
+    fn name(&self, id: &str) -> String {
+        name(&self.nodes, id)
+    }
+
+    /// A node as Atlas says it, in the picture and in words (`model::said`).
+    fn said(&self, id: &str) -> String {
+        said(id, |c| self.nodes.get(c).copied(), self.shared)
+    }
+
+    /// The name the function `f` goes by in the names of its values (`model::owner`).
+    fn owner(&self, f: &Node) -> String {
+        owner(f, |c| self.nodes.get(c).copied())
+    }
+
+    /// A function by the name a picture gives it (`model::function_label`): a method with its class (`Trend.save`).
+    fn function(&self, n: &Node) -> String {
+        function_label(n, |c| self.nodes.get(c).copied(), self.shared)
+    }
+
     fn out(&self, id: &str) -> impl Iterator<Item = &'g crate::model::Edge> + '_ {
         self.out.get(id).into_iter().flatten().copied()
     }
@@ -974,4 +984,14 @@ impl<'g> Index<'g> {
     fn into(&self, id: &str) -> impl Iterator<Item = &'g crate::model::Edge> + '_ {
         self.into.get(id).into_iter().flatten().copied()
     }
+}
+
+/// The nodes of a graph by id.
+fn by_id(g: &Graph) -> HashMap<&str, &Node> {
+    g.nodes.iter().map(|n| (n.id.as_str(), n)).collect()
+}
+
+/// A node by its own name (`model::name_of`), among the nodes of its reading by id.
+fn name(nodes: &HashMap<&str, &Node>, id: &str) -> String {
+    name_of(nodes.get(id).copied(), id).to_string()
 }

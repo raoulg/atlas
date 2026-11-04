@@ -334,6 +334,8 @@ export function unused() {}
     let main = |g: &Graph| g.node(&format!("{}.main.main", g.root)).unwrap().clone();
     let read = one.node("filekit.lib.read.readConfig").expect("the function the program calls is read");
     assert!(read.library, "a library's function is marked as one");
+    // the package as the dependency it is: the directory its code is read from, which its files lie under
+    assert!(read.file.starts_with(&one.libraries["filekit"].dir), "{:?}", one.libraries);
     let file = read.touches.iter().find(|t| t.kind_name() == "disk_read").expect("the package's own code reads the disk");
     assert_eq!((file.op.as_str(), file.artifact.as_str()), ("readFileSync", "settings.json"), "at the path the program hands it: {file:?}");
     let to: Vec<String> = main(&one).sites.iter().map(|s| if s.to.is_empty() { s.op.clone() } else { s.to.clone() }).collect();
@@ -864,4 +866,251 @@ export function main(): number {
     assert!(push.changes && !push.not_followed, "{push:#?}");
     assert!(held(&push.hands).contains(&(this.clone(), String::new())), "handed the box it runs on: {push:#?}");
     assert_eq!(held(&push.gives), [(this, "this".to_string())], "and gives it anew");
+}
+
+/// Isomorphic is the same: a socket of `node:net` or `node:dgram` is at its address however the code opens it (#323),
+/// as Python's and Rust's are: handed a port and a host (`net.createConnection(port, host)`) or an object that names them
+/// (`net.connect({ port, host })`), made without one and connected later (`new net.Socket()`, `.connect(port, host)`),
+/// or a datagram sent to one (`send(msg, port, host)`). A connection a server accepts, handed to the function it runs on
+/// each or to a listener for its `connection` event, is at the address it `listen`s at; a listener for `data` receives.
+#[test]
+fn a_node_socket_is_at_its_address_however_it_is_opened() {
+    let g = written(
+        "nodesockets",
+        &[
+            ("package.json", r#"{ "name": "nodesockets", "version": "0.1.0", "type": "module" }"#),
+            (
+                "src/index.ts",
+                r#"import * as net from "node:net";
+import * as dgram from "node:dgram";
+
+const PORT = 7878;
+const HOST = "127.0.0.1";
+
+export function handed(): void {
+  const s = net.createConnection(PORT, HOST);
+  s.write("hi");
+}
+
+export function named(): void {
+  const s = net.connect({ port: PORT, host: HOST });
+  s.write("hi");
+}
+
+export function later(): void {
+  const s = new net.Socket();
+  s.connect(PORT, HOST);
+  s.write("hi");
+}
+
+export function sent(): void {
+  const s = dgram.createSocket("udp4");
+  s.send("hi", PORT, HOST);
+}
+
+export function served(): void {
+  net.createServer((conn) => conn.on("data", (d) => conn.write(d))).listen(PORT, HOST);
+}
+
+export function heard(): void {
+  const server = net.createServer();
+  server.on("connection", (conn) => conn.on("data", () => {}));
+  server.listen(PORT, HOST);
+}
+"#,
+            ),
+        ],
+    );
+    let reached = |f: &str| -> BTreeSet<String> {
+        let n = g.node(&format!("nodesockets.{f}")).unwrap_or_else(|| panic!("no node {f}"));
+        n.touches.iter().filter(|t| t.kind_name() == "net").map(|t| t.artifact.clone()).collect()
+    };
+    let handed = reached("handed");
+    assert!(handed.len() == 1 && !handed.contains(""), "{handed:?}");
+    for f in ["named", "later", "sent", "served", "heard"] {
+        assert_eq!(reached(f), handed, "{f}");
+    }
+}
+
+/// A variable of the environment is one place however the lookup names it (`docs/reference/mathematics.md`,
+/// "Paths as terms"): `process.env.STORE`, `process.env["STORE"]` and `process.env[NAME]`, `NAME` a constant
+/// the code gives `"STORE"`, are the variable `STORE`, as Python's lookups are (`python_reader.rs`). A name
+/// no code decides (`process.env[name]` of a parameter) is no variable the code names.
+#[test]
+fn a_variable_is_one_place_however_its_lookup_names_it() {
+    let g = written(
+        "env-lookups",
+        &[
+            ("package.json", "{\"name\": \"lookups\", \"version\": \"0.0.0\"}\n"),
+            (
+                "src/env.ts",
+                r#"import { readFileSync } from "node:fs";
+
+const NAME = "STORE";
+
+export function member(): string {
+  return readFileSync(process.env.STORE!, "utf8");
+}
+
+export function keyed(): string {
+  return readFileSync(process.env["STORE"]!, "utf8");
+}
+
+export function constant(): string {
+  return readFileSync(process.env[NAME]!, "utf8");
+}
+
+export function undecided(name: string): string {
+  return readFileSync(process.env[name]!, "utf8");
+}
+"#,
+            ),
+        ],
+    );
+    let places =
+        |f: &str| -> Vec<String> { g.node(&format!("{}.env.{f}", g.root)).unwrap().touches.iter().map(|t| t.place().id).collect() };
+    let store = places("member");
+    assert_eq!(store.len(), 1, "{store:?}");
+    assert_eq!(places("keyed"), store, "`process.env[\"STORE\"]`");
+    assert_eq!(places("constant"), store, "`process.env[NAME]`");
+    assert_ne!(places("undecided"), store, "`process.env[name]`");
+}
+
+/// Each door is at the place its own opening names (`docs/reference/mathematics.md`, "A door keeps its place"): the touch
+/// a `FileHandle`'s traffic goes to is the one the call that made it made, so two files opened in one declaration are
+/// each read or written where they are opened, and the body draws what it draws with each opening on a line of its own
+/// (#353).
+#[test]
+fn two_doors_opened_on_one_line_keep_their_places() {
+    let g = written(
+        "twodoors",
+        &[
+            ("package.json", r#"{ "name": "twodoors", "version": "0.1.0", "type": "module" }"#),
+            (
+                "src/index.ts",
+                r#"import { open } from "node:fs/promises";
+
+export async function oneLine(): Promise<void> {
+  const src = await open("in.txt"), dst = await open("out.txt", "w");
+  await dst.writeFile(await src.readFile("utf8"));
+}
+
+export async function twoLines(): Promise<void> {
+  const src = await open("in.txt");
+  const dst = await open("out.txt", "w");
+  await dst.writeFile(await src.readFile("utf8"));
+}
+"#,
+            ),
+        ],
+    );
+    let drawn = |f: &str| -> BTreeSet<(String, String, String)> {
+        let n = g.node(&format!("twodoors.{f}")).unwrap_or_else(|| panic!("no node {f}"));
+        n.touches.iter().map(|t| (t.kind_name().to_string(), t.op.clone(), t.artifact.clone())).collect()
+    };
+    let apart = drawn("twoLines");
+    let at: BTreeSet<&str> = apart.iter().map(|t| t.2.as_str()).collect();
+    assert_eq!(at, BTreeSet::from(["in.txt", "out.txt"]), "{apart:?}");
+    assert_eq!(drawn("oneLine"), apart);
+}
+
+/// Isomorphic is the same: a descriptor `fs.openSync` gives is a door to the file it is opened at, as a `FileHandle`
+/// `fs.promises.open` gives is (`docs/reference/mathematics.md`, "A door keeps its place"). `fs.readFileSync(fd)` and
+/// `fs.writeSync(fd, ..)` read and write that file, as `handle.readFile()` and `handle.writeFile(..)` do, each opening
+/// goes the way its flags say, and a descriptor handed to a parameter is the one its caller opens (#353).
+#[test]
+fn a_descriptor_is_a_door_as_a_file_handle_is() {
+    let g = written(
+        "descriptors",
+        &[
+            ("package.json", r#"{ "name": "descriptors", "version": "0.1.0", "type": "module" }"#),
+            (
+                "src/index.ts",
+                r#"import * as fs from "node:fs";
+import { open } from "node:fs/promises";
+
+export function described(): void {
+  const src = fs.openSync("in.txt", "r");
+  const dst = fs.openSync("out.txt", "w");
+  fs.writeSync(dst, fs.readFileSync(src, "utf8"));
+}
+
+export async function handled(): Promise<void> {
+  const src = await open("in.txt", "r");
+  const dst = await open("out.txt", "w");
+  await dst.writeFile(await src.readFile("utf8"));
+}
+
+function count(fd: number): number {
+  return fs.readFileSync(fd, "utf8").length;
+}
+
+export function opener(): number {
+  return count(fs.openSync("in.txt", "r"));
+}
+"#,
+            ),
+        ],
+    );
+    let drawn = |f: &str| -> Vec<(String, String)> {
+        let n = g.node(&format!("descriptors.{f}")).unwrap_or_else(|| panic!("no node {f}"));
+        let mut out: Vec<_> = n.touches.iter().map(|t| (t.kind_name().to_string(), t.artifact.clone())).collect();
+        out.sort();
+        out
+    };
+    let handled = drawn("handled");
+    let read = ("disk_read".to_string(), "in.txt".to_string());
+    assert_eq!(handled.iter().filter(|t| **t == read).count(), 2, "opened and read: {handled:?}");
+    assert_eq!(drawn("described"), handled);
+    let handed = g.node("descriptors.count").expect("count").touches.iter().filter(|t| t.by.contains(&Both::one("descriptors.opener")));
+    assert_eq!(handed.map(|t| (t.kind_name(), t.artifact.as_str())).collect::<Vec<_>>(), [("disk_read", "in.txt")]);
+}
+
+/// The program of `a_call_is_read_alike_however_many_stand_beside_it`: `main` binds a chain of `depth` names, each an array
+/// of the one before twice (`const a1 = [a0, a0]`), so that the last stands for `first` along 2^depth occurrences, hands it
+/// to `calls` calls, and hands `show` an array it changes in place.
+fn chained(depth: usize, calls: usize) -> String {
+    let mut code = String::from(
+        "export class Level {\n  constructor(readonly db: number) {}\n}\n\nexport function show(levels: Level[]): void {\n  console.log(levels.length);\n}\n\nexport function main(first: Level): void {\n  const a0 = [first, first];\n",
+    );
+    for k in 1..=depth {
+        code += &format!("  const a{k} = [a{}, a{}];\n", k - 1, k - 1);
+    }
+    code += "  const rows: Level[] = [];\n  rows.push(first);\n";
+    code += &format!("  show(a{depth});\n").repeat(calls);
+    code += "  show(rows);\n}\n";
+    code
+}
+
+/// Whether a binding is changed in place is a fact of the body, which no call changes (`mathematics.md`, "One fine plan"):
+/// what a call hands is read the same however many calls stand beside it in the body. The subject hands a name that stands
+/// for `first` along 2^8 occurrences to many calls, and an array it changes in place to one: each call hands what it hands
+/// in the body with one such call. A reader that asks the whole body again, for every occurrence of every call, whether a
+/// name is changed in place cannot read it in reasonable time (#389); one that finds what the body changes in place once
+/// reads it at once.
+#[test]
+fn a_call_is_read_alike_however_many_stand_beside_it() {
+    const DEPTH: usize = 8;
+    let hands = |calls: usize| -> Vec<String> {
+        let g = written(
+            &format!("chained-{calls}"),
+            &[("package.json", "{\n  \"name\": \"chained\",\n  \"version\": \"0.1.0\"\n}\n"), ("src/main.ts", &chained(DEPTH, calls))],
+        );
+        let main = g.nodes.iter().find(|n| n.id.ends_with(".main") && n.kind == NodeKind::Function).expect("main is read");
+        let shown: Vec<String> = main
+            .sites
+            .iter()
+            .filter(|s| s.to.ends_with(".show"))
+            .map(|s| serde_json::to_string(&s.hands).expect("hands serialize"))
+            .collect();
+        assert_eq!(shown.len(), calls + 1, "every call of show is a site of main");
+        shown
+    };
+    let one = hands(1);
+    let many = hands(1500);
+    assert_ne!(one[0], "[]", "the chain hands what it stands for");
+    for (i, h) in many.iter().enumerate() {
+        let alone = if i + 1 == many.len() { &one[1] } else { &one[0] };
+        assert_eq!(h, alone, "call {i} hands what it hands beside one call");
+    }
 }

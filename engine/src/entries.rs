@@ -1,7 +1,7 @@
 //! Routes into a program: where a web app serves its routes, the entry points a Python project's
 //! `pyproject.toml` declares, what the human hands an entry on the command line, Makefile targets.
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::Path;
 
 use regex::Regex;
@@ -91,17 +91,26 @@ fn declared(repo: &Repo, root: &Path) -> Vec<Declared> {
     out
 }
 
+/// The modules the entry points a Python project's `pyproject.toml` declares name, by the names
+/// Python imports them by: `pkg.cli` of `pkg.cli:main`.
+pub fn declared_modules(repo: &Repo, root: &Path) -> HashSet<String> {
+    declared(repo, root).into_iter().map(|d| d.object.split(':').next().unwrap_or_default().trim().to_string()).collect()
+}
+
 /// The entry points a Python project's `pyproject.toml` declares are routes into it: a program
-/// is a command run by its name, a plugin a door its host loads, by `group:name`. The declaration
-/// says what the function is to its user, so a program is the command also where its package
-/// exports the function (a flat module's public `main`), and stays a door as well.
+/// is a command run by its name, a plugin a door its host loads, by `group:name`. A declaration
+/// names its object in the module Python imports by the name it writes, whatever the reader calls
+/// that module (`GraphBuilder::imported`). The declaration says what the function is to its user,
+/// so a program is the command also where its package exports the function (a flat module's
+/// public `main`), and stays a door as well.
 pub fn mark_scripts(repo: &Repo, store: &mut GraphBuilder, project_root: Option<&Path>) {
     let Some(root) = project_root else { return };
     for d in declared(repo, root) {
-        let (module, func) = d.object.split_once(':').unwrap_or((&d.object, ""));
-        let mut nid = if func.is_empty() { module.to_string() } else { format!("{module}.{func}") };
+        let (named, func) = d.object.split_once(':').map_or((d.object.as_str(), ""), |(m, f)| (m.trim(), f.trim()));
+        let module = store.imported.get(named).cloned().unwrap_or_else(|| named.to_string());
+        let mut nid = if func.is_empty() { module.clone() } else { format!("{module}.{func}") };
         if !store.nodes.contains_key(&nid) && !func.is_empty() {
-            if let Some(re) = store.bindings.get(module).and_then(|b| b.get(func)) {
+            if let Some(re) = store.bindings.get(&module).and_then(|b| b.get(func)) {
                 nid = re.clone(); // re-exported main
             }
         }
@@ -234,12 +243,7 @@ fn programs(repo: &Repo, root: &Path) -> Vec<String> {
     let mut out: Vec<String> = declared(repo, root).into_iter().filter(|d| d.group.is_none()).map(|d| d.name).collect();
     if let Some(doc) = repo.text(root.join("Cargo.toml")).and_then(|t| t.parse::<toml::Table>().ok()) {
         out.extend(doc.get("package").and_then(|p| p.get("name")).and_then(|n| n.as_str()).map(str::to_string));
-        out.extend(
-            repo.files_under(root.join("src/bin"))
-                .iter()
-                .filter(|p| p.extension().map_or(false, |e| e == "rs"))
-                .filter_map(|p| p.file_stem()?.to_str().map(str::to_string)),
-        );
+        out.extend(repo.files_under(root.join("src/bin"), &["rs"]).iter().filter_map(|p| p.file_stem()?.to_str().map(str::to_string)));
     }
     if let Some(json) = repo.text(root.join("package.json")).and_then(|t| serde_json::from_str::<serde_json::Value>(&t).ok()) {
         match &json["bin"] {

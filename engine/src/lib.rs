@@ -7,6 +7,7 @@ pub mod body;
 pub mod builder;
 pub mod cache;
 pub mod changes;
+pub mod clock;
 pub mod decide;
 pub mod diff;
 pub mod effects;

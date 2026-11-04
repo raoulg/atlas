@@ -179,14 +179,6 @@ pub fn apply<R: Runtime>(app: &AppHandle<R>, theme: &str) {
     });
 }
 
-/// A program on the `PATH`.
-fn which(program: &str) -> Option<PathBuf> {
-    let names: Vec<String> = if cfg!(windows) { vec![format!("{program}.exe"), format!("{program}.cmd")] } else { vec![program.into()] };
-    std::env::split_paths(&std::env::var_os("PATH")?)
-        .flat_map(|dir| names.iter().map(move |name| dir.join(name)))
-        .find(|path| path.is_file())
-}
-
 /// The command the CLI of a channel is installed as: the nightly's `atlas-code-nightly`, beside the release's `atlas-code`.
 fn command_of(channel: &str) -> &'static str {
     if channel == "nightly" {
@@ -199,7 +191,7 @@ fn command_of(channel: &str) -> &'static str {
 /// The `atlas-code` an agent starts: the CLI of Studio's own channel on the `PATH`, else Studio's own, so that
 /// the agent's `atlas-code mcp` is of the channel of the `atlas-code serve` it shares a page with.
 fn atlas() -> Option<PathBuf> {
-    which(command_of(env!("ATLAS_CHANNEL"))).or_else(|| {
+    which::which(command_of(env!("ATLAS_CHANNEL"))).ok().or_else(|| {
         let own = std::env::current_exe().ok()?.with_file_name(if cfg!(windows) { "atlas-code.exe" } else { "atlas-code" });
         own.is_file().then_some(own)
     })
@@ -245,7 +237,7 @@ pub fn agents(workspace: Option<&Path>) -> Vec<Agent> {
         Agent {
             id: "claude",
             name: "Claude Code",
-            installed: which("claude").is_some(),
+            installed: which::which("claude").is_ok(),
             registered: claude,
             command: format!("claude mcp add --scope user atlas -- {} mcp", quoted(&atlas)),
             reconnect: "Start a new Claude Code session, or run /mcp in the one you have.",
@@ -253,7 +245,7 @@ pub fn agents(workspace: Option<&Path>) -> Vec<Agent> {
         Agent {
             id: "codex",
             name: "Codex",
-            installed: which("codex").is_some(),
+            installed: which::which("codex").is_ok(),
             registered: codex,
             command: format!("codex mcp add atlas -- {} mcp", quoted(&atlas)),
             reconnect: "Start a new Codex session.",
@@ -278,7 +270,7 @@ pub fn register(id: &str) -> Result<(), String> {
         "codex" => ("codex", vec!["mcp".into(), "add".into(), "atlas".into(), "--".into()]),
         _ => return Err(format!("Studio does not know the agent {id}")),
     };
-    let program = which(program).ok_or(format!("{program} is not on the PATH"))?;
+    let program = which::which(program).map_err(|_| format!("{program} is not on the PATH"))?;
     let out = Command::new(program).args(args).arg(atlas).arg("mcp").stdin(Stdio::null()).output().map_err(|error| error.to_string())?;
     if !out.status.success() {
         return Err(String::from_utf8_lossy(&out.stderr).trim().to_string());

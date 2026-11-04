@@ -1,1 +1,1 @@
-{ "name": "shortcut", "private": true }
+{ "name": "shortcut", "private": true, "main": "src/client.ts" }

@@ -9,8 +9,8 @@ use indexmap::IndexMap;
 use tree_sitter::Node as TsNode;
 
 use super::body::{
-    by_name, changed, changed_params, field_default, handed, library_change, link_calls, positional, sites, Arg, Changing, Evaluated, Seen,
-    OWN,
+    by_name, changed, changed_params, changed_whole, field_default, handed, library_change, link_calls, positional, root_name, sites, Arg,
+    Changing, Evaluated, Seen, OWN,
 };
 use super::module::{
     call_path, declared, def_node, defined, dotted, first_docline, iter_defs, lib_of, package_of, private, resolve, signature,
@@ -19,7 +19,7 @@ use super::module::{
 use super::paths::{self, At, Built, Eval};
 use crate::builder::{foreign_type, ClassInfo, GraphBuilder};
 use crate::knowledge;
-use crate::model::{Dir, EdgeKind, Entry, EntryKind, Methods, Node, NodeKind, Route, Touch, World};
+use crate::model::{ext, Dir, EdgeKind, Entry, EntryKind, Methods, Node, NodeKind, Resolved, Route, Touch, World};
 use crate::pytypes::{Target, Types};
 use crate::tree::{field_children, literals, named_children, span, text, unquote, walk};
 
@@ -401,6 +401,7 @@ fn declared_all(m: &Module) -> Option<Vec<String>> {
 }
 
 pub(super) fn link(modules: &IndexMap<String, Module>, store: &mut GraphBuilder, own: &Own, types: &Types, root_dir: &Path) {
+    let signatures = crate::clock::stage("signatures");
     let aliases = type_aliases(modules);
     add_sums(modules, store, &aliases, own);
     let ids: Vec<String> = store.nodes.keys().cloned().collect();
@@ -414,8 +415,8 @@ pub(super) fn link(modules: &IndexMap<String, Module>, store: &mut GraphBuilder,
         let info = store.classes.get(id).cloned().unwrap_or_default();
         let mut resolved = vec![];
         for b in &info.bases {
-            let r = resolve(m, b, modules, &store.nodes, own).unwrap_or_else(|| format!("ext:{}", b.join(".")));
-            if r.starts_with("ext:") {
+            let r = resolve(m, b, modules, &store.nodes, own).unwrap_or_else(|| Resolved::Beyond(b.join("."))).id();
+            if ext::is(&r) {
                 store.ext_node(&r);
             }
             store.add_edge(id, &r, EdgeKind::Inherits, None);
@@ -425,7 +426,7 @@ pub(super) fn link(modules: &IndexMap<String, Module>, store: &mut GraphBuilder,
         // a field's type is read as a signature's: a name the module aliases is the sum it names
         for (fname, types) in &info.fields {
             for t in types {
-                for r in type_targets(m, t, modules, &aliases, &store.nodes, own).into_iter().filter(|r| !r.starts_with("ext:")) {
+                for r in type_targets(m, t, modules, &aliases, &store.nodes, own).into_iter().filter(|r| !ext::is(r)) {
                     store.classes.entry(id.clone()).or_default().attr_types.insert(fname.clone(), r.clone());
                     store.add_edge(id, &r, EdgeKind::Has, Some(fname.clone()));
                 }
@@ -433,7 +434,7 @@ pub(super) fn link(modules: &IndexMap<String, Module>, store: &mut GraphBuilder,
         }
     }
     // a method only declared: abstract, or of a protocol, which what has its methods implements
-    let protocols: HashSet<String> = knowledge::PYTHON_PROTOCOLS.iter().map(|(p, n)| format!("ext:{p}.{n}")).collect();
+    let protocols: HashSet<String> = knowledge::PYTHON_PROTOCOLS.iter().map(|(p, n)| ext::of(&format!("{p}.{n}"))).collect();
     for id in &ids {
         let n = &store.nodes[id];
         let Some(cls) = n.cls.as_deref().filter(|_| n.kind == NodeKind::Method) else { continue };
@@ -457,7 +458,7 @@ pub(super) fn link(modules: &IndexMap<String, Module>, store: &mut GraphBuilder,
             for u in unions {
                 let mut variants: Vec<String> = vec![];
                 for r in u.names.iter().flat_map(|t| type_targets(m, t, modules, &aliases, &store.nodes, own)) {
-                    if (!r.starts_with("ext:") || foreign_type(&r, &OWN)) && !variants.contains(&r) {
+                    if (!ext::is(&r) || foreign_type(&r, &OWN)) && !variants.contains(&r) {
                         variants.push(r);
                     }
                 }
@@ -469,7 +470,7 @@ pub(super) fn link(modules: &IndexMap<String, Module>, store: &mut GraphBuilder,
                 }
             }
             for r in targets {
-                if r.starts_with("ext:") {
+                if ext::is(&r) {
                     if !foreign_type(&r, &OWN) {
                         continue;
                     }
@@ -479,7 +480,8 @@ pub(super) fn link(modules: &IndexMap<String, Module>, store: &mut GraphBuilder,
             }
         }
         // a type written through an alias is held by the name of the type it stands for
-        let held = crate::model::holds_resolved(&store.nodes[id], |h| resolve(m, &[h.to_string()], modules, &store.nodes, own));
+        let held =
+            crate::model::holds_resolved(&store.nodes[id], |h| resolve(m, &[h.to_string()], modules, &store.nodes, own).map(Resolved::id));
         crate::model::set_holds(store.nodes.get_mut(id).expect("a node of the graph"), held);
     }
     let sites = sites(modules, store);
@@ -538,26 +540,30 @@ pub(super) fn link(modules: &IndexMap<String, Module>, store: &mut GraphBuilder,
             break;
         }
     }
+    drop(signatures);
     // bodies -> calls / instantiates / boundaries
     let eval = Eval::new(modules, types, root_dir);
     // a library's class by its package and its name, as the signatures name it
     let ext: HashMap<(String, String), String> = store
         .nodes
         .keys()
-        .filter(|k| k.starts_with("ext:") && !k.contains('['))
-        .filter_map(|k| Some(((package_of(&k[4..]), k.rsplit('.').next()?.to_string()), k.clone())))
+        .filter_map(|k| Some(((package_of(ext::path(k).filter(|p| !p.contains('['))?), k.rsplit('.').next()?.to_string()), k.clone())))
         .collect();
     let mut handed = vec![];
     let mut waiting: Vec<(String, Touch, Vec<Built>)> = vec![];
     let mut args: Vec<Arg> = vec![];
     for id in &ids {
         if matches!(store.nodes[id].kind, NodeKind::Function | NodeKind::Method | NodeKind::Module) {
+            let n = &store.nodes[id];
+            let _body = crate::clock::of("body", &package_of(&n.module), n.library);
             let linked = link_calls(modules, store, types, &sites, &ext, &eval, own, &changing, id);
+            store.count_linked(id);
             handed.extend(linked.handed);
             waiting.extend(linked.waiting.into_iter().map(|(t, b)| (id.clone(), t, b)));
             args.extend(linked.args);
         }
     }
+    let callers = crate::clock::stage("callers");
     // a parameter a call leaves out holds its declared default, and an entry's what it is run with
     let completed = {
         let store = &*store;
@@ -581,7 +587,9 @@ pub(super) fn link(modules: &IndexMap<String, Module>, store: &mut GraphBuilder,
         crate::paths::complete(waiting, &handing, &family, &default, &entry)
     };
     crate::paths::place_calls(store, completed, false);
-    globals(modules, store, types);
+    drop(callers);
+    let _globals = crate::clock::stage("globals");
+    globals(modules, store, types, &sites, own);
     // the work handed to a managed transaction (`session.execute_read(work)`) goes its way
     for (work, kind, dir) in handed {
         if let Some(n) = store.nodes.get_mut(&work) {
@@ -594,16 +602,24 @@ pub(super) fn link(modules: &IndexMap<String, Module>, store: &mut GraphBuilder,
 
 /// The values a module keeps between calls, which its functions change: a name a module binds at
 /// its top level that a function rebinds (`global df`) or changes in place (`df.drop(..,
-/// inplace=True)`, `LATEST[k] = v`), in its own module or where another imports it. Every
-/// function that changes one writes it and every one that uses it reads it: a place,
-/// `Global(module.name)`. A name no function changes is a constant of the code, and no place.
-fn globals(modules: &IndexMap<String, Module>, store: &mut GraphBuilder, types: &Types) {
+/// inplace=True)`, `LATEST[k] = v`, also through a name bound to a part of it: `row = ROWS[0];
+/// row.append(level)`), in its own module or where another imports it. Every function that
+/// changes one writes it and every one that uses it reads it: a place, `Global(module.name)`. A
+/// name no function changes is a constant of the code, and no place.
+fn globals(
+    modules: &IndexMap<String, Module>,
+    store: &mut GraphBuilder,
+    types: &Types,
+    sites: &HashMap<(String, usize), String>,
+    program: &Own,
+) {
     // per function: what it writes, reads, and tests for a key, each kept value by name and line
     type Named = Vec<(String, String, u32)>;
     type Uses = (String, Named, Named, Named);
     let mut uses: Vec<Uses> = vec![];
     for m in modules.values() {
         let src = &m.src;
+        let seen = Seen::new(m, types, sites, modules, store, program);
         let top: HashSet<String> = named_children(m.tree.root_node())
             .into_iter()
             .filter(|s| s.kind() == "expression_statement")
@@ -687,7 +703,15 @@ fn globals(modules: &IndexMap<String, Module>, store: &mut GraphBuilder, types: 
                 }
             }
             for x in changed(body, &|c| library_change(facts, c, src).into_iter().collect()) {
-                if let Some((k, n)) = held(x).filter(|(k, _)| !writes.iter().any(|(w, _, _)| w == k)) {
+                // a change through a name bound to a part of another value changes that value: a change to a part changes
+                // the whole (`changed_whole`)
+                let whole = changed_whole(body, src, &|c| seen.lookup(c).map(|l| l.parts()), x).filter(|w| Some(*w) != root_name(x, src));
+                let at = match whole {
+                    Some(w) if !own.contains(w) && !imported.contains(w) => kept(w).map(|k| (k, w.to_string())),
+                    Some(_) => None,
+                    None => held(x),
+                };
+                if let Some((k, n)) = at.filter(|(k, _)| !writes.iter().any(|(w, _, _)| w == k)) {
                     writes.push((k, n, line(x)));
                 }
             }
@@ -1057,8 +1081,8 @@ fn add_sums(modules: &IndexMap<String, Module>, store: &mut GraphBuilder, aliase
     for (id, a) in sums {
         let m = &modules[&a.module];
         let mut variants: Vec<String> = vec![];
-        for r in a.names.iter().filter_map(|n| resolve(m, n, modules, &store.nodes, own)) {
-            if (!r.starts_with("ext:") || foreign_type(&r, &OWN)) && !variants.contains(&r) {
+        for r in a.names.iter().filter_map(|n| resolve(m, n, modules, &store.nodes, own).map(Resolved::id)) {
+            if (!ext::is(&r) || foreign_type(&r, &OWN)) && !variants.contains(&r) {
                 variants.push(r);
             }
         }
@@ -1077,7 +1101,7 @@ fn add_sums(modules: &IndexMap<String, Module>, store: &mut GraphBuilder, aliase
         });
         store.add_edge(&a.module, id, EdgeKind::Contains, None);
         for v in variants {
-            if v.starts_with("ext:") {
+            if ext::is(&v) {
                 store.ext_node(&v);
             }
             store.add_edge(id, &v, EdgeKind::Variant, None);
@@ -1118,7 +1142,7 @@ fn type_targets(
     own: &Own,
 ) -> Vec<String> {
     match resolve(m, t, modules, nodes, own) {
-        Some(r) => vec![r],
+        Some(r) => vec![r.id()],
         None => alias_targets(m, t, modules, aliases, nodes, own),
     }
 }
@@ -1139,5 +1163,5 @@ fn alias_targets(
         return vec![full];
     }
     let Some(a) = aliases.get(&full) else { return vec![] };
-    a.names.iter().filter_map(|n| resolve(&modules[&a.module], n, modules, nodes, own)).collect()
+    a.names.iter().filter_map(|n| resolve(&modules[&a.module], n, modules, nodes, own).map(Resolved::id)).collect()
 }

@@ -16,7 +16,12 @@ the light its closed box had to its frame and kinds (#296), and every box of fil
 open, in one step, to the files it held or to directories below it, leaving every other file where it stood. They are asked again with the plan cut as a large
 program's is cut, at the budgets 1, 2 and 3 (`ATLAS_FINE_BUDGET`), where a step beyond the cut is the image of its body
 and each of its lines counts the fine lines its body draws there, and where each step beyond the cut, opened as the page
-opens it and planned anew, must refine the picture it was cut in; the facts are asked of the finest plan only.
+opens it and planned anew, must refine the picture it was cut in; the facts are asked of the finest plan only. The
+overview of every program is asked the same of its own fine plan, the functions with their own arrows, a type as one
+place and the calls between functions: for every set of open packages and parts, each line counts the fine lines it
+stands for, a type internal to a closed package draws none, each call goes between the blocks of its ends, opening one
+more box refines the picture, and the picture is a function of the set of open boxes (`overview-packages` holds a type
+internal to a package and one a package makes, takes and hands to another).
 
 ```bash
 cargo test -p atlas-engine --test plans -- --nocapture                              # every program
@@ -31,7 +36,7 @@ One fact per line; `#` starts a comment, at the start of a line or after a space
 | --- | --- |
 | `route ID` | the facts that follow are of the route of this entry (its node's id: `clean.run`) |
 | `step PATH` | an occurrence: a call of the route, by the names on its path from the route; `step PATH one of N` for a call that may run one of `N` functions, as its label counts them |
-| `choice PATH` | a choice in a body, a frame of its own with its arms inside |
+| `choice PATH` | a choice in a body, a frame of its own with its arms inside; a choice inside an arm beside other steps is a frame in it (`main/?1/?1`), one that is the whole arm is arms of the choice around it |
 | `line A > B CHANNEL` | a line of the plan, from what makes to what takes |
 | `home VALUE FRAME` | the frame a value stands in with every step open (`outside` when no frame holds it) |
 | `side PLACE SIDE` | where a place of the world stands, decided on the closed picture: `left`, `right`, `between` (also a place the code goes to without saying which way, in neither domain nor codomain), `both` |
@@ -131,3 +136,8 @@ smallest that showed one law:
 | `lent-after-the-put` | a part set whole to a chart is that chart: a figure lent to the chart after the put is the one the board's part draws on (#179) |
 | `drawn-after-the-put` | the same, the other way round: the figure the board makes through its part is the chart's, and the chart's own name draws on it again (#179) |
 | `folds-two-levels` | files folded into directories nested in one another that hold the same files (`data/`, `data/*/`) are one box: opening it shows the files in one step (#227) |
+| `leaf-binds-a-local` | a name a body binds by an expression no step makes is the body's own value, whatever the expression reads: a leaf that makes its mask from the samples takes nothing from beyond, one that reads the module's floor takes it from beyond (#318) |
+| `door-tensor-pad` | a value a step planned by itself takes by a name its caller holds is the caller's: a cut door names the one value of its kind from beyond as its opened picture does, by its type alone (#319) |
+| `setup-in-a-loop` | what ran before a step in a loop is every call of the loop: a shelf a later call opens is the one an earlier call keeps its report on in the next round (#329) |
+| `setup-in-an-arm` | what ran before a step in an arm is what ran before its choice and before it in its arm: a set-up in an arm counts for a call in a choice inside that arm (#329), and that choice is a frame inside the arm, never another arm beside it (#357); in Python, Rust and TypeScript |
+| `changed-in-an-arm` | a name the body binds by its own code holds the body's value, in its frame, for every step after the binding: a change in one arm makes it anew at the choice's moment, which the step after the choice takes, and a change in a loop takes it, never the latest of its kind the loop gives; in Python, Rust and TypeScript (#366) |

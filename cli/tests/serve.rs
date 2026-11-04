@@ -287,6 +287,47 @@ fn the_page_follows_the_code() {
     let _ = std::fs::remove_dir_all(repo.parent().unwrap());
 }
 
+/// The page rests on what its reading asked of the working tree. A file no reader asks about (a
+/// picture, a note) leaves the page as it was drawn; a file of code where the reader lists the code
+/// is drawn, and so is another `.atlasignore`, which the listing leaves out.
+#[test]
+fn the_page_is_drawn_again_when_what_it_rests_on_changes() {
+    let repo = repository("rests");
+    std::fs::create_dir_all(repo.join("docs")).unwrap();
+    std::fs::write(repo.join("docs/index.md"), "# spots\n").unwrap();
+    let (mut server, at) = serve(&repo);
+    let (first, _) = complete(&at);
+    let next = |after: &str| {
+        (0..60)
+            .find_map(|_| {
+                std::thread::sleep(std::time::Duration::from_millis(500));
+                drawn(&at).filter(|d| d != after)
+            })
+            .expect("the server draws the change by itself")
+    };
+
+    std::fs::create_dir_all(repo.join("docs/img")).unwrap();
+    std::fs::write(repo.join("docs/img/spots.svg"), "<svg xmlns=\"http://www.w3.org/2000/svg\"/>\n").unwrap();
+    std::fs::write(repo.join("notes.txt"), "a note\n").unwrap();
+    // the watch looks every second, and draws a change once it has stayed for a second
+    std::thread::sleep(std::time::Duration::from_secs(5));
+    let (_, body) = send(&at, "GET", "/api/drawn", None, false);
+    let state: Value = serde_json::from_str(&body).unwrap();
+    assert_eq!(state["drawn"], first.as_str(), "a file no reader asks about draws nothing: {state}");
+    assert_eq!(state["drawing"], false, "{state}");
+
+    std::fs::write(repo.join("src/spots/twice.py"), "from spots import count\n\n\ndef twice(n: int) -> int:\n    return count(count(n))\n")
+        .unwrap();
+    let second = next(&first);
+    assert!(snapshot(&at)["projects"]["spots"]["nodes"].to_string().contains("spots.twice.twice"), "the new module is drawn");
+
+    std::fs::write(repo.join(".atlasignore"), "src/spots/twice.py  # a sketch\n").unwrap();
+    next(&second);
+
+    server.kill().ok();
+    let _ = std::fs::remove_dir_all(repo.parent().unwrap());
+}
+
 /// Beside the page, the files Atlas reads, each with what the graph defines in it: the code's file
 /// holds its function, a file the graph defines nothing in is listed with none, and what git keeps
 /// or ignores is not listed.

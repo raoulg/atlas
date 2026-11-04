@@ -3,7 +3,7 @@
 //! Everything between `parse` and `layout` is `Graph -> Graph`. The JSON shape is the
 //! contract with the frontend; `ts-rs` generates the TypeScript side from these types.
 
-use std::collections::{BTreeMap, BTreeSet, HashMap, VecDeque};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
 
 use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
@@ -20,6 +20,112 @@ pub enum NodeKind {
     Function,
     Method,
     External,
+}
+
+/// An id is in the coproduct `Code ⊔ Beyond` (`mathematics.md`, "Lenses"): what the reading holds as code (the program,
+/// and a library read as code: `plotkit.data.load`), or a name past the fiber the graph keeps of a library, an
+/// `External` node with no body. The second injection is tagged, and the tag with its partial inverse is a prism:
+/// `path(&of(p)) == Some(p)`, `path(id) == None` for an id of the code's. Its spelling stands here and nowhere else.
+pub mod ext {
+    const TAG: &str = "ext:";
+
+    /// The id of a name past the code: `plotkit.data.load` is `ext:plotkit.data.load`.
+    pub fn of(path: &str) -> String {
+        format!("{TAG}{path}")
+    }
+
+    /// The name past the code an id is; None for an id of the code's.
+    pub fn path(id: &str) -> Option<&str> {
+        id.strip_prefix(TAG)
+    }
+
+    /// Whether an id is a name past the code.
+    pub fn is(id: &str) -> bool {
+        path(id).is_some()
+    }
+
+    /// The dotted name an id says, whichever side it is on: its path past the code, or the id itself.
+    pub fn name(id: &str) -> &str {
+        path(id).unwrap_or(id)
+    }
+}
+
+/// The id of a sum written in place (`x: Fit | Failed` in a signature, with no name of its own): the set of its variants'
+/// ids, `(ext:torch.Tensor | pkg.Fit)`. A union written in place is one object however and wherever it is written
+/// (`mathematics.md`, "Coproducts"), so its id is no dotted name a reader finds it by (`dotted`): no module, no function
+/// and no parameter that writes it is part of it. Its spelling stands here and nowhere else.
+pub mod sum {
+    /// The id of the sum of `variants`, each once.
+    pub fn of(variants: &[String]) -> String {
+        let mut key = variants.to_vec();
+        key.sort();
+        key.dedup();
+        format!("({})", key.join(" | "))
+    }
+
+    /// Whether an id is that of a sum written in place.
+    pub fn is(id: &str) -> bool {
+        id.starts_with('(') && id.ends_with(')')
+    }
+
+    /// The ids of the variants of the sum written in place whose id is `id`, in the order its id holds them; none for
+    /// any other id.
+    pub fn variants(id: &str) -> impl Iterator<Item = &str> {
+        is(id).then(|| id[1..id.len() - 1].split(" | ")).into_iter().flatten()
+    }
+}
+
+/// The dotted name a reader finds a node by, the path its id says (`ext::name`): an id of the code's is that name
+/// (`blocks.Block.scaled`), a name past the code its path past the code, the engine's tag taken off (`torch.Tensor`).
+/// A sum written in place says none (`sum`).
+pub fn dotted(id: &str) -> Option<&str> {
+    (!sum::is(id)).then(|| ext::name(id))
+}
+
+/// What a reader resolves a name to, a value of `Code ⊔ Beyond` (`ext`): one of the code's ids, which carries no tag, or a
+/// name past the code.
+#[derive(Clone, PartialEq, Eq, Hash, Debug)]
+pub enum Resolved {
+    Code(String),
+    Beyond(String),
+}
+
+impl Resolved {
+    /// What an id is, by its injection.
+    pub fn of_id(id: String) -> Resolved {
+        match ext::path(&id) {
+            Some(p) => Resolved::Beyond(p.to_string()),
+            None => Resolved::Code(id),
+        }
+    }
+
+    /// The id the graph knows it by.
+    pub fn id(self) -> String {
+        match self {
+            Resolved::Code(id) => id,
+            Resolved::Beyond(p) => ext::of(&p),
+        }
+    }
+
+    /// The code's id, where it names the code.
+    pub fn code(self) -> Option<String> {
+        match self {
+            Resolved::Code(id) => Some(id),
+            Resolved::Beyond(_) => None,
+        }
+    }
+
+    /// The name past the code, where it names one.
+    pub fn beyond(self) -> Option<String> {
+        match self {
+            Resolved::Code(_) => None,
+            Resolved::Beyond(p) => Some(p),
+        }
+    }
+
+    pub fn is_beyond(&self) -> bool {
+        matches!(self, Resolved::Beyond(_))
+    }
 }
 
 #[derive(Serialize, Deserialize, TS, Clone, Copy, PartialEq, Eq, Hash, Debug, PartialOrd, Ord)]
@@ -337,9 +443,10 @@ pub struct Node {
     /// What the body's own code uses outside the calls that are its steps: each name it reads in a
     /// condition, an operator, a format, a return or an argument of a call that is no step
     /// (`print(store.path)`, `if done:`, `Ok(path)`), once in each arm it is read in. A projection of a
-    /// name uses that name; a name bound to a part of another (`width = settings.width`) uses it where
-    /// the body reads that name. The instance a method runs on is used by no name, as a call is handed
-    /// it.
+    /// name uses that name; a name bound to a part of another (`width = settings.width`), or to what
+    /// the language's own code computes of names (`gap = first.db - second.db`, `body::stands_for`),
+    /// uses them where the body reads that name. The instance a method runs on is used by no name, as a
+    /// call is handed it.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub uses: Vec<Use>,
     /// The names the arms of its body's choices bind by the body's own code, no step of it: what an
@@ -347,9 +454,16 @@ pub struct Node {
     /// bound to gives where no step makes it (`let out = match f { "csv" => String::from(..), _ =>
     /// format!(..) }`, `x = a if c else b`). Each name once in each arm, with its type when known and
     /// the arms the value is made in. Such an arm makes the name's value as an arm whose step gives it
-    /// does. Outside the choices, the names it binds by a literal, a value made by no step that reads
-    /// no value (`let mut held = vec![]`, `items = []`), with no arms: the body makes that value
-    /// itself, as a call handed nothing makes it (`Vec::new()`, `list()`).
+    /// does. Outside the choices, with no arms, the names it binds to a value no step makes: a literal
+    /// (`let mut held = vec![]`, `items = []`), which the body makes as a call handed nothing makes it
+    /// (`Vec::new()`, `list()`), or any other expression (`mask = samples.abs() > 0`, `let total = a +
+    /// b`, `const shown = n > 0`), whatever it reads. Each is the body's own name, never a module's
+    /// (#318). What the language's own code computes of names with no call (`let total = a + b`, `both
+    /// = [first, second]`) is no value of its own: the name stands for those names (`body::stands_for`),
+    /// so a step handed it is handed what they hold, as one handed `a + b` written in place is (#328).
+    /// A name bound to another, to what a step gives or to a part of either (`width = settings.width`,
+    /// `g = &figures().clean`) holds that value, and a function written in place is a function: none of
+    /// these.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub binds: Vec<Use>,
     /// What its body's own code sets a part of a value to, by assignment through the name that holds
@@ -477,13 +591,145 @@ impl Param {
     }
 }
 
-/// A type's own name: its id without the library or module it is in (`ext:pandas.DataFrame` is `DataFrame`). A
-/// shaped array keeps its shape, a dot in it too: `ext:jaxtyping.Float[Tensor, batch {self.size}]` is
-/// `Float[Tensor, batch {self.size}]`.
-pub fn type_name(id: &str) -> &str {
-    let s = id.strip_prefix("ext:").unwrap_or(id);
+/// A type's id as the library or module it is in and its own name (`idName` in `viewer/plan.js`): `ext:pandas.DataFrame`
+/// is `pandas` and `DataFrame`. A shaped array keeps its shape in its name, a dot in it too:
+/// `ext:jaxtyping.Float[Tensor, batch {self.size}]` is `jaxtyping` and `Float[Tensor, batch {self.size}]`.
+fn type_path(id: &str) -> (&str, &str) {
+    let s = ext::name(id);
     let head = &s[..s.find('[').unwrap_or(s.len())];
-    &s[head.rfind('.').map_or(0, |i| i + 1)..]
+    match head.rfind('.') {
+        Some(i) => (&s[..i], &s[i + 1..]),
+        None => ("", s),
+    }
+}
+
+/// A type's own name: its id without the library or module it is in (`type_path`).
+pub fn type_name(id: &str) -> &str {
+    type_path(id).1
+}
+
+/// A node's own name: the name its reader gave it, which the view draws (`bare` in `viewer/plan.js`), or for an id the
+/// reading holds no node of, the type's own name the id says (`type_name`). A sum is named as the code writes it
+/// (`Fit | Failed`), a shaped array with its shape (`Float[Tensor, ... dim]`). What Atlas says a node by, wherever it
+/// says it, is this name with what the view adds to it (`said`).
+pub fn name_of<'a>(node: Option<&'a Node>, id: &'a str) -> &'a str {
+    node.map_or_else(|| type_name(id), |n| n.name.as_str())
+}
+
+/// The types that go by a name two or more of them share (`name_of`), by that name: each by the modules its id says it
+/// stands in (`type_path`), a sum written in place, whose id says none (`dotted`), by none. Where one of these names says a
+/// type, Atlas says the type with as much of its path as tells it apart from the others (`type_label`), so that one name
+/// says one construct. The view counts them among the nodes of the graph it draws, for a page of changes the union of the
+/// two readings, for the findings the parts of the repository together.
+#[derive(Clone, Debug, Default)]
+pub struct Shared(HashMap<String, Vec<Option<String>>>);
+
+impl Shared {
+    /// The shared names among the types of `nodes`, each node counted once however often it is given.
+    pub fn among<'a>(nodes: impl IntoIterator<Item = &'a Node>) -> Shared {
+        let mut seen: HashSet<&str> = HashSet::new();
+        let mut by: HashMap<String, Vec<Option<String>>> = HashMap::new();
+        for n in nodes.into_iter().filter(|n| matches!(n.kind, NodeKind::Class | NodeKind::External)) {
+            if seen.insert(n.id.as_str()) {
+                by.entry(n.name.clone()).or_default().push(dotted(&n.id).map(|_| type_path(&n.id).0.to_string()));
+            }
+        }
+        by.retain(|_, types| types.len() > 1);
+        Shared(by)
+    }
+
+    /// Whether two or more types go by `name`.
+    pub fn contains(&self, name: &str) -> bool {
+        self.0.contains_key(name)
+    }
+
+    /// The modules of a type of the shared `name` that stands in `module` (`orders.model`) that tell it apart from every
+    /// other type of that name: the fewest of the last that no other has as its last, so `orders.model` beside
+    /// `billing.model`, `model` beside `view`; all of them where every tail is another's, the whole dotted name being
+    /// that of another type too.
+    fn apart<'m>(&self, name: &str, module: &'m str) -> &'m str {
+        let parts: Vec<&str> = module.split('.').filter(|m| !m.is_empty()).collect();
+        let mut others: Vec<Vec<&str>> =
+            self.0.get(name).into_iter().flatten().flatten().map(|m| m.split('.').filter(|m| !m.is_empty()).collect()).collect();
+        if let Some(i) = others.iter().position(|o| *o == parts) {
+            others.remove(i);
+        }
+        // whether another type stands in modules whose last `k` are those of this one
+        let ends = |o: &[&str], k: usize| o.len() >= k && o[o.len() - k..] == parts[parts.len() - k..];
+        let k = (1..=parts.len()).find(|&k| !others.iter().any(|o| ends(o, k))).unwrap_or(parts.len());
+        let skipped: usize = parts[..parts.len() - k].iter().map(|m| m.len() + 1).sum();
+        &module[skipped..]
+    }
+}
+
+/// A type as Atlas says it, in the view (`typeLabel` in `viewer/plan.js`) and in words: its own name (`name_of`); where
+/// another type goes by that name too (`shared`), with as much of its module before it as tells it apart (`Shared`):
+/// `orders.model.Frame` beside `billing.model.Frame`, `dense.Rows` beside `sparse.Rows`. A sum written in place has no
+/// module (`sum`): where its name is shared, it is said as its variants, each as Atlas says it (`orders.model.Frame |
+/// Missing`). `node` gives the nodes of its reading by id.
+pub fn type_label<'n>(id: &str, node: impl Fn(&str) -> Option<&'n Node>, shared: &Shared) -> String {
+    label(id, &node, shared)
+}
+
+fn label<'n>(id: &str, node: &dyn Fn(&str) -> Option<&'n Node>, shared: &Shared) -> String {
+    let name = name_of(node(id), id);
+    if !shared.contains(name) {
+        return name.to_string();
+    }
+    if sum::is(id) {
+        return sum::variants(id).map(|v| label(v, node, shared)).collect::<Vec<_>>().join(" | ");
+    }
+    match shared.apart(name, type_path(id).0) {
+        "" => name.to_string(),
+        module => format!("{module}.{name}"),
+    }
+}
+
+/// A function as Atlas says it, in the view (`stepName` in `viewer/plan.js`, a step of a route) and in words: a method by
+/// its class (`type_label`) and its own name (`Block.scaled`); an initializer, which fills in the value a call to its
+/// class makes, as that call (`Block()`: Python's `__init__` and TypeScript's `constructor` are one construct); any other
+/// function by its own name. `node` gives the nodes of the function's reading by id.
+pub fn function_label<'n>(f: &Node, node: impl Fn(&str) -> Option<&'n Node>, shared: &Shared) -> String {
+    match f.cls.as_deref() {
+        Some(c) if f.ctor && !f.on_class => format!("{}()", type_label(c, &node, shared)),
+        Some(c) => format!("{}.{}", type_label(c, &node, shared), f.name),
+        None => f.name.clone(),
+    }
+}
+
+/// A step of a route as Atlas says it (`stepLabel` in `viewer/plan.js`): building a class as the call to it
+/// (`Frame()`); a method run on a class it is known to run on, `on`, by that class (`Kept.first`, `mathematics.md`,
+/// "Method resolution order"); any other function as `function_label` says it. `on` is empty where the class is not
+/// known or the call names the method it runs. An initializer is the call to its class wherever it runs.
+pub fn step_label<'n>(f: &Node, on: &str, node: impl Fn(&str) -> Option<&'n Node>, shared: &Shared) -> String {
+    let initializer = f.ctor && !f.on_class;
+    match f.cls.as_deref() {
+        _ if f.kind == NodeKind::Class => format!("{}()", type_label(&f.id, &node, shared)),
+        Some(_) if !on.is_empty() && !initializer => format!("{}.{}", type_label(on, &node, shared), f.name),
+        _ => function_label(f, &node, shared),
+    }
+}
+
+/// A node as Atlas says it, wherever it says it: a function as `function_label` says it, a module by its name, a type as
+/// `type_label` says it. `node` gives the nodes of its reading by id; `shared` the names two types of the graph share.
+pub fn said<'n>(id: &str, node: impl Fn(&str) -> Option<&'n Node>, shared: &Shared) -> String {
+    match node(id) {
+        Some(f) if matches!(f.kind, NodeKind::Function | NodeKind::Method) => function_label(f, &node, shared),
+        Some(m) if m.kind == NodeKind::Module => m.name.clone(),
+        _ => type_label(id, &node, shared),
+    }
+}
+
+/// The name a function goes by in the names of its values (`Store.path`, `Repo.read.dir`, `main.out`): a constructor's
+/// is its class's (`Store`), a method's its class's and its own (`Repo.read`), any other function's its own, each name
+/// as `name_of` says it. `node` gives the nodes of the function's reading by id.
+pub fn owner<'n>(f: &Node, node: impl Fn(&str) -> Option<&'n Node>) -> String {
+    let class = f.cls.as_deref().map(|c| name_of(node(c), c));
+    match (f.ctor, class) {
+        (true, Some(c)) => c.to_string(),
+        (false, Some(c)) => format!("{c}.{}", f.name),
+        _ => f.name.clone(),
+    }
 }
 
 /// The names of `held`, each as the last part of the type it resolves to: a type written through an
@@ -1019,6 +1265,9 @@ pub struct Touch {
     /// Which way data goes, when the call says: a file's mode, a database statement's verb, a
     /// download or an upload.
     pub dir: Option<Dir>,
+    /// What names the place it touches: for a file whose path is followed to where it is whole, the
+    /// place itself where the path is written out in full, else the term the code writes
+    /// (`{root}/out.csv`); else what the call is handed, its literal or the name it is written as.
     pub what: String,
     pub n: u32,
     /// What flows through the boundary, as the author named it, with its type when known.
@@ -1046,7 +1295,8 @@ pub struct Touch {
     /// Who makes its path or statement whole, where that is not its own function: callers whose
     /// calls hand what does, and entries whose users hand it. A disjunction of conjunctions, so a
     /// route shows it when every condition of one of them holds: it reaches each caller and starts
-    /// at the entry (`mathematics.md`, "Who makes a path whole"). Empty: whole in its own function.
+    /// at the entry (`mathematics.md`, "Who makes a path whole"). Kept with no conjunction beside
+    /// one it contains (`absorb`). Empty: whole in its own function.
     pub by: BTreeSet<Both>,
     /// What the call gives goes to nothing its function hands on: it only decides a choice, goes
     /// to an error, or is dropped. A read that checks what is there, not one that uses it.
@@ -1228,6 +1478,16 @@ impl FromIterator<Atom> for Both {
     }
 }
 
+/// Who makes a path whole in its canonical form: a monotone formula as the set of its minimal
+/// conjunctions. A conjunction that contains another holds only where the other does, so the
+/// formula with it is the formula without it (`a ∨ (a∧b) = a`): none is kept beside one it
+/// contains, and two formulas that hold at the same routes are one (`mathematics.md`, "Who makes a
+/// path whole"). Every formula is made or changed through it: read, merged, renamed, glued.
+pub fn absorb(by: &mut BTreeSet<Both>) {
+    let all: Vec<Both> = by.iter().cloned().collect();
+    by.retain(|b| !all.iter().any(|c| c != b && c.0.is_subset(&b.0)));
+}
+
 /// A touch as the graph's JSON writes it.
 #[derive(Serialize, Deserialize, TS, Clone, Debug, Default, PartialEq, Eq)]
 pub struct TouchJson {
@@ -1300,6 +1560,8 @@ impl TryFrom<TouchJson> for Touch {
     type Error = String;
     fn try_from(j: TouchJson) -> Result<Touch, String> {
         let c = Crossing::named(&j.kind, &j.dir).ok_or_else(|| format!("no part of the world called `{}`", j.kind))?;
+        let mut by: BTreeSet<Both> = j.by.iter().map(|b| Both::parse(b)).chain(j.users_of.into_iter().map(Both::users)).collect();
+        absorb(&mut by);
         Ok(Touch {
             kind: c.world,
             dir: c.dir,
@@ -1313,7 +1575,7 @@ impl TryFrom<TouchJson> for Touch {
             fixed_by: j.fixed_by,
             line: j.line,
             also_at: j.also_at,
-            by: j.by.iter().map(|b| Both::parse(b)).chain(j.users_of.into_iter().map(Both::users)).collect(),
+            by,
             checks: j.checks,
             holder: j.holder,
         })
@@ -1418,6 +1680,12 @@ pub struct Stats {
     /// The same calls by what the name each starts from is bound to.
     #[serde(default)]
     pub unresolved_calls: Unresolved,
+    /// The bodies the reading linked: the program's and those of the libraries' code it read.
+    #[serde(default)]
+    pub linked_bodies: usize,
+    /// Of those, the bodies of the libraries' code.
+    #[serde(default)]
+    pub linked_library_bodies: usize,
 }
 
 impl Stats {
@@ -1546,6 +1814,17 @@ pub struct Part {
     pub structural: bool,
 }
 
+/// A library read as code, as the dependency it is: the directory its code is read from, which
+/// names that code (Cargo's registry keeps one directory per version, an environment its own
+/// copy), and the version its manifest names, `""` where it names none.
+#[derive(Serialize, Deserialize, TS, Clone, Debug, Default, PartialEq, Eq)]
+#[ts(export)]
+pub struct Dependency {
+    pub dir: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub version: String,
+}
+
 /// What a language leaves its author to write: what its compiler neither asks for nor works out,
 /// so that code may leave it out and a reader then does not know it.
 #[derive(Serialize, Deserialize, TS, Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -1581,6 +1860,10 @@ pub struct Graph {
     pub parts: Vec<Part>,
     pub nodes: Vec<Node>,
     pub edges: Vec<Edge>,
+    /// The libraries it reads as code, by the id of each one's root, which its ids begin with
+    /// (`serde_json`, `plotkit`).
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub libraries: BTreeMap<String, Dependency>,
     /// Absolute path -> file text, for `inspect`.
     #[serde(default)]
     pub files: BTreeMap<String, String>,
@@ -1659,7 +1942,7 @@ impl Graph {
     /// replace, what its calls reach and the types they hand and give, the values its own code uses,
     /// binds and sets and the error it hands on, a value named by its step, whose calls make its touches
     /// whole and whose code decides where they go), an edge's ends, a make target's own with its
-    /// Makefile, its part and what it runs, the parts and the root.
+    /// Makefile, its part and what it runs, the root of each library, the parts and the root.
     pub fn rename(&mut self, to: &dyn Fn(&str) -> String) {
         let m = |s: &mut String| {
             if !s.is_empty() {
@@ -1707,6 +1990,7 @@ impl Graph {
             }
             for t in n.touches.iter_mut().chain(n.instead.iter_mut()) {
                 t.by = t.by.iter().map(|b| b.map(to)).collect();
+                absorb(&mut t.by);
                 t.fixed_by.iter_mut().for_each(&m);
                 if !t.holder.is_empty() {
                     m(&mut t.holder);
@@ -1723,6 +2007,7 @@ impl Graph {
             m(&mut t.part);
             t.calls.iter_mut().for_each(&m);
         }
+        self.libraries = std::mem::take(&mut self.libraries).into_iter().map(|(root, d)| (to(&root), d)).collect();
     }
 
     pub fn recount(&mut self) {
@@ -1915,6 +2200,36 @@ mod tests {
             proptest::prop_assert_eq!(t.in_route(&entry, &reached), u.in_route(&entry, &reached));
         }
 
+        /// Law: who makes a path whole is a monotone formula, and two formulas that hold at the same
+        /// routes are one (absorption, `a ∨ (a∧b) = a`). A formula with conjunctions added that
+        /// contain one of its own gives the same touch and the same JSON as the formula alone; no
+        /// conjunction the touch keeps contains another; and it runs where the formula as written
+        /// holds.
+        #[test]
+        fn a_conjunction_that_contains_another_adds_nothing(
+            (by, _) in written_twice(),
+            more in proptest::collection::vec((0usize..4, "(users_of:)?[a-e](\\.[a-c])?"), 0..4),
+            entry in "[a-e]",
+            reached in proptest::collection::btree_set("[a-e](\\.[a-c])?", 0..8),
+        ) {
+            let mut longer = by.clone();
+            for (i, extra) in &more {
+                if !by.is_empty() {
+                    longer.push(format!("{}&{extra}", by[i % by.len()]));
+                }
+            }
+            let touch = |by: Vec<String>| Touch::try_from(TouchJson { kind: "disk_read".into(), by, ..TouchJson::default() }).unwrap();
+            let (t, u) = (touch(by), touch(longer.clone()));
+            proptest::prop_assert_eq!(&t, &u);
+            proptest::prop_assert_eq!(serde_json::to_string(&t).unwrap(), serde_json::to_string(&u).unwrap());
+            for a in u.by.iter() {
+                proptest::prop_assert!(u.by.iter().all(|b| a == b || !a.0.is_subset(&b.0)), "{a} beside one that contains it");
+            }
+            let reached = |f: &str| reached.contains(f);
+            let as_written = longer.is_empty() || longer.iter().any(|b| Both::parse(b).holds(&entry, &reached));
+            proptest::prop_assert_eq!(u.in_route(&entry, &reached), as_written);
+        }
+
         /// Law: a route serves a set of methods (`GET∨POST = POST∨GET`, `GET∨GET = GET`). Methods
         /// listed in another order, repeated, or in another case give the same route, the same label
         /// and the same JSON, and the JSON reads back as the route it was written from.
@@ -1947,6 +2262,40 @@ mod tests {
             proptest::prop_assert_eq!(Request::of(&r.to_string()), r.clone());
             let json = serde_json::to_string(&r).unwrap();
             proptest::prop_assert_eq!(serde_json::from_str::<Request>(&json).unwrap(), r);
+        }
+    }
+
+    proptest::proptest! {
+        /// Law: the tag of a name past the code is a prism (`ext`). Previewing what was reviewed
+        /// gives the name back (`path(of(p)) = Some(p)`), reviewing what a preview gives is the id it
+        /// was taken from, and an id of the code's previews to nothing. `name` is the copairing: the
+        /// name either side says.
+        #[test]
+        fn the_tag_of_a_name_past_the_code_is_a_prism(p in "(ext:)?[a-z.:\\[\\] ]{0,10}", id in "(ext:|ex|e)?[a-z.:]{0,10}") {
+            let reviewed = ext::of(&p);
+            proptest::prop_assert_eq!(ext::path(&reviewed), Some(p.as_str()));
+            proptest::prop_assert_eq!(ext::name(&reviewed), p.as_str());
+            match ext::path(&id) {
+                Some(q) => proptest::prop_assert_eq!(ext::of(q), id.clone()),
+                None => {
+                    proptest::prop_assert!(!ext::is(&id));
+                    proptest::prop_assert_eq!(ext::name(&id), id.as_str());
+                }
+            }
+        }
+
+        /// Law: what a reader resolves a name to is a value of `Code ⊔ Beyond`, written as an id and
+        /// read back as the same value; one side is the code's, the other past it, never both.
+        #[test]
+        fn a_resolved_name_reads_back_from_its_id(beyond in proptest::bool::ANY, p in "[a-z.:]{0,10}") {
+            proptest::prop_assume!(beyond || !ext::is(&p));
+            let r = if beyond { Resolved::Beyond(p.clone()) } else { Resolved::Code(p.clone()) };
+            let id = r.clone().id();
+            proptest::prop_assert_eq!(Resolved::of_id(id.clone()), r.clone());
+            proptest::prop_assert_eq!(ext::is(&id), beyond);
+            proptest::prop_assert_eq!(r.is_beyond(), beyond);
+            proptest::prop_assert_eq!(r.clone().code().is_some(), !beyond);
+            proptest::prop_assert_eq!(r.beyond(), beyond.then_some(p));
         }
     }
 }

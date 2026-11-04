@@ -2,18 +2,40 @@
 //! edges they make, and what its calls touch. A reader says what each call is and how its
 //! language writes a string and a choice; the rest is read here.
 
-use std::cell::OnceCell;
+use std::cell::{OnceCell, RefCell};
 use std::collections::{HashMap, HashSet};
 
 use tree_sitter::Node as TsNode;
 
 use crate::builder::GraphBuilder;
 use crate::effects::{self, Facts};
-use crate::model::{Crossing, Dir, EdgeKind, Held, NodeKind, Set, Site, Slot, Test, Touch, Use, World};
+use crate::model::{ext, Crossing, Dir, EdgeKind, Held, NodeKind, Set, Site, Slot, Test, Touch, Use, World};
 use crate::tree::{
-    beneath, guarded_by, guards, named_children, number_choices, payload_of, starts_at_literal, text, walk, walk_all, what_of, wrapped,
-    ChoiceSyntax, Part, Wrappers,
+    beneath, guarded_by, guards, named_children, number_choices, parent, payload_of, starts_at_literal, text, walk, walk_all, what_of,
+    wrapped, wraps, ChoiceSyntax, Part, Wrappers,
 };
+
+/// The touches each call of a body made, by where the call is written: the touches made now, and
+/// those that wait for what callers hand, each by its place in the reader's list. The touch that
+/// opened a door is found by the call that opened it, so two doors opened on one line are two.
+#[derive(Default)]
+pub struct MadeBy(Vec<(Range, std::ops::Range<usize>, std::ops::Range<usize>)>);
+
+impl MadeBy {
+    /// Call `c` made the touches from `touches` and the waiting ones from `waiting` on, up to the
+    /// ends of both lists.
+    pub fn record(&mut self, c: TsNode, touches: std::ops::Range<usize>, waiting: std::ops::Range<usize>) {
+        self.0.push(((c.start_byte(), c.end_byte()), touches, waiting));
+    }
+
+    /// The touches and the waiting touches the calls written within `n` made, each by its place in
+    /// its list, in the order they were made.
+    pub fn within(&self, n: TsNode) -> (Vec<usize>, Vec<usize>) {
+        let inside = |(s, e): Range| n.start_byte() <= s && e <= n.end_byte();
+        let made = self.0.iter().filter(|(r, _, _)| inside(*r));
+        (made.clone().flat_map(|(_, t, _)| t.clone()).collect(), made.flat_map(|(_, _, w)| w.clone()).collect())
+    }
+}
 
 /// A call that crosses into the world, as the code writes it.
 pub struct Crosses {
@@ -33,7 +55,8 @@ impl Crosses {
     /// Read a call that crosses `kind` through operation `op` of `lib`: the facts its literals
     /// refine, what it touches, what flows (by the types of the names `held`), and whether its
     /// place starts at a literal. `strings` are the kinds of node a string is in the language, and
-    /// `makes_path` says which of its calls make a path or a URL of their first argument.
+    /// `path_function` says which path function a call's function is, as the reader's evaluator
+    /// of paths finds it.
     #[allow(clippy::too_many_arguments)]
     pub fn read(
         c: TsNode,
@@ -44,12 +67,12 @@ impl Crosses {
         literals: &[String],
         strings: &[&str],
         held: &HashMap<String, String>,
-        makes_path: &dyn Fn(TsNode) -> bool,
+        path_function: &dyn Fn(TsNode) -> Option<crate::knowledge::PathFn>,
     ) -> Crosses {
         let facts = effects::facts(kind, lib, op, literals);
         let what = what_of(c, src, strings, "arguments");
         let payload = payload_of(c, src, &what, "arguments", held);
-        let fixed = facts.kind.located() && starts_at_literal(c, src, strings, "arguments", effects::on_receiver(op), makes_path);
+        let fixed = facts.kind.located() && starts_at_literal(c, src, strings, "arguments", effects::on_receiver(op), path_function);
         Crosses { facts, what, payload, fixed, op: op.to_string(), line: c.start_position().row as u32 + 1 }
     }
 
@@ -97,8 +120,9 @@ pub struct UseSyntax {
     /// Is `child` what the call `node` is handed: its arguments.
     pub hands: fn(TsNode, TsNode) -> bool,
     /// The names a call `node` changes among what it is handed, where the language writes it
-    /// (Rust's `&mut s`): the call makes them anew from what it runs on.
-    pub changes: fn(TsNode) -> Vec<TsNode>,
+    /// (Rust's `&mut s`): the call makes them anew from what it runs on. A call that hands on the
+    /// value it is called on (`f.read_to_string(&mut s).unwrap()`) changes what that value's call changes.
+    pub changes: for<'t> fn(TsNode<'t>, &[u8]) -> Vec<TsNode<'t>>,
     /// Is `child` what `node` takes apart into the names its arms bind: a `match`'s subject.
     /// Where those names go is not followed, so the value is taken as going on.
     pub splits: fn(TsNode, TsNode) -> bool,
@@ -113,6 +137,10 @@ pub struct UseSyntax {
     /// Are a binding's targets and its value written as as many parts each, so that each target is
     /// bound to the part of the value at its place: `a.x, a.y = b, c`, `(a.x, a.y) = (b, c)`.
     pub pairs: fn(TsNode, TsNode) -> bool,
+    /// Does the language's own code compute what `node` gives of its parts, with no call: an operator, a display of several
+    /// values, a format (`a - b`, `!ok`, `[a, b]`, `(a, b)`, `f"{a}"`, `` `${a}` ``). A choice is none (`a if c else b`, `x ??
+    /// y`, `a && b`): its arms are the body's choices (`computed_of`).
+    pub computes: fn(TsNode, &[u8]) -> bool,
     /// What hands on the value inside it (`tree::Wrappers`): a call written in one is that call to
     /// what it stands in (`await f(x)`, `f(x)?`).
     pub wrappers: Wrappers,
@@ -199,6 +227,42 @@ pub fn placed<'t>(
     out
 }
 
+/// The names the value `v` is computed of by the language's own code (`UseSyntax::computes`): through its operators,
+/// displays and formats down to the parts that are none, each of which is what `part` says, the reader's: the names it is a
+/// projection of (`a` of `a.x[k]`), none for a literal, `None` for a part made otherwise (a call, a function written in
+/// place, a choice), and then for the whole. An operator is no occurrence: it is the language's operation
+/// handed its parts, glued into what takes its value as a projection is (`mathematics.md`, "One fine plan"), so a step
+/// handed `height - margin` is handed what `height` and `margin` hold.
+pub fn computed_of<'t>(
+    v: TsNode<'t>,
+    u: &UseSyntax,
+    src: &[u8],
+    part: &dyn Fn(TsNode<'t>) -> Option<Vec<TsNode<'t>>>,
+) -> Option<Vec<TsNode<'t>>> {
+    let v = beneath(v, u.wrappers);
+    if !(u.computes)(v, src) {
+        return part(v);
+    }
+    let mut out = vec![];
+    for c in named_children(v) {
+        out.extend(computed_of(c, u, src, part)?);
+    }
+    Some(out)
+}
+
+/// The names a name bound to `v` stands for: those `v` is computed of, where it is a computation of at least one name and
+/// no part of it is made otherwise (`computed_of`). Such a name is the body's own (`Node::binds`) but holds no value of its
+/// own: `bottom = height - margin; f(bottom)` is `f(height - margin)`, and own code that reads `bottom` reads `height` and
+/// `margin`, in every language. None for any other value: a name, a projection, a literal (a value the body makes itself), a
+/// call's result.
+pub fn stands_for<'t>(v: TsNode<'t>, u: &UseSyntax, src: &[u8], part: &dyn Fn(TsNode<'t>) -> Option<Vec<TsNode<'t>>>) -> Vec<TsNode<'t>> {
+    let v = beneath(v, u.wrappers);
+    if !(u.computes)(v, src) {
+        return vec![];
+    }
+    computed_of(v, u, src, part).unwrap_or_default()
+}
+
 /// One call as a step of the route through its body: what it runs, on which class and how the
 /// call finds it (`Site::named`, `Site::after`), what it is handed and what it gives back, and the
 /// options of the command line it parses when it parses the one the program is run with.
@@ -216,6 +280,9 @@ pub struct Step {
     pub hands: Vec<Held>,
     pub gives: Vec<Held>,
     pub command_line: Option<Vec<String>>,
+    /// Where the call is written from, where that lies before the node it is read at: among a macro's tokens a method's
+    /// call is the group it is handed, written from its receiver on (`Plain.name()`), as a call written outside one is.
+    pub from: Option<usize>,
 }
 
 /// What a call gives: the values it returns, and the named values it changes in place
@@ -227,6 +294,17 @@ fn changed_values(mut gives: Vec<Held>, changed: Vec<Held>) -> Vec<Held> {
         }
     }
     gives
+}
+
+/// Where a name the body writes is read (`Steps::reading`).
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Read {
+    /// Where it stands.
+    Here,
+    /// Where a name bound to it is read: the name stands for it, or for a part of what it holds.
+    There,
+    /// Nowhere: a label, or a name bound where it stands.
+    Not,
 }
 
 /// The steps of a body in the order they run, the names they keep, and the edges they make: read
@@ -257,8 +335,16 @@ pub struct Steps<'t, 's> {
     pub kept: HashSet<String>,
     /// The values the body binds a name to by a literal (`Steps::literal`), by where each is written.
     literals: HashSet<Range>,
+    /// The names the language's own code computes a value bound to a name of, where the reader follows that name to them
+    /// (`stands_for`), by their nodes: they are read where the name is (`Steps::reading`).
+    stood: HashSet<usize>,
+    /// The library's calls that look a part of a collection up (`Steps::looks_up`), each with the collection.
+    lookups: Vec<(TsNode<'t>, TsNode<'t>)>,
     /// The body read once, when a question first climbs it or follows a name through it.
     index: OnceCell<Index<'t, 's>>,
+    /// Of each name asked, where the climb from it to the body says it is read (`Steps::climb`). The climb reads the
+    /// body's tree and its lookups, so a lookup the body adds asks again.
+    climbs: RefCell<HashMap<usize, Read>>,
 }
 
 /// A body read once: the node each of its nodes stands in, the named nodes each holds, and the names written in it in
@@ -298,6 +384,41 @@ impl<'t, 's> Index<'t, 's> {
         }
         Index { parents, named, names, written }
     }
+
+    /// Whether `n` is `body` or stands in it, so that the index holds it.
+    fn holds(&self, body: TsNode<'t>, n: TsNode<'t>) -> bool {
+        n.id() == body.id() || self.parents.contains_key(&n.id())
+    }
+
+    /// The named nodes `n` holds, in source order, as tree-sitter gives them.
+    fn named_of(&self, body: TsNode<'t>, n: TsNode<'t>) -> std::borrow::Cow<'_, [TsNode<'t>]> {
+        if self.holds(body, n) {
+            std::borrow::Cow::Borrowed(self.named.get(&n.id()).map_or(&[][..], |all| &all[..]))
+        } else {
+            std::borrow::Cow::Owned(named_children(n))
+        }
+    }
+
+    /// Whether a name written in `n`, or `n` itself, writes `name`: one of `walk(n, names)` does.
+    fn writes(&self, body: TsNode<'t>, n: TsNode<'t>, name: &str, names: &[&str], src: &[u8]) -> bool {
+        if !self.holds(body, n) {
+            return walk(n, names).iter().any(|x| text(*x, src) == name);
+        }
+        let within = |x: &TsNode<'t>| {
+            let mut at = *x;
+            loop {
+                if at.id() == n.id() {
+                    return true;
+                }
+                match self.parents.get(&at.id()) {
+                    Some((p, _)) => at = *p,
+                    None => return false,
+                }
+            }
+        };
+        let inside = |x: &&TsNode<'t>| n.start_byte() <= x.start_byte() && x.end_byte() <= n.end_byte();
+        self.written.get(name).into_iter().flatten().filter(inside).any(within)
+    }
 }
 
 impl<'t, 's> Steps<'t, 's> {
@@ -320,7 +441,10 @@ impl<'t, 's> Steps<'t, 's> {
             converts: None,
             kept: HashSet::new(),
             literals: HashSet::new(),
+            stood: HashSet::new(),
+            lookups: vec![],
             index: OnceCell::new(),
+            climbs: RefCell::new(HashMap::new()),
         }
     }
 
@@ -332,8 +456,18 @@ impl<'t, 's> Steps<'t, 's> {
     fn up(&self, n: TsNode<'t>) -> Option<TsNode<'t>> {
         match self.index().parents.get(&n.id()) {
             Some((p, _)) => Some(*p),
-            None => n.parent(),
+            None => parent(n),
         }
+    }
+
+    /// The named nodes `n` holds, in source order (`Index::named_of`).
+    fn named(&self, n: TsNode<'t>) -> std::borrow::Cow<'_, [TsNode<'t>]> {
+        self.index().named_of(self.body, n)
+    }
+
+    /// Whether a name written in `n`, or `n` itself, writes `name` (`Index::writes`).
+    fn writes(&self, n: TsNode<'t>, name: &str) -> bool {
+        self.index().writes(self.body, n, name, self.uses.names, self.src)
     }
 
     /// The named nodes before `n` in the node it stands in, the nearest first.
@@ -349,7 +483,7 @@ impl<'t, 's> Steps<'t, 's> {
     fn outermost(&self, n: TsNode<'t>) -> TsNode<'t> {
         let wrappers = self.uses.wrappers;
         let mut n = n;
-        while let Some(p) = self.up(n).filter(|p| wrappers.contains(&p.kind()) && wrapped(*p).map(|x| x.id()) == Some(n.id())) {
+        while let Some(p) = self.up(n).filter(|p| wraps(wrappers, *p) && wrapped(*p).map(|x| x.id()) == Some(n.id())) {
             n = p;
         }
         n
@@ -422,7 +556,7 @@ impl<'t, 's> Steps<'t, 's> {
                 return true;
             }
             let last = up.named_child(up.named_child_count().saturating_sub(1)).map(|l| l.id()) == Some(at.id());
-            let through = (u.wrappers.contains(&up.kind()) && wrapped(up).map(|w| w.id()) == Some(at.id()))
+            let through = (wraps(u.wrappers, up) && wrapped(up).map(|w| w.id()) == Some(at.id()))
                 || (u.tails.contains(&up.kind()) && last && !(u.drops)(up, at, self.src))
                 || matches!((self.syntax.part)(up, at, self.src), Part::Arm(_));
             if !through {
@@ -448,7 +582,7 @@ impl<'t, 's> Steps<'t, 's> {
             }
             let Some(up) = self.up(at).filter(|_| at.id() != self.body.id()) else { return false };
             let last = named_children(up).into_iter().filter(|x| !x.kind().ends_with("comment")).last().is_some_and(|l| l.id() == at.id());
-            let through = (u.wrappers.contains(&up.kind()) && wrapped(up).is_some_and(|w| w.id() == at.id()))
+            let through = (wraps(u.wrappers, up) && wrapped(up).is_some_and(|w| w.id() == at.id()))
                 || (u.tails.contains(&up.kind()) && last && !(u.drops)(up, at, self.src))
                 || matches!((self.syntax.part)(up, at, self.src), Part::Arm(_));
             if !through && !(u.leaves)(up, self.body) {
@@ -488,7 +622,7 @@ impl<'t, 's> Steps<'t, 's> {
         let u = self.uses;
         let Some(propagates) = u.propagates else { return true };
         let mut at = c;
-        while let Some(p) = self.up(at).filter(|p| u.wrappers.contains(&p.kind()) && wrapped(*p).map(|w| w.id()) == Some(at.id())) {
+        while let Some(p) = self.up(at).filter(|p| wraps(u.wrappers, *p) && wrapped(*p).map(|w| w.id()) == Some(at.id())) {
             if propagates.contains(&p.kind()) {
                 return !self.in_function(p);
             }
@@ -537,8 +671,12 @@ impl<'t, 's> Steps<'t, 's> {
     /// is handed is the step's. `held` is the reader's: the values a name, or a string that writes
     /// names, holds where it stands, as a call written there would be handed them; none for one that
     /// holds no value (a function, a module, a class). Each value once in each arm it is used in.
-    pub fn uses(&mut self, held: &dyn Fn(TsNode<'t>) -> Vec<Held>) {
+    /// `stands` is the reader's too: the names a name, or a string that writes names, stands for where it stands, those it
+    /// follows it to through a binding to what the language's own code computes of them (`stands_for`), none where it
+    /// follows none. The body's own code reads those where it reads the name, never where it binds it.
+    pub fn uses(&mut self, held: &dyn Fn(TsNode<'t>) -> Vec<Held>, stands: &dyn Fn(TsNode<'t>) -> Vec<TsNode<'t>>) {
         let u = self.uses;
+        self.stood = self.stood(stands);
         let steps: Vec<(usize, usize)> =
             self.sites.iter().filter(|s| s.span != (0, 0)).map(|s| (s.span.0 as usize, s.span.1 as usize)).collect();
         let in_step = |n: TsNode| steps.iter().any(|(a, b)| *a <= n.start_byte() && n.end_byte() <= *b);
@@ -557,15 +695,15 @@ impl<'t, 's> Steps<'t, 's> {
                     }
                 }
             }
-            stack.extend(named_children(n).into_iter().rev());
+            stack.extend(self.named(n).iter().rev().copied());
         }
         // a name a step gave holds what the step gave, where the reader knows no type for it where it is read, or one of a
         // library's: the value is the step's, of no type of the code's where the step gives none (`fig, ax = plt.subplots()`)
-        for u in out.iter_mut().filter(|u| (u.ty.is_empty() || u.ty.starts_with("ext:")) && !u.name.is_empty()) {
+        for u in out.iter_mut().filter(|u| (u.ty.is_empty() || ext::is(&u.ty)) && !u.name.is_empty()) {
             let types: HashSet<&String> = self.sites.iter().flat_map(|s| &s.gives).filter(|g| g.name == u.name).map(|g| &g.ty).collect();
             let types: Vec<&String> = types.into_iter().collect();
             match types[..] {
-                [t] if !t.is_empty() || u.ty.starts_with("ext:") => u.ty = t.clone(),
+                [t] if !t.is_empty() || ext::is(&u.ty) => u.ty = t.clone(),
                 _ => {
                     if let [t] = types.iter().filter(|t| !t.is_empty()).collect::<Vec<_>>()[..] {
                         if u.ty.is_empty() {
@@ -718,11 +856,18 @@ impl<'t, 's> Steps<'t, 's> {
                     // the projection the name is read through: the fields read of it, and what hands on the value inside it
                     let mut e = n;
                     while let Some(q) = self.up(e).filter(|_| e.id() != c.id()) {
+                        // a lookup is an element of its collection, as a subscript is
+                        if let Some(lookup) =
+                            self.looking_up(e).filter(|l| c.start_byte() <= l.start_byte() && l.end_byte() <= c.end_byte())
+                        {
+                            e = lookup;
+                            continue;
+                        }
                         let of = |x: TsNode| beneath(x, u.wrappers).id() == beneath(e, u.wrappers).id();
-                        let wraps = u.wrappers.contains(&q.kind()) && wrapped(q).is_some_and(|w| w.id() == e.id());
+                        let wrapper = wraps(u.wrappers, q) && wrapped(q).is_some_and(|w| w.id() == e.id());
                         let reads = (u.field)(q, self.src).is_some_and(|(o, _)| of(o))
                             || (u.keeps.contains(&q.kind()) && q.named_child(0).is_some_and(of));
-                        if !(wraps || reads) || callee(q) {
+                        if !(wrapper || reads) || callee(q) {
                             break;
                         }
                         e = q;
@@ -742,14 +887,14 @@ impl<'t, 's> Steps<'t, 's> {
 
     /// The fields an expression reads of the name it starts at, as the code writes them, the elements it
     /// goes through left out: `fig` of `other.fig`, `fig.title` of `self.fig.title`, `rows` of
-    /// `self.rows[i]`. None where it starts at no name (a call's result) or reads no field.
-    fn fields(&self, n: TsNode) -> Option<String> {
+    /// `self.rows[i]` and of `self.rows.first()`. None where it starts at no name (a call's result) or reads no field.
+    fn fields(&self, n: TsNode<'t>) -> Option<String> {
         self.projection(n).map(|(_, fields)| fields)
     }
 
     /// The name an expression is a projection of and the fields it reads of it (`fields`): `self` and `title` of
     /// `self.title`.
-    fn projection<'n>(&self, n: TsNode<'n>) -> Option<(TsNode<'n>, String)> {
+    fn projection(&self, n: TsNode<'t>) -> Option<(TsNode<'t>, String)> {
         let u = self.uses;
         let (mut k, mut fields) = (beneath(n, u.wrappers), vec![]);
         loop {
@@ -758,12 +903,32 @@ impl<'t, 's> Steps<'t, 's> {
                 k = beneath(of, u.wrappers);
             } else if u.keeps.contains(&k.kind()) {
                 k = beneath(k.named_child(0)?, u.wrappers);
+            } else if let Some(of) = self.looked_up_in(k) {
+                k = of;
             } else {
                 break;
             }
         }
         fields.reverse();
         (!fields.is_empty() && (u.names.contains(&k.kind()) || u.reads.contains(&k.kind()))).then(|| (k, fields.join(".")))
+    }
+
+    /// Whether `n` is a part of a value the body has, no value of its own: a name, what a step gives, or a field or an element
+    /// of either (`x`, `self.rows`, `sites[i]`, `sites.first()`, `figures().clean`).
+    fn part_of_a_value(&self, n: TsNode<'t>) -> bool {
+        let u = self.uses;
+        let mut k = beneath(n, u.wrappers);
+        loop {
+            if let Some((of, _)) = (u.field)(k, self.src) {
+                k = beneath(of, u.wrappers);
+            } else if let Some(inner) = u.keeps.contains(&k.kind()).then(|| k.named_child(0)).flatten() {
+                k = beneath(inner, u.wrappers);
+            } else if let Some(of) = self.looked_up_in(k) {
+                k = of;
+            } else {
+                return u.names.contains(&k.kind()) || u.reads.contains(&k.kind()) || self.sites.iter().any(|s| s.span == span(k));
+            }
+        }
     }
 
     /// The fields `e` reads of the value `h` the name `n` holds, where `e` is `n` or a projection of it: those it reads of
@@ -803,8 +968,13 @@ impl<'t, 's> Steps<'t, 's> {
         }
         let mut k = at;
         while let Some(p) = self.up(k) {
+            // a lookup goes on from its collection, as a subscript does
+            if let Some(lookup) = self.looking_up(k) {
+                k = lookup;
+                continue;
+            }
             let of = |x: TsNode| beneath(x, u.wrappers).id() == beneath(k, u.wrappers).id();
-            if (u.wrappers.contains(&p.kind()) && wrapped(p).is_some_and(|w| w.id() == k.id()))
+            if (wraps(u.wrappers, p) && wrapped(p).is_some_and(|w| w.id() == k.id()))
                 || (u.field)(p, self.src).is_some_and(|(o, _)| of(o))
                 || (u.keeps.contains(&p.kind()) && p.named_child(0).is_some_and(of))
             {
@@ -843,6 +1013,18 @@ impl<'t, 's> Steps<'t, 's> {
     /// reads (`fig, ax = self.fig, self.ax` binds `ax` to `ax`). An element is left out (`row = self.rows[k]` is `rows`).
     fn bound_by(&self, binding: TsNode<'t>, name: &str) -> Option<String> {
         let u = self.uses;
+        let part = self.bound_to(binding, name)?;
+        match self.projection(part) {
+            Some((_, fields)) => Some(fields),
+            None if u.names.contains(&part.kind()) || u.reads.contains(&part.kind()) => Some(String::new()),
+            None => None,
+        }
+    }
+
+    /// The expression `binding` binds `name` to: its value, or, where the binding and its value are written as as many parts,
+    /// the part at the name's place (`fig, ax = self.fig, self.ax` binds `ax` to `self.ax`).
+    fn bound_to(&self, binding: TsNode<'t>, name: &str) -> Option<TsNode<'t>> {
+        let u = self.uses;
         let (targets, value) = (u.binds)(binding)?;
         let each = |x: TsNode<'t>| named_children(x).into_iter().filter(|c| !c.kind().ends_with("comment")).collect::<Vec<_>>();
         let part = match ((u.pairs)(targets, value), each(targets), each(value)) {
@@ -852,12 +1034,7 @@ impl<'t, 's> Steps<'t, 's> {
             }
             _ => value,
         };
-        let part = beneath(part, u.wrappers);
-        match self.projection(part) {
-            Some((_, fields)) => Some(fields),
-            None if u.names.contains(&part.kind()) || u.reads.contains(&part.kind()) => Some(String::new()),
-            None => None,
-        }
+        Some(beneath(part, u.wrappers))
     }
 
     /// Whether the body's own code reads what step `i` of the program's code gives, by no name: through
@@ -873,7 +1050,7 @@ impl<'t, 's> Steps<'t, 's> {
         if s.to.is_empty() || s.span == (0, 0) || s.raises || s.gives.iter().any(|g| !g.name.is_empty()) {
             return false;
         }
-        let Some(c) = self.body.descendant_for_byte_range(s.span.0 as usize, s.span.1 as usize) else { return false };
+        let Some(c) = self.read_at(s.span) else { return false };
         // what a function handed on by its name gives, the call's it is handed to (`lines.map(parse_line)`)
         if u.names.contains(&c.kind()) {
             return false;
@@ -882,9 +1059,9 @@ impl<'t, 's> Steps<'t, 's> {
         while let Some(p) = self.up(child).filter(|_| child.id() != self.body.id()) {
             let last =
                 named_children(p).into_iter().filter(|x| !x.kind().ends_with("comment")).last().is_some_and(|l| l.id() == child.id());
-            if u.wrappers.contains(&p.kind()) && wrapped(p).is_some_and(|w| w.id() == child.id()) {
+            if wraps(u.wrappers, p) && wrapped(p).is_some_and(|w| w.id() == child.id()) {
                 child = p;
-            } else if u.keeps.contains(&p.kind()) {
+            } else if u.keeps.contains(&p.kind()) || self.in_lookup(p) {
                 (child, part) = (p, true);
             } else if (u.tails.contains(&p.kind()) && last && !(u.drops)(p, child, self.src))
                 || matches!((self.syntax.part)(p, child, self.src), Part::Arm(_))
@@ -928,6 +1105,22 @@ impl<'t, 's> Steps<'t, 's> {
         false
     }
 
+    /// The node a step is read at: the one its span covers, or for a call written from before that node (`Step::from`, a
+    /// method's call among a macro's tokens), the outermost node within the span that ends where it does: the group the
+    /// call is handed.
+    fn read_at(&self, (a, b): (u32, u32)) -> Option<TsNode<'t>> {
+        let (a, b) = (a as usize, b as usize);
+        let n = self.body.descendant_for_byte_range(a, b)?;
+        if n.byte_range() == (a..b) {
+            return Some(n);
+        }
+        let mut t = self.body.descendant_for_byte_range(b.saturating_sub(1), b)?;
+        while let Some(p) = parent(t).filter(|p| a <= p.start_byte() && p.end_byte() == b) {
+            t = p;
+        }
+        Some(t)
+    }
+
     /// The innermost function written in place that `n` stands in, within the body: the node that binds its own names
     /// beside the part `n` is in (`|x| ..`, `(x) => { .. }`).
     fn function_around(&self, n: TsNode<'t>) -> Option<TsNode<'t>> {
@@ -956,50 +1149,93 @@ impl<'t, 's> Steps<'t, 's> {
         None
     }
 
-    /// Whether the name `n` is read where it stands: no label (the `f` of `x.f`), not what a binding
-    /// or a pattern binds (`x` of `x = v`, the names of `Some(x) =>`), and not a name a function written
-    /// in place binds for itself. A binding that reads what it binds reads it (`x += v`), and a change
-    /// made through a name reads the name (`x.f = v`, `rows[i] = v`). A name a binding binds to a part
-    /// of what it holds (`width = settings.width`, `row = rows[k]`, `for r in rows`) is read where the
-    /// bound name is: that name stands for the part, and a step it is handed takes it, the projection
-    /// glued into the step (`mathematics.md`, "One fine plan"). An operator, a format or a call the
-    /// body computes a value with reads what it is computed from.
+    /// Whether the name `n` is read where it stands (`Steps::reading`).
     fn read_here(&self, n: TsNode<'t>) -> bool {
+        self.reading(n) == Read::Here
+    }
+
+    /// Where the name `n` is read. Nowhere for a label (the `f` of `x.f`), what a binding or a pattern
+    /// binds (`x` of `x = v`, the names of `Some(x) =>`) and a name a function written in place binds for
+    /// itself. A binding that reads what it binds reads it (`x += v`), and a change made through a name
+    /// reads the name (`x.f = v`, `rows[i] = v`). A name a binding binds to a part of what it holds
+    /// (`width = settings.width`, `row = rows[k]`, `for r in rows`) is read where the bound name is: that
+    /// name stands for the part, and a step it is handed takes it, the projection glued into the step
+    /// (`mathematics.md`, "One fine plan"). So is a name the language's own code computes a bound value of
+    /// (`gap = first.db - second.db`), where the reader follows the bound name to it (`Steps::stood`): an
+    /// operator is no occurrence, and binding what it computes adds no arrow. Any other operator, format
+    /// or call the body computes a value with reads what it is computed from where it is written.
+    fn reading(&self, n: TsNode<'t>) -> Read {
         let u = self.uses;
         if (u.label)(n, self.src) {
-            return false;
+            return Read::Not;
         }
+        if self.stood.contains(&n.id()) {
+            return Read::There;
+        }
+        if let Some(r) = self.climbs.borrow().get(&n.id()) {
+            return *r;
+        }
+        let r = self.climb(n);
+        self.climbs.borrow_mut().insert(n.id(), r);
+        r
+    }
+
+    /// Where the name `n` is read, by the nodes between it and the body (`Steps::reading`).
+    fn climb(&self, n: TsNode<'t>) -> Read {
+        let u = self.uses;
         let name = text(n, self.src);
         // `chain`: what lies between `n` and `child` takes a part of what `n` holds, or hands it on
         let (mut child, mut through, mut chain) = (n, false, true);
         while let Some(p) = self.up(child).filter(|_| child.id() != self.body.id()) {
             if (u.binders)(p, child).is_some() {
-                return false;
+                return Read::Not;
             }
-            let own = |c: &TsNode| c.id() != child.id() && (u.binders)(p, *c) == Some(true);
-            if named_children(p).into_iter().filter(own).any(|c| walk(c, u.names).iter().any(|x| text(*x, self.src) == name)) {
-                return false;
+            let own = |c: &TsNode<'t>| c.id() != child.id() && self.writes(*c, name) && (u.binders)(p, *c) == Some(true);
+            if self.named(p).iter().any(own) {
+                return Read::Not;
             }
             if let Some((targets, value)) = (u.binds)(p) {
                 if targets.id() == child.id() {
-                    return through || u.updates.contains(&p.kind());
+                    return if through || u.updates.contains(&p.kind()) { Read::Here } else { Read::Not };
                 }
                 let kept = !walk(targets, u.keeps).is_empty();
                 if value.id() == child.id() && chain && !kept && !u.updates.contains(&p.kind()) && !self.decides(p) {
-                    return false;
+                    return Read::There;
                 }
             }
             if (u.parts)(p, child) && chain {
-                return false;
+                return Read::There;
             }
             // a binding written as as many parts as its value binds each name to the part at its place, two bindings
             // (`fig, ax = self.fig, self.ax`)
             let paired = self.up(p).and_then(|b| (u.binds)(b)).is_some_and(|(t, v)| v.id() == p.id() && (u.pairs)(t, v));
-            through |= u.keeps.contains(&p.kind());
-            chain &= u.keeps.contains(&p.kind()) || u.wrappers.contains(&p.kind()) || paired;
+            // a lookup is an element of its collection, as a subscript is (`xs.first()`, `d.get(k)`)
+            let part = u.keeps.contains(&p.kind()) || self.in_lookup(p);
+            through |= part;
+            chain &= part || wraps(u.wrappers, p) || paired;
             child = p;
         }
-        true
+        Read::Here
+    }
+
+    /// The names the body reads where a name bound to what its own code computes of them is read (`Steps::stood`): of each
+    /// name, or string that writes names, that the body reads where it stands or where a name bound to it is, the names
+    /// `stands` says it stands for, the reader's. Nothing else is asked: a label and a name bound where it stands are read
+    /// nowhere.
+    fn stood(&self, stands: &dyn Fn(TsNode<'t>) -> Vec<TsNode<'t>>) -> HashSet<usize> {
+        let u = self.uses;
+        let mut out = HashSet::new();
+        let mut stack = vec![self.body];
+        while let Some(n) = stack.pop() {
+            if n.id() != self.body.id() && u.nested.contains(&n.kind()) {
+                continue;
+            }
+            if (u.names.contains(&n.kind()) || u.reads.contains(&n.kind())) && self.reading(n) != Read::Not {
+                out.extend(stands(n).into_iter().map(|x| x.id()));
+            }
+            stack.extend(self.named(n).iter().rev().copied());
+        }
+        out
     }
 
     /// A call `c`, `name`d as the code writes it, of which the graph holds no more than what it
@@ -1042,11 +1278,26 @@ impl<'t, 's> Steps<'t, 's> {
         }
     }
 
+    /// Mark the touches a call made as checks when what it hands a function it is given goes to
+    /// nothing the body hands on: a listener's function is handed what the event brings, as the names
+    /// `received` bind it (`socket.on("data", (chunk) => ..)`), and what the call itself gives back
+    /// is no part of that. Where no name receives it, nothing it brings is used.
+    pub fn mark_received<'a>(&self, received: &[TsNode<'t>], touches: impl IntoIterator<Item = &'a mut Touch>) {
+        let mut bound = HashSet::new();
+        let checks = !received.iter().any(|r| self.bound_goes_on(text(*r, self.src), r.end_byte(), &mut bound));
+        for t in touches {
+            t.checks = checks;
+        }
+    }
+
     /// Whether what `v` gives reaches what the function hands on: it is returned, handed to a
     /// call, kept in a field or an element, or taken apart by a `match`, or a name it is bound to is. What only decides a
     /// choice, goes to an error or is dropped goes no further. `bound` are the names followed.
     fn goes_on(&self, v: TsNode<'t>, bound: &mut HashSet<String>) -> bool {
         let (u, mut child, mut handed) = (self.uses, v, false);
+        if self.changed_goes_on(v, bound) {
+            return true;
+        }
         while let Some(p) = self.up(child) {
             if (u.leaves)(child, self.body) {
                 return true;
@@ -1058,19 +1309,12 @@ impl<'t, 's> Steps<'t, 's> {
                 return true;
             }
             handed |= (u.hands)(p, child);
-            // a call that changes a value it is handed (`f.read_to_string(&mut s)`) makes it anew from
-            // what it runs on: what the call is made of goes on where that value goes
-            let after = p.end_byte();
-            for changed in (u.changes)(p) {
-                let name = text(changed, self.src).to_string();
-                if !bound.insert(name.clone()) {
-                    continue;
-                }
-                if self.written_after(&name, after).filter(|n| !self.rebinds(*n)).any(|n| self.goes_on(n, bound)) {
-                    return true;
-                }
+            if self.changed_goes_on(p, bound) {
+                return true;
             }
-            if let Some((targets, value)) = (u.binds)(p).filter(|(_, value)| value.id() == child.id()) {
+            // a binding that binds no name throws the value away as a statement does: `let _ = f(x)` is `f(x);`
+            let binding = (u.binds)(p).filter(|(_, value)| value.id() == child.id()).filter(|_| !(u.drops)(p, child, self.src));
+            if let Some((targets, value)) = binding {
                 if walk(targets, u.keeps).first().is_some() {
                     return true;
                 }
@@ -1087,6 +1331,17 @@ impl<'t, 's> Steps<'t, 's> {
             child = p;
         }
         handed
+    }
+
+    /// Whether a call that changes a value it is handed (`f.read_to_string(&mut s)`) makes what goes on: it makes the
+    /// value anew from what it runs on, so what the call gives, and what it is made of, goes on where that value goes.
+    fn changed_goes_on(&self, call: TsNode<'t>, bound: &mut HashSet<String>) -> bool {
+        (self.uses.changes)(call, self.src).into_iter().any(|changed| self.bound_goes_on(text(changed, self.src), call.end_byte(), bound))
+    }
+
+    /// Whether what the name `name` holds from `after` on goes on (`goes_on`), where it is not followed yet.
+    fn bound_goes_on(&self, name: &str, after: usize, bound: &mut HashSet<String>) -> bool {
+        bound.insert(name.to_string()) && self.written_after(name, after).filter(|n| !self.rebinds(*n)).any(|n| self.goes_on(n, bound))
     }
 
     /// Whether the name `n` is what a binding binds, not a value it reads.
@@ -1148,7 +1403,7 @@ impl<'t, 's> Steps<'t, 's> {
             args,
             written,
             arms: arms.clone(),
-            span: span(c),
+            span: step.from.map_or(span(c), |at| (at as u32, c.end_byte() as u32)),
             command_line: step.command_line,
             ..Default::default()
         };
@@ -1187,6 +1442,35 @@ impl<'t, 's> Steps<'t, 's> {
             return;
         }
         self.unread(c, op, hands, gives, false);
+    }
+
+    /// A library's call `c` that looks a part of the collection `of` up, as the reader finds its collection
+    /// (`knowledge::Lookup`: `xs.first()`, `d.get(k)`, `xs.at(0)`, `next(iter(xs))`): no step, but the projection a
+    /// subscript is (`xs[0]`, `d[k]`). What it is written of (the collection, the key, a default) is read where its value
+    /// is, as what an element is written of is (`Steps::reading`), and a projection goes through it to the collection, the
+    /// element left out (`Steps::projection`): a name bound to it stands for the part of the collection.
+    pub fn looks_up(&mut self, c: TsNode<'t>, of: TsNode<'t>) {
+        self.lookups.push((c, of));
+        self.climbs.get_mut().clear();
+    }
+
+    /// The collection the lookup `c` looks a part up in (`Steps::looks_up`), beneath what hands its value on.
+    fn looked_up_in(&self, c: TsNode<'t>) -> Option<TsNode<'t>> {
+        let (w, c) = (self.uses.wrappers, beneath(c, self.uses.wrappers));
+        self.lookups.iter().find(|(l, _)| l.id() == c.id()).map(|(_, of)| beneath(*of, w))
+    }
+
+    /// The lookup that looks a part of `of` up, where `of` is the collection a lookup is written on (`Steps::looks_up`).
+    fn looking_up(&self, of: TsNode<'t>) -> Option<TsNode<'t>> {
+        let (w, of) = (self.uses.wrappers, beneath(of, self.uses.wrappers));
+        self.lookups.iter().find(|(_, o)| beneath(*o, w).id() == of.id()).map(|(l, _)| *l)
+    }
+
+    /// Whether `p` is a lookup (`Steps::looks_up`) or what one writes its collection or its arguments in: its function, its
+    /// argument list.
+    fn in_lookup(&self, p: TsNode<'t>) -> bool {
+        let lookup = |n: TsNode<'t>| self.lookups.iter().any(|(l, _)| l.id() == n.id());
+        lookup(p) || self.up(p).is_some_and(lookup)
     }
 
     /// A call `op` the body reads no further that changes the values `changed` it is called on
@@ -1389,11 +1673,16 @@ impl<'t, 's> Steps<'t, 's> {
         }
     }
 
-    /// What the arms of the body's choices bind a name to by the body's own code (`Node::binds`): of
-    /// each binding of the body, what it binds that no step makes, where that is made in an arm, either
-    /// the binding standing in the arm (`unit = KELVIN`) or the value it binds being a choice whose arm
-    /// gives it (`let out = match f { .. }`, `x = a if c else b`). What a loop binds, its step gives;
-    /// a field or an element is kept beyond a name.
+    /// What the body binds a name to by its own code (`Node::binds`): of each binding of the body, what
+    /// it binds that no step makes. In an arm, either the binding standing in the arm (`unit = KELVIN`)
+    /// or the value it binds being a choice whose arm gives it (`let out = match f { .. }`, `x = a if c
+    /// else b`); outside the choices, a literal (`items = []`) or any other expression (`mask =
+    /// samples.abs() > 0`, `let total = a + b`), whatever it reads: the name is the body's own. What
+    /// the language's own code computes of names with no call (`a + b`) is no value of its own: the name
+    /// stands for those names where it is read (`stands_for`).
+    /// What a loop binds, its step gives; a field or an element is kept beyond a name; a name bound to
+    /// another, to what a step gives or to a part of either (`width = settings.width`) holds that value
+    /// (`Node::uses`); a function written in place is a function.
     fn binds(&self) -> Vec<Use> {
         let u = self.uses;
         let steps: HashSet<(u32, u32)> = self.sites.iter().map(|s| s.span).filter(|s| *s != (0, 0)).collect();
@@ -1422,7 +1711,27 @@ impl<'t, 's> Steps<'t, 's> {
                 }
                 let arms = self.arms(leaf);
                 let by_literal = arms.is_empty() && literal(leaf);
-                for name in names.iter().filter(|_| !arms.is_empty() || by_literal) {
+                // outside the choices, an expression that is no name, no step and no part of what either holds, and in which
+                // no step gives the name: a value the body makes itself, as by a literal. Several names bound to one value it does not
+                // write as as many parts are parts of that value; a function written in place is a function, no value
+                let whole = beneath(value, u.wrappers);
+                let by_own_code = |name: &str| {
+                    arms.is_empty()
+                        && !u.updates.contains(&b.kind())
+                        && !self.decides(b)
+                        && self.bound_to(b, name).is_some_and(|part| {
+                            let within = |s: &Site| part.start_byte() <= s.span.0 as usize && s.span.1 as usize <= part.end_byte();
+                            (names.len() == 1 || part.id() != whole.id())
+                                && !self.part_of_a_value(part)
+                                && !named_children(part).into_iter().any(|x| (u.binders)(part, x) == Some(true))
+                                && !self
+                                    .sites
+                                    .iter()
+                                    .filter(|s| s.span != (0, 0))
+                                    .any(|s| within(s) && (s.span == span(part) || s.gives.iter().any(|g| g.name == name)))
+                        })
+                };
+                for name in names.iter().filter(|n| !arms.is_empty() || by_literal || by_own_code(n)) {
                     let one = Use { name: name.clone(), ty: String::new(), arms: arms.clone(), param: false };
                     if !out.contains(&one) {
                         out.push(one);
@@ -1546,47 +1855,168 @@ impl<'t, 's> Steps<'t, 's> {
 /// The error type a written result names apart from its value, where it names one: the second
 /// argument of `Result<T, E>`, as written.
 pub fn error_written(written: &str) -> Option<&str> {
+    let (_, args) = generic_written(written)?;
+    args.get(1).and(args.last().copied())
+}
+
+/// A generic type as written, by what is written before its arguments and the arguments, each as written (`HashMap` and
+/// `String`, `Level` of `HashMap<String, Level>`); none for a type written with no arguments.
+pub fn generic_written(written: &str) -> Option<(&str, Vec<&str>)> {
     let open = written.find('<')?;
     let inner = written[open + 1..].trim_end().strip_suffix('>')?;
-    let (mut depth, mut at) = (0, None);
+    let (mut depth, mut from, mut args) = (0, 0, vec![]);
     for (i, c) in inner.char_indices() {
         match c {
-            '<' | '(' | '[' => depth += 1,
-            '>' | ')' | ']' => depth -= 1,
-            ',' if depth == 0 => at = Some(i),
+            '<' | '(' | '[' | '{' => depth += 1,
+            // the arrow of a function type (`Fn(u8) -> u8`) closes nothing
+            '>' if inner[..i].ends_with('-') => {}
+            '>' | ')' | ']' | '}' => depth -= 1,
+            ',' if depth == 0 => {
+                args.push(inner[from..i].trim());
+                from = i + 1;
+            }
             _ => {}
         }
     }
-    at.map(|i| inner[i + 1..].trim())
+    args.push(inner[from..].trim());
+    Some((written[..open].trim(), args.into_iter().filter(|a| !a.is_empty()).collect()))
 }
+
+/// A type as a language writes it, as far as what a value of it holds is read off it (`element_written`).
+pub enum Written<'a> {
+    /// A type written through what refers to it or marks it read-only, which is the type beneath (`&mut T`, `readonly T`).
+    Through(&'a str),
+    /// A collection the language writes by brackets around the type of its elements, by that type (`[T]`, `[T; 3]`, `T[]`).
+    Listed(&'a str),
+    /// A type named by a path, by the last name of it and the arguments it is written with, as written (`HashMap` and
+    /// `K`, `V` of `collections::HashMap<K, V>`, `Level` and none of `Level`).
+    Named(&'a str, Vec<&'a str>),
+    /// Any other type: a primitive, a tuple, a function, a union.
+    Other,
+}
+
+/// What a language's types hold, as far as what a subscript or a lookup picks of a value is read off its type
+/// (`element_written`).
+pub struct Holders<'k> {
+    /// How the language writes a type (`Written`).
+    pub written: fn(&str) -> Written<'_>,
+    /// Whether a generic named so is the language's or its library's whose arguments are the values it holds or stands
+    /// for (`knowledge::rust_container`, `knowledge::TYPESCRIPT_CONTAINERS`), not a type of the program's by that name.
+    pub holds: &'k dyn Fn(&str) -> bool,
+    /// The holders among them that hold many values, each of the type of their first argument.
+    pub collections: &'k [&'k str],
+    /// The collections that hold their values by their keys, the first argument, each of the type of their last.
+    pub maps: &'k [&'k str],
+}
+
+/// The type of what a subscript or a lookup picks of a value of the type `written` (`rows[0]`, `rows.first()`,
+/// `levels[name]`), as the language writes it: the element of a collection written by brackets (`Vec<Level>` of
+/// `[Vec<Level>]`, `Level[]` of `Level[][]`), a map's value, the key choosing it (`Level` of `HashMap<String, Level>` and of
+/// `Record<string, Level>`), any other collection's first argument (`Level` of `Vec<Level>`), through what refers to the
+/// value and what holds one value and is read as it (`&mut [Vec<Level>]`, `LazyLock<Mutex<Vec<Level>>>`, `readonly
+/// Level[]`: `mathematics.md`, "Containers and type parameters"). None for a type that holds no collection.
+pub fn element_written<'a>(written: &'a str, of: &Holders) -> Option<&'a str> {
+    let mut t = written.trim();
+    for _ in 0..16 {
+        t = match (of.written)(t) {
+            Written::Through(beneath) => beneath.trim(),
+            Written::Listed(element) => return Some(element.trim()),
+            Written::Named(head, args) if (of.holds)(head) => match () {
+                _ if of.maps.contains(&head) => return args.last().copied(),
+                _ if of.collections.contains(&head) => return args.first().copied(),
+                _ => args.first()?.trim(),
+            },
+            _ => return None,
+        };
+    }
+    None
+}
+
+/// The type a value of the type `written` is read as where a method is called on it: through what refers to it and what
+/// holds one value and is read as it (`Vec<Level>` of `&mut Box<Vec<Level>>`), up to a collection or a type that holds
+/// nothing (`Holders`).
+pub fn held_written<'a>(written: &'a str, of: &Holders) -> &'a str {
+    let mut t = written.trim();
+    for _ in 0..16 {
+        t = match (of.written)(t) {
+            Written::Through(beneath) => beneath.trim(),
+            Written::Named(head, args) if !of.collections.contains(&head) && (of.holds)(head) && !args.is_empty() => args[0].trim(),
+            _ => return t,
+        };
+    }
+    t
+}
+
+/// What a call the reader finds to look a part of a collection up is a part of (`Steps::looks_up`): the collection, and
+/// the default it gives where the part is not there; none for any other call.
+pub type Lookups<'l, 't> = &'l dyn Fn(TsNode<'t>) -> Option<Vec<TsNode<'t>>>;
 
 /// How a language binds names in a body, as far as a change made through a name is followed to
 /// the value it changes.
 pub struct BindSyntax {
     /// A statement that binds one name to a whole value: the name, and the names whose value it may
-    /// be or be a part of (`x = graph`, `x = self.items[0]`, `x = a or b`); none for a value made
-    /// anew (`x = copy(v)`, `x = xs[:]`). An augmented assignment (`x += v`) binds nothing new.
-    pub binds: for<'a> fn(TsNode, &'a [u8]) -> Option<(&'a str, Vec<&'a str>)>,
+    /// be or be a part of (`x = graph`, `x = self.items[0]`, `x = a or b`, and through the lookups
+    /// the reader finds as through a subscript, `x = xs.get(0)`); none for a value made anew (`x =
+    /// copy(v)`, `x = xs[:]`). An augmented assignment (`x += v`) binds nothing new.
+    pub binds: for<'t, 'a, 'l> fn(TsNode<'t>, &'a [u8], Lookups<'l, 't>) -> Option<(&'a str, Vec<&'a str>)>,
     /// A loop that binds one name to each element of a value: the name, the name that value is a
     /// part of (`for x in graph.nodes`), and the loop's body.
     pub loops: for<'t, 'a> fn(TsNode<'t>, &'a [u8]) -> Option<(&'a str, Option<&'a str>, TsNode<'t>)>,
 }
 
 /// What a change made through `name` at byte `at` of `body` changes: the name whose value that
-/// is when the change runs, or none when it is a value the body made. A loop binds the name to an
-/// element of what it goes over, so inside the loop a change through it changes that value (`for
-/// node in graph.nodes: node.status = ..` changes `graph`). A statement of the body's own, which
-/// runs whenever the body does, decides what the name holds after it: another name or a part of
-/// one makes it that value (`g = graph`), a value that may be what the name held keeps that, and
-/// a new value makes a change after it one to the new value, not to what the name held before
-/// (`graph = copy.copy(graph)`). A binding in a branch or a loop may not have run, so the name
-/// holds what it held before it: the change may be one to that.
-pub fn changed_through<'a>(body: TsNode, src: &'a [u8], syn: &BindSyntax, name: &'a str, at: usize) -> Option<&'a str> {
+/// is when the change runs, or none when it is a value the body made (`changed_binding` names the
+/// binding that holds it). A loop binds the name to an element of what it goes over, so inside
+/// the loop a change through it changes that value (`for node in graph.nodes: node.status = ..`
+/// changes `graph`). A statement of the body's own, which runs whenever the body does, decides
+/// what the name holds after it: another name or a part of one makes it that value (`g = graph`),
+/// a value that may be what the name held keeps that, and a new value makes a change after it one
+/// to the new value, not to what the name held before (`graph = copy.copy(graph)`). A binding in a
+/// branch or a loop may not have run, so the name holds what it held before it: the change may be
+/// one to that. A lookup (`looked`) is the projection its subscript is: a change through `row =
+/// rows.get(0)` changes `rows`.
+pub fn changed_through<'a, 't>(
+    body: TsNode<'t>,
+    src: &'a [u8],
+    syn: &BindSyntax,
+    looked: Lookups<'_, 't>,
+    name: &'a str,
+    at: usize,
+) -> Option<&'a str> {
+    followed(body, src, syn, looked, name, at).filter(|(.., made)| !made).map(|(name, ..)| name)
+}
+
+/// The binding whose value a change made through `name` at byte `at` of `body` changes, as
+/// `changed_through` follows it, where the body made that value too: its name, and a byte where
+/// that binding is the one visible (`rows` of `row.append(second)` after `rows = [[first]]` and
+/// `row = rows[0]`). None for a change to an element of a value no name holds (`for x in [a, b]`).
+pub fn changed_binding<'a, 't>(
+    body: TsNode<'t>,
+    src: &'a [u8],
+    syn: &BindSyntax,
+    looked: Lookups<'_, 't>,
+    name: &'a str,
+    at: usize,
+) -> Option<(&'a str, usize)> {
+    followed(body, src, syn, looked, name, at).map(|(name, at, _)| (name, at))
+}
+
+/// Where `changed_through` follows a change made through `name` at byte `at`: the name, a byte
+/// where its binding is the one visible, and whether the body made that binding's value anew.
+fn followed<'a, 't>(
+    body: TsNode<'t>,
+    src: &'a [u8],
+    syn: &BindSyntax,
+    looked: Lookups<'_, 't>,
+    name: &'a str,
+    at: usize,
+) -> Option<(&'a str, usize, bool)> {
     let nodes = walk_all(body);
-    let binds: Vec<(TsNode, &str, Vec<&str>)> = nodes.iter().filter_map(|n| (syn.binds)(*n, src).map(|(x, v)| (*n, x, v))).collect();
+    let binds: Vec<(TsNode, &str, Vec<&str>)> =
+        nodes.iter().filter_map(|n| (syn.binds)(*n, src, looked).map(|(x, v)| (*n, x, v))).collect();
     let loops: Vec<(TsNode, &str, Option<&str>, TsNode)> =
         nodes.iter().filter_map(|n| (syn.loops)(*n, src).map(|(x, v, b)| (*n, x, v, b))).collect();
-    let own = |s: TsNode| s.parent().into_iter().chain(s.parent().and_then(|p| p.parent())).any(|p| p.id() == body.id());
+    let own = |s: TsNode| parent(s).into_iter().chain(parent(s).and_then(|p| parent(p))).any(|p| p.id() == body.id());
     let (mut name, mut at) = (name, at);
     // each step goes back to where a loop or a statement before `at` binds the name, so it ends
     'follow: loop {
@@ -1611,11 +2041,12 @@ pub fn changed_through<'a>(body: TsNode, src: &'a [u8], syn: &BindSyntax, name: 
             if held.contains(&name) {
                 continue;
             }
-            name = *held.first()?;
+            let Some(whole) = held.first() else { return Some((name, at, true)) };
+            name = *whole;
             at = s.start_byte();
             continue 'follow;
         }
-        return Some(name);
+        return Some((name, at, false));
     }
 }
 
@@ -1763,7 +2194,8 @@ mod tests {
     }
 
     /// A body's index answers as its tree does: the node each node stands in is tree-sitter's parent, the named nodes
-    /// before it are its previous named siblings, and the names it keeps are the walk's, also by what each writes.
+    /// before it are its previous named siblings, the named nodes it holds are its named children, and the names it keeps
+    /// are the walk's, also by what each writes, under each of its nodes as under the body.
     #[test]
     fn the_index_of_a_body_answers_as_its_tree_does() {
         let ids = |ns: &[TsNode]| ns.iter().map(|n| n.id()).collect::<Vec<_>>();
@@ -1779,6 +2211,13 @@ mod tests {
                     let children: Vec<TsNode> = n.children(&mut cursor).collect();
                     under.extend(children.iter().copied());
                     stack.extend(children);
+                }
+                for n in under.iter().copied().chain([body]) {
+                    assert_eq!(ids(&index.named_of(body, n)), ids(&named_children(n)), "{code}: {}", n.kind());
+                    for name in index.written.keys() {
+                        let walked = walk(n, &names).iter().any(|x| text(*x, src) == *name);
+                        assert_eq!(index.writes(body, n, name, &names, src), walked, "{code}: {name} in {}", n.kind());
+                    }
                 }
                 for n in under {
                     let (p, at) = index.parents[&n.id()];

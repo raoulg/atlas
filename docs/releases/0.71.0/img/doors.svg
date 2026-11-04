@@ -1,0 +1,49 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 340" role="img" aria-label="A file or a connection opened in main and handed to another function: in 0.71 every operation through the door is a line to the place it was opened at, from the function that opens it and from the function it is handed to alike; before, the function a file was handed to read nothing, and a Node connection reached no network at all">
+<defs>
+<marker id="dr-g" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" style="fill:var(--ink-3)"/></marker>
+</defs>
+<text x="20" y="30" style="font-family:var(--sans);font-size:15px;fill:var(--ink);font-weight:600">a file, handed on</text>
+<rect x="150" y="50" width="170" height="36" rx="4" style="fill:var(--panel);stroke:var(--ink-2);stroke-width:1.5"/>
+<text x="235" y="73" style="font-family:var(--mono);font-size:14px;fill:var(--ink);text-anchor:middle">File(data.txt)</text>
+<g style="stroke:var(--key);stroke-width:2.4;stroke-linecap:round">
+<line x1="200" y1="86" x2="100" y2="210"/>
+<line x1="270" y1="86" x2="370" y2="210"/>
+</g>
+<text x="126" y="140" style="font-family:var(--sans);font-size:13px;fill:var(--ink-2);text-anchor:end">opens it</text>
+<text x="126" y="158" style="font-family:var(--mono);font-size:12px;fill:var(--ink-3);text-anchor:end">open(DATA)</text>
+<text x="346" y="140" style="font-family:var(--sans);font-size:13px;fill:var(--ink-2)">handed it</text>
+<text x="346" y="158" style="font-family:var(--mono);font-size:12px;fill:var(--ink-3)">f.readlines()</text>
+<rect x="40" y="210" width="120" height="34" rx="17" style="fill:var(--panel);stroke:var(--ink-2);stroke-width:1.5"/>
+<text x="100" y="232" style="font-family:var(--mono);font-size:14px;fill:var(--ink);text-anchor:middle">main</text>
+<rect x="310" y="210" width="120" height="34" rx="17" style="fill:var(--panel);stroke:var(--ink-2);stroke-width:1.5"/>
+<text x="370" y="232" style="font-family:var(--mono);font-size:14px;fill:var(--ink);text-anchor:middle">count</text>
+<line x1="160" y1="227" x2="306" y2="227" style="stroke:var(--ink-3);stroke-width:1.6" marker-end="url(#dr-g)"/>
+<rect x="205" y="216" width="60" height="22" style="fill:var(--panel);stroke:var(--line);stroke-width:1.2"/>
+<rect x="205" y="216" width="4" height="22" style="fill:var(--ink-3)"/>
+<text x="237" y="232" style="font-family:var(--mono);font-size:12px;fill:var(--ink);text-anchor:middle">data</text>
+<text x="235" y="262" style="font-family:var(--sans);font-size:12px;fill:var(--ink-3);text-anchor:middle">handed on</text>
+<text x="235" y="294" style="font-family:var(--sans);font-size:13px;fill:var(--del);text-anchor:middle;font-weight:600">before: count read nothing</text>
+<line x1="480" y1="14" x2="480" y2="300" style="stroke:var(--line);stroke-width:1.5"/>
+<text x="500" y="30" style="font-family:var(--sans);font-size:15px;fill:var(--ink);font-weight:600">a connection, handed on</text>
+<rect x="620" y="50" width="220" height="36" rx="4" style="fill:var(--panel);stroke:var(--ink-2);stroke-width:1.5"/>
+<text x="730" y="73" style="font-family:var(--mono);font-size:14px;fill:var(--ink);text-anchor:middle">Web(127.0.0.1:7878)</text>
+<g style="stroke:var(--key);stroke-width:2.4;stroke-linecap:round">
+<line x1="690" y1="86" x2="580" y2="210"/>
+<line x1="770" y1="86" x2="860" y2="210"/>
+</g>
+<text x="610" y="140" style="font-family:var(--sans);font-size:13px;fill:var(--ink-2);text-anchor:end">opens it</text>
+<text x="610" y="158" style="font-family:var(--mono);font-size:12px;fill:var(--ink-3);text-anchor:end">conn.write("ada")</text>
+<text x="836" y="140" style="font-family:var(--sans);font-size:13px;fill:var(--ink-2)">handed it</text>
+<text x="836" y="158" style="font-family:var(--mono);font-size:12px;fill:var(--ink-3)">on("data", …)</text>
+<rect x="520" y="210" width="120" height="34" rx="17" style="fill:var(--panel);stroke:var(--ink-2);stroke-width:1.5"/>
+<text x="580" y="232" style="font-family:var(--mono);font-size:14px;fill:var(--ink);text-anchor:middle">main</text>
+<rect x="800" y="210" width="120" height="34" rx="17" style="fill:var(--panel);stroke:var(--ink-2);stroke-width:1.5"/>
+<text x="860" y="232" style="font-family:var(--mono);font-size:14px;fill:var(--ink);text-anchor:middle">hear</text>
+<line x1="640" y1="227" x2="796" y2="227" style="stroke:var(--ink-3);stroke-width:1.6" marker-end="url(#dr-g)"/>
+<rect x="688" y="216" width="60" height="22" style="fill:var(--panel);stroke:var(--line);stroke-width:1.2"/>
+<rect x="688" y="216" width="4" height="22" style="fill:var(--ink-3)"/>
+<text x="720" y="232" style="font-family:var(--mono);font-size:12px;fill:var(--ink);text-anchor:middle">conn</text>
+<text x="718" y="262" style="font-family:var(--sans);font-size:12px;fill:var(--ink-3);text-anchor:middle">handed on</text>
+<text x="720" y="294" style="font-family:var(--sans);font-size:13px;fill:var(--del);text-anchor:middle;font-weight:600">before: no network at all</text>
+<text x="20" y="328" style="font-family:var(--sans);font-size:12px;fill:var(--ink-3)">teal: an operation through a door, at the place it was opened · gray: the door handed on · red: what was missing before</text>
+</svg>

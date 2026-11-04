@@ -24,9 +24,10 @@ use crate::builder::GraphBuilder;
 use crate::effects;
 use crate::environment::Environment;
 use crate::knowledge::{self, Registry};
-use crate::model::{Node, NodeKind};
-use crate::repo::{normal, Repo};
+use crate::model::{Dependency, Node, NodeKind};
+use crate::repo::Repo;
 use crate::tree::{span, text, walk};
+use path_clean::clean;
 
 /// How many re-exports a name is followed through.
 const DEPTH: u32 = 12;
@@ -35,6 +36,8 @@ const DEPTH: u32 = 12;
 struct Package {
     /// Its name: `filekit`, `@scope/name`.
     name: String,
+    /// The id of its root, which its modules' ids begin with: `filekit`, `scope.name`.
+    root: String,
     dir: PathBuf,
     manifest: Value,
     exports: Option<Exports>,
@@ -64,7 +67,7 @@ impl Environment {
                 return None;
             }
             if e.file_type().is_file() && is_code(e.path()) {
-                paths.push(normal(e.path()));
+                paths.push(clean(e.path()));
             }
         }
         paths.sort();
@@ -95,7 +98,7 @@ impl Package {
             by_id.insert(id.clone(), p.clone());
             files.insert(p, id);
         }
-        Some(Package { name, dir: package_dir.to_path_buf(), manifest, exports, files, by_id })
+        Some(Package { name, root, dir: package_dir.to_path_buf(), manifest, exports, files, by_id })
     }
 
     /// The file a specifier's path below the package names (`""` for the package itself): what
@@ -111,7 +114,7 @@ impl Package {
     /// The code file a path in the package names, with or without its extension, or the index
     /// of the directory it names.
     fn file_at(&self, target: &str) -> Option<PathBuf> {
-        let base = normal(&self.dir.join(target));
+        let base = clean(&self.dir.join(target));
         let stripped = base.with_extension("");
         let mut candidates = vec![base.clone()];
         for b in [&base, &stripped] {
@@ -183,7 +186,7 @@ impl Libraries {
                 .map_or(false, |abs| abs.starts_with(&self.here) && !abs.components().any(|c| c.as_os_str() == knowledge::NODE_PACKAGES))
         };
         // a package below the repository is named from it, like its own files
-        let found = found.filter(|d| !own(d)).map(|d| d.strip_prefix(&self.here).map(|r| normal(&self.root.join(r))).unwrap_or(d));
+        let found = found.filter(|d| !own(d)).map(|d| d.strip_prefix(&self.here).map(|r| clean(&self.root.join(r))).unwrap_or(d));
         self.found.insert(key, found.clone());
         found
     }
@@ -326,6 +329,8 @@ impl Libraries {
         }
         let mut m = self.parse(file)?;
         let pkg = self.holding(file)?;
+        let version = pkg.manifest["version"].as_str().unwrap_or_default().to_string();
+        store.libraries.insert(pkg.root.clone(), Dependency { dir: crate::tree::path_str(&pkg.dir), version });
         let local: Vec<(String, String)> = m
             .bindings
             .iter()
@@ -343,7 +348,7 @@ impl Libraries {
                     _ => continue,
                 },
             };
-            let ext = Bound::Ext(format!("ext:{t}"));
+            let ext = Bound::Ext(t);
             if m.dynamic.contains_key(&k) {
                 m.dynamic.insert(k.clone(), ext);
             } else {

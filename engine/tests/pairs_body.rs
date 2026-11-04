@@ -213,10 +213,12 @@ fn an_arm_that_binds_a_name_by_its_own_code_makes_it() {
     let out: Vec<&Vec<(u32, u32)>> = write.binds.iter().filter(|b| b.name == "out").map(|b| &b.arms).collect();
     assert!(out.contains(&&vec![(0, 1)]), "the `_` arm binds out by `format!`: {:#?}", write.binds);
     assert!(!out.contains(&&vec![(0, 0)]), "the csv arm's step gives it");
-    assert!(node(&p.clean, "spend.report.Markdown.render").binds.iter().all(|b| b.name != "out"), "bound outside every choice");
+    let render = node(&p.clean, "spend.report.Markdown.render");
+    assert!(render.binds.iter().filter(|b| b.name == "out").all(|b| b.arms.is_empty()), "bound outside every choice: {:#?}", render.binds);
     // the same in Python and TypeScript: what follows a guard is its last arm
     let g = program("python/shortcut");
-    let names: Vec<&str> = node(&g, "harvest.store.ReadingStore.summary").binds.iter().map(|b| b.name.as_str()).collect();
+    let names: Vec<&str> =
+        node(&g, "harvest.store.ReadingStore.summary").binds.iter().filter(|b| !b.arms.is_empty()).map(|b| b.name.as_str()).collect();
     assert_eq!(names, ["temperatures", "low", "high", "mean"], "`if row is None:` binds them by its own code");
     let g = program("pipeline/typescript");
     let trend = node(&g, "sunspots.plot.trend");

@@ -224,7 +224,9 @@ fn main() {
         )],
     );
     let written = |id: &str| places(&g, id).into_iter().map(|(_, _, artifact, _)| artifact).collect::<Vec<_>>();
-    assert_eq!(written("options.main"), ["out/graph.json", "out/run.log", "out/run.log"]);
+    // the `let` and the struct pattern each hold the log's default: one place, which a name that held
+    // anything else would stand beside
+    assert_eq!(written("options.main"), ["out/graph.json", "out/run.log"]);
     assert_eq!(written("options.log"), [""], "a parameter holds what its callers hand");
     assert_eq!(written("options.grammar"), [""], "pest's `Parser` is no command line");
 }
@@ -552,4 +554,150 @@ fn a_let_else_keeps_what_it_binds_and_a_macro_s_method_on_self_is_handed_the_ins
     let name = verb.sites.iter().find(|s| s.to == "kept.Kind.name").expect("verb calls name");
     assert_eq!(name.hands.iter().map(|h| (h.ty.as_str(), h.name.as_str())).collect::<Vec<_>>(), [("kept.Touch", "")]);
     assert_eq!(name.hands[0].fills, [atlas_engine::Slot::Receiver]);
+}
+
+/// Isomorphic is the same: a listener's connections are doors to the address it is bound to however the code takes them
+/// (`incoming()`, `accept()` taken apart in a `let` or in a `match` arm), and a clone of a connection is a door to the same
+/// place, so what each is handed to reads and writes there (#302).
+#[test]
+fn a_listener_s_connections_are_doors_to_its_address() {
+    let g = written(
+        "doors",
+        &[(
+            "src/main.rs",
+            "use std::io::{Read, Write};\nuse std::net::{TcpListener, TcpStream};\n\nconst ADDRESS: &str = \"127.0.0.1:7878\";\n\nfn each(listener: TcpListener) {\n    for conn in listener.incoming() {\n        read(conn.unwrap());\n    }\n}\n\nfn one(listener: &TcpListener) -> std::io::Result<()> {\n    let (conn, _) = listener.accept()?;\n    write(conn.try_clone()?);\n    Ok(())\n}\n\nfn matched(listener: &TcpListener) {\n    let conn = match listener.accept() {\n        Ok((conn, _)) => conn,\n        Err(_) => return,\n    };\n    read(conn);\n}\n\nfn read(mut conn: TcpStream) {\n    let mut buf = [0; 16];\n    let _ = conn.read(&mut buf);\n}\n\nfn write(mut conn: TcpStream) {\n    let _ = conn.write_all(b\"hi\");\n}\n\nfn main() -> std::io::Result<()> {\n    let listener = TcpListener::bind(ADDRESS)?;\n    one(&listener)?;\n    matched(&listener);\n    each(listener);\n    Ok(())\n}\n",
+        )],
+    );
+    for f in ["doors.read", "doors.write"] {
+        let reached: BTreeSet<String> = places(&g, f).into_iter().filter(|p| p.0 == "net").map(|p| p.2).collect();
+        assert_eq!(reached, BTreeSet::from(["127.0.0.1:7878".to_string()]), "{f}: {:?}", places(&g, f));
+    }
+}
+
+/// Isomorphic is the same: a socket's address is one place however the code writes it, as a string (`"127.0.0.1:7878"`),
+/// of its host and its port (`SocketAddr::from(([127, 0, 0, 1], 7878))`, `SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST),
+/// 7878)`) or as a pair of them (`(Ipv4Addr::LOCALHOST, 7878)`), as Python's tuple `("127.0.0.1", 7878)` is (#323).
+#[test]
+fn an_address_is_one_place_however_it_is_written() {
+    let g = written(
+        "addresses",
+        &[(
+            "src/main.rs",
+            "use std::io::Write;\nuse std::net::{IpAddr, Ipv4Addr, SocketAddr, TcpStream};\n\nfn text() -> std::io::Result<()> {\n    let mut s = TcpStream::connect(\"127.0.0.1:7878\")?;\n    s.write_all(b\"hi\")\n}\n\nfn parts() -> std::io::Result<()> {\n    let mut s = TcpStream::connect(SocketAddr::from(([127, 0, 0, 1], 7878)))?;\n    s.write_all(b\"hi\")\n}\n\nfn named() -> std::io::Result<()> {\n    let mut s = TcpStream::connect(SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 7878))?;\n    s.write_all(b\"hi\")\n}\n\nfn pair() -> std::io::Result<()> {\n    let mut s = TcpStream::connect((Ipv4Addr::LOCALHOST, 7878))?;\n    s.write_all(b\"hi\")\n}\n\nfn main() -> std::io::Result<()> {\n    text()?;\n    parts()?;\n    named()?;\n    pair()\n}\n",
+        )],
+    );
+    let reached = |f: &str| places(&g, f).into_iter().filter(|p| p.0 == "net").map(|p| (p.1, p.2)).collect::<BTreeSet<_>>();
+    let text = reached("addresses.text");
+    assert!(!text.is_empty() && text.iter().all(|(_, at)| !at.is_empty()), "{:?}", places(&g, "addresses.text"));
+    for f in ["addresses.parts", "addresses.named", "addresses.pair"] {
+        assert_eq!(reached(f), text, "{f}: {:?}", places(&g, f));
+    }
+}
+
+/// `File::options()` is `OpenOptions::new()`, as std says (#327): a file opened through either is the same door, opened
+/// and written at the path its `open` is handed.
+#[test]
+fn file_options_is_open_options() {
+    let g = written(
+        "opened",
+        &[(
+            "src/main.rs",
+            "use std::fs::{File, OpenOptions};\nuse std::io::Write;\n\nfn through_file() -> std::io::Result<()> {\n    let mut f = File::options().append(true).create(true).open(\"log.txt\")?;\n    f.write_all(b\"hi\")\n}\n\nfn through_options() -> std::io::Result<()> {\n    let mut f = OpenOptions::new().append(true).create(true).open(\"log.txt\")?;\n    f.write_all(b\"hi\")\n}\n\nfn main() -> std::io::Result<()> {\n    through_file()?;\n    through_options()\n}\n",
+        )],
+    );
+    let file = places(&g, "opened.through_file");
+    assert!(!file.is_empty() && file.iter().all(|p| p.0 == "disk_write" && !p.2.is_empty()), "{file:?}");
+    assert_eq!(file, places(&g, "opened.through_options"));
+}
+
+/// A dereference hands on the value it is written on, as a borrow does (`tree::Wrappers`): `let l = *level;` binds `l` to
+/// `level` itself, so the step `l` is handed to is handed `level`, as it is where the body hands `level` straight on, and
+/// the body binds no value of its own: `*x`, `&*x` and `x` are one value (#327).
+#[test]
+fn a_dereference_is_the_value_it_is_written_on() {
+    let g = written(
+        "deref",
+        &[(
+            "src/lib.rs",
+            "#[derive(Clone, Copy)]\npub struct Level {\n    pub db: f32,\n}\n\nfn show(level: &Level) {\n    println!(\"{}\", level.db);\n}\n\npub fn given(level: &Level) {\n    show(level);\n}\n\npub fn dereferenced(level: &Level) {\n    let l = *level;\n    show(&l);\n}\n\npub fn reborrowed(level: &Level) {\n    let l = &*level;\n    show(l);\n}\n\npub fn inline(level: &Level) {\n    show(&*level);\n}\n",
+        )],
+    );
+    let read = |f: &str| {
+        let n = g.node(&format!("deref.{f}")).unwrap_or_else(|| panic!("no node deref.{f}"));
+        let show = n.sites.iter().find(|s| s.to == "deref.show").unwrap_or_else(|| panic!("{f} calls show"));
+        let hands: Vec<(String, String, Vec<atlas_engine::Slot>)> =
+            show.hands.iter().map(|h| (h.ty.clone(), h.name.clone(), h.fills.clone())).collect();
+        (hands, n.binds.len())
+    };
+    let straight = read("given");
+    assert_eq!(straight.0.iter().map(|h| h.1.as_str()).collect::<Vec<_>>(), ["level"], "{straight:?}");
+    for f in ["dereferenced", "reborrowed", "inline"] {
+        assert_eq!(read(f), straight, "{f}");
+    }
+}
+
+/// Each door is at the place its own opening names (`docs/reference/mathematics.md`, "A door keeps its place"): the touch
+/// a door's traffic goes to is the one the call that made the door made, so two files opened on one line are each read or
+/// written where they are opened, and the body draws what it draws with each opening on a line of its own (#353).
+#[test]
+fn two_doors_opened_on_one_line_keep_their_places() {
+    let g = written(
+        "twodoors",
+        &[(
+            "src/lib.rs",
+            "use std::fs::File;\nuse std::io::{Read, Write};\n\npub fn one_line() {\n    let mut src = File::open(\"in.txt\").unwrap(); let mut dst = File::create(\"out.txt\").unwrap();\n    let mut s = String::new();\n    src.read_to_string(&mut s).unwrap();\n    dst.write_all(s.as_bytes()).unwrap();\n}\n\npub fn two_lines() {\n    let mut src = File::open(\"in.txt\").unwrap();\n    let mut dst = File::create(\"out.txt\").unwrap();\n    let mut s = String::new();\n    src.read_to_string(&mut s).unwrap();\n    dst.write_all(s.as_bytes()).unwrap();\n}\n",
+        )],
+    );
+    let drawn = |f: &str| -> BTreeSet<(String, String, String)> {
+        places(&g, &format!("twodoors.{f}")).into_iter().map(|(kind, op, place, _)| (kind, op, place)).collect()
+    };
+    let apart = drawn("two_lines");
+    let at: BTreeSet<&str> = apart.iter().map(|t| t.2.as_str()).collect();
+    assert_eq!(at, BTreeSet::from(["in.txt", "out.txt"]), "{apart:?}");
+    assert_eq!(drawn("one_line"), apart);
+}
+
+/// `.unwrap()` hands on the value it is called on, as `?` does, so a read into a buffer is used or only a check alike
+/// under both (`docs/reference/mathematics.md`, "A door keeps its place"): `f.read_to_string(&mut s).unwrap()` makes `s`
+/// from the file as `f.read_to_string(&mut s)?` does, used where `s` goes on, a check where it goes nowhere (#353).
+#[test]
+fn a_read_into_a_buffer_is_used_alike_through_unwrap_and_try() {
+    let g = written(
+        "readinto",
+        &[(
+            "src/lib.rs",
+            "use std::fs::File;\nuse std::io::{self, Read};\n\npub fn tried() -> io::Result<String> {\n    let mut f = File::open(\"in.txt\")?;\n    let mut s = String::new();\n    f.read_to_string(&mut s)?;\n    Ok(s)\n}\n\npub fn unwrapped() -> io::Result<String> {\n    let mut f = File::open(\"in.txt\")?;\n    let mut s = String::new();\n    f.read_to_string(&mut s).unwrap();\n    Ok(s)\n}\n\npub fn tried_dropped() -> io::Result<()> {\n    let mut f = File::open(\"in.txt\")?;\n    let mut s = String::new();\n    f.read_to_string(&mut s)?;\n    Ok(())\n}\n\npub fn unwrapped_dropped() -> io::Result<()> {\n    let mut f = File::open(\"in.txt\")?;\n    let mut s = String::new();\n    f.read_to_string(&mut s).unwrap();\n    Ok(())\n}\n",
+        )],
+    );
+    let checks = |f: &str| -> Vec<bool> {
+        let n = g.node(&format!("readinto.{f}")).unwrap_or_else(|| panic!("no node {f}"));
+        n.touches.iter().filter(|t| t.op == "read_to_string").map(|t| t.checks).collect()
+    };
+    assert_eq!(checks("tried"), [false], "`s` is returned: the read is used");
+    assert_eq!(checks("unwrapped"), checks("tried"), "`.unwrap()` is `?`");
+    assert_eq!(checks("tried_dropped"), [true], "`s` goes nowhere: the read only checks");
+    assert_eq!(checks("unwrapped_dropped"), checks("tried_dropped"), "`.unwrap()` is `?`");
+}
+
+/// A change of a part is a change of the whole it is picked of, and the index that picks it is only read: `rows[at].push(x)`
+/// changes `rows` as `rows[0].push(x)` does, never `at`, and where a macro built `rows` as `rows.push(x)` does
+/// (`docs/reference/mathematics.md`, "One fine plan"; #374).
+#[test]
+fn the_index_a_changed_part_is_picked_by_is_only_read() {
+    let g = written(
+        "picked",
+        &[(
+            "src/lib.rs",
+            "pub struct Level {\n    pub db: f32,\n}\n\npub fn by_name(mut rows: Vec<Vec<Level>>, at: usize, x: Level) -> Vec<Vec<Level>> {\n    rows[at].push(x);\n    rows\n}\n\npub fn by_place(mut rows: Vec<Vec<Level>>, x: Level) -> Vec<Vec<Level>> {\n    rows[0].push(x);\n    rows\n}\n\npub fn made_by_name(at: usize, x: Level) -> Vec<Vec<Level>> {\n    let mut rows = vec![vec![]];\n    rows[at].push(x);\n    rows\n}\n\npub fn made_whole(x: Level) -> Vec<Level> {\n    let mut rows = vec![];\n    rows.push(x);\n    rows\n}\n",
+        )],
+    );
+    let changed = |f: &str| -> Vec<String> {
+        let n = g.node(&format!("picked.{f}")).unwrap_or_else(|| panic!("no node picked.{f}"));
+        n.sites.iter().filter(|s| s.changes).flat_map(|s| s.gives.iter().map(|h| h.name.clone())).collect()
+    };
+    assert_eq!(changed("by_place"), ["rows"], "{:#?}", g.node("picked.by_place").map(|n| &n.sites));
+    assert_eq!(changed("by_name"), changed("by_place"), "{:#?}", g.node("picked.by_name").map(|n| &n.sites));
+    // a collection a macro builds holds what is put into it, through a part of it as through itself
+    assert_eq!(changed("made_whole"), ["rows"], "{:#?}", g.node("picked.made_whole").map(|n| &n.sites));
+    assert_eq!(changed("made_by_name"), changed("made_whole"), "{:#?}", g.node("picked.made_by_name").map(|n| &n.sites));
 }

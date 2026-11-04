@@ -1,25 +1,29 @@
 //! A function's body as TypeScript reads it: its steps in the order they run, what its calls touch,
 //! the values its names hold and what made them, and the syntax of its choices and comparisons.
 
+use std::cell::OnceCell;
 use std::collections::{HashMap, HashSet};
 
 use indexmap::IndexMap;
 use tree_sitter::Node as TsNode;
 
 use super::module::{
-    class_named, function_of, is_property, member_parts, package_from_ext, promised, resolve, type_head, type_names, Bound, Module,
-    WRAPPERS,
+    class_named, declarations, function_of, is_property, member_parts, package_from_ext, promised, resolve, type_head, type_names, Bound,
+    Module, WRAPPERS,
 };
 use super::paths::{self, Arg, At, Eval};
-use crate::body::{changed_through, BindSyntax, Bindings, Crosses, Range, Step, Steps, UseSyntax};
+use crate::body::{
+    changed_binding, changed_through, element_written, BindSyntax, Bindings, Crosses, Holders, Lookups, Range, Step, Steps, UseSyntax,
+    Written,
+};
 use crate::builder::{foreign_type, GraphBuilder};
 use crate::effects::{self, Crossing};
 use crate::knowledge;
 use crate::knowledge::OwnTypes;
-use crate::model::{Bucket, EdgeKind, Held, Node, NodeKind, Slot, Touch, World};
+use crate::model::{ext, Bucket, EdgeKind, Held, Node, NodeKind, Resolved, Slot, Touch, World};
 use crate::tree::{
-    beneath, evaluation_order, literals, named_children, nth_of_kind, outermost, path_maker_named, text, unquote, walk, what_of, wrapped,
-    ChoiceSyntax, CompareSyntax, Part,
+    beneath, evaluation_order, literals, named_children, nth_of_kind, outermost, text, unquote, walk, what_of, wrapped, ChoiceSyntax,
+    CompareSyntax, Part,
 };
 
 pub(super) const OWN: OwnTypes = knowledge::TYPESCRIPT_OWN_TYPES;
@@ -63,6 +67,68 @@ pub(super) fn builds_container(v: TsNode, m: &Module, src: &[u8]) -> bool {
         "new_expression" => v.child_by_field_name("constructor").map_or(false, |c| container_type(text(c, src), m)),
         _ => false,
     }
+}
+
+/// The collection a type as written is, as `knowledge::Lookup` names it: `knowledge::LISTED` of an array (`Level[]`,
+/// `readonly Level[]`), else its head where the module names nothing of its own so (`Map` of `Map<string, Level>`,
+/// `ReadonlyArray` of `ReadonlyArray<Level>`).
+pub(super) fn collection_kind(t: &str, m: &Module) -> Option<String> {
+    let t = t.trim().trim_start_matches(':').trim().trim_start_matches("readonly ").trim();
+    if t.ends_with("[]") {
+        return Some(knowledge::LISTED.to_string());
+    }
+    let head = t.split(|c: char| !(c.is_alphanumeric() || c == '_' || c == '$')).next().unwrap_or("");
+    (!head.is_empty() && !m.bindings.contains_key(head) && !m.symbols.contains_key(head)).then(|| head.to_string())
+}
+
+/// How TypeScript writes a type (`body::Written`): `readonly T` and a parenthesised type are the type beneath, `T[]` is
+/// listed, a name with the arguments it is written with is named by its last part (`Map<string, Level>`,
+/// `d3.Selection<..>`); a union, an intersection, an object's shape, a tuple, a function and a literal are none of them.
+fn written_as(t: &str) -> Written<'_> {
+    let t = t.trim().trim_start_matches(':').trim();
+    if let Some(beneath) = t.strip_prefix("readonly ") {
+        return Written::Through(beneath);
+    }
+    // where each bracket closes, and whether a union or an intersection joins two types at the top
+    let (mut depth, mut closes, mut joined) = (0i32, None, false);
+    for (i, c) in t.char_indices() {
+        match c {
+            '<' | '(' | '[' | '{' => depth += 1,
+            '>' if t[..i].ends_with('=') => {}
+            '>' | ')' | ']' | '}' => {
+                depth -= 1;
+                if depth == 0 && closes.is_none() {
+                    closes = Some(i);
+                }
+            }
+            '|' | '&' if depth == 0 => joined = true,
+            _ => {}
+        }
+    }
+    if joined {
+        return Written::Other;
+    }
+    if t.starts_with('(') && closes == Some(t.len() - 1) {
+        return Written::Through(&t[1..t.len() - 1]);
+    }
+    if let Some(element) = t.strip_suffix("[]") {
+        return Written::Listed(element);
+    }
+    let (path, args) = crate::body::generic_written(t).unwrap_or((t, vec![]));
+    if path.is_empty() || !path.chars().all(|c| c.is_alphanumeric() || matches!(c, '_' | '$' | '.')) {
+        return Written::Other;
+    }
+    Written::Named(path.rsplit('.').next().unwrap_or(path), args)
+}
+
+/// The type of what a subscript or a lookup picks of a value of a type as written (`body::element_written`): `Level[]`
+/// of `Level[][]`, `Level` of `Map<string, Level>` and of `Record<string, Level>`, through `readonly` and what holds one
+/// value and is read as it (`Readonly<..>`), where the module names nothing of its own so.
+pub(super) fn element_of(t: &str, m: &Module) -> Option<String> {
+    let holds = |h: &str| knowledge::TYPESCRIPT_CONTAINERS.contains(&h) && !m.bindings.contains_key(h) && !m.symbols.contains_key(h);
+    let of =
+        Holders { written: written_as, holds: &holds, collections: knowledge::TYPESCRIPT_COLLECTIONS, maps: knowledge::TYPESCRIPT_MAPS };
+    element_written(t, &of).map(String::from)
 }
 
 pub(super) fn typed_package(ty: TsNode, m: &Module, src: &[u8]) -> Option<String> {
@@ -160,7 +226,9 @@ fn value_type(m: &Module, name: &str, modules: &IndexMap<String, Module>, nodes:
             Bound::Ext(_) => return None,
         },
     };
-    resolve(home, home.values.get(&local)?, modules, nodes).filter(|r| nodes.get(r).map_or(false, |x| x.kind == NodeKind::Class))
+    resolve(home, home.values.get(&local)?, modules, nodes)
+        .map(Resolved::id)
+        .filter(|r| nodes.get(r).map_or(false, |x| x.kind == NodeKind::Class))
 }
 
 /// The classes a body's names hold, binding by binding (`body::Bindings`). A binding (a parameter,
@@ -176,7 +244,8 @@ pub(super) struct Locals<'t>(Bindings<Local<'t>>);
 struct Local<'t> {
     /// The program's class it holds.
     ty: Option<String>,
-    /// The type it is written with (`rows: Row[]`).
+    /// The type it is written with (`rows: Row[]`), or, where it is set to a part a subscript or a lookup picks, the type
+    /// of the elements of what it picks from (`Row[]` of `const row = rows[0]` where `rows: Row[][]`).
     written: Option<String>,
     /// Whether it holds one of the language's own containers that change in place.
     container: bool,
@@ -376,7 +445,13 @@ pub(super) fn link_calls<'t>(
             }
             let (t, w) = (b.read.touches.len(), b.read.calls.len());
             b.call(&mut steps, c);
-            steps.mark(c, b.read.touches[t..].iter_mut().chain(b.read.calls[w..].iter_mut().map(|(t, _)| t)));
+            b.read.made.record(c, t..b.read.touches.len(), w..b.read.calls.len());
+            let received = b.received(c);
+            let made = b.read.touches[t..].iter_mut().chain(b.read.calls[w..].iter_mut().map(|(t, _)| t));
+            match received {
+                Some(names) => steps.mark_received(&names, made),
+                None => steps.mark(c, made),
+            }
         }
         let kept = steps.kept.clone();
         let held = |n| {
@@ -386,7 +461,8 @@ pub(super) fn link_calls<'t>(
             }
             out
         };
-        steps.uses(&held);
+        let stands = |n| if b.mine(n) { b.stands(n, &kept) } else { vec![] };
+        steps.uses(&held, &stands);
         if let Some(cls) = b.cls.clone().filter(|_| b.initializer) {
             steps.keeps(Held::new(cls, ""), b.properties());
         }
@@ -399,7 +475,7 @@ pub(super) fn link_calls<'t>(
         // a qualifier is a type when it names an `enum` or a class of the program
         let is_type = |(a, b): (usize, usize)| {
             let parts: Vec<String> = String::from_utf8_lossy(&m.src[a..b]).split('.').map(str::to_string).collect();
-            resolve(m, &parts, modules, &store.nodes).and_then(|t| store.nodes.get(&t)).is_some_and(|t| t.kind == NodeKind::Class)
+            resolve(m, &parts, modules, &store.nodes).and_then(|t| store.nodes.get(&t.id())).is_some_and(|t| t.kind == NodeKind::Class)
         };
         // the value a method runs on is `this`, unless it is called on its class
         let receiver =
@@ -420,7 +496,7 @@ pub(super) fn link_calls<'t>(
         store.touch(id, t);
     }
     for (t, input) in read.mutates {
-        if t.starts_with("ext:") {
+        if ext::is(&t) {
             store.ext_node(&t);
         }
         store.add_edge(id, &t, EdgeKind::Mutates, Some(input));
@@ -451,6 +527,7 @@ pub(super) struct Read<'t> {
     mutates: Vec<(String, String)>,
     args: Vec<Arg<'t>>,
     calls: Vec<(Touch, Vec<crate::paths::Built>)>,
+    made: crate::body::MadeBy,
     exits: bool,
 }
 
@@ -491,6 +568,8 @@ pub(super) struct Body<'a, 't> {
     /// The calls that keep the command line the program is run with under a name (`command_line`).
     pub(super) keeps_command_line: HashSet<usize>,
     pub(super) read: Read<'t>,
+    /// The bindings the body's calls change in place (`changed_bindings`), found once the body is set up.
+    in_place: OnceCell<HashSet<(String, Option<usize>)>>,
 }
 
 const STRINGS: &[&str] = &["string", "template_string"];
@@ -535,6 +614,7 @@ impl<'a, 't> Body<'a, 't> {
             sites: vec![],
             keeps_command_line: HashSet::new(),
             read: Read::default(),
+            in_place: OnceCell::new(),
         };
         b.typed(n);
         for a in walk(body, &["assignment_expression"]) {
@@ -552,6 +632,8 @@ impl<'a, 't> Body<'a, 't> {
         .into_iter()
         .filter(|x| b.mine(*x))
         .collect();
+        // what the body changes in place is asked of the body set up whole
+        b.in_place = OnceCell::new();
         b
     }
 
@@ -605,8 +687,9 @@ impl<'a, 't> Body<'a, 't> {
         !self.is_module || module_level(x, self.root, &self.m.bodies)
     }
 
+    /// What a name path names, by the id the graph knows it by.
     fn resolve(&self, parts: &[String]) -> Option<String> {
-        resolve(self.m, parts, self.modules, &self.store.nodes)
+        resolve(self.m, parts, self.modules, &self.store.nodes).map(Resolved::id)
     }
 
     fn class(&self, r: Option<String>) -> Option<String> {
@@ -638,7 +721,7 @@ impl<'a, 't> Body<'a, 't> {
 
     /// Whether `r` is one of the program's own functions or classes.
     pub(super) fn own(&self, r: &str) -> bool {
-        !r.starts_with("ext:") && self.store.nodes.contains_key(r)
+        !ext::is(r) && self.store.nodes.contains_key(r)
     }
 
     /// What a change to each typed parameter changes, by name: the type the picture draws it as,
@@ -655,7 +738,7 @@ impl<'a, 't> Body<'a, 't> {
                 continue;
             };
             let drawn = type_names(Some(ty), src).into_iter().filter_map(|t| self.resolve(&t)).find(|r| {
-                if r.starts_with("ext:") {
+                if ext::is(r) {
                     foreign_type(r, &OWN)
                 } else {
                     self.class(Some(r.clone())).is_some()
@@ -664,7 +747,7 @@ impl<'a, 't> Body<'a, 't> {
             let written = text(ty, src).trim_start_matches(':').trim();
             let container = container_type(written, self.m).then(|| {
                 let head = written.split(|c: char| !(c.is_alphanumeric() || c == '_' || c == '$')).next().unwrap_or("");
-                format!("ext:javascript.{}", if knowledge::TYPESCRIPT_CHANGEABLE.contains(&head) { head } else { "Array" })
+                ext::of(&format!("javascript.{}", if knowledge::TYPESCRIPT_CHANGEABLE.contains(&head) { head } else { "Array" }))
             });
             if let Some(t) = drawn.or(container) {
                 out.insert(text(name, src).to_string(), t);
@@ -674,13 +757,19 @@ impl<'a, 't> Body<'a, 't> {
     }
 
     /// Whether a value holds one of the language's own containers that change in place: a name the
-    /// body declares or builds as one, or a field declared as one of the class the value is
-    /// (`this.rows`, `bag.items`), or of a class it inherits from.
-    fn holds_container(&self, v: TsNode) -> bool {
+    /// body declares or builds as one, a field declared as one of the class the value is
+    /// (`this.rows`, `bag.items`), or of a class it inherits from, or a part a subscript or a
+    /// lookup picks of a collection whose elements are written as one (`rows[0]` of `rows:
+    /// Level[][]`, `picked`).
+    fn holds_container(&self, v: TsNode<'t>) -> bool {
         let src = self.src;
         let v = beneath(v, WRAPPERS);
         match v.kind() {
             "identifier" => self.locals.container(v, src),
+            "subscript_expression" | "call_expression" => {
+                self.picked(v, 0).is_some_and(|(w, home)| container_type(&w, home))
+                    || self.picked_literal(v).is_some_and(|e| builds_container(e, self.m, src))
+            }
             "member_expression" => {
                 let (Some(o), Some(field)) = (v.child_by_field_name("object"), v.child_by_field_name("property")) else { return false };
                 // the class of the value the field is read from: the body's own, a name's, a field's of the body's own
@@ -707,6 +796,175 @@ impl<'a, 't> Body<'a, 't> {
             }
             _ => false,
         }
+    }
+
+    /// The collection a value is, as `knowledge::Lookup` names it, where the code says: by the type it is written with
+    /// (`written`: a name's, a constant's, a field's, a part's that a subscript or a lookup picks), else a name by the value
+    /// it is set to, an array (`[a, b]`), a collection a `new` builds (`new Map()`), through what hands a value on.
+    fn collection(&self, v: TsNode<'t>, depth: u32) -> Option<String> {
+        let src = self.src;
+        let v = beneath(v, WRAPPERS);
+        if let Some((written, home)) = self.written(v, depth) {
+            return collection_kind(&written, home);
+        }
+        match v.kind() {
+            "identifier" if depth < 8 => self.collection(self.set_to(v)?, depth + 1),
+            "array" => Some(knowledge::LISTED.to_string()),
+            "new_expression" => collection_kind(member_parts(v.child_by_field_name("constructor")?, src).last()?, self.m),
+            _ => None,
+        }
+    }
+
+    /// The type a value is written with, as the code says, and the module that writes it: a name by the type it is
+    /// declared with (`rows: Level[][]`, a constant its module declares) or else by the value it is set to, a field by the
+    /// type its class declares (`field_written`), a part a subscript or a lookup picks by the type of the elements of what
+    /// it picks from (`picked`), through what hands a value on.
+    fn written(&self, v: TsNode<'t>, depth: u32) -> Option<(String, &'t Module)> {
+        let src = self.src;
+        let v = beneath(v, WRAPPERS);
+        if depth > 8 {
+            return None;
+        }
+        match v.kind() {
+            "identifier" => {
+                let declared = match self.locals.bound(v, src) {
+                    true => self.locals.written(v, src).cloned(),
+                    false => self.top_declared(text(v, src)).and_then(|d| d.child_by_field_name("type")).map(|t| text(t, src).to_string()),
+                };
+                match declared {
+                    Some(w) => Some((w, self.m)),
+                    None => self.written(self.set_to(v)?, depth + 1),
+                }
+            }
+            "member_expression" => {
+                let class = self.receiver(v.child_by_field_name("object")?)?;
+                self.field_written(&class, text(v.child_by_field_name("property")?, src))
+            }
+            "subscript_expression" => self.picked(v, depth),
+            "call_expression" if self.lookup(v).is_some() => self.picked(v, depth),
+            _ => None,
+        }
+    }
+
+    /// The type of the part a subscript or a lookup picks, as written, and the module that writes it (`rows[0]`,
+    /// `rows.at(0)!`): the type of the elements of the collection it picks from (`element_of`: `Level[]` of `rows:
+    /// Level[][]`); none for any other value.
+    fn picked(&self, v: TsNode<'t>, depth: u32) -> Option<(String, &'t Module)> {
+        let v = beneath(v, WRAPPERS);
+        let of = match v.kind() {
+            "subscript_expression" => v.child_by_field_name("object")?,
+            "call_expression" => self.lookup(v)?,
+            _ => return None,
+        };
+        let (written, home) = self.written(of, depth + 1)?;
+        Some((element_of(&written, home)?, home))
+    }
+
+    /// The element a subscript or a lookup picks of an array the code writes, as the array's first element says what each
+    /// is (`[first]` of `rows[0]` where `const rows = [[first]]`), through the names set to it and the parts picked of
+    /// it; none for a part of any other value.
+    fn picked_literal(&self, v: TsNode<'t>) -> Option<TsNode<'t>> {
+        self.picked_literal_at(v, 0)
+    }
+
+    fn picked_literal_at(&self, v: TsNode<'t>, depth: u32) -> Option<TsNode<'t>> {
+        let v = beneath(v, WRAPPERS);
+        let mut of = beneath(
+            match v.kind() {
+                "subscript_expression" => v.child_by_field_name("object")?,
+                "call_expression" => self.lookup(v)?,
+                _ => return None,
+            },
+            WRAPPERS,
+        );
+        for _ in depth..8 {
+            of = match of.kind() {
+                "array" => return named_children(of).into_iter().find(|e| e.kind() != "spread_element"),
+                "identifier" => beneath(self.set_to(of)?, WRAPPERS),
+                "subscript_expression" | "call_expression" => beneath(self.picked_literal_at(of, depth + 1)?, WRAPPERS),
+                _ => return None,
+            };
+        }
+        None
+    }
+
+    /// The value a name is set to where it is bound, by no pattern: what the body's binding of it visible where it stands
+    /// is set to (`const row = rows[0]`), else what the module sets a constant of that name to.
+    fn set_to(&self, v: TsNode<'t>) -> Option<TsNode<'t>> {
+        match self.locals.bound(v, self.src) {
+            true => match self.locals.from(v, self.src) {
+                Some((value, BoundFrom::Whole)) => Some(value),
+                _ => None,
+            },
+            false => self.top_declared(text(v, self.src))?.child_by_field_name("value"),
+        }
+    }
+
+    /// The declaration of the name `name` at the top of the body's module (`const ROWS: Level[][] = ..`).
+    fn top_declared(&self, name: &str) -> Option<TsNode<'t>> {
+        let top = |d: &TsNode| {
+            let declaration = d.parent().and_then(|l| l.parent());
+            declaration.is_some_and(|p| p.kind() == "program" || p.parent().is_some_and(|q| q.kind() == "program"))
+        };
+        walk(self.m.tree.root_node(), &["variable_declarator"])
+            .into_iter()
+            .filter(top)
+            .find(|d| d.child_by_field_name("name").is_some_and(|n| text(n, self.src) == name))
+    }
+
+    /// The type the field `field` of the program's class `class`, or of a class it inherits from, is declared with, as
+    /// written, and the module that writes it: a field's or a shape's property's (`levels: Level[]`), or that of a
+    /// constructor's parameter that declares the field (`constructor(readonly levels: Level[])`).
+    fn field_written(&self, class: &str, field: &str) -> Option<(String, &'t Module)> {
+        let (mut todo, mut seen) = (vec![class.to_string()], HashSet::new());
+        while let Some(c) = todo.pop() {
+            if !seen.insert(c.clone()) {
+                continue;
+            }
+            todo.extend(self.store.classes.get(&c).map(|i| i.resolved.clone()).unwrap_or_default());
+            let Some(n) = self.store.nodes.get(&c) else { continue };
+            let Some(home) = self.modules.get(&n.module) else { continue };
+            let src = &home.src[..];
+            let named = |x: Option<TsNode>| x.is_some_and(|x| text(x, src) == field);
+            for (d, _, _) in declarations(home.tree.root_node()) {
+                if d.child_by_field_name("name").map(|x| text(x, src)) != Some(n.name.as_str()) {
+                    continue;
+                }
+                let body = match d.kind() {
+                    "type_alias_declaration" => d.child_by_field_name("value").filter(|v| v.kind() == "object_type"),
+                    _ => d.child_by_field_name("body"),
+                };
+                for member in body.map(named_children).unwrap_or_default() {
+                    let declared = match member.kind() {
+                        "public_field_definition" | "property_signature" if named(member.child_by_field_name("name")) => {
+                            member.child_by_field_name("type")
+                        }
+                        "method_definition" if member.child_by_field_name("name").map(|x| text(x, src)) == Some("constructor") => member
+                            .child_by_field_name("parameters")
+                            .map(named_children)
+                            .unwrap_or_default()
+                            .into_iter()
+                            .find(|p| is_property(*p) && named(p.child_by_field_name("pattern")))
+                            .and_then(|p| p.child_by_field_name("type")),
+                        _ => None,
+                    };
+                    if let Some(t) = declared {
+                        return Some((text(t, src).to_string(), home));
+                    }
+                }
+            }
+        }
+        None
+    }
+
+    /// The collection a lookup written as a method looks a part up in (`knowledge::TYPESCRIPT_LOOKUPS`): the value it is
+    /// called on, where that is a collection the lookup is a method of (`levels.at(0)` of `levels: Level[]`).
+    fn lookup(&self, c: TsNode<'t>) -> Option<TsNode<'t>> {
+        let f = function_of(c).filter(|f| f.kind() == "member_expression")?;
+        let (on, method) = (f.child_by_field_name("object")?, text(f.child_by_field_name("property")?, self.src));
+        let args = c.child_by_field_name("arguments").map(named_children).unwrap_or_default();
+        let l = knowledge::lookup(knowledge::TYPESCRIPT_LOOKUPS, method, args.iter().filter(|a| !a.kind().ends_with("comment")).count())?;
+        self.collection(on, 0).is_some_and(|k| l.of.contains(&k.as_str())).then_some(on)
     }
 
     /// Parameters and locals with a class type give receivers a type.
@@ -779,6 +1037,18 @@ impl<'a, 't> Body<'a, 't> {
             }
             if let Some(t) = ty {
                 self.locals.written_at(name, src, t);
+            }
+            // a part a subscript or a lookup picks is of the type of the elements of what it picks from: the row of
+            // `const row = rows[0]` is an array where `rows: Level[][]`
+            if let Some((element, home)) = self.picked(value, 0).filter(|_| ty.is_none()) {
+                if container_type(&element, home) {
+                    self.locals.container_at(name, src);
+                }
+                self.locals.written_at(name, src, &element);
+            } else if ty.is_none() && self.picked_literal(value).is_some_and(|e| builds_container(e, self.m, src)) {
+                // and of what the elements of an array the code writes are: the row of `const row = rows[0]!` is an
+                // array where `const rows = [[first]]`
+                self.locals.container_at(name, src);
             }
             let declared = v.child_by_field_name("type").and_then(|t| named_children(t).into_iter().next()).map(|t| member_parts(t, src));
             let built = (value.kind() == "new_expression")
@@ -896,6 +1166,18 @@ impl<'a, 't> Body<'a, 't> {
                 }
             }
         }
+        // so does the parameter of a function a package's server runs on each connection it accepts
+        // (`net.createServer((conn) => ..)`), as a parameter declared with the type would
+        for f in walk(if self.is_module { root } else { self.body }, &["arrow_function", "function_expression"]) {
+            let Some(server) = self.eval.served(m, f, 0) else { continue };
+            let pkg = match server.kind() {
+                "call_expression" => made_by_package(server, m, src),
+                _ => self.made.get(text(server, src)).cloned(),
+            };
+            if let (Some(name), Some(pkg)) = (paths::param_names(f, src).into_iter().next().filter(|n| !n.is_empty()), pkg) {
+                self.made.insert(name, pkg);
+            }
+        }
         // a parameter declared with a library's type holds a value its package made
         for p in self.scope.and_then(|f| f.child_by_field_name("parameters")).map(named_children).unwrap_or_default() {
             if let (Some(name), Some(pkg)) = (
@@ -999,7 +1281,7 @@ impl<'a, 't> Body<'a, 't> {
     fn hands_on(&self, on: Option<TsNode>, parts: &[Option<TsNode>], kept: &HashSet<String>) -> Vec<Held> {
         let mut out: Vec<(Held, bool)> = vec![];
         for (p, receiver) in on.map(|o| (o, true)).into_iter().chain(parts.iter().flatten().map(|p| (*p, false))) {
-            for i in names_in(p) {
+            for i in self.names_of(p) {
                 if i.kind() == "this" && (self.cls.is_none() || receiver && beneath(p, WRAPPERS).id() == i.id()) {
                     continue;
                 }
@@ -1064,12 +1346,23 @@ impl<'a, 't> Body<'a, 't> {
         if let Some((v, BoundFrom::Element)) =
             self.locals.from(i, self.src).filter(|(v, _)| v.parent().is_some_and(|p| p.kind() != "for_in_statement"))
         {
-            if depth > 8
-                || !walk(v, &["call_expression", "new_expression", "arrow_function", "function_expression", "await_expression"]).is_empty()
-            {
+            if depth > 8 || !self.stepless(v) {
                 return;
             }
-            for n in names_in(v) {
+            for n in self.names_of(v) {
+                let before = out.len();
+                self.held(n, kept, depth + 1, out);
+                for h in out[before..].iter_mut().filter(|h| h.bound == 0) {
+                    h.bound = n.start_byte() as u32;
+                }
+            }
+            return;
+        }
+        // a name bound to values without a step stands for what they are made of
+        let (values, element) = self.bound_to(i);
+        let computed = if depth <= 8 { self.stands(i, kept) } else { vec![] };
+        if !computed.is_empty() {
+            for n in computed {
                 let before = out.len();
                 self.held(n, kept, depth + 1, out);
                 for h in out[before..].iter_mut().filter(|h| h.bound == 0) {
@@ -1084,37 +1377,33 @@ impl<'a, 't> Body<'a, 't> {
         if kept.contains(name) {
             return out.push(Held::new("", name));
         }
-        // a name bound to values without a step stands for what they are made of: what it is declared
-        // with, and what each assignment to it sets (`let unit; if (..) unit = CELSIUS; else unit = KELVIN`)
-        if depth > 8 {
+        // a name a step changes in place holds a value of its own (`changed_in_place`), of what the values it is bound to
+        // hold where they all hold one type, as a container holds what is put into it (`Level` of `const rows =
+        // [[first]]`); one bound to a part of another name's value is that part, and a change of it is a change of that
+        // value (`changed_binding`)
+        if depth <= 8 && self.changed_in_place(i) && !self.part_bound(i) {
+            let mut put = vec![];
+            for n in values.iter().filter(|v| self.stepless(**v)).flat_map(|v| self.names_of(*v)) {
+                self.held(n, kept, depth + 1, &mut put);
+            }
+            // a literal of no type of the code's is no value (`const lines: string[] = []`): the name holds what it is bound
+            // to, as any other does
+            if let Some(ty) = put.first().map(|h| h.ty.clone()).filter(|t| !t.is_empty() && put.iter().all(|h| h.ty == *t)) {
+                return out.push(Held::new(ty, name));
+            }
+        }
+        if depth > 8 || element {
             return;
         }
-        let declared = match self.locals.from(i, self.src) {
-            Some((v, BoundFrom::Whole | BoundFrom::Part)) => Some(v),
-            Some((_, BoundFrom::Element)) => return,
-            None => None,
-        };
-        let binding = self.locals.which(i, self.src);
-        let assigned = self
-            .assigned
-            .get(name)
-            .into_iter()
-            .flatten()
-            .filter(|(left, _)| binding.is_some() && self.locals.which(*left, self.src) == binding)
-            .map(|(_, right)| *right);
-        let values: Vec<TsNode> = declared.into_iter().chain(assigned).collect();
-        let stepless = |v: &TsNode| {
-            walk(*v, &["call_expression", "new_expression", "arrow_function", "function_expression", "await_expression"]).is_empty()
-        };
         // one of the function's own parameters of no type of the code's holds what its calls fill it with, which is known
         // once every body is read (`builder::settle_parameters`)
         if values.is_empty() && self.own_parameter(i) {
             return out.push(Held { param: true, ..Held::new("", name) });
         }
-        if values.is_empty() || !values.iter().all(stepless) {
+        if values.is_empty() || !values.iter().all(|v| self.stepless(*v)) {
             return;
         }
-        for n in values.iter().flat_map(|v| names_in(*v)) {
+        for n in values.iter().flat_map(|v| self.names_of(*v)) {
             let before = out.len();
             self.held(n, kept, depth + 1, out);
             // what a name bound to a projection holds comes from the name the projection starts from (`const t = this.title`)
@@ -1122,6 +1411,117 @@ impl<'a, 't> Body<'a, 't> {
                 h.bound = n.start_byte() as u32;
             }
         }
+    }
+
+    /// The name, or `this`, a value is a part of, as `root_of` reads it, and through a lookup the collection it looks a part
+    /// up in (`Body::lookup`): `levels` of `levels.at(0).db`, as of `levels[0].db`.
+    fn held_root(&self, n: TsNode<'t>) -> Option<TsNode<'t>> {
+        root_through(n, &|c| self.lookup(c).map(|on| vec![on]))
+    }
+
+    /// What a part of a value TypeScript's own code computes is made of, as `part` reads it, a lookup being a part of the
+    /// collection it looks in (`held_root`).
+    fn part_of(&self, p: TsNode<'t>) -> Option<Vec<TsNode<'t>>> {
+        match part(p) {
+            Some(parts) if parts.is_empty() => Some(parts),
+            _ => self.held_root(p).map(|r| vec![r]),
+        }
+    }
+
+    /// Whether a value is made without a step: it holds no call, no `new`, no function and no `await` but lookups
+    /// (`Body::lookup`), each the projection its subscript is.
+    fn stepless(&self, v: TsNode<'t>) -> bool {
+        walk(v, &["call_expression", "new_expression", "arrow_function", "function_expression", "await_expression"])
+            .into_iter()
+            .all(|n| n.kind() == "call_expression" && self.lookup(n).is_some())
+    }
+
+    /// The names a value is made of (`names_in`), but for the key a lookup is handed (`Body::lookup`), which picks the part
+    /// as a subscript's index does.
+    fn names_of(&self, v: TsNode<'t>) -> Vec<TsNode<'t>> {
+        let key = |x: TsNode<'t>| x.kind() == "arguments" && x.parent().is_some_and(|c| self.lookup(c).is_some());
+        names_in(v)
+            .into_iter()
+            .filter(|i| !std::iter::successors(i.parent(), |x| x.parent()).take_while(|x| x.id() != v.id()).any(key))
+            .collect()
+    }
+
+    /// What the name `i` is bound to where it stands, by no step: what it is declared with, and what each assignment to it
+    /// sets (`let unit; if (..) unit = CELSIUS; else unit = KELVIN`); and whether it is declared an element of what it is
+    /// declared with (`for (const x of xs)`, `xs.map((x) => ..)`).
+    fn bound_to(&self, i: TsNode) -> (Vec<TsNode<'t>>, bool) {
+        let from = self.locals.from(i, self.src);
+        let element = matches!(from, Some((_, BoundFrom::Element)));
+        let declared = match from {
+            Some((v, BoundFrom::Whole | BoundFrom::Part)) => Some(v),
+            _ => None,
+        };
+        let binding = self.locals.which(i, self.src);
+        let assigned = self
+            .assigned
+            .get(text(i, self.src))
+            .into_iter()
+            .flatten()
+            .filter(|(left, _)| binding.is_some() && self.locals.which(*left, self.src) == binding)
+            .map(|(_, right)| *right);
+        (declared.into_iter().chain(assigned).collect(), element)
+    }
+
+    /// The names the name `i` stands for where it stands: where everything it is bound to (`bound_to`) is what TypeScript's
+    /// own code computes of names, whatever type the name has (`const gap = first.db - second.db`, `const both: Level[] =
+    /// [first, second]`), and no step made it anew, the names those values are computed of (`body::stands_for`); none for any
+    /// other name.
+    fn stands(&self, i: TsNode, kept: &HashSet<String>) -> Vec<TsNode<'t>> {
+        let (values, element) = self.bound_to(i);
+        if element || values.is_empty() || kept.contains(text(i, self.src)) || self.changed_in_place(i) {
+            return vec![];
+        }
+        let computed: Vec<Vec<TsNode<'t>>> =
+            values.iter().map(|v| crate::body::stands_for(*v, &USES, self.src, &|p| self.part_of(p))).collect();
+        if computed.iter().any(Vec::is_empty) {
+            return vec![];
+        }
+        computed.into_iter().flatten().collect()
+    }
+
+    /// Whether a step changes in place the value the binding of the name `i` visible where it stands holds, anywhere that
+    /// binding is visible: a call that changes the name or a part of it (`changed_by`): a method that changes what it runs
+    /// on (`both.push(second)`, as `knowledge::MUTATORS` says, or the program's own), or a function of the program's handed
+    /// it whose parameter it changes (`add(both, second)`), where the part may be one a subscript or a lookup picks and a
+    /// name may be bound to it (`rows[0]!.push(second)`, `const row = rows.at(0)!; row.push(second)`, `changed_binding`).
+    /// Such a name holds a value of its own, which each change makes anew (`mathematics.md`, "One fine plan").
+    fn changed_in_place(&self, i: TsNode) -> bool {
+        let binding = self.locals.which(i, self.src);
+        binding.is_some() && self.changed_bindings().contains(&(text(i, self.src).to_string(), binding))
+    }
+
+    /// The bindings the body's calls change in place, each by its name and the binding `Locals::which` names, found once for
+    /// the body: the name, or `this`, `held_root` reads a value or part a call changes of (`changed_by`), and a name of the
+    /// body's own may be bound to a part of another name's value, whose binding a change through it changes as well
+    /// (`changed_binding`).
+    fn changed_bindings(&self) -> &HashSet<(String, Option<usize>)> {
+        self.in_place.get_or_init(|| {
+            let looked = |c: TsNode<'t>| self.lookup(c).map(|on| vec![on]);
+            let mut changed = HashSet::new();
+            let roots = walk(self.body, &["call_expression"])
+                .into_iter()
+                .flat_map(|c| self.changed_by(c))
+                .filter_map(|x| self.held_root(beneath(x, WRAPPERS)))
+                .filter(|o| o.kind() == "identifier");
+            for o in roots {
+                let name = text(o, self.src);
+                changed.insert((name.to_string(), self.locals.which(o, self.src)));
+                if !self.locals.bound(o, self.src) {
+                    continue;
+                }
+                if let Some((w, at)) =
+                    changed_binding(self.body, self.src, &BINDS, &looked, name, o.start_byte()).filter(|(w, _)| *w != name)
+                {
+                    changed.insert((w.to_string(), self.locals.0.which(w, at)));
+                }
+            }
+            changed
+        })
     }
 
     /// What a call gives back, by the name the body keeps it by. Its type is one a step gives: what
@@ -1189,7 +1589,7 @@ impl<'a, 't> Body<'a, 't> {
             }
             if gives.is_empty() && steps.raised(c) {
                 let class =
-                    self.resolve(&parts).filter(|r| r.starts_with("ext:")).unwrap_or_else(|| format!("ext:javascript.{}", parts.join(".")));
+                    self.resolve(&parts).filter(|r| ext::is(r)).unwrap_or_else(|| ext::of(&format!("javascript.{}", parts.join("."))));
                 gives.push(Held::new(class, ""));
             }
             steps.op(c, &format!("{}()", parts.last().cloned().unwrap_or_default()), hands, gives);
@@ -1265,7 +1665,7 @@ impl<'a, 't> Body<'a, 't> {
             return None;
         }
         let home = self.modules.get(&node.module)?;
-        self.class(resolve(home, &parts, self.modules, &self.store.nodes))
+        self.class(resolve(home, &parts, self.modules, &self.store.nodes).map(Resolved::id))
     }
 
     /// `<Kaart/>` renders a component, handed its attributes; a lowercase name is an element of
@@ -1458,17 +1858,26 @@ impl<'a, 't> Body<'a, 't> {
             // a call not followed is a step where the body keeps what it gives, and is counted
             // by the name the code calls it by
             _ if parts.is_empty() => {
-                let (name, bucket) = (written_callee(f, src), self.bucket_of(f));
+                // a change of a part a subscript picks is the language's (`rows[0]!.push(level)`)
+                let changed = self.changes(c, &steps.kept);
+                let name = written_callee(f, src);
+                let bucket = if changed.is_empty() { self.bucket_of(f) } else { Bucket::Builtin };
                 let world = matches!(bucket, Bucket::Library | Bucket::Builtin) || self.world(object.unwrap_or(f), 0);
-                self.unread(steps, c, &name, world, hands, vec![]);
+                self.unread(steps, c, &name, world, hands, changed);
                 // what the language's own computes Atlas reads; what anything else does, it does not see
                 if bucket != Bucket::Builtin {
                     steps.dropped(c, &name);
                 }
                 self.read.unresolved.push((name, bucket));
             }
+            // a lookup is the projection of the collection it looks in, as its subscript is: no step
+            _ if self.lookup(c).is_some() => {
+                if let Some(on) = self.lookup(c) {
+                    steps.looks_up(c, on);
+                }
+            }
             _ => {
-                let changed = self.changes(c);
+                let changed = self.changes(c, &steps.kept);
                 // a method on what a guard narrowed to the language's own container is the language's
                 let narrowed = object.map_or(false, |o| self.narrowed(o));
                 let bucket = if changed.is_empty() && !narrowed { self.bucket_path(&parts) } else { Bucket::Builtin };
@@ -1544,9 +1953,12 @@ impl<'a, 't> Body<'a, 't> {
 
     /// The value a method of the language's own changes, as the value the call gives: `rows` for
     /// `rows.push(row)`, where the body holds an array, a `Map` or a `Set` by that name; and the
-    /// owner of a field that holds one, since a change to a part changes the whole: `this` for
-    /// `this.rows.push(e)`, `bag` for `bag.items.push(x)`.
-    fn changes(&self, c: TsNode) -> Vec<Held> {
+    /// owner of a part that holds one, since a change to a part changes the whole: `this` for
+    /// `this.rows.push(e)`, `bag` for `bag.items.push(x)`, `rows` for `rows[0].push(x)` and
+    /// `rows.at(0)!.push(x)` where `rows: Level[][]`, and for `row.push(x)` where `const row =
+    /// rows[0]` binds `row` to the part (`changed_through`): the values the name holds, as a call
+    /// is handed them.
+    fn changes(&self, c: TsNode<'t>, kept: &HashSet<String>) -> Vec<Held> {
         let src = self.src;
         let Some(f) = function_of(c).filter(|f| f.kind() == "member_expression") else { return vec![] };
         let (Some(o), Some(p)) = (f.child_by_field_name("object"), f.child_by_field_name("property")) else { return vec![] };
@@ -1555,7 +1967,18 @@ impl<'a, 't> Body<'a, 't> {
         }
         let o = beneath(o, WRAPPERS);
         let changes = if o.kind() == "identifier" { self.locals.container(o, src) || self.narrowed(o) } else { self.holds_container(o) };
-        let Some(owner) = root_of(o).filter(|_| changes) else { return vec![] };
+        let Some(owner) = self.held_root(o).filter(|_| changes) else { return vec![] };
+        let looked = |c: TsNode<'t>| self.lookup(c).map(|on| vec![on]);
+        let part = owner.kind() == "identifier"
+            && changed_binding(self.body, src, &BINDS, &looked, text(owner, src), owner.start_byte())
+                .is_some_and(|(w, _)| w != text(owner, src));
+        if part {
+            let mut held = vec![];
+            self.held(owner, kept, 0, &mut held);
+            if !held.is_empty() {
+                return held.into_iter().map(|h| Held { at: owner.start_byte() as u32, ..h }).collect();
+            }
+        }
         let (ty, name) = match owner.kind() {
             "this" => (self.cls.clone().unwrap_or_default(), "this"),
             _ => (self.type_of(owner).unwrap_or_default(), text(owner, src)),
@@ -1690,8 +2113,16 @@ impl<'a, 't> Body<'a, 't> {
                     _ => false,
                 }
             }
+            // a part of a collection is of the type its elements are written with (`rows[0]` of `rows: Level[][]` is an array)
+            "subscript_expression" | "call_expression" if self.picked(e, 0).is_some() => {
+                self.picked(e, 0).is_some_and(|(w, _)| self.world_type(&w))
+            }
             "subscript_expression" => {
                 e.child_by_field_name("object").is_some_and(|o| self.element_class(o).is_none() && self.world(o, depth + 1))
+            }
+            // a lookup is its subscript: an element of what it looks in (`xs.at(0)` is `xs[0]`)
+            "call_expression" if self.lookup(e).is_some() => {
+                self.lookup(e).is_some_and(|o| self.element_class(o).is_none() && self.world(o, depth + 1))
             }
             "call_expression" => match self.callee(e).filter(|t| self.own(t)) {
                 // what a function of the program's gives, as its signature writes it
@@ -1817,6 +2248,47 @@ impl<'a, 't> Body<'a, 't> {
         names.into_iter().map(|n| text(n, self.src).to_string()).collect()
     }
 
+    /// The names a listener's function binds what the event brings to, where `c` registers one for an
+    /// event it names (`socket.on("data", (chunk) => ..)`, `knowledge::NODE_LISTENERS`): its
+    /// parameters, none where it takes none.
+    fn received(&self, c: TsNode<'t>) -> Option<Vec<TsNode<'t>>> {
+        let f = function_of(c).filter(|f| f.kind() == "member_expression")?;
+        if !knowledge::NODE_LISTENERS.contains(&text(f.child_by_field_name("property")?, self.src)) {
+            return None;
+        }
+        let args = c.child_by_field_name("arguments").map(named_children).unwrap_or_default();
+        if args.first()?.kind() != "string" {
+            return None;
+        }
+        let listener = args[1..]
+            .iter()
+            .map(|a| beneath(*a, WRAPPERS))
+            .find(|a| matches!(a.kind(), "arrow_function" | "function_expression" | "function"))?;
+        let mut names = vec![];
+        if let Some(p) = listener.child_by_field_name("parameter") {
+            pattern_names(p, &mut names);
+        }
+        for p in listener.child_by_field_name("parameters").map(named_children).unwrap_or_default() {
+            if let Some(pattern) = p.child_by_field_name("pattern") {
+                pattern_names(pattern, &mut names);
+            }
+        }
+        Some(names)
+    }
+
+    /// The touch the body made where it made the door the name `on` holds (`const conn =
+    /// net.createConnection(..)`), with the term its place waits for: the last touch in `world` the
+    /// calls of the value the name is declared with made.
+    fn opening(&self, on: TsNode<'t>, world: World) -> Option<(Touch, Vec<crate::paths::Built>)> {
+        let (value, BoundFrom::Whole) = self.locals.from(on, self.src)? else { return None };
+        let (now, waiting) = self.read.made.within(value);
+        let made = now.into_iter().map(|i| (&self.read.touches[i], vec![])).chain(waiting.into_iter().map(|i| {
+            let (t, b) = &self.read.calls[i];
+            (t, b.clone())
+        }));
+        made.filter(|(t, _)| t.kind == world).last().map(|(t, b)| (t.clone(), b))
+    }
+
     /// What a library's call crosses into: a file call, a request or a database statement waits
     /// for the path, URL or statement it is handed, placed once every call is known; any other
     /// touches what its facts name.
@@ -1830,6 +2302,60 @@ impl<'a, 't> Body<'a, 't> {
             Some(Bound::Ext(e)) => Some(package_from_ext(e, &m.ext_pkgs)),
             _ => self.made.get(&head).cloned(),
         };
+        let args = c.child_by_field_name("arguments").map(named_children).unwrap_or_default();
+        // a Node socket receives by the event a listener waits for, which names the operation
+        // (`socket.on("data", ..)`); a method that sends what it is handed first is that sending
+        // where it is handed data (`socket.end(data)` is `socket.write(data)`, then `socket.end()`)
+        let socket = pkg.as_deref().is_some_and(knowledge::node_socket_package);
+        let event = parts
+            .last()
+            .filter(|l| socket && knowledge::NODE_LISTENERS.contains(&l.as_str()))
+            .and(args.first())
+            .filter(|a| a.kind() == "string")
+            .map(|a| unquote(text(*a, src)));
+        let handed = |a: &TsNode| !matches!(beneath(*a, WRAPPERS).kind(), "arrow_function" | "function_expression" | "function");
+        let sent = parts
+            .last()
+            .filter(|_| socket && args.first().is_some_and(handed))
+            .and_then(|l| knowledge::NODE_SENDS_FIRST.iter().find(|(m, _)| *m == l.as_str()))
+            .map(|(_, op)| op.to_string());
+        let listened: Vec<String>;
+        let parts = match event.or(sent) {
+            Some(e) => {
+                listened = parts[..parts.len() - 1].iter().cloned().chain([e]).collect();
+                &listened[..]
+            }
+            None => parts,
+        };
+        // traffic through a `FileHandle` is at the file it was opened at, wherever the handle is handed
+        // (`docs/reference/mathematics.md`, "A door keeps its place"), never at what it is handed
+        let imported = matches!(m.bindings.get(&head), Some(Bound::Ext(_)));
+        let handle = pkg.as_deref().is_some_and(|p| knowledge::NODE_FS.contains(&p)) && !imported;
+        let traffic = parts.last().filter(|_| handle).and_then(|l| knowledge::NODE_FILE_TRAFFIC.iter().find(|(o, _)| *o == l.as_str()));
+        let object = function_of(c).filter(|f| f.kind() == "member_expression").and_then(|f| f.child_by_field_name("object"));
+        if let (Some((op, dir)), Some(o)) = (traffic, object) {
+            let path_function = |f: TsNode| self.eval.path_function_of(m, f);
+            let kind = Crossing { world: World::Disk, dir: Some(*dir) };
+            let cr = Crosses::read(c, src, kind, pkg.as_deref(), op, &literals(c, src, STRINGS), STRINGS, &HashMap::new(), &path_function);
+            let t = Touch {
+                what: text(o, src).to_string(),
+                payload: cr.payload.clone(),
+                op: op.to_string(),
+                line: cr.line,
+                ..Touch::new(World::Disk, Some(*dir))
+            };
+            // a handle the body opened is at the place its opening touches, named as the opening names it
+            let at = At { m, scope: self.scope, params: &self.params };
+            let (t, built) = match self.opening(o, World::Disk) {
+                Some((o, built)) => (Touch { what: o.what, artifact: o.artifact, fixed: o.fixed, ..t }, built),
+                None => (t, self.eval.of(at, o, 0)),
+            };
+            match built {
+                built if built.is_empty() => self.read.touches.push(t),
+                built => self.read.calls.push((t, built)),
+            }
+            return;
+        }
         // some parts of the world are reached only through a client the package made, not its helpers
         let Some(kind) = effects::boundary_ts(pkg.as_deref(), parts)
             .filter(|k| !knowledge::THROUGH_A_CLIENT.contains(&k.world) || self.made.contains_key(&head))
@@ -1837,10 +2363,44 @@ impl<'a, 't> Body<'a, 't> {
             return;
         };
         let op = parts.last().cloned().unwrap_or_default();
-        let cr =
-            Crosses::read(c, src, kind, pkg.as_deref(), &op, &literals(c, src, STRINGS), STRINGS, &HashMap::new(), &path_maker_named(src));
+        let path_function = |f: TsNode| self.eval.path_function_of(m, f);
+        let cr = Crosses::read(c, src, kind, pkg.as_deref(), &op, &literals(c, src, STRINGS), STRINGS, &HashMap::new(), &path_function);
         let args = c.child_by_field_name("arguments").map(named_children).unwrap_or_default();
         let at = At { m, scope: self.scope, params: &self.params };
+        // a socket's traffic is at the door's place, which the callers hand as they hand a path
+        // (`docs/reference/mathematics.md`, "A door keeps its place"): the address the call that
+        // opens the door is handed, the one the operation is handed (`send(msg, port, host)`), else
+        // the address of the socket it runs on
+        if socket && kind.world == World::Net {
+            let object = function_of(c).filter(|f| f.kind() == "member_expression").and_then(|f| f.child_by_field_name("object"));
+            // the package's own function that opens a door (`net.connect(..)`), not a method of one it made
+            let imported = matches!(m.bindings.get(&head), Some(Bound::Ext(_)));
+            let opens = imported && knowledge::NODE_DOORS.iter().any(|(p, f, _)| pkg.as_deref() == Some(*p) && *f == op);
+            let handed = knowledge::NODE_SOCKET_ADDRESSES.iter().chain(knowledge::NODE_DOOR_PLACES).find(|(o, _)| *o == op);
+            let door = match (opens, handed, object) {
+                (true, _, _) | (false, None, None) => self.eval.of(at, c, 0),
+                (false, Some((_, a)), _) => self.eval.address(at, &args, a, 0),
+                (false, None, Some(o)) => self.eval.of(at, o, 0),
+            };
+            let t = Touch {
+                what: text(object.filter(|_| !opens).unwrap_or(c), src).to_string(),
+                payload: cr.payload.clone(),
+                op: op.clone(),
+                line: cr.line,
+                ..Touch::new(World::Net, kind.dir)
+            };
+            // a door the body opened is at the place its opening touches, named as the opening names it
+            let opened = object.filter(|_| !opens && handed.is_none()).and_then(|o| self.opening(o, World::Net));
+            let (t, built) = match opened {
+                Some((o, built)) => (Touch { what: o.what, artifact: o.artifact, fixed: o.fixed, ..t }, built),
+                None => (t, crate::paths::request_of(&op, door)),
+            };
+            match built {
+                built if built.is_empty() => self.read.touches.push(t),
+                built => self.read.calls.push((t, built)),
+            }
+            return;
+        }
         // a statement is read where it is whole: from a constant, a template, or what the callers
         // hand the parameters it is built from
         let statement = match (cr.facts.kind, args.first()) {
@@ -1895,24 +2455,46 @@ impl<'a, 't> Body<'a, 't> {
     /// changes nothing (`http.delete(..)` on a library's client). A call of the program's own also
     /// changes each argument whose parameter its body changes (`addLine(lines, ..)`).
     pub(super) fn changed(&self) -> std::collections::BTreeSet<&'t str> {
-        let changes = |c: TsNode<'t>| -> Vec<TsNode<'t>> {
-            let Some(f) = function_of(c) else { return vec![] };
-            let on = (f.kind() == "member_expression").then(|| f.child_by_field_name("object")).flatten();
-            match self.callee(c).filter(|t| self.own(t)) {
-                Some(t) => self.changed_parts(&t, on, c).into_iter().map(|(x, _)| x).collect(),
-                None => {
-                    let language = f
-                        .child_by_field_name("property")
-                        .filter(|_| f.kind() == "member_expression")
-                        .map_or(false, |p| knowledge::mutates(knowledge::Registry::Npm, "javascript", text(p, self.src)));
-                    on.filter(|o| language && self.holds_container(*o)).into_iter().collect()
-                }
-            }
-        };
-        changes_in(self.body, self.src, &changes)
+        let looked = |c: TsNode<'t>| self.lookup(c).map(|on| vec![on]);
+        // what the body changes through a lookup it changes in the collection, as through a subscript
+        changes_in(self.body, self.src, &|c| self.changed_by(c))
             .into_iter()
-            .filter_map(|(x, root)| changed_through(self.body, self.src, &BINDS, root, x.start_byte()))
+            .filter_map(|(x, root)| changed_through(self.body, self.src, &BINDS, &looked, root, x.start_byte()))
             .collect()
+    }
+
+    /// Whether the name `i`, where it stands, is bound to another name's value or a part of it, as a change through it is
+    /// followed (`changed_binding`): `row` of `const row = rows[0]!`.
+    fn part_bound(&self, i: TsNode<'t>) -> bool {
+        let looked = |c: TsNode<'t>| self.lookup(c).map(|on| vec![on]);
+        let name = text(i, self.src);
+        changed_binding(self.body, self.src, &BINDS, &looked, name, i.start_byte()).is_some_and(|(w, _)| w != name)
+    }
+
+    /// The name whose value a change made through the name `name` at byte `at` changes (`changed_through`), through the
+    /// lookups the body finds: `ROWS` of `row.push(level)` after `const row = ROWS[0]`, as of `ROWS[0].push(level)`; none
+    /// for a value the body made.
+    pub(super) fn changed_whole(&self, name: &'t str, at: usize) -> Option<&'t str> {
+        let looked = |c: TsNode<'t>| self.lookup(c).map(|on| vec![on]);
+        changed_through(self.body, self.src, &BINDS, &looked, name, at)
+    }
+
+    /// The parts of what it is handed that call `c` changes in place (`changed`): the value it is made on, where the
+    /// program's own method changes its receiver or the language's table changes the container it holds, and each
+    /// argument whose parameter the program's own function changes.
+    fn changed_by(&self, c: TsNode<'t>) -> Vec<TsNode<'t>> {
+        let Some(f) = function_of(c) else { return vec![] };
+        let on = (f.kind() == "member_expression").then(|| f.child_by_field_name("object")).flatten();
+        match self.callee(c).filter(|t| self.own(t)) {
+            Some(t) => self.changed_parts(&t, on, c).into_iter().map(|(x, _)| x).collect(),
+            None => {
+                let language = f
+                    .child_by_field_name("property")
+                    .filter(|_| f.kind() == "member_expression")
+                    .map_or(false, |p| knowledge::mutates(knowledge::Registry::Npm, "javascript", text(p, self.src)));
+                on.filter(|o| language && self.holds_container(*o)).into_iter().collect()
+            }
+        }
     }
 
     /// What the body changes among what it is handed, each by its name with the type its change is
@@ -2081,26 +2663,32 @@ pub(super) fn chain_root<'a>(n: TsNode, src: &'a [u8]) -> Option<&'a str> {
     root_of(n).map(|r| text(r, src))
 }
 
+/// What a part of a value TypeScript's own code computes is made of (`body::computed_of`): a literal, a piece of a string
+/// and a comment of none, any other part the name it is a part of (`root_of`).
+fn part(p: TsNode) -> Option<Vec<TsNode>> {
+    match p.kind() {
+        "number" | "string" | "string_fragment" | "escape_sequence" | "true" | "false" | "null" | "undefined" | "regex" | "comment" => {
+            Some(vec![])
+        }
+        _ => root_of(p).map(|r| vec![r]),
+    }
+}
+
 /// The name, or `this`, a chain like `this.items[0].x` starts from, as written.
 fn root_of(n: TsNode) -> Option<TsNode> {
-    match n.kind() {
-        "identifier" | "this" => Some(n),
-        "member_expression" | "subscript_expression" => root_of(n.child_by_field_name("object")?),
-        k if WRAPPERS.contains(&k) => root_of(wrapped(n)?),
-        _ => None,
-    }
+    root_through(n, &|_| None)
 }
 
 /// How TypeScript binds a name, as `changes` follows a change through it: `const x = v` and `x = v`
 /// bind `x` to `v`, `for (const x of v)` to each element of `v`.
 const BINDS: BindSyntax = BindSyntax {
-    binds: |n, src| {
+    binds: |n, src, looked| {
         let (l, v) = match n.kind() {
             "variable_declarator" => (n.child_by_field_name("name")?, n.child_by_field_name("value")?),
             "assignment_expression" => (n.child_by_field_name("left")?, n.child_by_field_name("right")?),
             _ => return None,
         };
-        (l.kind() == "identifier").then(|| (text(l, src), roots_of(v).into_iter().map(|r| text(r, src)).collect()))
+        (l.kind() == "identifier").then(|| (text(l, src), roots_through(v, looked).into_iter().map(|r| text(r, src)).collect()))
     },
     loops: |n, src| {
         let of = n.child_by_field_name("operator").map_or(false, |o| o.kind() == "of");
@@ -2139,15 +2727,33 @@ pub(super) fn changes_in<'a, 't>(
 /// the name a projection starts from (`graph`, `this.items[0]`), either side of `a ?? b`, `a || b`
 /// and `c ? a : b`. A call, a spread (`{ ...e }`) and a literal make a value anew.
 fn roots_of(v: TsNode) -> Vec<TsNode> {
+    roots_through(v, &|_| None)
+}
+
+/// The names whose value a TypeScript value may be or be a part of (`roots_of`), through the lookups `looked` finds as
+/// through a subscript: `rows` of `rows.at(0)!`, `this` of `this.byName.get(k)`.
+fn roots_through<'t>(v: TsNode<'t>, looked: Lookups<'_, 't>) -> Vec<TsNode<'t>> {
+    let either =
+        |a: Option<TsNode<'t>>, b: Option<TsNode<'t>>| [a, b].into_iter().flatten().flat_map(|x| roots_through(x, looked)).collect();
     match v.kind() {
         "binary_expression" if v.child_by_field_name("operator").map_or(false, |o| matches!(o.kind(), "??" | "||" | "&&")) => {
-            [v.child_by_field_name("left"), v.child_by_field_name("right")].into_iter().flatten().flat_map(roots_of).collect()
+            either(v.child_by_field_name("left"), v.child_by_field_name("right"))
         }
-        "ternary_expression" => {
-            [v.child_by_field_name("consequence"), v.child_by_field_name("alternative")].into_iter().flatten().flat_map(roots_of).collect()
-        }
-        k if WRAPPERS.contains(&k) => wrapped(v).into_iter().flat_map(roots_of).collect(),
-        _ => root_of(v).into_iter().collect(),
+        "ternary_expression" => either(v.child_by_field_name("consequence"), v.child_by_field_name("alternative")),
+        k if WRAPPERS.contains(&k) => wrapped(v).into_iter().flat_map(|x| roots_through(x, looked)).collect(),
+        _ => root_through(v, looked).into_iter().collect(),
+    }
+}
+
+/// The name, or `this`, a chain starts from (`root_of`), through the lookups `looked` finds as through a subscript:
+/// `rows` of `rows.at(0)!.length`.
+fn root_through<'t>(n: TsNode<'t>, looked: Lookups<'_, 't>) -> Option<TsNode<'t>> {
+    match n.kind() {
+        "identifier" | "this" => Some(n),
+        "member_expression" | "subscript_expression" => root_through(n.child_by_field_name("object")?, looked),
+        "call_expression" => root_through(looked(n)?.into_iter().next()?, looked),
+        k if WRAPPERS.contains(&k) => root_through(wrapped(n)?, looked),
+        _ => None,
     }
 }
 
@@ -2232,7 +2838,7 @@ const USES: UseSyntax = UseSyntax {
     hands: |n, child| {
         matches!(n.kind(), "call_expression" | "new_expression") && n.child_by_field_name("arguments").map(|a| a.id()) == Some(child.id())
     },
-    changes: |_| vec![],
+    changes: |_, _| vec![],
     splits: |n, child| n.kind() == "switch_statement" && n.child_by_field_name("value").map(|v| v.id()) == Some(child.id()),
     names: &["identifier", "shorthand_property_identifier"],
     keeps: &["member_expression", "subscript_expression"],
@@ -2242,6 +2848,13 @@ const USES: UseSyntax = UseSyntax {
             .flatten()
     },
     pairs: |targets, value| targets.kind() == "array_pattern" && value.kind() == "array",
+    // `??`, `||` and `&&` are choices; `void` and `delete` give no value of their operand
+    computes: |n, src| match n.kind() {
+        "binary_expression" => n.child_by_field_name("operator").is_some_and(|o| !matches!(text(o, src), "??" | "||" | "&&")),
+        "unary_expression" => n.child_by_field_name("operator").is_some_and(|o| !matches!(text(o, src), "void" | "delete")),
+        "array" | "template_string" | "template_substitution" => true,
+        _ => false,
+    },
     wrappers: WRAPPERS,
     drops: |n, child, src| match n.kind() {
         "expression_statement" => n.named_child(0).map(|c| c.id()) == Some(child.id()),

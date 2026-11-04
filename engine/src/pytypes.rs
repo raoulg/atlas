@@ -93,23 +93,15 @@ pub struct Param {
     pub file: Option<FileArg>,
 }
 
-/// The standard library's types for a path and for a file, by the class that defines them and the
-/// module ty finds it in: a path where the class is a path library's
-/// (`knowledge::PYTHON_PATH_CLASSES`).
+/// What a parameter typed as the class `class`, which ty finds in the module `module`, is handed:
+/// a path where the class is a path library's (`knowledge::PYTHON_PATH_CLASSES`), a file where it
+/// is one of the file classes (`knowledge::PYTHON_FILE_CLASSES`).
 fn file_of(module: &str, class: &str) -> Option<FileArg> {
-    let path = crate::knowledge::PYTHON_PATH_CLASSES
-        .iter()
-        .any(|(lib, c)| *c == class && (module == *lib || module.strip_prefix(lib).is_some_and(|r| r.starts_with('.'))));
-    if path {
+    let within = |lib: &str| module == lib || module.strip_prefix(lib).is_some_and(|r| r.starts_with('.'));
+    if crate::knowledge::PYTHON_PATH_CLASSES.iter().any(|(lib, c)| *c == class && within(lib)) {
         return Some(FileArg::Path);
     }
-    match class {
-        "SupportsRead" | "SupportsReadline" => Some(FileArg::Reads),
-        "SupportsWrite" => Some(FileArg::Writes),
-        "IO" | "TextIO" | "BinaryIO" | "IOBase" | "RawIOBase" | "BufferedIOBase" | "TextIOBase" | "TextIOWrapper" | "BufferedReader"
-        | "BufferedWriter" | "BufferedRandom" | "FileIO" => Some(FileArg::Open),
-        _ => None,
-    }
+    crate::knowledge::PYTHON_FILE_CLASSES.iter().find(|(lib, c, _)| *c == class && within(lib)).map(|(_, _, k)| *k)
 }
 
 /// A value's type: as ty writes it, the classes it names (`list[Node]` names `list` and
@@ -122,6 +114,17 @@ pub struct Value {
     pub names: Vec<String>,
     pub is_class: bool,
     pub is_code: bool,
+}
+
+impl Value {
+    /// Whether the value is an open file, a door to the file it was opened at: of one of the file
+    /// classes (`knowledge::PYTHON_FILE_CLASSES`), as ty finds the class in its library.
+    pub fn open_file(&self) -> bool {
+        self.classes.iter().zip(&self.names).any(|(t, n)| match t {
+            Target::Lib(m) => matches!(file_of(m, n), Some(FileArg::Open | FileArg::Reads | FileArg::Writes)),
+            Target::Here { .. } => false,
+        })
+    }
 }
 
 /// The classes a type is, as written: through the containers that hold values (`tuple`,
@@ -1147,6 +1150,9 @@ impl TyDb {
     /// The database for the project at `at`, a directory of the reading `repo`, and how it reads
     /// the project; `root` is `at` as the file system resolves it.
     fn new(repo: &Repo, at: &Path, root: &SystemPath) -> (TyDb, Setup) {
+        // ty finds the project's modules on disk by itself: what it may find there are the files
+        // Python imports under the project
+        repo.rests_on(at, SOURCES);
         let system = OsSystem::new(root);
         let vendored = ty_vendored::file_system().clone();
         let mut db = TyDb {

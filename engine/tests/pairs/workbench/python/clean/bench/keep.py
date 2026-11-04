@@ -1,6 +1,6 @@
 """What the program makes is kept in a folder of the project's own, the workbench: a class that
 holds the folder, whose method names each file in it."""
-
+import shutil
 from pathlib import Path
 
 
@@ -23,3 +23,7 @@ def save_report(project: Path, text: str) -> None:
 def save_log(project: Path, text: str) -> None:
     bench = Workbench.of(project)
     bench.file("log.txt").write_text(text)
+
+
+def clear(project: Path) -> None:
+    shutil.rmtree(Workbench.of(project).file("report.txt").parent)

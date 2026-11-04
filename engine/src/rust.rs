@@ -44,7 +44,7 @@ pub(crate) fn crates(repo: &Repo) -> Result<Vec<Crate>> {
     if let Some(members) = doc.get("workspace").and_then(|w| w.get("members")).and_then(|m| m.as_array()) {
         for m in members.iter().filter_map(|m| m.as_str()) {
             match m.strip_suffix("/*") {
-                Some(prefix) => dirs.extend(repo.dirs_in(prefix).into_iter().filter(|d| repo.is_file(d.join("Cargo.toml")))),
+                Some(prefix) => dirs.extend(repo.dirs_holding(prefix, "Cargo.toml")),
                 None => dirs.push(repo.root().join(m)),
             }
         }
@@ -122,9 +122,9 @@ pub fn parse(repo: &Repo, opts: &crate::Options) -> Result<(GraphBuilder, String
             p.ancestors().skip(1).take_while(|a| *a != c.dir.as_path() && a.starts_with(&c.dir)).any(|a| repo.is_file(a.join("Cargo.toml")))
         };
         let mut files: Vec<PathBuf> = repo
-            .files_under(&c.dir)
+            .files_under(&c.dir, &["rs"])
             .into_iter()
-            .filter(|p| p.extension().and_then(|x| x.to_str()) == Some("rs") && !other(p))
+            .filter(|p| !other(p))
             .filter(|p| {
                 let rel = p.strip_prefix(&c.dir).unwrap_or(p);
                 matches!(
@@ -135,6 +135,7 @@ pub fn parse(repo: &Repo, opts: &crate::Options) -> Result<(GraphBuilder, String
             .collect();
         files.sort();
         for p in files {
+            let _parse = crate::clock::of("parse", &c.name, false);
             let Some((mid, bin)) = module_id(repo, &c.name, &c.dir, &p) else { continue };
             if modules.contains_key(&mid) {
                 continue;
@@ -190,18 +191,27 @@ pub fn parse(repo: &Repo, opts: &crate::Options) -> Result<(GraphBuilder, String
         }
     }
     for m in modules.values_mut() {
+        let _items = crate::clock::of("items", &m.krate, false);
         collect_symbols(m, &mut store);
     }
     let module_ids: HashSet<String> = modules.keys().cloned().collect();
     for m in modules.values_mut() {
+        let _items = crate::clock::of("items", &m.krate, false);
         collect_uses(m, &crate_ids, &module_ids, &mut store);
         store.bindings.insert(m.id.clone(), m.bindings.clone());
     }
-    mark_exports(&modules, &mut store, &crate_ids);
-    let own: Vec<String> = modules.keys().cloned().collect();
-    collect_impls(&modules, &mut store, &crate_ids, &own);
-    libraries::read(repo, &crate_list, &mut modules, &mut store, &crate_ids, opts.libraries);
+    {
+        let _items = crate::clock::stage("items");
+        mark_exports(&modules, &mut store, &crate_ids);
+        let own: Vec<String> = modules.keys().cloned().collect();
+        collect_impls(&modules, &mut store, &crate_ids, &own);
+    }
+    {
+        let _reach = crate::clock::stage("reach");
+        libraries::read(repo, &crate_list, &mut modules, &mut store, &crate_ids, opts.libraries);
+    }
     link(&modules, &mut store, &crate_ids);
+    let _items = crate::clock::stage("items");
     mark_tests(&modules, &mut store);
     store.mark_library();
     Ok((store, root_name))

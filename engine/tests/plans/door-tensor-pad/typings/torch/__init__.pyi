@@ -1,0 +1,3 @@
+class Tensor:
+    def __eq__(self, other: object) -> Tensor: ...  # type: ignore[override]
+    def __mul__(self, other: Tensor) -> Tensor: ...

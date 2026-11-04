@@ -15,7 +15,7 @@ use tree_sitter::{Node as TsNode, Parser, Tree};
 
 use crate::builder::{Declared, SigInfo};
 use crate::knowledge;
-use crate::model::{Node, NodeKind, Param, Returns};
+use crate::model::{ext, Node, NodeKind, Param, Resolved, Returns};
 use crate::tree::{field_children, named_children, text, unquote, walk, Wrappers};
 
 /// What hands on the value inside it: parentheses and `await`.
@@ -543,20 +543,20 @@ impl Own {
     }
 }
 
-/// Dotted name in module scope -> node id, `ext:<name>`, or None.
+/// Dotted name in module scope -> one of the code's node ids, a name past the code, or None.
 pub(super) fn resolve(
     m: &Module,
     parts: &[String],
     modules: &IndexMap<String, Module>,
     nodes: &IndexMap<String, Node>,
     own: &Own,
-) -> Option<String> {
+) -> Option<Resolved> {
     // a shaped array is its dtype's type with the shape kept: `ext:jaxtyping.Float[Tensor, batch dim]`
     // (knowledge::SHAPED_ARRAYS)
     if let [one] = parts {
         if let Some((head, shape)) = one.split_once('[') {
-            let base = resolve(m, &head.split('.').map(str::to_string).collect::<Vec<_>>(), modules, nodes, own)?;
-            return Some(if knowledge::shaped(&base).is_some() { format!("{base}[{shape}") } else { base });
+            let base = resolve(m, &head.split('.').map(str::to_string).collect::<Vec<_>>(), modules, nodes, own)?.id();
+            return Some(Resolved::of_id(if knowledge::shaped(&base).is_some() { format!("{base}[{shape}") } else { base }));
         }
     }
     let head = parts.first()?;
@@ -565,12 +565,12 @@ pub(super) fn resolve(
         target = format!("{target}.{p}");
     }
     if own.holds(&target) {
-        return defined(&target, modules, nodes);
+        return defined(&target, modules, nodes).map(Resolved::Code);
     }
     if nodes.contains_key(&target) {
-        return Some(target);
+        return Some(Resolved::Code(target));
     }
-    Some(format!("ext:{target}"))
+    Some(Resolved::Beyond(target))
 }
 
 /// The definition node of a symbol, found again by its line and name.
@@ -634,7 +634,7 @@ pub(super) fn outer_type_names<'t>(t: TsNode<'t>, src: &[u8]) -> Vec<TsNode<'t>>
 
 /// The library an external name belongs to: `ext:requests.Session` -> `requests`.
 pub(super) fn lib_of(resolved: &str) -> Option<String> {
-    resolved.strip_prefix("ext:").map(|r| r.split(['.', '[']).next().unwrap_or(r).to_string())
+    ext::path(resolved).map(|r| r.split(['.', '[']).next().unwrap_or(r).to_string())
 }
 
 /// The package a library's module belongs to: `neo4j._sync.work.session` -> `neo4j`. A module

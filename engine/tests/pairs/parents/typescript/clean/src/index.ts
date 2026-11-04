@@ -1,5 +1,5 @@
 // A data file's line count, logged in the directory the data files lie in.
-import { readFileSync, writeFileSync } from "node:fs";
+import { readFileSync, appendFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 
@@ -16,7 +16,7 @@ export function summarise(name: string): number {
   return count;
 }
 
-/** Write the count of the data file `source` to the log in its directory. */
+/** Add the count of the data file `source` to the log in its directory. */
 function log(source: string, count: number): void {
-  writeFileSync(join(dirname(source), "shelf.log"), `${source} ${count}\n`);
+  appendFileSync(join(dirname(source), "shelf.log"), `${source} ${count}\n`);
 }

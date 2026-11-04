@@ -43,7 +43,7 @@ Homebrew loads a formula from a tap it does not ship only once it is trusted; na
 here, trusts that formula alone. `brew install --HEAD raoulg/tap/atlas-code` builds `next` from source
 instead (it needs Rust), and installs it as `atlas-code`, as `cargo install` does.
 
-`atlas-code --version` says `atlas-code 0.70.0`, `atlas-code-nightly --version` says `atlas-code 0.70.0-nightly (b0ead14)`.
+`atlas-code --version` says `atlas-code 0.71.0`, `atlas-code-nightly --version` says `atlas-code 0.71.0-nightly (b0ead14)`.
 
 ## Atlas Studio
 

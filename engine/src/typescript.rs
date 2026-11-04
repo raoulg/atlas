@@ -27,8 +27,9 @@ mod paths;
 use crate::builder::GraphBuilder;
 use crate::knowledge;
 use crate::model::{Entry, EntryKind, Node, NodeKind};
-use crate::repo::{normal, Repo};
+use crate::repo::Repo;
 use crate::tree::span;
+use path_clean::clean;
 
 pub(crate) use module::EXTENSIONS;
 use module::{is_code, module_id, segment, ts_parser, Module};
@@ -134,7 +135,8 @@ pub fn parse(repo: &Repo, opts: &crate::Options) -> Result<(GraphBuilder, String
     let made = |p: &Path| {
         p.strip_prefix(&base).map_or(false, |r| r.components().any(|c| knowledge::made_dir(c.as_os_str().to_str().unwrap_or(""))))
     };
-    let mut paths: Vec<PathBuf> = repo.files_under(&base).into_iter().filter(|p| is_code(p) && !made(p)).map(|p| normal(&p)).collect();
+    let mut paths: Vec<PathBuf> =
+        repo.files_under(&base, EXTENSIONS).into_iter().filter(|p| is_code(p) && !made(p)).map(|p| clean(&p)).collect();
     paths.sort();
     let files: HashMap<PathBuf, String> = paths.iter().map(|p| (p.clone(), module_id(&root, &base, p))).collect();
     // every directory is a package module, so the module quotient follows the folders
@@ -162,6 +164,7 @@ pub fn parse(repo: &Repo, opts: &crate::Options) -> Result<(GraphBuilder, String
     let (mut ts, mut tsx) = (ts_parser(false)?, ts_parser(true)?);
     for p in &paths {
         let id = files[p].clone();
+        let _parse = crate::clock::of("parse", id.split('.').next().unwrap_or(&id), false);
         let src = repo.bytes(p).with_context(|| format!("reading {}", p.display()))?.to_vec();
         let jsx = matches!(p.extension().and_then(|e| e.to_str()), Some("tsx" | "jsx" | "js" | "mjs" | "cjs"));
         let tree = (if jsx { &mut tsx } else { &mut ts }).parse(&src, None).with_context(|| format!("parsing {}", p.display()))?;
@@ -186,20 +189,27 @@ pub fn parse(repo: &Repo, opts: &crate::Options) -> Result<(GraphBuilder, String
         store.add_node(node);
         modules.insert(id.clone(), Module::new(id, p.clone(), src, tree));
     }
+    let items = crate::clock::stage("items");
     for m in modules.values_mut() {
         collect_imports(m, &aliases, &files);
         collect_wrapped(m);
         collect_symbols(m, &mut store);
         collect_routes(m, &mut store);
     }
+    drop(items);
+    let reach = crate::clock::stage("reach");
     libraries::read(repo, &mut modules, &mut store, opts.libraries);
+    drop(reach);
+    let items = crate::clock::stage("items");
     for m in modules.values_mut() {
         m.containers = container_fields(m);
     }
     route_prefixes(&modules, &mut store);
     mark_bins(repo, &files, &mut store);
     mark_exports(repo, &files, &modules, &mut store);
+    drop(items);
     link(&modules, &mut store, repo.root());
+    let _items = crate::clock::stage("items");
     store.mark_library();
     Ok((store, root))
 }

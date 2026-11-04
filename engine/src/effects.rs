@@ -18,7 +18,7 @@ const DISK_WRITE: Crossing = Crossing::write(World::Disk);
 /// socket's address), or it sends or receives on a socket. Building a client, or reading a
 /// response that has arrived (`resp.headers.get(..)`), is handed none.
 pub fn requests(params: &[&str], op: &str) -> bool {
-    params.iter().any(|p| matches!(*p, "url" | "uri" | "address")) || k::SOCKET_OPS.contains(&op)
+    params.iter().any(|p| matches!(*p, "url" | "uri" | "address")) || k::python_socket_op(op).is_some()
 }
 
 /// Whether a Python package is a network library, whose calls `requests` decides.
@@ -47,7 +47,7 @@ pub fn boundary_rust(parts: &[String]) -> Option<Crossing> {
     let has = |p: &str| parts.iter().any(|x| x == p);
     // building moves nothing: `Client::new()`, `Client::builder()..build()`, `OpenOptions::new()`
     let builds = k::BUILDS.contains(&last);
-    if has(k::RUST_FS_MODULE) {
+    if k::fs_path(parts) {
         if builds {
             return None;
         }
@@ -74,9 +74,10 @@ pub fn boundary_rust(parts: &[String]) -> Option<Crossing> {
             return Some(Crossing::to(World::Screen));
         }
     }
-    // a socket's traffic: `TcpStream::connect(addr)`, `conn.read(..)`; binding or a timeout moves none
-    if has(k::RUST_NET_MODULE) {
-        return k::RUST_SOCKET_OPS.contains(&last).then_some(Crossing::to(World::Net));
+    // a socket's traffic, the way its operation goes: `TcpStream::connect(addr)`, `conn.read(..)`;
+    // binding or a timeout moves none
+    if k::socket_path(parts) {
+        return k::rust_socket_op(last).map(socket_traffic);
     }
     // a program is run by a `Command`; `process::exit` ends this one and runs none
     if has(k::RUST_COMMAND) {
@@ -121,6 +122,14 @@ pub fn described(pkg: &str, from: Registry) -> bool {
     }
 }
 
+/// Whether a Python call runs on one of the program's own streams, the doors the runtime opens at
+/// the screen (`sys.stdin.readline()`, `sys.stderr.write(..)`): their traffic is the screen's, never
+/// a file's.
+pub fn on_stream(pkg: Option<&str>, parts: &[String]) -> bool {
+    let Some(pkg) = pkg else { return false };
+    parts.len() == 3 && (k::STREAMS.contains(&(pkg, parts[1].as_str())) || k::INPUT_STREAMS.contains(&(pkg, parts[1].as_str())))
+}
+
 /// Classify a call that leaves the package, by the package that defines what is called.
 ///
 /// `pkg` is that package: the library of the call's callee, or of its receiver's type, and
@@ -147,6 +156,10 @@ pub fn boundary(pkg: Option<&str>, parts: &[String]) -> Option<Crossing> {
     }
     if let Some(c) = k::operation(pkg, last).filter(|c| matches!(c.world, World::Screen | World::Figure)) {
         return Some(c);
+    }
+    // a socket's traffic, the way its operation goes (`SOCKET_OPS`)
+    if k::python_socket_package(pkg) {
+        return k::python_socket_op(last).map(socket_traffic);
     }
     match k::reaches(pkg, Some(Registry::PyPi)) {
         Some(World::Net) => return k::moves_on_the_web(last).then_some(Crossing::to(World::Net)),
@@ -195,7 +208,8 @@ fn ml(pkg: &str, parts: &[String], last: &str) -> Option<Crossing> {
 
 /// The boundary a TypeScript or JavaScript call crosses: `fetch` and HTTP clients go to the
 /// web, `console` to the screen, `node:fs` reads and writes files, `child_process` runs a
-/// program. `pkg` is the package the call's head was imported from, if any.
+/// program, a socket of `node:net` or `node:dgram` receives and sends. `pkg` is the package the
+/// call's head was imported from, if any.
 pub fn boundary_ts(pkg: Option<&str>, parts: &[String]) -> Option<Crossing> {
     let last = parts.last().map(String::as_str).unwrap_or("");
     let Some(pkg) = pkg else { return platform(parts) };
@@ -219,11 +233,24 @@ pub fn boundary_ts(pkg: Option<&str>, parts: &[String]) -> Option<Crossing> {
             Some(DISK_READ)
         } else if k::NODE_FS_WRITES.contains(&last) {
             Some(DISK_WRITE)
+        } else if k::node_file_door(pkg, last) {
+            // a file opened goes the way its flags say (`facts`)
+            Some(Crossing::to(World::Disk))
         } else {
             None
         };
     }
+    // a socket's traffic, the way its operation goes (`SOCKET_OPS`)
+    if k::node_socket_package(pkg) {
+        return k::node_socket_op(last).map(socket_traffic);
+    }
     None
+}
+
+/// A socket's traffic that goes `dir` (`knowledge::SOCKET_OPS`), in every language: what is received
+/// is read from the network, what is sent is written to it.
+fn socket_traffic(dir: Dir) -> Crossing {
+    Crossing { world: World::Net, dir: Some(dir) }
 }
 
 /// What the platform's own names cross to, where no import binds them: `fetch` and a socket or
@@ -348,8 +375,9 @@ pub fn facts(kind: Crossing, pkg: Option<&str>, op: &str, literals: &[String]) -
                 return Facts::of(DISK_READ, local.clone());
             }
         }
-        // a web place is named by its host; the Hub's operations say which way the files go, and a
-        // request named for its method goes that method's way
+        // a web place is named by its host; the Hub's operations say which way the files go, a
+        // request named for its method goes that method's way, and a socket's traffic its
+        // operation's way
         let hub = k::HUB_READ.contains(&op) || k::HUB_WRITE.contains(&op) || k::HUB_MODELS.contains(&op);
         let artifact = if hub { k::HUB_HOST.to_string() } else { literals.iter().find_map(|l| host(l)).unwrap_or_default() };
         let dir = if k::HUB_WRITE.contains(&op) {
@@ -357,7 +385,7 @@ pub fn facts(kind: Crossing, pkg: Option<&str>, op: &str, literals: &[String]) -
         } else if hub {
             Some(Dir::Read)
         } else {
-            k::request_way(op)
+            k::request_way(op).or(kind.dir)
         };
         return Facts::of(Crossing { world: World::Net, dir }, artifact);
     }
@@ -381,11 +409,36 @@ pub fn on_receiver(op: &str) -> bool {
     k::ON_THE_PATH.contains(&op)
 }
 
-/// The host of a URL: `https://huggingface.co/api/x` -> `huggingface.co`.
+/// The host of a URL: `https://huggingface.co/api/x` -> `huggingface.co`; a socket's address is
+/// its own (`127.0.0.1:7878`), as a URL's host is the place it names.
 fn host(s: &str) -> Option<String> {
+    if socket_address(s) {
+        return Some(s.to_string());
+    }
     let rest = s.split_once("://")?.1;
     let h = rest.split(['/', '?', '#']).next()?;
     (!h.is_empty() && !h.contains('{')).then(|| h.to_string())
+}
+
+/// Whether a text is a socket's address, a host and a port: `127.0.0.1:7878`, `localhost:80`,
+/// `[::1]:8080`; also a host the code names with a port it does not (`127.0.0.1:{port}`), a place
+/// named by its hole as a path is.
+pub fn socket_address(s: &str) -> bool {
+    if let Some((h, port)) = s.rsplit_once(':') {
+        let hole = port.len() > 2 && port.starts_with('{') && port.ends_with('}') && !port[1..port.len() - 1].contains(['{', '}', ':']);
+        if hole && !h.contains(['{', '}']) {
+            return socket_address(&format!("{h}:0"));
+        }
+    }
+    let Some((h, port)) = s.rsplit_once(':') else { return false };
+    let host = match h.strip_prefix('[').and_then(|h| h.strip_suffix(']')) {
+        Some(v6) => !v6.is_empty() && v6.chars().all(|c| c.is_ascii_hexdigit() || c == ':'),
+        // a name or an address of four numbers, never a time of day (`12:30`)
+        None => {
+            h.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '-')) && h.chars().any(|c| c == '.' || c.is_ascii_alphabetic())
+        }
+    };
+    host && (1..=5).contains(&port.len()) && port.chars().all(|c| c.is_ascii_digit())
 }
 
 /// A file mode literal: `r`, `wb`, `a+`.
@@ -862,31 +915,86 @@ mod tests {
         assert!(requests(&["url", "params"], "get") && !requests(&["key", "default"], "get"), "a request is handed a URL");
     }
 
-    /// Isomorphic is the same: a socket is the network in Python and in Rust, and the operations
-    /// that say the same thing cross alike. Connecting, sending and receiving reach it; binding an
-    /// address, accepting a connection, shutting a half and setting a timeout move no data.
+    /// Isomorphic is the same: a socket is the network in Python, in Rust and in TypeScript, and
+    /// the operations that say the same thing cross alike. Each operation that moves data is named
+    /// in every language, and every name of it reaches the network, in every module of sockets;
+    /// binding an address, listening, accepting a connection, shutting a half and setting a timeout
+    /// move no data.
     #[test]
-    fn a_socket_moves_data_alike_in_python_and_rust() {
-        let rs = |xs: &[&str]| name(boundary_rust(&xs.iter().map(|s| s.to_string()).collect::<Vec<_>>()));
+    fn a_socket_moves_data_alike_in_every_language() {
+        let rs = |xs: &[&str]| name(boundary_rust(&parts(xs)));
         let py = |op: &str| name(boundary(Some("socket"), &parts(&["sock", op])));
-        let alike = [
-            ("connect", "TcpStream", "connect"),
-            ("recv", "TcpStream", "read"),
-            ("recv_into", "TcpStream", "read_exact"),
-            ("send", "TcpStream", "write"),
-            ("sendall", "TcpStream", "write_all"),
-            ("shutdown", "TcpStream", "shutdown"),
-            ("settimeout", "TcpStream", "set_read_timeout"),
-            ("bind", "TcpListener", "bind"),
-            ("accept", "TcpListener", "accept"),
-            ("sendto", "UdpSocket", "send_to"),
-            ("recvfrom", "UdpSocket", "recv_from"),
-        ];
-        for (p, ty, r) in alike {
-            assert_eq!(py(p), rs(&["std", "net", ty, r]), "Python's `socket.{p}` and Rust's `{ty}::{r}`");
+        let node = |pkg: &str, op: &str| name(boundary_ts(Some(pkg), &parts(&["sock", op])));
+        for op in k::SOCKET_OPS {
+            assert!(
+                !op.python.is_empty() && !op.rust.is_empty() && !op.typescript.is_empty(),
+                "{:?}, {:?} and {:?}: named in every language",
+                op.python,
+                op.rust,
+                op.typescript
+            );
+            for (p, r) in op.python.iter().flat_map(|p| op.rust.iter().map(move |r| (p, r))) {
+                for module in k::RUST_SOCKET_MODULES {
+                    let path: Vec<&str> = module.iter().copied().chain(["TcpStream", r]).collect();
+                    assert_eq!(py(p), rs(&path), "Python's `socket.{p}` and Rust's `{}`", path.join("::"));
+                }
+                assert_eq!(py(p), Some("net"), "a socket's traffic reaches the network");
+            }
+            for t in op.typescript {
+                for pkg in ["net", "dgram"] {
+                    assert_eq!(node(pkg, t), Some("net"), "Node's `{pkg}` socket's `{t}` reaches the network");
+                }
+            }
         }
-        assert_eq!(py("recv"), Some("net"), "a socket's traffic reaches the network");
+        let still = [
+            ("shutdown", "TcpStream", "shutdown", "end"),
+            ("settimeout", "TcpStream", "set_read_timeout", "setTimeout"),
+            ("bind", "TcpListener", "bind", "bind"),
+            ("listen", "TcpListener", "listen", "listen"),
+            ("accept", "TcpListener", "accept", "createServer"),
+        ];
+        for (p, ty, r, t) in still {
+            assert_eq!(node("net", t), None, "Node's `{t}` moves no data");
+            assert_eq!((py(p), rs(&["std", "net", ty, r])), (None, None), "Python's `socket.{p}` and Rust's `{ty}::{r}` move no data");
+        }
         assert_eq!(rs(&["std", "net", "IpAddr", "from_str"]), None, "an address parsed moves nothing");
+    }
+
+    /// A library is judged by its own row, whatever module its path runs through (#302, #327): a
+    /// network library's call in a `net` or an `fs` module crosses as its calls elsewhere do
+    /// (`hyper::net`, `hyper::fs`), and a crate no table names reaches nothing through a module of
+    /// either name. Only the modules of sockets are judged by the socket table, and only the
+    /// modules of files by the file table, each the same in std and in the async runtimes.
+    #[test]
+    fn a_library_is_judged_by_its_own_row_whatever_module_its_path_runs_through() {
+        let rs = |xs: &[&str]| name(boundary_rust(&parts(xs)));
+        for module in ["net", "fs"] {
+            for op in ["get", "read", "send", "new", "shutdown", "read_to_string", "write"] {
+                assert_eq!(rs(&["hyper", module, "HttpConnector", op]), rs(&["hyper", "client", "HttpConnector", op]), "hyper's `{op}`");
+                assert_eq!(rs(&["netcode", module, "TcpStream", op]), None, "a crate no table names: `{module}::{op}`");
+            }
+        }
+        for op in ["read_to_string", "read_dir", "write", "remove_file", "create_dir_all"] {
+            let std = rs(&["std", "fs", op]);
+            assert!(std.is_some(), "std's `fs::{op}` reaches the disk");
+            for module in k::RUST_FS_MODULES {
+                let path: Vec<&str> = module.iter().copied().chain([op]).collect();
+                assert_eq!(rs(&path), std, "`{}` crosses as std's `fs::{op}`", path.join("::"));
+            }
+        }
+    }
+
+    /// A socket's address names its place as a URL's host does (#302): connecting to
+    /// `127.0.0.1:7878` reaches the place a request to `http://127.0.0.1:7878/` reaches; a time of
+    /// day names none.
+    #[test]
+    fn a_socket_address_names_its_place() {
+        let net = |op: &str, l: &str| facts(c("net"), None, op, &lits(&[l])).artifact;
+        for at in ["127.0.0.1:7878", "localhost:80", "[::1]:8080", "greeter.example.org:443"] {
+            assert_eq!(net("connect", at), net("get", &format!("http://{at}/greeting")), "{at}");
+            assert_eq!(net("connect", at), at);
+        }
+        assert_eq!(net("connect", "12:30"), "");
     }
 
     #[test]
@@ -991,5 +1099,42 @@ mod tests {
             facts(c("db_graph"), Some("neo4j"), "run", &lits(&["MATCH (n:Regeling) RETURN n"])),
             Facts::of(c("db_graph"), String::new())
         );
+    }
+
+    /// Isomorphic is the same (#353): a socket's operation goes one way, the way its row of
+    /// `SOCKET_OPS` says, by every name it has in every language and every module of sockets, and
+    /// the facts of the call keep it. An operation a socket and a file name alike goes the same way
+    /// through either door: what a stream's `read_to_string` receives is read from the network as
+    /// what a file's is read from the disk, and what `write_all` sends is written as a file's is.
+    #[test]
+    fn a_socket_goes_the_way_a_file_goes() {
+        let way = |c: Option<Crossing>| c.and_then(|c| c.dir);
+        for op in k::SOCKET_OPS {
+            let mut ways = vec![];
+            for r in op.rust {
+                for module in k::RUST_SOCKET_MODULES {
+                    let path: Vec<&str> = module.iter().copied().chain(["TcpStream", r]).collect();
+                    ways.push((path.join("::"), way(boundary_rust(&parts(&path)))));
+                }
+            }
+            ways.extend(op.python.iter().map(|p| (format!("socket.{p}"), way(boundary(Some("socket"), &parts(&["sock", p]))))));
+            for t in op.typescript {
+                for pkg in ["net", "dgram"] {
+                    ways.push((format!("{pkg}.{t}"), way(boundary_ts(Some(pkg), &parts(&["sock", t])))));
+                }
+            }
+            for (name, w) in ways {
+                assert_eq!(w, Some(op.dir), "`{name}` goes its row's way");
+                let kept = facts(Crossing { world: World::Net, dir: w }, None, name.rsplit(['.', ':']).next().unwrap_or(""), &[]);
+                assert_eq!(kept.dir, Some(op.dir), "`{name}`: the facts of the call keep its way");
+            }
+        }
+        let shared = k::RUST_DOOR_TRAFFIC.iter().filter(|op| k::rust_socket_op(op).is_some()).collect::<Vec<_>>();
+        assert!(!shared.is_empty(), "a socket and a file share their operations");
+        for op in shared {
+            let socket = way(boundary_rust(&parts(&["std", "net", "TcpStream", op])));
+            let file = way(boundary_rust(&parts(&["std", "fs", "File", op])));
+            assert_eq!(socket, file, "`{op}` goes the same way through a socket as through a file");
+        }
     }
 }

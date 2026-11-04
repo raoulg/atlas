@@ -99,7 +99,7 @@ checksum = "d3fb67a6e08acf24fdeccbac2cb6ac4305825bd1f117462e0e6f2f193345ad56"
 
 [[package]]
 name = "atlas-code"
-version = "0.70.0"
+version = "0.71.0"
 dependencies = [
  "anyhow",
  "atlas-engine",
@@ -113,11 +113,12 @@ dependencies = [
 
 [[package]]
 name = "atlas-engine"
-version = "0.70.0"
+version = "0.71.0"
 dependencies = [
  "anyhow",
  "ignore",
  "indexmap",
+ "path-clean",
  "proptest",
  "regex",
  "ruff_db",
@@ -932,6 +933,12 @@ dependencies = [
  "smallvec",
  "windows-link",
 ]
+
+[[package]]
+name = "path-clean"
+version = "1.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "17359afc20d7ab31fdb42bb844c8b3bb1dabd7dcf7e68428492da7f16966fcef"
 
 [[package]]
 name = "path-slash"

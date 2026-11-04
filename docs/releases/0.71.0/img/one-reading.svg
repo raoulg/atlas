@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 430" role="img" aria-label="atlas serve reads the code once, with its libraries, and draws the picture the agent reads too; the preliminary picture 0.70 showed first is no zoom or filter of the complete one, since its routes end at a library's border instead of the place the library reaches">
+<defs>
+<marker id="ka" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" style="fill:var(--key)"/></marker>
+<marker id="ga" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" style="fill:var(--ink-3)"/></marker>
+</defs>
+<rect x="40" y="60" width="160" height="64" rx="10" style="fill:var(--panel);stroke:var(--ink-2);stroke-width:1.5"/>
+<text x="120" y="98" style="font-family:var(--sans);font-size:15px;fill:var(--ink);text-anchor:middle;font-weight:600">your code</text>
+<rect x="330" y="40" width="300" height="104" rx="12" style="fill:var(--key);fill-opacity:0.12;stroke:var(--key);stroke-width:2"/>
+<text x="350" y="70" style="font-family:var(--sans);font-size:15px;fill:var(--ink);font-weight:600">the complete picture</text>
+<text x="350" y="92" style="font-family:var(--sans);font-size:13px;fill:var(--ink-2)">one reading, with libraries</text>
+<text x="350" y="124" style="font-family:var(--mono);font-size:13px;fill:var(--key)">load → File(sales.csv)</text>
+<rect x="330" y="262" width="300" height="104" rx="12" style="fill:var(--panel);stroke:var(--ink-3);stroke-width:1.2;stroke-dasharray:6 5"/>
+<text x="350" y="292" style="font-family:var(--sans);font-size:15px;fill:var(--ink-3);font-weight:600">0.70's first picture</text>
+<text x="350" y="314" style="font-family:var(--sans);font-size:13px;fill:var(--ink-3)">a second reading, no libraries</text>
+<text x="350" y="346" style="font-family:var(--mono);font-size:13px;fill:var(--ink-3)">load → pandas ┤ border</text>
+<line x1="200" y1="88" x2="326" y2="88" style="stroke:var(--key);stroke-width:2" marker-end="url(#ka)"/>
+<text x="263" y="78" style="font-family:var(--sans);font-size:13px;fill:var(--ink-2);text-anchor:middle">read</text>
+<line x1="180" y1="124" x2="326" y2="300" style="stroke:var(--ink-3);stroke-width:1.2;stroke-dasharray:6 5" marker-end="url(#ga)"/>
+<text x="232" y="232" style="font-family:var(--sans);font-size:13px;fill:var(--ink-3);text-anchor:end">read again</text>
+<line x1="480" y1="148" x2="480" y2="256" style="stroke:var(--del);stroke-width:2;stroke-dasharray:4 5"/>
+<g style="stroke:var(--del);stroke-width:3;stroke-linecap:round"><line x1="470" y1="192" x2="490" y2="212"/><line x1="490" y1="192" x2="470" y2="212"/></g>
+<text x="502" y="198" style="font-family:var(--sans);font-size:13px;fill:var(--del);font-weight:600">no zoom, no filter</text>
+<text x="502" y="216" style="font-family:var(--sans);font-size:12px;fill:var(--ink-2)">it drops what the library reaches</text>
+<rect x="760" y="40" width="170" height="56" rx="10" style="fill:var(--key);fill-opacity:0.16;stroke:var(--key);stroke-width:2"/>
+<text x="845" y="64" style="font-family:var(--sans);font-size:14px;fill:var(--ink);text-anchor:middle;font-weight:600">the agent</text>
+<text x="845" y="84" style="font-family:var(--mono);font-size:12px;fill:var(--ink-2);text-anchor:middle">atlas-code mcp</text>
+<rect x="760" y="150" width="170" height="56" rx="10" style="fill:var(--key);fill-opacity:0.16;stroke:var(--key);stroke-width:2"/>
+<text x="845" y="174" style="font-family:var(--sans);font-size:14px;fill:var(--ink);text-anchor:middle;font-weight:600">your page</text>
+<text x="845" y="194" style="font-family:var(--mono);font-size:12px;fill:var(--ink-2);text-anchor:middle">atlas-code serve</text>
+<line x1="630" y1="74" x2="756" y2="68" style="stroke:var(--key);stroke-width:2" marker-end="url(#ka)"/>
+<line x1="630" y1="112" x2="756" y2="170" style="stroke:var(--key);stroke-width:2" marker-end="url(#ka)"/>
+<text x="700" y="128" style="font-family:var(--sans);font-size:13px;fill:var(--key);text-anchor:middle;font-weight:600">one picture</text>
+<line x1="630" y1="300" x2="800" y2="210" style="stroke:var(--ink-3);stroke-width:1.2;stroke-dasharray:6 5" marker-end="url(#ga)"/>
+<text x="724" y="276" style="font-family:var(--sans);font-size:13px;fill:var(--ink-3)">0.70: shown first</text>
+<text x="40" y="414" style="font-family:var(--sans);font-size:12px;fill:var(--ink-3)">teal: what 0.71 draws, for both sides · gray dashed: what 0.71 no longer reads or shows · red: the arrow that does not exist</text>
+</svg>

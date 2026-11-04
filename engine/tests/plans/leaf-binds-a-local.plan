@@ -1,0 +1,39 @@
+# A name a body binds by its own code is the body's own, whatever expression binds it (#318): `_loud` makes `loud` from
+# the samples it is handed, by an expression no step makes (`samples.abs() > 0`), and hands back a mask made of it.
+# `loud` is no module's name and no value from beyond: closed, `_loud` takes only the samples its call hands it. Its
+# contrast, `_at_floor`, reads the module's `FLOOR`, which no code of the route makes: a value from beyond, by its name,
+# since the step takes two tensors.
+
+route marks.peaks
+step peaks/_loud
+
+line entry > peaks call
+line Tensor·samples > peaks value                           # `print(samples * mask)`
+line Tensor·samples > peaks/_loud value
+line peaks/_loud > Tensor·mask@peaks/_loud value
+line Tensor·mask@peaks/_loud > peaks value
+line peaks > Screen own
+
+home Tensor·samples peaks
+home Tensor·mask@peaks/_loud peaks
+
+side entry left
+side Screen right
+
+route marks.floor
+step floor/_at_floor
+
+line entry > floor call
+line Tensor·samples > floor value
+line Tensor·samples > floor/_at_floor value
+line Tensor·FLOOR > floor/_at_floor value                    # the module's floor, from beyond
+line floor/_at_floor > Tensor·mask@floor/_at_floor value
+line Tensor·mask@floor/_at_floor > floor value
+line floor > Screen own
+
+home Tensor·samples floor
+home Tensor·FLOOR floor
+home Tensor·mask@floor/_at_floor floor
+
+side entry left
+side Screen right

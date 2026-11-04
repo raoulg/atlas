@@ -1306,6 +1306,28 @@ fn places_a_path_a_type_builds_is_the_path_written_out() {
     assert!(c.iter().any(|(f, a, _)| f == "bench.clear" && a == ".made/"), "{c:?}");
 }
 
+/// The spelled pair, `spelled/rust`: a note kept in a folder the caller names however it likes
+/// (`./data/../notes`), and shown again from `notes/note.txt`. The clean side writes the folder once
+/// with the libraries that say what they do to a path (`std::path::absolute`, `path_clean::clean`);
+/// the shortcut takes its `.` and `..` out in a loop of its own.
+fn spelled(side: &str) -> Graph {
+    analyze(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/pairs/spelled/rust").join(side), &Options::default()).unwrap()
+}
+
+/// A term written out in full is the place itself, however the code spells it (`docs/reference/mathematics.md`,
+/// "Paths as terms"): a path a library makes absolute or writes without its `.` and `..` is the place its term names,
+/// so the note `save` writes is the note `show` reads, one place. A loop of the program's own is not evaluated: what
+/// it gives is not said, the gap the code leaves, and no place `save` writes is the one `show` reads.
+#[test]
+fn places_a_path_written_another_way_is_the_same_place() {
+    let places = |g: &Graph, f: &str, kind: &str| -> Vec<String> { touches(g, f, kind).iter().map(|t| t.place().id).collect() };
+    let (c, s) = (spelled("clean"), spelled("shortcut"));
+    assert!(!places(&c, "notes.save", "disk_write").is_empty());
+    assert_eq!(places(&c, "notes.save", "disk_write"), places(&c, "notes.show", "disk_read"));
+    let (saved, shown) = (places(&s, "notes.save", "disk_write"), places(&s, "notes.show", "disk_read"));
+    assert!(!saved.is_empty() && saved.iter().all(|p| !shown.contains(p)), "{saved:?} {shown:?}");
+}
+
 /// The kept pair, `kept/rust`: a note kept in a file in the folder `where.txt` names, read, and
 /// taken once. The clean side writes it whole beside its file and renames it in, and names the
 /// folder (`let folder = kept::notes_folder()?`); the shortcut writes it straight in and names
@@ -1667,6 +1689,34 @@ fn a_list_made_by_a_literal_is_made_by_the_body() {
     common::a_list_made_by_a_literal_is_made_by_the_body("rust", "by_literal", "by_call", "by_constant");
 }
 
+/// The locals pair: an array the body writes of what it is handed is the body's own, never a module's name (#318), as
+/// a list is in Python and an array in TypeScript.
+#[test]
+fn a_local_is_bound_by_the_bodys_own_code() {
+    common::a_local_is_bound_by_the_bodys_own_code("rust", "pair");
+}
+
+/// The locals pair: a `vec![..]` is the array it holds, so `listed` binds its vector by its own code as `pair` binds its
+/// array, and what the macro is written of is read as the array's elements are: the module's constant in the shortcut's
+/// `vec![first, QUIET]` comes from beyond, as it does in `[first, QUIET]` (#327).
+#[test]
+fn a_vec_is_the_array_it_holds() {
+    let p = common::pair("locals/rust");
+    for (side, g) in [("clean", &p.clean), ("shortcut", &p.shortcut)] {
+        let read = |f: &str| {
+            let n = g.node(f).unwrap_or_else(|| panic!("{side}: no node {f}"));
+            let names = |xs: &[atlas_engine::Use]| xs.iter().map(|u| u.name.clone()).collect::<Vec<_>>();
+            (names(&n.uses), names(&n.binds))
+        };
+        assert_eq!(read("signal.listed"), read("signal.pair"), "{side}: what the body reads and binds");
+        for budget in common::BUDGETS {
+            let plans = common::planned(g, &format!("vec-{side}"), budget);
+            let beyond = |route: &str| common::from_beyond(&plans[route], &common::parameters(g, route));
+            assert_eq!(beyond("signal.shown"), beyond("signal.paired"), "{side}, budget {budget:?}: from beyond");
+        }
+    }
+}
+
 /// One side of the sockets pair (`tests/pairs/sockets/rust`): a server that greets each client by
 /// the name it sends and lets the client read the greeting before the connection closes.
 fn greeter(side: &str) -> Graph {
@@ -1699,9 +1749,159 @@ fn places_a_parent_drops_the_last_part_of_a_path() {
     common::a_parent_drops_the_last_part_of_a_path("rust", "shelf.summarise", "shelf.log");
 }
 
+/// The unset pair: `env::var(name)` of the name a caller hands is the variable that caller names, as
+/// `env::var("REPORT")` is, and `unwrap_or(String::new())` falls back to the empty path as `unwrap_or_default()` does
+/// (#348).
+#[test]
+fn places_a_variable_a_caller_names_is_that_variable() {
+    common::a_variable_a_caller_names_is_that_variable("rust", "notes.keep", "notes.save_report", "notes.save_log", "notes.show_report");
+}
+
 /// The closures pair: a closure a `let` keeps and the body calls takes what each call hands it (#239), as a function of
 /// the module does, and as a lambda or a `def` inside a `def` does in Python.
 #[test]
 fn a_closures_parameter_is_what_its_calls_hand_it() {
     common::a_closures_parameter_is_what_its_calls_hand_it("rust", &["knot.settings", "knot.lock"]);
+}
+
+/// A value built at the call is built where it is named, among a macro's tokens as outside them (#299): a unit struct's
+/// name is a value of it (`docs/reference/mathematics.md`, "Method resolution order"), so `println!("{}:", Plain.name())`
+/// builds a `Plain` and runs `name` on it, as `Plain.show(..)` written outside the macro builds one and runs `show` on it.
+/// The shortcut of the built pair (`tests/pairs/built/rust`) writes both forms: each method it runs on a `Plain` is handed,
+/// as the value it runs on, the `Plain` the step right before it builds. The clean side is handed its block and builds none.
+#[test]
+fn built_a_unit_struct_named_in_a_macro_is_built_where_it_is_named() {
+    for side in ["clean", "shortcut"] {
+        let g = analyze(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/pairs/built/rust").join(side), &Options::default())
+            .expect("reads");
+        let sites = &node(&g, "notes.report").sites;
+        // a method of `Plain`'s own, or a trait's run on a `Plain` (`Block.show`)
+        let on_plain = |s: &Site| s.to.starts_with("notes.Plain.") || s.on == "notes.Plain";
+        let runs: Vec<usize> = (0..sites.len()).filter(|&i| on_plain(&sites[i])).collect();
+        for &i in &runs {
+            let built = i.checked_sub(1).map(|b| &sites[b]).filter(|b| b.to == "notes.Plain");
+            let built = built.unwrap_or_else(|| panic!("{side}: no Plain is built before {}", sites[i].to));
+            assert!(
+                sites[i].hands.iter().any(|h| built.gives.contains(h) && h.fills == [atlas_engine::Slot::Receiver]),
+                "{side}: {} runs on the Plain built for it: {:?}",
+                sites[i].to,
+                sites[i].hands
+            );
+        }
+        let builds = sites.iter().filter(|s| s.to == "notes.Plain").count();
+        assert_eq!(builds, runs.len(), "{side}: one Plain built for each method run on one");
+        assert_eq!(runs.len(), if side == "shortcut" { 2 } else { 0 }, "{side}: `Plain.name()` in the macro and `Plain.show(..)`");
+    }
+}
+
+/// The sockets pair (#302): the client `ask` connects to the greeter's address and hands the connection to `hear`; the
+/// server binds the address and hands each connection it accepts to `answer`, which hands it to `linger`. Each keeps the
+/// place it is opened at (`common::a_connection_keeps_its_place`).
+#[test]
+fn a_door_keeps_its_place() {
+    common::a_connection_keeps_its_place("rust", ["greeter.answer", "greeter.linger"], "greeter.main", "greeter.bin.ask");
+}
+
+/// The handles pair (#323): a `File` handed on is read and written at the path it was opened at, never at the buffer
+/// an operation is handed (`f.read_to_string(&mut text)` reads the file `f` is), as a `TcpStream` handed on is at its
+/// address (`common::a_file_handed_on_keeps_its_place`).
+#[test]
+fn handles_a_file_handed_on_keeps_its_place() {
+    common::a_file_handed_on_keeps_its_place("rust");
+}
+
+/// The locals pair: a name bound to what an operator or an array computes of names stands for those names, so a step
+/// handed it is handed what the expression written in its place hands (#328), and the route's own arrow takes what it
+/// takes with the expression written in place (#343), as in Python and TypeScript.
+#[test]
+fn a_name_computed_of_names_stands_for_them() {
+    common::a_name_computed_of_names_stands_for_them("rust");
+}
+
+/// The locals pair without its annotations: `let both: Vec<Level> = ..` names a type, and the body reads no `Level` by it
+/// (#356), as in Python and TypeScript.
+#[test]
+fn an_annotation_is_no_read() {
+    common::an_annotation_is_no_read("rust");
+}
+
+/// The twice pair: `kind` in `root.join(kind).join(format!("{kind}.csv"))` is one value, so the loop writes two places,
+/// never four (#324).
+#[test]
+fn places_a_name_bound_once_is_one_value() {
+    common::a_name_bound_once_is_one_value("rust", "export.export");
+}
+
+/// The trees pair: a recursion over `read_dir` is one place at every depth, through one function and through two that call
+/// each other (#325, #345).
+#[test]
+fn places_a_walk_of_a_tree_is_one_place_at_every_depth() {
+    common::a_walk_of_a_tree_is_one_place_at_every_depth(
+        "rust",
+        &[("backup.copy_tree", "data", "backup"), ("backup.mirror_entry", "photos", "archive")],
+        "backup.main",
+    );
+}
+
+/// The locals pair: a vector a step changes in place (`both.push(second)`) holds a value of its own and stands for nothing,
+/// where the vector written out once stands for the levels it holds (#355), as in Python and TypeScript.
+#[test]
+fn a_name_changed_in_place_holds_a_value_of_its_own() {
+    common::a_name_changed_in_place_holds_a_value_of_its_own("rust");
+}
+
+/// The locals pair's shortcut: a call handed a name as `&mut` changes it in place as a method that changes what it runs on
+/// does (#355): `add(&mut both, second)` is `both.push(second)`, as a function that changes what it is handed is in Python
+/// and TypeScript.
+#[test]
+fn a_name_handed_as_mut_is_changed_in_place() {
+    common::a_name_a_function_changes_holds_a_value_of_its_own("rust", "add", "push");
+}
+
+/// The locals pair: a vector pushed onto in one arm is the choice's value, which the step after the choice takes, where
+/// the vector the choice gives, written out in each arm, is the body's own (#366), as in Python and TypeScript.
+#[test]
+fn a_name_changed_in_one_arm_is_the_choices_value() {
+    common::a_name_changed_in_one_arm_is_the_choices_value("rust");
+}
+
+/// The lookups pair: `levels.first()?` and `levels.get(0)?` are the projection `&levels[0]` is and `levels.get(name)?` the
+/// one `&levels[name]` is, no step, also of a vector changed in place first and of a map a `LazyLock` keeps (#346, #355),
+/// as in Python and TypeScript; a tuple a tuple pattern takes apart binds each name as a `let` of its element would, so
+/// `let (first, second) = (levels.first()?, levels.get(1)?)` is `(&levels[0], &levels[1])` (`paired`). A `push` to the
+/// row `rows.first_mut()?` picks is the step a `push` to the row `&mut rows[0]` borrows is (#374).
+#[test]
+fn a_lookup_is_the_projection_its_subscript_is() {
+    common::a_lookup_is_the_projection_its_subscript_is(
+        "rust",
+        &[
+            ("indexed", "looked_up"),
+            ("indexed", "got_at"),
+            ("paired", "paired_looked_up"),
+            ("keyed", "got"),
+            ("pushed", "pushed_looked_up"),
+            ("added", "added_looked_up"),
+            ("grown", "grown_looked_up"),
+        ],
+        &[],
+    );
+}
+
+/// The keys pair: a key taken with `note.strip_prefix(root)` and joined back to its folder names the note it was taken from; one cut
+/// out of the path's text is a name of its own (#352).
+#[test]
+fn places_a_key_joined_back_to_its_root_is_the_note() {
+    common::a_key_joined_back_to_its_root_is_the_note("rust");
+}
+
+/// The lookups pair: a `push` to a row a subscript or a lookup picks changes the rows (#374): the row `&mut rows[0]`
+/// borrows of rows the function is handed as `&mut`, of rows it makes and binds `mut`, and of the module's rows a guard on
+/// its `Mutex` hands on, which the change writes; as in Python and TypeScript.
+#[test]
+fn a_change_of_a_part_changes_the_whole() {
+    common::a_change_of_a_part_changes_the_whole(
+        "rust",
+        &["added", "added_looked_up", "grown", "grown_looked_up"],
+        &["added", "added_looked_up"],
+    );
 }

@@ -83,9 +83,13 @@ impl Reading {
     /// What the principles still ask of the parts drawn, each part checked in its own language, and,
     /// where two readings are drawn as one, how many findings the later raises and resolves.
     pub(crate) fn findings(&self) -> Findings {
-        let found: Vec<Finding> = self.parts.iter().flat_map(atlas_engine::aside::check).collect();
+        // each function and type in their words as the page draws it: the parts together, of both readings where it draws two
+        let before = self.since.as_ref().map_or(&[][..], |s| s.parts.as_slice());
+        let shared = atlas_engine::model::Shared::among(self.parts.iter().chain(before).flat_map(|g| &g.nodes));
+        let checked = |gs: &[Graph]| -> Vec<Finding> { gs.iter().flat_map(|g| atlas_engine::aside::check_among(g, &shared)).collect() };
+        let found = checked(&self.parts);
         let changed = self.since.as_ref().map(|s| {
-            let before: Vec<Finding> = s.parts.iter().flat_map(atlas_engine::aside::check).collect();
+            let before = checked(&s.parts);
             let (raised, resolved, _) = changes::raised(&before, &found);
             Changed { raised: raised.len(), resolved: resolved.len() }
         });
@@ -133,7 +137,6 @@ pub(crate) struct Opens {
     pub(crate) route: Option<String>,
     pub(crate) sight: Option<Sight>,
     pub(crate) served: Option<String>,
-    pub(crate) preliminary: bool,
 }
 
 /// One project as the viewer is handed it: the graph, the flow its routes are read from, the
@@ -155,8 +158,6 @@ struct Project<'a> {
     served: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     drawn: Option<&'a str>,
-    #[serde(skip_serializing_if = "std::ops::Not::not")]
-    preliminary: bool,
 }
 
 /// What the viewer is handed: its projects by name, and the build of Atlas that drew them.
@@ -195,7 +196,6 @@ impl Html {
         let worker = serde_json::to_string(ELK_WORKER).expect("worker source is serializable").replace("</", "<\\/");
         VIEWER
             .replacen("/*__PLAN__*/", PLAN, 1)
-            .replacen("/*__PROGRESS__*/", PROGRESS, 1)
             .replacen("/*__PALETTE__*/", PALETTE, 1)
             .replacen("/*__FONTS__*/", FONTS, 1)
             .replacen("/*__D3__*/", D3, 1)
@@ -228,7 +228,6 @@ fn payload(graph: &Graph, flow: &Flow, findings: &Findings, compared: Option<&Co
         view: opens.sight.as_ref(),
         served: opens.served.is_some(),
         drawn: opens.served.as_deref(),
-        preliminary: opens.preliminary,
     };
     let payload = Payload { projects: BTreeMap::from([(graph.root.as_str(), project)]), atlas: crate::version::VERSION.as_str() };
     Ok(serde_json::to_string(&payload)?)
@@ -278,8 +277,11 @@ mod tests {
     }
 
     /// Each phase of a drawing has its own measure: it only rises, keeps even with the time while the
-    /// phase takes what it took the last time, never fills before the phase is done, is whole once the
-    /// phase is past, and still moves when the phase takes longer than the last time.
+    /// phase takes what it took the last time, fills four fifths by then, never fills before the phase is
+    /// done, is whole once the phase is past, and still moves when the phase takes longer than the last
+    /// time. What it shows past the time expected depends on the seconds past it alone, so a time expected
+    /// that is wrong by any factor never shows a reading still going as nearly done. A phase that reads no
+    /// code shows nothing.
     #[test]
     fn progress_rises_and_waits_for_each_phase() {
         let script = format!(
@@ -294,12 +296,20 @@ const waits = at("code", "code", 1000) < 1 && at("libraries", "libraries", 1e6) 
 const past = at("code", "libraries", 0) === 1 && at("libraries", "code", 50) === 0 && at("libraries", "ready", 0) === 1;
 const moves = at("libraries", "libraries", 60) > at("libraries", "libraries", 45);
 const even = Math.abs(at("code", "code", 5) - 2 * at("code", "code", 2.5)) < 1e-9;
-console.log(JSON.stringify({rises, waits, past, moves, even, start: at("code", "code", 0)}));
+const fifths = Math.abs(at("code", "code", 10) - 0.8) < 1e-9;
+const after = (expected, over) => progressOf({phases: ["code"], phase: "code", reads: true, elapsed: expected + over, expected: {code: expected}}, "code");
+const seconds = [1, 10, 80, 600].every(e => [0, 5, 70, 300].every(over => Math.abs(after(e, over) - after(1, over)) < 1e-9));
+const slow = after(1, 70) < 0.95;
+const none = progressOf({phases: ["code"], phase: "code", reads: false, elapsed: 50, expected: {code: 10}}, "code") === 0;
+console.log(JSON.stringify({rises, waits, past, moves, even, fifths, seconds, slow, none, start: at("code", "code", 0)}));
 "#
         );
         let out = std::process::Command::new("node").args(["-e", &script]).output().expect("node runs (it is on the PATH in CI)");
         let said: serde_json::Value =
             serde_json::from_slice(&out.stdout).unwrap_or_else(|_| panic!("{}", String::from_utf8_lossy(&out.stderr)));
-        assert_eq!(said, serde_json::json!({"rises": true, "waits": true, "past": true, "moves": true, "even": true, "start": 0}));
+        assert_eq!(
+            said,
+            serde_json::json!({"rises": true, "waits": true, "past": true, "moves": true, "even": true, "fifths": true, "seconds": true, "slow": true, "none": true, "start": 0})
+        );
     }
 }

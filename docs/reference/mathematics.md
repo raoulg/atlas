@@ -36,8 +36,10 @@ codomain, when the route leaves something in it. What the route reads back of wh
 reads only to check or count, it does not use: that place stays in the codomain. Whether a read is
 used is a fact of the step's body: what the call gives reaches the step's codomain (it is returned,
 handed to a call, kept in a field) through the names it is bound to and the values a call on it
-changes (`f.read_to_string(&mut s)` makes `s` from `f`), or it only decides a choice,
-goes to an error or is dropped, and is a check. A place one step
+changes (`f.read_to_string(&mut s)` makes `s` from `f`, through `?` and `.unwrap()` alike), and what a
+listener's function is handed is what its event brings (`conn.on("data", (chunk) => ..)` uses the read
+where `chunk` goes on); or it only decides a choice, goes to an error or is dropped (`let _ = f(x)` drops
+it as `f(x);` does), and is a check. A place one step
 writes and a later step reads and uses is the object between them, and stands between them. A
 place the route reads and then writes on is in both: two projections of one place, `from X` on
 the left and `into X` on the right. A place it writes only before it reads there, and only in an
@@ -106,7 +108,12 @@ are that step with a choice of what it is handed, no choice of where the value c
 coproduct of its arms, each injected by what decides it as the code writes it (`when not
 raw.exists()`, a `match` pattern, `otherwise`). A choice of one arm is a coproduct with the
 identity, `f + 1`: its steps run when the condition holds and nothing runs otherwise, so it is
-drawn as a choice too. In `x ?? y`, `x || y` and `x && y` (Python's `or` and `and`, Rust's
+drawn as a choice too. An arm is the composite of what it runs, so a choice inside an arm beside other steps of it
+is a coproduct inside that arm (`if keep: open_shelf(); if report: keep_report()` is `(open_shelf ; (keep_report + 1)) + 1`),
+a frame in the arm's branch, never another branch beside it: one run takes one branch of each frame it enters, and a run
+through both is one run. Coproducts are associative, `A + (B + C) = A + B + C`: an arm that runs nothing but one choice
+inside it is that choice, whose arms are branches of the one around it, each decided by the arms on its path (an `else`
+whose only statement is an `if` is an `elif`, as a chain of guards with nothing between them is) (#357). In `x ?? y`, `x || y` and `x && y` (Python's `or` and `and`, Rust's
 `x.unwrap_or_else(..)`) the left always runs and its value goes on where it holds, so it is no arm; the right is
 the one arm. What goes on past them is the left's value where the arm does not run and the arm's where it does, as
 in `match x { Some(v) => v, None => y }`: a body that gives back `x ?? y` gives back both. A guard, a choice none of whose arms runs on past its end and that has no arm for when none
@@ -114,13 +121,22 @@ is chosen (`if not xs: return Failed(..)`), is that choice with what follows it 
 Fit(..)` after it runs otherwise, as an `else` would write it. A repository's graph is the coproduct of its parts' graphs, glued only
 along the libraries and places of the world they share (a pushout over those): two parts whose code
 holds one name stay two, each name injected under where its part lies (`orders/app`, `billing/app`).
+Two parts share a library when they read the same code, and the directory a library is read from names its code
+(Cargo's registry keeps one directory per version, an environment its own copy): a library the parts read from one
+directory is one library under its own name, and a node both parts keep is held once, as the first part reads it
+(the common refinement of the two readings is #377). A library read from several
+directories is one library per directory, since a version's types and bodies are its own (rustc tells `Value` of
+1.0.151 from 1.0.154's): each takes its name with its version after it (`serde_json-1_0_151`), or, where the
+versions do not tell the directories apart, the place where its first reader lies, and the names past its fiber take
+that name too. A name past the code that two parts both name holds no code to differ in, and is one node.
 Each part is read in one language, so the graph's languages are the image of its parts': a set, empty for no parts,
 the union of theirs for a merge (`model::Languages`); one language is a value of the closed set Atlas reads (`Lang`).
 A call into a family runs one of its overrides, decided at run time, so its codomain is the coproduct of theirs: it
 hands on each error any of them can end with, as a call hands on each its one callee can end with, never one chosen
 for it (#213).
 **Where.** Principles `sums` and `choices`; `Node::whens` (`body.rs`), `arms_of` and `guarded_by` (`tree.rs`), `Item::Choice` (`flow.rs`),
-the MCP tool `choices`; `parts::apart`, `Graph::rename`; `Site::fails` and `settle_fails` (`builder.rs`).
+the MCP tool `choices`; `parts::apart`, `parts::versions`, `parts::merge`, `Graph::rename`, `Graph::libraries` and
+`model::Dependency`, held by `engine/tests/versions.rs` and `a_merge_holds_each_id_once` (`merge.rs`); `Site::fails` and `settle_fails` (`builder.rs`).
 
 ### Lenses
 **What.** A lens on S has `get: S → A` and `put: A × S → S`, and a lawful one gets back what
@@ -140,7 +156,17 @@ and a subclass, a variant of a sum left open). A constructor that reads the plac
 class. What a put takes is what reaches the place through its body's steps, by what each is
 handed and gives; a parameter handed only to reads, or only to a statement's key (`WHERE`), is a
 key. A view is the `get` of a lens with no `put`: it only reads.
-**Where.** Principle `lens`; `design.md` §1.
+An id is a value of the coproduct `Code ⊔ Beyond`: what the reading holds as code (the program, and a library read as
+code: `plotkit.data.load`), or a name past the fiber the graph keeps of a library, an `External` node with no body
+(`ext:plotkit.data.load` at `--libraries 0`). The tag of the second injection is a prism: `of` makes a name past the
+code an id, `path` takes it back, `path(of(p)) = Some(p)`, `of(p) = id` wherever `path(id) = Some(p)`, and an id of
+the code's has no path. What a reader resolves a name to is a value of the coproduct (`Resolved`); the graph keeps its
+id, the key its edges, its indexes and the page share. Either injection says a dotted name a reader finds the node by
+(`model::dotted`). A sum written in place says none: it is one object however and wherever it is written ("Coproducts"),
+so no module or place that writes it is part of its id, which is the set of its variants' ids (`model::sum`); a list
+names it as Atlas says it everywhere, by its own name (`model::said`).
+**Where.** Principle `lens`; `design.md` §1; `model::ext`, `model::sum`, `model::dotted` and `model::Resolved`, held by
+`engine/tests/readers.rs` (the tag is spelled once) and `engine/tests/one_name.rs`.
 
 ### Pullback: a filter
 **What.** The pullback of `true` along a predicate `p: G → Bool` is the part of G where p holds.
@@ -172,7 +198,25 @@ parameter holds it by that type's name, as the type it takes is named (#216).
 input with a default, where the package's code lies) closed under `/`-join, `parent`, `with_suffix` and a pattern below a
 directory. A collection of paths is the set of terms its elements can be; iterating it yields
 one of them. Substituting a parameter by the term a caller hands it is the term's evaluation, and
-a part no code determines is a named hole. The parts of a term are what lies between the `/`s it
+a part no code determines is a named hole. A name is a variable of the term, and substitution replaces every
+occurrence of a variable by the same term: a parameter is one of the values its call hands it, and an element of a
+collection, once the code binds it (`for ext in ["js", "mts"]`), one of the collection's terms each time the binding
+takes one. So a term in which a variable of n values stands any number of times is at most n terms
+(`f"{d}-{ext}/index.{ext}"` over `ext ∈ {js, mts}` is two, never four), distinct variables choose apart (the product
+of their values), and a hole is a variable whose values no code says. A function that hands itself a path below its
+parameter (`copy_tree(src / name)` for each `name` of `read_dir(src)`) extends the parameter at each call: over the
+recursion it holds the least fixpoint of the extension, `X`, `X/*`, `X/*/*`, …, which is `X/**`, any number of parts
+below what the first call hands (`**` holds none as well). An extension by a part the code does not decide (a pattern,
+a hole) is held exactly; one written out (`sub`) is held by `**` too, the least pattern of the algebra that holds
+`sub/sub/…`; a recursive call that hands the parameter itself adds nothing. A recursion is a cycle of the call graph, a
+strongly connected component of it: a function that calls itself, or several that call each other in turn (`mirror`
+lists a folder and hands each entry to `mirror_entry`, which hands a folder back to `mirror`). A walk around the cycle out
+through the callers that hands each parameter of the value that parameter or a path below it extends the parameter as a
+call of the function itself does, so over the cycle the parameter of each of its functions holds the least fixpoint below
+what the first call into that function hands. The extension is the whole walk's: held exactly where each walk around the
+cycle extends the parameter by one part the code does not decide, and by `**` where it extends it by more parts or by a
+name written out. A run of parts each of which holds any one part (`*`) or any number (`**`) holds as many as its `*`s, or
+more: `*/**` and `**/*` are one term, `**/*`, and `**/**` is `**`. The parts of a term are what lies between the `/`s it
 writes, so a value between two of them is one part; `parent` drops exactly the last part
 (`~/data/{name}` is in `~/data`), and of a term that is one value not said yet it is that value's
 directory, `{p}/..`, taken once `p` is substituted: `parent` commutes with substitution (#284). A pattern below a directory (`D.glob("*/IO-*")`) is
@@ -181,7 +225,27 @@ holds. A listing of all of `D` (`D.iterdir()`, `D.glob("*")`) is the fiber over 
 always holds, `D` itself, and each element it yields is `D/*`. An element of a collection is also
 what a function handed the collection to run on each element takes (`sorted(ps, key=lambda p: ..)`'s
 `p`) and what a pick of it gives (`max(ps)`, `ps[0]`). A lookup `d[k]` in a table the code writes is
-the value the key picks where the code decides `k`, and else the union of the values `d` holds.
+the value the key picks where the code decides `k`, and else the union of the values `d` holds. A
+loop over a table goes over its keys (`for k in d`, `d.keys()`, `for (const k in d)`): its variable
+is the union of the keys the code writes. An element of a listing has a name as well as a path
+(`e.name`, `e.file_name()`), and that name joined below the directory listed is the element, `D/*`.
+The empty path `""` names nothing: an input whose default is the empty path is the input alone, a
+hole, never the place the empty term would be. It is the unit of a join (`PathBuf::new().join(x)` is
+`x`), where it is written and where a caller hands it: a join commutes with what is handed. The step
+up `..` names no file or folder of its own: `{p}/..` is the directory of `p`, decided once `p` is. A
+path resolved against a base (`new URL(rel, base)`) starts at the base, as a join does. A path the code
+changes in place is the term it holds after each change, as a name bound anew is (`p.push(x)` is
+`p = p.join(x)`, `p.pop()` is `p = p.parent()`); a change the body may skip (in an arm) leaves it the
+union of the term before and after the change, and a change it repeats (in a loop) as many times as
+the code does not say: a join leaves it below the term before (`p/{…}`), a change of its extension or
+name one of the two, since doing it again changes nothing more, and any other change a value not said.
+A path taken within a base (`b.strip_prefix(a)`, `b.relative_to(a)`, `path.relative(a, b)`) is the left quotient of
+the join: the term `b ⧵ a` for which `a.join(b ⧵ a) = b`. Where `b` is written as `a` with parts below it, `b ⧵ a` is
+those parts (`notes/*` within `notes` is `*`); where `b` is `a`, the empty path; else it stays a quotient, a term of its
+own with `b` and `a` in it, which substitution writes into as into any term and which is decided once its base is at
+the front of `b`. A join at the same base cancels it, wherever the two meet: where the code writes the join, and where
+a caller says the base and the path only after it was written (`{A}/{B ⧵ C}` with `a` said for both `A` and `C` is `b`).
+A value with itself to fall back to is the value (`p.canonicalize().unwrap_or(p)` is `p`).
 **In Atlas.** A place on the disk the code names only through a variable is drawn as the term it
 evaluates to (`assets/regelingen/*/IO-*`), not as the variable (`m`). The root is traced to a
 default or to a parameter wherever the code says it; what it cannot trace stays a hole in the
@@ -191,14 +255,32 @@ where the package's code lies ships with it. The code decides a place in the fra
 function where the root becomes something it holds, a literal or a constant, which is where
 `places` asks. A file the term decides to the last part is a `File`; one whose name it decides
 below a directory it does not is that name under that directory, the hole kept in the term by
-the name the code gives it, wherever in the term it stands: `File({$DATA_DIR}/report.txt)`. Two
+the name the code gives it, wherever in the term it stands: `File({$DATA_DIR}/report.txt)`. A
+folder is placed as a file is: one whose name the term decides is that name under the directory it
+does not (`{project}/.made/`, the folder `clear` removes as the parent of the report it names), and
+one whose last part it leaves open, or whose last part is `..`, rests in the directory before the
+first part it leaves open. A folder made for a file holds that file by its term
+(`D/{x}/kind/` holds `D/{x}/kind/{id}.json`), so making it is a step towards the file, one place. Two
 holes the code names differently are two directories, since nothing in the code says they are one;
 a hole the code gives no name (an expression Atlas does not follow) is `{}`, never `*`, which is
 a wildcard the code writes. The name a hole has is the name the code binds the value to, in the
 function that binds it (`let folder = notes_folder()?` in `main` is `{main.folder}`), the first one,
 which every later name of the value hands on, so one value is one hole however many names it passes
 through. A binding is a name a function gives a value, as a parameter is (`analyze.dir`): two
-functions that each bind a `file` hold two values, and two places. A call is no
+functions that each bind a `file` hold two values, and two places. The places of a term are its terms once each of its
+variables is chosen, each value where it is whole: one the function writes out in that function, one built from what
+the callers hand once that is written in, so one binding a call hands in two arguments (`save(root / kind, kind)`) is one value in the callee too, and an element of what a caller hands
+(`for p in ps`) ranges over every term the caller hands. Each binding is a variable of its own: two loops over one list
+pair every element with every other, as their runs do, and two values the code keeps in step only by an index it
+counts (`dirs[i]`, `names[i]`) are two variables, every combination a place. What a choice binds a name to
+(`d = a if c else b`) is kept as its alternatives where the name stands. A recursion is completed to its fixpoint: where
+the walk out through the callers goes into a cycle, a parameter a walk around the cycle extends is written in once, as
+`{p}/**`, and the term goes on through the calls that leave the cycle and through the cycle's other functions, each met
+once, never around the cycle again; so a walk of a tree is one place at every depth (`data/**/*`, each file in any
+folder at any depth in `data/`), whether one function walks it or several in turn, never one place per level down to a
+limit. A path taken within the folder it came from and joined back to that folder is the path it was taken from
+(`root / note.relative_to(root)` reads the note listed), whichever function takes it and whichever joins it back; one
+cut out of the path's text by its length is a value Atlas does not follow, a name of its own below the folder. A call is no
 name of what it gives: a callee names an operation (`trim`, `new`, `TemporaryDirectory`), so a
 call no name holds is `{}` in every language. A suffix a path is given (`with_suffix`,
 `with_extension`) is part of the term, applied to what a caller hands once the caller says it,
@@ -210,15 +292,35 @@ written, a test whether it is there, a copy or a move into it or out of it, its 
 (`File({main.folder}/note.json)` for the rename that moves a note in, the read and the `remove_file`
 alike). The place is the term; its label says the term's patterns in words, from the
 file up (`every *.xml in OW-bestanden/ in each folder in {base_dir}/`), and the term is under the
-pointer. Words are a label, never an identity: two places are one when their terms are. A route
+pointer. Words are a label, never an identity: two places are one when their terms are. What the
+graph names a touched file by (`Touch.what`) is that term too, never a literal or an expression of
+the call that touches it: a term written out in full is the place itself, however the code spells
+it (`./.made/log.txt` is `.made/log.txt`), and a term with a hole keeps the names the code gives its
+holes (`~/data/{name}`). So a library's function that writes a path another way without moving it is the
+identity on terms: made absolute (`std::path::absolute`, `pathlib`'s `absolute` and `resolve`) or with its `.` and
+`..` taken out (`path_clean::clean`), it is the place it was handed (`knowledge::RUST_PATH_FUNCTIONS`, the pair
+`spelled`). A loop of the program's own over a path's parts is code Atlas does not evaluate, and what it gives is not
+said. A database opened on a file is named by that file's term, as any file is,
+however the code builds its path (`Path("data") / kind / "counts.db"` and `f"data/{kind}/counts.db"`
+are one place). A variable of the environment is one place however its lookup names it
+(`os.environ["STORE"]`, `os.getenv(NAME)`, `process.env.STORE`, `process.env[NAME]` of a constant).
+Its name is a term like any other, and the lookup a function of it that commutes with substitution,
+as `parent` does: a lookup whose name a caller hands (`os.environ[name]`, `env::var(name)`,
+`process.env[name]`) is the variable that caller names, written in by the substitution that completes
+a path built from a parameter, never by one of its own, and with a default the code takes where the
+variable is not set it is that input with its default once the name is said; a lookup whose name is an
+element the code binds (`for name in ["REPORT", "LOG"]`) is each variable the collection names. A lookup
+whose name no code decides names no variable. A route
 is one in the same way, by what it serves: a set of methods at a path. `methods=["POST", "GET"]`,
 `["GET", "POST"]` and `{"GET", "POST"}` are one set, and a registration for every method
 (`app.all`) is the top of the set. Its label, `GET|POST /items`, writes the set in the order of
 `knowledge::REQUEST_WAYS`; a request meets a route whose set holds its method, at its path.
-**Where.** `paths.rs` (`Seg`, `join`, `place`, `folders`, `bound`, `with_suffix`, `Callers`,
-`served`, `serving`), `model.rs` (`Route`, `Methods`, `Request`),
-the readers' `paths.rs` (`Eval::of`), `flow.rs` (`Touch::place`), `plan.js` (`pathWords`); the
-pairs `python/paths`, `places` and `kept`.
+**Where.** `paths.rs` (`Seg`, `join`, `place`, `folders`, `bound`, `each`, `chosen`, `substitute`, `with_suffix`,
+`environment_named`, `looked_up`, `or_else`, `within`, `Seg::Within`, `Callers`, `Cycles`, `wildcards`, `served`, `serving`),
+`model.rs` (`Route`, `Methods`, `Request`), the readers' `paths.rs` (`Eval::of`; Rust's `Eval::changed`), `flow.rs`
+(`Touch::place`), `plan.js` (`pathWords`), `knowledge.rs` (`PathFn`, `PathMethod::Within`, `ELEMENT_NAMES`,
+`LISTING_ENTRIES`); the pairs `python/paths`, `places`, `kept`, `workbench`, `unset`, `opened`, `twice` (#324), `trees`
+(#325, #345) and `keys` (#352).
 
 ### Places by the type that holds them
 **What.** A quotient of the places by the program's type whose code builds each place's path: the
@@ -239,21 +341,116 @@ only the first draws the group, since only its code says the files belong togeth
 `flow.rs` (`Touch::place`, its coarse place), `index.html` (the storage quotient); the pair
 `workbench`.
 
+### A door keeps its place
+**What.** The term algebra of places (Paths as terms) has operations that open a door at a term,
+a value through which data reaches the place the term names (`TcpStream::connect(a)`,
+`TcpListener::bind(a)`, `File::open(p)`), and operations that give a door at the same term (a
+clone, the connections a listener accepts). The term of a door is the term it is opened at, and
+substitution carries it as it carries a path: a door handed to a parameter is the door its caller
+hands.
+**In Atlas.** A library's type whose calls reach a place is a door to it (`design.md`, packages):
+a socket, and a file once it is open. An operation on a door is at the place the door's term
+evaluates to, wherever the door is handed: through parameters, `let`s, a pattern that takes it out
+of a pair (`let (conn, _) = listener.accept()?`, `conn, _ = listener.accept()`), a loop over a
+listener's connections, the function a Node server runs on each (`net.createServer((conn) =>
+..)`). A file is read and written at the path it was opened at, never at the buffer an operation is
+handed (`f.read_to_string(&mut text)` reads the file `f` is). Where the term is not made whole (a
+route that reaches none of the callers that make it), an operation on a door the function opened
+is named as the opening names its place, and one on a door it is handed by the name it is handed
+by, never by what the operation moves. A door made without a place takes the
+one the first call on it names (`s = socket.socket(); s.bind(address)`, `server.listen(port,
+host)`).
+
+Each operation that moves data through a door is a touch of its own at the door's place, whether
+the function opened the door or was handed it; the opening is a touch where it moves data itself
+(a connect, a file opened), and binding, listening and accepting are none. Were the operations
+folded into the opening, what a function does would depend on where its door came from, and
+writing a call out in its caller's body would change what the route does, against the effect
+functor. How finely they are drawn is the view's quotient: one place on one side of a step is one
+line, whatever operations reach it (#323, `decision`).
+
+Each operation goes one way, a socket's as a file's: a receive reads and stands in the domain of its
+step, a send writes and stands in its codomain, in every language, as its row of `SOCKET_OPS` says. So
+a socket's read and a file's read are drawn alike, from the place. An opening goes the way its mode
+says, and a door opened both ways (`open(p, "r+")`, `OpenOptions` that read and write) is drawn as
+written: the place holds what it did not hold before. A connected stream is opened both ways, so
+connecting writes. Node's `socket.end(data)` writes `data` and then ends the stream, a write as
+`write(data)` is (#353, `decision`).
+
+Node's descriptors and file handles are doors as Python's file objects and Rust's `File` are:
+`fs.openSync(p, flags)` gives a descriptor and `fs.promises.open(p, flags)` a `FileHandle`, each at
+`p` and opened the way its flags say. A descriptor handed to `fs.readFileSync(fd)` or `fs.writeSync(fd,
+..)`, and a handle's `readFile`, `read`, `writeFile` and `write`, read and write that file. The touch
+a door's operations go to is the one the call that opened it made, found by where that call is
+written, never by its line: two doors opened on one line (`with open(a) as x, open(b, "w") as y`)
+are two.
+
+The place of a stream socket is the address of its listening end, the one address the code names
+for it: the client names it in `connect`, the server in `bind` or `listen`, and each connection a
+listener accepts is a door to it. So a client that writes to an address and a server that reads
+there meet at one place, Network(address), as a request meets the route served at its host and
+path. The peer of a server's connection is decided by no code and names no place. A socket's
+address names its place as a URL's host does, written `host:port` (`127.0.0.1:7878`) whatever form
+the code writes it in: a string, Python's pair `("127.0.0.1", 7878)`, Rust's
+`SocketAddr::from(([127, 0, 0, 1], 7878))`, the port and the host Node is handed apart
+(`net.createConnection(7878, "127.0.0.1")`). Where the code does not say the address (only the
+environment holds it), the place stays a hole, as a path's does: the gap is the code's.
+**Where.** `knowledge::SOCKET_OPS` names each operation of a socket in the three languages and the
+way it goes; the doors and what keeps them are tables per language: `RUST_DOORS`, `RUST_DOOR_KEEPERS`,
+`RUST_SOCKET_ADDRESSES`, `RUST_DOOR_TRAFFIC`, `RUST_ADDRESS_MAKERS`, `RUST_NAMED_ADDRESSES`,
+`RUST_SAME_CALLS`; `PYTHON_DOORS`, `PYTHON_DOOR_PLACES`, `PYTHON_DOOR_KEEPERS`,
+`PYTHON_FILE_TRAFFIC`; `NODE_DOORS`, `NODE_DOOR_PLACES`, `NODE_DOOR_KEEPERS`,
+`NODE_SOCKET_ADDRESSES`, `NODE_LISTENERS`, `NODE_SENDS_FIRST`, `NODE_FILE_DOORS`, `NODE_FILE_TRAFFIC`.
+`effects::boundary_rust`, `boundary` and `boundary_ts` give each operation its way. The readers'
+`paths.rs` (Rust's `Eval::call`, `Eval::address`, `Eval::element`, `bound`; Python's `Eval::follow`,
+`Eval::placed_later`, `Eval::element`; TypeScript's `Eval::call`, `Eval::address`,
+`Eval::placed_later`, `Eval::served`) and `body.rs` (Rust's `chain_touches`, Python's `library` and
+`crossed`, TypeScript's `crossed`; each reader's `opening`, through `body::MadeBy`; `Steps::goes_on`
+and `Steps::mark_received` for whether a read is used); `effects::socket_address`; the pairs `sockets`
+and `handles`, each in the three languages.
+
 ### Who makes a path whole: a monotone formula
 **What.** A monotone Boolean formula over a set of atoms, in disjunctive normal form: a disjunction
 of conjunctions, with no negation. A conjunction is a set of atoms (`a∧b = b∧a`, `a∧a = a`) and the
 disjunction a set of conjunctions (`x∨y = y∨x`), so the formula is a set of sets. It holds at an
 assignment when every atom of one of its conjunctions does. The empty conjunction is true: the unit
-of `∧`.
+of `∧`. A conjunction that contains another holds only where the other does, so it adds nothing
+(absorption, `a ∨ (a∧b) = a`): two formulas that hold at the same assignments are one formula, and
+its canonical form is the set of its minimal conjunctions, none containing another. An atom that
+stands only in a conjunction that contains another is no condition of the formula: no assignment
+changes its value by it.
 **In Atlas.** A touch whose path others make whole runs in a route only where they are on the
 calls (pushforward, rule 5). The atoms are of two kinds, conditions of one kind on a route
 (`Atom`): it reaches a caller whose call hands what makes the path whole, or it starts at an entry
 whose users hand it. `Touch::by` is the formula: each conjunction a set of conditions that make the
 path whole together (one caller set up the object whose field holds the root, another handed the
 rest), any conjunction enough. The order the code is read in says nothing: `a&b` and `b&a` are one
-conjunction, and two alternatives in either order one formula. A role one condition plays is no
-part of the set: the function a request is from is kept beside it, in `Whole { asks, with }`, where
-the request is drawn.
+conjunction, and two alternatives in either order one formula. Nor does how the value got there:
+`Touch::by` is kept in its canonical form (`absorb`), so a conjunction beside one it contains (the
+`lens` pair's `Roster.load&Roster.reread` beside `Roster.load`, a Roster reread from one `load`
+built) is not written, and the callers the arrow of a step depends on are those of the minimal
+conjunctions. Under a step of a route a condition holds where what ran before the step meets it,
+and a route is its steps in call order (composition): what ran before a step is the calls that lead
+there and, in each of their bodies, the steps before the one that leads there, with all they run.
+Before is call order in a body, met with its choices and loops: a call ran before another when it
+stands before it and no choice holds the two in different arms (the arms each call's site names,
+`Site::arms`, so a choice inside an arm stands in that arm), and in a loop every call of the loop ran
+before every call of it, whichever stands first, since a later round runs after the round before.
+What ran is all that call may run, its overrides too. The engine's read-back of a function's arrow
+(`flow::orders`) and the page's plan read this one order, and say the same places under each
+occurrence of a route that starts at a function. A function's arrow stands in the contexts it is
+called in: the chain that starts at it, with nothing above it and nothing before it, and each chain
+of calls that leads to it, with the callers on it and what ran before it there. A function it calls
+itself runs below it, where its body calls it, and is above it in no context: a set-up it runs counts
+for what runs after it in its body and for nothing before (#359). So the arrow of a function holds
+what its route, read occurrence by occurrence, does at places, and is exactly that for a function
+nothing calls. A
+caller that handed the rest hands it down the calls into the touch's function, so it holds only on
+them; a caller that set up the object a method on the calls runs on (its calls reach a constructor
+of that method's class) holds wherever it ran before, also in a step beside the calls (`main`
+building the shelf in `open_shelf` and keeping its report in the step after). A role one condition
+plays is no part of the set: the graph says which a caller plays, as above, and the function a
+request is from is kept beside it, in `Whole { asks, with }`, where the request is drawn.
 Where two callers meet a path, the conjunction is the union of theirs (`Whole::and`), so the meet
 keeps every condition of both, however many levels of callers hand the path up. Its unit is the
 function the touch is in: every route that runs the touch reaches it, so `In(f)` there is the empty
@@ -261,8 +458,12 @@ conjunction, and only there; one level up, the caller that hands the path is a c
 other. The graph's JSON writes each conjunction `a&b`, its conditions in order, an entry's users as
 `users_of:e`, and the alternatives in order; a conjunction of one entry's users alone is written in
 `users_of`. It reads them back once.
-**Where.** `model.rs` (`Atom`, `Both`, `Touch::by`, `Touch::in_route`), `paths.rs` (`Whole`,
-`Callers::of`, `place_calls`), `plan.js` (`inRoute`); the pair `handing`.
+**Where.** `model.rs` (`Atom`, `Both`, `absorb`, `Touch::by`, `Touch::in_route`), `paths.rs` (`Whole`,
+`Callers::of`, `place_calls`), `flow.rs` (`holds`, what ran before a call: `Ix::prior`, the memo's `Key`;
+`along`; the contexts of an arrow: `contexts`, `in_every_context`), `plan.js` (`inRoute`, `before`,
+`ranBefore`); the pairs `handing`, `setup` and `order`, the programs `plans/setup-in-a-loop` and
+`plans/setup-in-an-arm`, and `engine/tests/ran_before.rs`, which holds the engine's reading and the page's
+to one answer, and a function's arrow to what its route, written out occurrence by occurrence, does at places.
 
 ### Yoneda: what changed
 **What.** An object is determined up to isomorphism by the arrows into it, `Hom(−, A)`, and
@@ -284,11 +485,16 @@ step put in before another (`double(add_one(x))` where A had `double(x)`) is the
 marked: the step after it is handed in each reading what that reading gives it. A place a caller
 makes whole is the caller's arrow; a file named by a function's own parameter (`load.path`) is
 named so whoever calls the function. A rename is an isomorphism of the typed arrows in and out:
-`list[float] → float` is no `str → str`. `atlas-code changes` reads the same union along each route,
-so the picture and the list hold the same marks.
+`list[float] → float` is no `str → str`. A sum written in place is its variants, so it is renamed with them. `atlas-code changes` reads the same union along each route,
+so the picture and the list hold the same marks, and it says each construct by the name the picture gives it
+(`model::said`): a method with its class, an initializer as the call to its class, a type whose name another type of
+the union shares with the fewest of its last modules that no other of that name stands in last (`orders.model.Frame`
+beside `billing.model.Frame`), a sum written in place by its variants. `route`'s text and a finding say the same names.
+One name said of two constructs points at neither.
 **Where.** `atlas-code history`, `atlas-code changes A..B`, a vision beside the working tree (`atlas
 mcp`'s `vision`); `diff::union`, `diff::reading`, `changes::between`; `design.md` §4, L5. Held by `engine/tests/arrows.rs`:
-on two readings of the same nodes, the marks are those of the direct arrows, and a node renamed is one node.
+on two readings of the same nodes, the marks are those of the direct arrows, and a node renamed is one node; and by
+`engine/tests/one_name.rs`: the list names each construct as the page's model draws it.
 
 ### Partial morphisms: a prophecy
 **What.** A partial map is defined on part of its domain; a graph with some objects and arrows
@@ -370,14 +576,16 @@ line or a box that appears or disappears means:
    rows stands where its other end products stand. What it wrote is what it wrote at the places the route
    touches (rule 5): a helper that writes the path its caller makes whole writes that caller's file, not
    the file it names alone, so a read of the latter is no read back. A step's arrow stands in every context
-   of callers that make a path it reaches whole, and reads back what it reads back in any one of them (#217).
+   it is called in, and reads back what it reads back in any one of them (#217): the chain that starts at it,
+   and each chain of calls that leads to it, with what ran before it there ("Who makes a path whole").
 5. **Reach is computed on the fine graph.** Quotienting identifies vertices and can make a path that
    no fine path has (`a → b`, `c → d`, `b ≡ c` gives `[a] → [d]`). What a step reaches is the closure
    of its calls in the fine graph, drawn apart from its own arrow (sentence 6), and never read off a
    quotient. The fine graph is the graph of occurrences, not of functions: a place a caller makes whole
    (a path it hands down) is touched under a step only where that caller is on the calls that lead to
    the step, or below it. A helper that writes the path its caller hands writes, under each caller,
-   that caller's file.
+   that caller's file. A caller that set up the object whose field holds the root has done its part
+   wherever it ran before the step, also in a step beside those calls ("Who makes a path whole").
 6. **Places with the same incidence are one block.** The rule for lines holds for the vertices too: values
    that one closed step takes, that no step makes and that join nothing else, have the same neighbours
    (that step) and the same way (in), so they are one block of the quotient with a multiplicity `n`, drawn
@@ -447,7 +655,7 @@ image.
 | a place of the world is no part of the code's hierarchy and stays outside a package, part or step that shows it | a place is an object, a package is a block of the partition of functions; `q` moves functions only |
 | memory made and used inside a step lives inside its frame | an object between two arrows of a composite is internal to it |
 | what a step takes from beyond it stands outside its frame | the domain of a composite is the domain of its first arrow |
-| a choice is a frame of its own, its branches inside | a coproduct is one object whose arms are its injections |
+| a choice is a frame of its own, its branches inside; a choice inside an arm beside other steps is a frame in that branch, one that is the whole arm is branches of the frame around it | a coproduct is one object whose arms are its injections; an arm is a composite, and `A + (B + C) = A + B + C` (`alternatives` in `engine/tests/plans.mjs`) |
 | files fold into the directories that hold them, one box per side their files stand on; directories nested in one another that hold the same files are one box, drawn as the deepest, and opening it opens them all; opening a directory refines the fold | the disk is a tree, and a fold is its quotient by directory, met with the side; directories with the same files are one block of that quotient, so the box is one class and opens as one (`foldDirs`, held by `plans.mjs` and `pictures.py topology`) |
 | a dotted line joins the packages whose code calls each other, whatever data also joins them; opened, it refines to what inside is called, down to the function's own box | the calls are a relation, and a quotient of a relation keeps its image; a line drawn only where another is absent is no relation and would come back on opening |
 | a type with parts is a family frame; its parts stand inside it opened | zoom by composition is a quotient by the relation "is a part of" |
@@ -578,7 +786,11 @@ open:
   `f = self.fig; other.fig = f` sets the field to `fig` of the instance; names bound in turn compose, `a = self.size; w =
   a.width` is `size.width`, and a binding written as as many parts as its value binds each name to its part, `fig, ax =
   self.fig, self.ax`), a lookup by a key among them (`row = table[k]`
-  hands `table`, the lens the key chooses), and so is any value a body binds without a step: a
+  hands `table`, the lens the key chooses), and so is that lookup where the language's library writes it as a call,
+  isomorphic to the subscript and made partial or total by a default (`xs.first()` and `xs.get(0)` in Rust, `xs.at(0)`
+  and a `Map`'s `m.get(k)` in TypeScript, `d.get(k)`, `d.get(k, default)` and `next(iter(xs))` in Python, by the
+  collections `knowledge::Lookup` names: the prism the lens is where the part may be missing, with the default the
+  other part it hands), and so is any value a body binds without a step: a
   pattern that takes a value apart (`const [year, month] = fields` hands `fields`), a name a
   `case` pattern binds (a part of what the `match` takes apart, through the variant the case matches, a
   prism), an element of a loop that is no step (`for s, t in rows`), an element a method hands the
@@ -608,8 +820,35 @@ open:
   of one: a literal fills it with none, and the route's own, which no code of the program fills, hold
   none. A name a body binds by a literal of a type of the code's (`let mut held = vec![]`, `items: list[Item] = []`)
   holds a value the body makes itself, in its frame, as the call handed nothing it is isomorphic to makes it
-  (`Vec::new()`, `list()`); the graph says which names a body binds so (`Node::binds`). What an opened step changes of a value it was handed goes out at its border as what its steps
-  made of it;
+  (`Vec::new()`, `list()`). A name a body binds by any other expression (`mask = samples.abs() > 0`,
+  `let total = a + b`), whatever it reads, where that is no name, no step's result and no part of either, which
+  hold their values, and no function written in place, is the body's own name too: a local is bound by the body's
+  own code, the same in every language, and is never a module's name; the graph says which names a body binds so
+  (`Node::binds`). Where the language's own code computes that value of names with no call (an operator, a
+  display of several values, a format: `bottom = height - margin`, `both = [first, second]`, `f"{a}"`), the value
+  has no moment of its own: an operator is the language's operation handed its parts (`a - b` is `a.__sub__(b)`,
+  `Sub::sub(a, b)`), no occurrence, and binding its result to a name adds no arrow. So the name stands for the
+  names it is computed of: `gap = first.db - second.db; draw(gap)` is `draw(first.db - second.db)`, and a step
+  handed `gap` is handed `first` and `second`, whatever the type of `gap`. The body's own code reads them where it
+  reads the name, as it reads a projection's root, never where it binds it: the binding is no use, so the route
+  that binds `gap` and hands it to `draw` takes no line of its own from `first` and `second`, as the route that
+  writes the expression in `draw`'s call takes none (#343). Where the name holds a value of its own instead (a step
+  made it anew), the code that computes the value reads its operands where it is written. A name a step changes in
+  place holds such a value from its binding on, and stands for nothing: the step calls a method that changes what it
+  runs on (`both.append(second)`, `both.push(second)`) or a function that changes what it is handed (`add(both,
+  second)`, in Rust lent as `&mut`: `add(&mut both, second)`). A
+  change in place is the name bound anew, as it is of a path (`p.push(x)` is `p = p.join(x)`), so the binding is a
+  value: `both = [first]; both.append(second); show(both)` makes the list where it binds it, reading `first` there,
+  the change is handed that list and `second` and makes the list anew, and `show` takes what the change made, never
+  `first`. Where the change runs in one arm or in a loop, the name stands for nothing either, as a path changed there
+  is no longer the term before alone (#327): the binding is a value, the change makes it anew, and what the arms make
+  of it is one value at the choice's moment, as it is of a value a step made (#355). A change of a part is a change of
+  the whole, a lens's put, so a change of a part a subscript or a lookup picks changes the collection in place, also
+  through a name bound to the part (`row = rows[0]; row.append(level)`, `let row = &mut rows[0]; row.push(level)`): the
+  change is handed the collection and makes it anew, and where the collection is a value its module keeps, the change
+  is a write of that value (#374). A choice among them is the body's
+  choice, and a part a call makes (`samples.abs()`) is that call's value, which the name keeps (#328). What an
+  opened step changes of a value it was handed goes out at its border as what its steps made of it;
 - a step that can fail has the codomain `T + E`: the error is a value its constructor makes in the arm
   that raises it, the step's border hands it on with its result, and a call that does not catch it
   hands it on to its own caller. Python's propagation and Rust's `?` are one form, no choice. An error
@@ -641,7 +880,9 @@ parse the command line to the entry. The closed picture is `F/q`:
   step or by the body's own code (`let out = match f { "csv" => String::from(..), _ => format!(..) }`;
   the variants of a sum are one value of it), or what one arm makes anew of a value named before the
   choice, which the other arms keep. What one arm makes and uses itself is its maker's, and no step of
-  another arm takes it: a run goes through one arm. A step that is itself a choice (a call into a family, which runs
+  another arm takes it: a run goes through one arm. A choice inside an arm is a maker in that arm, as a step of it is:
+  what it hands on past itself goes on past the choice around it by the same rule, and an error goes on past every choice of
+  the body (#357). A step that is itself a choice (a call into a family, which runs
   one of the overrides) makes it at a moment inside the step, and hands on a value of its own at its
   own moment, so what its overrides make is internal to it and what it hands on is not;
 - the families are taken on the route's fiber, the types its plan holds (saturation: the fiber first,
@@ -657,7 +898,8 @@ parse the command line to the entry. The closed picture is `F/q`:
   and each of its lines stands for the lines of all of them. The merge is decided on `F`, not on the
   picture, so opening a family, a group or a directory never splits a pill it did not open;
 - where a box stands is decided on `F`: a value stands in the smallest frame that holds all its users
-  and its maker (a choice or the route frame when no step makes it), a place of the world stands
+  and its maker (a choice; for a value the body binds by its own code, the body's frame, or the choice whose arm binds
+  it; the route frame when nothing in the plan makes it), a place of the world stands
   outside the steps that show it. The block is its image, so no box moves into or out of a frame by
   being opened;
 - which side a place of the world stands on is decided on the coarsest picture, `F/q₀` with only the
@@ -678,12 +920,41 @@ parse the command line to the entry. The closed picture is `F/q`:
   the caller has one, else the latest of its kind the body made, else one its body binds out of the
   plan's sight, which the caller does not see either; a name its function does not declare (a module's
   constant) is what the module holds, from beyond, as it is with the step open. A function declares its parameters and
-  the names its body binds, by a step or by its own code (a literal), none of them from beyond. The image depends on the
+  the names its body binds, by a step or by its own code (a literal, any expression no step makes), none of them from
+  beyond. A value it takes by a name its caller holds is the caller's to say: from beyond where the caller's value is,
+  and only then does it count among the values of one kind from beyond that keep their names. The image depends on the
   callers that make its paths whole and on which of the functions its body calls are on the path, which stay closed. What its border hands
   on is what it hands on open: an error as an error, a result of no type back to its caller, a value
   of no type by its name; and the types its body holds are the route's fiber, as they are open. The cut
   changes how much of `F` is held, never its picture, and opening a cut step refines as opening any step
   does: the picture it opens to, planned anew, maps onto the one it was cut in.
+
+The overview, a view with no route, is the image of a fine plan `F₀` of its own, built by the same
+`imageOf`. It has no route, so no order between its arrows and no moments: a value's identity is its
+type, drawn once. `F₀` is the graph of generators:
+
+- every function of the code is an occurrence with its own arrow (sentence 6: a package shows what its
+  own code does, not what it reaches through another package), in the package that holds it, the
+  smallest the overview opens to (a module); its frames are the code's hierarchy, parts, packages and
+  subpackages;
+- a type of data that the code both makes and takes is one place, from each function that makes it
+  (gives it back, builds it, changes it) to each that takes it; its home is the smallest package that
+  holds all of them;
+- every place of the world is at its concrete place, from or to each function whose own code touches
+  it; between parts, a route served over HTTP comes in through its part's place and a request to
+  another part's routes goes out to that part's;
+- a call from one function to another is a line of its own channel (rule 3). Building a class is a
+  call of its initializer; a class built from its fields runs no code, and building it is the line to
+  the type it makes.
+
+What is open is the map `q`, as on a route: a function goes to its outermost closed package or part.
+A type whose home is a closed package, or lies inside it, is internal to it and on no border; any
+other line between a function and a type or a place is one line of its block, counting the fine
+lines it stands for, all of them its own. A call goes from the caller's block to the callee's, and is
+internal to a block that holds both. So a package that makes a type another package takes, and takes
+it itself, draws both lines: the line into it is the image of its own taking, and a picture without
+it would gain the line when the package is opened. A closed package with no line still stands, so
+that it can be opened.
 
 On the image the page then does only what is a quotient of `F` or a way of drawing it: the merge of
 siblings, the storage quotient and the fold (above); a value with no name and no type of the code's
@@ -702,8 +973,8 @@ Each law is then a theorem of the construction, or it is not yet, and says which
 | Closing | `q` is a function of the set of open boxes | `topology` (closing draws the picture it was) |
 | Reading | the own arrow of an opened step is its border | `topology` |
 | Endpoints | every image of a place or an occurrence is a box | `pictures.py walk` |
-| Across the cut | a cut step's arrow is the image of its body, made by the same construction (`cutArrow`) | `plans.rs` at the budgets 1, 2 and 3 (`ATLAS_FINE_BUDGET`), which cut the small programs as a large one is cut: each line of a cut step counts the fine lines its body draws there, and each cut step of the closed picture, opened and planned anew, refines the picture it was cut in (`cutOpenings` in `plans.mjs`); `topology` with a small budget |
-| The overview | not built on a finest plan: the packages' pictures are drawn by their own construction, one box per type (#69) | `walk` only |
+| Across the cut | a cut step's arrow is the image of its body, made by the same construction (`cutArrow`) | `plans.rs` at the budgets 1, 2 and 3 (`ATLAS_FINE_BUDGET`), which cut the small programs as a large one is cut: each line of a cut step counts the fine lines its body draws there, and each cut step of the closed picture, opened and planned anew, refines the picture it was cut in (`cutOpenings` in `plans.mjs`); at the same budgets a route whose body, unfolded, has 2^40 occurrences, which only an arrow made without unfolding the body can plan (`a_step_beyond_the_cut_is_made_without_unfolding_its_body`); `topology` with a small budget |
+| The overview | `F₀/q` maps onto `F₀/q′` along the blocks, as a route's pictures do, the calls a channel among them | the oracle; `plans.rs` (`every_package_view_is_the_image_of_its_plan`), for every set of open packages and parts of every program: each line counts the fine lines it stands for and none is reached, a type internal to a closed package draws none, each call goes between the blocks of its ends, and the picture is a function of the set of open boxes |
 
 The oracle holds the pictures to one another, not to the program. Whether `F` says what the code
 does is a test of its own, `engine/tests/plans.rs`: beside a small program a `.plan` file writes down
@@ -714,13 +985,21 @@ test runs the viewer's own model in node, the function every picture is drawn fr
 the pairs and of its programs.
 **Where.** `plan`, `sitesOf`, `figureOf`, `FIGURE_FIELDS`, `FIGURE_SLOTS` and `figurePart`, `setsAt` and `resolveWhole`, `throughOf` and `partIn`,
 `changedThrough` and `changesOwner`,
-`coarsen`, `cutArrow` and `typesOf`, `handTo` and `checkOpenings` in `viewer/plan.js`, `cutOpenings` in `engine/tests/plans.mjs`;
+`coarsen`, `cutArrow` and `typesOf`, `handTo` and `checkOpenings`, `overviewBase` and `overview` in `viewer/plan.js`, `cutOpenings` and
+`overviewFaults` in `engine/tests/plans.mjs`;
 the field an argument reads, `Steps::fills` and `Steps::read_of` (`body.rs`); the class each field of a class holds, `Node::holds`;
 which parameters of no type of the code's hold a value, `builder::settle_parameters`; the fields a condition tests,
 `Steps::tests` (`body.rs`), and whether a figure is made sure of, `guarded` in `viewer/plan.js`; the names a body binds
-by a literal, `Steps::literals` (`body.rs`), and those a function declares, `declaredIn` and `bodyMade` in
-`viewer/plan.js`; `tools/pictures.py`; `engine/tests/plans.rs`; the recursion and literals pairs
-(`common::a_recursive_call_takes_what_its_call_hands_it`, `common::a_list_made_by_a_literal_is_made_by_the_body`).
+by its own code, `Steps::binds` and `Steps::literals` (`body.rs`), and those a function declares, `declaredIn` and
+`bodyMade` in `viewer/plan.js`; the names a name computed of names stands for, `body::computed_of` and
+`body::stands_for` with each language's `UseSyntax::computes`, and where the body's own code reads them, `Steps::reading`
+and `Steps::stood` with each reader's `stands`, and the names a step changes in place, which stand for nothing,
+`knowledge::MUTATORS` with Rust's `Body::is_changed_in_place`, Python's `changed_bindings` (`Seen::changed`) and
+TypeScript's `Body::changed_in_place`; the values of one kind from beyond that keep their names,
+`split` and `splitBy` in `viewer/plan.js`; `tools/pictures.py`; `engine/tests/plans.rs`; the recursion, literals and
+locals pairs (`common::a_recursive_call_takes_what_its_call_hands_it`, `common::a_list_made_by_a_literal_is_made_by_the_body`,
+`common::a_local_is_bound_by_the_bodys_own_code`, `common::a_name_computed_of_names_stands_for_them`,
+`common::a_name_changed_in_place_holds_a_value_of_its_own`, `common::a_name_a_function_changes_holds_a_value_of_its_own`).
 
 ### Saturation: when the order of a view does not matter
 **What.** A set is saturated by an equivalence when it never cuts a class in two.
@@ -762,9 +1041,16 @@ holds is what its type holds as its language reads it, never a name its type mer
 Plan>` is a value of Plans from beyond, as `PLANS: dict[Mode, Plan]` is, and `const out: Where[] = []` holds Wheres. So is
 what a function gives back: one that returns `Vec<(String, Vec<Where>)>` gives back pairs, and none of the Wheres its steps
 make. A value declared as the language's container is one, a field as a name (`n.touches: Touch[]` is an array), so a method
-called on it is the language's operation.
+called on it is the language's operation. So is a part a subscript or a lookup picks of a collection, of the type of what
+the collection holds as written: `rows[0]` and `rows.at(0)!` of `rows: Level[][]` are arrays, `&mut rows[0]` and
+`rows.first_mut()?` of `rows: &mut [Vec<Level>]` vectors, through what holds one value and is read as it (the guard
+`ROWS.lock()` of a `Mutex<Vec<Vec<Level>>>`). Where the code writes no type, a literal says what each element is
+(`[[first]]` holds arrays), and Rust says which places a method may change: a name bound `mut`, a part picked of one,
+and a name bound to a `&mut` borrow of such a part.
 **Where.** `knowledge.rs`: `python_container`, `TYPESCRIPT_CONTAINERS`, `RUST_CONTAINERS`, the maps `PYTHON_MAPS`,
-`TYPESCRIPT_MAPS`, `RUST_MAPS`; `Param::holds`, read by `writesType` in `viewer/plan.js` and by the principles, and
+`TYPESCRIPT_MAPS`, `RUST_MAPS`; `body::element_written`, with each reader's `written_as` (`rust/body.rs`,
+`typescript/body.rs`), and the readers' `Body::picked`, `mutable_place` (Rust) and `picked_literal` (TypeScript);
+`Param::holds`, read by `writesType` in `viewer/plan.js` and by the principles, and
 `Returns::holds`, read by `flow::made_from`; the Rust reader's
 signatures (`rust/passes.rs`, `fixed_by_implementations`; `rust/module.rs`, `type_names`, with `RUST_COLLECTIONS`); `typescript/module.rs`, `type_names`, with `TYPESCRIPT_COLLECTIONS`, and `typescript/body.rs`, `typed` and `world`; `python/module.rs`, `type_names`, and `pytypes::outer_classes`, with `python_collection`.
 
@@ -782,14 +1068,14 @@ not reach. Python's narrowing is ty's.
 **What.** An identity arrow `1_A: A → A` hands on its value unchanged; composing with it changes
 nothing.
 **In Atlas.** An expression that hands on the value inside it is an identity on what Atlas reads of
-the value: parentheses, a cast or an assertion (`as`, `satisfies`, `!`), a reference (`&x`), and an
-unwrapping (`await`, `x?`, `x.await`), since a promise, a coroutine, an `Option` and a `Result` are read as what
+the value: parentheses, a cast or an assertion (`as`, `satisfies`, `!`), a reference (`&x`) and a
+dereference (`*x`), and an unwrapping (`await`, `x?`, `x.await`), since a promise, a coroutine, an `Option` and a `Result` are read as what
 they hold. A value read through any of them is the value inside, so a change, a place or a call
 written through a wrapper is the one written without it. Moving a value into a container that holds
 one and is read as it (`RefCell::new(x)`, `Box::new(x)`, `Rc::new(x)`) hands on that value: no new
 one, as a copy makes (`copy.copy(x)`), so it is no step. A cast also names a type, and where the
 question is the class a method runs on (`(x as Store).f()`), that type answers it.
-**Where.** `tree.rs`: `Wrappers`, `beneath`, `outermost`; each reader's `WRAPPERS`.
+**Where.** `tree.rs`: `Wrappers`, `wraps`, `beneath`, `outermost`; each reader's `WRAPPERS`.
 
 ### Behavioural subtyping
 **What.** A subtype can stand wherever its base stands (Liskov).
@@ -845,7 +1131,10 @@ of `C.f` may run `B.f` on a `D`, though `B` is not below `C`, and there its `sup
 alternative is that method on that class, a body as any step on a known class runs it, named by the
 class it runs on (`D.f`); one of a class below the method's own runs on any value of its class, whose
 class is not known. A call through a class, and a `super()` call on a value whose class is known, run
-the one their call names. A value built at the call (`Block().show()`, `new Block().show()`, a unit struct's
+the one their call names. The name `D.f` is the author's name for the `f` a `D` runs first along its order, so it
+names a step only where that is what runs: an alternative of a `super()` call runs the next `f` after `K`, which
+`D.f` does not name (on a `D(B, C)`, `D.f` is `B.f` where `super().f()` in `B` runs `C.f`), and is named by the
+class that defines it, as the same call on a value whose class is known is (`C.f`). A value built at the call (`Block().show()`, `new Block().show()`, a unit struct's
 name `Plain.show()`) is of that class alone; a declared one (a parameter, an annotation, a return type, a field)
 may be that class or any below it. A Rust trait is below its supertraits (`trait Block: Named`), so a value of it
 runs their methods along its order. A call through a trait (`Language::parse(&words, text)`) names no class: the

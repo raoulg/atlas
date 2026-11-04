@@ -115,7 +115,7 @@ fn atlas_view_reads_as_its_algebra() {
     let call = |target| first_call_path(g, "atlas-code.view", target).unwrap_or_else(|| panic!("atlas-code.view reaches {target}"));
     let read = call("atlas-engine.repo.Repo.read");
     let parse = call("atlas-engine.language.Language.parse");
-    let findings = call("atlas-engine.principles.check");
+    let findings = call("atlas-engine.principles.check_among");
     let flow = call("atlas-engine.flow.of");
     let page = call("atlas-code.page.Html.of");
     let write = call("atlas-code.page.Html.write");
@@ -128,11 +128,24 @@ fn atlas_view_reads_as_its_algebra() {
 
 /// What `atlas check` asks of Atlas, each finding read: its principle, the node it is about, and
 /// why it stands (a fault of Atlas's code, tracked in an issue, or a fault of the rule).
+/// A finding is held by its principle and node, not its words: they name each function and type as the picture
+/// does (`model::said`), so they move where another type comes to share a name with one they name
+/// (`rust.body.Body.call`, `flow.Ix.step_of`), and why the finding stands does not.
 const REVIEWED: &[(&str, &str, &str)] = &[
     (
         "nothing",
         "atlas-code.serve.Server.progress",
         "`progress` writes the server's shared Progress value through a Mutex; Atlas does not trace the lock's interior mutation",
+    ),
+    (
+        "nothing",
+        "atlas-engine.repo.Repo.ask",
+        "`ask` keeps a question among what a part's reading asked of the listing, a set the part holds through a Mutex, as `bytes` keeps the files it read; Atlas does not trace the lock's interior mutation",
+    ),
+    (
+        "nothing",
+        "atlas-engine.repo.Repo.rests_on",
+        "`rests_on` keeps, through `ask`, the question whose answer a tool that looks on disk by itself depends on (ty, a project's modules); what it changes is the part's record of questions, behind a Mutex",
     ),
     (
         "choices",
@@ -148,6 +161,16 @@ const REVIEWED: &[(&str, &str, &str)] = &[
         "choices",
         "atlas-engine.rust.body.root",
         "`root`, `value_class` and `declared` read a name three ways: the name a value is a part of, the class of a value, the type a declaration gives it",
+    ),
+    (
+        "choices",
+        "atlas-engine.typescript.body.Body.holds_container",
+        "`holds_container`, `collection`, `written`, `picked`, `picked_literal_at` and `roots_through` read an expression six ways: whether it holds a container, the collection it is, the type it is written with, the type of the part it picks, the element of an array it picks from, the names it may be a part of; tree-sitter's kind is the syntax's own sum, and each function asks it a question of its own",
+    ),
+    (
+        "choices",
+        "atlas-engine.rust.body.library_chain",
+        "`library_chain`, `collection` and `held_root` read an expression three ways: the library value a chain of calls starts from, the collection a value is, the name a value is a part of through the lookups; tree-sitter's kind is the syntax's own sum, and each function asks it a question of its own",
     ),
     (
         "choices",
@@ -183,6 +206,31 @@ const REVIEWED: &[(&str, &str, &str)] = &[
         "choices",
         "atlas-engine.flow.body_of",
         "a method's call is resolved along the order of the class it runs on (`Ix::step_of`); a function's call, or a library operation the graph does not hold, runs itself: dispatch is a fact of methods alone",
+    ),
+    (
+        "places",
+        "atlas-engine.changes.envisioned",
+        "a vision stands beside the repository's environment, `.venv`, where uv keeps a project's: the name is the convention's, the directory it is in the caller's (`{repo}/.venv`); `.venv` alone is the command line run in `.`",
+    ),
+    (
+        "places",
+        "atlas-engine.python.parse",
+        "wrong, #395: the files a test's pair holds are credited to `parse`, where the listing's file made the place whole, and not to the test that built the `Repo` whose root it is",
+    ),
+    (
+        "places",
+        "atlas-engine.typescript.parse",
+        "wrong, #395: the files a test's pair holds are credited to `parse`, where the listing's file made the place whole, and not to the test that built the `Repo` whose root it is",
+    ),
+    (
+        "nothing",
+        "atlas-engine.cache.Cache.read_anew",
+        "wrong, #417: `read_anew` raises the count its clones share through `&self` (`AtomicUsize::fetch_add`), a change of the cache's value the Rust reader does not read on a field of `self`",
+    ),
+    (
+        "places",
+        "atlas-code.serve.serve",
+        "the page shows the repository's code, so `serve` listens on this machine alone: the loopback host is its own to fix, never a caller's; the port is the caller's (`--port`), else the repository's own, else one the system picks",
     ),
 ];
 

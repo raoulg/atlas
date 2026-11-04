@@ -2304,28 +2304,38 @@ fn gives_a_method_its_own_class_uses_says_what_it_gives() {
 }
 
 /// Where the program starts may name places, and a program `pyproject.toml` declares is where it
-/// starts, whatever layout holds it. `places/python/flat` is one module, `tally.py`, declared as
+/// starts, whatever layout holds it: a declaration names the function of the module Python imports
+/// by the name it writes (#364). `places/python/flat` is one module, `tally.py`, declared as
 /// `tally = "tally:main"`, so its package exports `main` with every other public name;
 /// `places/python/package` is the same code in `src/tally/cli.py`, declared as
-/// `tally = "tally.cli:main"`, its package exporting `count` and `keep`. Both draw one route: the
-/// command `tally --source --out`, whose parse of the command line is the entry's, with the same
-/// steps and places, and `places` asks neither. The flat `main` is a door as well.
+/// `tally = "tally.cli:main"`, its package exporting `count` and `keep`; `places/python/beside`
+/// keeps `count` and `keep` in `tally.py` and the command in a module of its own beside it,
+/// `cli.py`, declared as `tally = "cli:main"`. All three draw one route: the command
+/// `tally --source --out`, whose parse of the command line is the entry's, with the same steps and
+/// places, and `places` asks none. The file a declaration names is entered through it and is no
+/// script of its own. The flat `main` is a door as well.
 #[test]
-fn places_a_declared_program_is_a_command_flat_or_in_a_package() {
+fn places_a_declared_program_is_a_command_in_every_layout() {
     let read = |side: &str| {
         analyze(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/pairs/places/python").join(side), &Options::default()).unwrap()
     };
-    let (flat, package) = (read("flat"), read("package"));
-    let entries = |g: &Graph| -> Vec<(EntryKind, String, Vec<String>)> {
-        g.nodes.iter().filter_map(|n| n.entry.as_ref()).map(|e| (e.kind, e.label.clone(), e.options.clone())).collect()
+    let (flat, package, beside) = (read("flat"), read("package"), read("beside"));
+    let entries = |g: &Graph| -> BTreeSet<(String, String, Vec<String>)> {
+        g.nodes.iter().filter_map(|n| n.entry.as_ref()).map(|e| (format!("{:?}", e.kind), e.label.clone(), e.options.clone())).collect()
     };
     assert_eq!(entries(&flat), entries(&package));
-    assert!(entries(&flat).contains(&(EntryKind::Cli, "tally".into(), vec!["--source".into(), "--out".into()])), "{:?}", entries(&flat));
-    // the same route, its steps named alike once the module the code is in is left out
-    let steps = |g: &Graph, main: &str, module: &str| route(g, main).replace(module, "");
-    assert_eq!(steps(&flat, "tally.main", "tally."), steps(&package, "tally.cli.main", "tally.cli."));
+    assert_eq!(entries(&flat), entries(&beside));
+    let command = (format!("{:?}", EntryKind::Cli), "tally".to_string(), vec!["--source".to_string(), "--out".to_string()]);
+    assert!(entries(&flat).contains(&command), "{:?}", entries(&flat));
+    // the same route, its steps named alike once the modules the code is in are left out
+    let steps = |g: &Graph, main: &str, modules: &[&str]| modules.iter().fold(route(g, main), |r, m| r.replace(m, ""));
+    let flat_steps = steps(&flat, "tally.main", &["tally."]);
+    assert_eq!(flat_steps, steps(&package, "tally.cli.main", &["tally.cli."]));
+    assert_eq!(flat_steps, steps(&beside, "_root.cli.main", &["_root.cli.", "tally."]));
     assert!(!route(&flat, "tally.main").contains("parse_args"), "{}", route(&flat, "tally.main"));
-    assert!(found(&flat, "places").is_empty() && found(&package, "places").is_empty(), "{:?}", found(&flat, "places"));
+    for (form, g) in [("flat", &flat), ("package", &package), ("beside", &beside)] {
+        assert!(found(g, "places").is_empty(), "{form}: {:?}", found(g, "places"));
+    }
     assert!(flat.node("tally.main").is_some_and(|n| n.exported), "the flat package exports its command");
     assert!(package.node("tally.cli.main").is_some_and(|n| !n.exported), "{:?}", package.node("tally.cli.main").map(|n| &n.entry));
 }
@@ -2745,6 +2755,13 @@ fn a_list_made_by_a_literal_is_made_by_the_body() {
     common::a_list_made_by_a_literal_is_made_by_the_body("python", "by_literal", "by_call", "by_constant");
 }
 
+/// The locals pair: a list the body writes of what it is handed is the body's own, never a module's name (#318), as an
+/// array is in Rust and in TypeScript.
+#[test]
+fn a_local_is_bound_by_the_bodys_own_code() {
+    common::a_local_is_bound_by_the_bodys_own_code("python", "_pair");
+}
+
 /// The workbench pair, `workbench/python`: what the program makes, kept in a folder of the project's
 /// own. The clean side gives the folder a class whose method names each file in it
 /// (`Workbench.of(project).file("report.txt")`); the shortcut hands the folder around as a bare path (`made_dir(project) / "report.txt"`).
@@ -2774,6 +2791,19 @@ fn places_a_path_a_class_builds_is_the_path_written_out() {
 #[test]
 fn places_a_parent_drops_the_last_part_of_a_path() {
     common::a_parent_drops_the_last_part_of_a_path("python", "shelf.summary.summarise", "shelf.summary.log");
+}
+
+/// The unset pair: `os.environ[name]` and `os.environ.get(name, "")` of the name a caller hands are the variable that
+/// caller names, as `os.environ["REPORT"]` is (#348).
+#[test]
+fn places_a_variable_a_caller_names_is_that_variable() {
+    common::a_variable_a_caller_names_is_that_variable(
+        "python",
+        "notes.keep.keep",
+        "notes.keep.save_report",
+        "notes.keep.save_log",
+        "notes.keep.show_report",
+    );
 }
 
 // ---------- handing: a helper writes, under each caller, that caller's file ----------
@@ -2816,5 +2846,392 @@ fn handing_a_helper_writes_under_each_caller_that_caller_s_file() {
     assert_eq!(
         writers(&p.shortcut),
         BTreeSet::from(["shelf.store.Shelf.keep_log".to_string(), "shelf.store.Shelf.keep_report".to_string()])
+    );
+}
+
+/// Isomorphic is the same: `os.path.join("data", kind)`, `"data/" + kind` and `Path("data") / kind`
+/// each make the one path `data/{kind}`, and a function that writes one decides that place as much
+/// as one that writes another (#304). In the places pair's `stock.joined`, each form reads and
+/// writes `counts.json`: on the shortcut under `"data"`, and every function is asked, naming the
+/// same place; on the clean side under the folder it is handed, and none is. A library function's
+/// parameter goes the way its class, where ty finds it, says: `json.load` reads the file it is
+/// handed (`SupportsRead`), `json.dump` writes it (`SupportsWrite`).
+#[test]
+fn places_a_path_joined_any_way_python_joins_one_is_the_same_place() {
+    let (c, s) = (stock("clean"), stock("shortcut"));
+    let forms = ["joined", "added", "divided", "dumped"].map(|f| format!("stock.joined.{f}"));
+    assert!(found_in(&c, "places", "stock.joined").is_empty(), "{:?}", found_in(&c, "places", "stock.joined"));
+    assert_eq!(found_in(&s, "places", "stock.joined"), forms);
+    // what each form's own call and the library's touch, by the way they go: the same on every form
+    let places = |g: &Graph, f: &str| -> BTreeSet<(String, String, String, bool)> {
+        g.node(f)
+            .unwrap_or_else(|| panic!("{f} is in the graph"))
+            .touches
+            .iter()
+            .map(|t| (t.op.clone(), t.kind_name().to_string(), t.artifact.clone(), t.fixed || !t.fixed_by.is_empty()))
+            .collect()
+    };
+    let read = |file: &str, fixed: bool| {
+        BTreeSet::from(
+            [("open", "disk_read"), ("load", "disk_read")].map(|(op, k)| (op.to_string(), k.to_string(), file.to_string(), fixed)),
+        )
+    };
+    let written = |file: &str, fixed: bool| {
+        BTreeSet::from(
+            [("open", "disk_write"), ("dump", "disk_write")].map(|(op, k)| (op.to_string(), k.to_string(), file.to_string(), fixed)),
+        )
+    };
+    for f in &forms[..3] {
+        assert_eq!(places(&s, f), read("data/{kind}/counts.json", true), "{f}");
+        assert_eq!(places(&c, f), read("{data}/{kind}/counts.json", false), "{f}");
+    }
+    assert_eq!(places(&s, &forms[3]), written("data/{kind}/counts.json", true));
+    assert_eq!(places(&c, &forms[3]), written("{data}/{kind}/counts.json", false));
+}
+
+// ---------- setup: a step before the calls sets up the object a method on them runs on ----------
+
+/// The setup pair (#309): `main` sets the shelf up in a step of its own, `open_shelf`, and keeps its report and its log
+/// on it in the steps after. On the clean side the shelf is handed its folder, which `open_shelf` decides, and each
+/// method names its file in it and hands the path to `write`: the file is whole where both have run, the step that set
+/// the shelf up and the method that handed the rest. On the shortcut the folder is a constant of the module that each
+/// method reads itself, so the file is whole in the method and `open_shelf` decides nothing. A place is decided by the
+/// function whose own code decides it, and it is whole where every function that hands a part of its path has run: on
+/// both sides the route writes both files, and the sides differ in which steps that takes. Under each step the page
+/// draws it where those have run before (`setup/python/clean.plan`).
+#[test]
+fn setup_a_step_before_the_calls_sets_up_the_object_a_method_runs_on() {
+    let p = common::pair("setup/python");
+    let main = "shelf.cli.main";
+    let (open, report, log) = ("shelf.cli.open_shelf", "shelf.store.Shelf.keep_report", "shelf.store.Shelf.keep_log");
+    let written = |g: &Graph, file: &str| -> Touch {
+        let n = g.node("shelf.store.write").expect("the helper writes");
+        n.touches.iter().find(|t| t.kind_name() == "disk_write" && t.artifact == file).cloned().unwrap_or_else(|| panic!("writes {file}"))
+    };
+    let made = |t: &Touch| -> Vec<BTreeSet<String>> { t.by.iter().map(|b| b.names().map(str::to_string).collect()).collect() };
+    let set = |fs: &[&str]| -> BTreeSet<String> { fs.iter().map(|f| f.to_string()).collect() };
+    for (side, g) in [("clean", &p.clean), ("shortcut", &p.shortcut)] {
+        let route = ran(g, main);
+        for file in ["out/report.txt", "out/log.txt"] {
+            assert!(written(g, file).in_route(main, &|f: &str| route.contains(f)), "{side}: the route writes {file}");
+        }
+    }
+    for (file, method) in [("out/report.txt", report), ("out/log.txt", log)] {
+        let (clean, shortcut) = (written(&p.clean, file), written(&p.shortcut, file));
+        assert_eq!(made(&clean), [set(&[open, method])], "clean: the step that set the shelf up and the method");
+        assert_eq!(clean.fixed_by, [open], "clean: `open_shelf` decides the folder");
+        assert_eq!(made(&shortcut), [set(&[method])], "shortcut: the method alone");
+        assert_eq!(shortcut.fixed_by, [method], "shortcut: the method decides the folder");
+    }
+}
+
+// ---------- order: a set-up counts for what runs after it ----------
+
+/// The order pair (#359): `main` runs `review`, which keeps its report on the shelf `open_shelf` sets up, and sets the
+/// drafts up in `open_drafts`. On the clean side it reads the report back from the shelf before it sets the drafts up; on
+/// the shortcut it reads the report from the drafts, set up after it kept the report, where it never kept one.
+/// Composition is call order: a set-up counts for what runs after it, and one `review` runs itself never stands above
+/// it, so on both sides the report is written in `out` alone and neither `review` nor `main` reads back a file but that
+/// one. The shortcut also reads the drafts' report, which nothing in the route writes: it takes it from beyond, and the
+/// closed `review` draws the line from it. The clean route takes nothing from beyond.
+#[test]
+fn order_a_set_up_counts_for_what_runs_after_it() {
+    let p = common::pair("order/python");
+    let main = "shelf.cli.main";
+    let (out, drafts) = ("w:File:out/report.txt".to_string(), "w:File:drafts/report.txt".to_string());
+    // the files the route touches, occurrence by occurrence as it reads them
+    let touched =
+        |g: &Graph| -> BTreeSet<String> { flow::along(g, main).into_values().flatten().filter(|p| p.starts_with("w:File:")).collect() };
+    for (side, g) in [("clean", &p.clean), ("shortcut", &p.shortcut)] {
+        let arrows = flow::arrows(g);
+        for f in ["shelf.cli.review", main] {
+            assert_eq!(arrows[f].reads_back, [out.clone()], "{side}: `{f}` reads back the report it kept, and no other file");
+        }
+    }
+    assert_eq!(touched(&p.clean), BTreeSet::from([out.clone()]), "clean: the route touches the report it kept alone");
+    assert_eq!(touched(&p.shortcut), BTreeSet::from([out, drafts]), "shortcut: the route also reads the drafts' report");
+}
+
+// ---------- sockets: a socket is a place, in Python as in Rust and TypeScript ----------
+
+/// The names one language gives the operation of a row of `knowledge::SOCKET_OPS`.
+type SocketNames = fn(&atlas_engine::knowledge::SocketOp) -> &'static [&'static str];
+
+/// The operation of `knowledge::SOCKET_OPS` each of a function's touches of the network is, in the order the code writes
+/// them, in the language whose names `names` picks of a row.
+fn socket_rows(g: &Graph, id: &str, names: SocketNames) -> Vec<usize> {
+    let row = |op: &str| {
+        atlas_engine::knowledge::SOCKET_OPS
+            .iter()
+            .position(|o| names(o).contains(&op))
+            .unwrap_or_else(|| panic!("{id}: `{op}` is a socket's operation"))
+    };
+    let mut net = touches(g, id, "net");
+    net.sort_by_key(|t| t.line);
+    net.into_iter().map(|t| row(&t.op)).collect()
+}
+
+/// The sockets pair (#291, #302, #323), the same greeter and client in Python, Rust and TypeScript: a call leaves
+/// something behind, and a socket is a place. Isomorphic is the same: each function's traffic is the same operations of
+/// `knowledge::SOCKET_OPS` in every language (`recv`, `read` and a listener for Node's `data`; `sendall`, `write_all`
+/// and `write`; `create_connection`, `connect` and `createConnection`), each operation a touch of its own, so the three
+/// languages draw one server and one client. The clean server lingers as TCP asks, so `linger` reaches the network and
+/// nothing is asked; the shortcut waits, its `linger` reaches no place, and Atlas asks what the wait leaves behind.
+/// Binding, listening, accepting, shutting a half and setting a timeout move no data.
+#[test]
+fn nothing_a_socket_is_a_place() {
+    let (py, rs, ts) = (common::pair("sockets/python"), common::pair("sockets/rust"), common::pair("sockets/typescript"));
+    for (language, p, linger) in [("python", &py, "greeter.linger"), ("typescript", &ts, "greeter.greeter.linger")] {
+        assert_eq!(found(&p.clean, "nothing"), Vec::<String>::new(), "{language}");
+        assert_eq!(found(&p.shortcut, "nothing"), [linger], "{language}");
+    }
+    let (python, rust, typescript): (SocketNames, SocketNames, SocketNames) = (|o| o.python, |o| o.rust, |o| o.typescript);
+    // a function by its id in Python, in Rust and in TypeScript
+    let functions = [
+        ("greeter.main", "greeter.main", "greeter.greeter.main"),
+        ("greeter.answer", "greeter.answer", "greeter.greeter.answer"),
+        ("greeter.linger", "greeter.linger", "greeter.greeter.linger"),
+        ("_root.ask.main", "greeter.bin.ask.main", "greeter.ask.main"),
+        ("_root.ask.hear", "greeter.bin.ask.hear", "greeter.ask.hear"),
+    ];
+    let sides = [("clean", &py.clean, &rs.clean, &ts.clean), ("shortcut", &py.shortcut, &rs.shortcut, &ts.shortcut)];
+    for (side, p, r, t) in sides {
+        for (f, g, h) in functions {
+            let a = socket_rows(p, f, python);
+            assert_eq!(a, socket_rows(r, g, rust), "{side}: Python's `{f}` and Rust's `{g}`");
+            assert_eq!(a, socket_rows(t, h, typescript), "{side}: Python's `{f}` and TypeScript's `{h}`");
+        }
+    }
+    assert!(socket_rows(&py.clean, "greeter.linger", python).len() == 1 && socket_rows(&py.shortcut, "greeter.linger", python).is_empty());
+}
+
+/// The sockets pair (#323): a connection keeps the place it is opened at wherever it is handed
+/// (`common::a_connection_keeps_its_place`). Python writes the address as a tuple, `("127.0.0.1", 7878)`, which is the
+/// address Rust writes as `"127.0.0.1:7878"` and Node is handed as a port and a host: the three languages name one place.
+#[test]
+fn sockets_a_connection_keeps_its_place() {
+    let python = common::a_connection_keeps_its_place("python", ["greeter.answer", "greeter.linger"], "greeter.main", "_root.ask");
+    let rust = common::a_connection_keeps_its_place("rust", ["greeter.answer", "greeter.linger"], "greeter.main", "greeter.bin.ask");
+    let server = ["greeter.greeter.answer", "greeter.greeter.linger"];
+    let typescript = common::a_connection_keeps_its_place("typescript", server, "greeter.greeter.main", "greeter.ask");
+    assert_eq!(python, rust, "Python's address and Rust's are one place");
+    assert_eq!(python, typescript, "Python's address and Node's are one place");
+}
+
+// ---------- handles: a file handed on keeps the place it is opened at ----------
+
+/// The handles pair (#323): a file object handed on (`count(f: TextIO)`) is read and written at the file it was opened at,
+/// as a socket handed on is at its address (`common::a_file_handed_on_keeps_its_place`). Isomorphic is the same: Python's
+/// `open` and file object draw what Rust's `File` does, function by function, the same ways to the same places.
+#[test]
+fn handles_a_file_handed_on_keeps_its_place() {
+    common::a_file_handed_on_keeps_its_place("python");
+    let (py, rs) = (common::pair("handles/python"), common::pair("handles/rust"));
+    let ways = |g: &Graph, id: &str| -> Vec<(String, String)> {
+        let mut out: Vec<_> = common::disk(g, id).into_iter().map(|(kind, _, place, _)| (kind, place)).collect();
+        out.sort();
+        out
+    };
+    for (side, p, r) in [("clean", &py.clean, &rs.clean), ("shortcut", &py.shortcut, &rs.shortcut)] {
+        for f in ["tally.main", "tally.count", "tally.emit"] {
+            assert_eq!(ways(p, f), ways(r, f), "{side}: Python's and Rust's `{f}`");
+        }
+    }
+}
+
+/// The locals pair: a name bound to what an operator or a list computes of names stands for those names, so a step
+/// handed it is handed what the expression written in its place hands (#328), and the route's own arrow takes what it
+/// takes with the expression written in place (#343), as in Rust and TypeScript.
+#[test]
+fn a_name_computed_of_names_stands_for_them() {
+    common::a_name_computed_of_names_stands_for_them("python");
+}
+
+/// The locals pair without its annotations: `both: list[Level] = ..` names a type, and the body reads no `Level` by it (#356),
+/// as in Rust and TypeScript.
+#[test]
+fn an_annotation_is_no_read() {
+    common::an_annotation_is_no_read("python");
+}
+
+/// The twice pair: `kind` in `root / kind / f"{kind}.csv"` is one value, so the loop writes two places, never four (#324).
+#[test]
+fn places_a_name_bound_once_is_one_value() {
+    common::a_name_bound_once_is_one_value("python", "export.export");
+}
+
+/// The trees pair: a recursion over `iterdir` is one place at every depth, through one function and through two that call
+/// each other (#325, #345). It is the walk `rglob("*")` makes,
+/// so the clean copy reads what `size` reads ("Isomorphic is the same"); the shortcut's copy stops at the top.
+#[test]
+fn places_a_walk_of_a_tree_is_one_place_at_every_depth() {
+    common::a_walk_of_a_tree_is_one_place_at_every_depth(
+        "python",
+        &[("backup.copy_tree", "data", "backup"), ("backup.mirror_entry", "photos", "archive")],
+        "backup.main",
+    );
+    let p = common::pair("trees/python");
+    let read = |g: &Graph, id: &str| -> BTreeSet<String> {
+        let n = g.node(id).unwrap_or_else(|| panic!("no node {id}"));
+        n.touches.iter().filter(|t| t.kind_name() == "disk_read").map(|t| t.artifact.clone()).collect()
+    };
+    assert_eq!(read(&p.clean, "backup.copy_tree"), read(&p.clean, "backup.size"), "the recursion walks what `rglob` walks");
+    assert_ne!(read(&p.shortcut, "backup.copy_tree"), read(&p.shortcut, "backup.size"), "the shortcut walks the top alone");
+}
+
+// ---------- doors: a socket's traffic goes the way a file's goes, in every language ----------
+
+/// The way each of a function's touches of the network goes, in the order the code writes them.
+fn net_ways(g: &Graph, id: &str) -> Vec<Option<atlas_engine::Dir>> {
+    let mut net = touches(g, id, "net");
+    net.sort_by_key(|t| t.line);
+    net.into_iter().map(|t| t.dir).collect()
+}
+
+/// The sockets pair (#353): isomorphic is the same, so a socket's operation goes one way, the way its row of
+/// `knowledge::SOCKET_OPS` says, as a file's read or write does: function by function, the touches of the network go the
+/// same ways in Python, Rust and TypeScript, in the order the code writes them, each the way of its row, and none is open.
+/// Node's `end(data)` is `write(data)` and then `end()`: the clean TypeScript client sends its name by `end("ada")`, and
+/// it is the same write Python's `sendall` and Rust's `write_all` are.
+#[test]
+fn doors_a_sockets_operation_goes_its_way_in_every_language() {
+    let (py, rs, ts) = (common::pair("sockets/python"), common::pair("sockets/rust"), common::pair("sockets/typescript"));
+    let python: SocketNames = |o| o.python;
+    // a function by its id in Python, in Rust and in TypeScript
+    let functions = [
+        ("greeter.main", "greeter.main", "greeter.greeter.main"),
+        ("greeter.answer", "greeter.answer", "greeter.greeter.answer"),
+        ("greeter.linger", "greeter.linger", "greeter.greeter.linger"),
+        ("_root.ask.main", "greeter.bin.ask.main", "greeter.ask.main"),
+        ("_root.ask.hear", "greeter.bin.ask.hear", "greeter.ask.hear"),
+    ];
+    let sides = [("clean", &py.clean, &rs.clean, &ts.clean), ("shortcut", &py.shortcut, &rs.shortcut, &ts.shortcut)];
+    for (side, p, r, t) in sides {
+        for (f, g, h) in functions {
+            let way = net_ways(p, f);
+            let rows: Vec<_> = socket_rows(p, f, python).into_iter().map(|i| Some(atlas_engine::knowledge::SOCKET_OPS[i].dir)).collect();
+            assert_eq!(way, rows, "{side}: each touch of Python's `{f}` goes the way of its row");
+            assert_eq!(way, net_ways(r, g), "{side}: Python's `{f}` and Rust's `{g}`");
+            assert_eq!(way, net_ways(t, h), "{side}: Python's `{f}` and TypeScript's `{h}`");
+        }
+    }
+    let ends = |g: &Graph| touches(g, "greeter.ask.main", "net").iter().filter(|t| t.op == "end").count();
+    assert_eq!((ends(&ts.clean), ends(&ts.shortcut)), (0, 0), "`end` itself sends nothing; `end(data)` is a write");
+}
+
+/// The sockets and handles pairs (#353): a socket's read and a file's read are drawn alike, from the place, in every
+/// language. A touch that receives through a socket stands where a file's read stands, in the domain of its step, and
+/// one that sends where a file's write stands. Whether what a read gives is used is a fact of the body, the same in every
+/// language (`docs/reference/mathematics.md`, "A door keeps its place"): Rust's `read_to_string(&mut s)` hands on what
+/// `s` is given, `let _ = f(x)` is `f(x);`, and a Node listener's function is handed what its event brings. So the
+/// route each program starts, found by the name its user runs it by (#364), draws its places on the same sides in the
+/// three languages, how it is entered included: the server's connection both read and written, the client's address
+/// between the step that sends to it and the one that hears from it, and a file handed on read on the left and written
+/// on the right. A program starts where it is declared to: Python's at the function `[project.scripts]` names, also in
+/// a module of a flat layout (`ask = "ask:main"`); Rust's at a binary's `fn main`; TypeScript's at the top level of the
+/// file its `bin` names, which calls `main`.
+#[test]
+fn doors_a_sockets_read_is_drawn_as_a_files_read() {
+    let languages = ["python", "rust", "typescript"];
+    for language in languages {
+        let (sockets, handles) = (common::pair(&format!("sockets/{language}")), common::pair(&format!("handles/{language}")));
+        for (side, s, h) in [("clean", &sockets.clean, &handles.clean), ("shortcut", &sockets.shortcut, &handles.shortcut)] {
+            let stands = |g: &Graph, kind: &str| -> BTreeSet<(Option<atlas_engine::Dir>, String)> {
+                let all = g.nodes.iter().flat_map(|n| &n.touches);
+                all.filter(|t| t.kind_name().starts_with(kind)).map(|t| (t.dir, format!("{:?}", t.side()))).collect()
+            };
+            assert_eq!(stands(s, "net"), stands(h, "disk"), "{language} {side}: a socket's traffic stands where a file's stands");
+        }
+    }
+    // the route a program starts, found by the name its user runs it by
+    let entered = |g: &Graph, program: &str| -> String {
+        let cli = |n: &&atlas_engine::Node| n.entry.as_ref().is_some_and(|e| e.kind == EntryKind::Cli && e.label == program);
+        let at: Vec<&str> = g.nodes.iter().filter(cli).map(|n| n.id.as_str()).collect();
+        assert_eq!(at.len(), 1, "one entry is the program `{program}`: {at:?}");
+        at[0].to_string()
+    };
+    for (pair, program) in [("sockets", "greeter"), ("sockets", "ask"), ("handles", "tally")] {
+        for side in ["clean", "shortcut"] {
+            let drawn: Vec<(String, BTreeSet<String>)> = languages
+                .iter()
+                .map(|language| {
+                    let p = common::pair(&format!("{pair}/{language}"));
+                    let g = if side == "clean" { &p.clean } else { &p.shortcut };
+                    let route = entered(g, program);
+                    let plans = common::planned_routes(g, &format!("doors-{pair}-{program}-{language}-{side}"), None, &[&route]);
+                    let sides = plans[&route].iter().filter(|x| x.starts_with("side ")).cloned().collect();
+                    (route, sides)
+                })
+                .collect();
+            let [(python, py), (rust, rs), (typescript, ts)] = &drawn[..] else { unreachable!() };
+            assert!(py.iter().any(|x| !x.starts_with("side entry ")), "{pair} {side}: `{program}` reaches a place of the world");
+            assert_eq!(py, rs, "{pair} {side}: `{program}`, Python's `{python}` and Rust's `{rust}`");
+            if (pair, program) == ("sockets", "ask") {
+                // known #362: TypeScript's client is the top level of its `bin`, one closed step `main` that sends and then
+                // hears, and what a step hears of what it sent is read back, so it draws the address on the right alone
+                let read_back: BTreeSet<String> = py.iter().map(|x| x.replace(" between", " right")).collect();
+                assert_ne!(py, ts, "known #362: `{program}`, Python's `{python}` and TypeScript's `{typescript}`; the mark goes");
+                assert_eq!(&read_back, ts, "{pair} {side}: `{program}`, TypeScript's `{typescript}` differs by reading back alone");
+                continue;
+            }
+            assert_eq!(py, ts, "{pair} {side}: `{program}`, Python's `{python}` and TypeScript's `{typescript}`");
+        }
+    }
+}
+
+/// The locals pair: a list a step changes in place (`both.append(second)`) holds a value of its own and stands for nothing,
+/// where the list written out once stands for the levels it holds (#355), as in Rust and TypeScript.
+#[test]
+fn a_name_changed_in_place_holds_a_value_of_its_own() {
+    common::a_name_changed_in_place_holds_a_value_of_its_own("python");
+}
+
+/// The locals pair's shortcut: a function of the package that changes what it is handed changes it in place as a method
+/// that changes what it runs on does (#355): `_add(both, second)` is `both.append(second)`, as in Rust and TypeScript.
+#[test]
+fn a_name_a_function_changes_holds_a_value_of_its_own() {
+    common::a_name_a_function_changes_holds_a_value_of_its_own("python", "_add", "append");
+}
+
+/// The locals pair: a list appended to in one arm is the choice's value, which the step after the choice takes, where the
+/// list the choice gives, written out in each arm, is the body's own (#366), as in Rust and TypeScript.
+#[test]
+fn a_name_changed_in_one_arm_is_the_choices_value() {
+    common::a_name_changed_in_one_arm_is_the_choices_value("python");
+}
+
+/// The lookups pair: `next(iter(levels))` is the projection `levels[0]` is and `levels.get(name)` the one `levels[name]`
+/// is, no step, also of a list changed in place first (#346, #355), and an `append` to the row `next(iter(rows))` picks
+/// changes the rows as one to `rows[0]` does, as in Rust and TypeScript.
+#[test]
+fn a_lookup_is_the_projection_its_subscript_is() {
+    common::a_lookup_is_the_projection_its_subscript_is(
+        "python",
+        &[
+            ("indexed", "looked_up"),
+            ("keyed", "got"),
+            ("pushed", "pushed_looked_up"),
+            ("added", "added_looked_up"),
+            ("grown", "grown_looked_up"),
+        ],
+        &[],
+    );
+}
+
+/// The keys pair: a key taken with `note.relative_to(root)` and joined back to its folder names the note it was taken from; one cut
+/// out of the path's text is a name of its own (#352).
+#[test]
+fn places_a_key_joined_back_to_its_root_is_the_note() {
+    common::a_key_joined_back_to_its_root_is_the_note("python");
+}
+
+/// The lookups pair: an `append` to a row a subscript or a lookup picks changes the rows (#374): of rows the function is
+/// handed, of rows it makes, and of the module's rows, which the change writes; as in Rust and TypeScript.
+#[test]
+fn a_change_of_a_part_changes_the_whole() {
+    common::a_change_of_a_part_changes_the_whole(
+        "python",
+        &["added", "added_looked_up", "grown", "grown_looked_up"],
+        &["added", "added_looked_up"],
     );
 }

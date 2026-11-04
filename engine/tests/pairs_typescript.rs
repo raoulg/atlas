@@ -1712,7 +1712,7 @@ fn choices_an_early_return_and_the_left_of_a_logical_operator() {
 /// that builds the error it throws (#138). What one gives without a name goes into the call around it. `const db = new Database(this.path)`
 /// is a step that gives `db` (`readback`); `text.split("\n").filter(..).map(parseLine).filter(..)`
 /// in the pipeline's `parse`, returned unnamed, is none, and neither is `x(month.date)`, a call of
-/// the scale d3 gave `trend`.
+/// the scale d3 gave `trend`, nor `series.at(-1)`, a lookup, which is the projection a subscript is (#346).
 #[test]
 fn composition_an_operation_is_a_step_where_its_result_is_named() {
     let readback = common::pair("readback/typescript");
@@ -1725,13 +1725,13 @@ fn composition_an_operation_is_a_step_where_its_result_is_named() {
         analyze(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/pairs/pipeline/typescript"), &Options::default()).expect("reads");
     assert!(node(&pipeline, "series.parse").sites.iter().all(|s| !s.to.is_empty()), "{:#?}", node(&pipeline, "series.parse").sites);
     let trend: Vec<&str> = node(&pipeline, "plot.trend").sites.iter().filter(|s| s.to.is_empty()).map(|s| s.op.as_str()).collect();
-    assert_eq!(trend, ["at", "Error()", "range", "range", "line", "map", "map"], "each named, by its operation");
+    assert_eq!(trend, ["Error()", "range", "range", "line", "map", "map"], "each named, by its operation");
 }
 
 /// A call is handed the values the names in its arguments hold (#128), also through a name the body
 /// binds to a value without a step (#103): a projection or an element bound first, a pattern that
 /// takes a value apart, a value computed by operators, `this` in an argument. In the pipeline's
-/// `trend`, the scale `range` gives `x` is handed the months (`first = series[0]`) and the settings
+/// `trend`, the scale `range` gives `x` is handed the months (`first = series[0]`, `last = series.at(-1)`) and the settings
 /// (`const { width, height } = settings`); `parseLine` builds its Month of what `const [year, ..] =
 /// fields` took apart; `new Database(this.path)` is handed the ledger it runs on (`readback`), and so
 /// is the step a chain on `readFileSync(this.outages, ..)` ends in, since a library's call that is no
@@ -1748,7 +1748,7 @@ fn composition_a_call_is_handed_what_its_names_hold() {
         names.sort();
         names
     };
-    assert_eq!(handed("plot.trend", "range"), ["last", "series", "settings"], "`first.date`, `width - MARGIN.right` and what `at` gave");
+    assert_eq!(handed("plot.trend", "range"), ["series", "settings"], "`first.date`, `last.date` and `width - MARGIN.right`");
     assert_eq!(handed("series.parseLine", ".Month"), ["fields"]);
     let readback = common::pair("readback/typescript");
     let keep = node(&readback.clean, "cli.Ledger.keep");
@@ -1956,6 +1956,13 @@ fn a_list_made_by_a_literal_is_made_by_the_body() {
     common::a_list_made_by_a_literal_is_made_by_the_body("typescript", "byLiteral", "byCall", "byConstant");
 }
 
+/// The locals pair: an array the body writes of what it is handed is the body's own, never a module's name (#318), as a
+/// list is in Python and an array in Rust.
+#[test]
+fn a_local_is_bound_by_the_bodys_own_code() {
+    common::a_local_is_bound_by_the_bodys_own_code("typescript", "pair");
+}
+
 /// The workbench pair, `workbench/typescript`: what the program makes, kept in a folder of the project's
 /// own. The clean side gives the folder a class whose method names each file in it
 /// (`Workbench.of(project).file("report.txt")`); the shortcut hands the folder around as a bare path (`join(madeDir(project), "report.txt")`).
@@ -2024,4 +2031,156 @@ fn a_request_meets_the_routes_that_serve_its_method() {
 #[test]
 fn places_a_parent_drops_the_last_part_of_a_path() {
     common::a_parent_drops_the_last_part_of_a_path("typescript", "shelf.summarise", "shelf.log");
+}
+
+/// The unset pair: `process.env[name]` and `process.env[name] ?? ""` of the name a caller hands are the variable that
+/// caller names, as `process.env.REPORT` is (#348).
+#[test]
+fn places_a_variable_a_caller_names_is_that_variable() {
+    common::a_variable_a_caller_names_is_that_variable(
+        "typescript",
+        "notes.keep.keep",
+        "notes.keep.saveReport",
+        "notes.keep.saveLog",
+        "notes.keep.showReport",
+    );
+}
+
+// ---------- sockets: a socket of `node:net` is a place ----------
+
+/// The sockets pair (#323), the greeter and client Python and Rust write, on Node's `net`: a call leaves something
+/// behind, and a socket is a place. Node receives through a listener for the socket's `data` event, which is the
+/// operation that receives, and sends by `write`; listening, shutting the writing half (`end()`) and setting a timeout
+/// move no data. The clean server lingers as TCP asks, so `linger` reaches the network and nothing is asked; the
+/// shortcut waits, its `linger` reaches no place, and Atlas asks what the wait leaves behind.
+#[test]
+fn nothing_a_socket_is_a_place() {
+    let p = common::pair("sockets/typescript");
+    assert_eq!(asked_nodes(&p.clean, "nothing"), Vec::<String>::new());
+    assert_eq!(asked_nodes(&p.shortcut, "nothing"), ["greeter.greeter.linger"]);
+    assert!(!touches(&p.clean, "greeter.linger", "net").is_empty(), "what the client still sends is read from the network");
+    assert!(touches(&p.shortcut, "greeter.linger", "net").is_empty(), "a wait reaches no place");
+    for g in [&p.clean, &p.shortcut] {
+        assert!(node(g, "greeter.main").touches.is_empty(), "making a server and listening move no data");
+    }
+}
+
+/// The sockets pair (#323): a connection is a door to the place it is opened at, wherever it is handed
+/// (`common::a_connection_keeps_its_place`). A connection the server accepts is the parameter of the function handed to
+/// `net.createServer`, run on each, as a loop over a Rust listener's `incoming()` is: it is at the address the server
+/// `listen`s at, a port and a host handed apart.
+#[test]
+fn sockets_a_connection_keeps_its_place() {
+    common::a_connection_keeps_its_place(
+        "typescript",
+        ["greeter.greeter.answer", "greeter.greeter.linger"],
+        "greeter.greeter.main",
+        "greeter.ask",
+    );
+}
+
+/// The locals pair: a name bound to what an operator or an array computes of names stands for those names, so a step
+/// handed it is handed what the expression written in its place hands (#328), and the route's own arrow takes what it
+/// takes with the expression written in place (#343), as in Python and Rust.
+#[test]
+fn a_name_computed_of_names_stands_for_them() {
+    common::a_name_computed_of_names_stands_for_them("typescript");
+}
+
+/// The locals pair without its annotations: `const both: Level[] = ..` names a type, and the body reads no `Level` by it
+/// (#356), as in Python and Rust.
+#[test]
+fn an_annotation_is_no_read() {
+    common::an_annotation_is_no_read("typescript");
+}
+
+/// The twice pair: `kind` in `join(root, kind, `${kind}.csv`)` is one value, so the loop writes two places, never four
+/// (#324).
+#[test]
+fn places_a_name_bound_once_is_one_value() {
+    common::a_name_bound_once_is_one_value("typescript", "export.exportStock");
+}
+
+/// The trees pair: a recursion over `readdirSync` is one place at every depth, through one function and through two that call
+/// each other (#325, #345).
+#[test]
+fn places_a_walk_of_a_tree_is_one_place_at_every_depth() {
+    common::a_walk_of_a_tree_is_one_place_at_every_depth(
+        "typescript",
+        &[("backup.copyTree", "data", "backup"), ("backup.mirrorEntry", "photos", "archive")],
+        "backup.main",
+    );
+}
+
+/// The handles pair (#353): a `FileHandle` handed on (`count(f: FileHandle)`, made by `open` of `node:fs/promises`) is read
+/// and written at the file it was opened at, as Python's file object and Rust's `File` are
+/// (`common::a_file_handed_on_keeps_its_place`), and its opening goes the way its flags say, as Python's `open` goes by
+/// its mode. Isomorphic is the same: function by function, TypeScript's draws what Python's draws, the same ways to the
+/// same places.
+#[test]
+fn handles_a_file_handle_handed_on_keeps_its_place() {
+    common::a_file_handed_on_keeps_its_place_in("typescript", "tally.tally");
+    let (ts, py) = (common::pair("handles/typescript"), common::pair("handles/python"));
+    let ways = |g: &Graph, id: &str| -> Vec<(String, String)> {
+        let mut out: Vec<_> = common::disk(g, id).into_iter().map(|(kind, _, place, _)| (kind, place)).collect();
+        out.sort();
+        out
+    };
+    for (side, t, p) in [("clean", &ts.clean, &py.clean), ("shortcut", &ts.shortcut, &py.shortcut)] {
+        for f in ["main", "count", "emit"] {
+            assert_eq!(ways(t, &format!("tally.tally.{f}")), ways(p, &format!("tally.{f}")), "{side}: TypeScript's and Python's `{f}`");
+        }
+    }
+}
+
+/// The locals pair: an array a step changes in place (`both.push(second)`) holds a value of its own and stands for nothing,
+/// where the array written out once stands for the levels it holds (#355), as in Python and Rust.
+#[test]
+fn a_name_changed_in_place_holds_a_value_of_its_own() {
+    common::a_name_changed_in_place_holds_a_value_of_its_own("typescript");
+}
+
+/// The locals pair's shortcut: a function of the program's that changes what it is handed changes it in place as a method
+/// that changes what it runs on does (#355): `add(both, second)` is `both.push(second)`, as in Python and Rust.
+#[test]
+fn a_name_a_function_changes_holds_a_value_of_its_own() {
+    common::a_name_a_function_changes_holds_a_value_of_its_own("typescript", "add", "push");
+}
+
+/// The locals pair: an array pushed onto in one arm is the choice's value, which the step after the choice takes, where
+/// the array the choice gives, written out in each arm, is the body's own (#366), as in Python and Rust.
+#[test]
+fn a_name_changed_in_one_arm_is_the_choices_value() {
+    common::a_name_changed_in_one_arm_is_the_choices_value("typescript");
+}
+
+/// The lookups pair: `levels.at(0)` is the projection `levels[0]` is and a `Map`'s `levels.get(name)` the one a record's
+/// `levels[name]` is, no step, also of an array changed in place first (#346, #355), and a `push` to the row `rows.at(0)!`
+/// picks is the step a `push` to `rows[0]!` is, as in Python and Rust (#374).
+#[test]
+fn a_lookup_is_the_projection_its_subscript_is() {
+    common::a_lookup_is_the_projection_its_subscript_is(
+        "typescript",
+        &[("indexed", "lookedUp"), ("keyed", "got"), ("pushed", "pushedLookedUp"), ("added", "addedLookedUp"), ("grown", "grownLookedUp")],
+        &[("NAMED", "BY_NAME")],
+    );
+}
+
+/// The keys pair: a key taken with `relative(root, note)` and joined back to its folder names the note it was taken from; one cut
+/// out of the path's text is a name of its own (#352).
+#[test]
+fn places_a_key_joined_back_to_its_root_is_the_note() {
+    common::a_key_joined_back_to_its_root_is_the_note("typescript");
+}
+
+/// The lookups pair: a `push` to a row a subscript or a lookup picks changes the rows (#374): the row of rows written
+/// `Level[][]`, of an array of arrays the function writes, and of the array of arrays the module keeps, which the change
+/// writes; as in Python and Rust.
+#[test]
+fn a_change_of_a_part_changes_the_whole() {
+    common::a_change_of_a_part_changes_the_whole(
+        "typescript",
+        &["added", "addedLookedUp", "grown", "grownLookedUp"],
+        &["added", "addedLookedUp"],
+    );
 }

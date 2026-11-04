@@ -6,9 +6,15 @@ use atlas_engine::{analyze, EntryKind, Graph, Options};
 /// A project written to a directory of its own, with the libraries it imports as stubs, read, and
 /// removed.
 fn written(name: &str, files: &[(&str, &str)]) -> Graph {
+    declaring(name, "", files)
+}
+
+/// A project written as `written` writes one, with more tables in its `pyproject.toml`.
+fn declaring(name: &str, tables: &str, files: &[(&str, &str)]) -> Graph {
     let dir = std::env::temp_dir().join(format!("atlas-python-{name}-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
-    let manifest = format!("[project]\nname = \"{name}\"\nversion = \"0.1.0\"\n\n[tool.ty.environment]\nextra-paths = [\"typings\"]\n");
+    let manifest =
+        format!("[project]\nname = \"{name}\"\nversion = \"0.1.0\"\n\n[tool.ty.environment]\nextra-paths = [\"typings\"]\n{tables}");
     for (path, text) in std::iter::once(&("pyproject.toml", manifest.as_str())).chain(files) {
         let file = dir.join(path);
         std::fs::create_dir_all(file.parent().unwrap()).unwrap();
@@ -193,8 +199,8 @@ def run() -> None:
 }
 
 /// What hands on the value inside it, parentheses and `await`, is read as that value, wherever a
-/// value is read: the file `open` is handed is named by the call that gives it, whether the call
-/// is written plainly, in parentheses or awaited.
+/// value is read: the file `open` is handed is the place the call that gives it returns, whether
+/// the call is written plainly, in parentheses or awaited, and is named by that place (#301).
 #[test]
 fn a_value_through_its_wrappers_is_the_value_inside() {
     let g = written(
@@ -225,12 +231,176 @@ async def awaited() -> str:
 "#,
         )],
     );
+    // the places read: the file `open` opens, and what is read through the file object it gives
     let read = |f: &str| -> Vec<String> {
-        g.node(&format!("wrappers.{f}")).unwrap().touches.iter().filter(|t| t.kind_name() == "disk_read").map(|t| t.what.clone()).collect()
+        let mut out: Vec<String> = g
+            .node(&format!("wrappers.{f}"))
+            .unwrap()
+            .touches
+            .iter()
+            .filter(|t| t.kind_name() == "disk_read")
+            .map(|t| t.what.clone())
+            .collect();
+        out.dedup();
+        out
     };
     let plain = read("plain");
-    assert!(plain.len() == 1 && plain[0].contains("where"), "the file is named by the call `where`: {plain:?}");
+    assert_eq!(plain, ["data/notes.txt"], "the file is the place the call `where` returns");
     assert_eq!(read("parenthesized"), plain, "parentheses are the value inside");
-    let awaited: Vec<String> = read("awaited").iter().map(|w| w.replace("place", "where")).collect();
-    assert_eq!(awaited, plain, "`await place()` is named as `place()` is");
+    assert_eq!(read("awaited"), plain, "`await place()` is the place `place()` returns");
+}
+
+/// Isomorphic is the same: a socket is at its address however the code opens it (#323): made and then bound or connected
+/// (`s = socket.socket(); s.bind(ADDRESS)`), or made at the address (`socket.create_server(ADDRESS)`); a connection the
+/// pair `accept()` gives is at the listener's. A tuple address `("127.0.0.1", 7878)` is the address `127.0.0.1:7878`, the
+/// place a request to `http://127.0.0.1:7878/` reaches.
+#[test]
+fn a_socket_is_at_its_address_however_it_is_opened() {
+    let g = written(
+        "sockets",
+        &[(
+            "sockets.py",
+            "import socket\nimport urllib.request\n\nADDRESS = (\"127.0.0.1\", 7878)\n\n\ndef bound() -> None:\n    s = socket.socket()\n    s.bind(ADDRESS)\n    s.listen()\n    conn, _ = s.accept()\n    conn.recv(16)\n\n\ndef served() -> None:\n    with socket.create_server(ADDRESS) as listener:\n        conn, _ = listener.accept()\n        conn.recv(16)\n\n\ndef connected() -> None:\n    s = socket.socket()\n    s.connect(ADDRESS)\n    s.sendall(b\"hi\")\n\n\ndef asked() -> None:\n    urllib.request.urlopen(\"http://127.0.0.1:7878/\")\n",
+        )],
+    );
+    let reached = |f: &str| -> std::collections::BTreeSet<String> {
+        let n = g.node(f).unwrap_or_else(|| panic!("no node {f}"));
+        n.touches.iter().filter(|t| t.kind_name() == "net").map(|t| t.artifact.clone()).collect()
+    };
+    let asked = reached("sockets.asked");
+    assert!(asked.len() == 1 && !asked.contains(""), "{asked:?}");
+    for f in ["sockets.bound", "sockets.served", "sockets.connected"] {
+        assert_eq!(reached(f), asked, "{f}");
+    }
+}
+
+/// A variable of the environment is one place however the lookup names it (`docs/reference/mathematics.md`,
+/// "Paths as terms"): `os.environ["STORE"]`, `os.environ[NAME]`, `NAME` a constant the code gives `"STORE"`,
+/// `os.getenv("STORE")` and `os.environ.get(NAME)` are the variable `STORE`, as TypeScript's lookups are
+/// (`typescript.rs`). A name no code decides (`os.environ[name]` of a parameter) is no variable the code names.
+#[test]
+fn a_variable_is_one_place_however_its_lookup_names_it() {
+    use std::collections::BTreeSet;
+    let g = written(
+        "lookups",
+        &[(
+            "lookups/__init__.py",
+            r#"import os
+
+NAME = "STORE"
+
+
+def keyed() -> str:
+    with open(os.environ["STORE"]) as f:
+        return f.read()
+
+
+def constant() -> str:
+    with open(os.environ[NAME]) as f:
+        return f.read()
+
+
+def asked() -> str:
+    with open(os.getenv("STORE")) as f:
+        return f.read()
+
+
+def got() -> str:
+    with open(os.environ.get(NAME)) as f:
+        return f.read()
+
+
+def undecided(name: str) -> str:
+    with open(os.environ[name]) as f:
+        return f.read()
+"#,
+        )],
+    );
+    // the places each function touches: its file is opened and read there, two touches at one place (#323)
+    let places = |f: &str| -> BTreeSet<String> { g.node(&format!("lookups.{f}")).unwrap().touches.iter().map(|t| t.place().id).collect() };
+    let store = places("keyed");
+    assert_eq!(store.len(), 1, "{store:?}");
+    assert_eq!(places("constant"), store, "`os.environ[NAME]`");
+    assert_eq!(places("asked"), store, "`os.getenv(\"STORE\")`");
+    assert_eq!(places("got"), store, "`os.environ.get(NAME)`");
+    assert_ne!(places("undecided"), store, "`os.environ[name]`");
+}
+
+/// Each door is at the place its own opening names (`docs/reference/mathematics.md`, "A door keeps its place"): the touch
+/// a file object's traffic goes to is the one the call that made it made, so two files opened by one `with` are each read
+/// or written where they are opened, and the body draws what it draws with each opening on a line of its own (#353).
+#[test]
+fn two_doors_opened_on_one_line_keep_their_places() {
+    use std::collections::BTreeSet;
+    let g = written(
+        "twodoors",
+        &[(
+            "twodoors.py",
+            "def one_line() -> None:\n    with open(\"in.txt\") as src, open(\"out.txt\", \"w\") as dst:\n        dst.write(src.read())\n\n\ndef two_lines() -> None:\n    with open(\"in.txt\") as src:\n        with open(\"out.txt\", \"w\") as dst:\n            dst.write(src.read())\n",
+        )],
+    );
+    let drawn = |f: &str| -> BTreeSet<(String, String, String)> {
+        let n = g.node(&format!("twodoors.{f}")).unwrap_or_else(|| panic!("no node {f}"));
+        n.touches.iter().map(|t| (t.kind_name().to_string(), t.op.clone(), t.artifact.clone())).collect()
+    };
+    let apart = drawn("two_lines");
+    let at: BTreeSet<&str> = apart.iter().map(|t| t.2.as_str()).collect();
+    assert_eq!(at, BTreeSet::from(["in.txt", "out.txt"]), "{apart:?}");
+    assert_eq!(drawn("one_line"), apart);
+}
+
+/// `[project.scripts] name = "mod:attr"` names the function `attr` of the module Python imports as `mod`, whatever the
+/// reader calls that module inside (#364): a flat layout's top-level `ask.py` is `ask`, as a src layout's `src/ask.py`
+/// is and as a package's `greeter/ask.py` is `greeter.ask`. Isomorphic is the same, so the three forms are entered
+/// alike: each declared program is a CLI entry at the function it names, and the file it names is no second entry of
+/// its own (one start is one entry); a file that also runs as a program is entered as a package's module is, by
+/// `python -m` and the name it is imported by.
+#[test]
+fn a_console_script_is_the_function_of_the_module_python_imports() {
+    use std::collections::BTreeSet;
+    const SERVER: &str = "def main() -> None:\n    print(\"hello\")\n";
+    const ASK: &str = "def main() -> None:\n    print(\"ada\")\n";
+    const TELL: &str = "def main() -> None:\n    print(\"ada\")\n\n\nif __name__ == \"__main__\":\n    main()\n";
+    let scripts = |package: &str| {
+        format!("\n[project.scripts]\ngreeter = \"greeter:main\"\nask = \"{package}ask:main\"\ntell = \"{package}tell:main\"\n")
+    };
+    let forms = [
+        ("flat", "", [("greeter.py", SERVER), ("ask.py", ASK), ("tell.py", TELL)]),
+        ("src", "", [("src/greeter/__init__.py", SERVER), ("src/ask.py", ASK), ("src/tell.py", TELL)]),
+        ("package", "greeter.", [("src/greeter/__init__.py", SERVER), ("src/greeter/ask.py", ASK), ("src/greeter/tell.py", TELL)]),
+    ];
+    let mut entered: Vec<(&str, BTreeSet<(String, String, String)>)> = vec![];
+    for (form, package, files) in forms {
+        let g = declaring("greeter", &scripts(package), &files);
+        // each entry by its kind and its label, the module `python -m` runs written `<tell>`, with the kind and the
+        // name of the node it is on and the file of the three it is in; what a package exports is a door of the
+        // library, not a start
+        let file = |path: &str| ["greeter", "ask", "tell"][files.iter().position(|(f, _)| path.ends_with(f)).expect("a file written")];
+        let entries = g
+            .nodes
+            .iter()
+            .filter_map(|n| Some((n, n.entry.as_ref().filter(|e| e.kind != EntryKind::Export)?)))
+            .map(|(n, e)| {
+                let label = match e.label.strip_prefix("python -m ") {
+                    Some(m) if m == format!("{package}tell") => "python -m <tell>".to_string(),
+                    _ => e.label.clone(),
+                };
+                (format!("{:?}", e.kind), label, format!("{:?} {} in {}", n.kind, n.name, file(&n.file)))
+            })
+            .collect();
+        entered.push((form, entries));
+    }
+    let started = |(kind, label, node): (EntryKind, &str, &str)| (format!("{kind:?}"), label.to_string(), node.to_string());
+    let expected: BTreeSet<_> = [
+        (EntryKind::Cli, "greeter", "Function main in greeter"),
+        (EntryKind::Cli, "ask", "Function main in ask"),
+        (EntryKind::Cli, "tell", "Function main in tell"),
+        (EntryKind::Cli, "python -m <tell>", "Module tell in tell"),
+    ]
+    .into_iter()
+    .map(started)
+    .collect();
+    for (form, entries) in &entered {
+        assert_eq!(entries, &expected, "{form}");
+    }
 }

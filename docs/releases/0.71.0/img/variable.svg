@@ -1,0 +1,38 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 340" role="img" aria-label="A name bound once is one value wherever it stands: a loop over two kinds that names the folder and the file by one kind writes two files, the diagonal, where before every pairing of the two uses was drawn; two lists kept in step by an index are two variables, so every pairing is drawn, since the code does not tie them">
+<text x="20" y="30" style="font-family:var(--sans);font-size:15px;fill:var(--ink);font-weight:600">one name, bound once</text>
+<text x="20" y="58" style="font-family:var(--mono);font-size:13px;fill:var(--ink)">for <tspan style="fill:var(--key);font-weight:600">kind</tspan> in KINDS:</text>
+<text x="51" y="80" style="font-family:var(--mono);font-size:13px;fill:var(--ink)">(root / <tspan style="fill:var(--key);font-weight:600">kind</tspan> / f"{<tspan style="fill:var(--key);font-weight:600">kind</tspan>}.csv").write_text(kind)</text>
+<text x="212" y="116" style="font-family:var(--mono);font-size:13px;fill:var(--ink-2);text-anchor:middle">books.csv</text>
+<text x="362" y="116" style="font-family:var(--mono);font-size:13px;fill:var(--ink-2);text-anchor:middle">games.csv</text>
+<text x="130" y="154" style="font-family:var(--mono);font-size:13px;fill:var(--ink-2);text-anchor:end">out/books/</text>
+<text x="130" y="206" style="font-family:var(--mono);font-size:13px;fill:var(--ink-2);text-anchor:end">out/games/</text>
+<rect x="140" y="126" width="144" height="46" rx="6" style="fill:var(--key);fill-opacity:0.14;stroke:var(--key);stroke-width:2"/>
+<text x="212" y="154" style="font-family:var(--sans);font-size:13px;fill:var(--key);text-anchor:middle;font-weight:600">written</text>
+<rect x="290" y="126" width="144" height="46" rx="6" style="fill:none;stroke:var(--del);stroke-width:1.6;stroke-dasharray:6 4"/>
+<text x="362" y="154" style="font-family:var(--sans);font-size:13px;fill:var(--del);text-anchor:middle">no run writes</text>
+<rect x="140" y="178" width="144" height="46" rx="6" style="fill:none;stroke:var(--del);stroke-width:1.6;stroke-dasharray:6 4"/>
+<text x="212" y="206" style="font-family:var(--sans);font-size:13px;fill:var(--del);text-anchor:middle">no run writes</text>
+<rect x="290" y="178" width="144" height="46" rx="6" style="fill:var(--key);fill-opacity:0.14;stroke:var(--key);stroke-width:2"/>
+<text x="362" y="206" style="font-family:var(--sans);font-size:13px;fill:var(--key);text-anchor:middle;font-weight:600">written</text>
+<text x="287" y="254" style="font-family:var(--sans);font-size:14px;fill:var(--ink);text-anchor:middle;font-weight:600">one variable: 2 files</text>
+<text x="287" y="274" style="font-family:var(--sans);font-size:13px;fill:var(--ink-2);text-anchor:middle">each use takes the same kind</text>
+<line x1="472" y1="14" x2="472" y2="290" style="stroke:var(--line);stroke-width:1.5"/>
+<text x="500" y="30" style="font-family:var(--sans);font-size:15px;fill:var(--ink);font-weight:600">two lists, one index</text>
+<text x="500" y="58" style="font-family:var(--mono);font-size:13px;fill:var(--ink)">for i in range(len(FOLDERS)):</text>
+<text x="531" y="80" style="font-family:var(--mono);font-size:13px;fill:var(--ink)">(root / <tspan style="fill:var(--key);font-weight:600">FOLDERS[i]</tspan> / <tspan style="fill:var(--key);font-weight:600">NAMES[i]</tspan>).write_text(…)</text>
+<text x="692" y="116" style="font-family:var(--mono);font-size:13px;fill:var(--ink-2);text-anchor:middle">books.csv</text>
+<text x="842" y="116" style="font-family:var(--mono);font-size:13px;fill:var(--ink-2);text-anchor:middle">games.csv</text>
+<text x="610" y="154" style="font-family:var(--mono);font-size:13px;fill:var(--ink-2);text-anchor:end">out/books/</text>
+<text x="610" y="206" style="font-family:var(--mono);font-size:13px;fill:var(--ink-2);text-anchor:end">out/games/</text>
+<rect x="620" y="126" width="144" height="46" rx="6" style="fill:var(--key);fill-opacity:0.14;stroke:var(--key);stroke-width:2"/>
+<text x="692" y="154" style="font-family:var(--sans);font-size:13px;fill:var(--key);text-anchor:middle;font-weight:600">written</text>
+<rect x="770" y="126" width="144" height="46" rx="6" style="fill:var(--key);fill-opacity:0.14;stroke:var(--key);stroke-width:2"/>
+<text x="842" y="154" style="font-family:var(--sans);font-size:13px;fill:var(--key);text-anchor:middle;font-weight:600">drawn</text>
+<rect x="620" y="178" width="144" height="46" rx="6" style="fill:var(--key);fill-opacity:0.14;stroke:var(--key);stroke-width:2"/>
+<text x="692" y="206" style="font-family:var(--sans);font-size:13px;fill:var(--key);text-anchor:middle;font-weight:600">drawn</text>
+<rect x="770" y="178" width="144" height="46" rx="6" style="fill:var(--key);fill-opacity:0.14;stroke:var(--key);stroke-width:2"/>
+<text x="842" y="206" style="font-family:var(--sans);font-size:13px;fill:var(--key);text-anchor:middle;font-weight:600">written</text>
+<text x="767" y="254" style="font-family:var(--sans);font-size:14px;fill:var(--ink);text-anchor:middle;font-weight:600">two variables: 2 × 2 files</text>
+<text x="767" y="274" style="font-family:var(--sans);font-size:13px;fill:var(--ink-2);text-anchor:middle">the code does not tie them</text>
+<text x="20" y="328" style="font-family:var(--sans);font-size:12px;fill:var(--ink-3)">teal: a file 0.71 draws · red dashed: a file drawn before that no run writes</text>
+</svg>

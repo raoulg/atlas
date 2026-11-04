@@ -20,6 +20,7 @@ rustc-hash = "2"
 sqlparser = { version = "0.63", features = ["visitor"] }
 walkdir = "2"
 ignore = "0.4"
+path-clean = "1"
 tree-sitter = "0.25"
 tree-sitter-python = "0.25"
 ts-rs = { version = "12", features = ["no-serde-warnings"] }

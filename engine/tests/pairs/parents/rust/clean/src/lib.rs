@@ -1,6 +1,7 @@
 //! A data file's line count, logged in the directory the data files lie in.
 
-use std::fs;
+use std::fs::{self, OpenOptions};
+use std::io::Write;
 use std::path::{Path, PathBuf};
 
 /// The directory the data files lie in: `data` in the user's home.
@@ -16,8 +17,9 @@ pub fn summarise(name: &str) -> std::io::Result<usize> {
     Ok(count)
 }
 
-/// Write the count of the data file `source` to the log in its directory.
+/// Add the count of the data file `source` to the log in its directory.
 fn log(source: &Path, count: usize) -> std::io::Result<()> {
     let folder = source.parent().expect("a data file is in a directory");
-    fs::write(folder.join("shelf.log"), format!("{} {count}\n", source.display()))
+    let mut out = OpenOptions::new().append(true).create(true).open(folder.join("shelf.log"))?;
+    out.write_all(format!("{} {count}\n", source.display()).as_bytes())
 }

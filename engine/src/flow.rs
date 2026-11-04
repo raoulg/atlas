@@ -17,15 +17,19 @@ use serde::Serialize;
 use crate::model::{Both, Db, Dir, Edge, EdgeKind, Graph, Held, Leaves, Node, NodeKind, Site, Touch, World};
 
 /// Wire the steps of every body: a call written inside another call hands it its result, under
-/// the name the body gives it or, without one, under the step's own (`#n`, unique in the graph);
+/// the name the body gives it or, without one, under the step's own (`#n`, counted in its body);
 /// a library's operation that only turns a value of one type into a value of the same type is an
 /// identity, and the value it names is the one the step before it makes.
+///
+/// The name a step gives its result is a fact of its body alone, as every fact of the body's own
+/// arrow is: the bodies read beside it, and the order they are read in, name none of its values.
+/// The name is unique within its body, and the graph never relates two bodies' values by it: a
+/// value no name holds goes only to the step written around the one that makes it.
 pub fn wire(nodes: &mut IndexMap<String, Node>, edges: &[Edge]) {
     let gives_class = classes_given(nodes, edges);
-    let mut next = 0;
     for id in nodes.keys().cloned().collect::<Vec<_>>() {
         let mut sites = std::mem::take(&mut nodes[&id].sites);
-        nest(&mut sites, &gives_class, &mut next);
+        nest(&mut sites, &gives_class);
         drop_identities(&mut sites);
         nodes[&id].sites = sites;
     }
@@ -55,8 +59,10 @@ fn written(s: &Site) -> bool {
 }
 
 /// Each step written inside another hands it its result; the outer step is no longer handed what
-/// the inner one is.
-fn nest(sites: &mut [Site], gives_class: &HashMap<String, String>, next: &mut usize) {
+/// the inner one is. A result without a name is named by its step: `#n` for the `n`th step of the
+/// body written inside another.
+fn nest(sites: &mut [Site], gives_class: &HashMap<String, String>) {
+    let mut next = 0;
     // the call each step is written in: the smallest other step around it
     let around: Vec<Option<usize>> = (0..sites.len())
         .map(|i| {
@@ -69,7 +75,7 @@ fn nest(sites: &mut [Site], gives_class: &HashMap<String, String>, next: &mut us
         let Some(outer) = around[i] else { continue };
         // the result without a name is named by its step
         let name = format!("#{next}");
-        *next += 1;
+        next += 1;
         let s = &mut sites[i];
         if !s.gives.iter().any(|g| !g.name.is_empty()) {
             if s.gives.is_empty() {
@@ -579,12 +585,115 @@ struct Order {
 type Done = Rc<[(u32, Order)]>;
 
 /// A body as `orders` works it out: the body by the numbers of its function and of the class it runs on, the callers on
-/// the chain above it that make a path whole below it, and the chain's entry where its users make one whole.
+/// the chain above it that make a path whole below it, the conditions below it that ran before it, the classes of the
+/// methods on the chain that a condition below it sets up, and the chain's entry where its users make one whole. What
+/// the body does depends on nothing else of the route, so a body is worked out once for every route that runs it alike.
 #[derive(Clone, PartialEq, Eq, Hash)]
 struct Key {
     body: (u32, u32),
     made: Box<[u32]>,
+    before: Box<[u32]>,
+    classes: Box<[u32]>,
     entry: u32,
+}
+
+/// What a body runs under on a route, by the numbers of functions and classes (`Ix::name`): the callers on the chain of
+/// calls that leads to it, the conditions that ran before it (mathematics.md, "Who makes a path whole"), each once and in
+/// order, the classes of the methods on the chain, and the chain's first function.
+#[derive(Clone, Copy)]
+struct Under<'a> {
+    calls: &'a [u32],
+    before: &'a [u32],
+    classes: &'a [u32],
+    top: u32,
+}
+
+impl Under<'_> {
+    /// Under nothing: the start of a chain that starts at the function numbered `top`.
+    fn start(top: u32) -> Self {
+        Under { calls: &[], before: &[], classes: &[], top }
+    }
+}
+
+impl Key {
+    /// The key of the body of `n` run on class `on` under `under`: what it keeps of each is what the body or what it runs
+    /// asks for.
+    fn of(ix: &Ix, n: &Node, on: &str, under: &Under) -> Key {
+        let body = (ix.name(&n.id), ix.name(on));
+        let consulted = ix.consulted(body, &n.id, on);
+        // a body that consults no condition is the same under every chain
+        if consulted.is_empty() {
+            return Key { body, made: Box::default(), before: Box::default(), classes: Box::default(), entry: ix.name("") };
+        }
+        let kept = |xs: &mut dyn Iterator<Item = u32>, by: &BTreeSet<u32>| -> Box<[u32]> {
+            let mut out: Vec<u32> = xs.filter(|x| by.contains(x)).collect();
+            out.sort_unstable();
+            out.dedup();
+            out.into()
+        };
+        let made = kept(&mut under.calls.iter().copied().chain([body.0]), &consulted);
+        // the classes on the chain and what ran before matter only where a condition the body consults sets an object up
+        let asked = ix.asked(body, &n.id, on);
+        let (classes, before) = if asked.is_empty() {
+            (Box::default(), Box::default())
+        } else {
+            // the body is on the chain itself, and so is the class of a method it is
+            let own = n.cls.as_deref().filter(|_| !n.ctor).map(|c| ix.name(c));
+            let classes = match (under.classes.is_empty(), own) {
+                (true, None) => Box::default(),
+                _ => kept(&mut under.classes.iter().copied().chain(own), &asked),
+            };
+            // a condition that ran before holds below only where it is not on the calls already and set up an object of
+            // a class a method on the chain runs on where a touch names it: one on the chain now, or a method the body
+            // may still call that consults it (`Ix::set_up`)
+            let before: Box<[u32]> = if under.before.is_empty() {
+                Box::default()
+            } else {
+                let set_up = ix.set_up(body, &n.id, on);
+                let sets_up = |g: &u32| set_up.contains(g) || ix.builds_of(*g).iter().any(|c| classes.contains(c));
+                under.before.iter().copied().filter(|g| consulted.contains(g) && !made.contains(g) && sets_up(g)).collect()
+            };
+            (classes, before)
+        };
+        Key { body, made, before, classes, entry: if consulted.contains(&under.top) { under.top } else { ix.name("") } }
+    }
+
+    /// What a body run under this key holds a call of it to: the callers on its chain, the conditions that ran before the
+    /// call (`before`: what ran before the body, and before the call in it, `Ix::prior`), and the classes of the methods on
+    /// its chain.
+    fn under<'a>(&'a self, before: &'a [u32], top: u32) -> Under<'a> {
+        Under { calls: &self.made, before, classes: &self.classes, top }
+    }
+
+    /// What ran before a call of the body that `prior` says ran before it inside the body, with what ran before the body.
+    fn before(&self, prior: &[u32]) -> Vec<u32> {
+        let mut out: Vec<u32> = self.before.iter().chain(prior).copied().collect();
+        out.sort_unstable();
+        out.dedup();
+        out
+    }
+}
+
+/// Whether condition `f` of a touch holds in a body run under `k` (mathematics.md, "Who makes a path whole"): `f` is on
+/// the calls that lead there; or it is a constructor of the class of a method on them, which built the object that
+/// method runs on, before the route or in it; or it ran before and set such an object up, its calls reaching a
+/// constructor of that class. A caller that hands the rest of the path hands it down the calls, so it holds only on them.
+fn holds(ix: &Ix, f: &str, k: &Key) -> bool {
+    let x = ix.name(f);
+    if k.made.contains(&x) {
+        return true;
+    }
+    if k.classes.is_empty() {
+        return false;
+    }
+    let built = ix.nodes.get(f).filter(|c| c.ctor).and_then(|c| c.cls.as_deref());
+    built.is_some_and(|c| k.classes.contains(&ix.name(c))) || (k.before.contains(&x) && ix.builds(f).iter().any(|c| k.classes.contains(c)))
+}
+
+/// The touches of `n` a route that starts at `top` runs in a body run under `k`: those one of whose conjunctions holds
+/// (`holds`), and a call none of whose touches it runs as the call was read (`Node::touches_in`).
+fn running<'n>(ix: &Ix, n: &'n Node, top: &str, k: &Key) -> Vec<&'n Touch> {
+    n.touches_in(top, &|f: &str| holds(ix, f, k))
 }
 
 /// What every function does at each place, worked out once each round. A call back into a
@@ -620,23 +729,17 @@ const ROUNDS: usize = 8;
 /// unconditionally, or in an arm of a choice the read is in too; a write in one arm says nothing of a read outside it.
 /// Without `done`, its own body alone, its calls left out. It runs on a chain of calls that leads to it from the function
 /// whose arrow is worked out, `top` the chain's first: a touch a caller makes whole is at that caller's place where the
-/// caller is on the chain, and as it was read where none is (`Node::touches_in`, mathematics.md rule 5), so a read reads
-/// back only what was written at the place the route touches. `above` holds callers on the chain above `id`, by their
-/// numbers (`Ix::name`), among them every one that makes a path whole below the function that calls `id`: what a body
-/// touches is touched below each of its callers too (`Ix::consulted`), so no other caller on the chain makes one whole
-/// below `id`.
-fn orders(ix: &Ix, id: &str, on: &str, top: &str, above: &[u32], mut done: Option<&mut Memo>) -> Done {
-    let Some((&id, &n)) = ix.nodes.get_key_value(id) else { return Done::default() };
-    // which callers on the chain make a path whole that `id` or what it runs touches, as a set, and the chain's entry
-    // where its users make one whole: what the chain changes below `id`, so a recursive cycle comes back to the same
-    // key and a body is worked out once for every chain that touches alike in it
-    let body = (ix.name(id), ix.name(on));
-    let consulted = ix.consulted(body, id, on);
-    let mut made: Vec<u32> = above.iter().copied().chain([body.0]).filter(|f| consulted.contains(f)).collect();
-    made.sort_unstable();
-    made.dedup();
-    let entry = ix.name(if consulted.contains(&ix.name(top)) { top } else { "" });
-    let k = Key { body, made: made.into(), entry };
+/// conditions of one of its conjunctions hold there (`holds`), and as it was read where none does (`Node::touches_in`,
+/// mathematics.md rule 5), so a read reads back only what was written at the place the route touches. `under` holds
+/// the callers on the chain above `id`, the conditions that ran before it and the classes of the methods on the chain,
+/// by their numbers (`Ix::name`); a call of the body runs under the chain with the body on it and what ran before the
+/// call in the body besides (`Ix::prior`), so the route is read in call order as the plan reads it.
+fn orders(ix: &Ix, id: &str, on: &str, top: &str, under: &Under, mut done: Option<&mut Memo>) -> Done {
+    let Some(&n) = ix.nodes.get(id) else { return Done::default() };
+    // what the chain changes below `id` (`Key::of`): a recursive cycle comes back to the same key, and a body is worked
+    // out once for every chain that touches alike in it
+    let k = Key::of(ix, n, on, under);
+    let body = k.body;
     if let Some(m) = done.as_deref_mut() {
         if let Some(o) = m.done.get(&k) {
             return o.clone();
@@ -655,19 +758,20 @@ fn orders(ix: &Ix, id: &str, on: &str, top: &str, above: &[u32], mut done: Optio
     let looped = |x: u32, y: u32| n.loop_lines.iter().any(|&(a, b)| a <= x.min(y) && x.max(y) <= b);
     enum Event<'n, 'c> {
         Touch(&'n Touch),
-        Call(&'c Call),
+        Call(usize, &'c Call),
     }
     // a place's shape is no content: what is read after it was made is what was there
     // a touch that stands for several calls runs on the line of each
     // a call whose place a caller makes whole is read as written where no such caller runs (`instead`): at each place
-    let mut events: Vec<(u32, Event)> = n
-        .touches_in(top, &|f: &str| k.made.contains(&ix.name(f)))
+    let mut events: Vec<(u32, Event)> = running(ix, n, top, &k)
         .into_iter()
         .filter(|t| t.dir.is_some() && !t.shape())
         .flat_map(|t| std::iter::once(t.line).chain(t.also_at.iter().copied()).map(move |l| (l, Event::Touch(t))))
         .collect();
     let calls = if done.is_some() { ix.calls(body, n, on) } else { Rc::from([]) };
-    events.extend(calls.iter().map(|c| (c.line, Event::Call(c))));
+    // what ran before each call, besides what ran before the body
+    let prior = ix.prior(body, n, on, &calls);
+    events.extend(calls.iter().enumerate().map(|(i, c)| (c.line, Event::Call(i, c))));
     // on one line what is read comes first, then the calls, then what is written: `x ??= v` reads
     // `x` before it may write it, `y = f(x)` calls `f` before `y` is written
     let rank = |e: &Event| match e {
@@ -688,13 +792,15 @@ fn orders(ix: &Ix, id: &str, on: &str, top: &str, above: &[u32], mut done: Optio
                 let writes = t.dir == Some(Dir::Write);
                 vec![(ix.place_of(t), Order { finds: !writes, writes, always_writes: writes, ..Order::default() })]
             }
-            Event::Call(c) => {
-                one_of(&c.runs.iter().map(|(t, on)| orders(ix, t, on, top, &k.made, done.as_deref_mut())).collect::<Vec<_>>())
+            Event::Call(i, c) => {
+                let before = if prior[*i].is_empty() { None } else { Some(k.before(&prior[*i])) };
+                let under = k.under(before.as_deref().unwrap_or(&k.before), under.top);
+                one_of(&c.runs.iter().map(|(t, on)| orders(ix, t, on, top, &under, done.as_deref_mut())).collect::<Vec<_>>())
             }
         };
         let conditional = match e {
             Event::Touch(_) => at.is_some(),
-            Event::Call(c) => c.in_arm || at.is_some(),
+            Event::Call(_, c) => !c.arms.is_empty() || at.is_some(),
         };
         for (place, b) in happened {
             let lines = written_at.entry(place).or_default();
@@ -763,17 +869,40 @@ fn one_of(runs: &[Done]) -> Vec<(u32, Order)> {
     out.into_iter().map(|(p, (o, always))| (p, Order { always_writes: always == all, ..o })).collect()
 }
 
-/// What `id` does at places in each context its arrow stands in, together: with no caller above it that makes a path
-/// whole, and under each such caller a touch it reaches names (`Touch::by`). In one context every touch is at one place
-/// (`orders`); an arrow stands in all of them, so it reads back, or changes, what it does in any one: the places where
-/// what it reads is only what was written, and those where it writes on what it found. Without `done`, its own body
-/// alone.
-fn in_every_context(ix: &Ix, id: &str, on: &str, mut done: Option<&mut Memo>) -> Orders {
+/// The contexts each body stands in, by the body (`Key::body`): the keys `orders` worked it out under in `done`, each with
+/// what it does there. Every function starts a chain (`arrows_in`), so a body's contexts are the chain that starts at it,
+/// with nothing above it and nothing before it, and each chain of calls that leads to it from another function, with
+/// the callers on it and what ran before it there (`Key::of`, `Ix::prior`): the contexts it can be called in, as the
+/// route reads each. A function it calls itself runs below it, where its body calls it, and is in none of them above it.
+fn contexts(done: &Memo) -> FxHashMap<(u32, u32), Vec<(&Key, &Done)>> {
+    let mut out: FxHashMap<(u32, u32), Vec<(&Key, &Done)>> = FxHashMap::default();
+    for (k, d) in &done.done {
+        out.entry(k.body).or_default().push((k, d));
+    }
+    out
+}
+
+/// What `id` does at places in each context its arrow stands in (`contexts`), together. In one context every touch is at
+/// one place (`orders`); an arrow stands in all of them, so it reads back, or changes, what it does in any one: the
+/// places where what it reads is only what was written, and those where it writes on what it found. With `own`, its own
+/// body alone in each, its calls left out.
+fn in_every_context(ix: &Ix, id: &str, on: &str, contexts: &FxHashMap<(u32, u32), Vec<(&Key, &Done)>>, own: bool) -> Orders {
     let (mut reads_back, mut updates): (BTreeSet<u32>, BTreeSet<u32>) = Default::default();
-    for above in contexts(ix, id) {
-        let top = above.first().copied().unwrap_or(id);
-        let above: Vec<u32> = above.iter().map(|f| ix.name(f)).collect();
-        for &(p, o) in orders(ix, id, on, top, &above, done.as_deref_mut()).iter() {
+    let none = ix.name("");
+    for &(k, done) in contexts.get(&(ix.name(id), ix.name(on))).into_iter().flatten() {
+        let alone;
+        let done = if own {
+            // the context as its key keeps it, which `Key::of` gives back as this key: the body alone runs the touches
+            // it runs with its calls
+            let top = if k.entry == none { id.to_string() } else { ix.named(k.entry) };
+            let under = k.under(&k.before, k.entry);
+            debug_assert!(ix.nodes.get(id).is_some_and(|n| Key::of(ix, n, on, &under) == *k), "{id}: a context is its own key");
+            alone = orders(ix, id, on, &top, &under, None);
+            &alone
+        } else {
+            done
+        };
+        for &(p, o) in done.iter() {
             if o.reads_back && !o.finds {
                 reads_back.insert(p);
             }
@@ -788,36 +917,6 @@ fn in_every_context(ix: &Ix, id: &str, on: &str, mut done: Option<&mut Memo>) ->
         out
     };
     Orders { reads_back: named(reads_back), updates: named(updates) }
-}
-
-/// The callers above `id` that may make a path it reaches whole: none, and each set a touch it reaches names in `by`.
-fn contexts<'g>(ix: &Ix<'g>, id: &str) -> Vec<Vec<&'g str>> {
-    let mut out: Vec<Vec<&'g str>> = vec![vec![]];
-    let mut seen: HashSet<&str> = HashSet::new();
-    let mut stack: Vec<&str> = vec![id];
-    while let Some(f) = stack.pop() {
-        if !seen.insert(f) {
-            continue;
-        }
-        let Some(&n) = ix.nodes.get(f) else { continue };
-        for t in &n.touches {
-            for by in &t.by {
-                let makers: Vec<&'g str> = by.members().filter_map(|m| ix.nodes.get_key_value(m).map(|(k, _)| *k)).collect();
-                if !makers.is_empty() && !out.contains(&makers) {
-                    out.push(makers);
-                }
-            }
-        }
-        stack.extend(
-            ix.out
-                .get(f)
-                .into_iter()
-                .flatten()
-                .filter(|e| matches!(e.kind, EdgeKind::Calls | EdgeKind::Instantiates))
-                .map(|e| e.dst.as_str()),
-        );
-    }
-    out
 }
 
 impl<'g> Ix<'g> {
@@ -957,7 +1056,7 @@ enum Value<'s> {
     Unknown,
 }
 
-fn arrow_of(ix: &Ix, n: &Node, done: &mut Memo) -> Arrow {
+fn arrow_of(ix: &Ix, n: &Node, contexts: &FxHashMap<(u32, u32), Vec<(&Key, &Done)>>) -> Arrow {
     if n.kind == NodeKind::Class {
         return Arrow {
             takes: ix.built_from(&n.id),
@@ -969,12 +1068,12 @@ fn arrow_of(ix: &Ix, n: &Node, done: &mut Memo) -> Arrow {
     // a module's own code runs where it is a program (`if __name__ == "__main__":`): what it
     // reads back of what it wrote
     if n.kind == NodeKind::Module {
-        let (at, own) = (in_every_context(ix, &n.id, "", Some(done)), in_every_context(ix, &n.id, "", None));
+        let (at, own) = (in_every_context(ix, &n.id, "", contexts, false), in_every_context(ix, &n.id, "", contexts, true));
         return Arrow { reads_back: at.reads_back, own_reads_back: own.reads_back, updates: at.updates, ..Default::default() };
     }
     let ctor = n.ctor;
     let gives = ix.targets(&n.id, EdgeKind::Returns);
-    let (at, own) = (in_every_context(ix, &n.id, "", Some(done)), in_every_context(ix, &n.id, "", None));
+    let (at, own) = (in_every_context(ix, &n.id, "", contexts, false), in_every_context(ix, &n.id, "", contexts, true));
     // a function whose signature does not say what it gives back gives back a value where its callers use one
     let returns_value = n.returns.as_ref().map_or(false, |r| !r.value.is_empty()) || (ix.unsaid(n) && ix.used(&n.id));
     Arrow {
@@ -1008,6 +1107,93 @@ pub fn arrows(g: &Graph) -> BTreeMap<String, Arrow> {
     arrows_in(g, &Ix::new(g), &mut Memo::default())
 }
 
+/// What the route that starts at `entry` runs at places, occurrence by occurrence, as `orders` reads it: the route in
+/// the context it runs in, nothing above its entry and nothing before it, each call under the chain of calls that leads
+/// to it and what ran before it (`Key::of`, `Ix::prior`). An occurrence is named by its path from the entry, as the page
+/// names it: the entry, then `/` and the call's place among its body's sites for each call, and `|` and the key of the
+/// body for what a call may run in place of the function it reaches (`key`). Each holds the places of the touches its
+/// own body runs there (`running`), each once. A call of a function already on the calls is not opened.
+pub fn along(g: &Graph, entry: &str) -> BTreeMap<String, BTreeSet<String>> {
+    let mut a = Along::new(g, entry);
+    a.read(entry, entry, "", usize::MAX);
+    a.occurrences.into_iter().map(|(at, o)| (at, o.touches.iter().map(|t| t.place().id).collect())).collect()
+}
+
+/// One occurrence of a route as `along` reads it: the touches its own body runs there (`running`), and which reading of
+/// its body it is, numbered in the order the reader first reads it. Two occurrences with one `reading` run their bodies
+/// alike, and all those bodies run (`Key`): they differ at most in which call of a function already on the calls is not
+/// opened.
+pub struct Occurrence<'g> {
+    pub touches: Vec<&'g Touch>,
+    pub reading: usize,
+}
+
+/// The route that starts at `entry` as `along` reads it, read a part at a time: each occurrence by its name, with one
+/// numbering of readings for all of it.
+pub struct Along<'g> {
+    ix: Ix<'g>,
+    entry: String,
+    readings: FxHashMap<Key, usize>,
+    occurrences: BTreeMap<String, Occurrence<'g>>,
+}
+
+impl<'g> Along<'g> {
+    /// The route that starts at `entry`, none of it read yet.
+    pub fn new(g: &'g Graph, entry: &str) -> Self {
+        Along { ix: Ix::new(g), entry: entry.to_string(), readings: FxHashMap::default(), occurrences: BTreeMap::new() }
+    }
+
+    /// Reads the part of the route that starts at body `id` run on class `on` (none where that is not known), nothing
+    /// above it and nothing before it, down to `depth` calls below it, its occurrences named from `at`: the entry itself,
+    /// or a body the route runs that no call in a body's sites leads to (a door of a class the route starts at, what the
+    /// entry may run instead). A part read to a depth reads each occurrence above it as the whole route does.
+    pub fn read(&mut self, at: &str, id: &str, on: &str, depth: usize) {
+        let mut out = Out { depth, readings: &mut self.readings, occurrences: &mut self.occurrences };
+        let top = self.entry.as_str();
+        occurrences(&self.ix, id, on, at.to_string(), top, &Under::start(self.ix.name(top)), &mut vec![], &mut out);
+    }
+
+    /// The occurrence named `at`, where a route read so far has it.
+    pub fn occurrence(&self, at: &str) -> Option<&Occurrence<'g>> {
+        self.occurrences.get(at)
+    }
+}
+
+/// Where `occurrences` reads into: how deep, the readings of bodies by their keys, and the occurrences by their names.
+struct Out<'a, 'g> {
+    depth: usize,
+    readings: &'a mut FxHashMap<Key, usize>,
+    occurrences: &'a mut BTreeMap<String, Occurrence<'g>>,
+}
+
+/// The occurrences below the one named `at` of body `id` run on class `on` under `under` (`along`), into `out`.
+#[allow(clippy::too_many_arguments)]
+fn occurrences<'g>(ix: &Ix<'g>, id: &str, on: &str, at: String, top: &str, under: &Under, path: &mut Vec<String>, out: &mut Out<'_, 'g>) {
+    let Some(&n) = ix.nodes.get(id) else { return };
+    let k = Key::of(ix, n, on, under);
+    let next = out.readings.len();
+    let reading = *out.readings.entry(k.clone()).or_insert(next);
+    out.occurrences.insert(at.clone(), Occurrence { touches: running(ix, n, top, &k), reading });
+    if path.len() >= out.depth {
+        return;
+    }
+    let calls = ix.calls(k.body, n, on);
+    let prior = ix.prior(k.body, n, on, &calls);
+    path.push(id.to_string());
+    for (c, ran) in calls.iter().zip(prior.iter()) {
+        let before = k.before(ran);
+        let under = k.under(&before, under.top);
+        for (i, (t, tc)) in c.runs.iter().enumerate() {
+            if !ix.nodes.contains_key(t.as_str()) || path.contains(t) {
+                continue;
+            }
+            let name = if i == 0 { format!("{at}/{}", c.site) } else { format!("{at}/{}|{}", c.site, key(t, tc)) };
+            occurrences(ix, t, tc, name, top, &under, path, out);
+        }
+    }
+    path.pop();
+}
+
 /// The arrows, worked out in `done`.
 fn arrows_in<'g>(g: &'g Graph, ix: &Ix<'g>, done: &mut Memo) -> BTreeMap<String, Arrow> {
     let kinds = |n: &&Node| matches!(n.kind, NodeKind::Module | NodeKind::Class | NodeKind::Function | NodeKind::Method);
@@ -1021,19 +1207,20 @@ fn arrows_in<'g>(g: &'g Graph, ix: &Ix<'g>, done: &mut Memo) -> BTreeMap<String,
         .collect();
     for round in 1..=ROUNDS {
         for n in g.nodes.iter().filter(kinds) {
-            orders(ix, &n.id, "", &n.id, &[], Some(&mut *done));
+            orders(ix, &n.id, "", &n.id, &Under::start(ix.name(&n.id)), Some(&mut *done));
         }
         for (f, c) in &on {
-            orders(ix, f, c, f, &[], Some(&mut *done));
+            orders(ix, f, c, f, &Under::start(ix.name(f)), Some(&mut *done));
         }
         if done.done == done.before || round == ROUNDS {
             break;
         }
         done.before = std::mem::take(&mut done.done);
     }
-    let mut out: BTreeMap<String, Arrow> = g.nodes.iter().filter(kinds).map(|n| (n.id.clone(), arrow_of(ix, n, &mut *done))).collect();
+    let contexts = contexts(done);
+    let mut out: BTreeMap<String, Arrow> = g.nodes.iter().filter(kinds).map(|n| (n.id.clone(), arrow_of(ix, n, &contexts))).collect();
     for (f, c) in &on {
-        let at = in_every_context(ix, f, c, Some(&mut *done));
+        let at = in_every_context(ix, f, c, &contexts, false);
         if let Some(a) = out.get_mut(f).filter(|a| a.reads_back != at.reads_back || a.updates != at.updates) {
             a.on.insert(c.clone(), at);
         }
@@ -1160,12 +1347,23 @@ pub enum Item {
     Step(Step),
     /// The arms of one choice that hold steps, each a branch, and what decides each branch, by
     /// branch, as the code writes it. A choice with one such arm is still a choice: its steps run
-    /// when it holds, and nothing runs otherwise.
+    /// when it holds, and nothing runs otherwise. An arm that runs no step but those of one choice
+    /// inside it is that choice (`A + (B + C) = A + B + C`), so its arms are branches of this one,
+    /// each decided by the arms on its path. A choice inside an arm beside other steps of it is a
+    /// coproduct inside that arm, an item of its own `within` the branch it stands in.
     Choice {
         choice: u32,
+        /// The steps of its branches that stand in no choice inside them.
         members: Vec<Member>,
         #[serde(skip_serializing_if = "Vec::is_empty")]
         when: Vec<String>,
+        /// The arms each branch runs in, by branch, as `Site::arms` names them: from the body's
+        /// outermost choice in, through this choice to the branch's last arm.
+        arms: Vec<Vec<(u32, u32)>>,
+        /// The choice of the body this one stands in an arm of, and the branch of that choice's
+        /// item it stands in.
+        #[serde(skip_serializing_if = "Option::is_none")]
+        within: Option<(u32, usize)>,
     },
 }
 
@@ -1189,15 +1387,18 @@ impl Body {
         self.alts.is_empty() && self.items.is_empty()
     }
 
-    /// Every step, branches included, in order.
+    /// Every step, branches included, in call order: by the site of each, else as the items list them.
     pub fn steps(&self) -> Vec<&Step> {
-        self.items
+        let mut steps: Vec<&Step> = self
+            .items
             .iter()
             .flat_map(|it| match it {
                 Item::Step(s) => vec![s],
                 Item::Choice { members, .. } => members.iter().map(|m| &m.step).collect(),
             })
-            .collect()
+            .collect();
+        steps.sort_by_key(|s| s.site);
+        steps
     }
 }
 
@@ -1259,6 +1460,22 @@ struct Ix<'g> {
     places: RefCell<FxHashMap<*const Touch, u32>>,
     /// The calls of each body, with what each may run (`Ix::may_run`), by the body.
     calls: RefCell<FxHashMap<(u32, u32), Rc<[Call]>>>,
+    /// The functions some touch names as a caller that makes its path whole (`Touch::by`): the conditions what ran
+    /// before a step is kept of.
+    conditions: RefCell<Option<Rc<FxHashSet<u32>>>>,
+    /// The conditions each body may run, itself included, by the body (`Ix::ran`).
+    ran: RefCell<FxHashMap<(u32, u32), Rc<BTreeSet<u32>>>>,
+    /// The classes whose constructors each body may run, by the body, and by the function on a class not known
+    /// (`Ix::builds`).
+    built: RefCell<FxHashMap<(u32, u32), Rc<BTreeSet<u32>>>>,
+    builds: RefCell<FxHashMap<u32, Rc<BTreeSet<u32>>>>,
+    /// The classes the conditions consulted below each body set up, by the body (`Ix::asked`).
+    asked: RefCell<FxHashMap<(u32, u32), Rc<BTreeSet<u32>>>>,
+    /// What ran before each call of each body inside it, by the body (`Ix::prior`).
+    prior: RefCell<FxHashMap<(u32, u32), Rc<[Box<[u32]>]>>>,
+    /// The conditions that set up the object of a method each body may run, and that method consults, by the body
+    /// (`Ix::set_up`).
+    set_up: RefCell<FxHashMap<(u32, u32), Rc<BTreeSet<u32>>>>,
 }
 
 /// Names numbered in the order they are first asked for: the same text, the same number.
@@ -1268,12 +1485,13 @@ struct Names {
     text: Vec<String>,
 }
 
-/// A call in a body run on a class: its line, what it may run, one of them, each on the class it runs on, and whether it
-/// stands in an arm.
+/// A call in a body run on a class: its place among the body's sites, its line, what it may run, one of them, each on
+/// the class it runs on, and the arms of the choices it stands in (`Site::arms`).
 struct Call {
+    site: usize,
     line: u32,
     runs: Vec<(String, String)>,
-    in_arm: bool,
+    arms: Vec<(u32, u32)>,
 }
 
 impl<'g> Ix<'g> {
@@ -1298,6 +1516,13 @@ impl<'g> Ix<'g> {
             names: RefCell::default(),
             places: RefCell::default(),
             calls: RefCell::default(),
+            conditions: RefCell::default(),
+            ran: RefCell::default(),
+            built: RefCell::default(),
+            builds: RefCell::default(),
+            asked: RefCell::default(),
+            prior: RefCell::default(),
+            set_up: RefCell::default(),
         }
     }
 
@@ -1337,17 +1562,26 @@ impl<'g> Ix<'g> {
         let calls: Rc<[Call]> = n
             .sites
             .iter()
-            .filter(|s| !s.to.is_empty())
-            .map(|s| Call { line: s.line, runs: self.may_run(s, on), in_arm: !s.arms.is_empty() })
+            .enumerate()
+            .filter(|(_, s)| !s.to.is_empty())
+            .map(|(site, s)| Call { site, line: s.line, runs: self.may_run(s, on), arms: s.arms.clone() })
             .collect();
         self.calls.borrow_mut().insert(body, calls.clone());
         calls
     }
 
-    /// The callers that make a touch whole in body `id` run on class `on`, numbered `root`, or in any body its calls may
-    /// run (`may_run`), through every call: worked out once a body, a body already worked out answering for all it runs.
-    fn consulted(&self, root: (u32, u32), id: &str, on: &str) -> Rc<BTreeSet<u32>> {
-        if let Some(c) = self.consulted.borrow().get(&root) {
+    /// What `own` says of body `id` run on class `on`, numbered `root`, and of every body its calls may run (`may_run`),
+    /// through every call, together: worked out once a body in `cache`, a body already worked out answering for all it
+    /// runs.
+    fn closure(
+        &self,
+        cache: &RefCell<FxHashMap<(u32, u32), Rc<BTreeSet<u32>>>>,
+        root: (u32, u32),
+        id: &str,
+        on: &str,
+        own: &dyn Fn(&Node, &str) -> Vec<u32>,
+    ) -> Rc<BTreeSet<u32>> {
+        if let Some(c) = cache.borrow().get(&root) {
             return c.clone();
         }
         let mut out: BTreeSet<u32> = BTreeSet::new();
@@ -1356,15 +1590,13 @@ impl<'g> Ix<'g> {
         while let Some((f, c)) = stack.pop() {
             let k = (self.name(&f), self.name(&c));
             if k != root {
-                if let Some(done) = self.consulted.borrow().get(&k) {
+                if let Some(done) = cache.borrow().get(&k) {
                     out.extend(done.iter().copied());
                     continue;
                 }
             }
             let Some(&n) = self.nodes.get(f.as_str()) else { continue };
-            for t in &n.touches {
-                out.extend(t.by.iter().flat_map(Both::names).map(|f| self.name(f)));
-            }
+            out.extend(own(n, &c));
             for call in self.calls(k, n, &c).iter() {
                 for (t, tc) in &call.runs {
                     if seen.insert((self.name(t), self.name(tc))) {
@@ -1374,7 +1606,136 @@ impl<'g> Ix<'g> {
             }
         }
         let out = Rc::new(out);
-        self.consulted.borrow_mut().insert(root, out.clone());
+        cache.borrow_mut().insert(root, out.clone());
+        out
+    }
+
+    /// The callers that make a touch whole in body `id` run on class `on`, numbered `root`, or in any body its calls may
+    /// run (`may_run`), through every call.
+    fn consulted(&self, root: (u32, u32), id: &str, on: &str) -> Rc<BTreeSet<u32>> {
+        self.closure(&self.consulted, root, id, on, &|n, _| {
+            n.touches.iter().flat_map(|t| t.by.iter().flat_map(Both::names)).map(|f| self.name(f)).collect()
+        })
+    }
+
+    /// The functions some touch names as a caller that makes its path whole, the conditions of `Touch::by` that a route
+    /// meets by reaching them.
+    fn conditions(&self) -> Rc<FxHashSet<u32>> {
+        if let Some(c) = self.conditions.borrow().as_ref() {
+            return c.clone();
+        }
+        let all: FxHashSet<u32> =
+            self.nodes.values().flat_map(|n| &n.touches).flat_map(|t| &t.by).flat_map(Both::members).map(|f| self.name(f)).collect();
+        let all = Rc::new(all);
+        *self.conditions.borrow_mut() = Some(all.clone());
+        all
+    }
+
+    /// The conditions body `id` run on class `on`, numbered `root`, may run, itself included: what has run once a call of
+    /// it has.
+    fn ran(&self, root: (u32, u32), id: &str, on: &str) -> Rc<BTreeSet<u32>> {
+        let conditions = self.conditions();
+        self.closure(&self.ran, root, id, on, &|n, _| Some(self.name(&n.id)).filter(|f| conditions.contains(f)).into_iter().collect())
+    }
+
+    /// The classes whose constructors function `f` may run, itself and each override a call of it by name may run in its
+    /// place included: the objects a call of it sets up.
+    fn builds(&self, f: &str) -> Rc<BTreeSet<u32>> {
+        self.builds_of(self.name(f))
+    }
+
+    /// The classes whose constructors the function numbered `x` may run (`builds`).
+    fn builds_of(&self, x: u32) -> Rc<BTreeSet<u32>> {
+        if let Some(b) = self.builds.borrow().get(&x) {
+            return b.clone();
+        }
+        let f = self.named(x);
+        let f = f.as_str();
+        let ctor = |n: &Node, _: &str| n.cls.as_deref().filter(|_| n.ctor).map(|c| self.name(c)).into_iter().collect();
+        let mut bodies: Vec<(String, String)> = vec![(f.to_string(), String::new())];
+        if let Some(&n) = self.nodes.get(f) {
+            bodies.extend(self.overrides(n).iter().map(|k| split(k)).map(|(g, c)| (g.to_string(), c.to_string())));
+        }
+        let mut out: BTreeSet<u32> = BTreeSet::new();
+        for (g, c) in &bodies {
+            out.extend(self.closure(&self.built, (self.name(g), self.name(c)), g, c, &ctor).iter().copied());
+        }
+        let out = Rc::new(out);
+        self.builds.borrow_mut().insert(x, out.clone());
+        out
+    }
+
+    /// What ran before each call of body `n` run on class `on`, numbered `root` (its `calls`), inside the body, each by its
+    /// number (mathematics.md, "Who makes a path whole"): each call that ran earlier in the same run of it, with all it may
+    /// run. A call before it in the body runs before it unless a choice holds the two in different arms (`Site::arms`); in a
+    /// loop that holds both, any call of the loop has run before it, whichever stands first, since a later round runs
+    /// after an earlier one. The plan reads it alike (`ranInside` in `viewer/plan.js`). Of what ran it keeps the
+    /// conditions the body consults (`consulted`), the only ones a touch below it names: worked out once a body.
+    fn prior(&self, root: (u32, u32), n: &Node, on: &str, calls: &[Call]) -> Rc<[Box<[u32]>]> {
+        if let Some(p) = self.prior.borrow().get(&root) {
+            return p.clone();
+        }
+        let consulted = self.consulted(root, &n.id, on);
+        let runs: Vec<BTreeSet<u32>> = calls
+            .iter()
+            // a body that consults no condition asks nothing of what ran
+            .filter(|_| !consulted.is_empty())
+            .map(|c| {
+                let ran = c.runs.iter().map(|(t, tc)| self.ran((self.name(t), self.name(tc)), t, tc));
+                // of what ran, a condition holds through having run only where it set an object up
+                let kept = |f: &u32| consulted.contains(f) && !self.builds_of(*f).is_empty();
+                ran.flat_map(|r| r.iter().copied().filter(kept).collect::<Vec<_>>()).collect()
+            })
+            .collect();
+        let apart = |a: &Call, b: &Call| a.arms.iter().any(|(c, x)| b.arms.iter().any(|(d, y)| c == d && x != y));
+        let looped = |a: &Call, b: &Call| n.loop_lines.iter().any(|&(s, e)| s <= a.line.min(b.line) && a.line.max(b.line) <= e);
+        let prior: Rc<[Box<[u32]>]> = calls
+            .iter()
+            .map(|x| {
+                let mut ran: BTreeSet<u32> = BTreeSet::new();
+                for (y, r) in calls.iter().zip(&runs).filter(|(_, r)| !r.is_empty()) {
+                    if (y.site < x.site && !apart(y, x)) || looped(y, x) {
+                        ran.extend(r.iter().copied());
+                    }
+                }
+                // what the call's callees consult is all a condition can matter to below it
+                if !ran.is_empty() {
+                    let below: Vec<Rc<BTreeSet<u32>>> =
+                        x.runs.iter().map(|(t, tc)| self.consulted((self.name(t), self.name(tc)), t, tc)).collect();
+                    ran.retain(|f| below.iter().any(|c| c.contains(f)));
+                }
+                ran.into_iter().collect()
+            })
+            .collect();
+        self.prior.borrow_mut().insert(root, prior.clone());
+        prior
+    }
+
+    /// The conditions that set up the object of a method body `id` run on class `on`, numbered `root`, may run (itself
+    /// included), each one that method consults and whose calls reach a constructor of its class: of what ran before the
+    /// body, only these can hold in such a method or below it (`holds`), besides those that set up a class already on the
+    /// chain.
+    fn set_up(&self, root: (u32, u32), id: &str, on: &str) -> Rc<BTreeSet<u32>> {
+        self.closure(&self.set_up, root, id, on, &|n, c| {
+            let Some(cls) = n.cls.as_deref().filter(|_| !n.ctor).map(|c| self.name(c)) else { return vec![] };
+            let consulted = self.consulted((self.name(&n.id), self.name(c)), &n.id, c);
+            consulted.iter().copied().filter(|g| self.builds_of(*g).contains(&cls)).collect()
+        })
+    }
+
+    /// The classes the conditions consulted in body `id` run on class `on`, numbered `root`, set up (`consulted`,
+    /// `builds`): the classes of the methods on a chain that what the body runs asks about.
+    fn asked(&self, root: (u32, u32), id: &str, on: &str) -> Rc<BTreeSet<u32>> {
+        if let Some(a) = self.asked.borrow().get(&root) {
+            return a.clone();
+        }
+        let consulted = self.consulted(root, id, on);
+        let mut out: BTreeSet<u32> = BTreeSet::new();
+        for &g in consulted.iter() {
+            out.extend(self.builds_of(g).iter().copied());
+        }
+        let out = Rc::new(out);
+        self.asked.borrow_mut().insert(root, out.clone());
         out
     }
 
@@ -1460,38 +1821,92 @@ impl<'g> Ix<'g> {
 }
 
 /// The steps in call order, the steps of each choice together, by branch, with what decides each
-/// branch (`whens`, as `Node::whens` holds them).
+/// branch (`whens`, as `Node::whens` holds them). A choice is a coproduct of its arms
+/// (`docs/reference/mathematics.md`, "Coproducts"), and the arms each step sits in (`Site::arms`)
+/// are the path to it through the choices of the body. Where an arm runs no step but those of one
+/// choice inside it, the arm is that choice, and its arms are branches of the choice around it, each
+/// run where every arm on its path holds (`A + (B + C) = A + B + C`: an `else` whose only statement
+/// is an `if`, or an `except` inside an `if`). A choice inside an arm beside other steps of that arm
+/// is a coproduct inside the arm: an item of its own, within the branch it stands in, after the
+/// item it stands in.
 fn grouped(steps: Vec<(Step, Vec<(u32, u32)>)>, whens: &[(u32, u32, String)]) -> Vec<Item> {
-    let choice_of = |arms: &Vec<(u32, u32)>| arms.first().map(|a| a.0);
-    let mut items = vec![];
-    let mut placed = HashSet::new();
+    // the arm a path reaches, and whether every step that runs in it runs in the one choice `c` inside it
+    let only = |arm: &[(u32, u32)], c: u32| {
+        steps.iter().filter(|(_, a)| a.starts_with(arm)).all(|(_, a)| a.get(arm.len()).is_some_and(|x| x.0 == c))
+    };
+    struct Group {
+        branches: Vec<Vec<(u32, u32)>>,
+        depth: usize,
+        members: Vec<Member>,
+        within: Option<(u32, Vec<(u32, u32)>)>,
+    }
+    let mut groups: IndexMap<u32, Group> = IndexMap::new();
+    let branch = |g: &mut Group, p: &[(u32, u32)]| match g.branches.iter().position(|b| b == p) {
+        Some(i) => i,
+        None => {
+            g.branches.push(p.to_vec());
+            g.branches.len() - 1
+        }
+    };
+    // a top-level item: a step, or the choice by its number
+    let mut order: Vec<Result<Step, u32>> = vec![];
     for (step, arms) in &steps {
-        let Some(k) = choice_of(arms) else {
-            items.push(Item::Step(step.clone()));
+        if arms.is_empty() {
+            order.push(Ok(step.clone()));
             continue;
-        };
-        let group: Vec<&(Step, Vec<(u32, u32)>)> = steps.iter().filter(|(_, a)| choice_of(a) == Some(k)).collect();
-        let mut paths: Vec<&Vec<(u32, u32)>> = vec![];
-        for (_, a) in &group {
-            if !paths.contains(&a) {
-                paths.push(a);
+        }
+        // the depth on the path of the choice whose item each choice on it is in
+        let mut own = vec![0usize; arms.len()];
+        for j in 1..arms.len() {
+            own[j] = if only(&arms[..j], arms[j].0) { own[j - 1] } else { j };
+        }
+        for j in (0..arms.len()).filter(|&j| own[j] == j) {
+            let k = arms[j].0;
+            if !groups.contains_key(&k) {
+                let within = (j > 0).then(|| (arms[own[j - 1]].0, arms[..j].to_vec()));
+                groups.insert(k, Group { branches: vec![], depth: j, members: vec![], within });
+                if j == 0 {
+                    order.push(Err(k));
+                }
+            }
+            if j > 0 {
+                branch(&mut groups[&arms[own[j - 1]].0], &arms[..j]);
             }
         }
-        if placed.insert(k) {
-            let members =
-                group.iter().map(|(s, a)| Member { step: s.clone(), branch: paths.iter().position(|p| *p == a).unwrap_or(0) }).collect();
-            // a branch runs when every arm on its path does: an `except` inside an `if`
-            let when: Vec<String> = paths
-                .iter()
-                .map(|p| {
-                    p.iter()
-                        .filter_map(|(c, a)| whens.iter().find(|w| w.0 == *c && w.1 == *a).map(|w| w.2.as_str()))
-                        .collect::<Vec<_>>()
-                        .join(" · ")
-                })
-                .collect();
-            let when = if when.iter().all(String::is_empty) { vec![] } else { when };
-            items.push(Item::Choice { choice: k, members, when });
+        let g = &mut groups[&arms[own[arms.len() - 1]].0];
+        let b = branch(g, arms);
+        g.members.push(Member { step: step.clone(), branch: b });
+    }
+    // what decides a branch, from its choice in: every arm on its path, an `except` inside an `if`
+    let words = |p: &[(u32, u32)]| {
+        p.iter().filter_map(|(c, a)| whens.iter().find(|w| w.0 == *c && w.1 == *a).map(|w| w.2.as_str())).collect::<Vec<_>>().join(" · ")
+    };
+    let item = |k: u32| {
+        let g = &groups[&k];
+        let when: Vec<String> = g.branches.iter().map(|p| words(&p[g.depth..])).collect();
+        let within = g.within.as_ref().map(|(c, p)| (*c, groups[c].branches.iter().position(|b| b == p).unwrap_or(0)));
+        Item::Choice {
+            choice: k,
+            members: g.members.clone(),
+            when: if when.iter().all(String::is_empty) { vec![] } else { when },
+            arms: g.branches.clone(),
+            within,
+        }
+    };
+    // a choice inside an arm comes after the item it stands in
+    let mut items = vec![];
+    for o in order {
+        match o {
+            Ok(s) => items.push(Item::Step(s)),
+            Err(k) => {
+                let mut todo = vec![k];
+                while let Some(c) = todo.pop() {
+                    items.push(item(c));
+                    let inner: Vec<u32> =
+                        groups.iter().filter(|(_, g)| g.within.as_ref().is_some_and(|w| w.0 == c)).map(|(k, _)| *k).collect();
+                    todo.extend(inner.into_iter().rev());
+                }
+            }
         }
     }
     items
@@ -1633,7 +2048,7 @@ mod tests {
             site("", "ok_or_else", (10, 40), vec![at("Options", "opts", 17)], vec![Held::new("Language", "lang")]),
         ];
         let gives_class = HashMap::from([("detect".to_string(), "Language".to_string())]);
-        nest(&mut sites, &gives_class, &mut 0);
+        nest(&mut sites, &gives_class);
         assert_eq!(sites[1].hands, [Held::new("Language", "#0")], "the outer call is handed the inner one's result, not its arguments");
         drop_identities(&mut sites);
         assert_eq!(sites.len(), 1, "an identity is not drawn");
@@ -1650,7 +2065,7 @@ mod tests {
             site("g", "", (2, 6), vec![at("X", "x", 4)], vec![]),
             site("f", "", (0, 10), vec![at("X", "x", 4), at("Y", "y", 8)], vec![]),
         ];
-        nest(&mut sites, &HashMap::from([("g".to_string(), "Z".to_string())]), &mut 0);
+        nest(&mut sites, &HashMap::from([("g".to_string(), "Z".to_string())]));
         assert_eq!(sites[0].gives, [Held::new("Z", "#0")]);
         assert_eq!(sites[1].hands, [Held::new("Y", "y"), Held::new("Z", "#0")]);
     }
@@ -1673,6 +2088,47 @@ mod tests {
     /// A place one arm of a choice writes and another reads is found and changed: the write never runs before
     /// the read. Written in an arm and read after the choice, it is made sure of; written in one choice and read
     /// in a later one, the write may run first. Neither of those changes what was found.
+    /// A choice is a coproduct of its arms (mathematics.md, "Coproducts"), and coproducts are associative: an arm that runs
+    /// nothing but one choice inside it is that choice, `A + (B + C) = A + B + C`, so `if a: x() else: (if b: y() else: z())`
+    /// is the one item `if a: x() elif b: y() else: z()` is, three branches decided alike. A choice beside another step of
+    /// its arm is a coproduct inside that arm, `x ; (y + 1)`, an item within the branch it stands in, never another branch
+    /// beside it (#357).
+    #[test]
+    fn a_choice_that_is_an_arm_is_one_coproduct_with_the_one_around_it() {
+        let step = |i: usize| Step { site: Some(i), ..Step::of(&format!("f{i}")) };
+        let shape = |items: &[Item]| -> Vec<(Vec<(String, usize)>, Vec<String>, Option<(u32, usize)>)> {
+            items
+                .iter()
+                .map(|it| match it {
+                    Item::Step(s) => (vec![(s.to.clone(), 0)], vec![], None),
+                    Item::Choice { members, when, within, .. } => {
+                        (members.iter().map(|m| (m.step.to.clone(), m.branch)).collect(), when.clone(), *within)
+                    }
+                })
+                .collect()
+        };
+        let w = |c: u32, a: u32, t: &str| (c, a, t.to_string());
+        let nested = grouped(
+            vec![(step(0), vec![(0, 0)]), (step(1), vec![(0, 1), (1, 0)]), (step(2), vec![(0, 1), (1, 1)])],
+            &[w(0, 0, "a"), w(0, 1, "otherwise"), w(1, 0, "b"), w(1, 1, "otherwise")],
+        );
+        let elif = grouped(
+            vec![(step(0), vec![(0, 0)]), (step(1), vec![(0, 1)]), (step(2), vec![(0, 2)])],
+            &[w(0, 0, "a"), w(0, 1, "otherwise · b"), w(0, 2, "otherwise · otherwise")],
+        );
+        assert_eq!(shape(&nested), shape(&elif));
+        assert_eq!(nested.len(), 1);
+        // `if a: x(); if b: y()`: the choice of `b` stands in the arm of `a`, beside `x`
+        let inside = grouped(vec![(step(0), vec![(0, 0)]), (step(1), vec![(0, 0), (1, 0)])], &[w(0, 0, "a"), w(1, 0, "b")]);
+        assert_eq!(
+            shape(&inside),
+            [
+                (vec![("f0".to_string(), 0)], vec!["a".to_string()], None),
+                (vec![("f1".to_string(), 0)], vec!["b".to_string()], Some((0, 0)))
+            ]
+        );
+    }
+
     #[test]
     fn arms_of_one_choice_never_run_one_after_the_other() {
         let updated = |arms: Vec<((u32, u32), u32)>, read: u32| {
@@ -1800,7 +2256,7 @@ mod tests {
             site("detect", "", (10, 22), vec![at("Options", "opts", 17)], vec![Held::new("Language", "lang")]),
             site("", "unwrap", (10, 31), vec![at("Options", "opts", 17)], vec![Held::new("Language", "lang")]),
         ];
-        nest(&mut sites, &HashMap::new(), &mut 0);
+        nest(&mut sites, &HashMap::new());
         drop_identities(&mut sites);
         assert_eq!(sites.iter().map(|s| s.to.as_str()).collect::<Vec<_>>(), ["detect"]);
     }
@@ -1832,8 +2288,10 @@ mod tests {
         assert_eq!((up.to.as_str(), up.instead.as_slice()), (source, [key(cached, feed)].as_slice()));
         assert!(b.contains_key(&key(cached, feed)) && b[&key(cached, feed)].alts.is_empty(), "on a feed, nothing runs in its place");
         // what a route does at a place is what its calls may run there: on a feed, `lines` reads the store in one arm
-        // and writes it in the other, the place as `lines` names it (the store from beyond, `self.root / key`)
-        assert_eq!(arrows(&g)["news.read.lines"].updates, ["w:Disk:self.root / key", "w:Disk:{cache}/{url}"]);
+        // and writes it in the other, the place as `lines` names it (the store from beyond, `self.root / key`), the one
+        // context it is called in; `headlines` builds the feed on the store it names, and changes `{cache}/{url}`
+        assert_eq!(arrows(&g)["news.read.lines"].updates, ["w:Disk:self.root / key"]);
+        assert_eq!(arrows(&g)["news.read.headlines"].updates, ["w:Disk:{cache}/{url}"]);
         let g = crate::analyze(&at("shortcut"), &crate::Options::default()).expect("reads the pair");
         assert!(arrows(&g)["news.read.lines"].updates.is_empty(), "the shortcut's lines never reads the store");
     }
@@ -1876,7 +2334,7 @@ mod tests {
             site("make", "", (10, 22), vec![], vec![Held::new("Board", "board")]),
             site("", "copy", (40, 56), vec![at("Board", "board", 50)], vec![Held::new("Board", "board")]),
         ];
-        nest(&mut sites, &HashMap::new(), &mut 0);
+        nest(&mut sites, &HashMap::new());
         drop_identities(&mut sites);
         assert_eq!(sites.iter().map(|s| s.op.as_str()).collect::<Vec<_>>(), ["", "copy"]);
     }

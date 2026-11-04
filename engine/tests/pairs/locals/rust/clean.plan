@@ -1,0 +1,85 @@
+# A name bound to what the language's own code computes of names, with no call, stands for those names (#328): `named`
+# binds the gap between the two levels (`first.db - second.db`) and the array of both (`[first, second]`) to names
+# before it hands each to a step, and `written` writes each where its step is handed it. An operator is no occurrence
+# and a name adds no arrow, so the two routes are one plan: each step takes the two levels, and no value of the body's
+# own (`gap`, `both`) stands between them and the step.
+
+route signal.named
+step named/draw
+step named/list
+
+line entry > named call
+line Level·first > named value
+line Level·second > named value
+line Level·first > named/draw value                  # `draw(gap)`, `let gap = first.db - second.db`
+line Level·second > named/draw value
+line Level·first > named/list value                  # `list(&both)`, `let both = [first, second]`
+line Level·second > named/list value
+line named/draw > Screen own
+line named/list > Screen own
+
+home Level·first named
+home Level·second named
+
+side entry left
+side Screen right
+
+route signal.written
+step written/draw
+step written/list
+
+line entry > written call
+line Level·first > written value
+line Level·second > written value
+line Level·first > written/draw value                # `draw(first.db - second.db)`
+line Level·second > written/draw value
+line Level·first > written/list value                # `list(&[first, second])`
+line Level·second > written/list value
+line written/draw > Screen own
+line written/list > Screen own
+
+home Level·first written
+home Level·second written
+
+side entry left
+side Screen right
+
+# `gathered` writes the vector of both levels out once (`vec![first, second]`): it stands for them, so the step that
+# lists it takes the two levels.
+
+route signal.gathered
+step gathered/list
+
+line entry > gathered call
+line Level·first > gathered value
+line Level·second > gathered value
+line Level·first > gathered/list value               # `list(&both)`, `let both = vec![first, second]`
+line Level·second > gathered/list value
+line gathered/list > Screen own
+
+home Level·first gathered
+home Level·second gathered
+
+side entry left
+side Screen right
+
+# The vector the choice gives, written out in each arm (`let both = if loud { vec![first, second] } else { vec![first] }`): a choice among values the body's own code makes is
+# the body's choice, and its arms run no step, so it has no frame of its own. The name holds the vector the body made by
+# that choice, in its frame, which reads the two levels where it binds the name, and the step after it takes that vector
+# (#366).
+
+route signal.chosen
+step chosen/list
+
+line entry > chosen call
+line Level·first > chosen value                   # read where the body binds the vector
+line Level·second > chosen value
+line Level·both@chosen/~both > chosen/list value  # `list(&both)`
+line chosen/list > Screen own
+
+home Level·first chosen
+home Level·second chosen
+home Level·both@chosen/~both chosen
+
+side entry left
+side Screen right

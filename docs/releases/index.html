@@ -93,6 +93,78 @@ section li{margin:4px 0}
 .bar .v{height:22px;background:var(--key);min-width:2px;position:relative}
 .bar .v span{position:absolute;left:calc(100% + 8px);top:1px;font-family:var(--mono);font-size:13px;color:var(--ink);white-space:nowrap}
 .bars .cap{font-size:13.5px;color:var(--ink-2);margin-top:10px}
+.b-legend{display:flex;flex-wrap:wrap;gap:6px 18px;font-size:13px;color:var(--ink-2);margin:0 0 10px}
+.b-legend i{display:inline-block;width:12px;height:12px;margin-right:6px;vertical-align:-1px}
+.gbar{display:grid;grid-template-columns:minmax(120px,30%) 1fr;gap:12px;align-items:center;margin:10px 0}
+.gbar .l{font-size:14px;color:var(--ink-2)}
+.gpair{display:grid;gap:3px}
+.gbar:has(> .l:empty){grid-template-columns:1fr}
+.gpair .v{height:14px;min-width:2px;position:relative}
+.gpair .v.none{min-width:0}
+.gpair .v span{position:absolute;left:calc(100% + 8px);top:-1px;font-family:var(--mono);font-size:12.5px;color:var(--ink);white-space:nowrap}
+.s0{background:var(--ink-3)}.s1{background:var(--key)}.s2{background:var(--edit)}.s3{background:var(--add)}
+.bench{margin:22px 0;background:var(--panel);border:1px solid var(--line);padding:16px 18px}
+.b-row{border-top:1px solid var(--line);padding:14px 0 6px}
+.b-row:first-child{border-top:0;padding-top:0}
+.b-name{margin:0;font-weight:500;color:var(--ink)}
+.b-card{margin:2px 0 10px;font-family:var(--mono);font-size:12px;color:var(--ink-3)}
+.b-cells{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,220px),1fr));gap:12px 22px}
+.b-cell .l{font-size:13px;color:var(--ink-2);margin:0 0 4px}
+.b-bar{display:grid;grid-template-columns:56px 1fr;gap:8px;align-items:center;font-family:var(--mono);font-size:12px;color:var(--ink-3);margin:3px 0}
+.b-bar .v{height:14px;min-width:2px;position:relative}.b-bar .v.none{min-width:0}
+.b-bar .v span{position:absolute;left:calc(100% + 6px);top:-1px;white-space:nowrap;color:var(--ink)}
+.b-bar.before .v{background:var(--ink-3)}.b-bar.after .v{background:var(--key)}
+.b-ratio{font-family:var(--mono);font-size:12px;color:var(--ink-3);margin:2px 0 0}
+.b-lines{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,260px),1fr));gap:14px 22px}
+.b-lines figure{margin:0}
+.b-lines figcaption{font-size:12.5px;color:var(--ink-2);margin:0 0 2px}
+.b-head{border-top:1px solid var(--line);padding-top:14px;margin:18px 0 10px;font-weight:500;color:var(--ink)}
+.b-sum{display:flex;gap:16px;align-items:baseline;flex-wrap:wrap;margin:0 0 12px}
+.b-sum span{font-size:14px;color:var(--ink-2);max-width:60ch}
+.b-sum .b-big{font-family:var(--mono);font-size:30px;color:var(--ink);max-width:none}
+.b-scale{font-family:var(--mono);font-size:11.5px;color:var(--ink-3);margin:0 0 4px}
+.b-scale .t{display:flex;justify-content:space-between;gap:6px;height:auto;white-space:nowrap}
+.b-who{margin:10px 0 2px;font-size:13px;font-weight:500;color:var(--ink)}
+.b-div{display:grid;grid-template-columns:min(36%,240px) 1fr 64px;gap:10px;align-items:center;margin:3px 0;font-size:12.5px}
+.b-div .l{color:var(--ink-2)}
+.b-div .t{position:relative;height:12px}
+.b-div .m{position:absolute;left:50%;top:-3px;bottom:-3px;border-left:1px solid var(--ink-3)}
+.b-div .d{position:absolute;top:0;height:12px;min-width:1px}
+.b-div .d.faster{background:var(--add)}.b-div .d.slower{background:var(--del)}.b-div .d.same{background:var(--line)}
+.b-div .n{font-family:var(--mono);font-size:12px;white-space:nowrap}
+.b-div .w{grid-column:1/-1;font-size:11.5px;color:var(--ink-3);margin:-2px 0 8px}
+.b-div .w b{font-weight:400;white-space:nowrap}.b-div .w b.faster{color:var(--add)}.b-div .w b.slower{color:var(--del)}
+.b-div .p{position:absolute;top:1px;width:9px;height:9px;margin-left:-4.5px;border-radius:50%;border:1.5px solid var(--panel)}
+.b-div .p.faster{background:var(--add)}.b-div .p.slower{background:var(--del)}.b-div .p.same{background:var(--ink-3)}
+.b-div .d{opacity:.45}
+.b-kept{font-size:13px;color:var(--ink-3);margin:10px 0 0}
+.b-more{border-top:1px solid var(--line);margin-top:14px;padding-top:10px}
+.b-more summary{cursor:pointer;font-weight:500;color:var(--ink);margin-bottom:8px}
+.b-div .n.faster{color:var(--add)}.b-div .n.slower{color:var(--del)}.b-div .n.same{color:var(--ink-3)}
+.bench .cap{font-size:13.5px;color:var(--ink-2);margin:14px 0 0}
+.glance{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,300px),1fr));gap:8px 32px;margin:-24px 0 40px;padding:18px 20px;background:var(--panel);border:1px solid var(--line)}
+.glance-head{font-family:var(--mono);font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:var(--accent);margin:4px 0 6px}
+.glance ul{margin:0 0 8px;padding-left:18px}
+.glance li{margin:3px 0;font-size:15px}
+.glance a{text-decoration:none;color:var(--ink)}
+.glance a:hover{color:var(--accent)}
+.kind{margin-top:56px}
+.kind-head{font-family:var(--mono);font-size:13px;font-weight:500;letter-spacing:.08em;text-transform:uppercase;color:var(--accent);margin:0 0 6px}
+.kind-said{color:var(--ink-2);max-width:70ch;margin:0 0 8px}
+.kind section{padding-top:28px}
+.kind section h2{font-size:24px}
+figcaption.above{font-size:15px;color:var(--ink);margin:14px 0 6px}
+figcaption.above .tag{font-size:12px;vertical-align:1px}
+.shots{margin:18px 0 8px}
+.shots summary{font-size:14px}
+.alike{display:grid;grid-template-columns:minmax(0,2fr) minmax(0,1fr);gap:0;margin:18px 0 10px;background:var(--panel);border:1px solid var(--line)}
+.alike > div{padding:10px 14px;border-top:1px solid var(--line)}
+.alike > div:nth-child(-n+2){border-top:0}
+.alike .forms{font-size:14px;line-height:2}
+.alike .forms code{overflow-wrap:anywhere}
+.alike .eq{color:var(--key);font-weight:600;margin:0 6px}
+.alike .is{font-size:14px;color:var(--ink-2)}
+@media(max-width:700px){.alike{grid-template-columns:1fr}.alike .is{border-top:0;padding-top:0}}
 .pager{display:flex;justify-content:space-between;gap:16px;border-top:1px solid var(--line);margin-top:48px;padding-top:20px;font-family:var(--mono);font-size:14px}
 .pager a{text-decoration:none;color:var(--ink-2)}
 .pager a:hover{color:var(--accent)}
@@ -104,7 +176,7 @@ section li{margin:4px 0}
 <header><img src="../logo.svg" alt=""><span class="name">Atlas</span><nav><a href="../">Atlas</a><a href="https://github.com/raoulg/atlas/releases">Downloads</a></nav></header>
 <p class="eyebrow">Releases</p>
 <h1>What changed, release by release</h1>
-<div class="list"><a href="0.70.0/"><span class="v">0.70.0</span><span class="t">The command is atlas-code, Where the code says nothing, Atlas no longer guesses, Paths shown right in a few more cases, Tensors of one rank stand together, What</span></a><a href="0.69.4/"><span class="v">0.69.4</span><span class="t">What&#x27;s New shows the notes</span></a><a href="0.69.3/"><span class="v">0.69.3</span><span class="t">The command becomes atlas-code</span></a><a href="0.69.2/"><span class="v">0.69.2</span><span class="t">Atlas is free software</span></a><a href="0.69.1/"><span class="v">0.69.1</span><span class="t">A large program opens in seconds, warm or cold</span></a><a href="0.69.0/"><span class="v">0.69.0</span><span class="t">Where your files are, by what keeps them, A type&#x27;s folder, as the code writes it, Names that say where, Atlas Studio, Faster checks</span></a><a href="0.68.0/"><span class="v">0.68.0</span><span class="t">Atlas Studio: Atlas as an app, A hundred times faster, the second time, Which way data goes, Where your files are, in words, The figures a program makes, How a </span></a></div>
+<div class="list"><a href="0.71.0/"><span class="v">0.71.0</span><span class="t">A loop writes only the files it writes, A recursive copy reaches every depth, A file or a connection you hand on keeps its place, An environment variable names </span></a><a href="0.70.0/"><span class="v">0.70.0</span><span class="t">The command is atlas-code, Where the code says nothing, Atlas no longer guesses, Paths shown right in a few more cases, Tensors of one rank stand together, What</span></a><a href="0.69.4/"><span class="v">0.69.4</span><span class="t">What&#x27;s New shows the notes</span></a><a href="0.69.3/"><span class="v">0.69.3</span><span class="t">The command becomes atlas-code</span></a><a href="0.69.2/"><span class="v">0.69.2</span><span class="t">Atlas is free software</span></a><a href="0.69.1/"><span class="v">0.69.1</span><span class="t">A large program opens in seconds, warm or cold</span></a><a href="0.69.0/"><span class="v">0.69.0</span><span class="t">Where your files are, by what keeps them, A type&#x27;s folder, as the code writes it, Names that say where, Atlas Studio, Faster checks</span></a><a href="0.68.0/"><span class="v">0.68.0</span><span class="t">Atlas Studio: Atlas as an app, A hundred times faster, the second time, Which way data goes, Where your files are, in words, The figures a program makes, How a </span></a></div>
 </main>
 </body>
 </html>

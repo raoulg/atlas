@@ -27,9 +27,10 @@ use crate::cache::Check;
 use crate::effects;
 use crate::environment::Environment;
 use crate::knowledge::{self, Registry};
-use crate::model::{Node, NodeKind};
-use crate::repo::{normal, Repo};
+use crate::model::{ext, Dependency, Node, NodeKind};
+use crate::repo::Repo;
 use crate::tree::{named_children, span, text, unquote, walk};
+use path_clean::clean;
 
 /// How many re-exports a path is followed through.
 const DEPTH: u32 = 8;
@@ -60,8 +61,15 @@ impl Environment {
         }
         let holds = self.compiled(package_dir, Registry::Crates);
         let lib = manifest.get("lib").and_then(|l| l.get("path")).and_then(|p| p.as_str()).unwrap_or("src/lib.rs");
-        let file = normal(&package_dir.join(lib));
+        let file = clean(&package_dir.join(lib));
         (!holds && file.is_file()).then_some(file)
+    }
+
+    /// A fetched crate as the dependency it is: its directory, and the version its manifest names.
+    fn dependency(&self, package_dir: &Path) -> Dependency {
+        let manifest: Option<toml::Table> = self.manifest(package_dir, "Cargo.toml").and_then(|t| t.parse().ok());
+        let version = manifest.as_ref().and_then(|m| m.get("package")?.get("version")?.as_str()).unwrap_or_default();
+        Dependency { dir: crate::tree::path_str(package_dir), version: version.to_string() }
     }
 }
 
@@ -126,7 +134,7 @@ fn dependencies(repo: &Repo, crates: &[Crate]) -> (HashMap<String, PathBuf>, Env
                 let package = spec.get("package").and_then(|p| p.as_str()).unwrap_or(key);
                 let dir = match spec.get("path").and_then(|p| p.as_str()) {
                     Some(p) => {
-                        let d = normal(&base.join(p));
+                        let d = clean(&base.join(p));
                         let inside = Repo::resolved(&d).map(|abs| abs.starts_with(&here));
                         if inside != Some(true) {
                             env.checks.push(Check::Tree(d.clone()));
@@ -187,6 +195,7 @@ impl Libraries {
 
     /// A library's module from its file, before its symbols and imports are collected.
     fn module(&mut self, id: &str, file: &Path) -> Option<Module> {
+        let _parse = crate::clock::of("parse", id.split('.').next().unwrap_or(id), true);
         if !self.trees.contains_key(file) {
             let src = self.env.source(file)?;
             let tree = self.parser.as_mut()?.parse(&src, None)?;
@@ -227,6 +236,7 @@ impl Libraries {
     /// A module parsed to follow a path through.
     fn parsed(&mut self, id: &str, crate_ids: &HashMap<String, String>) -> Option<&Module> {
         if !self.parsed.contains_key(id) {
+            let _reach = crate::clock::of("reach", id.split('.').next().unwrap_or(id), true);
             let file = self.files.get(id).cloned();
             let m = file.and_then(|f| self.module(id, &f)).map(|mut m| {
                 Self::collect(&mut m, &mut GraphBuilder::default(), crate_ids);
@@ -260,7 +270,7 @@ impl Libraries {
         for (i, seg) in path.iter().enumerate().skip(1) {
             let m = self.parsed(&cur, crate_ids)?;
             let onward = |to: &str, from: &[String]| -> Vec<String> {
-                to.trim_start_matches("ext:").split('.').map(String::from).chain(from.iter().cloned()).collect()
+                ext::name(to).split('.').map(String::from).chain(from.iter().cloned()).collect()
             };
             let (candidates, defines) = (children(m).remove(seg), m.symbols.contains_key(seg));
             let next: Vec<Vec<String>> = match m.bindings.get(seg) {
@@ -307,6 +317,7 @@ impl Libraries {
         if modules.contains_key(id) {
             return None;
         }
+        let _items = crate::clock::of("items", id.split('.').next().unwrap_or(id), true);
         let mut m = self.module(id, file)?;
         let root = m.tree.root_node();
         store.files.insert(crate::tree::path_str(file), String::from_utf8_lossy(&m.src).to_string());
@@ -349,7 +360,7 @@ fn children(m: &Module) -> HashMap<String, Vec<PathBuf>> {
             Some(p) => vec![dir.join(p)],
             None => vec![base.join(format!("{name}.rs")), base.join(&name).join("mod.rs")],
         };
-        out.insert(name, candidates.into_iter().map(|c| normal(&c)).collect());
+        out.insert(name, candidates.into_iter().map(|c| clean(&c)).collect());
     }
     out
 }
@@ -361,15 +372,20 @@ fn library_calls(
     crate_ids: &HashMap<String, String>,
     probe: &HashSet<String>,
 ) -> Vec<Vec<String>> {
+    let copied = crate::clock::stage("reach");
     let eval = Eval::new(modules, &store.nodes, crate_ids);
     let returned = returned_classes(store);
+    drop(copied);
     let mut out = vec![];
     for n in store.nodes.values().filter(|n| matches!(n.kind, NodeKind::Function | NodeKind::Method) && probe.contains(&n.module)) {
         let Some(m) = modules.get(&n.module) else { continue };
+        let _reach = crate::clock::of("reach", &m.krate, n.library);
         let Some(d) = def_node(m, n) else { continue };
         let Some(body) = d.child_by_field_name("body") else { continue };
-        let b = Body::new(modules, store, crate_ids, &eval, &returned, m, n, d, body);
-        out.extend(walk(body, &["call_expression"]).into_iter().filter_map(|c| b.library_target(c)));
+        crate::tree::indexed(d, || {
+            let b = Body::new(modules, store, crate_ids, &eval, &returned, m, n, d, body);
+            out.extend(walk(body, &["call_expression"]).into_iter().filter_map(|c| b.library_target(c)));
+        });
     }
     out
 }
@@ -422,12 +438,21 @@ pub(super) fn read(
             }
             defining.insert(def);
         }
+        let items = crate::clock::stage("items");
         collect_impls(modules, store, crate_ids, &fresh);
+        drop(items);
         used.get_or_insert(reached);
         probe = defining.into_iter().filter(|d| fresh.contains(d)).collect();
         if probe.is_empty() {
             break;
         }
     }
+    // each crate read, as the dependency it is
+    for (ident, root) in &lib.roots {
+        if let (Some(_), Some(dir)) = (root, lib.deps.get(ident)) {
+            store.libraries.insert(ident.clone(), lib.env.dependency(dir));
+        }
+    }
+    let _items = crate::clock::stage("items");
     store.mark_library();
 }

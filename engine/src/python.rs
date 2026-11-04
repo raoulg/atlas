@@ -25,7 +25,7 @@ mod paths;
 pub use crate::builder::{foreign_type, ClassInfo, Declared, GraphBuilder, SigInfo};
 use crate::environment::Environment;
 use crate::knowledge;
-use crate::model::{Entry, EntryKind, Node, NodeKind};
+use crate::model::{Dependency, Entry, EntryKind, Node, NodeKind};
 use crate::pytypes::{Ty, Types};
 use crate::repo::Repo;
 use crate::tree::named_children;
@@ -55,11 +55,10 @@ fn scripts(repo: &Repo, root_dir: &Path, packages: &[PathBuf]) -> Vec<PathBuf> {
         let name = d.file_name().and_then(|n| n.to_str()).unwrap_or("");
         knowledge::made_dir(name) || knowledge::TEST_DIRS.contains(&name) || is_project(repo, d)
     };
-    let packaged: HashSet<PathBuf> = packages.iter().flat_map(|d| repo.files_under(d)).collect();
+    let packaged: HashSet<PathBuf> = packages.iter().flat_map(|d| repo.files_under(d, SCRIPTS)).collect();
     let mut out: Vec<PathBuf> = repo
-        .files_under(root_dir)
+        .files_under(root_dir, SCRIPTS)
         .into_iter()
-        .filter(|p| matches!(p.extension().and_then(|x| x.to_str()), Some("py" | "ipynb")))
         .filter(|p| !packaged.contains(p))
         .filter(|p| !p.ancestors().skip(1).take_while(|a| *a != root_dir).any(elsewhere))
         .filter(|p| !knowledge::python_test_file(p.file_name().and_then(|n| n.to_str()).unwrap_or("")))
@@ -77,6 +76,9 @@ fn scripts(repo: &Repo, root_dir: &Path, packages: &[PathBuf]) -> Vec<PathBuf> {
 /// How many directories, from a package up, are looked through for its project: the package,
 /// `src`, the project, and one more for a nested layout.
 pub const PROJECT_ABOVE: usize = 4;
+
+/// The extensions of the files a project runs on their own: scripts and notebooks.
+const SCRIPTS: &[&str] = &["py", "ipynb"];
 
 /// Whether a directory holds a Python project: one of the files the Python tools install or build
 /// a project from (knowledge::PYTHON_PROJECT_FILES), a `pyproject.toml` or a `requirements.txt`
@@ -115,11 +117,11 @@ pub fn packages(repo: &Repo) -> Vec<PathBuf> {
     let manifest = repo.text("pyproject.toml").and_then(|t| t.parse::<toml::Table>().ok()).unwrap_or_default();
     let mut out = named_packages(repo, &manifest);
     for base in package_bases(&manifest) {
-        for d in repo.dirs_in(&base) {
+        for d in repo.dirs_holding(&base, "__init__.py") {
             let name = d.file_name().and_then(|n| n.to_str()).unwrap_or("");
             let elsewhere = knowledge::made_dir(name) || knowledge::TEST_DIRS.contains(&name) || is_project(repo, &d);
             // a package inside another is read with it
-            if !elsewhere && repo.is_file(d.join("__init__.py")) && !out.iter().any(|p| d.starts_with(p) || p.starts_with(&d)) {
+            if !elsewhere && !out.iter().any(|p| d.starts_with(p) || p.starts_with(&d)) {
                 out.push(d);
             }
         }
@@ -209,6 +211,21 @@ fn package_bases(manifest: &toml::Table) -> Vec<PathBuf> {
     bases
 }
 
+/// The name Python imports a file of the project by (`rel`, from the project's root), from the
+/// first of the directories it keeps its packages in that holds it: a flat layout's `ask.py` is
+/// `ask`, as a src layout's `src/ask.py` is.
+fn imported_as(rel: &Path, bases: &[PathBuf]) -> Option<String> {
+    if rel.extension().and_then(|x| x.to_str()) != Some("py") {
+        return None;
+    }
+    let below = bases.iter().find_map(|b| rel.strip_prefix(b).ok())?.with_extension("");
+    let mut parts: Vec<String> = below.components().map(|c| c.as_os_str().to_string_lossy().to_string()).collect();
+    if parts.last().is_some_and(|l| l == "__init__") {
+        parts.pop();
+    }
+    (!parts.is_empty()).then(|| parts.join("."))
+}
+
 /// The value at a path of keys in a manifest.
 fn setting<'t>(manifest: &'t toml::Table, path: &[&str]) -> Option<&'t toml::Value> {
     let (first, rest) = path.split_first()?;
@@ -250,8 +267,7 @@ pub fn parse(repo: &Repo, packages: &[PathBuf], project_root: Option<&Path>, opt
     // that module
     let mut files: Vec<(PathBuf, &Path, bool)> = vec![];
     for d in packages {
-        let mut found: Vec<PathBuf> =
-            repo.files_under(d).into_iter().filter(|p| p.extension().and_then(|x| x.to_str()) == Some("py")).collect();
+        let mut found: Vec<PathBuf> = repo.files_under(d, &["py"]);
         found.sort();
         let single = single_module(repo, d);
         files.extend(found.into_iter().map(|p| (p, d.parent().unwrap_or(Path::new("")), single)));
@@ -270,6 +286,7 @@ pub fn parse(repo: &Repo, packages: &[PathBuf], project_root: Option<&Path>, opt
         if modules.contains_key(&mid) {
             continue;
         }
+        let _parse = crate::clock::of("parse", &package_of(&mid), false);
         let m = load_module(&mut parser, &mid, &p, is_pkg, &repo.bytes(&p).with_context(|| format!("reading {}", p.display()))?)?;
         store.files.insert(crate::tree::path_str(&p), String::from_utf8_lossy(&m.src).to_string());
         store.add_node(Node {
@@ -290,6 +307,9 @@ pub fn parse(repo: &Repo, packages: &[PathBuf], project_root: Option<&Path>, opt
     }
     // the project's scripts and notebooks are routes into its packages
     if let Some(root_dir) = project_root {
+        let manifest = repo.text(root_dir.join("pyproject.toml")).and_then(|t| t.parse::<toml::Table>().ok()).unwrap_or_default();
+        let bases = package_bases(&manifest);
+        let declared = crate::entries::declared_modules(repo, root_dir);
         for p in scripts(repo, root_dir, packages) {
             let rel = p.strip_prefix(root_dir).unwrap_or(&p).to_path_buf();
             let stem = p.file_stem().and_then(|s| s.to_str()).unwrap_or("script").to_string();
@@ -302,6 +322,7 @@ pub fn parse(repo: &Repo, packages: &[PathBuf], project_root: Option<&Path>, opt
                 false => format!("{}.{}", dirs.join("."), stem.replace('.', "_")),
                 true => format!("_root.{}", stem.replace('.', "_")),
             };
+            let _parse = crate::clock::of("parse", &package_of(&mid), false);
             // a script or notebook that does not load is left out, and the rest is read
             let loaded = repo
                 .bytes(&p)
@@ -315,6 +336,20 @@ pub fn parse(repo: &Repo, packages: &[PathBuf], project_root: Option<&Path>, opt
                 }
             };
             store.files.insert(crate::tree::path_str(&p), String::from_utf8_lossy(&m.src).to_string());
+            // a file an entry point names by its import name is a module of the program, entered as
+            // a package's module is: through what the declaration names, and by `python -m` where
+            // it runs as a program
+            let entry = match imported_as(&rel, &bases).filter(|name| declared.contains(name)) {
+                Some(name) => {
+                    let main = runs_as_main(m.tree.root_node(), &m.src).then(|| Entry::new(EntryKind::Cli, format!("python -m {name}")));
+                    store.imported.entry(name).or_insert_with(|| mid.clone());
+                    main
+                }
+                None => Some(Entry::new(
+                    if p.extension().and_then(|x| x.to_str()) == Some("ipynb") { EntryKind::Notebook } else { EntryKind::Script },
+                    crate::tree::path_str(&rel),
+                )),
+            };
             store.add_node(Node {
                 id: mid.clone(),
                 kind: NodeKind::Module,
@@ -323,10 +358,7 @@ pub fn parse(repo: &Repo, packages: &[PathBuf], project_root: Option<&Path>, opt
                 span: Some((1, m.tree.root_node().end_position().row as u32 + 1)),
                 module: mid.clone(),
                 doc: first_docline(Some(m.tree.root_node()), &m.src),
-                entry: Some(Entry::new(
-                    if p.extension().and_then(|x| x.to_str()) == Some("ipynb") { EntryKind::Notebook } else { EntryKind::Script },
-                    crate::tree::path_str(&rel),
-                )),
+                entry,
                 ..Default::default()
             });
             modules.insert(mid, m);
@@ -334,6 +366,7 @@ pub fn parse(repo: &Repo, packages: &[PathBuf], project_root: Option<&Path>, opt
     }
 
     let types = read_libraries(repo, &mut parser, &mut modules, &mut store, &types_root, opts)?;
+    let items = crate::clock::stage("items");
     for m in modules.values_mut() {
         collect_symbols(m, &mut store);
     }
@@ -345,7 +378,9 @@ pub fn parse(repo: &Repo, packages: &[PathBuf], project_root: Option<&Path>, opt
     for m in modules.values() {
         store.bindings.insert(m.id.clone(), m.bindings.clone());
     }
+    drop(items);
     link(&modules, &mut store, &own, &types, &types_root);
+    let _items = crate::clock::stage("items");
     mark_exports(&modules, &mut store, &own);
     route_prefixes(&modules, &mut store, &types, &own);
     store.mark_library();
@@ -370,8 +405,11 @@ fn read_libraries(
 ) -> Result<Types> {
     let entry = |m: &Module| (crate::tree::path_str(&m.path), m.path.clone());
     let mut files: Vec<(String, PathBuf)> = modules.values().map(entry).collect();
+    let typing = crate::clock::stage("types");
     let Some(ty) = Ty::new(repo, root_dir, &files, opts.cache.as_ref()) else { return Ok(Types::default()) };
     let mut types = ty.read(&files, &files);
+    drop(typing);
+    let _reach = crate::clock::stage("reach");
     let mut reached = types.libs.clone();
     let used: HashSet<String> = reached.iter().map(|(m, _)| package_of(m)).collect();
     let mut readable = Readable::default();
@@ -389,8 +427,18 @@ fn read_libraries(
             let is_pkg = path.file_stem().and_then(|s| s.to_str()) == Some("__init__");
             // a library's code is the environment's, not the repository's
             let Some(text) = ty.env.source(&path) else { continue };
+            let parse = crate::clock::of("parse", &package_of(&mid), true);
             let Ok(m) = load_module(parser, &mid, &shown, is_pkg, &text) else { continue };
+            drop(parse);
             store.files.insert(crate::tree::path_str(&shown), String::from_utf8_lossy(&m.src).to_string());
+            // the library as the dependency it is: the directory of its top-level package, or its one module
+            let (root, depth) = (mid.split('.').next().unwrap_or(&mid), mid.split('.').count() - 1 + usize::from(is_pkg));
+            if let Some(top) = shown.ancestors().nth(depth) {
+                store
+                    .libraries
+                    .entry(root.to_string())
+                    .or_insert_with(|| Dependency { dir: crate::tree::path_str(top), ..Default::default() });
+            }
             store.add_node(Node {
                 id: mid.clone(),
                 kind: NodeKind::Module,
@@ -410,12 +458,14 @@ fn read_libraries(
             break;
         }
         if round < depth {
+            let _types = crate::clock::stage("types");
             reached = ty.libs(&fresh, &fresh);
         }
         files.extend(fresh);
     }
     // read together, a call into a library module read as code goes to its definition
     if files.len() > project {
+        let _types = crate::clock::stage("types");
         types = ty.read(&files, &files);
     }
     Ok(types)

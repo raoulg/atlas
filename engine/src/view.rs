@@ -33,6 +33,7 @@ impl<F: Fn(&Node) -> bool> View for Fiber<F> {
             parts: g.parts.clone(),
             nodes: g.nodes.iter().filter(|n| keep.contains(n.id.as_str())).cloned().collect(),
             edges: g.edges.iter().filter(|e| keep.contains(e.src.as_str()) && keep.contains(e.dst.as_str())).cloned().collect(),
+            libraries: g.libraries.clone(),
             files: g
                 .files
                 .iter()
@@ -79,6 +80,7 @@ impl<F: Fn(&Node) -> Option<Node>> View for Quotient<F> {
                 .into_iter()
                 .map(|((src, dst, kind), w)| Edge { src, dst, kind, via: None, weight: Some(w), arms: vec![], uses: false })
                 .collect(),
+            libraries: g.libraries.clone(),
             files: BTreeMap::new(),
             make: g.make.clone(),
             stats: Default::default(),
@@ -383,6 +385,7 @@ fn glue(lib: &Library, dropped: &HashSet<String>) -> HashMap<String, Glued> {
                     }
                     by.insert(rest);
                 }
+                crate::model::absorb(&mut by);
                 let by = if whole { Default::default() } else { by };
                 if by.is_empty() && !whole {
                     continue;

@@ -18,6 +18,6 @@ def summarise(name: str) -> int:
 
 
 def log(source: Path, count: int) -> None:
-    """Write the count of the data file `source` to the log in its directory."""
-    with open(source.parent / "shelf.log", "w") as out:
+    """Add the count of the data file `source` to the log in its directory."""
+    with open(source.parent / "shelf.log", "a") as out:
         out.write(f"{source.name} {count}\n")

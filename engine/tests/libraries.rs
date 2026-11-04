@@ -28,6 +28,8 @@ fn a_library_is_read_as_far_as_the_project_reaches() {
     let node = |id: &str| g.nodes.iter().find(|n| n.id == id);
     let load = node("plotkit.data.load").expect("the function the app calls is read");
     assert!(load.library, "a library's function is marked as one");
+    // the library as the dependency it is: the directory its code is read from, which its files lie under
+    assert!(load.file.starts_with(&g.libraries["plotkit"].dir), "{:?}", g.libraries);
     assert!(load.touches.iter().any(|t| t.kind_name() == "disk_read"), "{:?}", load.touches);
     assert!(edge(&g, "app.main.main", "plotkit.data.load", EdgeKind::Calls));
     assert!(node("plotkit.data.unused").is_none(), "a function nothing reaches is not drawn");

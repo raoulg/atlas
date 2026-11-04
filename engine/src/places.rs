@@ -21,7 +21,7 @@ pub struct Workbench {
 impl Workbench {
     /// The workbench of the worktree `subject` is in, else of `subject` itself; made when missing.
     pub fn of(subject: &Path) -> Workbench {
-        let subject = crate::repo::normal(&std::path::absolute(subject).unwrap_or_else(|_| subject.to_path_buf()));
+        let subject = path_clean::clean(std::path::absolute(subject).unwrap_or_else(|_| subject.to_path_buf()));
         Workbench::at(worktree_top(&subject).join(".atlas"))
     }
 

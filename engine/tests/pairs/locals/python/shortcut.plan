@@ -1,0 +1,97 @@
+# A name bound to what the language's own code computes of names, with no call, stands for those names (#328), and
+# the body's own code reads those names where it reads the name, never where it binds it (#343): `named` binds the gap
+# between the level and the module's quiet level (`first.db - QUIET.db`) and the list of both (`[first, QUIET]`) to names
+# before it hands each to a step, and `written` writes each where its step is handed it. An operator is no occurrence and
+# a name adds no arrow, so the two routes are one plan: each step takes the level and the quiet level, which alone comes
+# from beyond, and the route's own arrow reads neither where the body binds a name to them.
+
+route signal.named
+step named/_draw
+step named/_show
+
+line entry > named call
+line Level·first > named value
+line Level·first > named/_draw value                 # `_draw(gap)`, `gap = first.db - QUIET.db`
+line Level·QUIET > named/_draw value                 # the module's quiet level, from beyond
+line Level·first > named/_show value                 # `_show(both)`, `both = [first, QUIET]`
+line Level·QUIET > named/_show value
+line named/_draw > Screen own
+line named/_show > Screen own
+
+home Level·first named
+home Level·QUIET named
+
+side entry left
+side Screen right
+
+route signal.written
+step written/_draw
+step written/_show
+
+line entry > written call
+line Level·first > written value
+line Level·first > written/_draw value               # `_draw(first.db - QUIET.db)`
+line Level·QUIET > written/_draw value
+line Level·first > written/_show value               # `_show([first, QUIET])`
+line Level·QUIET > written/_show value
+line written/_draw > Screen own
+line written/_show > Screen own
+
+home Level·first written
+home Level·QUIET written
+
+side entry left
+side Screen right
+
+# A name a step changes in place holds a value of its own from its binding on, and stands for nothing (#355): `gathered`
+# binds a list of the first level (`[first]`) and appends the second to it. The body's own code makes the list where it
+# binds it, and reads the first level there; the append is handed that list and the second level and makes the list
+# anew, and the step that shows it takes what the append made. No step takes the first level.
+
+route signal.gathered
+step gathered/append
+step gathered/_show
+
+line entry > gathered call
+line Level·first > gathered value                    # `both: list[Level] = [first]`
+line Level·second > gathered value
+line Level·both@gathered/~both > gathered/append value # `both.append(second)`
+line Level·second > gathered/append value
+line gathered/append > Level·both@gathered/append value
+line Level·both@gathered/append > gathered/_show value # `_show(both)`
+line gathered/_show > Screen own
+
+home Level·first gathered
+home Level·second gathered
+home Level·both@gathered/~both gathered
+home Level·both@gathered/append gathered
+
+side entry left
+side Screen right
+
+# A choice's value is what its arms make of it (#366): `chosen` binds a list of the first level and changes it in one
+# arm. The change takes the list the body made where it binds the name, which stands in the route's frame and not in
+# the arm's, and makes it anew; the arm that does not run keeps it, so what the change makes is one value at the choice's
+# moment, and the step after the choice takes that value, as it would of a list a step made.
+
+route signal.chosen
+choice chosen/?1                                       # `if loud`
+step chosen/?1/append
+step chosen/_show
+
+line entry > chosen call
+line Level·first > chosen value                        # `both: list[Level] = [first]`, read where it is bound
+line Level·second > chosen value
+line Level·both@chosen/~both > chosen/?1/append value  # `both.append(second)`
+line Level·second > chosen/?1/append value
+line chosen/?1/append > Level·both@chosen/?1 value     # made anew in one arm, kept in the other
+line Level·both@chosen/?1 > chosen/_show value         # `_show(both)`
+line chosen/_show > Screen own
+
+home Level·first chosen
+home Level·second chosen
+home Level·both@chosen/~both chosen
+home Level·both@chosen/?1 chosen
+
+side entry left
+side Screen right
