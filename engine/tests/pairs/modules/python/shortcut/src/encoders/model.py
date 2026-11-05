@@ -52,4 +52,6 @@ def batch() -> tuple[Float[Tensor, "batch 384"], Float[Tensor, "batch 512"]]:
 
 def main() -> None:
     image, text = batch()
-    print(predict(Fusion(), image, text))
+    model = Fusion()
+    print(predict(model, image, text))
+    print(model)

@@ -3317,3 +3317,27 @@ fn only_a_torch_module_called_runs_its_forward() {
     assert_eq!(called, BTreeSet::from(["callers.model.Scaler.__call__", "callers.model.Gate.__call__"]));
     assert!(edge(&g, "callers.model.Gate.__call__", "callers.model.Gate.forward", EdgeKind::Calls));
 }
+
+/// An instance handed to a call is no call of it (#423): `print(model)` hands the model on as a value, and the code does
+/// not say that the receiver calls it. Calling an instance runs its `__call__`, or a torch module's `forward`; handing it on
+/// runs neither, in both forms alike. Only `model(..)` itself, or `model.forward(..)`, is a call of what it runs.
+#[test]
+fn an_instance_handed_on_is_no_call_of_it() {
+    let side = |s: &str| {
+        analyze(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/pairs/modules/python").join(s), &Options::default()).unwrap()
+    };
+    let reaches = |g: &Graph, from: &str| -> BTreeSet<String> {
+        let edges = g.edges.iter().filter(|e| e.src == from && e.kind == EdgeKind::Calls).map(|e| e.dst.clone());
+        let sites = g.node(from).into_iter().flat_map(|n| &n.sites).map(|s| s.to.clone()).filter(|t| !t.is_empty());
+        edges.chain(sites).filter(|t| !g.node(t).is_some_and(|n| n.library)).collect()
+    };
+    for s in ["clean", "shortcut"] {
+        let g = side(s);
+        assert_eq!(
+            reaches(&g, "encoders.model.main"),
+            BTreeSet::from(["encoders.model.Fusion".into(), "encoders.model.batch".into(), "encoders.model.predict".into()]),
+            "{s}"
+        );
+    }
+    assert!(reaches(&side("other"), "callers.model.show").is_empty());
+}
