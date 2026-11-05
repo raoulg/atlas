@@ -1,0 +1,235 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Atlas 0.72.0</title>
+<meta name="description" content="What changed in Atlas 0.72.0">
+<link rel="icon" href="../../logo.svg">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#F4F1EC;--panel:#FFFFFF;--ink:#111111;--ink-2:#5A544D;--ink-3:#857D73;--line:#E2DCD3;--accent:#C43A14;
+  --sans:"Outfit","Helvetica Neue",Helvetica,system-ui,sans-serif;--mono:"JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,monospace}
+@media(prefers-color-scheme:dark){:root{--bg:#141210;--panel:#1B1815;--ink:#F4F1EC;--ink-2:#B8B0A5;--ink-3:#8A8178;--line:#2B2621}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);font-size:17px;line-height:1.55}
+a{color:inherit}
+main{max-width:1040px;margin:0 auto;padding:48px 16px 96px}
+header{display:flex;align-items:center;gap:16px;margin-bottom:48px}
+header img{width:44px;height:44px}
+header .name{font-size:22px;font-weight:600;letter-spacing:-.01em}
+header nav{margin-left:auto;display:flex;gap:20px;font-family:var(--mono);font-size:13px}
+header nav a{text-decoration:none;color:var(--ink-2)}
+header nav a:hover{color:var(--ink)}
+.eyebrow{font-family:var(--mono);font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--accent);margin:0}
+h1{font-size:44px;font-weight:500;letter-spacing:-.02em;line-height:1.1;margin:10px 0 18px}
+.lede{font-size:19px;color:var(--ink-2);max-width:66ch;margin:0 0 56px}
+section{border-top:1px solid var(--line);padding:40px 0 8px}
+section h2{font-size:28px;font-weight:500;letter-spacing:-.01em;margin:0 0 14px;line-height:1.2}
+section p,section li{max-width:70ch;color:var(--ink-2)}
+section p{margin:0 0 14px}
+code{font-family:var(--mono);font-size:.86em;background:var(--panel);border:1px solid var(--line);padding:0 4px}
+.issues{font-family:var(--mono);font-size:12.5px;color:var(--ink-3);margin-top:6px}
+.issues a{color:var(--ink-3);text-decoration:none}
+.issues a:hover{color:var(--accent)}
+.pictures{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,420px),1fr));gap:16px;margin:22px 0 10px}
+.pictures a{display:block;background:var(--panel);border:1px solid var(--line);padding:6px}
+.pictures img{display:block;width:100%;height:auto}
+.list a{display:flex;gap:18px;align-items:baseline;padding:14px 0;border-top:1px solid var(--line);text-decoration:none}
+.list .v{font-family:var(--mono);font-size:15px;min-width:90px}
+.list .t{color:var(--ink-2)}
+footer{margin-top:64px;font-family:var(--mono);font-size:12px;color:var(--ink-3)}
+:root{--add:#2E8B57;--del:#C0361C;--edit:#B26A00;--key:#1D5A73}
+@media(prefers-color-scheme:dark){:root{--add:#6CC08C;--del:#F2643C;--edit:#E0A24A;--key:#86B9C9}}
+.legend{display:flex;flex-wrap:wrap;gap:8px 18px;font-size:14px;color:var(--ink-2);margin:-30px 0 48px}
+.legend span{display:inline-flex;align-items:center;gap:7px}
+.swatch{width:18px;height:12px;border:3px solid;border-radius:2px}
+.card{background:var(--panel);border:1px solid var(--line);padding:16px 18px;margin:20px 0}
+.card h3{font-size:16px;font-weight:500;margin:0 0 12px}
+.card h3 a{text-decoration:none;color:var(--ink-3);font-family:var(--mono);font-size:13px;margin-right:6px}
+.pair{display:grid;gap:12px}
+.pair figure{margin:0}
+.pair .shot{overflow-x:auto;border:1px solid var(--line);background:var(--bg);padding:6px}
+.pair .shot pre{border:0;background:none;margin:0;padding:4px;font-size:12px;max-width:none;max-height:340px}
+@media(min-width:900px){.pair:has(pre){grid-template-columns:1fr 1fr}}
+.pair img{display:block;max-width:100%;height:auto}
+figcaption{font-size:13.5px;color:var(--ink-2);margin-top:6px}
+.tag{font-family:var(--mono);font-size:11.5px;padding:1px 6px;border:1.5px solid;margin-right:6px}
+.tag.before{color:var(--del)}.tag.after{color:var(--add)}
+.where{font-family:var(--mono);font-size:12px;color:var(--ink-3);margin:0 0 8px}
+details{margin-top:12px}
+summary{cursor:pointer;font-size:13.5px;color:var(--ink-2)}
+pre{font-family:var(--mono);font-size:13px;background:var(--panel);border:1px solid var(--line);padding:12px 14px;overflow:auto;max-width:70ch}
+pre code{background:none;border:0;padding:0}
+.hero{margin:6px 0 24px;border:1px solid var(--line);background:var(--panel);padding:8px}
+.hero img{display:block;width:100%;height:auto}
+.example{margin:18px 0 6px}
+.example pre{margin:0 0 14px}
+@media(min-width:900px){.pair{grid-template-columns:1fr 1fr;align-items:start}}
+.pair.stack{grid-template-columns:1fr}
+section ul{padding-left:20px;margin:0 0 16px}
+section li{margin:4px 0}
+.diagram{margin:22px 0;background:var(--panel);border:1px solid var(--line);padding:14px}
+.diagram svg{display:block;width:100%;height:auto;max-height:340px}
+.diagram figcaption{font-size:14px;color:var(--ink-3);margin-top:10px}
+.d-frame{fill:none;stroke:var(--ink-3);stroke-width:1.5}
+.d-box{fill:var(--bg);stroke:var(--line);stroke-width:1.5}
+.d-key{stroke:var(--key);stroke-width:2}
+.d-engine{fill:var(--panel);stroke:var(--ink-3)}
+.d-ground{fill:var(--line);stroke:none}
+.d-title{font:600 15px var(--sans);fill:var(--ink)}
+.d-name{font:500 14px var(--mono);fill:var(--ink)}
+.d-note{font:13px var(--sans);fill:var(--ink-2)}
+.d-label{font:13px var(--sans);fill:var(--ink-2)}
+.d-arrow{fill:none;stroke:var(--ink-3);stroke-width:1.6;marker-end:url(#d-head)}
+.d-before{stroke:var(--del)}.d-after{stroke:var(--add)}
+.d-law{font:28px var(--sans);fill:var(--key)}
+.d-broken{fill:var(--del)}
+.d-axis{stroke:var(--ink-3);stroke-width:1.4;fill:none}.d-grid{stroke:var(--line);stroke-dasharray:4 4}
+.d-curve{fill:none;stroke:var(--key);stroke-width:3}.d-dot{fill:var(--key)}
+.bars{margin:22px 0;background:var(--panel);border:1px solid var(--line);padding:16px 18px;max-width:760px}
+.bar{display:grid;grid-template-columns:minmax(120px,30%) 1fr;gap:12px;align-items:center;margin:8px 0}
+.bar .l{font-size:14px;color:var(--ink-2)}
+.bar .v{height:22px;background:var(--key);min-width:2px;position:relative}
+.bar .v span{position:absolute;left:calc(100% + 8px);top:1px;font-family:var(--mono);font-size:13px;color:var(--ink);white-space:nowrap}
+.bars .cap{font-size:13.5px;color:var(--ink-2);margin-top:10px}
+.b-legend{display:flex;flex-wrap:wrap;gap:6px 18px;font-size:13px;color:var(--ink-2);margin:0 0 10px}
+.b-legend i{display:inline-block;width:12px;height:12px;margin-right:6px;vertical-align:-1px}
+.gbar{display:grid;grid-template-columns:minmax(120px,30%) 1fr;gap:12px;align-items:center;margin:10px 0}
+.gbar .l{font-size:14px;color:var(--ink-2)}
+.gpair{display:grid;gap:3px}
+.gbar:has(> .l:empty){grid-template-columns:1fr}
+.gpair .v{height:14px;min-width:2px;position:relative}
+.gpair .v.none{min-width:0}
+.gpair .v span{position:absolute;left:calc(100% + 8px);top:-1px;font-family:var(--mono);font-size:12.5px;color:var(--ink);white-space:nowrap}
+.s0{background:var(--ink-3)}.s1{background:var(--key)}.s2{background:var(--edit)}.s3{background:var(--add)}
+.bench{margin:22px 0;background:var(--panel);border:1px solid var(--line);padding:16px 18px}
+.b-row{border-top:1px solid var(--line);padding:14px 0 6px}
+.b-row:first-child{border-top:0;padding-top:0}
+.b-name{margin:0;font-weight:500;color:var(--ink)}
+.b-card{margin:2px 0 10px;font-family:var(--mono);font-size:12px;color:var(--ink-3)}
+.b-cells{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,220px),1fr));gap:12px 22px}
+.b-cell .l{font-size:13px;color:var(--ink-2);margin:0 0 4px}
+.b-bar{display:grid;grid-template-columns:56px 1fr;gap:8px;align-items:center;font-family:var(--mono);font-size:12px;color:var(--ink-3);margin:3px 0}
+.b-bar .v{height:14px;min-width:2px;position:relative}.b-bar .v.none{min-width:0}
+.b-bar .v span{position:absolute;left:calc(100% + 6px);top:-1px;white-space:nowrap;color:var(--ink)}
+.b-bar.before .v{background:var(--ink-3)}.b-bar.after .v{background:var(--key)}
+.b-ratio{font-family:var(--mono);font-size:12px;color:var(--ink-3);margin:2px 0 0}
+.b-lines{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,260px),1fr));gap:14px 22px}
+.b-lines figure{margin:0}
+.b-lines figcaption{font-size:12.5px;color:var(--ink-2);margin:0 0 2px}
+.b-head{border-top:1px solid var(--line);padding-top:14px;margin:18px 0 10px;font-weight:500;color:var(--ink)}
+.b-sum{display:flex;gap:16px;align-items:baseline;flex-wrap:wrap;margin:0 0 12px}
+.b-sum span{font-size:14px;color:var(--ink-2);max-width:60ch}
+.b-sum .b-big{font-family:var(--mono);font-size:30px;color:var(--ink);max-width:none}
+.b-scale{font-family:var(--mono);font-size:11.5px;color:var(--ink-3);margin:0 0 4px}
+.b-scale .t{display:flex;justify-content:space-between;gap:6px;height:auto;white-space:nowrap}
+.b-who{margin:10px 0 2px;font-size:13px;font-weight:500;color:var(--ink)}
+.b-div{display:grid;grid-template-columns:min(36%,240px) 1fr 64px;gap:10px;align-items:center;margin:3px 0;font-size:12.5px}
+.b-div .l{color:var(--ink-2)}
+.b-div .t{position:relative;height:12px}
+.b-div .m{position:absolute;left:50%;top:-3px;bottom:-3px;border-left:1px solid var(--ink-3)}
+.b-div .d{position:absolute;top:0;height:12px;min-width:1px}
+.b-div .d.faster{background:var(--add)}.b-div .d.slower{background:var(--del)}.b-div .d.same{background:var(--line)}
+.b-div .n{font-family:var(--mono);font-size:12px;white-space:nowrap}
+.b-div .w{grid-column:1/-1;font-size:11.5px;color:var(--ink-3);margin:-2px 0 8px}
+.b-div .w b{font-weight:400;white-space:nowrap}.b-div .w b.faster{color:var(--add)}.b-div .w b.slower{color:var(--del)}
+.b-div .p{position:absolute;top:1px;width:9px;height:9px;margin-left:-4.5px;border-radius:50%;border:1.5px solid var(--panel)}
+.b-div .p.faster{background:var(--add)}.b-div .p.slower{background:var(--del)}.b-div .p.same{background:var(--ink-3)}
+.b-div .d{opacity:.45}
+.b-kept{font-size:13px;color:var(--ink-3);margin:10px 0 0}
+.b-more{border-top:1px solid var(--line);margin-top:14px;padding-top:10px}
+.b-more summary{cursor:pointer;font-weight:500;color:var(--ink);margin-bottom:8px}
+.b-div .n.faster{color:var(--add)}.b-div .n.slower{color:var(--del)}.b-div .n.same{color:var(--ink-3)}
+.bench .cap{font-size:13.5px;color:var(--ink-2);margin:14px 0 0}
+.glance{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,300px),1fr));gap:8px 32px;margin:-24px 0 40px;padding:18px 20px;background:var(--panel);border:1px solid var(--line)}
+.glance-head{font-family:var(--mono);font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:var(--accent);margin:4px 0 6px}
+.glance ul{margin:0 0 8px;padding-left:18px}
+.glance li{margin:3px 0;font-size:15px}
+.glance a{text-decoration:none;color:var(--ink)}
+.glance a:hover{color:var(--accent)}
+.kind{margin-top:56px}
+.kind-head{font-family:var(--mono);font-size:13px;font-weight:500;letter-spacing:.08em;text-transform:uppercase;color:var(--accent);margin:0 0 6px}
+.kind-said{color:var(--ink-2);max-width:70ch;margin:0 0 8px}
+.kind section{padding-top:28px}
+.kind section h2{font-size:24px}
+figcaption.above{font-size:15px;color:var(--ink);margin:14px 0 6px}
+figcaption.above .tag{font-size:12px;vertical-align:1px}
+.shots{margin:18px 0 8px}
+.shots summary{font-size:14px}
+.alike{display:grid;grid-template-columns:minmax(0,2fr) minmax(0,1fr);gap:0;margin:18px 0 10px;background:var(--panel);border:1px solid var(--line)}
+.alike > div{padding:10px 14px;border-top:1px solid var(--line)}
+.alike > div:nth-child(-n+2){border-top:0}
+.alike .forms{font-size:14px;line-height:2}
+.alike .forms code{overflow-wrap:anywhere}
+.alike .eq{color:var(--key);font-weight:600;margin:0 6px}
+.alike .is{font-size:14px;color:var(--ink-2)}
+@media(max-width:700px){.alike{grid-template-columns:1fr}.alike .is{border-top:0;padding-top:0}}
+.pager{display:flex;justify-content:space-between;gap:16px;border-top:1px solid var(--line);margin-top:48px;padding-top:20px;font-family:var(--mono);font-size:14px}
+.pager a{text-decoration:none;color:var(--ink-2)}
+.pager a:hover{color:var(--accent)}
+.pager .newer{margin-left:auto}
+</style>
+</head>
+<body>
+<main>
+<header><img src="../../logo.svg" alt=""><span class="name">Atlas</span>
+<nav><a href="../">Releases</a><a href="../../">Atlas</a><a href="https://github.com/raoulg/atlas/releases/tag/v0.72.0">Download</a></nav></header>
+<p class="eyebrow">Release 0.72.0</p>
+<h1>What changed in Atlas 0.72.0</h1>
+<div class="lede"><p>Atlas 0.72.0 reads a PyTorch model the way its author writes it: a submodule that is called runs its <code>forward</code>, and every value between two steps keeps the shape its jaxtyping annotation gives it. A model&#x27;s forward pass draws as a chain of shapes, from its inputs to its logits. The overview draws what each function gives back, and leaves the program&#x27;s tests out. A path built by helper functions is the whole path.</p></div>
+<nav class="glance"><div class="glance-kind"><p class="glance-head">Was drawn wrong, now drawn right</p><ul><li><a href="#a-pytorch-model-draws-its-forward-pass-as-a-chain-of-shapes">A PyTorch model draws its forward pass as a chain of shapes</a></li><li><a href="#the-overview-draws-what-each-function-gives-back">The overview draws what each function gives back</a></li><li><a href="#a-path-built-through-helpers-is-the-whole-path">A path built through helpers is the whole path</a></li><li><a href="#smaller-things-that-were-drawn-wrong">Smaller things that were drawn wrong</a></li></ul></div><div class="glance-kind"><p class="glance-head">Studio, the page and the agent</p><ul><li><a href="#the-overview-shows-your-program-not-its-tests">The overview shows your program, not its tests</a></li></ul></div><div class="glance-kind"><p class="glance-head">Speed</p><ul><li><a href="#measured-on-five-programs-the-same-in-every-release">Measured on five programs, the same in every release</a></li></ul></div></nav>
+<div class="kind"><h2 class="kind-head">Was drawn wrong, now drawn right</h2><p class="kind-said">Each of these drew something your code does not do. In a picture of Atlas, a red outline is what only the release before draws, a green one what only this release draws.</p><section id="a-pytorch-model-draws-its-forward-pass-as-a-chain-of-shapes"><h2>A PyTorch model draws its forward pass as a chain of shapes</h2><p>A torch model calls its submodules, <code>self.projection(x)</code> or <code>model(x)</code>, and <code>nn.Module</code> runs their <code>forward</code>. Atlas did not follow such a call, so a model drew as steps that lead nowhere unless every call was written <code>self.projection.forward(x)</code>. The values between the steps lost their shape as well: a type checker reads <code>Float[Tensor, &quot;batch 128&quot;]</code> as a plain <code>Tensor</code>. Now calling a module is calling its <code>forward</code>, and each value between two steps carries the shape the code declares: a parameter&#x27;s, an annotated local&#x27;s, or what the function that made it returns. Handing a model on, as in <code>print(model)</code>, is handing on a value, and runs no <code>forward</code>.</p><figure class="diagram"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 390" role="img" aria-label="A model’s forward pass drawn as a chain of shapes: batch 384 and batch 512 go through dino_projection and resnet_projection to batch 128 each, concatenate to batch 256, and head to batch 47. Calling a submodule, self.head(z), is calling self.head.forward(z): one step into forward. Handing a model on, print(model), is handing on a value: no step into forward."><defs><marker id="d-head" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 L10 5 L0 10 z" style="fill:var(--ink-3)"/></marker></defs>
+<defs><marker id="fw-g" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" style="fill:var(--ink-3)"/></marker><marker id="fw-k" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" style="fill:var(--key)"/></marker></defs>
+<text x="20" y="30" style="font-family:var(--sans);font-size:15px;fill:var(--ink);text-anchor:start;font-weight:600">a model’s forward pass, as its code calls it</text>
+<rect x="20" y="58" width="110" height="34" rx="3" style="fill:var(--panel);stroke:var(--ink-3);stroke-width:1.4"/><rect x="20" y="58" width="4" height="34" style="fill:var(--ink-3)"/><text x="77" y="79.5" style="font-family:var(--mono);font-size:13px;fill:var(--ink);text-anchor:middle">batch 384</text>
+<rect x="20" y="118" width="110" height="34" rx="3" style="fill:var(--panel);stroke:var(--ink-3);stroke-width:1.4"/><rect x="20" y="118" width="4" height="34" style="fill:var(--ink-3)"/><text x="77" y="139.5" style="font-family:var(--mono);font-size:13px;fill:var(--ink);text-anchor:middle">batch 512</text>
+<rect x="158" y="58" width="150" height="34" rx="17.0" style="fill:var(--key);fill-opacity:0.12;stroke:var(--key);stroke-width:1.8"/><text x="233" y="79.5" style="font-family:var(--mono);font-size:13px;fill:var(--key);text-anchor:middle;font-weight:600">dino_projection</text>
+<rect x="158" y="118" width="150" height="34" rx="17.0" style="fill:var(--key);fill-opacity:0.12;stroke:var(--key);stroke-width:1.8"/><text x="233" y="139.5" style="font-family:var(--mono);font-size:13px;fill:var(--key);text-anchor:middle;font-weight:600">resnet_projection</text>
+<rect x="336" y="58" width="110" height="34" rx="3" style="fill:var(--panel);stroke:var(--ink-3);stroke-width:1.4"/><rect x="336" y="58" width="4" height="34" style="fill:var(--ink-3)"/><text x="393" y="79.5" style="font-family:var(--mono);font-size:13px;fill:var(--ink);text-anchor:middle">batch 128</text>
+<rect x="336" y="118" width="110" height="34" rx="3" style="fill:var(--panel);stroke:var(--ink-3);stroke-width:1.4"/><rect x="336" y="118" width="4" height="34" style="fill:var(--ink-3)"/><text x="393" y="139.5" style="font-family:var(--mono);font-size:13px;fill:var(--ink);text-anchor:middle">batch 128</text>
+<rect x="478" y="88" width="120" height="34" rx="17.0" style="fill:var(--key);fill-opacity:0.12;stroke:var(--key);stroke-width:1.8"/><text x="538" y="109.5" style="font-family:var(--mono);font-size:13px;fill:var(--key);text-anchor:middle;font-weight:600">concatenate</text>
+<rect x="624" y="88" width="106" height="34" rx="3" style="fill:var(--panel);stroke:var(--ink-3);stroke-width:1.4"/><rect x="624" y="88" width="4" height="34" style="fill:var(--ink-3)"/><text x="679" y="109.5" style="font-family:var(--mono);font-size:13px;fill:var(--ink);text-anchor:middle">batch 256</text>
+<rect x="756" y="88" width="66" height="34" rx="17.0" style="fill:var(--key);fill-opacity:0.12;stroke:var(--key);stroke-width:1.8"/><text x="789" y="109.5" style="font-family:var(--mono);font-size:13px;fill:var(--key);text-anchor:middle;font-weight:600">head</text>
+<rect x="848" y="88" width="92" height="34" rx="3" style="fill:var(--panel);stroke:var(--ink-3);stroke-width:1.4"/><rect x="848" y="88" width="4" height="34" style="fill:var(--ink-3)"/><text x="896" y="109.5" style="font-family:var(--mono);font-size:13px;fill:var(--ink);text-anchor:middle">batch 47</text>
+<line x1="130" y1="75" x2="156" y2="75" style="stroke:var(--ink-3);stroke-width:1.6" marker-end="url(#fw-g)"/>
+<line x1="130" y1="135" x2="156" y2="135" style="stroke:var(--ink-3);stroke-width:1.6" marker-end="url(#fw-g)"/>
+<line x1="308" y1="75" x2="334" y2="75" style="stroke:var(--ink-3);stroke-width:1.6" marker-end="url(#fw-g)"/>
+<line x1="308" y1="135" x2="334" y2="135" style="stroke:var(--ink-3);stroke-width:1.6" marker-end="url(#fw-g)"/>
+<path d="M446,75 C462,75 462,100 476,103" style="fill:none;stroke:var(--ink-3);stroke-width:1.6" marker-end="url(#fw-g)"/>
+<path d="M446,135 C462,135 462,110 476,107" style="fill:none;stroke:var(--ink-3);stroke-width:1.6" marker-end="url(#fw-g)"/>
+<line x1="598" y1="105" x2="622" y2="105" style="stroke:var(--ink-3);stroke-width:1.6" marker-end="url(#fw-g)"/>
+<line x1="730" y1="105" x2="754" y2="105" style="stroke:var(--ink-3);stroke-width:1.6" marker-end="url(#fw-g)"/>
+<line x1="822" y1="105" x2="846" y2="105" style="stroke:var(--ink-3);stroke-width:1.6" marker-end="url(#fw-g)"/>
+<text x="20" y="182" style="font-family:var(--sans);font-size:13px;fill:var(--ink-2);text-anchor:start">each step is a submodule called, <tspan style="font-family:var(--mono)">self.dino_projection(x)</tspan>; each box is the shape the code declares for the value between two steps</text>
+<line x1="20" y1="202" x2="952" y2="202" style="stroke:var(--line);stroke-width:1.5"/>
+<text x="20" y="232" style="font-family:var(--sans);font-size:15px;fill:var(--ink);text-anchor:start;font-weight:600">called: it runs its forward</text>
+<text x="20" y="260" style="font-family:var(--mono);font-size:13px;fill:var(--ink);text-anchor:start">self.head(z)</text>
+<text x="122" y="260" style="font-family:var(--sans);font-size:14px;fill:var(--ink-2);text-anchor:start">≡</text>
+<text x="140" y="260" style="font-family:var(--mono);font-size:13px;fill:var(--ink);text-anchor:start">self.head.forward(z)</text>
+<rect x="20" y="282" width="96" height="34" rx="3" style="fill:var(--panel);stroke:var(--ink-3);stroke-width:1.4"/><rect x="20" y="282" width="4" height="34" style="fill:var(--ink-3)"/><text x="70.0" y="303.5" style="font-family:var(--mono);font-size:13px;fill:var(--ink);text-anchor:middle">batch 256</text>
+<rect x="150" y="282" width="126" height="34" rx="17.0" style="fill:var(--key);fill-opacity:0.12;stroke:var(--key);stroke-width:1.8"/><text x="213.0" y="303.5" style="font-family:var(--mono);font-size:13px;fill:var(--key);text-anchor:middle;font-weight:600">Head.forward</text>
+<rect x="310" y="282" width="80" height="34" rx="3" style="fill:var(--panel);stroke:var(--ink-3);stroke-width:1.4"/><rect x="310" y="282" width="4" height="34" style="fill:var(--ink-3)"/><text x="352.0" y="303.5" style="font-family:var(--mono);font-size:13px;fill:var(--ink);text-anchor:middle">batch 47</text>
+<line x1="116" y1="299" x2="148" y2="299" style="stroke:var(--ink-3);stroke-width:1.6" marker-end="url(#fw-g)"/>
+<line x1="276" y1="299" x2="308" y2="299" style="stroke:var(--ink-3);stroke-width:1.6" marker-end="url(#fw-g)"/>
+<text x="20" y="344" style="font-family:var(--sans);font-size:13px;fill:var(--ink-2);text-anchor:start">one step, into the forward the module’s class runs</text>
+<line x1="480" y1="216" x2="480" y2="350" style="stroke:var(--line);stroke-width:1.5"/>
+<text x="500" y="232" style="font-family:var(--sans);font-size:15px;fill:var(--ink);text-anchor:start;font-weight:600">handed on: it is a value</text>
+<text x="500" y="260" style="font-family:var(--mono);font-size:13px;fill:var(--ink);text-anchor:start">print(model)</text>
+<rect x="500" y="282" width="128" height="34" rx="3" style="fill:var(--panel);stroke:var(--ink-3);stroke-width:1.4"/><rect x="500" y="282" width="4" height="34" style="fill:var(--ink-3)"/><text x="566.0" y="303.5" style="font-family:var(--mono);font-size:13px;fill:var(--ink);text-anchor:middle">Fusion · model</text>
+<rect x="664" y="250" width="136" height="34" rx="17.0" style="fill:none;fill-opacity:0.12;stroke:var(--del);stroke-width:1.8;stroke-dasharray:6 4"/><text x="732.0" y="271.5" style="font-family:var(--mono);font-size:13px;fill:var(--del);text-anchor:middle;font-weight:600">Fusion.forward</text>
+<rect x="844" y="282" width="92" height="34" rx="3" style="fill:var(--key);fill-opacity:0.10;stroke:var(--ink-3);stroke-width:1.4"/>
+<text x="890" y="303" style="font-family:var(--sans);font-size:13px;fill:var(--ink);text-anchor:middle">Screen</text>
+<line x1="628" y1="299" x2="842" y2="299" style="stroke:var(--ink-3);stroke-width:1.6" marker-end="url(#fw-g)"/>
+<path d="M600,282 C620,262 640,267 662,267" style="fill:none;stroke:var(--del);stroke-width:1.6" marker-end="url(#fw-g)"/>
+<text x="732" y="236" style="font-family:var(--sans);font-size:12px;fill:var(--del);text-anchor:middle">no step</text>
+<text x="500" y="344" style="font-family:var(--sans);font-size:13px;fill:var(--ink-2);text-anchor:start">printed, saved or copied, a model is a value: its forward does not run</text>
+<text x="20" y="378" style="font-family:var(--sans);font-size:12px;fill:var(--ink-3);text-anchor:start">teal: a step the code runs · grey: a value and its shape · red dashed: no step, since the code does not run it</text>
+</svg>
+<figcaption>Decided from principle (<a href="https://github.com/raoulg/atlas/issues/422">#422</a>, <a href="https://github.com/raoulg/atlas/issues/423">#423</a>): calling a module is calling its forward, and handing it on is not.</figcaption></figure><details class="shots"><summary>In Atlas: the release before and this one</summary><div class="pair stack"><figure><figcaption class="above"><span class="tag before">0.71</span>the course&#x27;s fusion model, its values <code>Tensor · dino_z</code>, <code>dino</code> and <code>resnet</code> without a shape</figcaption><div class="shot"><img src="../../releases/0.72.0/img/fusion-0.71.png" alt="" loading="lazy"></div></figure><figure><figcaption class="above"><span class="tag after">0.72</span>batch 384 and batch 512, to batch 128 each, batch 256 and batch 47</figcaption><div class="shot"><img src="../../releases/0.72.0/img/fusion-0.72.png" alt="" loading="lazy"></div></figure></div></details><p class="issues"><a href="https://github.com/raoulg/atlas/issues/422">#422</a>, <a href="https://github.com/raoulg/atlas/issues/423">#423</a></p></section><section id="the-overview-draws-what-each-function-gives-back"><h2>The overview draws what each function gives back</h2><p>The packages view drew a type only where the code both made and took it. A function whose result no other function took, such as <code>card(shelf) -&gt; Card</code>, or a model&#x27;s <code>forward</code> that returns <code>Float[Tensor, &quot;*lead {self.out_size}&quot;]</code>, drew what it took and no line to what it gave back. Now every type a function makes or takes is a box of the overview, in the smallest package that holds all its makers and takers.</p><div class="pair stack"><figure><figcaption class="above"><span class="tag before">0.71</span><code>card</code> takes the shelf and gives nothing</figcaption><div class="shot"><img src="../../changes/419-before.png" alt="" loading="lazy"></div></figure><figure><figcaption class="above"><span class="tag after">0.72</span><code>card</code> gives a <code>Card</code></figcaption><div class="shot"><img src="../../changes/419-after.png" alt="" loading="lazy"></div></figure></div><p class="issues"><a href="https://github.com/raoulg/atlas/issues/419">#419</a></p></section><section id="a-path-built-through-helpers-is-the-whole-path"><h2>A path built through helpers is the whole path</h2><p>A path that each folder of it names with a helper function of its own was followed only so deep, so the archive&#x27;s stand-up notes were written to <code>{monthDir.folder}/11/2/meetings/standup.md</code>, the folder three helpers down left as a hole. Now each function&#x27;s return is read once, as a term of its parameters, and the notes are written to <code>~/archive/2026/11/2/meetings/standup.md</code>, in Python, Rust and TypeScript alike. Reading Atlas itself got slightly faster for it (9.8 s to 9.2 s, cold).</p><div class="pair stack"><figure><figcaption class="above"><span class="tag before">0.71</span>a folder left as a hole three helpers down</figcaption><div class="shot"><img src="../../changes/396-before.png" alt="" loading="lazy"></div></figure><figure><figcaption class="above"><span class="tag after">0.72</span>the whole path, <code>~/archive/2026/11/2/meetings/standup.md</code></figcaption><div class="shot"><img src="../../changes/396-after.png" alt="" loading="lazy"></div></figure></div><p class="issues"><a href="https://github.com/raoulg/atlas/issues/396">#396</a></p></section><section id="smaller-things-that-were-drawn-wrong"><h2>Smaller things that were drawn wrong</h2><ul><li>A shape written as <code>Float[Tensor, &quot;...&quot;]</code>, which promises no axis, reads <code>Float Tensor · any rank</code>, where it was drawn raw (<a href="https://github.com/raoulg/atlas/issues/420">#420</a>).</li><li>A group of the places one type holds says how many it stands for (<code>EarlyStopping · 3</code>), and opens to its files as the disk folds them; opening one stopped the page before (<a href="https://github.com/raoulg/atlas/issues/421">#421</a>).</li></ul><p class="issues"><a href="https://github.com/raoulg/atlas/issues/420">#420</a>, <a href="https://github.com/raoulg/atlas/issues/421">#421</a></p></section></div><div class="kind"><h2 class="kind-head">Studio, the page and the agent</h2><section id="the-overview-shows-your-program-not-its-tests"><h2>The overview shows your program, not its tests</h2><p>The overview drew all the code, tests included: a test&#x27;s fixture file and the test&#x27;s own types stood beside the files the program reads. It now draws the program alone, without Rust&#x27;s <code>#[test]</code> and <code>tests/</code>, pytest&#x27;s <code>test_*.py</code> and <code>conftest.py</code>, or a <code>*.test.ts</code>. The chip <code>without test code ✕</code> above the picture says so, and one click on it draws the tests again.</p><div class="pair stack"><figure><figcaption class="above"><span class="tag before">0.71</span>the shelf with its pytest file and the fixture only the test reads</figcaption><div class="shot"><img src="../../changes/400-before.png" alt="" loading="lazy"></div></figure><figure><figcaption class="above"><span class="tag after">0.72</span><code>store</code> opens to <code>disk</code> alone, which reads <code>shelf.csv</code></figcaption><div class="shot"><img src="../../changes/400-after.png" alt="" loading="lazy"></div></figure></div><p class="issues"><a href="https://github.com/raoulg/atlas/issues/400">#400</a></p></section></div><div class="kind"><h2 class="kind-head">Speed</h2><section id="measured-on-five-programs-the-same-in-every-release"><h2>Measured on five programs, the same in every release</h2><p class="issues"><a href="https://github.com/raoulg/atlas/issues/396">#396</a></p></section></div>
+<nav class="pager"><a class="older" href="../0.71.0/">← Atlas 0.71.0</a></nav>
+<footer>Made by tools/release_page.py from docs/releases/0.72.0.md and the notes in docs/changes.</footer>
+</main>
+</body>
+</html>

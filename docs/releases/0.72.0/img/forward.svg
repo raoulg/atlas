@@ -1,0 +1,47 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 390" role="img" aria-label="A model’s forward pass drawn as a chain of shapes: batch 384 and batch 512 go through dino_projection and resnet_projection to batch 128 each, concatenate to batch 256, and head to batch 47. Calling a submodule, self.head(z), is calling self.head.forward(z): one step into forward. Handing a model on, print(model), is handing on a value: no step into forward.">
+<defs><marker id="fw-g" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" style="fill:var(--ink-3)"/></marker><marker id="fw-k" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" style="fill:var(--key)"/></marker></defs>
+<text x="20" y="30" style="font-family:var(--sans);font-size:15px;fill:var(--ink);text-anchor:start;font-weight:600">a model’s forward pass, as its code calls it</text>
+<rect x="20" y="58" width="110" height="34" rx="3" style="fill:var(--panel);stroke:var(--ink-3);stroke-width:1.4"/><rect x="20" y="58" width="4" height="34" style="fill:var(--ink-3)"/><text x="77" y="79.5" style="font-family:var(--mono);font-size:13px;fill:var(--ink);text-anchor:middle">batch 384</text>
+<rect x="20" y="118" width="110" height="34" rx="3" style="fill:var(--panel);stroke:var(--ink-3);stroke-width:1.4"/><rect x="20" y="118" width="4" height="34" style="fill:var(--ink-3)"/><text x="77" y="139.5" style="font-family:var(--mono);font-size:13px;fill:var(--ink);text-anchor:middle">batch 512</text>
+<rect x="158" y="58" width="150" height="34" rx="17.0" style="fill:var(--key);fill-opacity:0.12;stroke:var(--key);stroke-width:1.8"/><text x="233" y="79.5" style="font-family:var(--mono);font-size:13px;fill:var(--key);text-anchor:middle;font-weight:600">dino_projection</text>
+<rect x="158" y="118" width="150" height="34" rx="17.0" style="fill:var(--key);fill-opacity:0.12;stroke:var(--key);stroke-width:1.8"/><text x="233" y="139.5" style="font-family:var(--mono);font-size:13px;fill:var(--key);text-anchor:middle;font-weight:600">resnet_projection</text>
+<rect x="336" y="58" width="110" height="34" rx="3" style="fill:var(--panel);stroke:var(--ink-3);stroke-width:1.4"/><rect x="336" y="58" width="4" height="34" style="fill:var(--ink-3)"/><text x="393" y="79.5" style="font-family:var(--mono);font-size:13px;fill:var(--ink);text-anchor:middle">batch 128</text>
+<rect x="336" y="118" width="110" height="34" rx="3" style="fill:var(--panel);stroke:var(--ink-3);stroke-width:1.4"/><rect x="336" y="118" width="4" height="34" style="fill:var(--ink-3)"/><text x="393" y="139.5" style="font-family:var(--mono);font-size:13px;fill:var(--ink);text-anchor:middle">batch 128</text>
+<rect x="478" y="88" width="120" height="34" rx="17.0" style="fill:var(--key);fill-opacity:0.12;stroke:var(--key);stroke-width:1.8"/><text x="538" y="109.5" style="font-family:var(--mono);font-size:13px;fill:var(--key);text-anchor:middle;font-weight:600">concatenate</text>
+<rect x="624" y="88" width="106" height="34" rx="3" style="fill:var(--panel);stroke:var(--ink-3);stroke-width:1.4"/><rect x="624" y="88" width="4" height="34" style="fill:var(--ink-3)"/><text x="679" y="109.5" style="font-family:var(--mono);font-size:13px;fill:var(--ink);text-anchor:middle">batch 256</text>
+<rect x="756" y="88" width="66" height="34" rx="17.0" style="fill:var(--key);fill-opacity:0.12;stroke:var(--key);stroke-width:1.8"/><text x="789" y="109.5" style="font-family:var(--mono);font-size:13px;fill:var(--key);text-anchor:middle;font-weight:600">head</text>
+<rect x="848" y="88" width="92" height="34" rx="3" style="fill:var(--panel);stroke:var(--ink-3);stroke-width:1.4"/><rect x="848" y="88" width="4" height="34" style="fill:var(--ink-3)"/><text x="896" y="109.5" style="font-family:var(--mono);font-size:13px;fill:var(--ink);text-anchor:middle">batch 47</text>
+<line x1="130" y1="75" x2="156" y2="75" style="stroke:var(--ink-3);stroke-width:1.6" marker-end="url(#fw-g)"/>
+<line x1="130" y1="135" x2="156" y2="135" style="stroke:var(--ink-3);stroke-width:1.6" marker-end="url(#fw-g)"/>
+<line x1="308" y1="75" x2="334" y2="75" style="stroke:var(--ink-3);stroke-width:1.6" marker-end="url(#fw-g)"/>
+<line x1="308" y1="135" x2="334" y2="135" style="stroke:var(--ink-3);stroke-width:1.6" marker-end="url(#fw-g)"/>
+<path d="M446,75 C462,75 462,100 476,103" style="fill:none;stroke:var(--ink-3);stroke-width:1.6" marker-end="url(#fw-g)"/>
+<path d="M446,135 C462,135 462,110 476,107" style="fill:none;stroke:var(--ink-3);stroke-width:1.6" marker-end="url(#fw-g)"/>
+<line x1="598" y1="105" x2="622" y2="105" style="stroke:var(--ink-3);stroke-width:1.6" marker-end="url(#fw-g)"/>
+<line x1="730" y1="105" x2="754" y2="105" style="stroke:var(--ink-3);stroke-width:1.6" marker-end="url(#fw-g)"/>
+<line x1="822" y1="105" x2="846" y2="105" style="stroke:var(--ink-3);stroke-width:1.6" marker-end="url(#fw-g)"/>
+<text x="20" y="182" style="font-family:var(--sans);font-size:13px;fill:var(--ink-2);text-anchor:start">each step is a submodule called, <tspan style="font-family:var(--mono)">self.dino_projection(x)</tspan>; each box is the shape the code declares for the value between two steps</text>
+<line x1="20" y1="202" x2="952" y2="202" style="stroke:var(--line);stroke-width:1.5"/>
+<text x="20" y="232" style="font-family:var(--sans);font-size:15px;fill:var(--ink);text-anchor:start;font-weight:600">called: it runs its forward</text>
+<text x="20" y="260" style="font-family:var(--mono);font-size:13px;fill:var(--ink);text-anchor:start">self.head(z)</text>
+<text x="122" y="260" style="font-family:var(--sans);font-size:14px;fill:var(--ink-2);text-anchor:start">≡</text>
+<text x="140" y="260" style="font-family:var(--mono);font-size:13px;fill:var(--ink);text-anchor:start">self.head.forward(z)</text>
+<rect x="20" y="282" width="96" height="34" rx="3" style="fill:var(--panel);stroke:var(--ink-3);stroke-width:1.4"/><rect x="20" y="282" width="4" height="34" style="fill:var(--ink-3)"/><text x="70.0" y="303.5" style="font-family:var(--mono);font-size:13px;fill:var(--ink);text-anchor:middle">batch 256</text>
+<rect x="150" y="282" width="126" height="34" rx="17.0" style="fill:var(--key);fill-opacity:0.12;stroke:var(--key);stroke-width:1.8"/><text x="213.0" y="303.5" style="font-family:var(--mono);font-size:13px;fill:var(--key);text-anchor:middle;font-weight:600">Head.forward</text>
+<rect x="310" y="282" width="80" height="34" rx="3" style="fill:var(--panel);stroke:var(--ink-3);stroke-width:1.4"/><rect x="310" y="282" width="4" height="34" style="fill:var(--ink-3)"/><text x="352.0" y="303.5" style="font-family:var(--mono);font-size:13px;fill:var(--ink);text-anchor:middle">batch 47</text>
+<line x1="116" y1="299" x2="148" y2="299" style="stroke:var(--ink-3);stroke-width:1.6" marker-end="url(#fw-g)"/>
+<line x1="276" y1="299" x2="308" y2="299" style="stroke:var(--ink-3);stroke-width:1.6" marker-end="url(#fw-g)"/>
+<text x="20" y="344" style="font-family:var(--sans);font-size:13px;fill:var(--ink-2);text-anchor:start">one step, into the forward the module’s class runs</text>
+<line x1="480" y1="216" x2="480" y2="350" style="stroke:var(--line);stroke-width:1.5"/>
+<text x="500" y="232" style="font-family:var(--sans);font-size:15px;fill:var(--ink);text-anchor:start;font-weight:600">handed on: it is a value</text>
+<text x="500" y="260" style="font-family:var(--mono);font-size:13px;fill:var(--ink);text-anchor:start">print(model)</text>
+<rect x="500" y="282" width="128" height="34" rx="3" style="fill:var(--panel);stroke:var(--ink-3);stroke-width:1.4"/><rect x="500" y="282" width="4" height="34" style="fill:var(--ink-3)"/><text x="566.0" y="303.5" style="font-family:var(--mono);font-size:13px;fill:var(--ink);text-anchor:middle">Fusion · model</text>
+<rect x="664" y="250" width="136" height="34" rx="17.0" style="fill:none;fill-opacity:0.12;stroke:var(--del);stroke-width:1.8;stroke-dasharray:6 4"/><text x="732.0" y="271.5" style="font-family:var(--mono);font-size:13px;fill:var(--del);text-anchor:middle;font-weight:600">Fusion.forward</text>
+<rect x="844" y="282" width="92" height="34" rx="3" style="fill:var(--key);fill-opacity:0.10;stroke:var(--ink-3);stroke-width:1.4"/>
+<text x="890" y="303" style="font-family:var(--sans);font-size:13px;fill:var(--ink);text-anchor:middle">Screen</text>
+<line x1="628" y1="299" x2="842" y2="299" style="stroke:var(--ink-3);stroke-width:1.6" marker-end="url(#fw-g)"/>
+<path d="M600,282 C620,262 640,267 662,267" style="fill:none;stroke:var(--del);stroke-width:1.6" marker-end="url(#fw-g)"/>
+<text x="732" y="236" style="font-family:var(--sans);font-size:12px;fill:var(--del);text-anchor:middle">no step</text>
+<text x="500" y="344" style="font-family:var(--sans);font-size:13px;fill:var(--ink-2);text-anchor:start">printed, saved or copied, a model is a value: its forward does not run</text>
+<text x="20" y="378" style="font-family:var(--sans);font-size:12px;fill:var(--ink-3);text-anchor:start">teal: a step the code runs · grey: a value and its shape · red dashed: no step, since the code does not run it</text>
+</svg>
