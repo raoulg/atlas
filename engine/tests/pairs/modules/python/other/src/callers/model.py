@@ -33,3 +33,9 @@ class Doubled(Gate):
 
 def run(scaler: Scaler, gate: Gate, doubled: Doubled, x: Float[Tensor, "batch dim"]) -> Float[Tensor, "batch dim"]:
     return doubled(gate(scaler(x)))
+
+
+def show(scaler: Scaler, gate: Gate) -> None:
+    """Instances handed on, not called: printing a module runs its `__repr__`, neither its call nor its forward."""
+    print(scaler)
+    print(gate)

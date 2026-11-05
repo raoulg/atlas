@@ -789,17 +789,18 @@ impl<'a> Seen<'a> {
         reached.iter().find_map(|c| self.package(&c.target)).or_else(defined).or_else(imported)
     }
 
-    /// The function of the package a value handed on is called as: a function or method, or an
-    /// instance's `__call__`. Reading a property hands nothing on.
+    /// The function of the package a value handed on is called as: a function or a method. An
+    /// instance handed on is a value (`print(model)`): the code does not say that the receiver calls
+    /// it, so neither its `__call__` nor what its library class runs is reached. Reading a property
+    /// hands nothing on.
     fn handed_function(&self, a: TsNode) -> Option<String> {
         let reached = self.facts.map_or(&[][..], |x| x.callees(Self::range(a)));
         let function = |id: &&String| self.store.nodes.get(*id).map_or(false, |n| n.kind == NodeKind::Function);
         for c in reached {
             let def = match c.by {
-                By::Call | By::Runs => self.node(&c.target).cloned(),
-                By::Instance => self.node(&c.target).and_then(|cls| self.store.method_of(cls, "__call__")),
+                By::Call => self.node(&c.target).cloned(),
                 By::Name => self.node(&c.target).filter(function).cloned(),
-                By::Construct => None,
+                By::Instance | By::Runs | By::Construct => None,
             };
             if def.is_some() {
                 return def;
