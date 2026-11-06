@@ -350,9 +350,9 @@ pub fn between(a: &str, b: Option<&str>, before: &[Graph], after: &[Graph]) -> C
         let empty = Route::default();
         let (a2, b2) = (a.unwrap_or(&empty), b.unwrap_or(&empty));
         let diff = |x: &BTreeSet<String>, y: &BTreeSet<String>| x.difference(y).cloned().collect::<Vec<_>>();
-        // a step or place the route has in one reading only is added or removed: changed is what it
-        // has in both
-        let reached: BTreeSet<&String> = a2.reached.intersection(&b2.reached).collect();
+        // a step or place the route has in one reading only is added or removed; a step the union marks changed is said
+        // changed with what it was wherever the route reaches it, in one reading or both (the page marks it so)
+        let reached: BTreeSet<&String> = a2.reached.union(&b2.reached).collect();
         let at: BTreeSet<&String> = a2.at.intersection(&b2.at).collect();
         let gone = |x: &BTreeMap<String, Touch>, y: &BTreeMap<String, Touch>| {
             x.iter()
