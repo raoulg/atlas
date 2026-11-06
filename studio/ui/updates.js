@@ -3,8 +3,9 @@
 
   // A newer build of Studio's channel: a button in the status bar says so, and a page shows what
   // changed (a release's page of notes, drawn in the window; for a nightly, the commits between the
-  // two, in the browser) with the button that installs it. The page opens by itself once per newer
-  // build, and again whenever the button is pressed. The same page shows what changed in the build that
+  // two, in the browser) with the button that installs it. A newer build installed already, under the
+  // one that runs (by Homebrew, or the install script), shows the same way with the button that restarts
+  // Studio on it. The page opens by itself once per newer build, and again whenever the button is pressed. The same page shows what changed in the build that
   // runs, when asked (What's New); for a nightly, the notes of the release it leads to, as next has them.
 
   const node = (tag, className, label) => {
@@ -54,13 +55,17 @@
           : build.notes.includes('/commits/')
           ? 'This build is no release yet: what changed is in the commits it is made of.'
           : 'What changed is on its release page.';
+      } else if (build.installed) {
+        title.textContent = build.nightly ? `Nightly ${build.version} of Atlas Studio is installed` : `Atlas Studio ${build.version} is installed`;
+        said.textContent = 'This window still runs the build Studio started as. Restart Studio to use the new one.' + (build.page ? '' : ' What changed is in the commits since yours.');
       } else {
         title.textContent = build.nightly ? 'A newer nightly of Atlas Studio is out' : `Atlas Studio ${build.version} is out`;
         said.textContent = build.nightly
           ? `Nightly ${build.version}, built from next. What changed is in the commits since yours.`
           : (build.installs ? 'Studio installs it where it is now, and starts again on it.' : 'Download it from the release.') + (build.page ? '' : ' What changed is on its release page.');
       }
-      install.hidden = !build.installs;
+      install.hidden = !(build.installs || build.installed);
+      if (!install.disabled) install.textContent = build.installed ? 'Restart' : 'Update and restart';
       later.hidden = build.current;
       close.hidden = !build.current;
       outside.hidden = build.page;
@@ -72,8 +77,8 @@
 
     async function run() {
       install.disabled = true;
-      install.textContent = 'Updating…';
-      try { await bridge.install(); }
+      install.textContent = shown && shown.installed ? 'Restarting…' : 'Updating…';
+      try { await (shown && shown.installed ? bridge.restart() : bridge.install()); }
       catch (error) { said.textContent = String(error); install.disabled = false; install.textContent = 'Try again'; }
     }
 
@@ -82,8 +87,9 @@
       newer = next;
       statusButton.hidden = !next;
       if (!next) return;
-      statusButton.textContent = next.nightly ? `↑ nightly ${next.version}` : `↑ Studio ${next.version}`;
-      statusButton.title = 'A newer build is out: what changed, and update';
+      const mark = next.installed ? '↻' : '↑';
+      statusButton.textContent = next.nightly ? `${mark} nightly ${next.version}` : `${mark} Studio ${next.version}`;
+      statusButton.title = next.installed ? 'A newer build is installed: what changed, and restart' : 'A newer build is out: what changed, and update';
       let seen = '';
       try { seen = localStorage.getItem('atlas-studio-update-shown') || ''; } catch {}
       if (seen !== next.version) {

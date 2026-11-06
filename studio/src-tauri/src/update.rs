@@ -1,7 +1,8 @@
 //! Whether a newer build of the channel Studio is from is out, asked once a day, as the CLI asks it
 //! (`cli/src/update.rs`): a stable build looks for a newer release, a nightly for a newer commit of
-//! the nightly. Which build Studio is, its sidecar says (`atlas-code --version`): it is of the same commit
-//! and channel. GitHub is asked through `curl`, so Studio carries no TLS of its own, and the last
+//! the nightly. Which build Studio is, its sidecar said when Studio started (`atlas-code --version`): it is of
+//! the same commit and channel. Asked again, the sidecar names the build installed, which is another one
+//! when the app was replaced while it ran; that one waits for Studio to start again. GitHub is asked through `curl`, so Studio carries no TLS of its own, and the last
 //! answer is kept in Studio's configuration folder. Updating runs the install script of the channel
 //! into the folder Studio runs from (macOS), or the setup program (Windows).
 
@@ -62,6 +63,8 @@ pub struct Newer {
     pub installs: bool,
     /// Whether it is the build that runs, whose changes are asked for.
     pub current: bool,
+    /// Whether it is installed already and runs once Studio starts again.
+    pub installed: bool,
 }
 
 /// A version as numbers: `v0.66.3` and `0.66.3` are `(0, 66, 3)`.
@@ -80,14 +83,31 @@ pub fn newer(this: &Build, latest: &Latest) -> Option<Newer> {
         }
         let short = &sha[..sha.len().min(7)];
         let notes = format!("https://github.com/raoulg/atlas/compare/{}...{short}", this.commit);
-        return Some(Newer { version: short.to_string(), nightly: true, notes, page: false, installs, current: false });
+        return Some(Newer { version: short.to_string(), nightly: true, notes, page: false, installs, current: false, installed: false });
     }
     let (theirs, ours) = (numbers(&latest.release)?, numbers(&this.version)?);
     (theirs > ours).then(|| {
         let version = latest.release.trim_start_matches('v').to_string();
         let notes = notes_of(&version, false);
-        Newer { version, nightly: false, notes, page: true, installs, current: false }
+        Newer { version, nightly: false, notes, page: true, installs, current: false, installed: false }
     })
+}
+
+/// The build installed, when it is another than the one that runs: the app was replaced while Studio ran (by
+/// Homebrew, or the install script), and the build waits for Studio to start again.
+pub fn installed(running: &Build, on_disk: &Build) -> Option<Newer> {
+    if key(running) == key(on_disk) {
+        return None;
+    }
+    let nightly = on_disk.nightly;
+    let (version, notes, page) = if nightly {
+        let short = on_disk.commit[..on_disk.commit.len().min(7)].to_string();
+        let notes = format!("https://github.com/raoulg/atlas/compare/{}...{short}", running.commit);
+        (short, notes, false)
+    } else {
+        (on_disk.version.clone(), notes_of(&on_disk.version, false), true)
+    };
+    Some(Newer { version, nightly, notes, page, installs: false, current: false, installed: true })
 }
 
 /// `newer` as it can be shown: a release without its page of notes (one made before the pages, or
@@ -106,8 +126,15 @@ pub fn shown(mut newer: Newer) -> Newer {
 /// made of.
 pub fn changes(this: &Build) -> Newer {
     let version = this.version.clone();
-    let at =
-        |notes: String, page: bool| Newer { version: version.clone(), nightly: this.nightly, notes, page, installs: false, current: true };
+    let at = |notes: String, page: bool| Newer {
+        version: version.clone(),
+        nightly: this.nightly,
+        notes,
+        page,
+        installs: false,
+        current: true,
+        installed: false,
+    };
     let page = notes_of(&version, this.nightly);
     if answers(&page) {
         return at(page, true);
@@ -317,6 +344,21 @@ mod tests {
         let newer = newer(&this, &Latest { nightly: "19ec16bb11".into(), ..Latest::default() }).unwrap();
         assert_eq!((newer.version.as_str(), newer.nightly), ("19ec16b", true));
         assert!(newer.notes.ends_with("compare/9a7ecf0...19ec16b"));
+    }
+
+    #[test]
+    fn a_build_installed_under_the_one_that_runs_waits_for_a_restart() {
+        let running = Build { version: "0.72.0".into(), nightly: false, commit: "5131334".into() };
+        assert_eq!(installed(&running, &running), None);
+        let on_disk = Build { version: "0.72.1".into(), nightly: false, commit: "e639149".into() };
+        let waiting = installed(&running, &on_disk).unwrap();
+        assert_eq!((waiting.version.as_str(), waiting.installed, waiting.installs, waiting.current), ("0.72.1", true, false, false));
+        assert_eq!(waiting.notes, "https://atlas.pttrn.io/releases/0.72.1/");
+        let nightly = Build { version: "0.73.0".into(), nightly: true, commit: "2fb49bf".into() };
+        let later = Build { commit: "f15e325".into(), ..nightly.clone() };
+        let waiting = installed(&nightly, &later).unwrap();
+        assert_eq!((waiting.version.as_str(), waiting.nightly, waiting.page), ("f15e325", true, false));
+        assert!(waiting.notes.ends_with("compare/2fb49bf...f15e325"));
     }
 
     #[test]

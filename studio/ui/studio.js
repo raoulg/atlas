@@ -336,6 +336,7 @@ invoke('studio_build').then((build) => {
 // a newer build of Studio's channel, looked for once an hour against an answer a day old at most
 const updates = window.AtlasUpdates.mount(byId('updates'), byId('update-button'), {
   install: () => invoke('install_update'),
+  restart: () => invoke('restart'),
   openOutside: (url) => invoke('plugin:opener|open_url', {url}),
   closed: () => { if (workspace) selectView(activeView); },
 });
@@ -354,7 +355,8 @@ async function checkNow() {
     const newer = await invoke('check_update', {now: true});
     updates.found(newer);
     if (newer) updates.show();
-    const said = newer ? 'A newer Studio is out' : 'Atlas Studio is up to date';
+    const said = !newer ? 'Atlas Studio is up to date'
+      : newer.installed ? `Atlas Studio ${newer.version} is installed: restart to use it` : 'A newer Studio is out';
     say(said, {held: true});
     return {newer, said};
   } catch (error) {
