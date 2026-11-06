@@ -3,6 +3,9 @@
 //! a shortcut (a place the code does not name, an open question), never as if it were clean and
 //! never not at all. What differs between the two pictures is what Atlas lays bare.
 
+mod common;
+
+use std::collections::BTreeSet;
 use std::path::PathBuf;
 
 use atlas_engine::parts::analyze_repo;
@@ -738,5 +741,62 @@ fn a_test_is_an_entry_of_kind_test_in_every_language() {
         for language in ["rust", "typescript"] {
             assert_eq!(read(language), python, "{language} {side}");
         }
+/// The places the finest plan of each route of `g` (`common::planned`) reads under an occurrence whose path ends in `at`:
+/// those a line goes from into it on its own channel.
+fn read_under(g: &Graph, name: &str, at: &str) -> BTreeSet<String> {
+    let read = |f: &String| -> Option<String> {
+        let (from, to) = f.strip_prefix("line ")?.strip_suffix(" own")?.split_once(" > ")?;
+        (to.ends_with(at) && from.starts_with("File(")).then(|| from.to_string())
+    };
+    common::planned(g, name, None).values().flatten().filter_map(read).collect()
+}
+
+/// A set-up that ran before holds for a method only where the value the method runs on may be one that set-up built
+/// (`docs/reference/mathematics.md`, "Who makes a path whole"; #368). The order pair (#359), in Python, Rust and
+/// TypeScript: `review` keeps its report on the shelf `open_shelf` built, then sets the drafts up. The clean side reads
+/// the report back from the shelf before it sets the drafts up; the shortcut reads it from the drafts, where it never kept
+/// one. Both set-ups ran before the shortcut's read, but the read runs on `drafts`, which only `open_drafts` made: under
+/// it the route reads `drafts/report.txt` alone, and `review` reads back nothing it wrote, as the engine's arrow and the
+/// page's plan both say. The clean `review` reads back the report it kept.
+#[test]
+fn a_set_up_holds_for_a_method_only_on_the_value_it_built() {
+    let out = "w:File:out/report.txt".to_string();
+    for (language, review) in [("python", "shelf.cli.review"), ("rust", "shelf.review"), ("typescript", "shelf.cli.review")] {
+        let (clean, shortcut) = (pair(&format!("order/{language}/clean")), pair(&format!("order/{language}/shortcut")));
+        let reads_back = |g: &Graph| atlas_engine::flow::arrows(g).remove(review).unwrap_or_default().reads_back;
+        assert_eq!(reads_back(&clean), [out.clone()], "{language}: the clean `review` reads back the report it kept");
+        assert_eq!(reads_back(&shortcut), Vec::<String>::new(), "{language}: the shortcut reads the drafts, where it kept none");
+        let under = read_under(&shortcut, &format!("order-{language}"), "/review/Shelf.report/read");
+        assert_eq!(under, BTreeSet::from(["File(drafts/report.txt)".to_string()]), "{language}: the read runs on the drafts alone");
+    }
+}
+
+/// In a loop, a name rebound after a call holds, in the next round, what the rebinding made: the call is handed every
+/// binding of the name that ran before it in the loop's order (`docs/reference/mathematics.md`, "Who makes a path whole";
+/// #354). `plans/setup-in-a-loop`, in Python, Rust and TypeScript: `main` sets the drafts up, and each round keeps its
+/// report on the shelf and then opens the shelf on `out`. The value the report is kept on is made by both steps, as the
+/// engine reads the body (`flow::receiver_makers`) and as the page's plan hands it: `write` under it takes both shelves.
+#[test]
+fn a_call_in_a_loop_is_handed_what_the_round_before_bound() {
+    for (language, keep, makers) in [
+        ("python", "keep_report", ["open_drafts", "open_shelf"]),
+        ("rust", "keep_report", ["open_drafts", "open_shelf"]),
+        ("typescript", "keepReport", ["openDrafts", "openShelf"]),
+    ] {
+        let at = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/plans/setup-in-a-loop").join(language);
+        let g = analyze_repo(&[at], &Options::default()).unwrap();
+        let n = g.node("rounds.main").expect("the route");
+        let site = n.sites.iter().position(|s| s.to.ends_with(keep)).expect("keeps the report");
+        let made: Vec<&str> = atlas_engine::flow::receiver_makers(n, site)
+            .expect("the body says which values the shelf is")
+            .into_iter()
+            .map(|j| n.sites[j].to.rsplit('.').next().unwrap_or_default())
+            .collect();
+        assert_eq!(made, makers, "{language}: the drafts set up before the loop, and the shelf the round before opened");
+        let facts = common::planned(&g, &format!("rounds-{language}"), None).remove("rounds.main").unwrap_or_default();
+        let into = format!(" > main/Shelf.{keep}/write value");
+        let handed: BTreeSet<String> =
+            facts.iter().filter_map(|f| f.strip_prefix("line Shelf·shelf@")?.strip_suffix(into.as_str()).map(String::from)).collect();
+        assert_eq!(handed, makers.iter().map(|m| format!("main/{m}")).collect(), "{language}: `write` takes both shelves");
     }
 }

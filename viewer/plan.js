@@ -718,10 +718,64 @@ const ranInside = (n, b) => {
   ranLocal.set(b, out);
   return out;
 };
-// what ran before step `s` of body `b`: what ran before the body, and what ran before `s` inside it
+// the sites of body `n` whose results the name `name` may hold where call `i` reads it, in call order (mathematics.md, "Who
+// makes a path whole"): the binding nearest before it and, where that one stands in an arm the call is not in, those before
+// it too, up to one that runs whenever the call does, never one in another arm of a choice the call is in; in a loop that
+// holds the call, where no binding in the loop runs before it in the same round, every binding after it in the loop, which a
+// later round finds. A value no name holds (`#3`) is its maker's. Null where the name may hold what no step of the body makes
+// (a parameter, a value the body binds by its own code). The same as `flow.rs`'s `makers`
+const makersOf = (n, i, name) => {
+  const sites = n?.sites || [], gives = j => (sites[j].gives || []).some(g => g.name === name);
+  if (!name || i >= sites.length) return null;
+  if (name.startsWith("#")) { const j = sites.findIndex((_, j) => j !== i && gives(j)); return j < 0 ? null : [j]; }
+  if ((n.binds || []).some(b => b.name === name)) return null;
+  const at = sites[i].arms || [], line = sites[i].line;
+  const apart = j => (sites[j].arms || []).some(([c, x]) => at.some(([d, y]) => c === d && x !== y));
+  const whenever = j => (sites[j].arms || []).every(([c, x]) => at.some(([d, y]) => c === d && x === y));
+  const out = new Set();
+  let last = null;
+  for (let j = i - 1; j >= 0; j--) if (gives(j) && !apart(j)) { out.add(j); if (whenever(j)) { last = sites[j].line; break; } }
+  if (last == null) return null;
+  for (const [a, z] of (n.loop_lines || []).filter(([a, z]) => a <= line && line <= z)) if (!(a <= last && last <= z)) for (let j = i + 1; j < sites.length; j++) if (gives(j) && a <= sites[j].line && sites[j].line <= z) out.add(j);
+  return [...out].sort((x, y) => x - y);
+};
+// the sites of body `n` the value call `i` runs on may be made of: those that bind it, and those that make what each of them
+// is handed, through every step; null where the body does not say which object it is. The same as `flow.rs`'s `receiver_makers`
+const receiverMakers = (n, i) => {
+  const site = n?.sites?.[i], h = site && !site.on_receiver && (site.hands || []).find(x => (x.fills || []).includes("receiver"));
+  if (!h) return null;
+  const out = new Set(), todo = [[i, h.name || ""]];
+  while (todo.length) {
+    const [at, name] = todo.pop(), ms = makersOf(n, at, name);
+    if (!ms) return null;
+    for (const j of ms) if (!out.has(j)) { out.add(j); for (const x of n.sites[j].hands || []) todo.push([j, x.name || ""]); }
+  }
+  return out;
+};
+// the set-ups that cannot have built the value step `s` of body `b` runs on: of `ran`, those that set up an object of the class
+// of the method its call names and that no step the value may be made of runs. A set-up holds for a method only where the value
+// it runs on may be one it built; where the body does not say which value that is, none is ruled out. The same as `Ix::off`
+const offLocal = new WeakMap();
+const offAt = (n, b, s, ran) => {
+  const m = s.site != null && byId.get(n?.sites?.[s.site]?.to), cls = m && !m.ctor && m.cls;
+  if (!cls) return NONE;
+  const builders = [...ran].filter(g => [...reach(g, null).nodes].some(f => { const c = byId.get(f); return !!(c?.ctor && c.cls === cls); }));
+  if (!builders.length) return NONE;
+  if (!offLocal.has(b)) offLocal.set(b, new Map());
+  const memo = offLocal.get(b);
+  if (!memo.has(s)) {
+    const made = receiverMakers(n, s.site);
+    memo.set(s, made && new Set(stepsIn(b).filter(x => made.has(x.site)).flatMap(x => [...ranAfter(NONE, x)])));
+  }
+  const by = memo.get(s);
+  return by ? new Set(builders.filter(g => !by.has(g))) : NONE;
+};
+// what ran before step `s` of body `b`: what ran before the body, and what ran before `s` inside it, but for the set-ups that
+// cannot have built the value it runs on (`offAt`)
 const ranBefore = (n, b, before, s) => {
   const more = [...(ranInside(n, b).get(s) || [])].filter(f => !before.has(f));
-  return more.length ? new Set([...before, ...more]) : before;
+  const ran = more.length ? new Set([...before, ...more]) : before, off = offAt(n, b, s, ran);
+  return off.size ? new Set([...ran].filter(f => !off.has(f))) : ran;
 };
 function routeTree() {
   const closedRoutes = ids => ids.map(id => ({id, open: false, kids: [], hue: null}));
@@ -1484,7 +1538,22 @@ const latestEntry = (key, P, inner = false, arms = null) => {
 const latestGet = (key, P, inner = false, arms = null) => { const e = latestEntry(key, P, inner, arms); return e && e.v !== NONE ? e.v : null; };
 // whether the name a step takes `k` by holds no value here, and the other values that name holds beside `v`
 const holdsNone = (P, k, nm = (P.dn && P.dn.get(k)) || "", within = false) => !!nm && latestEntry(kindKey(k) + "|" + nm, P, within)?.v === NONE;
-const alsoOf = (P, k, nm, within, v) => { const e = nm && v ? latestEntry(kindKey(k) + "|" + nm, P, within) : null; return e && e.v === v ? e.also : []; };
+const alsoOf = (P, k, nm, within, v) => {
+  const e = v ? latestEntry(kindKey(k) + "|" + nm, P, within) : null, also = e && e.v === v ? e.also : [];
+  const later = within || !v ? [] : laterRounds(P, k, nm).filter(w => w !== v && !also.includes(w));
+  return later.length ? [...also, ...later] : also;
+};
+// in a loop a later round runs after every call of the round before (mathematics.md, "Who makes a path whole"): a call the loop
+// runs is handed, by a name, also what a binding of that name after it in the loop made in the round before (`makersOf`), at
+// that binding's moment (#354)
+const madeBy = new Map();
+const laterRounds = (P, k, nm) => {
+  if (!nm || nm.startsWith("#")) return [];
+  const info = treeInfo.get(P.own ? frames.get(P.parent)?.step : P.steps[0]), from = info?.from && treeInfo.get(info.from);
+  if (info?.siteNo == null || !from) return [];
+  const later = (makersOf(byId.get(from.step), info.siteNo, nm) || []).filter(j => j > info.siteNo);
+  return later.flatMap(j => (madeBy.get(`${info.from}/${j}`) || []).filter(m => m.kind === kindKey(k) && m.name === nm).map(m => version(m.k, m.v)));
+};
 // what the call hands a step and what the function says it takes are one value when they are of one
 // kind and at most one of them has a name: the value by the name and the type the call gives it.
 // Two values of a kind with names of their own are two values
@@ -1503,6 +1572,13 @@ const oneOfKind = (m, names, keep) => {
   return out;
 };
 for (const P of pills.values()) if (!P.steps[0].startsWith("unit:") && !P.cut) { P.D = oneOfKind(P.D, P.dn, P.keep); P.C = oneOfKind(P.C, P.cn); }
+// what each step makes under a name and at which moment, read before any step takes it: a call in a loop takes what a later
+// step of the loop makes (`laterRounds`). A step in an arm makes it at a moment its choice decides, which is left to the arm
+for (const P of pills.values()) if (!P.steps[0].startsWith("unit:") && !armOf(P)) {
+  const key = P.own ? frames.get(P.parent)?.step : P.steps[0], made = [];
+  for (const k of P.C.keys()) { const nm = P.cn?.get(k); if (isMem(k) && !inside(k) && nm && !nm.startsWith("#")) made.push({k, kind: kindKey(k), name: nm, v: `${k}@${remadeAt(ownMoment(P))}`}); }
+  if (key && made.length) madeBy.set(key, [...(madeBy.get(key) || []), ...made]);
+}
 // planned by itself, a step does not know its caller's values: a value it takes by a name its body did not make is the
 // caller's value of that name where the caller has one, else the latest of its kind the body made (`X ~y?`)
 const condOf = (k, nm) => { const id = k + "?"; if (!places.has(id)) places.set(id, {...places.get(k), id, name: nm, cond: true}); return id; };
@@ -1599,7 +1675,7 @@ const viaDispatch = (P, k) => {
 // projection glued into the call (#121); `receiverPart` keeps the fields of it the call reads (`left`, #172). A parameter
 // filled through a projection is that projection: `paramPart` keeps, by the frame and the parameter's name, the value it holds
 // and the fields of it the call reads (`other` of `self.left.lend(self.right)` is the board through `right`, #173)
-const entered = new Set(), receiverAt = new Map(), receiverPart = new Map(), paramPart = new Map();
+const entered = new Set(), receiverAt = new Map(), receiverAlso = new Map(), receiverPart = new Map(), paramPart = new Map();
 const sameValue = (a, b) => !!a && !!b && (originOf.get(a) || a) === (originOf.get(b) || b);
 // the part of the value `v` that what the body of frame `c` hands by `h` is: the part the instance it runs on is, where `h`
 // is that instance, or the part a parameter of it holds, where `h` is that parameter and still holds the value
@@ -1628,7 +1704,7 @@ const enter = fid => {
   // it is a value of the class the method is written in too: inside the body the latest of that kind, and the value its name
   // holds (`self`), whichever subclass it is (`Source.read` run on a `Trimmed` by `super().read()`)
   const rv = receiverAt.get(fid), self = (fn?.params || []).find(p => p.receiver)?.name;
-  if (rv) { const k = "t:" + kindOf(recv); latestSet(k + "|", rv, Own, fid, true); if (self) latestSet(k + "|" + self, rv, Own, fid, true); }
+  if (rv) { const k = "t:" + kindOf(recv), also = receiverAlso.get(fid) || []; latestSet(k + "|", rv, Own, fid, true, also); if (self) latestSet(k + "|" + self, rv, Own, fid, true, also); }
 };
 // the frame of the body a frame's call is made in, through the choices between them
 const bodyFrame = fid => { let c = fid; while (c && frames.get(c)?.synthetic) c = frames.get(c).parent; return c; };
@@ -1666,8 +1742,9 @@ const handTo = (fid, f, info, Own, fn, recv) => {
   }
   if (parts.size) paramPart.set(fid, parts);
   for (const [p, vs] of holds) {
-    // the receiver is the latest of its kind inside the body, and the value its name holds (`self`)
-    if (p.receiver) { if (!vs.length) continue; const v = vs[0]; receiverAt.set(fid, v); if (part) receiverPart.set(fid, part); latestSet(kindKey(v) + "|", v, Own, fid, true); if (p.name) latestSet(kindKey(v) + "|" + p.name, v, Own, fid, true); continue; }
+    // the receiver is the latest of its kind inside the body, and the value its name holds (`self`), with any other its call may
+    // hand it (a loop's later round)
+    if (p.receiver) { if (!vs.length) continue; const v = vs[0]; receiverAt.set(fid, v); if (vs.length > 1) receiverAlso.set(fid, vs.slice(1)); if (part) receiverPart.set(fid, part); latestSet(kindKey(v) + "|", v, Own, fid, true, vs.slice(1)); if (p.name) latestSet(kindKey(v) + "|" + p.name, v, Own, fid, true, vs.slice(1)); continue; }
     if (!p.name) continue;
     // a parameter is looked for by its own type and name: what fills it through a projection is of another type; one of
     // no type of the code's as a value of no type, whatever it holds
