@@ -3122,6 +3122,23 @@ fn doors_a_sockets_operation_goes_its_way_in_every_language() {
     assert_eq!((ends(&ts.clean), ends(&ts.shortcut)), (0, 0), "`end` itself sends nothing; `end(data)` is a write");
 }
 
+/// The sockets pair (#363): whether a read is used is a fact of the body, the same in every language. The clean `linger`
+/// reads the connection to see whether it is closed: Python's `if not conn.recv(1024): break`, Rust's `match` whose
+/// arms bind nothing, and Node's listener that does nothing with the chunk only decide, so each read is a check.
+#[test]
+fn doors_a_sockets_linger_only_checks_in_every_language() {
+    let (py, rs, ts) = (common::pair("sockets/python"), common::pair("sockets/rust"), common::pair("sockets/typescript"));
+    let checks = |g: &Graph, id: &str| -> Vec<bool> {
+        let mut net: Vec<_> = touches(g, id, "net").into_iter().filter(|t| t.dir == Some(atlas_engine::Dir::Read)).collect();
+        net.sort_by_key(|t| t.line);
+        net.into_iter().map(|t| t.checks).collect()
+    };
+    let p = checks(&py.clean, "greeter.linger");
+    assert_eq!(p, [true], "Python's `linger` reads to see whether the connection is closed");
+    assert_eq!(checks(&rs.clean, "greeter.linger"), p, "Rust's `linger` is Python's");
+    assert_eq!(checks(&ts.clean, "greeter.greeter.linger"), p, "TypeScript's `linger` is Python's");
+}
+
 /// The sockets and handles pairs (#353): a socket's read and a file's read are drawn alike, from the place, in every
 /// language. A touch that receives through a socket stands where a file's read stands, in the domain of its step, and
 /// one that sends where a file's write stands. Whether what a read gives is used is a fact of the body, the same in every

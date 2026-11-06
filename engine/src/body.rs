@@ -123,9 +123,10 @@ pub struct UseSyntax {
     /// (Rust's `&mut s`): the call makes them anew from what it runs on. A call that hands on the
     /// value it is called on (`f.read_to_string(&mut s).unwrap()`) changes what that value's call changes.
     pub changes: for<'t> fn(TsNode<'t>, &[u8]) -> Vec<TsNode<'t>>,
-    /// Is `child` what `node` takes apart into the names its arms bind: a `match`'s subject.
-    /// Where those names go is not followed, so the value is taken as going on.
-    pub splits: fn(TsNode, TsNode) -> bool,
+    /// The names the arms bind when `child` is what `node` takes apart: a `match`'s subject. None where
+    /// `node` takes `child` apart in no such way; empty where the subject only decides which arm runs
+    /// (`Ok(0) | Err(_) => break`, a `switch`'s cases).
+    pub splits: for<'t> fn(TsNode<'t>, TsNode<'t>, &[u8]) -> Option<Vec<TsNode<'t>>>,
     /// The kinds of node a name is.
     pub names: &'static [&'static str],
     /// The kinds of target that keep a value beyond a name: a field, an element (`self.n = v`,
@@ -1364,7 +1365,8 @@ impl<'t, 's> Steps<'t, 's> {
     }
 
     /// Whether what `v` gives reaches what the function hands on: it is returned, handed to a
-    /// call, kept in a field or an element, or taken apart by a `match`, or a name it is bound to is. What only decides a
+    /// call, kept in a field or an element, or a name it is bound to is, or a name the arms of a `match` it is the subject of bind, or the
+    /// `match`'s own value. A binding whose names nothing read throws the value away as a statement does. What only decides a
     /// choice, goes to an error or is dropped goes no further. `bound` are the names followed.
     fn goes_on(&self, v: TsNode<'t>, bound: &mut HashSet<String>) -> bool {
         let (u, mut child, mut handed) = (self.uses, v, false);
@@ -1378,8 +1380,11 @@ impl<'t, 's> Steps<'t, 's> {
             if (self.syntax.part)(p, child, self.src) == Part::Decides || (u.fails)(p, self.src) {
                 return false;
             }
-            if (u.splits)(p, child) {
-                return true;
+            // a subject goes on where a name an arm binds goes on, or where the `match`'s own value goes on
+            if let Some(arms) = (u.splits)(p, child, self.src) {
+                if arms.into_iter().any(|n| self.bound_goes_on(text(n, self.src), n.end_byte(), bound)) {
+                    return true;
+                }
             }
             handed |= (u.hands)(p, child);
             if self.changed_goes_on(p, bound) {
@@ -1392,8 +1397,12 @@ impl<'t, 's> Steps<'t, 's> {
                     return true;
                 }
                 let after = value.end_byte();
-                let names: Vec<String> =
-                    walk(targets, u.names).into_iter().map(|n| text(n, self.src).to_string()).filter(|n| bound.insert(n.clone())).collect();
+                let all: Vec<String> = walk(targets, u.names).into_iter().map(|n| text(n, self.src).to_string()).collect();
+                // names nothing reads throw the value away as a statement does: what was handed to a call on the way is used
+                if !all.iter().any(|name| self.written_after(name, after).any(|n| !self.rebinds(n))) {
+                    return handed;
+                }
+                let names: Vec<String> = all.into_iter().filter(|n| bound.insert(n.clone())).collect();
                 return names
                     .into_iter()
                     .any(|name| self.written_after(&name, after).filter(|n| !self.rebinds(*n)).any(|n| self.goes_on(n, bound)));

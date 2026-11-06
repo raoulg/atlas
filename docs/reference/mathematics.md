@@ -38,8 +38,11 @@ used is a fact of the step's body: what the call gives reaches the step's codoma
 handed to a call, kept in a field) through the names it is bound to and the values a call on it
 changes (`f.read_to_string(&mut s)` makes `s` from `f`, through `?` and `.unwrap()` alike), and what a
 listener's function is handed is what its event brings (`conn.on("data", (chunk) => ..)` uses the read
-where `chunk` goes on); or it only decides a choice, goes to an error or is dropped (`let _ = f(x)` drops
-it as `f(x);` does), and is a check. A place one step
+where `chunk` goes on); or it only decides a choice, goes to an error or is dropped, and is a check. A
+value handed to a call reaches the codomain whatever becomes of what the call gives back, so a binding whose
+names nothing reads (`_ = f(x)`, `done = f(x)`, `let _ = f(x)`, `void f(x)`) is dropped as `f(x);` is, and a name
+that is read only in a condition is a check. A `match` takes its subject apart into the names its arms bind and its
+own value, as a binding does: arms that bind nothing only decide. A place one step
 writes and a later step reads and uses is the object between them, and stands between them. A
 place the route reads and then writes on is in both: two projections of one place, `from X` on
 the left and `into X` on the right. A place it writes only before it reads there, and only in an

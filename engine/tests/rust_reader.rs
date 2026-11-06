@@ -701,3 +701,33 @@ fn the_index_a_changed_part_is_picked_by_is_only_read() {
     assert_eq!(changed("made_whole"), ["rows"], "{:#?}", g.node("picked.made_whole").map(|n| &n.sites));
     assert_eq!(changed("made_by_name"), changed("made_whole"), "{:#?}", g.node("picked.made_by_name").map(|n| &n.sites));
 }
+
+/// What a read gives is used where it reaches the step's codomain, and a call it is handed to is in that codomain,
+/// whatever becomes of what the call gives back (`docs/reference/mathematics.md`, "A route's domain and codomain"). So
+/// `f(x);`, `let _ = f(x)` and `let done = f(x)` with `done` never read are one thing in every language, and a name read only to decide a choice keeps the read a check (#363).
+/// A `match` on a read is followed into the names its arms bind and into its own value: arms that bind nothing only
+/// decide, and an arm that binds a name that is returned uses the read.
+#[test]
+fn a_read_handed_to_a_call_is_used_and_a_match_follows_what_its_arms_bind() {
+    let g = written(
+        "usesread",
+        &[(
+            "src/lib.rs",
+            "use std::fs;\n\nfn consume(data: &str) -> usize {\n    data.len()\n}\n\npub fn plain() {\n    consume(&fs::read_to_string(\"in.txt\").unwrap());\n}\n\npub fn discarded() {\n    let _ = consume(&fs::read_to_string(\"in.txt\").unwrap());\n}\n\npub fn unread() {\n    let done = consume(&fs::read_to_string(\"in.txt\").unwrap());\n}\n\npub fn decided() {\n    let n = consume(&fs::read_to_string(\"in.txt\").unwrap());\n    if n > 0 {\n        return;\n    }\n}\n\npub fn deciding() {\n    loop {\n        match fs::read_to_string(\"in.txt\") {\n            Ok(s) if s.is_empty() => break,\n            Err(_) => break,\n            Ok(_) => {}\n        }\n    }\n}\n\npub fn taking() -> String {\n    match fs::read_to_string(\"in.txt\") {\n        Ok(s) => s,\n        Err(_) => String::new(),\n    }\n}\n",
+        )],
+    );
+    let checks = |f: &str| -> Vec<bool> {
+        let n = g
+            .nodes
+            .iter()
+            .find(|n| n.id.ends_with(&format!(".{f}")))
+            .unwrap_or_else(|| panic!("no node {f}: {:?}", g.nodes.iter().map(|n| n.id.clone()).collect::<Vec<_>>()));
+        n.touches.iter().filter(|t| t.kind_name().starts_with("disk")).map(|t| t.checks).collect()
+    };
+    assert_eq!(checks("plain"), [false], "the file is handed to a call: the read is used");
+    assert_eq!(checks("discarded"), checks("plain"), "`let _ = f(x)` is `f(x)`");
+    assert_eq!(checks("unread"), checks("plain"), "a name nothing reads is a drop");
+    assert_eq!(checks("decided"), [true], "a name read only in a condition decides a choice");
+    assert_eq!(checks("deciding"), [true], "arms that bind nothing the body uses only decide");
+    assert_eq!(checks("taking"), [false], "an arm binds a name that is returned");
+}
