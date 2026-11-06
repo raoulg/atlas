@@ -1808,6 +1808,10 @@ pub struct Part {
     /// What its language leaves to the author.
     #[serde(default)]
     pub leaves: Leaves,
+    /// Its manifest says it is meant to be imported (a crate with a lib target, a package that
+    /// names what it exports, a Python package): its routes in are its doors.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub library: bool,
     /// Its language compares types by their members: a value stands where a type is asked for when
     /// it has every member that type declares, whatever it is declared as (TypeScript).
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
