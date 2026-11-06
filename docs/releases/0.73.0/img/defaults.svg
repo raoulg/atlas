@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 360" role="img" aria-label="save_report called with no path writes out/report.txt, its default; called with a path, it writes that path. 0.72 drew the first call&#x27;s file as the parameter&#x27;s name, {path}.">
+<defs><marker id="m-g" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" style="fill:var(--ink-3)"/></marker><marker id="m-add" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" style="fill:var(--add)"/></marker><marker id="m-del" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" style="fill:var(--del)"/></marker></defs>
+<text x="30" y="36" style="font-family:var(--mono);font-size:14px;fill:var(--ink-2);text-anchor:start">def save_report(name, path = Path(&quot;out/report.txt&quot;))</text>
+<rect x="72.0" y="82" width="196.0" height="36" rx="18" style="fill:var(--panel);stroke:var(--ink-3);stroke-width:1.6"/>
+<text x="170" y="105" style="font-family:var(--mono);font-size:14px;fill:var(--ink);text-anchor:middle">save_report(&quot;draft&quot;)</text>
+<rect x="59.4" y="182" width="221.2" height="36" rx="18" style="fill:var(--panel);stroke:var(--ink-3);stroke-width:1.6"/>
+<text x="170" y="205" style="font-family:var(--mono);font-size:14px;fill:var(--ink);text-anchor:middle">save_report(&quot;final&quot;, p)</text>
+<rect x="632.0" y="82" width="196.0" height="36" rx="3" style="fill:var(--panel);stroke:var(--add);stroke-width:3"/>
+<text x="730" y="105" style="font-family:var(--mono);font-size:14px;fill:var(--ink);text-anchor:middle">File(out/report.txt)</text>
+<rect x="686.6" y="182" width="86.8" height="36" rx="3" style="fill:var(--panel);stroke:var(--ink-3);stroke-width:1.4"/>
+<text x="730" y="205" style="font-family:var(--mono);font-size:14px;fill:var(--ink);text-anchor:middle">File(p)</text>
+<path d="M268,100 L630,100" style="fill:none;stroke:var(--add);stroke-width:2" marker-end="url(#m-add)"/>
+<path d="M285,200 L688,200" style="fill:none;stroke:var(--ink-3);stroke-width:2" marker-end="url(#m-g)"/>
+<text x="450" y="88" style="font-family:var(--sans);font-size:14px;fill:var(--ink-2);text-anchor:middle">path left out: the default</text>
+<text x="450" y="188" style="font-family:var(--sans);font-size:14px;fill:var(--ink-2);text-anchor:middle">path handed: what the caller hands</text>
+<text x="730" y="140" style="font-family:var(--sans);font-size:14px;fill:var(--del);text-anchor:middle">0.72 drew File({path})</text>
+<text x="30" y="270" style="font-family:var(--mono);font-size:14px;fill:var(--ink-2);text-anchor:start">path: str = …   ≡   path ?? …   ≡   path or …   ≡   path.unwrap_or(…)</text>
+<text x="30" y="294" style="font-family:var(--sans);font-size:14px;fill:var(--ink-2);text-anchor:start">a parameter&#x27;s default, a fallback in the body and an Option unwrapped are one construct</text>
+<text x="30" y="346" style="font-family:var(--sans);font-size:13px;fill:var(--ink-3)">pill: a call · box: a place · green: drawn by 0.73 only · red: drawn by 0.72 only</text>
+</svg>
