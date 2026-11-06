@@ -178,9 +178,15 @@ nodes and the edges between them.
 **What.** The predicate *test code* on the functions of the graph: a function is test code when it
 is a test (an entry of kind `test`), when a reader marks it as test code (`Node::test`), or when it
 stands in a module that is. Each language says what it compiles or collects only to test: Rust's
-`#[test]`, an item under `#[cfg(test)]` and a crate's `tests/`; pytest's `test_*.py`, `*_test.py`
-and `conftest.py`; a `*.test.ts`, a `*.spec.ts` and what lies below `__tests__`. The readers hold
-it; no project declares it.
+`#[test]`, an item under `#[cfg(test)]` and a crate's `tests/`; pytest's `test_*.py`, `*_test.py`,
+`conftest.py` and a project's `tests/`; a `*.test.ts`, a `*.spec.ts`, what lies below `__tests__`
+and a `tests/` beside a package's code. The readers hold it; no project declares it. A test is
+what the runner collects and reports one by one: pytest's `test*` function of a file it collects
+(or such a method of a `Test*` class), Cargo's `#[test]` function, the callback a `*.test.ts`
+hands `it` or `test`, labelled by its string. The file that holds them is a module of test code,
+never a test itself: one entry per collected test in every language (pytest collecting `test_*` is
+Cargo collecting `#[test]` is vitest collecting `it`). The test code is read where the runner's
+layout puts it, beside the package as well as in it: a project's tests are in its graph.
 **In Atlas.** The overview is drawn on the fiber where the code is no test code, unless the reader
 keeps the test code (the sight's `tests`). The fiber is the full subgraph on the functions of the
 program: their own arrows, the calls between two of them, the packages and parts that hold a module
@@ -194,9 +200,16 @@ answers what the program does, and test code is not the program: Cargo builds it
 crate, pytest collects it, and a test is a way in from outside the program (the principles' reading).
 The test code stays in the graph: its tests are routes of their own, and one click keeps it.
 **Where.** `testCode` and `overviewBase` (`kept`, `whole`) in `viewer/plan.js`; the principles'
-`test` in `principles.rs`, the same predicate; the readers: `rust/passes.rs` (`cfg_test`),
-`rust.rs`, `python.rs` with `knowledge::python_test_file`, `typescript.rs` with
-`knowledge::TYPESCRIPT_TEST_FILES`. Held by `engine/tests/plans.rs`
+`test` in `principles.rs`, the same predicate; `entries::mark_tests`, which marks test code and
+makes each collected test an entry, called by each language's `parse` with its runner's
+`knowledge::TestConventions` (`PYTEST`, `CARGO_TEST`, `JS_TESTS`); the readers supply their syntax
+and layout: `rust/passes.rs` (`cfg_test`), `python.rs` (`tests_beside`: the tests beside the
+package, by the module names pytest gives them from the project's root, `tests.test_cli`),
+`typescript.rs` (the tests beside `src/`) and `typescript/passes.rs` (`collect_tests`: a registered
+callback is a function named by its string). Held by `engine/tests/pairs.rs`
+(`a_test_is_an_entry_of_kind_test_in_every_language`, on `engine/tests/pairs/tests`: the fiber, the
+test code and the tests' labels agree across the languages, and a test kept inside the package
+cuts its module, one kept beside it cuts none; issues #403, #404) and `engine/tests/plans.rs`
 (`every_package_view_is_the_image_of_its_plan`: the fine plan without the test code is the fiber,
 taken on the plan, of the one with it, and every picture is the image of that fiber, for every set
 of open packages; `test_code_cuts_a_package_in_two`: the counterexample to taking the quotient

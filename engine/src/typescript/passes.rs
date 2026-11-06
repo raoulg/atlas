@@ -716,6 +716,45 @@ fn router_pkg(parts: &[String], m: &Module) -> bool {
     }
 }
 
+/// The tests a file the runners collect from registers: each callback handed to a call that
+/// registers a test (`it("loads", () => ..)`, `test.only(..)`), at any depth (inside a
+/// `describe(..)`), is a function of its own, named by the string it is handed with and marked by
+/// the call (`entries::mark_tests` makes it a test). `rel` is the file's path below the package.
+pub(super) fn collect_tests(m: &mut Module, store: &mut GraphBuilder, rel: &Path) {
+    if !knowledge::JS_TESTS.collects_from(rel) {
+        return;
+    }
+    let tree = m.tree.clone();
+    let src = m.src.clone();
+    let lit = |n: TsNode| matches!(n.kind(), "string" | "template_string") && walk(n, &["template_substitution"]).is_empty();
+    for c in walk(tree.root_node(), &["call_expression"]) {
+        // the call by the name it starts with: `it`, `it.only`
+        let Some(mut head) = c.child_by_field_name("function") else { continue };
+        while head.kind() == "member_expression" {
+            let Some(obj) = head.child_by_field_name("object") else { break };
+            head = obj;
+        }
+        let mark = text(head, &src).to_string();
+        if head.kind() != "identifier" || !knowledge::JS_TESTS.marks.contains(&mark.as_str()) {
+            continue;
+        }
+        let args = c.child_by_field_name("arguments").map(named_children).unwrap_or_default();
+        let Some(label) = args.first().filter(|a| lit(**a)).map(|a| unquote(text(*a, &src))) else { continue };
+        let Some(f) = args.last().filter(|a| matches!(a.kind(), "arrow_function" | "function_expression" | "function")) else { continue };
+        // a name registered twice in one file is two tests
+        let written = label.replace('.', "_");
+        let name = (1..).map(|i| if i == 1 { written.clone() } else { format!("{written} {i}") });
+        let Some(name) = name.take(64).find(|n| !store.nodes.contains_key(&format!("{}.{n}", m.id))) else { continue };
+        let body = f.child_by_field_name("body").unwrap_or(*f);
+        let id = add_function(m, store, &name, c, *f, body, None);
+        if let Some(n) = store.nodes.get_mut(&id) {
+            n.name = label;
+            n.decorators = vec![mark];
+        }
+        store.add_edge(&m.id.clone(), &id, EdgeKind::Contains, None);
+    }
+}
+
 /// The routes a module registers on its routers: `app.get("/x", (c) => ..)` is a handler at
 /// `GET /x`, `app.all("/x", ..)` one at every method (`knowledge::methods_served`), and
 /// `app.route("/api", sub)` (`app.use` in Express) mounts one router on another. An inline handler

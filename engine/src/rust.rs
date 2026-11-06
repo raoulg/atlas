@@ -30,7 +30,7 @@ mod passes;
 mod paths;
 
 use module::{definitions, module_doc, new_parser, type_parameters, Crate, Module};
-use passes::{collect_impls, collect_symbols, collect_uses, link, mark_exports, mark_tests};
+use passes::{collect_impls, collect_symbols, collect_uses, link, mark_cfg_test, mark_exports};
 
 pub(crate) fn crates(repo: &Repo) -> Result<Vec<Crate>> {
     let manifest = repo.root().join("Cargo.toml");
@@ -155,8 +155,6 @@ pub fn parse(repo: &Repo, opts: &crate::Options) -> Result<(GraphBuilder, String
                 module: mid.clone(),
                 doc: module_doc(tree.root_node(), &src),
                 is_pkg: is_root,
-                // an integration test: Cargo builds what `tests/` holds only to test the crate
-                test: p.strip_prefix(&c.dir).is_ok_and(|rel| rel.starts_with("tests")),
                 ..Default::default()
             });
             let defs = definitions(&tree, &src);
@@ -212,7 +210,7 @@ pub fn parse(repo: &Repo, opts: &crate::Options) -> Result<(GraphBuilder, String
     }
     link(&modules, &mut store, &crate_ids);
     let _items = crate::clock::stage("items");
-    mark_tests(&modules, &mut store);
+    mark_cfg_test(&modules, &mut store);
     store.mark_library();
     Ok((store, root_name))
 }
