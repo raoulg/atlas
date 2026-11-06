@@ -1114,3 +1114,98 @@ fn a_call_is_read_alike_however_many_stand_beside_it() {
         assert_eq!(h, alone, "call {i} hands what it hands beside one call");
     }
 }
+
+/// The program of `a_value_is_handed_alike_however_many_names_stand_for_it`: `main` binds a chain of eight names, each an
+/// array of the one before written `wide` times (`const a1 = [a0, a0, a0]`), so that the last stands for `first` along
+/// `wide`^8 occurrences, and hands it to `calls` calls, every other one kept under a name of its own.
+fn fanned(wide: usize, calls: usize) -> String {
+    let of = |name: String| vec![name; wide].join(", ");
+    let mut code = String::from(
+        "export class Level {\n  constructor(readonly db: number) {}\n}\n\nexport function show(levels: unknown[]): number {\n  return levels.length;\n}\n\nexport function main(first: Level): void {\n",
+    );
+    code += &format!("  const a0 = [{}];\n", of("first".into()));
+    for k in 1..=8 {
+        code += &format!("  const a{k} = [{}];\n", of(format!("a{}", k - 1)));
+    }
+    for j in 0..calls {
+        code += &if j % 2 == 0 { "  show(a8);\n".to_string() } else { format!("  const r{j} = show(a8);\n") };
+    }
+    code += "}\n";
+    code
+}
+
+/// What a name holds is a fact of its binding, whichever occurrence asks and however often the names it stands for are
+/// written (`mathematics.md`, "One fine plan"): a value is handed once, however many occurrences of the names along the
+/// way stand for it. The subject binds a chain of eight names, once with each name written once in the next and once with
+/// it written four times, and hands the last to many calls between which the body keeps names: every call hands the same
+/// in both. A reader that follows every occurrence anew unfolds 4^8 occurrences at each call and cannot read the second
+/// in reasonable time (#401); one that finds what each name holds once, shared by its occurrences, reads both at once.
+#[test]
+fn a_value_is_handed_alike_however_many_names_stand_for_it() {
+    const CALLS: usize = 400;
+    let hands = |wide: usize| -> Vec<String> {
+        let g = written(
+            &format!("fanned-{wide}"),
+            &[("package.json", "{\n  \"name\": \"fanned\",\n  \"version\": \"0.1.0\"\n}\n"), ("src/main.ts", &fanned(wide, CALLS))],
+        );
+        let main = g.nodes.iter().find(|n| n.id.ends_with(".main") && n.kind == NodeKind::Function).expect("main is read");
+        let shown: Vec<String> = main
+            .sites
+            .iter()
+            .filter(|s| s.to.ends_with(".show"))
+            .map(|s| serde_json::to_string(&(&s.hands, &s.gives)).expect("hands serialize"))
+            .collect();
+        assert_eq!(shown.len(), CALLS, "every call of show is a site of main");
+        shown
+    };
+    let once = hands(1);
+    assert!(once[0].contains("Level"), "the chain hands what it stands for: {}", once[0]);
+    assert_eq!(hands(4), once, "a value is handed once however many occurrences stand for it");
+}
+
+/// The program of `a_call_of_one_name_reads_alike_however_many_stand_beside_it`: `main` leaves unless it is handed a
+/// level, then hands it to `calls` calls of `show`, and reads it itself.
+fn repeated(calls: usize) -> String {
+    let mut code = String::from(
+        "export class Level {\n  constructor(readonly db: number) {}\n}\n\nexport function show(level: Level): number {\n  return level.db;\n}\n\nexport function main(first: Level | undefined, other: Level): number {\n  if (!first) return 0;\n",
+    );
+    code += &"  show(first);\n".repeat(calls);
+    code += "  return first.db + other.db;\n}\n";
+    code
+}
+
+/// A step is read from where it stands in its body (`mathematics.md`, "One fine plan"): a call reads alike, and the body
+/// uses alike what it uses itself, however many calls of the same name stand beside it. The subject's calls stand after a
+/// guard, so each is in the guard's arm, and hand a name the body also reads itself: each of thousands of calls is the
+/// one call of the body that has one, but for its line. A reader that walks the body, or the block a call stands in,
+/// again for every call or every name reads it in time quadratic in the calls (#401); one that finds what the walks look
+/// for once per body or block reads it at once.
+#[test]
+fn a_call_of_one_name_reads_alike_however_many_stand_beside_it() {
+    let read = |calls: usize| -> (Vec<serde_json::Value>, String) {
+        let g = written(
+            &format!("repeated-{calls}"),
+            &[("package.json", "{\n  \"name\": \"repeated\",\n  \"version\": \"0.1.0\"\n}\n"), ("src/main.ts", &repeated(calls))],
+        );
+        let main = g.nodes.iter().find(|n| n.id.ends_with(".main") && n.kind == NodeKind::Function).expect("main is read");
+        let sites: Vec<serde_json::Value> = main
+            .sites
+            .iter()
+            .filter(|s| s.to.ends_with(".show"))
+            .map(|s| {
+                let mut v = serde_json::to_value(s).expect("a site serializes");
+                v.as_object_mut().expect("a site is an object").remove("line");
+                v
+            })
+            .collect();
+        assert_eq!(sites.len(), calls, "every call of show is a site of main");
+        (sites, serde_json::to_string(&main.uses).expect("uses serialize"))
+    };
+    let (one, uses) = read(1);
+    assert!(one[0].get("arms").is_some(), "the call stands in the guard's arm: {}", one[0]);
+    let (many, many_uses) = read(3000);
+    for (i, s) in many.iter().enumerate() {
+        assert_eq!(s, &one[0], "call {i} reads as the one call");
+    }
+    assert_eq!(many_uses, uses, "the body uses alike what it uses itself");
+}
