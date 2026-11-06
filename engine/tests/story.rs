@@ -97,3 +97,41 @@ fn a_choice_letters_each_branch_apart() {
     assert_eq!(letters.len(), 30, "a line per arm:\n{choices}");
     assert_eq!(apart.len(), letters.len(), "two branches share letters:\n{choices}");
 }
+
+/// Law: the nesting `route`'s text and `choices` give is the nesting `flow::Body` gives. A choice inside an arm beside other
+/// steps of it (`within`) is a coproduct inside that arm (mathematics.md, "Coproducts"): the text numbers its steps inside
+/// the label of the arm it stands in, deeper by one level, and `choices` says which arm of which choice it stands in.
+#[test]
+fn a_choice_inside_an_arm_is_told_inside_that_arm() {
+    use atlas_engine::flow::{self, Item};
+    let src = "fn main() {\n    if std::env::args().count() > 1 {\n        open();\n        if std::env::args().count() > 2 {\n            report();\n        }\n    }\n}\n\nfn open() {\n    println!(\"open\");\n}\n\nfn report() {\n    println!(\"report\");\n}\n";
+    let g = written("nest", src);
+    let entry = "nest.main";
+    let bodies = flow::bodies(&g);
+    let body = bodies.get(entry).expect("main has a body");
+    // each choice that stands in an arm: the function its inner choice runs, and the function the arm it stands in runs
+    let mut nested = vec![];
+    for item in &body.items {
+        let Item::Choice { members, within: Some((outer, br)), .. } = item else { continue };
+        let arm = body
+            .items
+            .iter()
+            .find_map(|i| match i {
+                Item::Choice { choice, members, .. } if choice == outer => Some(members),
+                _ => None,
+            })
+            .expect("the choice it stands in is an item of the body");
+        let in_arm = arm.iter().find(|m| m.branch == *br).expect("the branch it stands in runs a step");
+        nested.push((in_arm.step.to.clone(), members[0].step.to.clone(), *br));
+    }
+    assert!(!nested.is_empty(), "the program has a choice inside an arm: {body:?}");
+    let told = atlas_engine::story::told_steps(&g, entry, 3).expect("main is a route");
+    let route = atlas_engine::story::route(&g, entry, 3).unwrap();
+    let label = |f: &str| told.iter().find(|t| t.runs == f).map(|t| t.label.clone()).unwrap_or_else(|| panic!("{f} is told:\n{route}"));
+    for (outer, inner, _) in &nested {
+        let (outer, inner) = (label(outer), label(inner));
+        assert!(inner.starts_with(&format!("{outer}.")), "{inner} stands inside {outer}:\n{route}");
+    }
+    let choices = atlas_engine::story::choices(&g, entry).unwrap();
+    assert_eq!(choices.matches("stands in arm").count(), nested.len(), "each says which arm it stands in:\n{choices}");
+}
