@@ -110,6 +110,16 @@ are made on Ubuntu 22.04 and need WebKitGTK 4.1, which Ubuntu 22.04 and newer, D
 Fedora have. Studio does not install its own updates on Linux: run the script again. There is no build
 for Linux on arm64 yet.
 
+Studio and the CLI install apart and do not depend on each other's version. Studio draws with the
+`atlas-code` inside it, of the same commit and channel as the app (its status bar names that build), never
+with one on the `PATH`; a coding agent Studio starts runs the CLI of Studio's channel on the `PATH` where
+there is one, else Studio's own, so that its `atlas-code mcp` matches the page it shares. What Atlas reads
+is cached per build: a directory for each build in `.atlas/index/` of the repository and in the user's
+cache directory (`$XDG_CACHE_HOME/atlas`, else `~/Library/Caches`, `%LOCALAPPDATA%` or `~/.cache`). Two
+builds never read each other's entries, and an entry is written whole and renamed into place, so a CLI and
+a Studio of different versions can read one repository side by side; of the same build they share what
+either has read.
+
 ## Updates
 
 Once a day, `atlas-code serve`, `view`, `check`, `changes`, `history` and `revelation` tell you on stderr when a
