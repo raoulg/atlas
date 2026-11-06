@@ -18,6 +18,7 @@
   <script defer src="lesson.html.js"></script>
   <script defer src="lesson.mount.js"></script>
   <script defer src="panel.js"></script>
+  <script defer src="sidebar.js"></script>
   <script defer src="files.js"></script>
   <script defer src="terminal.js"></script>
   <script defer src="workspaces.js"></script>
@@ -35,11 +36,11 @@
       <button id="insert-atlas-view" class="open-button" type="button" hidden>Insert view in lesson</button>
       <button id="open-workspace" class="open-button" type="button" title="Workspaces (⌘O) · a new window (⌘N)">Open workspace</button>
     </header>
-    <div class="workbench">
-      <nav class="sidebar" aria-label="Workspace sections">
-        <div class="side-label">WORKSPACE</div>
-        <button class="side-tab active" type="button" data-view="atlas" aria-current="page"><span>◇</span> Atlas view</button>
-        <button class="side-tab" type="button" data-view="history"><span>◷</span> History</button>
+    <div class="workbench" id="workbench" data-sidebar="open">
+      <nav id="sidebar" class="sidebar" aria-label="Workspace sections">
+        <div class="side-head"><div class="side-label">WORKSPACE</div><button id="sidebar-toggle" class="sidebar-toggle" type="button" aria-expanded="true" aria-controls="sidebar" title="Hide the sidebar (⌘B)"><span class="glyph" aria-hidden="true">‹</span></button></div>
+        <button class="side-tab active" type="button" data-view="atlas" aria-current="page" title="Atlas view (⌘1)"><span>◇</span> Atlas view</button>
+        <button class="side-tab" type="button" data-view="history" title="History (⌘2)"><span>◷</span> History</button>
         <div class="side-label files-label"><span>FILES</span><span class="files-legend" title="A filled dot: the graph defines something in the file. An open dot: a physical file only."><span class="traced">●</span> traced <span>○</span> file</span></div>
         <div id="file-tree" class="file-tree-host"></div>
         <div class="side-label lessons-label">LESSONS</div>
