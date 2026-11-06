@@ -10,17 +10,11 @@
   // The remembered choice: folded only when it says so.
   const foldedIn = (kept) => kept === 'rail';
 
-  // Whether a key event is the toggle: ⌘B on macOS, Ctrl+B elsewhere, with no other modifier.
-  function isToggle(event, mac) {
-    const modifier = mac ? event.metaKey && !event.ctrlKey : event.ctrlKey && !event.metaKey;
-    return Boolean(modifier) && !event.shiftKey && !event.altKey && String(event.key).toLowerCase() === 'b';
-  }
-
   const titleOf = (folded, mac) => `${folded ? 'Show' : 'Hide'} the sidebar (${mac ? '⌘B' : 'Ctrl+B'})`;
 
   // Wires the toggle `button` to the `workbench`; `held` are the scrolling elements the sidebar keeps.
-  // `skip(event)` says that a key belongs to what has focus (the terminal), not to the toggle.
-  function mount({workbench, button, held = [], storage, mac, skip = () => false}) {
+  // The key, ⌘B or Ctrl+B, is the View menu's accelerator, which reaches the window wherever focus is.
+  function mount({workbench, button, held = [], storage, mac}) {
     const offsets = new Map();
     let folded = false;
     const put = (next, remember) => {
@@ -38,13 +32,8 @@
     put(foldedIn(kept), false);
     const toggle = () => put(!folded, true);
     button.addEventListener('click', toggle);
-    root.document.addEventListener('keydown', (event) => {
-      if (!isToggle(event, mac) || skip(event)) return;
-      event.preventDefault();
-      toggle();
-    });
     return {toggle, isFolded: () => folded};
   }
 
-  root.AtlasSidebar = {KEY, foldedIn, isToggle, titleOf, mount};
+  root.AtlasSidebar = {KEY, foldedIn, titleOf, mount};
 })(typeof window !== 'undefined' ? window : globalThis);

@@ -1,15 +1,11 @@
 const assert = require('node:assert/strict');
 
-// The sidebar's folding: a round trip gives back what was there, the choice is kept, and one key (⌘B,
-// or Ctrl+B off the Mac) is the toggle.
+// The sidebar's folding: a round trip gives back what was there, and the choice is kept.
 
-const keys = [];
-globalThis.document = {addEventListener: (type, fn) => { if (type === 'keydown') keys.push(fn); }};
 require('../ui/sidebar.js');
-const {KEY, foldedIn, isToggle, mount} = globalThis.AtlasSidebar;
+const {KEY, foldedIn, mount} = globalThis.AtlasSidebar;
 
-const press = (init) => { let stopped = false; keys.forEach((fn) => fn({key: 'b', preventDefault: () => { stopped = true; }, ...init})); return stopped; };
-const parts = (storage, mac = true, skip) => {
+const parts = (storage, mac = true) => {
   const attrs = {};
   const button = {
     attrs, title: '', glyph: {textContent: ''}, clicks: [],
@@ -19,25 +15,13 @@ const parts = (storage, mac = true, skip) => {
   };
   const held = [{scrollTop: 0}, {scrollTop: 0}];
   const workbench = {dataset: {}};
-  keys.length = 0;
-  return {button, held, workbench, sidebar: mount({workbench, button, held, storage, mac, skip})};
+  return {button, held, workbench, sidebar: mount({workbench, button, held, storage, mac})};
 };
 const memory = (initial) => { const kept = new Map(initial ? [[KEY, initial]] : []); return {getItem: (k) => kept.get(k) ?? null, setItem: (k, v) => kept.set(k, v), kept}; };
 
 // Only the saved word "rail" folds; anything else is the sidebar open.
 for (const other of [null, undefined, '', 'open', 'true', 'constructor']) assert.equal(foldedIn(other), false, String(other));
 assert.equal(foldedIn('rail'), true);
-
-// The key: the platform's modifier alone, with B in either case.
-for (const mac of [true, false]) {
-  const own = mac ? {metaKey: true} : {ctrlKey: true};
-  const other = mac ? {ctrlKey: true} : {metaKey: true};
-  assert.equal(isToggle({key: 'b', ...own}, mac), true);
-  assert.equal(isToggle({key: 'B', ...own}, mac), true);
-  for (const extra of [{shiftKey: true}, {altKey: true}, other]) assert.equal(isToggle({key: 'b', ...own, ...extra}, mac), false);
-  assert.equal(isToggle({key: 'b'}, mac), false);
-  assert.equal(isToggle({key: 'n', ...own}, mac), false);
-}
 
 // A round trip gives back the scroll offsets and the state; the button says what it does.
 {
@@ -51,7 +35,7 @@ for (const mac of [true, false]) {
   assert.equal(button.attrs['aria-expanded'], 'false');
   assert.match(button.title, /^Show .*⌘B/);
   held[0].scrollTop = 0; held[1].scrollTop = 0; // a hidden scroller loses its offset
-  assert.equal(press({metaKey: true}), true);
+  sidebar.toggle();
   assert.equal(sidebar.isFolded(), false);
   assert.deepEqual(held.map((each) => each.scrollTop), [120, 7]);
   assert.equal(workbench.dataset.sidebar, 'open');
@@ -70,14 +54,10 @@ for (const mac of [true, false]) {
   assert.equal(later.button.attrs['aria-expanded'], 'false');
 }
 
-// Off the Mac, Ctrl+B and the shell: a key that belongs to the terminal is left alone, and Cmd does nothing.
+// Off the Mac the button names Ctrl+B.
 {
-  const {sidebar} = parts(memory(), false, (event) => event.inTerminal);
-  assert.equal(press({ctrlKey: true, inTerminal: true}), false);
-  assert.equal(sidebar.isFolded(), false);
-  assert.equal(press({metaKey: true}), false);
-  assert.equal(press({ctrlKey: true}), true);
-  assert.equal(sidebar.isFolded(), true);
+  const {button} = parts(memory(), false);
+  assert.match(button.title, /^Hide .*Ctrl\+B/);
 }
 
 // A storage that refuses is no reason to refuse folding.

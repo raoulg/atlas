@@ -64,7 +64,7 @@ While Atlas draws, a bar shows how far reading the project's code is; the pictur
 
 ## The sidebar
 
-The button at the top of the sidebar, ⌘B (View › Toggle Sidebar; Ctrl+B on Windows and Linux, which a shell in the terminal keeps for itself) folds it to a rail of the section icons, ◇ Atlas view and ◷ History, which still switch the view. The sidebar is hidden, not rebuilt, so the file tree keeps its open folders and its place. The choice is kept in the webview's `localStorage` (`atlas-studio-sidebar`), shared by the windows of one build.
+The button at the top of the sidebar, or ⌘B (Ctrl+B on Windows and Linux; View › Toggle Sidebar) wherever focus is, the terminal and the Atlas view included, as in the usual editors, folds it to a rail of the section icons, ◇ Atlas view and ◷ History, which still switch the view. The sidebar is hidden, not rebuilt, so the file tree keeps its open folders and its place. The choice is kept in the webview's `localStorage` (`atlas-studio-sidebar`), shared by the windows of one build.
 
 ## Files
 

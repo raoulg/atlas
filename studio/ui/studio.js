@@ -380,7 +380,7 @@ const settingsPage = window.AtlasSettings.mount(byId('settings'), {
   closed: () => { if (workspace) selectView(activeView); else showState('welcome'); },
 });
 
-// the sidebar folds to a rail: ⌘B on macOS (the View menu's), Ctrl+B elsewhere unless the terminal has focus
+// the sidebar folds to a rail: the button, or ⌘B / Ctrl+B through the View menu
 const onMac = /Mac/i.test(navigator.platform);
 const sidebar = window.AtlasSidebar.mount({
   workbench: byId('workbench'),
@@ -388,7 +388,6 @@ const sidebar = window.AtlasSidebar.mount({
   held: [byId('file-tree'), byId('lesson-list')],
   storage: window.localStorage,
   mac: onMac,
-  skip: (event) => !onMac && Boolean(event.target.closest?.('.terminal-panel')),
 });
 
 // the menu bar's items, said by name
