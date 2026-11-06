@@ -3151,9 +3151,9 @@ const USES: UseSyntax = UseSyntax {
                 .filter_map(|arm| arm.child_by_field_name("pattern"))
                 .flat_map(|p| walk(p, &["identifier"]))
                 .filter(|id| {
-                    // a variant or a constant is written with a capital (`None`); a path and the type of a variant pattern
+                    // a variant or a constant is written with a capital (`None`), a binding without (`_n` too); a path and the type of a variant pattern
                     // (`Ok` of `Ok(n)`) name no binding
-                    !text(*id, src).starts_with(|c: char| c.is_uppercase() || c == '_')
+                    !text(*id, src).starts_with(char::is_uppercase)
                         && parent(*id).is_some_and(|p| {
                             !matches!(p.kind(), "scoped_identifier" | "scoped_type_identifier")
                                 && !(matches!(p.kind(), "tuple_struct_pattern" | "struct_pattern")
