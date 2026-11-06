@@ -3104,10 +3104,18 @@ const USES: UseSyntax = UseSyntax {
         _ => None,
     },
     leaves: |n, body| {
-        // the last named child of the block, which stands in it
+        // the last named child of the block, which stands in it: an expression statement without its `;` is a block's value
+        // (a `match` that ends a function); a loop's body gives the loop nothing
+        let value = match n.kind() {
+            "expression_statement" => {
+                n.child(n.child_count().saturating_sub(1)).is_some_and(|l| l.kind() != ";")
+                    && n.named_child(0).is_some_and(|e| !matches!(e.kind(), "loop_expression" | "while_expression" | "for_expression"))
+            }
+            "let_declaration" | "empty_statement" => false,
+            _ => true,
+        };
         n.kind() == "return_expression"
-            || (!matches!(n.kind(), "expression_statement" | "let_declaration" | "empty_statement")
-                && body.named_child(body.named_child_count().saturating_sub(1)).map(|l| l.id()) == Some(n.id()))
+            || (value && body.named_child(body.named_child_count().saturating_sub(1)).map(|l| l.id()) == Some(n.id()))
     },
     fails: panics,
     hands: |n, child| match n.kind() {
@@ -3132,7 +3140,29 @@ const USES: UseSyntax = UseSyntax {
         }
         out
     },
-    splits: |n, child| n.kind() == "match_expression" && n.child_by_field_name("value").map(|v| v.id()) == Some(child.id()),
+    splits: |n, child, src| {
+        if n.kind() != "match_expression" || n.child_by_field_name("value").map(|v| v.id()) != Some(child.id()) {
+            return None;
+        }
+        Some(
+            n.child_by_field_name("body")
+                .into_iter()
+                .flat_map(|b| (0..b.named_child_count()).filter_map(move |i| b.named_child(i)))
+                .filter_map(|arm| arm.child_by_field_name("pattern"))
+                .flat_map(|p| walk(p, &["identifier"]))
+                .filter(|id| {
+                    // a variant or a constant is written with a capital (`None`); a path and the type of a variant pattern
+                    // (`Ok` of `Ok(n)`) name no binding
+                    !text(*id, src).starts_with(|c: char| c.is_uppercase() || c == '_')
+                        && parent(*id).is_some_and(|p| {
+                            !matches!(p.kind(), "scoped_identifier" | "scoped_type_identifier")
+                                && !(matches!(p.kind(), "tuple_struct_pattern" | "struct_pattern")
+                                    && p.child_by_field_name("type").map(|t| t.id()) == Some(id.id()))
+                        })
+                })
+                .collect(),
+        )
+    },
     names: &["identifier"],
     keeps: &["field_expression", "index_expression"],
     field: |n, src| {

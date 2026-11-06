@@ -2879,7 +2879,10 @@ const USES: UseSyntax = UseSyntax {
         matches!(n.kind(), "call_expression" | "new_expression") && n.child_by_field_name("arguments").map(|a| a.id()) == Some(child.id())
     },
     changes: |_, _| vec![],
-    splits: |n, child| n.kind() == "switch_statement" && n.child_by_field_name("value").map(|v| v.id()) == Some(child.id()),
+    // a case binds no name: the value only decides which one runs
+    splits: |n, child, _| {
+        (n.kind() == "switch_statement" && n.child_by_field_name("value").map(|v| v.id()) == Some(child.id())).then(Vec::new)
+    },
     names: &["identifier", "shorthand_property_identifier"],
     keeps: &["member_expression", "subscript_expression"],
     field: |n, src| {

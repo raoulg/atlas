@@ -1214,3 +1214,28 @@ fn a_call_of_one_name_reads_alike_however_many_stand_beside_it() {
     }
     assert_eq!(many_uses, uses, "the body uses alike what it uses itself");
 }
+
+/// What a read gives is used where it reaches the step's codomain, and a call it is handed to is in that codomain,
+/// whatever becomes of what the call gives back (`docs/reference/mathematics.md`, "A route's domain and codomain"). So
+/// `f(x)`, `void f(x)` and `const done = f(x)` with `done` never read are one thing in every language, and a name read only to decide a choice keeps the read a check (#363).
+#[test]
+fn a_read_handed_to_a_call_is_used_whatever_becomes_of_the_calls_value() {
+    let g = written(
+        "usesread",
+        &[(
+            "package.json",
+            r#"{ "name": "usesread" }"#,
+        ), (
+            "src/usesread.ts",
+            "import * as fs from \"node:fs\";\n\nfunction consume(data: string): number {\n  return data.length;\n}\n\nexport function plain(): void {\n  consume(fs.readFileSync(\"in.txt\", \"utf8\"));\n}\n\nexport function discarded(): void {\n  void consume(fs.readFileSync(\"in.txt\", \"utf8\"));\n}\n\nexport function unread(): void {\n  const done = consume(fs.readFileSync(\"in.txt\", \"utf8\"));\n}\n\nexport function decided(): void {\n  const n = consume(fs.readFileSync(\"in.txt\", \"utf8\"));\n  if (n) {\n    return;\n  }\n}\n",
+        )],
+    );
+    let checks = |f: &str| -> Vec<bool> {
+        let n = g.nodes.iter().find(|n| n.id.ends_with(&format!(".{f}"))).unwrap_or_else(|| panic!("no node {f}"));
+        n.touches.iter().filter(|t| t.kind_name().starts_with("disk")).map(|t| t.checks).collect()
+    };
+    assert_eq!(checks("plain"), [false], "the file is handed to a call: the read is used");
+    assert_eq!(checks("discarded"), checks("plain"), "`void f(x)` is `f(x)`");
+    assert_eq!(checks("unread"), checks("plain"), "a name nothing reads is a drop");
+    assert_eq!(checks("decided"), [true], "a name read only in a condition decides a choice");
+}

@@ -2629,7 +2629,29 @@ const USES: UseSyntax = UseSyntax {
     fails: |n, _| matches!(n.kind(), "raise_statement" | "assert_statement"),
     hands: |n, child| n.kind() == "call" && n.child_by_field_name("arguments").map(|a| a.id()) == Some(child.id()),
     changes: |_, _| vec![],
-    splits: |n, child| n.kind() == "match_statement" && n.child_by_field_name("subject").map(|v| v.id()) == Some(child.id()),
+    splits: |n, child, _| {
+        if n.kind() != "match_statement" || n.child_by_field_name("subject").map(|v| v.id()) != Some(child.id()) {
+            return None;
+        }
+        Some(
+            n.child_by_field_name("body")
+                .into_iter()
+                .flat_map(|b| (0..b.named_child_count()).filter_map(move |i| b.named_child(i)))
+                .flat_map(|clause| (0..clause.named_child_count()).filter_map(move |i| clause.named_child(i)))
+                .filter(|c| c.kind() == "case_pattern")
+                .flat_map(|c| walk(c, &["identifier"]))
+                .filter(|id| {
+                    // a capture is a lone name (`case x`) or an `as` alias; a class, a key and `_` are not
+                    parent(*id).is_some_and(|p| {
+                        (p.kind() == "dotted_name"
+                            && p.named_child_count() == 1
+                            && parent(p).is_some_and(|g| g.kind() != "class_pattern" || g.named_child(0).map(|c| c.id()) != Some(p.id())))
+                            || (p.kind() == "as_pattern" && p.child_by_field_name("alias").map(|a| a.id()) == Some(id.id()))
+                    })
+                })
+                .collect(),
+        )
+    },
     names: &["identifier"],
     keeps: &["attribute", "subscript"],
     field: |n, src| {
