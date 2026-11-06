@@ -1940,6 +1940,31 @@ fn composition_a_name_assigned_again_is_handed_what_it_was_assigned() {
     }
 }
 
+/// A tuple pattern binds each name it binds in a `let` as a pattern of one name would (#380): a `mut` name
+/// changed in place (`asked.push(s)` of `let (mut asked, mut unknown) = (vec![], false)`) holds a value of its
+/// own, so a part of it (`asked.first()`) takes it. The same function written with a `let` per name and with
+/// one tuple pattern reads the same: the same steps, each handed and giving the same.
+#[test]
+fn composition_a_tuple_pattern_in_a_let_binds_each_name_as_a_pattern_of_one_name_would() {
+    let (c, s) = (assigned("clean"), assigned("shortcut"));
+    assert!(!shape(&c, "assigned.gather").is_empty());
+    assert_eq!(shape(&s, "assigned.gather"), shape(&c, "assigned.gather"));
+}
+
+/// A tuple pattern binds each name it binds as a parameter as a pattern of one name would (#380): each name is
+/// a parameter of the function, with the element of the tuple type at its place. Atlas reads the pattern as one
+/// parameter named by its text, so `returns` is no name of the function's. Giving each name a parameter of its
+/// own moves the places the call's arguments fill (`Slot::At(n)` counts the written parameters), which the
+/// shared builder counts; ignored until a call's tuple argument is spread over them.
+#[test]
+#[ignore = "a tuple pattern as a parameter is one parameter named by its text (#380)"]
+fn composition_a_tuple_pattern_as_a_parameter_binds_each_name_as_a_pattern_of_one_name_would() {
+    let (c, s) = (assigned("clean"), assigned("shortcut"));
+    let params = |g: &Graph, f: &str| node(g, f).params.iter().map(|p| (p.name.clone(), p.ty.clone())).collect::<Vec<_>>();
+    assert_eq!(params(&s, "assigned.set_holds"), params(&c, "assigned.set_holds"));
+    assert_eq!(shape(&s, "assigned.set_holds"), shape(&c, "assigned.set_holds"));
+}
+
 /// One side of the interior pair (`tests/pairs/interior/rust`): counts kept in the fields of structs
 /// that change through `&self`, or in statics the methods raise.
 fn interior(side: &str) -> Graph {

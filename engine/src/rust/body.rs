@@ -1445,6 +1445,27 @@ impl<'a, 't> Body<'a, 't> {
         )
     }
 
+    /// The names the `let`s of a body bind one at a time, each with its pattern, the type written for it and the value that
+    /// binds it: a `let` of a name, and each name of a tuple pattern a tuple written out is bound to (`tuple_elements`), as
+    /// a `let` of that name alone with the element of the tuple type at its place would.
+    fn bindings(&self, body: TsNode<'t>) -> Vec<(TsNode<'t>, TsNode<'t>, Option<TsNode<'t>>, Option<TsNode<'t>>)> {
+        let mut out = vec![];
+        for l in walk(body, &["let_declaration"]) {
+            let (ty, value) = (l.child_by_field_name("type"), l.child_by_field_name("value"));
+            if let Some(pairs) = tuple_elements(l) {
+                let types = ty.filter(|t| t.kind() == "tuple_type").map(named_children).filter(|t| t.len() == pairs.len());
+                for (i, (pat, element)) in pairs.into_iter().enumerate() {
+                    if matches!(pat.kind(), "identifier" | "mut_pattern") {
+                        out.push((l, pat, types.as_ref().map(|t| t[i]), Some(element)));
+                    }
+                }
+            } else if let Some(pat) = l.child_by_field_name("pattern").filter(|p| matches!(p.kind(), "identifier" | "mut_pattern")) {
+                out.push((l, pat, ty, value));
+            }
+        }
+        out
+    }
+
     /// Locals assigned from a constructor, a struct literal, or a function with a typed return;
     /// `.unwrap()`, `.expect(..)`, `.context(..)` hand on the type of the value they are called on.
     /// Gives the `let`s that write no type and whose value is of none the body knows, each with
@@ -1452,19 +1473,21 @@ impl<'a, 't> Body<'a, 't> {
     fn lets(&mut self, body: TsNode<'t>) -> Vec<(String, (usize, usize))> {
         let src = self.src;
         let mut untyped = vec![];
-        for l in walk(body, &["let_declaration"]) {
-            let Some(pat) = l.child_by_field_name("pattern").filter(|p| matches!(p.kind(), "identifier" | "mut_pattern")) else { continue };
+        for (l, pat, ty, given) in self.bindings(body) {
             let name = text(pat, src).trim_start_matches("mut ").to_string();
             let Some((from, to)) = scope(pat) else { continue };
-            if pat.kind() == "mut_pattern" || named_children(l).iter().any(|x| x.kind() == "mutable_specifier") {
+            if pat.kind() == "mut_pattern"
+                || (l.child_by_field_name("pattern").map(|x| x.id()) == Some(pat.id())
+                    && named_children(l).iter().any(|x| x.kind() == "mutable_specifier"))
+            {
                 self.mutable.bind(&name, from, to, ());
             }
-            let declared = type_names(l.child_by_field_name("type"), src);
+            let declared = type_names(ty, src);
             if let Some(t) = self.library_type(&declared) {
                 self.foreign.bind(&name, from, to, t);
             }
             let annotated = declared.iter().find_map(|t| self.resolve(t).and_then(|t| self.class_of(&t.id())));
-            let mut value = l.child_by_field_name("value");
+            let mut value = given;
             while let Some(v) = value {
                 value = match v.kind() {
                     _ if wraps(WRAPPERS, v) => wrapped(v),
@@ -1481,12 +1504,12 @@ impl<'a, 't> Body<'a, 't> {
                     _ => break,
                 };
             }
-            if let Some(made) = l.child_by_field_name("value") {
+            if let Some(made) = given {
                 self.made_by.bind(&name, from, to, made);
             }
             match annotated.or_else(|| value.and_then(|v| self.value_class(v))) {
                 Some(t) => self.locals.bind(&name, from, to, t),
-                None if l.child_by_field_name("type").is_none() => untyped.push((name, (from, to))),
+                None if ty.is_none() => untyped.push((name, (from, to))),
                 None => {}
             }
         }
