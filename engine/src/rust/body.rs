@@ -11,7 +11,7 @@ use super::module::{
     WRAPPERS,
 };
 use super::paths::{self, Arg, At, Eval};
-use crate::body::{element_written, held_written, Bindings, Crosses, Holders, Range, Step, Steps, UseSyntax, Written};
+use crate::body::{element_written, held_written, Bindings, Crosses, Holders, Kept, Range, Step, Steps, UseSyntax, Written};
 use crate::builder::{foreign_type, GraphBuilder};
 use crate::effects::{self, Crossing};
 use crate::knowledge::{self, OwnTypes};
@@ -1860,7 +1860,7 @@ impl<'a, 't> Body<'a, 't> {
     /// The instance the body runs on is handed where an argument names it or a part of it
     /// (`fs::read_to_string(&self.path)`, `let conn = &self.conn; conn.prepare(..)`), as a value of
     /// its class no name of the body holds; a call made on `self` itself runs on it instead.
-    fn hands(&self, parts: &[Option<TsNode>], kept: &HashSet<String>) -> Vec<Held> {
+    fn hands(&self, parts: &[Option<TsNode>], kept: &Kept) -> Vec<Held> {
         self.handed(self.hands_of(parts, kept))
     }
 
@@ -1873,7 +1873,7 @@ impl<'a, 't> Body<'a, 't> {
 
     /// What `hands` gives, each value with the place of the body's own parameter of no type of the
     /// code's it is, where it is one.
-    fn hands_of(&self, parts: &[Option<TsNode>], kept: &HashSet<String>) -> Vec<(Held, Option<usize>)> {
+    fn hands_of(&self, parts: &[Option<TsNode>], kept: &Kept) -> Vec<(Held, Option<usize>)> {
         let mut out: Vec<(Held, Option<usize>)> = vec![];
         // the receiver a method called by its path runs on is its first argument (`Self::raw(self)`)
         let runs_on: Vec<usize> =
@@ -1933,7 +1933,7 @@ impl<'a, 't> Body<'a, 't> {
     /// The values the name `name` written at byte `at` holds, as a call is handed them: the value `held_by` says, or the
     /// values the names it stands for hold there (`stands`), as the value written in the name's place hands them. Each is
     /// handed where the name is written, from where the name it holds it by is (`Held::bound`).
-    fn held_through(&self, name: &str, at: usize, kept: &HashSet<String>, depth: usize) -> Vec<(Held, Option<usize>)> {
+    fn held_through(&self, name: &str, at: usize, kept: &Kept, depth: usize) -> Vec<(Held, Option<usize>)> {
         let names = if depth <= 8 { self.stands(name, at, kept) } else { vec![] };
         if names.is_empty() {
             return self.held_by(name, at, kept).into_iter().collect();
@@ -1955,7 +1955,7 @@ impl<'a, 't> Body<'a, 't> {
     /// The names the name `name` written at byte `at` stands for: where a `let` binds it to what Rust's own code computes of
     /// names and nothing makes it anew, no step, no assignment and no change in place (`let gap = first.db - second.db`, `let
     /// both = [first, second]`), the names that value is computed of (`body::stands_for`); none for any other name.
-    fn stands(&self, name: &str, at: usize, kept: &HashSet<String>) -> Vec<TsNode<'t>> {
+    fn stands(&self, name: &str, at: usize, kept: &Kept) -> Vec<TsNode<'t>> {
         let (holder, from) = self.holder(name, at);
         let anew = |h: &String| kept.contains(h) || self.reassigned(h, from) || self.is_changed_in_place(h, from);
         let made = self.made_by.get(&holder, from).filter(|_| !anew(&holder));
@@ -2012,7 +2012,7 @@ impl<'a, 't> Body<'a, 't> {
     /// the code's where a step kept it under the name or the name is one of the function's
     /// parameters, which holds what its call hands it (given with the parameter's place). None for
     /// a name that holds no value Atlas draws (a local the body bound to a literal).
-    fn held_by(&self, name: &str, at: usize, kept: &HashSet<String>) -> Option<(Held, Option<usize>)> {
+    fn held_by(&self, name: &str, at: usize, kept: &Kept) -> Option<(Held, Option<usize>)> {
         let (name, from) = self.holder(name, at);
         // a name a `let` bound to a projection holds what the projection starts from, there (`let t = &self.title`)
         let bound = |h: Held| Held { bound: if from != at { from as u32 } else { 0 }, ..h };
@@ -2026,7 +2026,10 @@ impl<'a, 't> Body<'a, 't> {
         let param = || self.params.iter().position(|p| *p == name).filter(|_| self.parameter.get(&name, from) == Some(&true));
         match self.held_type(&name, from) {
             Some(ty) => Some((bound(Held::at(ty, name, at, false)), None)),
-            None if kept.contains(&name) => Some((bound(Held::at(String::new(), name, at, false)), None)),
+            None if kept.contains(&name) => {
+                let ty = kept.value_of(&name, false).and_then(|v| v.into_iter().next()).map(|h| h.ty).unwrap_or_default();
+                Some((bound(Held::at(ty, name, at, false)), None))
+            }
             None => {
                 let at_param = param()?;
                 Some((bound(Held::at(String::new(), name, at, false)), Some(at_param)))
@@ -2352,7 +2355,7 @@ impl<'a, 't> Body<'a, 't> {
 
     /// What a call is handed: the value it is called on, and the names that stand for values in
     /// its arguments.
-    fn call_hands(&self, c: TsNode<'t>, recv: Option<TsNode<'t>>, kept: &HashSet<String>) -> Vec<Held> {
+    fn call_hands(&self, c: TsNode<'t>, recv: Option<TsNode<'t>>, kept: &Kept) -> Vec<Held> {
         let parts: Vec<Option<TsNode>> = match c.kind() {
             "token_tree" => std::iter::once(recv).chain(token_values(c).into_iter().map(Some)).collect(),
             _ => vec![recv, c.child_by_field_name("arguments")],

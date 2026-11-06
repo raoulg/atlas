@@ -337,6 +337,50 @@ enum Read {
     Not,
 }
 
+/// The values the steps so far have given under a name, by name: of each name, what the latest step that gave it gave, with
+/// the types it gave them. A name a step gave is the body's value, never the module's function of that name.
+#[derive(Clone, Default)]
+pub struct Kept {
+    values: HashMap<String, Vec<Held>>,
+    /// How many times a step gave a name: it changes whenever any name's values may have.
+    gave: usize,
+}
+
+impl Kept {
+    /// Whether a step gave `name`.
+    pub fn contains(&self, name: &str) -> bool {
+        self.values.contains_key(name)
+    }
+
+    /// A number that differs between any two states of the table.
+    pub fn version(&self) -> usize {
+        self.gave
+    }
+
+    /// Keep what a step gave: each name it gave is held by the values the step gave under it.
+    pub fn keep(&mut self, gives: &[Held]) {
+        let mut named: HashMap<&str, Vec<Held>> = HashMap::new();
+        for g in gives.iter().filter(|g| !g.name.is_empty()) {
+            named.entry(g.name.as_str()).or_default().push(Held::new(g.ty.clone(), g.name.clone()));
+        }
+        for (name, held) in named {
+            self.values.insert(name.to_string(), held);
+            self.gave += 1;
+        }
+    }
+
+    /// What `name` holds where the body is at: the values a step gave under it, typed as the step typed them; else, where
+    /// `bound` (the reader says the body binds the name here), one value of no type; else none, and only then is the name
+    /// the module's.
+    pub fn value_of(&self, name: &str, bound: bool) -> Option<Vec<Held>> {
+        match self.values.get(name) {
+            Some(held) => Some(held.clone()),
+            None if bound => Some(vec![Held::new(String::new(), name.to_string())]),
+            None => None,
+        }
+    }
+}
+
 /// The steps of a body in the order they run, the names they keep, and the edges they make: read
 /// the same way for every language. The reader says what each call is; where it sits among the
 /// body's choices is read here.
@@ -362,7 +406,7 @@ pub struct Steps<'t, 's> {
     /// says it fails.
     converts: Option<String>,
     /// The names the steps so far have kept.
-    pub kept: HashSet<String>,
+    pub kept: Kept,
     /// The values the body binds a name to by a literal (`Steps::literal`), by where each is written.
     literals: HashSet<Range>,
     /// The names the language's own code computes a value bound to a name of, where the reader follows that name to them
@@ -475,7 +519,7 @@ impl<'t, 's> Steps<'t, 's> {
             sets: vec![],
             tests: vec![],
             converts: None,
-            kept: HashSet::new(),
+            kept: Kept::default(),
             literals: HashSet::new(),
             stood: HashSet::new(),
             lookups: vec![],
@@ -1463,7 +1507,7 @@ impl<'t, 's> Steps<'t, 's> {
 
     /// Keep the names a call's value is held by.
     pub fn keep(&mut self, gives: &[Held]) {
-        self.kept.extend(gives.iter().map(|g| g.name.clone()).filter(|n| !n.is_empty()));
+        self.kept.keep(gives);
     }
 
     /// A call `c` of the program's own code: a step to `to`, and an edge of `kind` (`via` the

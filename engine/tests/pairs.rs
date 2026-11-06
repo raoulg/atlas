@@ -1125,7 +1125,6 @@ fn a_method_on_a_value_built_in_place_is_linked_in_every_language() {
 /// each reading runs those of every other language. A name no binding takes is the module's function: `total` hands `size`
 /// itself on to `map`, which runs it on each pile, and `addressed` calls `tidy`, on both sides and in every language.
 #[test]
-#[ignore = "K9: red until #375/#394 land"]
 fn a_name_the_body_binds_is_never_the_modules_function() {
     use atlas_engine::NodeKind;
     use std::collections::BTreeMap;
@@ -1175,7 +1174,6 @@ fn a_name_the_body_binds_is_never_the_modules_function() {
 /// `show`: the step after the change takes the value the change gave, by the name it gave it, so with the type it gave it.
 /// What the change gives is one value in every language, so each reading gives and hands the types every other does.
 #[test]
-#[ignore = "K9: red until #375/#394 land"]
 fn a_value_a_change_gives_is_handed_on_with_its_type() {
     use std::collections::BTreeMap;
     let languages = ["python", "rust", "typescript"];

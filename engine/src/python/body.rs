@@ -12,7 +12,7 @@ use super::module::{
     written, Module, Own, WRAPPERS,
 };
 use super::paths::{self, At, Built, Eval};
-use crate::body::{changed_binding, changed_through, BindSyntax, Crosses, Lookups, Range, Step, Steps, UseSyntax};
+use crate::body::{changed_binding, changed_through, BindSyntax, Crosses, Kept, Lookups, Range, Step, Steps, UseSyntax};
 use crate::builder::{foreign_type, GraphBuilder};
 use crate::effects::{self, Crossing};
 use crate::knowledge::{self, OwnTypes};
@@ -856,7 +856,7 @@ impl<'a> Seen<'a> {
     /// A loop as the step it is: what it takes (what it goes over), and what it gives, each
     /// element under the name it binds (`for n in g.nodes` takes `g` and gives `n`). It gives
     /// nothing where its elements are no values Atlas draws.
-    fn each(&self, l: TsNode, ext: &HashMap<(String, String), String>, made: &HashSet<String>) -> (Vec<Held>, Vec<Held>) {
+    fn each(&self, l: TsNode, ext: &HashMap<(String, String), String>, made: &Kept) -> (Vec<Held>, Vec<Held>) {
         let (Some(left), Some(right)) = (l.child_by_field_name("left"), l.child_by_field_name("right")) else { return (vec![], vec![]) };
         let src = &self.m.src;
         let names: Vec<TsNode> = if left.kind() == "identifier" { vec![left] } else { walk(left, &["identifier"]) };
@@ -896,17 +896,17 @@ impl<'a> Seen<'a> {
     /// method runs on). A call in it that is a step of its own takes its names itself and hands
     /// what it gives (`Message(level.prefix())` is handed what `prefix` gives, not `level`). A
     /// class or a function named is no value, and neither is a name a `lambda` in it binds.
-    fn held_in(&self, e: TsNode, ext: &HashMap<(String, String), String>, made: &HashSet<String>) -> Vec<Held> {
+    fn held_in(&self, e: TsNode, ext: &HashMap<(String, String), String>, made: &Kept) -> Vec<Held> {
         self.held(e, ext, made, false)
     }
 
     /// What a call changes in `e`, the value it is called on: as `held_in`, with the instance the
     /// method runs on by its name, `self`, the value the change makes anew.
-    fn changed_in(&self, e: TsNode, ext: &HashMap<(String, String), String>, made: &HashSet<String>) -> Vec<Held> {
+    fn changed_in(&self, e: TsNode, ext: &HashMap<(String, String), String>, made: &Kept) -> Vec<Held> {
         self.held(e, ext, made, true)
     }
 
-    fn held(&self, e: TsNode, ext: &HashMap<(String, String), String>, made: &HashSet<String>, changed: bool) -> Vec<Held> {
+    fn held(&self, e: TsNode, ext: &HashMap<(String, String), String>, made: &Kept, changed: bool) -> Vec<Held> {
         let mut out: Vec<Held> = vec![];
         let mut add = |ty: String, name: String, at: usize, param: bool| {
             if !out.iter().any(|h| h.ty == ty && h.name == name) {
@@ -964,7 +964,8 @@ impl<'a> Seen<'a> {
             // the call makes it anew; one of the function's own parameters holds what its calls fill it with,
             // which is known once every body is read (`builder::settle_parameters`)
             if tys.is_empty() && (made.contains(name) || changed) {
-                add(String::new(), name.to_string(), i.start_byte(), false);
+                let ty = made.value_of(name, false).and_then(|v| v.into_iter().next()).map(|h| h.ty).unwrap_or_default();
+                add(ty, name.to_string(), i.start_byte(), false);
             } else if tys.is_empty() && own_parameter(i, src) {
                 add(String::new(), name.to_string(), i.start_byte(), true);
             }
@@ -990,20 +991,20 @@ impl<'a> Seen<'a> {
     /// of a choice before `i` holds what each arm binds. A name a step made holds what the step gave.
     /// Where `computed`, a name holds what an operator computes it from as well (`sources`); a change
     /// made through a name changes only what the name is or is a part of.
-    fn projected<'t>(&self, i: TsNode<'t>, made: &HashSet<String>, computed: bool) -> Vec<TsNode<'t>> {
+    fn projected<'t>(&self, i: TsNode<'t>, made: &Kept, computed: bool) -> Vec<TsNode<'t>> {
         self.followed(i, made, computed).0
     }
 
     /// The names the name `i` stands for where it stands, as `projected` follows it with `computed`: those a binding it
     /// follows binds a name to by what Python's own code computes of them (`gap = first.db - second.db`,
     /// `body::stands_for`).
-    fn stands<'t>(&self, i: TsNode<'t>, made: &HashSet<String>) -> Vec<TsNode<'t>> {
+    fn stands<'t>(&self, i: TsNode<'t>, made: &Kept) -> Vec<TsNode<'t>> {
         self.followed(i, made, true).1
     }
 
     /// The names `i` is followed to (`projected`), and the names it is followed through that stand where a binding binds a
     /// name to what Python's own code computes of them (`stands`).
-    fn followed<'t>(&self, i: TsNode<'t>, made: &HashSet<String>, computed: bool) -> (Vec<TsNode<'t>>, Vec<TsNode<'t>>) {
+    fn followed<'t>(&self, i: TsNode<'t>, made: &Kept, computed: bool) -> (Vec<TsNode<'t>>, Vec<TsNode<'t>>) {
         let src = &self.m.src;
         let (mut out, mut stood, mut todo, mut seen) = (vec![], vec![], vec![(i, 0)], HashSet::new());
         while let Some((at, depth)) = todo.pop() {
@@ -1608,7 +1609,7 @@ impl<'a, 't> Body<'a, 't> {
     /// What a call of the language's own that runs the function `a` it is handed on each element of
     /// what it goes over hands that function (`knowledge::PYTHON_EACH`): the values the element is a
     /// part of, and the parameter it fills (`map(f, rows)`, `sorted(rows, key=f)`, `rows.sort(key=f)`).
-    fn per_element(&self, c: TsNode<'t>, a: TsNode<'t>, receiver: Option<TsNode<'t>>, kept: &HashSet<String>) -> Option<(Vec<Held>, Slot)> {
+    fn per_element(&self, c: TsNode<'t>, a: TsNode<'t>, receiver: Option<TsNode<'t>>, kept: &Kept) -> Option<(Vec<Held>, Slot)> {
         let name = dotted(c.child_by_field_name("function"), self.src).last().cloned()?;
         let e = knowledge::PYTHON_EACH.iter().find(|e| e.name == name && (e.over.is_some() || receiver.is_some()))?;
         let function = match e.function {
@@ -1628,7 +1629,7 @@ impl<'a, 't> Body<'a, 't> {
     /// What a call is handed: the value it is called on, and its arguments. A method called on
     /// `self` itself runs on the instance the body runs on, which its step says (`on_receiver`);
     /// `self` inside an argument or a part of it (`self.path`, `self.cells.clear()`) is handed.
-    fn hands(&self, c: TsNode, receiver: Option<TsNode>, kept: &HashSet<String>) -> Vec<Held> {
+    fn hands(&self, c: TsNode, receiver: Option<TsNode>, kept: &Kept) -> Vec<Held> {
         let receiver = receiver.filter(|r| !(r.kind() == "identifier" && text(*r, self.src) == "self"));
         let args = c.child_by_field_name("arguments").map(named_children).unwrap_or_default();
         let values = args.into_iter().filter(|x| x.kind() != "comment").map(|x| {
