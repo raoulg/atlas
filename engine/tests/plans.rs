@@ -14,7 +14,9 @@
 //! its box for each value it stands for, as the page draws the frame (the walk's rule); and each class, picked as the set of
 //! its values, opens the families it cuts in two until no box is lit in part and none of its values is lost, and a family lit
 //! whole opens into lit boxes only (the filter first, mathematics.md "Saturation"); and each box of files folded into a
-//! directory opens in one step to what lies below it, every other file standing where it stood. The pictures are asked again of
+//! directory opens in one step to what lies below it, every other file standing where it stood; and the picture the model
+//! hands the page, its siblings that draw alike merged into one box, has both ends of every line among its boxes and joins
+//! only siblings that draw the same lines, calls among them (#412). The pictures are asked again of
 //! the plan cut as a large program's is cut, at a few small budgets (`ATLAS_FINE_BUDGET`): a step beyond the cut is the
 //! image of its body, and each of its lines counts the fine lines its body draws there. Opening a step beyond the cut plans
 //! it anew, so the oracle, which opens a box of one plan, does not hold it: each such step of the closed picture is opened
@@ -320,7 +322,9 @@ fn every_picture_of_a_cut_plan_is_its_image() {
 /// The overview is the image of one fine plan of generators, as a route's pictures are of theirs (mathematics.md, "One fine
 /// plan, every picture its image"; #69): for every set of open packages and parts of every program, each line of the picture
 /// counts the fine lines it stands for, a type internal to a closed package draws none, a call goes between the blocks of its
-/// ends, opening one more box refines the picture (the oracle), and the picture is a function of the set of open boxes. The
+/// ends, opening one more box refines the picture (the oracle), the picture is a function of the set of open boxes, and the
+/// picture the page draws, its siblings merged, has both ends of every line and every call among its boxes and joins only
+/// siblings that draw the same lines (`plans/siblings-call`, #412). The
 /// faults known of a program are known here too. All of it holds of the overview without the test code as well, which is the
 /// image of the fiber of the plan where the code is no test code (mathematics.md, "A filter: the program without its test
 /// code"; #400): its fine plan, built from the code without its test code, is the fiber of the fine plan with it, taken on

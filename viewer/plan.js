@@ -2352,6 +2352,43 @@ const coarsen = (F, opened = isOpenKey, coarsest = key => key === V.route) => {
   for (const P of F.pills.values()) for (const [way, m] of [["in", P.D], ["out", P.C]]) for (const k of m.keys()) { if (!ways.has(k)) ways.set(k, new Set()); ways.get(k).add(way); }
   return {places: view.places, pills: view.pills, frames: view.frames, restArrows: [], folded: view.folded, roles, home: view.homeOf, fine: {places: F.places, pills: F.pills, ways}, oracle: window.ATLAS_ORACLE ? checkOpenings(F, view, folded, opened) : null};
 };
+// whether a step of a union runs a function whose own arrow B changed
+const stepChanged = steps => !!DIFF && steps.some(s => byId.get(stepOf(s))?.ds === "changed");
+// Siblings that draw the same lines on the finest plan (the same places, versions and channels) are one pill: a quotient of
+// the picture's steps, so it is the same whatever else is open, and each of its lines stands for the lines of all of them. A
+// call is a line of the plan as data is, so siblings are one pill only where they call and are called alike, and a call to a
+// member is a call to the pill it joined. In a union, only siblings that both readings, or the same one, hold, and that changed
+// alike. A step the reader opened stands on its own: opening the pill refines the quotient into its members. A box of the
+// code's hierarchy (a part, a package) stands on its own
+const siblings = C => {
+  const {pills} = C, merged = new Map(), joinedTo = new Map(), callers = new Map();
+  for (const P of pills.values()) for (const b of P.calls || []) { if (!callers.has(b)) callers.set(b, []); callers.get(b).push(P.id); }
+  const counts = (P, n) => P[n] || new Map([...(n[0] === "D" ? P.D : P.C)].filter(([, r]) => n[1] === "n" || r).map(([k]) => [k, 1]));
+  for (const P of [...pills.values()]) {
+    if (P.own || P.hue || P.steps[0].startsWith("part:") || P.steps[0].startsWith("unit:") || P.steps.some(st => V.open.steps.has(st))) continue;
+    const lines = (P.fine ?? [...P.D.keys()].sort() + ">" + [...P.C.keys()].sort()) + "|" + [...(P.calls || [])].sort() + "<" + (callers.get(P.id) || []).sort();
+    const key = (P.parent || "") + "|" + lines + "|" + (P.backTo || "") + "|" + [...(P.sides || [])].sort() + "|" + stepChanged(P.steps);
+    const Q = merged.get(key);
+    if (!Q) { merged.set(key, P); continue; }
+    for (const n of ["Dn", "Cn", "Dr", "Cr"]) { const q = counts(Q, n); counts(P, n).forEach((c, k) => q.set(k, (q.get(k) || 0) + c)); Q[n] = q; }
+    for (const n of ["aDn", "aCn", "aDr", "aCr"]) if (Q[n] && P[n]) P[n].forEach((c, k) => Q[n].set(k, (Q[n].get(k) || 0) + c));
+    Q.steps = [...Q.steps, ...P.steps]; P.D.forEach((r, k) => Q.D.set(k, Q.D.get(k) && r)); P.C.forEach((r, k) => Q.C.set(k, Q.C.get(k) && r)); joinGoes(Q.goes, P.goes);
+    for (const [qs, ps] of [[Q.Ds, P.Ds], [Q.Cs, P.Cs]]) ps?.forEach((s, k) => qs.set(k, new Set([...(qs.get(k) || []), ...s])));
+    joinedTo.set(P.id, Q);
+    pills.delete(P.id);
+  }
+  for (const P of pills.values()) if (P.steps.length > 1) { joinedTo.set(P.id, P); P.id = "n:" + P.steps.join("+"); }
+  C.pills = new Map([...pills.values()].map(P => [P.id, P]));
+  const callee = b => joinedTo.get(b)?.id ?? b;
+  for (const P of C.pills.values()) {
+    if (P.calls) P.calls = new Set([...P.calls].map(callee));
+    if (P.Ks) { const Ks = new Map(); P.Ks.forEach((s, b) => Ks.set(callee(b), new Set([...(Ks.get(callee(b)) || []), ...s]))); P.Ks = Ks; }
+  }
+  return C;
+};
+// The picture the page draws is the coarse plan with its siblings that draw alike merged (`siblings`). One reading of a union
+// is not merged: the page merges the union of the two
+const alike = C => (SIDE ? C : siblings(C));
 // ---- the overview is the image of one fine plan of generators ----
 // A view with no route has no order between its arrows, so its fine plan `F₀` has no moments: the functions of the code,
 // each with its own arrow (sentence 6: a package shows what its own code does, not what it reaches through another), a type
@@ -2470,19 +2507,20 @@ const overview = () => {
   const F = overviewBase(), C = coarsen(F, overviewOpen, () => false);
   // a closed package stands even where nothing crosses its edge, so that it can be opened
   for (const [fid, f] of F.frames) if (!C.frames.has(fid) && (!f.parent || C.frames.has(f.parent)) && !C.pills.has(fid)) C.pills.set(fid, {id: fid, steps: [f.step], D: new Map(), C: new Map(), Dn: new Map(), Cn: new Map(), Dr: new Map(), Cr: new Map(), goes: new Map(), parent: f.parent, hue: null});
+  alike(C);
   window.atlasPlan = {fine: F, coarse: C};
   return {...C, calling: true};
 };
 const plan = () => {
   if (!V.route && !V.kind && !V.focus.size) return overview();
-  if (!V.route) return planBase(false);
+  if (!V.route) return alike(planBase(false));
   FINE = true;
   FIBER = null;
   cutArrows.clear();
   try {
     const F = planBase(true);
     FIBER = typesOf(F);
-    const C = coarsen(F);
+    const C = alike(coarsen(F));
     window.atlasPlan = {fine: F, coarse: C};
     return {...C, fiber: FIBER};
   } finally { FINE = false; }

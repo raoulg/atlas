@@ -943,7 +943,10 @@ parse the command line to the entry. The closed picture is `F/q`:
   lines to it, one solid and one dashed;
 - sibling steps that draw the same lines on `F` (the same places, versions and channels) are one pill,
   and each of its lines stands for the lines of all of them. The merge is decided on `F`, not on the
-  picture, so opening a family, a group or a directory never splits a pill it did not open;
+  picture, so opening a family, a group or a directory never splits a pill it did not open. A call is a
+  line as data is, so siblings are one pill only where they call the same steps and are called by the
+  same ones, and a call to a member is a call to the pill it joined: the merge is a quotient of the
+  picture's steps, and like every quotient it keeps the image of each line, both ends a box;
 - where a box stands is decided on `F`: a value stands in the smallest frame that holds all its users
   and its maker (a choice; for a value the body binds by its own code, the body's frame, or the choice whose arm binds
   it; the route frame when nothing in the plan makes it), a place of the world stands
@@ -1007,8 +1010,8 @@ test code (A filter: the program without its test code), and is the fiber of the
 line of a touch carries the formula of who makes its path whole, so the fiber can be taken on the
 plan too, and both ways give one plan.
 
-On the image the page then does only what is a quotient of `F` or a way of drawing it: the merge of
-siblings, the storage quotient and the fold (above); a value with no name and no type of the code's
+On the image the model merges the siblings (above, `siblings`), and the page then does only what is a
+quotient of `F` or a way of drawing it: the storage quotient and the fold (above); a value with no name and no type of the code's
 drawn as a wire from its maker to its takers, a vertex between two arrows contracted (a homotopy, as
 in rule 6); a type no line touches left out, since it lies on no border; and a place the route
 finds and changes drawn twice, `from X ⇄` on the left and `into X ⇄` on the right, one place with
@@ -1023,7 +1026,7 @@ Each law is then a theorem of the construction, or it is not yet, and says which
 | Side | decided on `F/q₀` and carried by `q` | `topology` (a place that changes side) |
 | Closing | `q` is a function of the set of open boxes | `topology` (closing draws the picture it was) |
 | Reading | the own arrow of an opened step is its border | `topology` |
-| Endpoints | every image of a place or an occurrence is a box | `pictures.py walk` |
+| Endpoints | every image of a place or an occurrence is a box | `pictures.py walk`; `plans.rs`, for every set of open steps of every route and every set of open packages of every overview: every line of the picture the model hands the page, its siblings merged, has both ends among its boxes, and the members of a merged box draw the same lines, calls among them (`ends` in `plans.mjs`) |
 | Across the cut | a cut step's arrow is the image of its body, made by the same construction (`cutArrow`) | `plans.rs` at the budgets 1, 2 and 3 (`ATLAS_FINE_BUDGET`), which cut the small programs as a large one is cut: each line of a cut step counts the fine lines its body draws there, and each cut step of the closed picture, opened and planned anew, refines the picture it was cut in (`cutOpenings` in `plans.mjs`); at the same budgets a route whose body, unfolded, has 2^40 occurrences, which only an arrow made without unfolding the body can plan (`a_step_beyond_the_cut_is_made_without_unfolding_its_body`); `topology` with a small budget |
 | The overview | `F₀/q` maps onto `F₀/q′` along the blocks, as a route's pictures do, the calls a channel among them | the oracle; `plans.rs` (`every_package_view_is_the_image_of_its_plan`), for every set of open packages and parts of every program: each line counts the fine lines it stands for and none is reached, a type internal to a closed package draws none, each call goes between the blocks of its ends, and the picture is a function of the set of open boxes; all of it again without the test code, whose plan is the fiber of the plan with it |
 
@@ -1036,8 +1039,8 @@ test runs the viewer's own model in node, the function every picture is drawn fr
 the pairs and of its programs.
 **Where.** `plan`, `sitesOf`, `figureOf`, `FIGURE_FIELDS`, `FIGURE_SLOTS` and `figurePart`, `setsAt` and `resolveWhole`, `throughOf` and `partIn`,
 `changedThrough` and `changesOwner`,
-`coarsen`, `cutArrow` and `typesOf`, `handTo` and `checkOpenings`, `overviewBase` and `overview` in `viewer/plan.js`, `cutOpenings` and
-`overviewFaults` in `engine/tests/plans.mjs`;
+`coarsen`, `siblings`, `cutArrow` and `typesOf`, `handTo` and `checkOpenings`, `overviewBase` and `overview` in `viewer/plan.js`,
+`cutOpenings`, `ends` and `overviewFaults` in `engine/tests/plans.mjs`;
 the field an argument reads, `Steps::fills` and `Steps::read_of` (`body.rs`); the class each field of a class holds, `Node::holds`;
 which parameters of no type of the code's hold a value, `builder::settle_parameters`; the fields a condition tests,
 `Steps::tests` (`body.rs`), and whether a figure is made sure of, `guarded` in `viewer/plan.js`; the names a body binds

@@ -13,7 +13,9 @@ oracle and the quotient must find nothing, and every closed family must open int
 each value it stands for, as the page draws it (the walk's rule), and every class of the route's fiber, picked as the set
 of its values, must leave no closed box cut in two once the families it cuts are open, and every family opened must carry
 the light its closed box had to its frame and kinds (#296), and every box of files folded into a directory must
-open, in one step, to the files it held or to directories below it, leaving every other file where it stood. They are asked again with the plan cut as a large
+open, in one step, to the files it held or to directories below it, leaving every other file where it stood. The picture
+the model hands the page, its siblings that draw alike merged into one box (`siblings`), must have both ends of every line
+among its boxes, and merge only siblings that draw the same lines, calls among them (#412). They are asked again with the plan cut as a large
 program's is cut, at the budgets 1, 2 and 3 (`ATLAS_FINE_BUDGET`), where a step beyond the cut is the image of its body
 and each of its lines counts the fine lines its body draws there, and where each step beyond the cut, opened as the page
 opens it and planned anew, must refine the picture it was cut in; the facts are asked of the finest plan only. The
@@ -22,7 +24,8 @@ place and the calls between functions. Each function's arrow there is its morphi
 function takes and gives every one it makes, whether or not another function of the code makes or takes it. For every
 set of open packages and parts, each line counts the fine lines it
 stands for, a type internal to a closed package draws none, each call goes between the blocks of its ends, opening one
-more box refines the picture, and the picture is a function of the set of open boxes (`overview-packages` holds a type
+more box refines the picture, the picture is a function of the set of open boxes, and the picture the page draws, its
+siblings merged, has both ends of every line and every call among its boxes (`overview-packages` holds a type
 internal to a package, one a package makes, takes and hands to another, and one a function gives back that no
 function takes). The same is asked of the overview without
 the test code, whose fine plan must be the fiber of the one with it, taken on that plan, for every set of open packages
@@ -146,3 +149,4 @@ smallest that showed one law:
 | `setup-in-a-loop` | what ran before a step in a loop is every call of the loop: a shelf a later call opens is the one an earlier call keeps its report on in the next round (#329) |
 | `setup-in-an-arm` | what ran before a step in an arm is what ran before its choice and before it in its arm: a set-up in an arm counts for a call in a choice inside that arm (#329), and that choice is a frame inside the arm, never another arm beside it (#357); in Python, Rust and TypeScript |
 | `changed-in-an-arm` | a name the body binds by its own code holds the body's value, in its frame, for every step after the binding: a change in one arm makes it anew at the choice's moment, which the step after the choice takes, and a change in a loop takes it, never the latest of its kind the loop gives; in Python, Rust and TypeScript (#366) |
+| `siblings-call` | siblings are one box only where they draw the same lines, calls among them: in the overview, `total` and `report` call `price` and `tax` and are called by `main`, and are one box, as `price` and `tax` are; `stamp` takes and shows what they do but calls nothing, `discount` takes what `price` takes but `main` calls it, and each stands on its own; every call ends at the box its callee joined (#412) |
