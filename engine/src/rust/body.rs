@@ -905,6 +905,9 @@ pub(super) struct Body<'a, 't> {
     /// or a `static` that nothing changes (`const FLOOR: Floor = ..`). A name of one holds what the module holds, a value the
     /// body did not make.
     constants: HashMap<String, String>,
+    /// The fields of the body's own class that change in place (`knowledge::RUST_INTERIOR`, in the type or in what it
+    /// holds): a method that changes one through `&self` changes `self`, as `&mut self` does.
+    interior: HashSet<String>,
     read: Read<'t>,
 }
 
@@ -954,9 +957,11 @@ impl<'a, 't> Body<'a, 't> {
             unit: n.returns.as_ref().map_or(true, |r| r.value.is_empty() && !r.own),
             loop_values: HashSet::new(),
             constants: HashMap::new(),
+            interior: HashSet::new(),
             read: Read::default(),
         };
         b.constants = b.constants();
+        b.interior = b.interior_fields();
         b.parameters(d);
         b.binders(d, body);
         b.loop_values = b.iterations(body).into_iter().map(|(_, v)| v.id()).collect();
@@ -1751,6 +1756,35 @@ impl<'a, 't> Body<'a, 't> {
         self.locals.get(name, at).or_else(|| self.taken.get(name, at)).or_else(library).or_else(constant).cloned()
     }
 
+    /// The fields of the body's own class whose type changes in place or holds one that does (`Cell<usize>`,
+    /// `Arc<AtomicUsize>`, `Arc<Mutex<Vec<u8>>>`), not a type of the program's that is named like one.
+    fn interior_fields(&self) -> HashSet<String> {
+        let own = |t: &Vec<String>| self.resolve(t).and_then(Resolved::code).is_some_and(|r| self.class_of(&r).is_some());
+        let fields = self.cls.as_ref().and_then(|c| self.store.classes.get(c)).map(|c| c.fields.as_slice()).unwrap_or_default();
+        fields
+            .iter()
+            .filter(|(_, types)| types.iter().any(|t| t.last().is_some_and(|l| knowledge::rust_interior(l)) && !own(t)))
+            .map(|(name, _)| name.clone())
+            .collect()
+    }
+
+    /// Whether a method changes a field of `self` that changes in place, through `&self` (`self.n.fetch_add(..)`,
+    /// `self.log.lock().unwrap().push(..)`): a change of `self`, as `self.n += 1` through `&mut self` is.
+    fn changes_own_field(&self, value: TsNode<'t>, method: &str) -> bool {
+        let src = self.src;
+        let root = opened(value, src);
+        let guarded = root.id() != beneath(value, WRAPPERS).id();
+        let field = (root.kind() == "field_expression").then_some(root).and_then(|r| {
+            let on = opened(r.child_by_field_name("value")?, src);
+            if on.kind() == "self" {
+                Some(text(r.child_by_field_name("field")?, src))
+            } else {
+                None
+            }
+        });
+        field.is_some_and(|f| self.interior.contains(f)) && knowledge::rust_changes(method, guarded)
+    }
+
     /// The constants the body's module declares at its top, each with the class of the program its declared type holds
     /// (`Body::constants`): a `static` that is `mut` or changes in place is a place, `Global(..)`, no constant.
     fn constants(&self) -> HashMap<String, String> {
@@ -2429,6 +2463,12 @@ impl<'a, 't> Body<'a, 't> {
             steps.looks_up(c, on);
             return;
         }
+        if own.is_none() && self.changes_own_field(value, &method) {
+            let class = self.cls.clone().map(|c| (c, "self".to_string()));
+            if let Some(m) = class.filter(|m| !self.read.mutates.contains(m)) {
+                self.read.mutates.push(m);
+            }
+        }
         if own.is_none() && self.changes_library_value(value, &method) {
             let hands = self.call_hands(c, Some(value), &steps.kept);
             // what changes is the name the part is picked of, never the index that picks it (`fills` of `fills[k].push(..)`)
@@ -2476,6 +2516,9 @@ impl<'a, 't> Body<'a, 't> {
     /// as it makes it, is of a crate whose row of `knowledge::MUTATORS` has the method. A prelude
     /// type (`Vec`, `String`) is std's, and so is a slice or an array.
     fn changes_library_value(&self, value: TsNode<'t>, method: &str) -> bool {
+        if self.changes_own_field(value, method) {
+            return true;
+        }
         let ty = match (self.declared(value), self.picked(value, 0)) {
             (Some(ty), _) => ty,
             (None, Some(element)) => {

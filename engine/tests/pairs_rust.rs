@@ -1912,3 +1912,31 @@ fn a_change_of_a_part_changes_the_whole() {
 fn places_a_path_through_helpers_is_the_path_in_place() {
     common::a_path_through_helpers_is_the_path_in_place("rust");
 }
+
+/// One side of the interior pair (`tests/pairs/interior/rust`): counts kept in the fields of structs
+/// that change through `&self`, or in statics the methods raise.
+fn interior(side: &str) -> Graph {
+    analyze(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/pairs/interior/rust").join(side), &Options::default()).expect("reads")
+}
+
+/// A field of `self` that changes in place (`AtomicUsize`, `Arc<AtomicUsize>`, `Arc<Mutex<..>>`,
+/// `Cell`), changed through `&self`, is a change of `self`, as `&mut self` with `self.n += 1` is:
+/// isomorphic forms, one construct (#417). Each `bump(&self)` changes its struct as `Plain::bump(&mut
+/// self)` changes `Plain`; a method that only reads the field changes nothing. The same count kept
+/// in a `static` lands elsewhere: `Global(..)` is changed, no struct is, and Atlas tells the two
+/// apart by where the change lands.
+#[test]
+fn changes_a_field_that_changes_in_place_is_a_change_of_self() {
+    let (c, s) = (interior("clean"), interior("shortcut"));
+    assert_eq!(targets(&c, EdgeKind::Mutates, "interior.Plain.bump"), ["interior.Plain"]);
+    for class in ["Atomic", "Shared", "Locked", "Celled"] {
+        assert_eq!(targets(&c, EdgeKind::Mutates, &format!("interior.{class}.bump")), [format!("interior.{class}")], "{class}");
+    }
+    assert!(targets(&c, EdgeKind::Mutates, "interior.Reader.seen").is_empty(), "a read changes nothing");
+    assert_eq!(found(&c, "nothing"), Vec::<String>::new());
+    for class in ["Atomic", "Locked", "Celled"] {
+        let f = format!("interior.{class}.bump");
+        assert!(targets(&s, EdgeKind::Mutates, &f).is_empty(), "{f}: the static is changed, not the struct");
+        assert!(touches(&s, &f, "global").iter().any(|t| t.dir_name() == "write"), "{f}: a Global is written");
+    }
+}
