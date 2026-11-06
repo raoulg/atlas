@@ -16,7 +16,9 @@
 //! whole opens into lit boxes only (the filter first, mathematics.md "Saturation"); and each box of files folded into a
 //! directory opens in one step to what lies below it, every other file standing where it stood; and the picture the model
 //! hands the page, its siblings that draw alike merged into one box, has both ends of every line among its boxes and joins
-//! only siblings that draw the same lines, calls among them (#412). The pictures are asked again of
+//! only siblings that draw the same lines, calls among them (#412); and a place on the disk that lies in another the
+//! picture draws stands in the outermost of them that is closed, or in the frame of the innermost where all are open
+//! (#381). The pictures are asked again of
 //! the plan cut as a large program's is cut, at a few small budgets (`ATLAS_FINE_BUDGET`): a step beyond the cut is the
 //! image of its body, and each of its lines counts the fine lines its body draws there. Opening a step beyond the cut plans
 //! it anew, so the oracle, which opens a box of one plan, does not hold it: each such step of the closed picture is opened

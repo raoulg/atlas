@@ -963,8 +963,8 @@ async function renderPlaat(mine) {
     }
     return {places, pills, frames, restArrows: [...rest.values()], roles, home, fine, oracle, calling: A.calling || B.calling};
   };
-  // the union's siblings that draw alike are one pill, as each plan's are (`siblings`)
-  const {places, pills, frames, restArrows, roles, home, fine, oracle, calling: planCalls} = DIFF ? siblings(unite()) : plan();
+  // the union's siblings that draw alike are one pill and its places are ordered on the disk, as each plan's are (`quotients`)
+  const {places, pills, frames, restArrows, roles, home, fine, oracle, calling: planCalls, meets} = DIFF ? quotients(unite()) : plan();
   // Storage quotients are computed on the visible fiber. A singleton keeps its concrete
   // expression; an opened quotient retains a frame around the same members.
   const storage = new Map(), worldFrames = new Map(), worldParent = new Map();
@@ -1033,7 +1033,9 @@ async function renderPlaat(mine) {
   for (const P of pills.values()) { P.D = remapWorld(P.D); P.C = remapWorld(P.C); if (P.Ds) { P.Ds = remapWorld(P.Ds, true); P.Cs = remapWorld(P.Cs, true); } }
   // the disk is a tree: past a column's worth, files fold into their directories, and a click opens one
   const visibleFiles = new Set([...places.keys()].map(filePath).filter(Boolean));
-  dirFold = foldDirs((fine ? [...fine.ways.keys()].filter(k => !worldShown.has(k)) : [...places.keys()]).map(filePath).filter(Boolean));
+  // a place the order of the disk took stands where that order puts it (`meet`), whatever the crowd
+  const ordered = k => meets.took.has(k.replace(/~own$/, ""));
+  dirFold = foldDirs((fine ? [...fine.ways.keys()].filter(k => !worldShown.has(k)) : [...places.keys()]).filter(k => !ordered(k)).map(filePath).filter(Boolean));
   if (dirFold.to.size) {
     // a directory holds the files it folds by the side each stands on: one class where they agree, one per side where not
     const classes = new Map();
@@ -1058,6 +1060,11 @@ async function renderPlaat(mine) {
       worldFrames.get(id).kids = kids;
       for (const k of kids) worldParent.set(k, id);
     }
+  }
+  // an opened place of the disk's order is a frame around its own place and what stands in it (`meet`)
+  for (const [id, F] of meets.frames) {
+    worldFrames.set(id, {...F, kids: new Set(F.kids)});
+    for (const k of F.kids) worldParent.set(k, id);
   }
   // a value with no name and no type of the code's is a wire, not a place where data rests: the step
   // that makes it points at the steps that take it
@@ -1185,14 +1192,14 @@ async function renderPlaat(mine) {
   // a place that stands twice is `from X` on the left and `into X` on the right
   const TWIN = " ⇄", sideLabel = p => p.way ? `${p.way} ${p.label}` : p.label;
   const sideOf = id => { const us = worldFrames.has(id) ? [...worldFrames.get(id).kids].map(k => used.get(k) || {}) : [used.get(id) || {}]; const i = us.some(u => u.in), o = us.some(u => u.out); return i && !o ? "in" : o && !i ? "out" : "both"; };
-  const worldIds = [...places.values()].filter(p => p.kind === "world" && keep.has(p.id) && !worldParent.has(p.id)).map(p => p.id).concat([...worldFrames.keys()]);
+  const worldIds = [...places.values()].filter(p => p.kind === "world" && keep.has(p.id) && !worldParent.has(p.id)).map(p => p.id).concat([...worldFrames.keys()].filter(id => !worldParent.has(id)));
   const sortWorld = ids => ids.sort((a, b) => (a.startsWith("e:") ? -1 : 0) - (b.startsWith("e:") ? -1 : 0) || (placeKind(a) || "").localeCompare(placeKind(b) || "") || a.localeCompare(b));
   const worldNode = (id, constraint) => {
     const F = worldFrames.get(id), opts = constraint ? {"elk.layered.layering.layerConstraint": constraint} : {};
     if (!F) return leaf(id, placeW({...places.get(id), label: sideLabel(places.get(id)) + (places.get(id).twin ? TWIN : "")}, 40), 36, opts);
     const n = frameNode(id, 36); Object.assign(n.layoutOptions, opts);
     n.layoutOptions["elk.nodeSize.minimum"] = `(${textW(sideLabel(F) + (F.twin ? TWIN : "")) + 50},70)`;
-    for (const k of F.kids) n.children.push(leaf(k, placeW(places.get(k), 40), 36));
+    for (const k of F.kids) n.children.push(worldFrames.has(k) ? worldNode(k) : leaf(k, placeW(places.get(k), 40), 36));
     return n;
   };
   // where each drawn place stands is the side of the places of the finest plan it stands for (`sideOfRoles`). A place it
@@ -1209,6 +1216,8 @@ async function renderPlaat(mine) {
   for (const [id, r] of roleAt) {
     if (r !== "both") continue;
     const tw = id + TWIN, F = worldFrames.get(id);
+    // an opened place of the disk's order stands once, between what writes in it and what reads it
+    if (F?.dir) { roleAt.set(id, "mid"); continue; }
     if (F) {
       // an opened database: what is read of it stands in the one, what is written in the other
       const T = {...F, id: tw, kids: new Set(), way: "into", twin: id};
@@ -1479,13 +1488,13 @@ async function renderPlaat(mine) {
     return ds.length > 0;
   };
   // frames: open steps (choices dashed) and open families
-  for (const F of worldFrames.values()) {
-    const P = pos.get(F.id), kind = placeKind([...F.kids][0]);
+  for (const F of [...worldFrames.values()].sort((a, b) => pos.get(a.id).depth - pos.get(b.id).depth)) {
+    const P = pos.get(F.id), kind = placeKind(F.dir ? F.id : [...F.kids][0]);
     const grp = el("g", {class: "frame storage", "data-id": F.id, "data-group": F.group}, fg);
     el("rect", {class: "bg", width: P.w, height: P.h, style: `stroke:var(--k-${kind});fill:var(--panel)`}, grp);
     const title = el("text", {class: "ftitle", x: 14, y: 22}, grp); title.textContent = "▾ " + sideLabel(F);
     if (F.twin) twinLink(title, F.twin);
-    title.addEventListener("click", ev => { ev.stopPropagation(); V.open.places.delete(F.group); plaatAnchor = F.id.slice(6); render(); });
+    title.addEventListener("click", ev => { ev.stopPropagation(); if (F.dir) { V.open.dirs.delete(F.dir); plaatAnchor = F.id; } else { V.open.places.delete(F.group); plaatAnchor = F.id.slice(6); } render(); });
     pointable(grp, F.id);
     place(grp, F.id);
   }

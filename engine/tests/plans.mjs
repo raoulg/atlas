@@ -133,6 +133,8 @@ function read(route) {
     facts.push(`side ${placeName(k)} ${SIDES[s]}`);
   }
   const faults = [...alternatives(F, occ), ...pictures(F, open, occ, homes, valueName), ...familyOpenings(), ...pickings(), ...folderOpenings([...C.fine.ways.keys()].map(M.filePath).filter(Boolean))];
+  V.open.steps = new Set();
+  faults.push(...orderings(() => [M.plan(), M.coarsen(window.atlasPlan.fine)]));
   if (window.ATLAS_FINE_BUDGET) faults.push(...cutOpenings(F, occ));
   return {facts: [...new Set(facts)].sort(), faults};
 }
@@ -333,6 +335,36 @@ function ends(C, unmerged) {
   return out;
 }
 
+// The places on the disk are ordered by their terms (`D.flow.lies_in`, from the top), and the order is a quotient of them whose
+// blocks are the folders and patterns the program touches (mathematics.md, "Paths as terms"; #381). So a place the picture draws
+// stands in the outermost place of its order that the picture draws and has not opened: closed, that place's box stands for
+// it, and no box of its own is drawn; opened, the place stands in its frame again, as refinement keeps what it does not refine.
+// Asked with the folders and patterns closed, each opened alone, and all opened; `picture` draws the picture and the one before
+// the order is taken
+const LIES_IN = Object.entries(D.flow?.lies_in || {});
+function orderings(picture) {
+  if (!LIES_IN.length) return [];
+  const out = [], holders = [...new Set(LIES_IN.flatMap(([, qs]) => qs))].map(q => q.slice(7)), was = new Set(V.open.dirs);
+  for (const set of [[], ...holders.map(h => [h]), ...(holders.length > 1 ? [holders] : [])]) {
+    V.open.dirs = new Set(set);
+    const [C, before] = picture(), at = set.length ? `with ${set.join(", ")} open` : "with every folder closed";
+    const drawn = new Set([...before.places.keys()].filter(k => k.startsWith("w:File:")));
+    const box = k => (C.meets?.frames.has(k) ? k : C.places.has(k) ? k : null);
+    for (const p of drawn) {
+      const hs = (D.flow.lies_in[p] || []).filter(q => q !== p && drawn.has(q)), c = hs.find(q => !V.open.dirs.has(q.slice(7)));
+      if (c) {
+        if (C.places.has(p)) out.push(`${at}: ${p} lies in ${c}, which is closed, and is drawn as a box of its own`);
+        if (!C.places.get(c)?.members?.includes(p)) out.push(`${at}: ${p} lies in ${c}, which is closed, and its box does not stand for it`);
+      } else if (hs.length) {
+        const q = hs[hs.length - 1], b = box(p);
+        if (!b || !C.meets?.frames.get(q)?.kids.has(b)) out.push(`${at}: ${p} lies in ${q}, which is open, and stands outside its frame`);
+      }
+    }
+  }
+  V.open.dirs = was;
+  return out;
+}
+
 // A picture as what it draws: its boxes, the frames they stand in, the lines of each step with their counts, and the side
 // of each place of the world
 function drawn(C) {
@@ -486,6 +518,7 @@ function overviewFaults(tests) {
     const C = M.plan();
     for (const f of ends(C, M.coarsen(window.atlasPlan.fine, M.overviewOpen, () => false))) out.push(`${at}: ${f}`);
     first.set(set, drawnOf(C));
+    for (const f of orderings(() => [M.plan(), M.coarsen(window.atlasPlan.fine, M.overviewOpen, () => false)])) out.push(`${at}: ${f}`);
   }
   for (const set of [...sets].reverse()) {
     openAs(set);
