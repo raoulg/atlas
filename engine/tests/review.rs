@@ -189,6 +189,16 @@ const REVIEWED: &[(&str, &str, &str)] = &[
     ),
     (
         "choices",
+        "atlas-engine.python.paths.Eval.built",
+        "`built` and `of` are two evaluations over the same kinds of expression: the class a value is and the calls that built it, the values it can have; tree-sitter's kind is the syntax's own sum, and each function asks it a question of its own",
+    ),
+    (
+        "choices",
+        "atlas-engine.typescript.paths.Eval.object",
+        "`object`, `named_value`, `built` and `class_of` read an expression four ways: the object literal it is, the value a name stands for, the class it is with the calls that built it, the class alone; tree-sitter's kind is the syntax's own sum, and each function asks it a question of its own",
+    ),
+    (
+        "choices",
         "atlas-engine.typescript.module.collect_types",
         "the TypeScript reader's functions each read a construct by tree-sitter's kind: a type name stands for one thing in a type, another in a member path",
     ),
@@ -226,16 +236,6 @@ const REVIEWED: &[(&str, &str, &str)] = &[
         "places",
         "atlas-engine.changes.envisioned",
         "a vision stands beside the repository's environment, `.venv`, where uv keeps a project's: the name is the convention's, the directory it is in the caller's (`{repo}/.venv`); `.venv` alone is the command line run in `.`",
-    ),
-    (
-        "places",
-        "atlas-engine.python.parse",
-        "wrong, #395: the files a test's pair holds are credited to `parse`, where the listing's file made the place whole, and not to the test that built the `Repo` whose root it is",
-    ),
-    (
-        "places",
-        "atlas-engine.typescript.parse",
-        "wrong, #395: the files a test's pair holds are credited to `parse`, where the listing's file made the place whole, and not to the test that built the `Repo` whose root it is",
     ),
     (
         "places",

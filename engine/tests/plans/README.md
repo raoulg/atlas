@@ -37,7 +37,11 @@ A focus, the overview with some packages singled out, is asked the same of its o
 over the packages in focus with the rest of the code around it, for every set of packages in focus and every set of
 open boxes; besides, each package of the focus drawn closed has the border it has in the overview, and each type
 stands where the overview puts it (`focus-shapes` holds four ranks of one tensor type, each named otherwise by the
-package that takes it, and a class one package makes and another takes).
+package that takes it, and a class one package makes and another takes). In both, a library with two types or
+more in the plan is a box of its own: open, every box of its types stands in its frame, and the frame at the one home
+of its types; closed, it is one box `L · N types`, the image of the open picture under the quotient that merges its
+boxes, every other box where it was (`library-frame` holds torch tensors in four ranks, a bare `Tensor` and one
+numpy array, a library of one type; `library-frame-rust` two ndarray arrays).
 
 ```bash
 cargo test -p atlas-engine --test plans -- --nocapture                              # every program

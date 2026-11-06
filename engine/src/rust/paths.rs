@@ -11,9 +11,7 @@ use tree_sitter::Node as TsNode;
 use super::module::{def_node, expand, path_parts, resolve, resolve_value, shadowed, Module};
 use crate::knowledge::{self, PathFn, PathMethod};
 use crate::model::{ext, Node, NodeKind, Resolved};
-use crate::paths::{
-    applied, bound as named_by, cross, each, environment_named, held_by, hole, lit, or_else, parent, union, Built, Seg, Summaries,
-};
+use crate::paths::{applied, bound as named_by, cross, each, environment_named, hole, lit, or_else, parent, union, Built, Seg, Summaries};
 use crate::tree::{beneath, named_children, text, unquote, walk};
 
 /// How deep one frame's own expression is followed: a function's, the value a constructor gives a
@@ -28,9 +26,9 @@ pub(super) struct Eval<'a> {
     /// The program's items, to find the function a value is given by.
     nodes: IndexMap<String, Node>,
     crate_ids: &'a HashMap<String, String>,
-    /// The struct literals of every module, by the type each builds: found once, when a field is
-    /// first asked for.
-    literals: OnceCell<HashMap<String, Vec<(&'a Module, TsNode<'a>)>>>,
+    /// The constructions of the program's types and their variants, as calls of their constructors:
+    /// found once, when a field is first asked for.
+    constructions: OnceCell<Vec<Arg<'a>>>,
     /// The `const` and `static` items of a module, by its id and their name, the first of a name
     /// where it declares two: found once, when a constant of the module is first asked for.
     constants: RefCell<HashMap<String, HashMap<String, TsNode<'a>>>>,
@@ -86,7 +84,7 @@ impl<'a> Eval<'a> {
             modules,
             nodes: nodes.clone(),
             crate_ids,
-            literals: OnceCell::new(),
+            constructions: OnceCell::new(),
             constants: RefCell::new(HashMap::new()),
             summaries: Summaries::default(),
         }
@@ -121,10 +119,12 @@ impl<'a> Eval<'a> {
                 }
                 let held = match e.child_by_field_name("value") {
                     Some(v) if v.kind() == "self" => self.held(at, field),
-                    Some(v) => self
-                        .parsed(at, v, depth)
-                        .and_then(|ty| self.option(&ty, None, field, depth))
-                        .or_else(|| self.type_of(at, v, depth + 1).and_then(|ty| self.held_in(&ty, field))),
+                    // of a value whose type the code says, what the constructor that built it holds, of the
+                    // one the code says built it where it says so
+                    Some(v) => self.parsed(at, v, depth).and_then(|ty| self.option(&ty, None, field, depth)).or_else(|| {
+                        let ty = self.type_of(at, v, depth + 1).or_else(|| self.built(at, v, depth + 1).map(|(ty, _)| ty))?;
+                        self.held_in(&ty, field).map(|values| self.built_on(at, v, values, depth + 1))
+                    }),
                     None => None,
                 };
                 held.unwrap_or_else(|| vec![hole(field)])
@@ -179,10 +179,28 @@ impl<'a> Eval<'a> {
                     let values = args.into_iter().fold(vec![], |acc, a| union(acc, self.of(at, a, depth + 1)));
                     return named_by(&self.local(at.m, scope, name), values);
                 }
-                Some(Bound::Field(pattern, field, value)) => {
-                    return self
-                        .taken_apart(at, pattern, &field, value, depth)
-                        .unwrap_or_else(|| vec![hole(&self.local(at.m, scope, name))])
+                // a field a pattern takes out: an option of what the function parsed from the command line, else
+                // what the constructor of the struct or the variant holds by it, of the one the code says built the
+                // value where it says so (`Check::Tree(d)` in a `match` on a `Check::Tree(dir)`)
+                Some(Bound::Field(fields, value)) => {
+                    let local = self.local(at.m, scope, name);
+                    if let [(pattern, field)] = fields.as_slice() {
+                        if let Some(values) = self.taken_apart(at, *pattern, field, value, depth) {
+                            return values;
+                        }
+                    }
+                    let held: Vec<Built> = fields
+                        .iter()
+                        .filter_map(|(p, field)| {
+                            let (_, ctor) = self.constructor(at.m, *p, &path_parts(p.child_by_field_name("type"), src))?;
+                            let built = self.constructions_of().iter().any(|a| a.callee == ctor);
+                            built.then(|| vec![Seg::Held(ctor, field.clone(), vec![])])
+                        })
+                        .collect();
+                    if held.is_empty() {
+                        return vec![hole(&local)];
+                    }
+                    return named_by(&local, self.built_on(at, value, held, depth + 1));
                 }
                 Some(Bound::Element(value, i)) => {
                     if let Some(values) = self.element(at, value, i, depth) {
@@ -510,58 +528,198 @@ impl<'a> Eval<'a> {
         }
     }
 
-    /// A field of the value a method runs on, as the struct literals that build that type set it
-    /// (`Self { root }` in `new(root)`), from what the functions they are in are handed.
+    /// A field of the value a method runs on: what the constructor that built it holds by the
+    /// field's name (`Self { root }` in `new(root)`), of whatever value of its type the method runs on.
     fn held(&self, at: At<'a, '_>, field: &str) -> Option<Vec<Built>> {
         self.held_in(&self.impl_type(at.m, at.scope?)?, field)
     }
 
-    /// A field of a value of the program's type `ty`, as the struct literals that build that type set
-    /// it, from what the functions they are in are handed: of the value a method runs on, or of any
-    /// value whose type the code says (`tmp.root` of a `Tmp`).
+    /// A field of a value of the program's type `ty`: what the constructor of `ty` holds by the field's
+    /// name, a term its callers complete (a struct's literal is a call of the struct's constructor,
+    /// `Callers`), where the program builds a value of `ty`.
     fn held_in(&self, ty: &str, field: &str) -> Option<Vec<Built>> {
-        let ty = ty.to_string();
-        let mut out = vec![];
-        // a library's code builds none of the program's types
-        let own = self.nodes.get(&ty).map_or(true, |n| !n.library);
-        for &(m, lit) in self.literals().get(&ty).into_iter().flatten().filter(|(m, _)| !(own && m.library)) {
-            let value =
-                lit.child_by_field_name("body").map(named_children).unwrap_or_default().into_iter().find_map(|fi| match fi.kind() {
-                    "field_initializer" if fi.child_by_field_name("field").map(|f| text(f, &m.src)) == Some(field) => {
-                        fi.child_by_field_name("value")
-                    }
-                    "shorthand_field_initializer" if named_children(fi).first().map(|x| text(*x, &m.src)) == Some(field) => {
-                        named_children(fi).into_iter().next()
-                    }
-                    _ => None,
-                });
-            let (Some(value), Some(f)) = (value, enclosing_fn(lit)) else { continue };
-            let Some(id) = self.fn_id(m, f) else { continue };
-            let names = param_names(f, &m.src);
-            let vals = self.summaries.of(value.id(), || self.of(At { m, scope: Some(f), params: &names }, value, 0));
-            out = union(out, vals.into_iter().map(|b| held_by(&id, b)).collect());
-        }
-        (!out.is_empty()).then_some(out)
+        self.constructions_of().iter().any(|a| a.callee == ty).then(|| vec![vec![Seg::Held(ty.to_string(), field.to_string(), vec![])]])
     }
 
-    /// The struct literals of every module, by the type each builds.
-    fn literals(&self) -> &HashMap<String, Vec<(&'a Module, TsNode<'a>)>> {
-        self.literals.get_or_init(|| {
-            let mut out: HashMap<String, Vec<(&'a Module, TsNode<'a>)>> = HashMap::new();
+    /// Every construction of a type of the program or of a variant of one, as a call of its constructor:
+    /// a struct's literal (`Shelf { root }`) hands each field the value it is written with, a tuple struct's
+    /// or a variant's call (`Check::Tree(dir)`) each field by its place (`0`, `1`). A library's code builds
+    /// none of the program's types.
+    pub fn constructions(&self) -> Vec<Arg<'a>> {
+        self.constructions_of().clone()
+    }
+
+    fn constructions_of(&self) -> &Vec<Arg<'a>> {
+        self.constructions.get_or_init(|| {
+            let mut out = vec![];
             for m in self.modules.values() {
-                for lit in walk(m.tree.root_node(), &["struct_expression"]) {
-                    let name = path_parts(lit.child_by_field_name("name"), &m.src);
-                    let built = match name.as_slice() {
-                        [s] if s == "Self" => self.impl_type(m, lit),
-                        _ => resolve(m, &name, self.modules, &self.nodes, self.crate_ids).map(Resolved::id),
+                for c in walk(m.tree.root_node(), &["struct_expression", "call_expression"]) {
+                    let (name, passed): (Option<TsNode<'a>>, Vec<(String, TsNode<'a>)>) = match c.kind() {
+                        "struct_expression" => {
+                            let fields = c.child_by_field_name("body").map(named_children).unwrap_or_default();
+                            let passed = fields
+                                .into_iter()
+                                .filter_map(|fi| match fi.kind() {
+                                    "field_initializer" => {
+                                        Some((text(fi.child_by_field_name("field")?, &m.src).to_string(), fi.child_by_field_name("value")?))
+                                    }
+                                    "shorthand_field_initializer" => {
+                                        let x = named_children(fi).into_iter().next()?;
+                                        Some((text(x, &m.src).to_string(), x))
+                                    }
+                                    _ => None,
+                                })
+                                .collect();
+                            (c.child_by_field_name("name"), passed)
+                        }
+                        _ => {
+                            let f = c.child_by_field_name("function").filter(|f| matches!(f.kind(), "identifier" | "scoped_identifier"));
+                            // a type's name and a variant's are written in upper camel case, a function's never
+                            let upper = f.is_some_and(|f| {
+                                path_parts(Some(f), &m.src).last().and_then(|x| x.chars().next()).is_some_and(char::is_uppercase)
+                            });
+                            if !upper {
+                                continue;
+                            }
+                            let args = c.child_by_field_name("arguments").map(named_children).unwrap_or_default();
+                            let passed = args
+                                .into_iter()
+                                .filter(|a| !a.kind().ends_with("comment"))
+                                .enumerate()
+                                .map(|(i, a)| (i.to_string(), a))
+                                .collect();
+                            (f, passed)
+                        }
                     };
-                    if let Some(ty) = built {
-                        out.entry(ty).or_default().push((m, lit));
+                    let Some((ty, ctor)) = self.constructor(m, c, &path_parts(name, &m.src)) else { continue };
+                    if m.library && self.nodes.get(&ty).is_some_and(|n| !n.library) {
+                        continue;
                     }
+                    let Some(f) = enclosing_fn(c) else { continue };
+                    let Some(caller) = self.fn_id(m, f) else { continue };
+                    let params = param_names(f, &m.src);
+                    out.push(Arg { caller, callee: ctor, module: m.id.clone(), scope: Some(f), params, passed });
                 }
             }
             out
         })
+    }
+
+    /// Whether the users of the program can build a value through the constructor `ctor` (`constructions`), by
+    /// whether they can name the type (`named`): a variant of such a type, or a struct every field of which is
+    /// theirs to name; none where `ctor` is no constructor.
+    pub fn built_by_users(&self, ctor: &str, named: impl Fn(&str) -> bool) -> Option<bool> {
+        let class = |id: &str| self.nodes.get(id).filter(|n| n.kind == NodeKind::Class);
+        if let Some(n) = class(ctor) {
+            let home = self.modules.get(&n.module)?;
+            let body = def_node(home, n)?.child_by_field_name("body");
+            let parts: Vec<TsNode> = body
+                .map(named_children)
+                .unwrap_or_default()
+                .into_iter()
+                .filter(|d| !d.kind().ends_with("comment") && d.kind() != "attribute_item")
+                .collect();
+            let open = |d: &TsNode| named_children(*d).iter().any(|x| x.kind() == "visibility_modifier");
+            let theirs = match body.map(|b| b.kind()) {
+                // `pub struct Dir(pub PathBuf)`: each field's type after the visibility it is written with
+                Some("ordered_field_declaration_list") => {
+                    parts.iter().filter(|x| x.kind() == "visibility_modifier").count() * 2 == parts.len()
+                }
+                _ => parts.iter().filter(|d| d.kind() == "field_declaration").all(open),
+            };
+            return Some(named(ctor) && theirs);
+        }
+        let (ty, _) = ctor.rsplit_once('.')?;
+        class(ty)?;
+        Some(named(ty))
+    }
+
+    /// The type a path builds a value of where it names a constructor, a struct's (`Self`, `Shelf`) or a
+    /// variant's (`Check::Tree`), with the constructor's id: the type's own, or the variant's below its type's.
+    fn constructor(&self, m: &'a Module, at: TsNode<'a>, parts: &[String]) -> Option<(String, String)> {
+        let class = |parts: &[String]| {
+            let id = match parts {
+                [s] if s == "Self" => self.impl_type(m, at)?,
+                _ => resolve(m, parts, self.modules, &self.nodes, self.crate_ids)?.id(),
+            };
+            self.nodes.get(&id).filter(|n| n.kind == NodeKind::Class).map(|_| id)
+        };
+        if parts.is_empty() {
+            return None;
+        }
+        if let Some(ty) = class(parts) {
+            return Some((ty.clone(), ty));
+        }
+        let (variant, owner) = parts.split_last()?;
+        let ty = class(owner)?;
+        let n = self.nodes.get(&ty)?;
+        let home = self.modules.get(&n.module)?;
+        let declared = walk(def_node(home, n)?, &["enum_variant"])
+            .into_iter()
+            .any(|v| v.child_by_field_name("name").is_some_and(|x| text(x, &home.src) == variant));
+        declared.then(|| (ty.clone(), format!("{ty}.{variant}")))
+    }
+
+    /// The type of the value `e` is and the calls that built it, where the code says which: a construction
+    /// written in the function `e` is in, a binding of one the function does not assign again, or a call of
+    /// one of the program's functions whose every return builds a value of one type (`Shelf::new(root)`,
+    /// `open_archive()`), outward from the function the constructor is called in.
+    fn built(&self, at: At<'a, '_>, e: TsNode<'a>, depth: u32) -> Option<(String, Vec<String>)> {
+        if depth > DEPTH {
+            return None;
+        }
+        let e = beneath(e, super::module::WRAPPERS);
+        let src = &at.m.src;
+        let here = || at.scope.and_then(|f| self.fn_id(at.m, f));
+        match e.kind() {
+            "struct_expression" => {
+                let (ty, _) = self.constructor(at.m, e, &path_parts(e.child_by_field_name("name"), src))?;
+                Some((ty, vec![here()?]))
+            }
+            "identifier" => {
+                let scope = at.scope?;
+                let name = text(e, src);
+                let again = walk(scope, &["assignment_expression"])
+                    .into_iter()
+                    .any(|a| a.child_by_field_name("left").is_some_and(|l| text(l, src) == name));
+                match bound(scope, name, e.start_byte(), src)? {
+                    Bound::Value(v) if !again => self.built(at, v, depth + 1),
+                    _ => None,
+                }
+            }
+            "call_expression" => {
+                let f = e.child_by_field_name("function").filter(|f| matches!(f.kind(), "identifier" | "scoped_identifier"))?;
+                let parts = path_parts(Some(f), src);
+                if shadowed(at.scope, f, &parts, src) {
+                    return None;
+                }
+                if let Some((ty, _)) = self.constructor(at.m, e, &parts) {
+                    return Some((ty, vec![here()?]));
+                }
+                let id = resolve_value(at.m, &parts, self.modules, &self.nodes, self.crate_ids).and_then(Resolved::code)?;
+                let n = self.nodes.get(&id).filter(|n| matches!(n.kind, NodeKind::Function | NodeKind::Method))?;
+                let home = self.modules.get(&n.module)?;
+                let def = def_node(home, n)?;
+                let names = param_names(def, &home.src);
+                let inner = At { m: home, scope: Some(def), params: &names };
+                let mut each =
+                    def.child_by_field_name("body").map(returns).unwrap_or_default().into_iter().map(|r| self.built(inner, r, depth + 1));
+                let first = each.next()??;
+                each.all(|x| x.as_ref() == Some(&first)).then_some(())?;
+                let (ty, mut along) = first;
+                along.push(here()?);
+                Some((ty, along))
+            }
+            _ => None,
+        }
+    }
+
+    /// What `values` hold of the value `on` is, where the code says which calls built it (`built`).
+    fn built_on(&self, at: At<'a, '_>, on: TsNode<'a>, values: Vec<Built>, depth: u32) -> Vec<Built> {
+        match self.built(at, on, depth) {
+            Some((ty, along)) => crate::paths::built_along(values, &ty, &along),
+            None => values,
+        }
     }
 
     /// The type a command-line parser derives (clap's `#[derive(Parser)] struct Cli`) that a value
@@ -816,6 +974,8 @@ impl<'a> Eval<'a> {
                     }
                 }
                 // what an `Option` or a `Result` holds, or what it falls back to where it holds nothing
+                // what a condition's `Option` holds where it holds one: `(!clone).then_some(repo)` is `repo`
+                None if super::module::HOLDING_IF.contains(&method) && args.len() == 1 => arg(0),
                 None if super::module::OR_ELSE.contains(&method) && !method.starts_with("map") => or_else(on(), arg(0)),
                 None if knowledge::hands_on(method) && !matches!(method, "map" | "and_then") => on(),
                 // a door to the place of the socket it is called on: a clone, the connections a
@@ -918,17 +1078,21 @@ impl<'a> Eval<'a> {
             return None;
         }
         let handed: HashMap<&str, Vec<Built>> = names.iter().zip(args).map(|(p, a)| (p.as_str(), self.of(at, *a, depth + 1))).collect();
-        Some(applied(&summary, |p| handed.get(p).cloned().unwrap_or_else(|| vec![hole(p)])))
+        // a parameter handed no value the code says holds what no code says, as through the callers (`Callers`): the
+        // language declares no defaults
+        Some(applied(&summary, |p| handed.get(p).filter(|v| !v.is_empty()).cloned().unwrap_or_else(|| vec![hole(p)])))
     }
 
     /// What one of the program's methods gives back, called on a value whose type the code says
     /// (`Workbench::of(dir).file(name)`): its parameters bound to what the call hands them, and
-    /// what it reads of `self` as the values of its type hold it.
+    /// what it reads of `self` as the constructor of its type holds it, narrowed to the calls that
+    /// built the value where the code says them (`built_on`).
     fn method_given(&self, at: At<'a, '_>, recv: TsNode<'a>, method: &str, args: &[TsNode<'a>], depth: u32) -> Option<Vec<Built>> {
-        let ty = self.type_of(at, recv, depth + 1)?;
+        let ty = self.type_of(at, recv, depth + 1).or_else(|| self.built(at, recv, depth + 1).map(|(ty, _)| ty))?;
         let n = self.nodes.get(&format!("{ty}.{method}")).filter(|n| n.kind == NodeKind::Method)?;
         let home = self.modules.get(&n.module)?;
-        self.handed_to(at, home, def_node(home, n)?, args, depth)
+        let values = self.handed_to(at, home, def_node(home, n)?, args, depth)?;
+        Some(self.built_on(at, recv, values, depth + 1))
     }
 
     /// The program's type of the value `e` is, where the code says it: the value a method runs on,
@@ -1058,7 +1222,7 @@ impl<'a> Eval<'a> {
         match g {
             [x] if matches!(x.kind(), "string_literal" | "raw_string_literal" | "identifier") => self.of(at, *x, depth + 1),
             [x] if x.kind() == "integer_literal" => vec![lit(text(*x, src))],
-            // a field of the value the method is called on: what its type's struct literals set it to
+            // a field of the value the method is called on: what its type's constructor holds by that name
             [s, dot, field] if text(*s, src) == "self" && dot.kind() == "." && field.kind() == "identifier" => {
                 self.held(at, text(*field, src)).unwrap_or_else(|| vec![hole(text(*field, src))])
             }
@@ -1330,7 +1494,7 @@ fn path_made(k: PathMethod, on: Vec<Built>, first: Vec<Built>) -> Vec<Built> {
 /// closure on each element goes over.
 enum Bound<'a> {
     Value(TsNode<'a>),
-    Field(TsNode<'a>, String, TsNode<'a>),
+    Field(Vec<(TsNode<'a>, String)>, TsNode<'a>),
     Element(TsNode<'a>, usize),
     Each(TsNode<'a>),
     Handed(Vec<TsNode<'a>>),
@@ -1346,6 +1510,27 @@ enum Bound<'a> {
 fn bound<'a>(scope: TsNode<'a>, name: &str, pos: usize, src: &[u8]) -> Option<Bound<'a>> {
     let named = |p: TsNode| matches!(p.kind(), "identifier" | "mut_pattern") && text(p, src).trim_start_matches("mut ") == name;
     let element = |t: TsNode| (t.kind() == "tuple_pattern").then(|| named_children(t).into_iter().position(|x| named(x))).flatten();
+    // the field a pattern of a struct or a variant takes out by `name`: by its name (`Cmd::Analyze { out, .. }`),
+    // or by its place (`Check::Tree(d)`)
+    let field_of = |p: TsNode<'a>| -> Option<(TsNode<'a>, String)> {
+        let ty = p.child_by_field_name("type");
+        let inner: Vec<TsNode> = named_children(p).into_iter().filter(|c| Some(c.id()) != ty.map(|t| t.id())).collect();
+        match p.kind() {
+            "tuple_struct_pattern" => {
+                let mut cur = p.walk();
+                let places: Vec<TsNode> =
+                    p.children(&mut cur).filter(|c| Some(c.id()) != ty.map(|t| t.id()) && !matches!(c.kind(), "(" | ")" | ",")).collect();
+                let at = places.iter().position(|x| named(*x))?;
+                (!places[..at].iter().any(|x| x.kind() == "remaining_field_pattern")).then(|| (p, at.to_string()))
+            }
+            "struct_pattern" => inner.into_iter().filter(|f| f.kind() == "field_pattern").find_map(|f| {
+                let field = text(f.child_by_field_name("name")?, src).to_string();
+                let held = f.child_by_field_name("pattern").map_or(field == name, named);
+                held.then_some((p, field))
+            }),
+            _ => None,
+        }
+    };
     let binds = |p: TsNode<'a>, v: TsNode<'a>| -> Option<Bound<'a>> {
         if named(p) {
             return Some(Bound::Value(v));
@@ -1359,12 +1544,9 @@ fn bound<'a>(scope: TsNode<'a>, name: &str, pos: usize, src: &[u8]) -> Option<Bo
                 _ => None,
             },
             "tuple_pattern" => element(p).map(|i| Bound::Element(v, i)),
-            "struct_pattern" => inner.into_iter().filter(|f| f.kind() == "field_pattern").find_map(|f| {
-                let field = text(f.child_by_field_name("name")?, src).to_string();
-                let held = f.child_by_field_name("pattern").map_or(field == name, named);
-                held.then_some(Bound::Field(p, field, v))
-            }),
-            _ => None,
+            // each pattern of an arm that takes one of several variants apart binds the name
+            "or_pattern" => named_children(p).into_iter().map(field_of).collect::<Option<Vec<_>>>().map(|fs| Bound::Field(fs, v)),
+            _ => field_of(p).map(|f| Bound::Field(vec![f], v)),
         }
     };
     let around = |n: Option<TsNode>| n.map_or(false, |n| n.start_byte() <= pos && pos < n.end_byte());
@@ -1520,6 +1702,7 @@ fn with_extension(b: &Built, ext: &Built) -> Built {
 }
 
 /// One call of a function of the program, with the argument each parameter is handed.
+#[derive(Clone)]
 pub(super) struct Arg<'a> {
     pub caller: String,
     pub callee: String,
@@ -1529,10 +1712,11 @@ pub(super) struct Arg<'a> {
     pub passed: Vec<(String, TsNode<'a>)>,
 }
 
-/// A call with what it hands each parameter, evaluated in the caller.
+/// A call with what it hands each parameter, evaluated in the caller, once for each parameter.
 pub(super) struct Evaluated<'e, 'a> {
     pub arg: &'e Arg<'a>,
     pub eval: &'e Eval<'a>,
+    pub handed: RefCell<HashMap<String, Vec<Built>>>,
 }
 
 impl crate::paths::Handing for Evaluated<'_, '_> {
@@ -1543,8 +1727,13 @@ impl crate::paths::Handing for Evaluated<'_, '_> {
         &self.arg.callee
     }
     fn hands(&self, p: &str) -> Option<Vec<Built>> {
+        if let Some(v) = self.handed.borrow().get(p) {
+            return Some(v.clone());
+        }
         let (_, node) = self.arg.passed.iter().find(|(q, _)| q == p)?;
         let m = self.eval.modules.get(&self.arg.module)?;
-        Some(self.eval.of(At { m, scope: self.arg.scope, params: &self.arg.params }, *node, 0))
+        let v = self.eval.of(At { m, scope: self.arg.scope, params: &self.arg.params }, *node, 0);
+        self.handed.borrow_mut().insert(p.to_string(), v.clone());
+        Some(v)
     }
 }

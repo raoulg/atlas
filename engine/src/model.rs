@@ -426,6 +426,11 @@ pub struct Node {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(type = "string")]
     pub door: Option<World>,
+    /// For a shaped array (`knowledge::SHAPED_ARRAYS`): the array type its annotation names, as the code resolves it
+    /// (`torch.Tensor` for `Float[Tensor, "batch dim"]` where `Tensor` is imported from torch). Its values are that
+    /// type's library's, whichever library writes their shape.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub array: String,
     /// The part of the repository the node belongs to.
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub part: String,

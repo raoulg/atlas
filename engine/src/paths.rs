@@ -157,9 +157,14 @@ pub enum Seg {
     Lit(String),
     /// A parameter of the function the path is built in.
     Param(String),
-    /// A parameter of another function, through the object it set up: `self.cache_dir`, set in
-    /// `__init__` from its `cache_dir`, by the function's id and the parameter's name.
-    Held(String, String),
+    /// What an object holds, through the constructor that built it: `self.cache_dir`, set in
+    /// `__init__` from its `cache_dir`, by the constructor's id (a struct's literal is a call of the
+    /// struct's, a variant's of the variant's) and the name it is held by, a parameter of the
+    /// constructor or a field it sets (`Callers::holds`); and the calls that built it, outward from
+    /// the function the constructor is called in, where the code says which call built the value
+    /// (`Shelf(Path("drafts")).index()` in `read_index`), none where it does not (`self.root`
+    /// of whatever value a method runs on).
+    Held(String, String, Vec<String>),
     /// What cannot be known, by the name the code gives it; what the environment holds for a
     /// variable is named by `$` and the variable (`environment`).
     Hole(String),
@@ -553,7 +558,7 @@ pub fn or_else(value: Vec<Built>, fallback: Vec<Built>) -> Vec<Built> {
         return out;
     }
     let input = |b: &Built| match b.as_slice() {
-        [Seg::Param(x) | Seg::Held(_, x) | Seg::Option(x, _) | Seg::Hole(x)] => Some(x.clone()),
+        [Seg::Param(x) | Seg::Held(_, x, _) | Seg::Option(x, _) | Seg::Hole(x)] => Some(x.clone()),
         _ => None,
     };
     let named: Option<Vec<String>> = value.iter().map(input).collect();
@@ -950,7 +955,7 @@ pub fn render(b: &Built) -> String {
         b.iter()
             .map(|s| match s {
                 Seg::Lit(x) | Seg::Package(x) => x.clone(),
-                Seg::Param(x) | Seg::Held(_, x) | Seg::Hole(x) | Seg::Var(x, _) => format!("{{{x}}}"),
+                Seg::Param(x) | Seg::Held(_, x, _) | Seg::Hole(x) | Seg::Var(x, _) => format!("{{{x}}}"),
                 Seg::Option(_, d) | Seg::Env(_, Some(d)) => render(d),
                 Seg::Env(_, None) => "{value}".into(),
                 Seg::Within(n, ..) if n.is_empty() => "{value}".into(),
@@ -1124,7 +1129,7 @@ pub fn folders<'a>(places: impl Iterator<Item = &'a str> + Clone) -> HashSet<Str
 /// part, or when it is a parameter of more than one of them.
 fn by_value<'b>(store: &crate::builder::GraphBuilder, holders: &[&str], mut built: impl Iterator<Item = &'b Built>) -> Option<String> {
     let name = |b: &Built| match b.as_slice() {
-        [Seg::Hole(x) | Seg::Param(x) | Seg::Held(_, x)] => Some(x.clone()),
+        [Seg::Hole(x) | Seg::Param(x) | Seg::Held(_, x, _)] => Some(x.clone()),
         _ => None,
     };
     let first = name(built.next()?)?;
@@ -1214,7 +1219,7 @@ impl Summaries {
 /// (`model::Atom`): in a function, from what its calls hand, or at an entry, from what the entry's
 /// users hand it; and where it takes several, also the others (the caller that built an object
 /// whose field holds its root, and the one that handed the rest).
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Whole {
     /// Where what is left is handed: the part of a URL that picks the route that serves it, so the
     /// function a request is from.
@@ -1275,6 +1280,29 @@ pub struct Callers<'c, H> {
     pub default: &'c Defaults<'c>,
     pub entry: &'c dyn Fn(&str) -> bool,
     pub decides: &'c dyn Fn(&Built) -> bool,
+    /// What the object a constructor builds holds by a name, where it is not the constructor's
+    /// parameter of that name (`Holds`).
+    pub holds: &'c Holds<'c>,
+    /// The completions of each value the walk out through the callers met outside a cycle, by where it met it
+    /// (`Callers::of`): a value's completions are a function of it, so each is followed once.
+    pub walked: RefCell<HashMap<Walked, Vec<Completion>>>,
+}
+
+/// Where the walk out through the callers meets a value: the function, the value, the member of a family the calls
+/// must run, the calls the code says made it, the function that decided it, and how deep the walk is there.
+pub type Walked = (String, Built, Option<(String, String)>, Vec<String>, Option<String>, u32);
+
+/// What the object the constructor `g` builds holds by the name `x`, a term of `g`'s parameters,
+/// made once where the reader reads the field: the value `g` sets the field to (`self.root =
+/// Path("shelves") / name`). None where it holds `g`'s parameter `x` itself (a dataclass's field, a
+/// struct literal's, `self.root = root`). A constructor's summary of a field is a summary as a
+/// function's return is (`docs/reference/mathematics.md`, "A function's return is its summary"),
+/// so the place whose start it writes is decided in the constructor.
+pub type Holds<'c> = dyn Fn(&str, &str) -> Option<Vec<Built>> + 'c;
+
+/// The fields of a language whose constructors hold their parameters alone.
+pub fn no_fields(_: &str, _: &str) -> Option<Vec<Built>> {
+    None
 }
 
 /// The default the parameter `p` of the function `f` declares, if it declares one: the values it holds
@@ -1290,7 +1318,7 @@ pub fn no_defaults(_: &str, _: &str) -> Option<Vec<Built>> {
 }
 
 /// A completion of a value at one place of the callers.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Completion {
     /// Where the value is whole.
     pub whole: Whole,
@@ -1314,7 +1342,7 @@ impl<'c, H: Handing> Callers<'c, H> {
     /// through the callers, in whose own code it decides: `default_rows` for `read_rows(path)`
     /// called as `read_rows(Path("data/rows.csv"))`.
     pub fn at(&self, f: &str, b: &Built, depth: u32) -> Vec<Completion> {
-        self.of(f, b, None, None, &[], depth)
+        self.of(f, b, None, &[], None, &[], depth)
     }
 
     /// The parameters among `params` of the value in `f` that a recursion extends: a walk out through
@@ -1356,19 +1384,79 @@ impl<'c, H: Handing> Callers<'c, H> {
         })
     }
 
+    /// Whether the code decides `b` as far as it is built in the function it stands in: one of the terms it is, with
+    /// what its parameters and the objects it reads hold not said yet, starts at what that function's code holds. A
+    /// variable whose values all take a parameter is one of them once each is said, so what decides is looked for in
+    /// its values.
+    fn starts(&self, b: &Built) -> bool {
+        let unsaid = written_in(b, |s| match s {
+            Seg::Param(p) | Seg::Held(_, p, _) => Some(vec![hole(p)]),
+            _ => None,
+        });
+        unsaid.iter().flat_map(|u| choose(u, false, 0)).any(|t| (self.decides)(&t))
+    }
+
     /// `at`, keeping to the calls of `f` that hand its parameter `only.0` a value that is an
     /// `only.1`, or one the code does not say: the member of a family a call on that parameter
-    /// runs. `decided` is the function that decides the value, where a callee's code already did.
-    /// `met` are the functions of `f`'s cycle the walk out through the callers met before `f`, since it
-    /// went into the cycle.
-    fn of(&self, f: &str, b: &Built, only: Option<(&str, &str)>, decided: Option<&str>, met: &[Met<'c, H>], depth: u32) -> Vec<Completion> {
+    /// runs. `along` are the functions, outward from `f`'s caller, whose calls the code says made the
+    /// value (the object a constructor built where the code says which call built it): of `f`'s calls,
+    /// those `along` names first, then their callers', and beyond them every call. `decided` is the
+    /// function that decides the value, where a callee's code already did. `met` are the functions of
+    /// `f`'s cycle the walk out through the callers met before `f`, since it went into the cycle.
+    fn of(
+        &self,
+        f: &str,
+        b: &Built,
+        only: Option<(&str, &str)>,
+        along: &[String],
+        decided: Option<&str>,
+        met: &[Met<'c, H>],
+        depth: u32,
+    ) -> Vec<Completion> {
+        // each completion once, whatever number of walks reach it, and each value met outside a cycle followed once at
+        // each depth: what a value completes to depends on that value and the depth alone, never on what was completed
+        // before it
+        let key = met.is_empty().then(|| {
+            (
+                f.to_string(),
+                b.clone(),
+                only.map(|(p, c)| (p.to_string(), c.to_string())),
+                along.to_vec(),
+                decided.map(str::to_string),
+                depth,
+            )
+        });
+        if let Some(found) = key.as_ref().and_then(|k| self.walked.borrow().get(k).cloned()) {
+            return found;
+        }
+        let mut seen = HashSet::new();
+        let out: Vec<Completion> =
+            self.walk(f, b, only, along, decided, met, depth).into_iter().filter(|c| seen.insert(c.clone())).collect();
+        if let Some(k) = key {
+            self.walked.borrow_mut().insert(k, out.clone());
+        }
+        out
+    }
+
+    /// `of`, each walk out through the callers, a completion as often as a walk reaches it.
+    #[allow(clippy::too_many_arguments)]
+    fn walk(
+        &self,
+        f: &str,
+        b: &Built,
+        only: Option<(&str, &str)>,
+        along: &[String],
+        decided: Option<&str>,
+        met: &[Met<'c, H>],
+        depth: u32,
+    ) -> Vec<Completion> {
         // a variable is each of its values that is whole, the value once for each, and ranges over
         // the others as the callers make them
         let terms = choose(b, false, 0);
         if terms.len() != 1 || terms[0] != *b {
             let mut out = vec![];
             for t in terms {
-                out.extend(self.of(f, &t, only, decided, met, depth));
+                out.extend(self.of(f, &t, only, along, decided, met, depth));
                 if out.len() >= COMPLETIONS {
                     break;
                 }
@@ -1376,27 +1464,28 @@ impl<'c, H: Handing> Callers<'c, H> {
             return out;
         }
         // decided by a callee, else here where the value as `f` builds it decides
-        let here = decided.map(str::to_string).or_else(|| (self.decides)(b).then(|| f.to_string()));
-        // what an object holds is what the callers of the function that set it up hand that
-        // function: whole where that is, unless `f`'s own callers still have to hand the rest
+        let here = decided.map(str::to_string).or_else(|| self.starts(b).then(|| f.to_string()));
+        // what an object holds is what the constructor that built it sets, a term of the
+        // constructor's parameters, whole where the call that built it hands them, unless `f`'s own
+        // callers still have to hand the rest
         let (mut held_at, mut params) = (None, vec![]);
         visit(b, &mut |s| match s {
-            Seg::Held(g, p) if held_at.is_none() => held_at = Some((g.clone(), p.clone())),
+            Seg::Held(g, p, by) if held_at.is_none() => held_at = Some((s.clone(), g.clone(), p.clone(), by.clone())),
             Seg::Param(p) if !params.contains(p) => params.push(p.clone()),
             _ => {}
         });
-        if let Some((g, p)) = held_at {
-            let held = if depth > DEPTH {
-                vec![Completion { whole: Whole::at(f), term: hole(&p), decided_in: None, set_up_in: None }]
-            } else {
-                self.at(&g, &vec![Seg::Param(p.clone())], depth + 1)
+        if let Some((held, g, p, by)) = held_at {
+            let set = (self.holds)(&g, &p).unwrap_or_else(|| vec![vec![Seg::Param(p.clone())]]);
+            let objects: Vec<Completion> = match depth > DEPTH {
+                true => vec![Completion { whole: Whole::at(f), term: hole(&p), decided_in: None, set_up_in: None }],
+                false => set.iter().flat_map(|s| self.of(&g, s, None, &by, None, &[], depth + 1)).collect(),
             };
             let mut out = vec![];
-            for object in held {
-                for x in fill(b, &g, &p, &object.term) {
-                    // a value that what the object holds decides is decided where the object was built
-                    let by = here.clone().or_else(|| (self.decides)(&x).then_some(object.decided_in.clone()).flatten());
-                    for rest in self.of(f, &x, None, by.as_deref(), met, depth + 1) {
+            for object in objects {
+                for x in fill(b, &held, &object.term) {
+                    // a value whose start what the object holds says is decided where the object was built
+                    let by = here.clone().or_else(|| self.starts(&x).then(|| object.decided_in.clone()).flatten());
+                    for rest in self.of(f, &x, None, along, by.as_deref(), met, depth + 1) {
                         // whole where both are: every condition of the one that built the object and
                         // of the one that handed `f` the rest
                         let both = rest.whole.and(&object.whole, self.home);
@@ -1454,6 +1543,14 @@ impl<'c, H: Handing> Callers<'c, H> {
                 None => true,
             })
             .collect();
+        // the call the code says made the value, of those it names; beyond what the code says (or where
+        // no call of `f` stands in the function it names), every call
+        let named_by = |a: &&'c H| along.first().is_some_and(|c| a.caller() == c);
+        let told = sites.iter().any(|(a, _)| named_by(a));
+        let (sites, along): (Vec<_>, &[String]) = match told {
+            true => (sites.into_iter().filter(|(a, _)| named_by(a)).collect(), &along[1..]),
+            false => (sites, &[]),
+        };
         // a walk around a cycle of the call graph (`f` calls itself, or `f` calls `g` calls `f`) that
         // hands each parameter of the value that parameter or a path below it is a recursion: over it
         // a parameter it extends holds the least fixpoint of the extension, any number of parts below
@@ -1497,7 +1594,8 @@ impl<'c, H: Handing> Callers<'c, H> {
         if (onward.is_empty() && met.is_empty()) || depth > DEPTH {
             return given(b, Whole::at(f));
         }
-        let mut out: Vec<Completion> = if (self.entry)(f) { given(b, Whole::users(f)) } else { vec![] };
+        // an entry is run by its users as well, but for a value one of its calls is said to have made
+        let mut out: Vec<Completion> = if (self.entry)(f) && !told { given(b, Whole::users(f)) } else { vec![] };
         // whether a call leaves a parameter its default of nothing: no term there, and no value whole here
         let mut none = false;
         for (a, named, next_met) in onward {
@@ -1510,7 +1608,7 @@ impl<'c, H: Handing> Callers<'c, H> {
             let terms = substitute(b, |p| hands(p).filter(|v| !v.is_empty()).unwrap_or_else(|| unknown(p)));
             none |= terms.is_empty();
             for x in terms {
-                out.extend(self.of(a.caller(), &x, next, here.as_deref(), &next_met, depth + 1));
+                out.extend(self.of(a.caller(), &x, next, along, here.as_deref(), &next_met, depth + 1));
                 if out.len() >= COMPLETIONS {
                     return out;
                 }
@@ -1524,12 +1622,9 @@ impl<'c, H: Handing> Callers<'c, H> {
     }
 }
 
-/// `b` with what the object holds for parameter `p` of `g` written in.
-fn fill(b: &Built, g: &str, p: &str, v: &Built) -> Vec<Built> {
-    written_in(b, |s| match s {
-        Seg::Held(h, q) if h == g && q == p => Some(vec![v.clone()]),
-        _ => None,
-    })
+/// `b` with `v` written in for what an object holds, `held`.
+fn fill(b: &Built, held: &Seg, v: &Built) -> Vec<Built> {
+    written_in(b, |s| (s == held).then(|| vec![v.clone()]))
 }
 
 /// The parameter a value a call hands is, or is a path below, and which (`true` for below): `{p}`
@@ -1689,12 +1784,35 @@ pub struct Met<'c, H> {
     by: &'c H,
 }
 
+/// What the values hold of an object of the type `class` where the code says which call built it: each thing such an
+/// object holds through one of the type's constructors (the type's own for a struct's literal, one of its methods or a
+/// variant of it), with the calls that built the object, `along`, outward from the function the constructor is called
+/// in (`Shelf(Path("drafts")).index()` in `read_index`: what `index` reads of `self` is what the call in `read_index`
+/// hands the constructor). What a value holds of another object is left as it is.
+pub fn built_along(values: Vec<Built>, class: &str, along: &[String]) -> Vec<Built> {
+    fn mark(b: Built, class: &str, along: &[String]) -> Built {
+        b.into_iter()
+            .map(|s| match s {
+                Seg::Held(g, x, by) if by.is_empty() && (g == class || g.rsplit_once('.').is_some_and(|(c, _)| c == class)) => {
+                    Seg::Held(g, x, along.to_vec())
+                }
+                Seg::Var(n, vs) => Seg::Var(n, vs.into_iter().map(|v| mark(v, class, along)).collect()),
+                Seg::Option(x, d) => Seg::Option(x, mark(d, class, along)),
+                Seg::Env(name, default) => Seg::Env(mark(name, class, along), default.map(|d| mark(d, class, along))),
+                Seg::Within(n, path, base) => Seg::Within(n, mark(path, class, along), mark(base, class, along)),
+                s => s,
+            })
+            .collect()
+    }
+    values.into_iter().map(|b| mark(b, class, along)).collect()
+}
+
 /// `b` as the object the function `g` sets up holds it, built there from `g`'s parameters: each
 /// parameter of `g` as what the object holds for it, also among the values of a variable.
 pub fn held_by(g: &str, b: Built) -> Built {
     b.into_iter()
         .map(|s| match s {
-            Seg::Param(x) => Seg::Held(g.to_string(), x),
+            Seg::Param(x) => Seg::Held(g.to_string(), x, vec![]),
             Seg::Var(n, vs) => Seg::Var(n, vs.into_iter().map(|v| held_by(g, v)).collect()),
             Seg::Option(x, d) => Seg::Option(x, held_by(g, d)),
             Seg::Env(name, default) => Seg::Env(held_by(g, name), default.map(|d| held_by(g, d))),
@@ -1760,6 +1878,7 @@ pub fn complete<H: Handing>(
     handing: &[H],
     family: &crate::builder::Family,
     default: &Defaults,
+    holds: &Holds,
     entry: &dyn Fn(&str) -> bool,
 ) -> Vec<Completed> {
     let cycles = Cycles::of(handing);
@@ -1767,7 +1886,17 @@ pub fn complete<H: Handing>(
         .into_iter()
         .map(|(f, t, built)| {
             let decides = |b: &Built| decided(b, &t);
-            let callers = Callers { home: &f, calls: handing, cycles: &cycles, family, default, entry, decides: &decides };
+            let callers = Callers {
+                home: &f,
+                calls: handing,
+                cycles: &cycles,
+                family,
+                default,
+                entry,
+                decides: &decides,
+                holds,
+                walked: Default::default(),
+            };
             let found = built
                 .iter()
                 .flat_map(|b| choose(b, false, 0))
@@ -1828,11 +1957,17 @@ pub fn place_calls(store: &mut crate::builder::GraphBuilder, completed: Vec<Comp
         .filter(|n| n.kind == crate::model::NodeKind::Method && !n.library)
         .filter_map(|n| Some((n.id.clone(), n.cls.clone()?)))
         .collect();
+    // the type a constructor builds: the class of its method (`__init__`, `constructor`), the type
+    // itself for a struct's literal, the type of a variant or of a generated `__init__`
+    let classes: HashSet<String> =
+        store.nodes.values().filter(|n| n.kind == crate::model::NodeKind::Class && !n.library).map(|n| n.id.clone()).collect();
+    let class = |id: &str| classes.get(id).cloned();
+    let builds = |g: &str| class_of.get(g).cloned().or_else(|| class(g)).or_else(|| class(g.rsplit_once('.')?.0));
     for (f, t, built, found) in completed {
         // the type whose code gives the path its root: one whose value holds it (`self.root`), or
         // whose constructor takes it, as a constructor's parameter is its class's (`Store.path`)
         let held = built.iter().flatten().find_map(|s| match s {
-            Seg::Held(g, _) => class_of.get(g).cloned(),
+            Seg::Held(g, ..) => builds(g),
             _ => None,
         });
         // else the one whose constructor takes the path, as a constructor's parameter is its class's
@@ -1872,7 +2007,7 @@ pub fn place_calls(store: &mut crate::builder::GraphBuilder, completed: Vec<Comp
             // or one whose value a caller's object holds, set up where the completion went through
             let held = held
                 .clone()
-                .or_else(|| found.iter().filter(|c| c.whole == *whole).find_map(|c| class_of.get(c.set_up_in.as_ref()?).cloned()))
+                .or_else(|| found.iter().filter(|c| c.whole == *whole).find_map(|c| builds(c.set_up_in.as_ref()?)))
                 .or_else(|| own.clone());
             let way = if t.kind == World::Net { way_of_request(alternatives).or(t.dir) } else { t.dir };
             // each place with the functions whose own code decides it
@@ -2073,7 +2208,17 @@ mod tests {
         let decides = |b: &Built| decided(b, &t);
         let family = crate::builder::Family::default();
         let cycles = Cycles::of(calls);
-        let callers = Callers { home: "read", calls, cycles: &cycles, family: &family, default, entry: &|_| false, decides: &decides };
+        let callers = Callers {
+            home: "read",
+            calls,
+            cycles: &cycles,
+            family: &family,
+            default,
+            entry: &|_| false,
+            decides: &decides,
+            holds: &no_fields,
+            walked: Default::default(),
+        };
         callers.at("read", &vec![Seg::Param("path".into())], 0)
     }
 
@@ -2573,8 +2718,17 @@ mod tests {
         let none = no_defaults;
         let calls = [Call("main", "read", vec![("path", lit("data"))]), Call("other", "read", vec![("path", hole("asked"))])];
         let cycles = Cycles::of(&calls);
-        let callers =
-            Callers { home: "read", calls: &calls, cycles: &cycles, family: &family, default: &none, entry: &|_| false, decides: &decides };
+        let callers = Callers {
+            home: "read",
+            calls: &calls,
+            cycles: &cycles,
+            family: &family,
+            default: &none,
+            entry: &|_| false,
+            decides: &decides,
+            holds: &no_fields,
+            walked: Default::default(),
+        };
         let handed = join(&vec![Seg::Param("path".into())], &lit("rows.csv"), "/");
         let held = |c: &[Completion]| -> BTreeSet<String> { c.iter().map(|c| format!("{:?} {}", c.whole, render(&c.term))).collect() };
         for values in

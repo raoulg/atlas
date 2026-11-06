@@ -1830,7 +1830,16 @@ impl<'g> Ix<'g> {
         }
         let f = self.named(x);
         let f = f.as_str();
-        let ctor = |n: &Node, _: &str| n.cls.as_deref().filter(|_| n.ctor).map(|c| self.name(c)).into_iter().collect();
+        // the classes a body builds objects of: its own where it is a constructor, and each class it calls that has no
+        // constructor of its own (a struct's literal, `Shelf { root }`, is a call of the struct); the plan reads it alike
+        // (`madeIn` in `viewer/plan.js`)
+        let ctor = |n: &Node, on: &str| {
+            let literal = n
+                .sites
+                .iter()
+                .filter(|s| self.nodes.get(s.to.as_str()).is_some_and(|k| k.kind == NodeKind::Class) && self.may_run(s, on).is_empty());
+            n.cls.as_deref().filter(|_| n.ctor).into_iter().chain(literal.map(|s| s.to.as_str())).map(|c| self.name(c)).collect()
+        };
         let mut bodies: Vec<(String, String)> = vec![(f.to_string(), String::new())];
         if let Some(&n) = self.nodes.get(f) {
             bodies.extend(self.overrides(n).iter().map(|k| split(k)).map(|(g, c)| (g.to_string(), c.to_string())));

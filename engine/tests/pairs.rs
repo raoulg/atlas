@@ -1044,6 +1044,7 @@ fn an_input_is_its_default_where_no_caller_overrides_it() {
     }
     assert!(facts.windows(2).all(|w| w[0] == w[1]), "{facts:?}");
 }
+
 /// The calls to `write` from the functions `inplace` and `bound` of a program written as `files` (path, text) under a
 /// fresh directory.
 fn calls_to_write(name: &str, files: &[(&str, String)]) -> BTreeSet<(String, String)> {
@@ -1112,6 +1113,202 @@ fn a_method_on_a_value_built_in_place_is_linked_in_every_language() {
         ("inplace-rust-new", rust("Html::new(text)")),
     ] {
         assert_eq!(calls_to_write(name, &files), law, "{name}");
+    }
+}
+
+/// A name the body binds is the body's value, never the module's function of that name (`docs/reference/mathematics.md`,
+/// "Paths as terms": a binding is a name a function gives a value; #375). The shadows pair (`shadows/{python,rust,
+/// typescript}`) sorts letters onto a pile. `sort` binds a function that tidies a name, the letters it keeps, those it sends
+/// back and how many came, calls the function it binds and hands the others on; the clean side names them apart from the
+/// module's functions, the shortcut by the module's own names (`tidy`, `addressed`, `size`). Naming a local like a function
+/// changes nothing the code does, so on the shortcut each route runs the program's functions it runs on the clean side, and
+/// each reading runs those of every other language. A name no binding takes is the module's function: `total` hands `size`
+/// itself on to `map`, which runs it on each pile, and `addressed` calls `tidy`, on both sides and in every language.
+#[test]
+fn a_name_the_body_binds_is_never_the_modules_function() {
+    use atlas_engine::NodeKind;
+    use std::collections::BTreeMap;
+    // the program's functions a route's steps run and its lines call, by their names
+    let runs = |g: &Graph, route: &str| -> BTreeSet<String> {
+        let id = format!("inbox.{route}");
+        let n = g.node(&id).unwrap_or_else(|| panic!("no {id}"));
+        let own = |to: &str| g.node(to).is_some_and(|x| !x.library && x.kind == NodeKind::Function);
+        let steps = n.sites.iter().map(|s| s.to.as_str());
+        let calls = g.edges.iter().filter(|e| e.src == id && e.kind == EdgeKind::Calls).map(|e| e.dst.as_str());
+        steps.chain(calls).filter(|t| own(t)).map(|t| t.rsplit('.').next().unwrap_or_default().to_string()).collect()
+    };
+    let (languages, routes) = (["python", "rust", "typescript"], ["sort", "total", "addressed"]);
+    let mut read = BTreeMap::new();
+    for language in languages {
+        for side in ["clean", "shortcut"] {
+            let g = pair(&format!("shadows/{language}/{side}"));
+            read.insert((language, side), routes.map(|r| (r, runs(&g, r))));
+        }
+    }
+    let mut broken = vec![];
+    for ((language, side), facts) in &read {
+        let clean = &read[&(*language, "clean")];
+        if facts != clean {
+            broken.push(format!("{language} {side} runs {facts:?}, its clean side {clean:?}"));
+        }
+        let named = |r: &str, f: &str| facts.iter().any(|(route, runs)| *route == r && runs.contains(f));
+        if !named("total", "size") || !named("addressed", "tidy") {
+            broken.push(format!("{language} {side}: a name no binding takes is the module's function: {facts:?}"));
+        }
+    }
+    for side in ["clean", "shortcut"] {
+        for (i, a) in languages.iter().enumerate() {
+            for b in &languages[i + 1..] {
+                if read[&(*a, side)] != read[&(*b, side)] {
+                    broken.push(format!("{side}: {a} runs {:?}, {b} {:?}", read[&(*a, side)], read[&(*b, side)]));
+                }
+            }
+        }
+    }
+    assert!(broken.is_empty(), "{}", broken.join("\n"));
+}
+
+/// A value a change gives anew is handed on with the type it was given (`docs/reference/mathematics.md`, "Paths as terms": a
+/// binding is a name a function gives a value; #394). In the lookups pair (`lookups/{python,rust,typescript}`) the routes
+/// `pushed`, `added` and `grown`, each by a subscript and by a lookup, change a list in place and then hand it to `draw` or
+/// `show`: the step after the change takes the value the change gave, by the name it gave it, so with the type it gave it.
+/// What the change gives is one value in every language, so each reading gives and hands the types every other does.
+#[test]
+fn a_value_a_change_gives_is_handed_on_with_its_type() {
+    use std::collections::BTreeMap;
+    let languages = ["python", "rust", "typescript"];
+    let routes = ["pushed", "pushedlookedup", "added", "addedlookedup", "grown", "grownlookedup"];
+    // a route by its name with the language's spelling taken away: `pushedlookedup` of `pushed_looked_up` and `pushedLookedUp`
+    let flat = |id: &str| id.rsplit('.').next().unwrap_or_default().replace('_', "").to_lowercase();
+    let mut read: BTreeMap<(&str, &str), BTreeMap<String, Vec<(String, String)>>> = BTreeMap::new();
+    let mut broken = vec![];
+    for language in languages {
+        for side in ["clean", "shortcut"] {
+            let g = pair(&format!("lookups/{language}/{side}"));
+            let mut facts = BTreeMap::new();
+            for n in g.nodes.iter().filter(|n| !n.library && routes.contains(&flat(&n.id).as_str())) {
+                let at = format!("{language} {side} {}", n.id);
+                let changing: Vec<usize> = (0..n.sites.len()).filter(|i| n.sites[*i].changes).collect();
+                let [c] = changing[..] else { panic!("{at}: one step changes the list: {:?}", n.sites) };
+                let after = n.sites.get(c + 1).unwrap_or_else(|| panic!("{at}: a step takes the list after the change"));
+                // of each value the change gives, the type it gives it and the types the step after is handed it by, by its name
+                let mut given: Vec<(String, String)> = n.sites[c]
+                    .gives
+                    .iter()
+                    .map(|g| {
+                        let handed: Vec<&str> = after.hands.iter().filter(|h| h.name == g.name).map(|h| h.ty.as_str()).collect();
+                        (g.ty.clone(), handed.join(" | "))
+                    })
+                    .collect();
+                given.sort();
+                for (gives, hands) in given.iter().filter(|(g, h)| g != h) {
+                    broken.push(format!("{at}: `{}` gives `{gives}`, `{}` is handed `{hands}`", n.sites[c].op, after.to));
+                }
+                facts.insert(flat(&n.id), given);
+            }
+            assert_eq!(facts.len(), routes.len(), "{language} {side}: {:?}", facts.keys());
+            read.insert((language, side), facts);
+        }
+    }
+    for side in ["clean", "shortcut"] {
+        for r in routes {
+            let types: Vec<(&str, &Vec<(String, String)>)> = languages.iter().map(|l| (*l, &read[&(*l, side)][r])).collect();
+            // a reading is named where another that differs from it says as many types or more: a type no reading says is
+            // missing in none, two that are said and differ are wrong in both
+            let typed =
+                |v: &Vec<(String, String)>| v.iter().map(|(g, h)| usize::from(!g.is_empty()) + usize::from(!h.is_empty())).sum::<usize>();
+            for (language, t) in &types {
+                if types.iter().any(|(l, o)| l != language && o != t && typed(o) >= typed(t)) {
+                    broken.push(format!("{side} {r}: {language} gives and hands {t:?}, the readings {types:?}"));
+                }
+            }
+        }
+    }
+    assert!(broken.is_empty(), "{}", broken.join("\n"));
+}
+
+/// A field holds what the constructor that built the value set (`docs/reference/mathematics.md`, "A function's return is
+/// its summary"; #407, #395). The fields pair (`fields/{python,rust,typescript}`): a shelf holds its folder, its methods
+/// name a file in it; `open_archive` builds the archive and hands it on to the method that writes the note, `read_index`
+/// builds the drafts where it reads their index. The clean shelf is handed its folder, the shortcut's constructor puts
+/// it under one it names itself. In every language and on both sides: the index read on the shelf built in place is that
+/// shelf's alone, never the archive's (#407); the note written on the shelf handed in is made whole by the builder and
+/// the method together (the conjunction), and its place is decided where its start is written: by the builder on the
+/// clean side, by the constructor on the shortcut's (#395). The facts are the same in every reading.
+#[test]
+fn a_field_holds_what_the_constructor_that_built_the_value_set() {
+    // a function by its name with the language's spelling taken away, a type's constructor by one name
+    let name = |id: &str| -> String {
+        let last = id.rsplit(['.', ':']).next().unwrap_or_default().replace('_', "").to_lowercase();
+        if matches!(last.as_str(), "new" | "init" | "constructor") {
+            "constructor".to_string()
+        } else {
+            last
+        }
+    };
+    let touches = |g: &Graph, function: &str| -> BTreeSet<(String, Vec<String>, BTreeSet<String>)> {
+        g.nodes
+            .iter()
+            .filter(|n| !n.library && name(&n.id) == function)
+            .flat_map(|n| &n.touches)
+            .filter(|t| t.kind == World::Disk)
+            .map(|t| {
+                let by = t
+                    .by
+                    .iter()
+                    .map(|b| b.0.iter().map(|a| name(&a.to_string())).collect::<BTreeSet<_>>().into_iter().collect::<Vec<_>>().join("&"));
+                let by = by.collect();
+                (t.artifact.clone(), t.fixed_by.iter().map(|f| name(f)).collect(), by)
+            })
+            .collect()
+    };
+    let mut facts = vec![];
+    for language in ["python", "rust", "typescript"] {
+        for (side, below, decided) in [("clean", "", "openarchive"), ("shortcut", "shelves/", "constructor")] {
+            let g = pair(&format!("fields/{language}/{side}"));
+            let read: BTreeSet<String> = touches(&g, "readindex").into_iter().map(|(at, ..)| at).collect();
+            assert_eq!(read, BTreeSet::from([format!("{below}drafts/index.txt")]), "{language} {side}: the shelf built in place");
+            let written = touches(&g, "write");
+            let archive = written.iter().find(|(at, ..)| *at == format!("{below}archive/note.txt"));
+            let (_, fixed_by, by) = archive.unwrap_or_else(|| panic!("{language} {side}: {written:?}"));
+            assert_eq!(by, &BTreeSet::from(["keep&openarchive".to_string()]), "{language} {side}: the builder and the method");
+            assert_eq!(fixed_by, &[decided.to_string()], "{language} {side}: decided where the start is written");
+            facts.push((side, read, written));
+        }
+    }
+    for side in ["clean", "shortcut"] {
+        let same: Vec<_> = facts.iter().filter(|(s, ..)| *s == side).map(|(_, read, written)| (read, written)).collect();
+        assert!(same.windows(2).all(|w| w[0] == w[1]), "{side}: {same:?}");
+    }
+}
+
+/// A variant's field taken out by the pattern that matches it is the value built in, as a struct's field read back is
+/// (`docs/reference/mathematics.md`, "A function's return is its summary"; #349). The kept pair of sums
+/// (`sums/kept/{python,rust}`): an attachment is kept in a file of its own or in a folder with an index. The clean side
+/// keeps where as a variant built with its path (`Plek::Bestand(path)`, `Bestand(path)`) and takes it apart in a `match`
+/// (`Plek::Bestand(pad) =>`, `case Bestand(pad):`), so the reads under its arms are the places built in, decided where
+/// they are built; the shortcut writes the kind before the path into one string and splits it again, so no place it
+/// reads is one the code decides. The facts are the same in both readings. TypeScript's discriminated union is not read
+/// this way yet.
+#[test]
+fn a_variant_s_field_taken_out_by_a_match_is_the_value_built_in() {
+    let places = |g: &Graph| -> BTreeSet<(String, Vec<String>)> {
+        g.nodes
+            .iter()
+            .filter(|n| !n.library && n.id.ends_with("lees"))
+            .flat_map(|n| &n.touches)
+            .filter(|t| t.kind == World::Disk && !t.artifact.is_empty())
+            .map(|t| (t.artifact.clone(), t.fixed_by.iter().map(|f| f.rsplit('.').next().unwrap_or_default().to_string()).collect()))
+            .collect()
+    };
+    let built = BTreeSet::from([
+        ("bijlagen/bron.txt".to_string(), vec!["main".to_string()]),
+        ("bijlagen/los/index.txt".to_string(), vec!["main".to_string()]),
+    ]);
+    for language in ["python", "rust"] {
+        assert_eq!(places(&pair(&format!("sums/kept/{language}/clean"))), built, "{language}: the places built into the variants");
+        let split = places(&pair(&format!("sums/kept/{language}/shortcut")));
+        assert!(split.iter().all(|(at, by)| at.starts_with('{') && by.is_empty()), "{language}: no place the code decides: {split:?}");
     }
 }
 

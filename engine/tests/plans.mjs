@@ -25,7 +25,7 @@ const D = JSON.parse(fs.readFileSync(dataJson, "utf8"));
 // `ATLAS_FINE_BUDGET=n` cuts the plan as a large program's is cut (`plan.js`, `FINE_BUDGET`)
 const window = process.env.ATLAS_FINE_BUDGET ? {ATLAS_FINE_BUDGET: Number(process.env.ATLAS_FINE_BUDGET)} : {};
 const M = new Function("D", "window", fs.readFileSync(planJs, "utf8") + `
-return {V, plan, imageOf, coarsen, checkOpenings, overviewOpen, inUnit, partOf, MAKEFILES, treeInfo, stepLabel, oneOf, typeLabel, sideOfRoles, familyOf, kindOf, byId, ordersOn, stepOf, opens, frameOf, valueBox, foldDirs, filePath, valuesOf, closedFamily, typesIn, lightOf, cutBy, familyFrames, here, kindsOf, isData, worldPlaceOf, placeOfType, focusOpen: typeof focusOpen === "function" ? focusOpen : null, overviewEntries, planBase, VIEWS, viewOf, dirsOf};`)(D, window);
+return {V, plan, imageOf, coarsen, checkOpenings, refines, overviewOpen, inUnit, partOf, MAKEFILES, treeInfo, stepLabel, oneOf, typeLabel, sideOfRoles, familyOf, kindOf, byId, ordersOn, stepOf, opens, frameOf, valueBox, foldDirs, filePath, valuesOf, closedFamily, typesIn, lightOf, cutBy, familyFrames, here, kindsOf, isData, worldPlaceOf, placeOfType, focusOpen: typeof focusOpen === "function" ? focusOpen : null, overviewEntries, planBase, VIEWS, viewOf, dirsOf};`)(D, window);
 const {V} = M;
 
 const SIDES = {in: "left", out: "right", mid: "between", both: "both"};
@@ -605,8 +605,12 @@ function fiberOf(F) {
   const frames = new Map([...F.frames].filter(([, f]) => holds(f.step)));
   const chainOf = fid => { const c = []; for (let f = fid; f; f = frames.get(f)?.parent) c.unshift(f); return c; };
   const places = new Map();
-  // a type's home holds every occurrence kept that makes or takes a type of its family
-  const kin = k => { const f = F.places.get(k)?.type && M.familyOf(F.places.get(k).type); return f ? [...F.places.keys()].filter(j => F.places.get(j)?.type && "home" in F.places.get(j) && M.familyOf(F.places.get(j).type) === f) : [k]; };
+  // a type's home holds every occurrence kept that makes or takes a type of its block: its library where the kept places hold
+  // two types of it or more, else its family
+  const placed = new Map([...F.places].filter(([k]) => [...pills.values()].some(P => P.D.has(k) || P.C.has(k))));
+  const folds = librariesOf({places: placed});
+  const blockOf = t => (folds.has(libraryOf(t)) ? "lib:" + libraryOf(t) : M.familyOf(t));
+  const kin = k => { const f = F.places.get(k)?.type && blockOf(F.places.get(k).type); return f ? [...placed.keys()].filter(j => F.places.get(j)?.type && "home" in F.places.get(j) && blockOf(F.places.get(j).type) === f) : [k]; };
   for (const [k, pl] of F.places) {
     const by = [...pills.values()].filter(P => P.D.has(k) || P.C.has(k));
     if (!by.length) continue;
@@ -671,8 +675,8 @@ function testFaults() {
 
 // A focus is the fiber of `F₀` over the packages in it, with the rest of the code around it (mathematics.md, "One fine plan,
 // every picture its image", the focus). Restated here from `F₀` and the packages in focus `U`: the functions of the packages in
-// focus with every place they make, take or touch, a type with every type of its kind (the box the overview draws is one
-// block of `F₀`'s places); every other function with its lines to those places and its calls into the focus, and where it
+// focus with every place they make, take or touch, a type with every type of its block, its library where `F₀` holds
+// two types of it or more, else its kind (the box the overview draws is one block of `F₀`'s places); every other function with its lines to those places and its calls into the focus, and where it
 // draws neither it stands nowhere; the frames of the focus as in `F₀`, those in focus that lie in no package in focus at the
 // top, and the rest's: each package that holds no code in focus and lies in none that holds none, in the rest's frame; a
 // type's home `F₀`'s where it is a package of the focus, else outside every package; the calls with an end in the focus
@@ -681,7 +685,8 @@ function starOf(F0, U) {
   const unitAt = fid => (F0.frames.get(fid)?.step.startsWith("unit:") ? F0.frames.get(fid).step.slice(5) : null);
   const inFocus = fid => { for (let f = fid; f; f = F0.frames.get(f).parent) if (U.includes(unitAt(f))) return true; return false; };
   const holds = fid => [...F0.frames.keys()].some(g => inFocus(g) && (() => { for (let f = g; f; f = F0.frames.get(f).parent) if (f === fid) return true; return false; })());
-  const kind = k => (F0.places.get(k)?.type ? M.kindOf(F0.places.get(k).type) : k);
+  const folds = librariesOf(F0);
+  const kind = k => { const t = F0.places.get(k)?.type; return t ? (folds.has(libraryOf(t)) ? "lib:" + libraryOf(t) : M.kindOf(t)) : k; };
   const mine = [...F0.pills.values()].filter(P => inFocus(P.parent));
   const kinds = new Set(mine.flatMap(P => [...P.D.keys(), ...P.C.keys()]).map(kind));
   const star = k => kinds.has(kind(k));
@@ -881,54 +886,71 @@ function entryFaults(kind, K, rs) {
 // plan: every line ends at a box it draws (`ends`), each line counts the fine lines it stands for and a box stands where the
 // plan puts it (`quotient`, or for a plan of generators `generated`), opening one more box refines it (`checkOpenings`), the
 // picture is a function of the view state (drawn again after every other, it is the same) and of the coordinates its view
-// reads alone (a coordinate it does not read leaves it as it is)
-const COORDINATES = {route: null, kind: null, part: null, focus: "set", tests: "flag", open: {parts: "set", units: "set", steps: "set", functions: "set", families: "set", places: "set", dirs: "set"}};
+// reads alone (a coordinate it does not read leaves it as it is). What a view has open until the reader closes it is a
+// coordinate of what is closed: a library's frame (`closed.libraries`)
+const COORDINATES = {route: null, kind: null, part: null, focus: "set", tests: "flag", open: {parts: "set", units: "set", steps: "set", functions: "set", families: "set", places: "set", dirs: "set"}, closed: {libraries: "set"}};
+// the coordinates that are sets of boxes: what the reader opens, and what it closes
+const BOXES = ["open", "closed"];
 // the coordinates each view reads; the others leave its picture as it is
 const READS = {
   route: ["route", "open.steps", "open.functions", "open.families", "open.places", "open.dirs"],
   kind: ["kind", "part", "open.families", "open.places", "open.dirs"],
-  focus: ["focus", "part", "tests", "open.units", "open.families", "open.places", "open.dirs"],
-  overview: ["part", "tests", "open.parts", "open.units", "open.families", "open.places", "open.dirs"],
+  focus: ["focus", "part", "tests", "open.units", "open.families", "open.places", "open.dirs", "closed.libraries"],
+  overview: ["part", "tests", "open.parts", "open.units", "open.families", "open.places", "open.dirs", "closed.libraries"],
 };
 const VIEW_SEED = Number(process.env.ATLAS_VIEWS_SEED || 437) >>> 0;
 // how many sets of boxes of all coordinates together each view is asked at, and how many boxes it opens alone at most
 const VIEW_SETS = Number(process.env.ATLAS_VIEWS_SETS || 4), VIEW_SINGLES = Number(process.env.ATLAS_VIEWS_SINGLES || 12);
 // A coordinate of `V` that the law does not draw is a view it cannot see: the keys are read from the page's own view state
 function coordinateFaults() {
-  const out = [], drawn = Object.keys(COORDINATES).filter(k => k !== "open"), open = Object.keys(COORDINATES.open);
-  for (const k of Object.keys(V)) if (k !== "open" && !drawn.includes(k)) out.push(`the view state has a coordinate ${k} that the law does not draw`);
-  for (const k of Object.keys(V.open)) if (!open.includes(k)) out.push(`the view state has a coordinate open.${k} that the law does not draw`);
+  const out = [], drawn = Object.keys(COORDINATES).filter(k => !BOXES.includes(k));
+  const sets = BOXES.flatMap(g => Object.keys(COORDINATES[g]).map(k => `${g}.${k}`)), has = c => { const [g, k] = c.split("."); return !!V[g] && k in V[g]; };
+  for (const k of Object.keys(V)) if (!BOXES.includes(k) && !drawn.includes(k)) out.push(`the view state has a coordinate ${k} that the law does not draw`);
+  for (const g of BOXES) for (const k of Object.keys(V[g] || {})) if (!sets.includes(`${g}.${k}`)) out.push(`the view state has a coordinate ${g}.${k} that the law does not draw`);
   for (const k of drawn) if (!(k in V)) out.push(`the law draws a coordinate ${k} that the view state does not have`);
-  for (const k of open) if (!(k in V.open)) out.push(`the law draws a coordinate open.${k} that the view state does not have`);
-  for (const r of Object.values(READS)) for (const c of r) if (!(c.startsWith("open.") ? open.includes(c.slice(5)) : drawn.includes(c))) out.push(`a view reads ${c}, no coordinate of the law`);
+  for (const c of sets) if (!has(c)) out.push(`the law draws a coordinate ${c} that the view state does not have`);
+  for (const r of Object.values(READS)) for (const c of r) if (!(c.includes(".") ? sets.includes(c) : drawn.includes(c))) out.push(`a view reads ${c}, no coordinate of the law`);
   return out;
 }
-const blank = () => ({route: null, kind: null, part: null, focus: new Set(), tests: false, open: Object.fromEntries(Object.keys(V.open).map(k => [k, new Set()]))});
+const blank = () => ({route: null, kind: null, part: null, focus: new Set(), tests: false, ...Object.fromEntries(BOXES.map(g => [g, Object.fromEntries(Object.keys(COORDINATES[g]).map(k => [k, new Set()]))]))});
 const setState = S => {
   V.route = S.route; V.kind = S.kind; V.part = S.part; V.focus = new Set(S.focus); V.tests = S.tests;
-  for (const k of Object.keys(V.open)) V.open[k] = new Set(S.open[k] || []);
+  for (const g of BOXES) for (const k of Object.keys(V[g] || {})) V[g][k] = new Set(S[g]?.[k] || []);
 };
 const nameState = S => {
   const o = {};
   for (const k of ["route", "kind", "part"]) if (S[k]) o[k] = S[k];
   if (S.focus.size) o.focus = [...S.focus].sort();
   if (S.tests) o.tests = true;
-  for (const [k, v] of Object.entries(S.open)) if (v.size) (o.open ||= {})[k] = [...v].sort();
+  for (const g of BOXES) for (const [k, v] of Object.entries(S[g] || {})) if (v.size) (o[g] ||= {})[k] = [...v].sort();
   return JSON.stringify(o);
 };
+// a state with the boxes of one coordinate (`open.units`, `closed.libraries`) set to `boxes`
+const withBoxes = (S, c, boxes) => { const [g, k] = c.split("."); return {...S, [g]: {...S[g], [k]: new Set(boxes)}}; };
 // a picture as what the page is handed of it: its boxes and frames, the lines of each with their counts, the side of each
 // place, the calls, the rest of a focus, the order of the disk
 function pictureOf(C) {
   try {
-    return focusDrawn(C) + JSON.stringify([[...(C.meets?.frames.keys() || [])].sort(), [...(C.fiber || [])].sort()]);
+    const libraries = [...(C.libraries?.values() || [])].map(L => [L.id, [...L.kids].sort()]).sort();
+    return focusDrawn(C) + JSON.stringify([[...(C.meets?.frames.keys() || [])].sort(), [...(C.fiber || [])].sort(), libraries]);
   } catch (e) {
     return `a picture without what a plan's image carries: ${e.message}`;
   }
 }
-// The boxes each coordinate of `V.open` can hold in a view, read off its plan: the boxes of the code's hierarchy and the steps of
-// a route that its plan frames, the functions those run, the families of the types it holds, the groups of its places, the
-// entry of a route that parses its command line and the entries of a kind's routes, the directories of its files and the places
-// on the disk that hold others
+// The library each type of a plan is of (`flow.types.library`): its kind's, the box it stands in while its family is closed (a
+// shape's rank family), or its own. A library is a box of its own where a plan holds two types of it or more: a library of one
+// type is that type, which a frame would only name again
+const LIBRARY = D.flow?.types?.library || {};
+const libraryOf = t => LIBRARY[M.kindOf(t)] || LIBRARY[t] || null;
+function librariesOf(F) {
+  const by = new Map();
+  for (const p of F.places.values()) if (p.type && libraryOf(p.type)) { const L = libraryOf(p.type); if (!by.has(L)) by.set(L, new Set()); by.get(L).add(p.type); }
+  return new Map([...by].filter(([, ts]) => ts.size > 1));
+}
+// The boxes each coordinate of `V.open` and `V.closed` can hold in a view, read off its plan: the boxes of the code's hierarchy
+// and the steps of a route that its plan frames, the functions those run, the families of the types it holds, the groups of its
+// places, the entry of a route that parses its command line and the entries of a kind's routes, the directories of its files
+// and the places on the disk that hold others; and the libraries whose frames it can close
 function boxesOf(F, view) {
   const frames = [...F.frames.values()].filter(f => f.step && !f.synthetic && !f.anchor), steps = frames.map(f => f.step);
   const types = [...F.places.values()].filter(p => p.type).flatMap(p => [M.familyOf(p.type), M.kindOf(p.type)]);
@@ -942,7 +964,63 @@ function boxesOf(F, view) {
     families: [...new Set(types)].filter(t => M.opens(t)).sort(),
     places: [...new Set([...entry, ...[...F.places.values()].map(p => p.group).filter(Boolean)])].sort(),
     dirs: [...new Set([...files.flatMap(M.dirsOf), ...Object.values(D.flow?.lies_in || {}).flat().map(q => q.slice(7))])].sort(),
+    libraries: [...librariesOf(F).keys()].sort(),
   };
+}
+// the coordinate of the view state each kind of box is set in
+const COORDINATE_OF = {parts: "open.parts", units: "open.units", steps: "open.steps", functions: "open.functions", families: "open.families", places: "open.places", dirs: "open.dirs", libraries: "closed.libraries"};
+// A library's types stand in their library (mathematics.md, "Shapes and their rank", the library; #431). In a view that reads
+// `closed.libraries` (the overview, a focus), a library the plan holds two types of or more is a frame while it is open: each
+// box of a type of it stands in the frame, the frame holds no other, and the frame stands where the plan puts the library's
+// types, which share one home. Closed, the library is one box, `L · N types`, N the types of the plan it stands for, and no
+// other box of its types is drawn. Closing an open frame draws the image of the open picture under the quotient that sends
+// each of its types to the library's box (`refines`): no line is lost, none is drawn that the open picture does not have,
+// and each box of the open picture lies in one box of the closed. Refinement keeps what it does not refine: every box that is
+// not the library's stands in the same frame, open or closed. A view that does not read the coordinate (a route, the routes
+// of a kind) draws no library
+function libraryFaults(F, C, opened, reads) {
+  const out = [], libs = librariesOf(F), box = L => "t:lib:" + L, frames = C.libraries || new Map();
+  if (!reads) {
+    for (const k of C.places.keys()) if (k.startsWith("t:lib:")) out.push(`${k} is drawn in a view that draws no library`);
+    if (frames.size) out.push(`a view that draws no library frames ${[...frames.keys()].join(", ")}`);
+    return out;
+  }
+  const typed = [...C.places.values()].filter(p => p.type && !p.type.startsWith("lib:"));
+  for (const [L, ts] of libs) {
+    const mine = typed.filter(p => libraryOf(p.type) === L), f = frames.get(box(L));
+    if (V.closed?.libraries.has(L)) {
+      if (mine.length) out.push(`the library ${L} is closed, and ${mine.map(p => p.id).join(", ")} stand beside its box`);
+      const b = C.places.get(box(L));
+      if (b && b.label !== `${L} · ${ts.size} types`) out.push(`the closed library ${L} is labelled ${b.label}, and stands for ${ts.size} types`);
+      if (f) out.push(`the library ${L} is closed, and drawn as a frame`);
+      continue;
+    }
+    if (C.places.has(box(L))) out.push(`the library ${L} is open, and drawn as a closed box`);
+    if (!mine.length) continue;
+    if (!f) { out.push(`the library ${L} is open and holds ${mine.map(p => p.id).join(", ")}, and no frame of it is drawn`); continue; }
+    for (const p of mine) if (!f.kids.has(p.id)) out.push(`${p.id} is ${L}'s, and stands outside its frame`);
+    for (const k of f.kids) if (libraryOf(C.places.get(k)?.type || "") !== L) out.push(`the frame of ${L} holds ${k}, which is not ${L}'s`);
+    const hs = new Set([...F.places.values()].filter(p => p.type && libraryOf(p.type) === L && "home" in p).map(p => p.home || null));
+    if (hs.size > 1) out.push(`the types of ${L} have the homes ${[...hs].join(", ")}, and its frame stands in one`);
+    const h = [...hs][0], want = h && C.frames.has(h) ? h : null, got = C.home?.([box(L)], false) || null;
+    if (hs.size === 1 && want !== got) out.push(`the frame of ${L} stands in ${got || "the picture"}, and its plan puts its types in ${want || "the picture"}`);
+  }
+  // closing each open frame draws the quotient of the open picture, and keeps what it does not refine
+  for (const L of libs.keys()) {
+    if (!V.closed || V.closed.libraries.has(L)) continue;
+    const B = M.imageOf(F, opened, false);
+    V.closed.libraries.add(L);
+    try {
+      const A = M.imageOf(F, opened, false);
+      for (const f of M.refines(A, B)) out.push(`closing the library ${L}: ${f}`);
+      for (const [k, p] of B.places) {
+        if ((p.type && libraryOf(p.type) === L) || !A.places.has(k)) continue;
+        const a = A.homeOf([k], false) || null, b = B.homeOf([k], false) || null;
+        if (a !== b) out.push(`closing the library ${L} moves ${k} from ${b || "the picture"} to ${a || "the picture"}`);
+      }
+    } finally { V.closed.libraries.delete(L); }
+  }
+  return out;
 }
 // The image of a plan of generators (the overview, a focus, the routes of a kind), as the definition takes it: an occurrence
 // goes to its outermost closed frame, a type whose home lies in a closed block is internal to it, each other line counts the
@@ -1023,6 +1101,8 @@ function stateFaults(name, S) {
     for (const f of quotient(F, image, set, homes, occ, valueName)) at(f);
   } else for (const f of generated(F, image, opened)) at(f);
   setState(S);
+  for (const f of libraryFaults(F, M.plan(), opened, READS[view].includes("closed.libraries"))) at(f);
+  setState(S);
   return {out, C: M.plan()};
 }
 // a set of each coordinate's boxes, drawn: each box with a chance the set draws first
@@ -1045,11 +1125,11 @@ function viewFaults() {
   for (const base of bases) {
     setState(base); M.plan();
     const view = M.viewOf(), F = window.atlasPlan.fine, boxes = boxesOf(F, view), reads = new Set(READS[view]);
-    const coords = Object.keys(boxes).filter(k => reads.has("open." + k) && boxes[k].length);
+    const coords = Object.keys(boxes).filter(k => reads.has(COORDINATE_OF[k]) && boxes[k].length);
     const states = [base];
     const singles = coords.flatMap(k => boxes[k].map(b => [k, b]));
-    for (const [k, b] of singles.length <= VIEW_SINGLES ? singles : [...Array(VIEW_SINGLES).keys()].map(() => singles[Math.floor(draw() * singles.length)])) states.push({...base, open: {...base.open, [k]: new Set([b])}});
-    for (let i = 0; i < VIEW_SETS && coords.length; i++) states.push({...base, open: {...base.open, ...Object.fromEntries(coords.map(k => [k, new Set(drawSet(draw, boxes[k]))]))}});
+    for (const [k, b] of singles.length <= VIEW_SINGLES ? singles : [...Array(VIEW_SINGLES).keys()].map(() => singles[Math.floor(draw() * singles.length)])) states.push(withBoxes(base, COORDINATE_OF[k], [b]));
+    for (let i = 0; i < VIEW_SETS && coords.length; i++) states.push(coords.reduce((S, k) => withBoxes(S, COORDINATE_OF[k], drawSet(draw, boxes[k])), base));
     for (const S of states) {
       const name = `${view} ${nameState(S)}`;
       if (seen.has(name)) continue;
@@ -1059,12 +1139,12 @@ function viewFaults() {
       seen.set(name, [S, picture]);
       // a coordinate the view does not read leaves the picture as it is: one below it in what decides the view (a route before
       // a kind, a kind before a focus), the part and the test code where it does not read them, and an open box of another view
-      const other = {...S, open: {...S.open}};
+      let other = {...S};
       if (view === "route" && kinds.length) other.kind = kinds[0];
       if ((view === "route" || view === "kind") && units.length) other.focus = new Set([units[0]]);
       if (!reads.has("part") && parts.length) other.part = parts[0];
       if (!reads.has("tests")) other.tests = !S.tests;
-      for (const k of Object.keys(other.open)) if (!reads.has("open." + k)) other.open[k] = new Set(["unread"]);
+      for (const g of BOXES) for (const k of Object.keys(COORDINATES[g])) if (!reads.has(`${g}.${k}`)) other = withBoxes(other, `${g}.${k}`, ["unread"]);
       setState(other);
       const again = pictureOf(M.plan());
       if (again !== picture) out.push(`${name}: drawn with ${nameState(other)}, coordinates the view does not read, the picture differs`);

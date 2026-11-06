@@ -582,9 +582,13 @@ pub(super) fn link(modules: &IndexMap<String, Module>, store: &mut GraphBuilder,
     let callers = crate::clock::stage("callers");
     let family = store.family();
     // a path or a statement built from a function's parameters is whole where its callers hand them
-    let handing: Vec<Evaluated> = args.iter().map(|arg| Evaluated { arg, eval: &eval }).collect();
-    let entry = |f: &str| store.nodes.get(f).map_or(false, |n| n.entry.is_some());
-    let completed = crate::paths::complete(waiting, &handing, &family, &crate::paths::no_defaults, &entry);
+    // a struct's literal and a variant's constructor are calls of the type's constructor, handing each field its value
+    args.extend(eval.constructions());
+    let handing: Vec<Evaluated> = args.iter().map(|arg| Evaluated { arg, eval: &eval, handed: Default::default() }).collect();
+    let named = |f: &str| store.nodes.get(f).map_or(false, |n| n.entry.is_some());
+    // a type's constructor is run by its users where they can write its literal
+    let entry = |f: &str| eval.built_by_users(f, named).unwrap_or_else(|| named(f));
+    let completed = crate::paths::complete(waiting, &handing, &family, &crate::paths::no_defaults, &crate::paths::no_fields, &entry);
     crate::paths::place_calls(store, completed, false);
     drop(callers);
     let _globals = crate::clock::stage("globals");
