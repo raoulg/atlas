@@ -229,8 +229,14 @@ fn faults_of(marks: &[&Known], faults: &[String], fails: &mut Vec<String>, known
 /// The faults one law of the views finds of every program, against the marks of that law: what fails, a mark whose fault is
 /// gone among it.
 fn views_hold(law: &str) -> Vec<String> {
+    views_said(law).0
+}
+
+/// What one law of the views says of every program: its faults, against the marks of that law, and what it finds of the
+/// programs themselves, each by the program it is of.
+fn views_said(law: &str) -> (Vec<String>, Vec<String>) {
     let (tests, all) = all_programs();
-    let (next, fails) = (AtomicUsize::new(0), Mutex::new(vec![]));
+    let (next, fails, findings) = (AtomicUsize::new(0), Mutex::new(vec![]), Mutex::new(vec![]));
     let workers = std::thread::available_parallelism().map_or(4, |n| n.get());
     let flag = format!("--{law}");
     std::thread::scope(|s| {
@@ -242,7 +248,9 @@ fn views_hold(law: &str) -> Vec<String> {
                     let plan = if file.is_file() { read_plan(&file) } else { Plan::default() };
                     let marks: Vec<&Known> = plan.views.iter().filter(|k| k.view.as_deref() == Some(law)).collect();
                     let (mut f, mut known) = (vec![], vec![]);
-                    let faults: Vec<String> = asked(program, &data(program), None, &[&flag]).into_values().flat_map(|(_, x)| x).collect();
+                    let said = asked(program, &data(program), None, &[&flag]);
+                    findings.lock().unwrap().extend(said.values().flat_map(|(x, _)| x).map(|x| format!("{name}: {x}")));
+                    let faults: Vec<String> = said.into_values().flat_map(|(_, x)| x).collect();
                     faults_of(&marks, &faults, &mut f, &mut known);
                     for k in marks.iter().filter(|k| !faults.iter().any(|x| x.contains(&k.fact))) {
                         f.push(format!("gone now, so the mark goes: known {} {law} {}", k.issue, k.fact));
@@ -256,7 +264,9 @@ fn views_hold(law: &str) -> Vec<String> {
             });
         }
     });
-    fails.into_inner().unwrap()
+    let mut findings = findings.into_inner().unwrap();
+    findings.sort();
+    (fails.into_inner().unwrap(), findings)
 }
 
 /// The programs under `pairs` and `plans`; `ATLAS_PLANS=pairs/pipeline` keeps only those under that path.
@@ -422,14 +432,16 @@ fn every_view_state_draws_the_image_of_its_plan() {
 }
 
 /// A route starts at an entry point and ends at a place, and both are visible (sentence 3): every route closed, alone and
-/// among the routes of its kind, gives something, a value, a place it changes or a call it makes. A route whose code gives
-/// nothing and changes nothing ends nowhere, a finding of the program. Ignored until a route's codomain is drawn whatever
-/// its type (#439): a value of no type of the code's that a route gives back, and a class built from its fields, end at no
-/// place in 543 routes of the pairs.
+/// among the routes of its kind, whose code gives something (a value back, whatever its type, a change, a write, a request,
+/// an error), as the graph says and no plan, gives a value, a place it changes or a call it makes. A route whose code gives
+/// nothing and changes nothing ends at the terminal object, no place: a finding of the program, which the law says and does
+/// not fail on (mathematics.md, "The terminal object").
 #[test]
-#[ignore = "a route's codomain of no type of the code's is not drawn (#439)"]
 fn every_route_ends_at_a_place() {
-    let fails = views_hold("ends");
+    let (fails, findings) = views_said("ends");
+    for f in &findings {
+        println!("finding {f}");
+    }
     assert!(fails.is_empty(), "{} routes end at no place:\n{}", fails.len(), fails.join("\n"));
 }
 

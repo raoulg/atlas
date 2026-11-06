@@ -62,6 +62,8 @@ side Disk(self.root / key) both
 # `Feed.read`. Its `super().read()` runs the next `read` after `Trimmed` along the feed's order: `Cached.read` on the
 # feed, which reads the store before it asks the network. Either way the source is read through its store: what
 # `cached_lines` runs on a feed does what it does on any cached source, as a cache that is also trimmed should.
+home _@lines lines
+line lines > _@lines value                                               # what it gives its caller, of no type of the code's
 
 route news.read.cached_lines
 step cached_lines/Cached.read one of 2                                            # `source.read()`, one of two
@@ -128,3 +130,5 @@ home _·data@cached_lines/Cached.read/Feed.read/Cached.read/?1/Source.read cache
 side entry left
 side Web left                                                                         # `urlopen(url)` with no data is a GET
 side Disk(self.root / key) both
+home _@cached_lines cached_lines
+line cached_lines > _@cached_lines value                                 # what it gives its caller, of no type of the code's

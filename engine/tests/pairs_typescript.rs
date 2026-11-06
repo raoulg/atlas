@@ -2191,3 +2191,10 @@ fn a_change_of_a_part_changes_the_whole() {
 fn places_a_path_through_helpers_is_the_path_in_place() {
     common::a_path_through_helpers_is_the_path_in_place("typescript");
 }
+
+/// The ends pair: `loudest` gives back a `number` and ends at it, `Level` is an interface whose values are built from their
+/// fields, and ends at what it builds; the shortcut prints the loudest level and ends at the screen (#439).
+#[test]
+fn a_route_ends_at_what_it_gives_back() {
+    common::a_route_ends_at_what_it_gives_back("typescript", "number");
+}

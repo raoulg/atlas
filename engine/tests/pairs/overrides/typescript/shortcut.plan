@@ -24,3 +24,7 @@ home Event·e Handler()
 home Click·e Handler()
 
 side entry left
+home _@Handler()/Handler.handle Handler()
+home _@Handler()/Handler.log Handler()
+line Handler()/Handler.handle > _@Handler()/Handler.handle value         # what it gives its caller, of no type of the code's
+line Handler()/Handler.log > _@Handler()/Handler.log value               # what it gives its caller, of no type of the code's

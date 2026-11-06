@@ -33,6 +33,8 @@ side Web left                                                                   
 # `Feed.read` (#155). The shortcut's `Trimmed.read` names `Source.read(self)`, so on a feed the call asks the network
 # and never reads the store: a cached source that is also trimmed is no cache. On any other cached source the store is
 # read, else the network and then the store.
+home _@lines lines
+line lines > _@lines value                                               # what it gives its caller, of no type of the code's
 
 route news.read.cached_lines
 step cached_lines/Cached.read one of 2                                            # `source.read()`, one of two
@@ -83,3 +85,5 @@ home _·response@cached_lines/Cached.read/Feed.read/Source.read/urlopen cached_l
 side entry left
 side Web left                                                                         # `urlopen(url)` with no data is a GET
 side Disk(self.root / key) both
+home _@cached_lines cached_lines
+line cached_lines > _@cached_lines value                                 # what it gives its caller, of no type of the code's

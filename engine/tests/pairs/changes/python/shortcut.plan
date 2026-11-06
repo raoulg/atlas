@@ -146,3 +146,5 @@ line Cell·cell@main/mark_all/for cell in board.cells > main/mark_all value
 # a result the caller drops goes back to it: the reader does not say the call is a statement of its own
 
 # take_victim's victim is the board the call hands, stale (#129); its own arrow takes the receiver that extend, no step yet, runs on (#125)
+home _@main main
+line main > _@main value                                                 # what it gives its caller, of no type of the code's

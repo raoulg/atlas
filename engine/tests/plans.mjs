@@ -1055,33 +1055,85 @@ function generated(F, view, opened) {
   }
   return out;
 }
+// What the code of a route gives, read from the graph and not from any plan: the route's codomain (sentence 2), what it gives
+// back, changes, writes, sends, runs or raises, of the route's function or, for a class, of its doors (the initializer it runs,
+// the class itself where it is built from its fields, its public methods), and of everything they run. A read is in the domain.
+// Empty, the route is the arrow into the terminal object, which tells its caller nothing (mathematics.md, "The terminal
+// object"): the code is dead, or does what Atlas does not see, the calls `unseen` names
+const BYID = new Map(D.nodes.map(n => [n.id, n])), ARROW = D.flow?.arrows || {}, BODY = D.flow?.bodies || {};
+const OUT = new Map(), BELOW = new Map();
+for (const e of D.edges) {
+  if (["calls", "instantiates", "requests"].includes(e.kind)) { if (!OUT.has(e.src)) OUT.set(e.src, []); OUT.get(e.src).push(e); }
+  if (e.kind === "inherits") { if (!BELOW.has(e.dst)) BELOW.set(e.dst, []); BELOW.get(e.dst).push(e.src); }
+}
+const writes = t => t.dir === "write" || ["disk_write", "screen", "figure", "process"].includes(t.kind);
+function codeGives(r) {
+  const n = BYID.get(r), doors = n?.kind === "class" ? (BODY[r]?.items || []).flatMap(i => i.members || [i]).map(i => i.to).filter(Boolean) : [r];
+  const what = [], unseen = [], seen = new Set(doors), todo = [...doors];
+  for (const d of doors) {
+    const a = ARROW[d] || {};
+    if (a.returns_value || a.gives?.length || a.builds || a.changes?.length || a.changed?.length) what.push(`${d} gives a value back or changes one`);
+  }
+  while (todo.length) {
+    const id = todo.pop(), f = BYID.get(id);
+    if (!f) continue;
+    if ((f.touches || []).some(writes)) what.push(`${id} writes, sends or runs`);
+    // a sketch's body is not built: what it raises (`todo!()`) marks it as unbuilt, as Python's `...` does, and is no error
+    if (((f.raises || f.fails != null) && !(f.prophecy || BYID.get(f.cls)?.prophecy)) || f.returns?.fails) what.push(`${id} raises`);
+    if ((f.params || []).some(p => p.changes)) what.push(`${id} changes what it is handed`);
+    // a request goes the way its method says: one that leaves something at the route that serves it
+    if ((OUT.get(id) || []).some(e => e.kind === "requests" && (BYID.get(e.dst)?.entry?.request?.methods || []).some(m => m !== "GET"))) what.push(`${id} leaves something with a request`);
+    unseen.push(...(f.unseen || []).map(([, c]) => c));
+    const next = (OUT.get(id) || []).filter(e => e.kind !== "requests").map(e => e.kind === "instantiates" ? ARROW[e.dst]?.runs || e.dst : e.dst);
+    // a method may run what overrides it
+    if (f.cls) for (const below of BELOW.get(f.cls) || []) next.push(`${below}.${f.name}`);
+    for (const t of next) if (!seen.has(t)) { seen.add(t); todo.push(t); }
+  }
+  for (const e of D.edges) if (e.kind === "mutates" && seen.has(e.src)) what.push(`${e.src} changes a value`);
+  return {what, unseen: [...new Set(unseen)]};
+}
 // A route ends at a place (sentence 3): a box that stands for a route closed gives something, a value, a place it changes or a
-// call it makes. A route whose code gives nothing and changes nothing is a finding of the program, said as one
-function endsFaults(name, F, C) {
+// call it makes, wherever its code gives something. A route whose code gives nothing ends at the terminal object, no place: a
+// finding of the program, said as one
+function endsFaults(name, F, C, findings) {
   const out = [], routes = new Set(M.overviewEntries().map(e => e.id));
   const gives = B => !!B && (B.C.size > 0 || (B.calls?.size || 0) > 0 || !!B.backTo);
+  const judge = r => {
+    const code = codeGives(r);
+    if (code.what.length) out.push(`${name}: the route ${r} ends at no place, though ${code.what[0]}`);
+    else findings.add(`the route ${r} ends at 1: its code names nothing it gives back, changes, writes or raises` + (code.unseen.length ? `, or does what Atlas does not see: ${code.unseen.join(", ")}` : ""));
+  };
   if (V.route) {
     const folded = ["cli", "script"].includes(M.byId.get(V.route)?.entry?.kind);
     const A = M.imageOf(F, () => false, folded), B = A.pills.get("n:" + V.route) || A.pills.get("o:" + V.route);
-    if (!gives(B)) out.push(`${name}: the route ${V.route} ends at no place`);
-  } else if (V.kind) for (const B of C.pills.values()) for (const r of B.steps || []) if (routes.has(r) && !gives(B)) out.push(`${name}: the route ${r} ends at no place`);
+    if (!gives(B)) judge(V.route);
+  } else if (V.kind) for (const B of C.pills.values()) for (const r of B.steps || []) if (routes.has(r) && !gives(B)) judge(r);
   return out;
 }
-// every route of the program closed, alone and among the routes of its kind, ends at a place
+// what a route closed gives its caller, each by the label of its box: the image of its finest plan with no box open
+function givesOf(r) {
+  setState({...blank(), route: r});
+  M.plan();
+  const F = window.atlasPlan.fine, A = M.imageOf(F, () => false, ["cli", "script"].includes(M.byId.get(r)?.entry?.kind));
+  const B = A.pills.get("n:" + r) || A.pills.get("o:" + r);
+  setState(blank());
+  return [...(B?.C.keys() || [])].map(k => (A.places?.get(k) || F.places.get(k))?.label ?? k).sort();
+}
+// every route of the program closed, alone and among the routes of its kind, ends at a place, or its code gives nothing
 function routeEnds() {
-  const out = [];
+  const out = [], findings = new Set();
   for (const kind of [...new Set([...M.byId.values()].filter(n => n.entry).map(n => n.entry.kind))].sort()) {
     setState({...blank(), kind});
     const C = M.plan();
-    out.push(...endsFaults(`kind ${kind}`, window.atlasPlan.fine, C));
+    out.push(...endsFaults(`kind ${kind}`, window.atlasPlan.fine, C, findings));
   }
   for (const n of [...M.byId.values()].filter(n => n.entry)) {
     setState({...blank(), route: n.id});
     const C = M.plan();
-    out.push(...endsFaults(`route ${n.id}`, window.atlasPlan.fine, C));
+    out.push(...endsFaults(`route ${n.id}`, window.atlasPlan.fine, C, findings));
   }
   setState(blank());
-  return out;
+  return {faults: out, findings: [...findings].sort()};
 }
 // the faults of one picture, held to its plan
 function stateFaults(name, S) {
@@ -1161,11 +1213,12 @@ function viewFaults() {
 
 // with no route named, every route of the program but its tests; `--overview` asks the overview, with the test code and without;
 // `--focus` every focus, with the test code and without; `--kinds` the routes of each kind; `--views` every view state; `--ends`
-// whether every route ends at a place
+// whether every route ends at a place, and which end at 1; `--gives ROUTE...` what each route closed gives its caller
 // the answer is written whole before the process ends: a pipe takes some 64 KB at a time
 const said = answer => process.stdout.write(JSON.stringify(answer), () => process.exit(0));
 if (routes[0] === "--views") said({"@views": {facts: [], faults: viewFaults()}});
-else if (routes[0] === "--ends") said({"@ends": {facts: [], faults: routeEnds()}});
+else if (routes[0] === "--ends") { const {faults, findings} = routeEnds(); said({"@ends": {facts: findings, faults}}); }
+else if (routes[0] === "--gives") said(Object.fromEntries(routes.slice(1).map(r => [r, {facts: givesOf(r), faults: []}])));
 else if (routes[0] === "--kinds") said({"@kinds": {facts: [], faults: kindFaults()}});
 else if (routes[0] === "--focus") said({"@focus": {facts: [], faults: [...focusFaults(true), ...focusFaults(false)]}});
 else if (routes[0] === "--overview") {
