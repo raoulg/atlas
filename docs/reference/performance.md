@@ -31,17 +31,22 @@ repository, the full commit it is read at, and what reads it.
 
 ```text
 atlas-0.70.0    https://github.com/raoulg/atlas          4ebbbae0a877ef3609de15befe577897c3bec69b   perf
-goad_toolkit    https://github.com/raoulg/goad_toolkit   929d37cc588b27f599b7fbe2e4f5d9733619f897   perf laws
+goad_toolkit-locked https://github.com/raoulg/goad_toolkit   929d37cc588b27f599b7fbe2e4f5d9733619f897   perf laws
 ```
 
 Adding a program is that one line. A name is one revision: a program read at another commit gets another name
-(`atlas-0.70.0`, then `atlas-0.75.0`), so that its series starts afresh, and `record` refuses a night that reads
+(`atlas-0.70.0`, then `atlas-0.75.0`), and so does a program read with another lock (`vectormesh-locked`, read with what its `uv.lock` names), so that its series starts afresh, and `record` refuses a night that reads
 a name at another revision than the series has it at. Atlas is in the corpus at the commit of v0.70.0, beside
 `atlas`, Atlas at the commit measured: the first measures the reader on a subject that does not move, the second
-what a user of `next` sees on Atlas's own code. A program with a `Cargo.lock` has its crates fetched with it
-(`cargo fetch --locked`): Atlas reads a Rust program's libraries where Cargo keeps them, and without them the
-reading would depend on which crates the runner happened to hold. A Python or TypeScript program is read as
-cloned, without an environment or `node_modules`, as the laws read it.
+what a user of `next` sees on Atlas's own code. A program is read with its dependencies, as its author has them. Fetching what a lock file names is one
+construct in every language, and each committed lock file, at any depth, is installed by its tool in its own
+directory: `Cargo.lock` by `cargo fetch --locked` (the crates in Cargo's registry), `uv.lock` by `uv sync --frozen`
+(the program's `.venv`, which is the environment ty reads), `package-lock.json` by `npm ci`, `pnpm-lock.yaml` and
+`yarn.lock` by pnpm and yarn with their frozen lock (the program's `node_modules`). Scripts of dependencies do not
+run. So the corpus measures Python and TypeScript readings that include their libraries, as a user's do, and
+without them the reading would depend on what the runner happened to hold. The tools keep their downloads in their
+own caches outside the program (`~/.cache/uv`, `~/.npm`, Cargo's home), which the workflows keep between runs for
+one list of programs; installing is not timed. A program without a lock file is read as cloned.
 
 A program can be private. Its line says `private` where the repository stands; its repository is its line
 `NAME URL` in the secret `CORPUS_PRIVATE`, fetched with the read-only token in the secret `CORPUS_TOKEN`, sent

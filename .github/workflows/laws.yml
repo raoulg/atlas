@@ -39,6 +39,13 @@ jobs:
           node-version: 22
       - uses: dtolnay/rust-toolchain@stable
       - uses: astral-sh/setup-uv@v10.3.0
+      # the corpus's dependencies come from the tools' downloads, kept between runs for one list of programs
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/uv
+            ~/.npm
+          key: corpus-downloads-${{ runner.os }}-${{ hashFiles('atlas/tools/corpus.txt') }}
       - name: the corpus, at its revisions
         run: uv run atlas/tools/perf.py corpus fetch --into programs --for laws
       - uses: Swatinem/rust-cache@v2

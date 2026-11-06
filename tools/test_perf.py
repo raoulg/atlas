@@ -59,6 +59,21 @@ class Corpus(unittest.TestCase):
             if p.private:
                 self.assertEqual(p.readers, ("perf",))
 
+    def test_every_lock_a_program_commits_is_installed_by_its_tool_where_it_lies(self):
+        """Fetching a lock's dependencies is one construct: each committed lock file, in any language and at any depth,
+        names the command of its tool, run in its own directory; an uncommitted file (a lock in `node_modules`) is none."""
+        with tempfile.TemporaryDirectory() as d:
+            tree = Path(d)
+            for f in ("Cargo.lock", "uv.lock", "web/package-lock.json", "web/pnpm-lock.yaml", "README.md"):
+                (tree / f).parent.mkdir(parents=True, exist_ok=True)
+                (tree / f).write_text("")
+            (tree / "node_modules").mkdir()
+            (tree / "node_modules" / "package-lock.json").write_text("")
+            subprocess.run(["git", "init", "-q", str(tree)], check=True)
+            subprocess.run(["git", "-C", str(tree), "add", "Cargo.lock", "uv.lock", "web", "README.md"], check=True)
+            got = [(w.relative_to(tree).as_posix(), c[0] if c[0] != "corepack" else c[1]) for w, c in perf.locks_in(tree)]
+            self.assertEqual(got, [(".", "cargo"), (".", "uv"), ("web", "npm"), ("web", "pnpm")])
+
     def test_a_private_program_is_never_sampled(self):
         with self.assertRaisesRegex(SystemExit, "laws never reads it"):
             corpus_of(f"secret private {SHA} perf laws\n")

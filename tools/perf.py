@@ -16,7 +16,7 @@
 
 `corpus` reads the corpus, `tools/corpus.txt`: the programs Atlas is measured on (`perf`) and its laws are sampled on
 (`laws`), each at a fixed revision. `fetch` checks those of one reader out in DIR, one folder per name, a private one
-with the secrets CORPUS_PRIVATE and CORPUS_TOKEN; `paths` names the folders. `--programs DIR` gives `read`,
+with the secrets CORPUS_PRIVATE and CORPUS_TOKEN, and installs what its lock files name (`install_dependencies`); `paths` names the folders. `--programs DIR` gives `read`,
 `reproduce` and `bisect` the programs `perf` reads as subjects. Nothing printed or written of a private program
 names its code: a reading that fails says so without Atlas's words, and its stages name only its libraries.
 
@@ -159,9 +159,41 @@ def secret_urls(text: str) -> dict[str, str]:
     return out
 
 
+# What a lock file asks for: the command that installs exactly the dependencies it names, run in the lock's own
+# directory. One construct in every language: a program's libraries lie where its tool keeps them (Cargo's registry,
+# `.venv`, `node_modules`), which is where Atlas reads them. Scripts of dependencies do not run.
+LOCKS: dict[str, list[str]] = {
+    "Cargo.lock": ["cargo", "fetch", "--locked"],
+    "uv.lock": ["uv", "sync", "--frozen"],
+    "package-lock.json": ["npm", "ci", "--ignore-scripts"],
+    "pnpm-lock.yaml": ["corepack", "pnpm", "install", "--frozen-lockfile", "--ignore-scripts"],
+    "yarn.lock": ["corepack", "yarn", "install", "--immutable", "--mode=skip-build"],
+}
+
+
+def locks_in(tree: Path) -> list[tuple[Path, list[str]]]:
+    """The lock files committed in `tree`, each as the directory it lies in and the command that installs what it
+    names, in a stable order."""
+    done = subprocess.run(["git", "-C", str(tree), "ls-files", "-z"], capture_output=True, text=True, check=True)
+    found = sorted(Path(f) for f in done.stdout.split("\0") if f and Path(f).name in LOCKS)
+    return [(tree / f.parent, LOCKS[f.name]) for f in found]
+
+
+def install_dependencies(program: Program, tree: Path) -> None:
+    """Install what every lock file of `tree` names, as its author has it: a Rust program's crates, a Python
+    program's `.venv` (`uv sync --frozen`), a TypeScript program's `node_modules` (`npm ci`). The tools keep their
+    downloads in their own caches (CARGO_HOME, UV_CACHE_DIR, npm_config_cache), which a run may keep between runs.
+    What fails is said without a private program's code."""
+    for where, command in locks_in(tree):
+        done = subprocess.run(command, cwd=where, capture_output=True, text=True, check=False)
+        if done.returncode:
+            said = "" if program.private else f" ({' '.join(command)} in {where.relative_to(tree)}): {(done.stderr or done.stdout).strip()[-2000:]}"
+            raise SystemExit(f"the dependencies of {program.name} could not be installed{said}")
+
+
 def fetch(program: Program, into: Path, urls: dict[str, str], token: str | None) -> Path:
-    """`program` checked out at its revision in `into/<name>`, with its crates fetched where it has a Cargo.lock
-    (Atlas reads a Rust program's libraries where Cargo keeps them). A private program is fetched with `token`, sent
+    """`program` checked out at its revision in `into/<name>`, with the dependencies its lock files name installed
+    (`install_dependencies`: Atlas reads a program's libraries where its tool keeps them). A private program is fetched with `token`, sent
     as a header to its host alone; what fails is said without its repository or git's words."""
     tree = into / program.name
     url, env = program.repository, dict(os.environ, GIT_TERMINAL_PROMPT="0")
@@ -187,11 +219,7 @@ def fetch(program: Program, into: Path, urls: dict[str, str], token: str | None)
         if done.returncode:
             said = "" if program.private else f": {done.stderr.strip()}"
             raise SystemExit(f"{program.name} could not be fetched at {program.revision[:12]}{said}")
-    if (tree / "Cargo.lock").exists():
-        done = subprocess.run(["cargo", "fetch", "--locked"], cwd=tree, capture_output=True, text=True, check=False)
-        if done.returncode:
-            said = "" if program.private else f": {done.stderr.strip()[-2000:]}"
-            raise SystemExit(f"the crates of {program.name} could not be fetched{said}")
+    install_dependencies(program, tree)
     return tree
 
 
