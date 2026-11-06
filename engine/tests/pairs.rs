@@ -686,3 +686,57 @@ fn a_folder_made_for_a_file_is_that_files_in_every_language() {
         assert_eq!(run_places(language, "folder-made", made), file, "{language}");
     }
 }
+
+/// Test code is one predicate and a test is an entry of kind `test`, in every language (`mathematics.md`, "A filter: the
+/// program without its test code"; #403, #404). The tests pair (`tests/{python,rust,typescript}`) is one shelf with one
+/// door, `load`, and one test of it, handed a sample by a helper. The clean side keeps the test where the runner's layout
+/// puts it beside the package (pytest's `tests/`, a crate's `tests/`, a `tests/` beside `src/`); the shortcut keeps it in
+/// the package beside the store it tests (a `test_*.py` in the package, a `#[test]` in `store.rs`, a `*.test.ts` beside
+/// `disk.ts`), where the runner collects it and the package ships it. On both sides, in the three languages alike, the
+/// fiber without the test code has the same functions and the test code the same, every test the runner collects is an
+/// entry of kind `test` by the same label, and its route calls the door. On the shortcut side the test code lies in a
+/// module below the package's root that holds the program's code as well, the store, so the overview's fiber cuts it in
+/// two; on the clean side no module below a root holds both.
+#[test]
+fn a_test_is_an_entry_of_kind_test_in_every_language() {
+    use atlas_engine::model::{EntryKind, Node, NodeKind};
+    use std::collections::BTreeSet;
+    type Read = (BTreeSet<String>, BTreeSet<String>, BTreeSet<String>, BTreeSet<String>);
+    for side in ["clean", "shortcut"] {
+        let read = |language: &str| -> Read {
+            let g = pair(&format!("tests/{language}/{side}"));
+            let test = |n: &Node| n.entry.as_ref().is_some_and(|e| e.kind == EntryKind::Test);
+            let test_code = |n: &Node| n.test || test(n) || g.node(&n.module).is_some_and(|m| m.test);
+            let functions: Vec<&Node> =
+                g.nodes.iter().filter(|n| !n.library && matches!(n.kind, NodeKind::Function | NodeKind::Method)).collect();
+            let names = |keep: &dyn Fn(&Node) -> bool| functions.iter().filter(|n| keep(n)).map(|n| n.name.clone()).collect();
+            let labels = g.nodes.iter().filter(|n| test(n)).map(|n| n.entry.as_ref().unwrap().label.clone()).collect();
+            for t in g.nodes.iter().filter(|n| test(n)) {
+                let calls: Vec<&str> = g
+                    .edges
+                    .iter()
+                    .filter(|e| e.src == t.id && e.kind == EdgeKind::Calls)
+                    .filter_map(|e| g.node(&e.dst))
+                    .map(|d| d.name.as_str())
+                    .collect();
+                assert!(calls.contains(&"load"), "{language} {side}: {} calls {calls:?}, not the door", t.id);
+            }
+            // a module holds what lies in it or in a module below it; a root lies below none
+            let modules: Vec<&Node> = g.nodes.iter().filter(|n| !n.library && n.kind == NodeKind::Module).collect();
+            let within = |id: &str, m: &str| id == m || id.starts_with(&format!("{m}."));
+            let below_root = |m: &&&Node| modules.iter().any(|a| a.id != m.id && within(&m.id, &a.id));
+            let holds = |m: &Node, code: bool| functions.iter().any(|f| within(&f.module, &m.id) && test_code(f) == code);
+            let cut = modules.iter().filter(below_root).filter(|m| holds(m, true) && holds(m, false)).map(|m| m.id.clone()).collect();
+            (names(&|n| !test_code(n)), names(&|n| test_code(n)), labels, cut)
+        };
+        let python = read("python");
+        assert_eq!(python.0, BTreeSet::from(["load".to_string()]), "{side}: the program's functions");
+        assert_eq!(python.1, BTreeSet::from(["sample".to_string(), "test_loads".to_string()]), "{side}: the test code");
+        assert_eq!(python.2, BTreeSet::from(["test_loads".to_string()]), "{side}: the tests");
+        let cut = if side == "shortcut" { BTreeSet::from(["shelf.store".to_string()]) } else { BTreeSet::new() };
+        assert_eq!(python.3, cut, "{side}: the modules the test code cuts");
+        for language in ["rust", "typescript"] {
+            assert_eq!(read(language), python, "{language} {side}");
+        }
+    }
+}

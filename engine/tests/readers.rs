@@ -103,10 +103,14 @@ fn library_knowledge_is_data() {
     names.extend(k::PYTHON_ENVIRONMENT.iter().flat_map(|(l, c, _)| [*l, *c]));
     // a file's classes hold where ty finds their library, never by their names
     names.extend(k::PYTHON_FILE_CLASSES.iter().flat_map(|(l, c, _)| [*l, *c]));
-    // a runner's test files and a package's client makers by their conventions (`open` is also a
-    // word of the page and of the effects); the conditions of `exports` other than words the reader
-    // uses for the language's own forms (`import`, `default`)
-    names.extend(k::TYPESCRIPT_TEST_FILES.marks.iter().chain(k::TYPESCRIPT_TEST_FILES.dirs).copied());
+    // a runner's test code and its tests and a package's client makers by their conventions (`test` is
+    // also Rust's own `cfg(test)` and `Test` a word of the page; `open` is also a word of the page and
+    // of the effects); the conditions of `exports` other than words the reader uses for the
+    // language's own forms (`import`, `default`)
+    for runner in [&k::PYTEST, &k::CARGO_TEST, &k::JS_TESTS] {
+        let words = [runner.files, runner.collects, runner.functions, runner.classes, runner.marks];
+        names.extend(words.into_iter().flatten().copied().filter(|w| !matches!(*w, "test" | "Test" | "**")));
+    }
     names.extend(k::TYPESCRIPT_CLIENT_MAKERS.names.iter().copied().filter(|n| *n != "open"));
     names.extend(k::EXPORT_CONDITIONS.iter().copied().filter(|c| !matches!(*c, "import" | "require" | "default" | "module" | "node")));
     for table in [

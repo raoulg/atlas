@@ -349,12 +349,6 @@ pub fn made_dir(name: &str) -> bool {
 /// Directories that hold tests and the data they read.
 pub const TEST_DIRS: &[&str] = &["tests", "test", "__tests__", "fixtures", "testdata"];
 
-/// A Python test file by pytest's convention, wherever it stands: `test_*.py`, `*_test.py`, and
-/// `conftest.py`, which holds what its tests share.
-pub fn python_test_file(name: &str) -> bool {
-    name.starts_with("test_") || name.ends_with("_test.py") || name == "conftest.py"
-}
-
 // ---------- a library's code ----------
 
 /// The directory a JavaScript package is installed in, below the project or a directory above it.
@@ -1940,25 +1934,109 @@ impl Makers {
 
 pub const TYPESCRIPT_CLIENT_MAKERS: Makers = Makers { starts: &["create"], names: &["connect", "open"] };
 
-/// A test file by the conventions of a language's test runners: by a mark in its name, or by a
-/// directory of tests it is below.
-pub struct TestFiles {
+/// What a test runner compiles or collects only to test, and which of it it runs as tests one by
+/// one, each an entry of kind `test`. A pattern stands for files by their path below a root of the
+/// reading (a project, a crate, a package): without a `/` it is a file's name, with one its path;
+/// `*` is any part of a name and `**` any number of directories.
+pub struct TestConventions {
+    /// The files that are test code: those the runner collects tests from, those their tests
+    /// share, and the directories kept for tests.
+    pub files: &'static [&'static str],
+    /// The files the runner collects tests from.
+    pub collects: &'static [&'static str],
+    /// The names of the functions it collects from such a file, by how they start; none where it
+    /// collects by a mark alone.
+    pub functions: &'static [&'static str],
+    /// The names of the classes whose methods it collects as it collects functions, by how they start.
+    pub classes: &'static [&'static str],
+    /// The marks it collects a function by: an attribute the function carries, or the call that
+    /// registers it.
     pub marks: &'static [&'static str],
-    pub dirs: &'static [&'static str],
 }
 
-impl TestFiles {
-    /// Whether the file at `path` is a test file.
-    pub fn holds(&self, path: &std::path::Path) -> bool {
-        let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
-        self.marks.iter().any(|m| name.contains(m))
-            || path.components().any(|c| c.as_os_str().to_str().is_some_and(|d| self.dirs.contains(&d)))
+impl TestConventions {
+    /// Whether the file at `rel`, below a root of the reading, is test code.
+    pub fn test_file(&self, rel: &std::path::Path) -> bool {
+        self.files.iter().any(|p| matches_path(p, rel))
+    }
+    /// Whether every file below the directory `rel` is test code: a directory kept for tests.
+    pub fn test_dir(&self, rel: &std::path::Path) -> bool {
+        self.files.iter().filter_map(|p| p.strip_suffix("/**")).any(|p| matches_path(p, rel))
+    }
+    /// Whether the runner collects tests from the file at `rel`.
+    pub fn collects_from(&self, rel: &std::path::Path) -> bool {
+        self.collects.iter().any(|p| matches_path(p, rel))
+    }
+    /// Whether a function of a file the runner collects from is a test: by its name and its
+    /// class's, or by a mark it carries, of which what the mark is handed is no part
+    /// (`tokio::test(flavor = "current_thread")` is `tokio::test`).
+    pub fn collects(&self, name: &str, class: Option<&str>, marks: &[String]) -> bool {
+        let starts = |starts: &[&str], n: &str| starts.iter().any(|s| n.starts_with(s));
+        let by_name = starts(self.functions, name) && class.map_or(true, |c| starts(self.classes, c));
+        by_name || marks.iter().any(|m| self.marks.contains(&m.split('(').next().unwrap_or(m).trim()))
     }
 }
 
-/// TypeScript's and JavaScript's test files, as Jest, Vitest and Mocha find them: `rows.test.ts`,
-/// `rows.spec.js`, and any file below `__tests__`.
-pub const TYPESCRIPT_TEST_FILES: TestFiles = TestFiles { marks: &[".test.", ".spec."], dirs: &["__tests__"] };
+/// Whether a path below a root matches a pattern of `TestConventions`.
+fn matches_path(pattern: &str, rel: &std::path::Path) -> bool {
+    let parts: Vec<String> = rel.components().map(|c| c.as_os_str().to_string_lossy().to_string()).collect();
+    if !pattern.contains('/') {
+        return parts.last().is_some_and(|n| matches_name(pattern, n));
+    }
+    fn below(pattern: &[&str], parts: &[String]) -> bool {
+        match pattern.split_first() {
+            None => parts.is_empty(),
+            Some((&"**", rest)) => (0..=parts.len()).any(|i| below(rest, &parts[i..])),
+            Some((p, rest)) => parts.split_first().is_some_and(|(n, more)| matches_name(p, n) && below(rest, more)),
+        }
+    }
+    below(&pattern.split('/').collect::<Vec<_>>(), &parts)
+}
+
+/// Whether a name matches a pattern in which `*` stands for any part of it.
+fn matches_name(pattern: &str, name: &str) -> bool {
+    let mut pieces = pattern.split('*');
+    let Some(mut rest) = name.strip_prefix(pieces.next().unwrap_or("")) else { return false };
+    let pieces: Vec<&str> = pieces.collect();
+    let Some((last, middle)) = pieces.split_last() else { return rest.is_empty() };
+    for m in middle {
+        let Some(i) = rest.find(m) else { return false };
+        rest = &rest[i + m.len()..];
+    }
+    rest.len() >= last.len() && rest.ends_with(last)
+}
+
+/// pytest: `test_*.py` and `*_test.py` (its `python_files`), their `test*` functions and the
+/// `test*` methods of their `Test*` classes (`python_functions`, `python_classes`); `conftest.py`,
+/// which holds what its tests share, and a `tests/` a project keeps its tests in, at any depth.
+pub const PYTEST: TestConventions = TestConventions {
+    files: &["test_*.py", "*_test.py", "conftest.py", "**/tests/**", "**/test/**"],
+    collects: &["test_*.py", "*_test.py"],
+    functions: &["test"],
+    classes: &["Test"],
+    marks: &[],
+};
+
+/// Cargo: what a crate's `tests/` holds is built only to test the crate, and a function marked
+/// `#[test]`, or a runtime's `#[tokio::test]`, is a test wherever the crate holds it. What stands
+/// under `#[cfg(test)]` the reader says: an attribute on any item, scoped as the language scopes it.
+pub const CARGO_TEST: TestConventions = TestConventions {
+    files: &["tests/**"],
+    collects: &["**"],
+    functions: &[],
+    classes: &[],
+    marks: &["test", "tokio::test", "async_std::test"],
+};
+
+/// Vitest and Jest: `rows.test.ts`, `rows.spec.js` and every file below `__tests__`, where each
+/// callback handed to `it` or `test` is a test; and the `test/` or `tests/` beside a package's code.
+pub const JS_TESTS: TestConventions = TestConventions {
+    files: &["*.test.*", "*.spec.*", "**/__tests__/**", "test/**", "tests/**"],
+    collects: &["*.test.*", "*.spec.*", "**/__tests__/**"],
+    functions: &[],
+    classes: &[],
+    marks: &["it", "test"],
+};
 
 /// The conditions of a package's `exports` that an import of the package's code meets: Node's
 /// (`node`, `import`, `require`), a bundler's (`module`, `browser`), and `default`, which every

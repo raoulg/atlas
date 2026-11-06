@@ -26,7 +26,7 @@ mod paths;
 
 use crate::builder::GraphBuilder;
 use crate::knowledge;
-use crate::model::{Entry, EntryKind, Node, NodeKind};
+use crate::model::{Node, NodeKind};
 use crate::repo::Repo;
 use crate::tree::span;
 use path_clean::clean;
@@ -34,7 +34,8 @@ use path_clean::clean;
 pub(crate) use module::EXTENSIONS;
 use module::{is_code, module_id, segment, ts_parser, Module};
 use passes::{
-    collect_imports, collect_routes, collect_symbols, collect_wrapped, container_fields, link, mark_bins, mark_exports, route_prefixes,
+    collect_imports, collect_routes, collect_symbols, collect_tests, collect_wrapped, container_fields, link, mark_bins, mark_exports,
+    route_prefixes,
 };
 
 /// Does this look like a JavaScript or TypeScript package: a `package.json` with a
@@ -132,20 +133,29 @@ pub fn parse(repo: &Repo, opts: &crate::Options) -> Result<(GraphBuilder, String
     let aliases = path_aliases(repo);
     let mut store = GraphBuilder::default();
     // not under what a tool made
-    let made = |p: &Path| {
-        p.strip_prefix(&base).map_or(false, |r| r.components().any(|c| knowledge::made_dir(c.as_os_str().to_str().unwrap_or(""))))
+    let made = |p: &Path, from: &Path| {
+        p.strip_prefix(from).map_or(false, |r| r.components().any(|c| knowledge::made_dir(c.as_os_str().to_str().unwrap_or(""))))
     };
     let mut paths: Vec<PathBuf> =
-        repo.files_under(&base, EXTENSIONS).into_iter().filter(|p| is_code(p) && !made(p)).map(|p| clean(&p)).collect();
+        repo.files_under(&base, EXTENSIONS).into_iter().filter(|p| is_code(p) && !made(p, &base)).map(|p| clean(&p)).collect();
+    // the tests the runners find beside the code (a `tests/` beside `src/`), named from the package's root
+    let beside = |p: &Path| !p.starts_with(&base);
+    if base != repo.root() {
+        let tests = repo.files_under(repo.root(), EXTENSIONS).into_iter().filter(|p| beside(p) && is_code(p) && !made(p, repo.root()));
+        paths.extend(tests.filter(|p| p.strip_prefix(repo.root()).is_ok_and(|r| knowledge::JS_TESTS.test_file(r))).map(|p| clean(&p)));
+    }
     paths.sort();
-    let files: HashMap<PathBuf, String> = paths.iter().map(|p| (p.clone(), module_id(&root, &base, p))).collect();
+    let from = |p: &Path| if beside(p) { repo.root().to_path_buf() } else { base.clone() };
+    let files: HashMap<PathBuf, String> = paths.iter().map(|p| (p.clone(), module_id(&root, &from(p), p))).collect();
     // every directory is a package module, so the module quotient follows the folders; a directory the
     // test runners keep for tests (`__tests__`) is test code, as every file below it is
     let mut dirs: Vec<(String, bool)> = vec![(root.clone(), false)];
     for p in &paths {
+        let top = from(p);
         let mut cur = p.parent();
-        while let Some(d) = cur.filter(|d| d.starts_with(&base) && *d != base.as_path()) {
-            dirs.push((module_id(&root, &base, &d.join("index.ts")), knowledge::TYPESCRIPT_TEST_FILES.holds(d)));
+        while let Some(d) = cur.filter(|d| d.starts_with(&top) && *d != top.as_path()) {
+            let test = d.strip_prefix(repo.root()).is_ok_and(|r| knowledge::JS_TESTS.test_dir(r));
+            dirs.push((module_id(&root, &top, &d.join("index.ts")), test));
             cur = d.parent();
         }
     }
@@ -172,10 +182,6 @@ pub fn parse(repo: &Repo, opts: &crate::Options) -> Result<(GraphBuilder, String
         let tree = (if jsx { &mut tsx } else { &mut ts }).parse(&src, None).with_context(|| format!("parsing {}", p.display()))?;
         store.files.insert(crate::tree::path_str(p), String::from_utf8_lossy(&src).to_string());
         let is_index = p.file_stem().and_then(|s| s.to_str()) == Some("index");
-        let rel = crate::tree::path_str(p.strip_prefix(repo.root()).unwrap_or(p));
-        // a test file is test code, and a route of its own: its body runs the tests
-        let test = knowledge::TYPESCRIPT_TEST_FILES.holds(p);
-        let entry = test.then(|| Entry::new(EntryKind::Test, rel.clone()));
         let node = Node {
             id: id.clone(),
             kind: NodeKind::Module,
@@ -184,8 +190,6 @@ pub fn parse(repo: &Repo, opts: &crate::Options) -> Result<(GraphBuilder, String
             span: span(tree.root_node()),
             module: id.clone(),
             is_pkg: is_index,
-            test,
-            entry,
             ..Default::default()
         };
         store.add_node(node);
@@ -197,6 +201,8 @@ pub fn parse(repo: &Repo, opts: &crate::Options) -> Result<(GraphBuilder, String
         collect_wrapped(m);
         collect_symbols(m, &mut store);
         collect_routes(m, &mut store);
+        let rel = m.path.strip_prefix(repo.root()).unwrap_or(&m.path).to_path_buf();
+        collect_tests(m, &mut store, &rel);
     }
     drop(items);
     let reach = crate::clock::stage("reach");

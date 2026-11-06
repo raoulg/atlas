@@ -101,6 +101,7 @@ impl Language for Python {
         let (mut b, root) = python::parse(repo, &packages, project_root.as_deref(), opts)?;
         let _finish = crate::clock::stage("finish");
         entries::mark_scripts(repo, &mut b, project_root.as_deref());
+        entries::mark_tests(&mut b, &knowledge::PYTEST, &[python::types_root(&packages, project_root.as_deref())]);
         Ok(b.finish(root, project_root.as_deref(), self.lang()))
     }
     /// A project reads its packages; a project file anywhere else below it roots a project of
@@ -170,8 +171,11 @@ impl Language for Rust {
         repo.is_file("Cargo.toml")
     }
     fn parse(&self, repo: &Repo, opts: &Options) -> Result<Graph> {
-        let (b, root) = rust::parse(repo, opts)?;
+        let (mut b, root) = rust::parse(repo, opts)?;
         let _finish = crate::clock::stage("finish");
+        // each crate's own layout: its `tests/` lies beside its manifest
+        let crates: Vec<PathBuf> = rust::crates(repo).map(|cs| cs.into_iter().map(|c| c.dir).collect()).unwrap_or_default();
+        entries::mark_tests(&mut b, &knowledge::CARGO_TEST, &crates);
         Ok(b.finish(root, Some(repo.root()), self.lang()))
     }
     /// The compiler asks for every type, `pub` is the export, and a trait's implementation has the
@@ -214,8 +218,9 @@ impl Language for TypeScript {
         typescript::detect(repo)
     }
     fn parse(&self, repo: &Repo, opts: &Options) -> Result<Graph> {
-        let (b, root) = typescript::parse(repo, opts)?;
+        let (mut b, root) = typescript::parse(repo, opts)?;
         let _finish = crate::clock::stage("finish");
+        entries::mark_tests(&mut b, &knowledge::JS_TESTS, &[repo.root().to_path_buf()]);
         Ok(b.finish(root, Some(repo.root()), self.lang()))
     }
     /// The compiler works out what a function gives, which a reader of its declaration does not

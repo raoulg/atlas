@@ -73,7 +73,12 @@ fn routes_render_components_and_hand_on_functions() {
     assert!(has(&calls, "cli", "lib.api.laad"), "through lib/index.ts and its `export *`");
     let cli = g.node("fixture-ts.cli").unwrap().entry.clone().unwrap();
     assert_eq!((cli.kind, cli.label.as_str()), (EntryKind::Cli, "fixture"), "package.json bin");
-    assert_eq!(g.node("fixture-ts.lib.api_test").unwrap().entry.as_ref().map(|e| e.kind), Some(EntryKind::Test));
+    // a test file is test code, and each callback it hands `it` is a test, labelled by its string (#403)
+    let file = g.node("fixture-ts.lib.api_test").unwrap();
+    assert!(file.test && file.entry.is_none(), "the test file is the module that holds its tests");
+    let test = g.node("fixture-ts.lib.api_test.kiest kort").and_then(|n| n.entry.clone()).unwrap();
+    assert_eq!((test.kind, test.label.as_str()), (EntryKind::Test, "kiest kort"));
+    assert!(has(&calls, "lib.api_test.kiest kort", "lib.api.kies"));
 }
 
 /// A type with method signatures promises what its implementations do; a value of that type
