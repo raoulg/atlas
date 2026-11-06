@@ -4,8 +4,9 @@
 //! mixin, pydantic's `BaseModel`, torch's `Module`) is how a class is built, not what flows.
 //!
 //! A shaped array (`Float[Tensor, batch dim]`) stands in its rank family, named by its dtype, array
-//! type and rank (`Float Tensor · 2D`), where the graph holds two types of that rank: the family is a
-//! quotient of the shapes, its members stay types of their own.
+//! type and rank (`Float Tensor · 2D`), whatever other shapes the graph holds: the rank is a map on each
+//! shape alone, the family its quotient, and its members stay types of their own. A run alone
+//! (`Float[Tensor, ...]`) is named as its family already, and stands in it only beside another shape.
 //!
 //! A type is data, or a door to a part of the world (a sink, a repository, a client): what a
 //! family's member reaches makes the whole family a door.
@@ -44,6 +45,9 @@ pub struct Families {
     /// packages when one makes it and the other takes it.
     pub makes: Vec<(String, Vec<String>)>,
     pub takes: Vec<(String, Vec<String>)>,
+    /// The rank families of shaped arrays (`Float Tensor · 3D`): families no type of the code's is, each one a
+    /// family however few shapes it holds.
+    pub ranks: Vec<String>,
 }
 
 struct Ix<'g> {
@@ -51,7 +55,7 @@ struct Ix<'g> {
     out: HashMap<&'g str, Vec<&'g Edge>>,
     into: HashMap<&'g str, Vec<&'g Edge>>,
     used_as_type: HashSet<&'g str>,
-    /// The rank family of each shaped array whose rank another type of the graph shares.
+    /// The rank family of each shaped array.
     ranks: HashMap<&'g str, String>,
 }
 
@@ -79,7 +83,11 @@ impl<'g> Ix<'g> {
         for (_, f) in &shaped {
             *fiber.entry(f.as_str()).or_default() += 1;
         }
-        let ranks = shaped.iter().filter(|(_, f)| fiber[f.as_str()] > 1).map(|(t, f)| (*t, f.clone())).collect();
+        let ranks = shaped
+            .iter()
+            .filter(|(t, f)| fiber[f.as_str()] > 1 || crate::shapes::name(t).is_none())
+            .map(|(t, f)| (*t, f.clone()))
+            .collect();
         Ix { kinds: g.nodes.iter().map(|n| (n.id.as_str(), n.kind)).collect(), out, into, used_as_type, ranks }
     }
 
@@ -196,6 +204,10 @@ pub fn families(g: &Graph) -> Families {
             by.push(e.src.clone());
         }
     }
+    let mut ranks: Vec<String> = ix.ranks.values().cloned().collect();
+    ranks.sort();
+    ranks.dedup();
+    out.ranks = ranks;
     out.makes = makes.into_iter().collect();
     out.takes = takes.into_iter().collect();
     out

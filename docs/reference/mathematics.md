@@ -1152,14 +1152,16 @@ fibers, over one `D` and `A`, are the rank families, and the most general shape 
 after a run where the rank is open (`_ _`, `... _`), is an upper bound of it: every shape of the fiber is `≤` it.
 **In Atlas.** Each shape the code writes is a type of its own, named by its shape: two names are two variables, so
 `batch dim` and `batch ndim` are two types, and so are `Float[..]` and `Int[..]`. A shape stands in its rank family
-as a subclass stands in its base (Coequalizer: a quotient), where the program's types hold two shapes of that rank:
-closed, `Float Tensor · 2D` stands for the rank-2 float tensors the picture holds (`· ≥1D` where the rank is open,
-`· any rank` where no axis is promised);
-opened, it is a frame around the shapes themselves. The family is named by its dtype, array type and rank, never in
+as a subclass stands in its base (Coequalizer: a quotient), however few shapes of that rank the program or the route
+holds: the rank is a map on each shape alone, and a fiber of one is a fiber, so a shape's closed box is the same in
+the overview and zoomed into a route, whatever other code holds (#425). Closed, `Float Tensor · 2D` stands for the
+rank-2 float tensors the picture holds (`· ≥1D` where the rank is open, `· any rank` where no axis is promised);
+opened, it is a frame around the shapes themselves, the finer level, where the names of the axes show. The family is named by its dtype, array type and rank, never in
 the annotation's own notation: `Float[Tensor, _ _]` would read as a type the code wrote, and a box that says what the
 code does not is a guess. A shape the code writes as `_ _` is a member of its family like any other. A run alone
 (`...`) promises no axis, and its notation says nothing a reader needs: it is named as what it says,
-`Float Tensor · any rank`, whether or not a family holds it. The family is a
+`Float Tensor · any rank`, whether or not a family holds it; alone in its family it stands as itself, since opening it
+would only repeat its name. The family is a
 quotient of the picture, never a fact of the graph:
 the shapes, the steps and their lines are the same with it closed or open. The preorder is what an override keeps
 (Behavioural subtyping); a family is never ordered above another in the picture, since the ranks are no base the
