@@ -510,7 +510,17 @@ nothing calls. A
 caller that handed the rest hands it down the calls into the touch's function, so it holds only on
 them; a caller that set up the object a method on the calls runs on (its calls reach a constructor
 of that method's class) holds wherever it ran before, also in a step beside the calls (`main`
-building the shelf in `open_shelf` and keeping its report in the step after). A role one condition
+building the shelf in `open_shelf` and keeping its report in the step after), and only where the value the method runs on
+may be one it built. That value is one the body names, and the body says which steps it may be made of: the steps that bind
+its name and ran before the call, and those that make what each of them is handed, through every step. A name holds what
+the binding nearest before the call made, and what one before it made where that one stands in an arm the call is not in,
+up to a binding that runs whenever the call does; in a loop, where no binding in the loop runs before the call in the same
+round, it holds in a later round what a binding after the call in the loop made in the round before, so the call is handed
+each of them (`shelf = open_drafts()`, then in the loop `shelf.keep_report(..)` and `shelf = open_shelf()`: the report is
+kept on both shelves). A set-up none of those steps runs built another object, and holds for nothing the call runs: of two
+shelves set up before a read, the read on the drafts counts the drafts' set-up alone. Where the body does not say which
+value it is (a parameter, a value its own code binds, a field of the value its method runs on), any set-up of the class
+that ran before may have built it. A role one condition
 plays is no part of the set: the graph says which a caller plays, as above, and the function a
 request is from is kept beside it, in `Whole { asks, with }`, where the request is drawn.
 Where two callers meet a path, the conjunction is the union of theirs (`Whole::and`), so the meet
@@ -521,10 +531,12 @@ other. The graph's JSON writes each conjunction `a&b`, its conditions in order, 
 `users_of:e`, and the alternatives in order; a conjunction of one entry's users alone is written in
 `users_of`. It reads them back once.
 **Where.** `model.rs` (`Atom`, `Both`, `absorb`, `Touch::by`, `Touch::in_route`), `paths.rs` (`Whole`,
-`Callers::of`, `place_calls`), `flow.rs` (`holds`, what ran before a call: `Ix::prior`, the memo's `Key`;
+`Callers::of`, `place_calls`), `flow.rs` (`holds`, what ran before a call: `Ix::prior`, the memo's `Key`; the set-ups
+that cannot have built the value a call runs on: `makers`, `receiver_makers`, `Ix::off`;
 `along`; the contexts of an arrow: `contexts`, `in_every_context`), `plan.js` (`inRoute`, `before`,
-`ranBefore`); the pairs `handing`, `setup` and `order`, the programs `plans/setup-in-a-loop` and
-`plans/setup-in-an-arm`, and `engine/tests/ran_before.rs`, which holds the engine's reading and the page's
+`ranBefore`, `makersOf`, `receiverMakers`, `offAt`, and what a call in a loop is handed: `laterRounds`); the pairs
+`handing`, `setup` and `order` (each in Python, Rust and TypeScript, `engine/tests/pairs.rs`), the programs
+`plans/setup-in-a-loop` and `plans/setup-in-an-arm`, both in the three languages, and `engine/tests/ran_before.rs`, which holds the engine's reading and the page's
 to one answer, and a function's arrow to what its route, written out occurrence by occurrence, does at places.
 
 ### Yoneda: what changed

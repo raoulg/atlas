@@ -763,19 +763,86 @@ impl Key {
         Under { calls: &self.made, before, classes: &self.classes, top }
     }
 
-    /// What ran before a call of the body that `prior` says ran before it inside the body, with what ran before the body.
-    fn before(&self, prior: &[u32]) -> Vec<u32> {
-        let mut out: Vec<u32> = self.before.iter().chain(prior).copied().collect();
+    /// What ran before a call of the body that `prior` says ran before it inside the body, with what ran before the body,
+    /// but for the set-ups `off` that cannot have built the value the call runs on (`Ix::off`).
+    fn before(&self, prior: &[u32], off: &[u32]) -> Vec<u32> {
+        let mut out: Vec<u32> = self.before.iter().chain(prior).copied().filter(|g| !off.contains(g)).collect();
         out.sort_unstable();
         out.dedup();
         out
     }
 }
 
+/// The steps of body `n` whose results the name `name` may hold where call `i` reads it (mathematics.md, "Who makes a path
+/// whole"): the sites of the body that bind it by what they give, read in call order. Before the call they are the
+/// binding nearest before it and, where that one stands in an arm the call is not in, the ones before it too, up to one
+/// that runs whenever the call does; one in another arm of a choice the call is in never runs before it. In a loop that
+/// holds the call, where no binding in the loop runs before it in the same round, the name holds in a later round what a
+/// binding after the call in the loop made in the round before: every such binding is one of them. A value no name holds
+/// (`#3`) is the result of the step that makes it. None where the name may hold what no step of the body makes: a
+/// parameter, a value the body binds by its own code, one bound before the body.
+pub fn makers(n: &Node, i: usize, name: &str) -> Option<Vec<usize>> {
+    let sites = &n.sites;
+    let gives = |j: usize| sites[j].gives.iter().any(|g| g.name == name);
+    if name.is_empty() || i >= sites.len() {
+        return None;
+    }
+    if name.starts_with('#') {
+        return (0..sites.len()).find(|&j| j != i && gives(j)).map(|j| vec![j]);
+    }
+    if n.binds.iter().any(|b| b.name == name) {
+        return None;
+    }
+    let (at, line) = (&sites[i].arms, sites[i].line);
+    let apart = |j: usize| sites[j].arms.iter().any(|(c, x)| at.iter().any(|(d, y)| c == d && x != y));
+    let whenever = |j: usize| sites[j].arms.iter().all(|a| at.contains(a));
+    let mut out = vec![];
+    let mut last = None;
+    for j in (0..i).rev().filter(|&j| gives(j) && !apart(j)) {
+        out.push(j);
+        if whenever(j) {
+            last = Some(sites[j].line);
+            break;
+        }
+    }
+    let last = last?;
+    for &(a, b) in n.loop_lines.iter().filter(|&&(a, b)| a <= line && line <= b) {
+        if !(a <= last && last <= b) {
+            out.extend((i + 1..sites.len()).filter(|&j| gives(j) && a <= sites[j].line && sites[j].line <= b));
+        }
+    }
+    out.sort_unstable();
+    out.dedup();
+    Some(out)
+}
+
+/// The steps of body `n` whose results the value call `i` runs on may be made of (`makers`): the steps that bind it, and
+/// those that make what each of them is handed, through every step. None where the value may be one no step of the body
+/// makes, or be made of one: the body does not say which object it is.
+pub fn receiver_makers(n: &Node, i: usize) -> Option<BTreeSet<usize>> {
+    let site = n.sites.get(i)?;
+    if site.on_receiver {
+        return None;
+    }
+    let h = site.hands.iter().find(|h| h.fills.contains(&crate::model::Slot::Receiver))?;
+    let mut out: BTreeSet<usize> = BTreeSet::new();
+    let mut todo: Vec<(usize, String)> = vec![(i, h.name.clone())];
+    while let Some((at, name)) = todo.pop() {
+        for j in makers(n, at, &name)? {
+            if out.insert(j) {
+                todo.extend(n.sites[j].hands.iter().map(|h| (j, h.name.clone())));
+            }
+        }
+    }
+    Some(out)
+}
+
 /// Whether condition `f` of a touch holds in a body run under `k` (mathematics.md, "Who makes a path whole"): `f` is on
 /// the calls that lead there; or it is a constructor of the class of a method on them, which built the object that
 /// method runs on, before the route or in it; or it ran before and set such an object up, its calls reaching a
-/// constructor of that class. A caller that hands the rest of the path hands it down the calls, so it holds only on them.
+/// constructor of that class, where the value the method runs on may be one it built (what ran before a call leaves out
+/// the set-ups that cannot have, `Ix::off`). A caller that hands the rest of the path hands it down the calls, so it holds
+/// only on them.
 fn holds(ix: &Ix, f: &str, k: &Key) -> bool {
     let x = ix.name(f);
     if k.made.contains(&x) {
@@ -867,8 +934,9 @@ fn orders(ix: &Ix, id: &str, on: &str, top: &str, under: &Under, mut done: Optio
         .flat_map(|t| std::iter::once(t.line).chain(t.also_at.iter().copied()).map(move |l| (l, Event::Touch(t))))
         .collect();
     let calls = if done.is_some() { ix.calls(body, n, on) } else { Rc::from([]) };
-    // what ran before each call, besides what ran before the body
+    // what ran before each call, besides what ran before the body, and the set-ups that cannot have built what it runs on
     let prior = ix.prior(body, n, on, &calls);
+    let off = ix.off(body, n, on, &calls);
     events.extend(calls.iter().enumerate().map(|(i, c)| (c.line, Event::Call(i, c))));
     // on one line what is read comes first, then the calls, then what is written: `x ??= v` reads
     // `x` before it may write it, `y = f(x)` calls `f` before `y` is written
@@ -891,7 +959,7 @@ fn orders(ix: &Ix, id: &str, on: &str, top: &str, under: &Under, mut done: Optio
                 vec![(ix.place_of(t), Order { finds: !writes, writes, always_writes: writes, ..Order::default() })]
             }
             Event::Call(i, c) => {
-                let before = if prior[*i].is_empty() { None } else { Some(k.before(&prior[*i])) };
+                let before = if prior[*i].is_empty() && off[*i].is_empty() { None } else { Some(k.before(&prior[*i], &off[*i])) };
                 let under = k.under(before.as_deref().unwrap_or(&k.before), under.top);
                 one_of(&c.runs.iter().map(|(t, on)| orders(ix, t, on, top, &under, done.as_deref_mut())).collect::<Vec<_>>())
             }
@@ -1276,10 +1344,10 @@ fn occurrences<'g>(ix: &Ix<'g>, id: &str, on: &str, at: String, top: &str, under
         return;
     }
     let calls = ix.calls(k.body, n, on);
-    let prior = ix.prior(k.body, n, on, &calls);
+    let (prior, off) = (ix.prior(k.body, n, on, &calls), ix.off(k.body, n, on, &calls));
     path.push(id.to_string());
-    for (c, ran) in calls.iter().zip(prior.iter()) {
-        let before = k.before(ran);
+    for ((c, ran), off) in calls.iter().zip(prior.iter()).zip(off.iter()) {
+        let before = k.before(ran, off);
         let under = k.under(&before, under.top);
         for (i, (t, tc)) in c.runs.iter().enumerate() {
             if !ix.nodes.contains_key(t.as_str()) || path.contains(t) {
@@ -1571,6 +1639,8 @@ struct Ix<'g> {
     asked: RefCell<FxHashMap<(u32, u32), Rc<BTreeSet<u32>>>>,
     /// What ran before each call of each body inside it, by the body (`Ix::prior`).
     prior: RefCell<FxHashMap<(u32, u32), Rc<[Box<[u32]>]>>>,
+    /// The set-ups that cannot have built the value each call of each body runs on, by the body (`Ix::off`).
+    off: RefCell<FxHashMap<(u32, u32), Rc<[Box<[u32]>]>>>,
     /// The conditions that set up the object of a method each body may run, and that method consults, by the body
     /// (`Ix::set_up`).
     set_up: RefCell<FxHashMap<(u32, u32), Rc<BTreeSet<u32>>>>,
@@ -1620,6 +1690,7 @@ impl<'g> Ix<'g> {
             builds: RefCell::default(),
             asked: RefCell::default(),
             prior: RefCell::default(),
+            off: RefCell::default(),
             set_up: RefCell::default(),
         }
     }
@@ -1807,6 +1878,42 @@ impl<'g> Ix<'g> {
             .collect();
         self.prior.borrow_mut().insert(root, prior.clone());
         prior
+    }
+
+    /// The set-ups that cannot have built the value each call of body `n` run on class `on`, numbered `root`, runs on (its
+    /// `calls`), each by its number (mathematics.md, "Who makes a path whole"): of the conditions the body consults, those
+    /// that set up an object of the class of the method the call names and that none of the steps the value may be made of
+    /// runs (`receiver_makers`). A set-up holds for a method only where the value the method runs on may be one it built;
+    /// where the body does not say which value that is, none is ruled out. Worked out once a body.
+    fn off(&self, root: (u32, u32), n: &Node, on: &str, calls: &[Call]) -> Rc<[Box<[u32]>]> {
+        if let Some(o) = self.off.borrow().get(&root) {
+            return o.clone();
+        }
+        let consulted = self.consulted(root, &n.id, on);
+        let off: Rc<[Box<[u32]>]> = calls
+            .iter()
+            .map(|c| {
+                let site = &n.sites[c.site];
+                let Some(cls) = self.nodes.get(site.to.as_str()).filter(|m| !m.ctor).and_then(|m| m.cls.as_deref()) else {
+                    return Box::default();
+                };
+                let cls = self.name(cls);
+                let builders: Vec<u32> = consulted.iter().copied().filter(|g| self.builds_of(*g).contains(&cls)).collect();
+                if builders.is_empty() {
+                    return Box::default();
+                }
+                let Some(made) = receiver_makers(n, c.site) else { return Box::default() };
+                let mut ran: BTreeSet<u32> = BTreeSet::new();
+                for m in calls.iter().filter(|m| made.contains(&m.site)) {
+                    for (t, tc) in &m.runs {
+                        ran.extend(self.ran((self.name(t), self.name(tc)), t, tc).iter().copied());
+                    }
+                }
+                builders.into_iter().filter(|g| !ran.contains(g)).collect()
+            })
+            .collect();
+        self.off.borrow_mut().insert(root, off.clone());
+        off
     }
 
     /// The conditions that set up the object of a method body `id` run on class `on`, numbered `root`, may run (itself

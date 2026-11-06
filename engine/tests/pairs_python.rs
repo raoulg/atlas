@@ -2932,8 +2932,9 @@ fn setup_a_step_before_the_calls_sets_up_the_object_a_method_runs_on() {
 /// the shortcut it reads the report from the drafts, set up after it kept the report, where it never kept one.
 /// Composition is call order: a set-up counts for what runs after it, and one `review` runs itself never stands above
 /// it, so on both sides the report is written in `out` alone and neither `review` nor `main` reads back a file but that
-/// one. The shortcut also reads the drafts' report, which nothing in the route writes: it takes it from beyond, and the
-/// closed `review` draws the line from it. The clean route takes nothing from beyond.
+/// one (whether the shortcut reads it back at all is the law of the value a method runs on, `pairs.rs`, #368). The
+/// shortcut also reads the drafts' report, which nothing in the route writes: it takes it from beyond, and the closed
+/// `review` draws the line from it. The clean route takes nothing from beyond.
 #[test]
 fn order_a_set_up_counts_for_what_runs_after_it() {
     let p = common::pair("order/python");
@@ -2945,9 +2946,11 @@ fn order_a_set_up_counts_for_what_runs_after_it() {
     for (side, g) in [("clean", &p.clean), ("shortcut", &p.shortcut)] {
         let arrows = flow::arrows(g);
         for f in ["shelf.cli.review", main] {
-            assert_eq!(arrows[f].reads_back, [out.clone()], "{side}: `{f}` reads back the report it kept, and no other file");
+            let back = arrows.get(f).map(|a| a.reads_back.clone()).unwrap_or_default();
+            assert!(back.iter().all(|x| *x == out), "{side}: `{f}` reads back no file but the report it kept: {back:?}");
         }
     }
+    assert_eq!(flow::arrows(&p.clean)["shelf.cli.review"].reads_back, [out.clone()], "clean: `review` reads back the report it kept");
     assert_eq!(touched(&p.clean), BTreeSet::from([out.clone()]), "clean: the route touches the report it kept alone");
     assert_eq!(touched(&p.shortcut), BTreeSet::from([out, drafts]), "shortcut: the route also reads the drafts' report");
 }
