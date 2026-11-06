@@ -85,7 +85,8 @@ jobs:
             "$app/Contents/MacOS/atlas-code" --version
             sh studio/smoke-serve.sh "$app/Contents/MacOS/atlas-code"
           fi
-          hdiutil detach "$mount"
+          sleep 1
+          hdiutil detach -force "$mount"
       - uses: actions/upload-artifact@v7
         with:
           name: atlas-studio-${{ matrix.target }}

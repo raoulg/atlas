@@ -7,7 +7,7 @@
 set -eu
 atlas=$1
 work=$(mktemp -d)
-trap 'kill "${server:-0}" 2>/dev/null || true; rm -rf "$work"' EXIT
+trap 'kill "${server:-0}" 2>/dev/null || true; pkill -f "$work/repo" 2>/dev/null || true; rm -rf "$work"' EXIT
 mkdir "$work/repo"
 printf '[project]\nname = "smoke"\nversion = "0"\n' > "$work/repo/pyproject.toml"
 printf 'def smoke_marker(x: int) -> str:\n    return str(x)\n' > "$work/repo/app.py"
