@@ -121,10 +121,36 @@ fn jsonc(text: &str) -> String {
 }
 
 /// What a reading of the package at `repo` takes from its dependency directories: its own
-/// `node_modules` and those above it, which Node finds from its files as well.
+/// `node_modules` and those above it, which Node finds from its files as well, and the code that
+/// a package linked into one (a `file:` dependency) points to, which a reading of it reads from
+/// there.
 pub fn environment(repo: &Repo) -> Vec<crate::cache::Check> {
     let root = crate::repo::Repo::real(&repo.root());
-    root.ancestors().map(|a| crate::cache::Check::Tree(a.join(knowledge::NODE_PACKAGES))).collect()
+    let mut out = vec![];
+    for dir in root.ancestors().map(|a| a.join(knowledge::NODE_PACKAGES)) {
+        out.push(crate::cache::Check::Tree(dir.clone()));
+        let Ok(real) = std::fs::canonicalize(&dir) else { continue };
+        out.extend(linked(&real, &root).into_iter().map(crate::cache::Check::Tree));
+    }
+    out
+}
+
+/// Where the packages of the `node_modules` directory `dir` that are links point: the directories
+/// outside it, and outside the package at `root`, whose own code is read as its own.
+fn linked(dir: &Path, root: &Path) -> Vec<PathBuf> {
+    let entries = |d: &Path| -> Vec<PathBuf> { std::fs::read_dir(d).into_iter().flatten().flatten().map(|e| e.path()).collect() };
+    let mut packages = vec![];
+    for entry in entries(dir) {
+        match entry.file_name().and_then(|n| n.to_str()) {
+            Some(scope) if scope.starts_with('@') => packages.extend(entries(&entry)),
+            Some(name) if !name.starts_with('.') => packages.push(entry),
+            _ => {}
+        }
+    }
+    packages
+        .into_iter()
+        .filter_map(|p| std::fs::canonicalize(&p).ok().filter(|real| real.is_dir() && !real.starts_with(dir) && !real.starts_with(root)))
+        .collect()
 }
 
 /// Where the code of the package `name` lies, imported from the file `from` of the package at

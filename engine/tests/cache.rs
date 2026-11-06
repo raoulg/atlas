@@ -362,3 +362,78 @@ fn a_reading_holds_until_what_it_rests_on_changes() {
     }
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+/// A symbolic link to `source` at `link` (a junction on Windows), as a package manager makes one.
+fn link(source: &Path, link: &Path) {
+    std::fs::create_dir_all(link.parent().unwrap()).unwrap();
+    #[cfg(unix)]
+    std::os::unix::fs::symlink(source, link).unwrap();
+    #[cfg(windows)]
+    assert!(Command::new("cmd").arg("/C").arg("mklink").arg("/J").arg(link).arg(source).status().unwrap().success());
+}
+
+/// A reading is cached under a check of everything it read, and a library read through a link is
+/// read from where the link points. So a package installed as a `file:` dependency (a link in
+/// `node_modules` to a directory outside it), and a Python package installed by a path (a `.pth`
+/// file naming its source directory), are read again when their code changes: the next reading
+/// draws what a reading anew draws, and not the library as it was.
+#[test]
+fn a_library_read_through_a_link_is_read_anew_when_its_code_changes() {
+    let dir = scratch("links");
+    let ts = dir.join("tsapp");
+    let linked = dir.join("tskit");
+    let tskit = |body: &str| {
+        write(
+            &linked,
+            &[
+                ("package.json", r#"{ "name": "tskit", "version": "1.0.0", "main": "index.js" }"#),
+                ("index.js", &format!("import {{ readFileSync }} from \"node:fs\";\n\nexport function load(path) {{\n{body}\n}}\n")),
+            ],
+        )
+    };
+    tskit("  return readFileSync(path, \"utf8\");");
+    write(
+        &ts,
+        &[
+            ("package.json", r#"{ "name": "tsapp", "dependencies": { "tskit": "file:../tskit" } }"#),
+            ("tsconfig.json", "{}"),
+            ("src/main.ts", "import { load } from \"tskit\";\n\nexport function main(): string {\n  return load(\"page.html\");\n}\n"),
+        ],
+    );
+    link(&linked, &ts.join("node_modules/tskit"));
+
+    let py = dir.join("pyapp");
+    let source = dir.join("pykit");
+    let pykit = |body: &str| write(&source, &[("src/pykit/__init__.py", &format!("def read_config(path):\n{body}\n"))]);
+    pykit("    return open(path).read()");
+    write(
+        &py,
+        &[
+            ("pyproject.toml", "[project]\nname = \"pyapp\"\nversion = \"0\"\nrequires-python = \">=3.13\"\n"),
+            ("pyapp/__init__.py", ""),
+            ("pyapp/main.py", "from pykit import read_config\n\n\ndef run(path: str) -> str:\n    return read_config(path)\n"),
+            (".venv/pyvenv.cfg", "home = /usr/bin\nversion_info = 3.13.0\ninclude-system-site-packages = false\n"),
+        ],
+    );
+    let packages = site(&py);
+    write(&packages, &[("pykit-1.0.dist-info/METADATA", "Name: pykit\nVersion: 1.0\n")]);
+    write(&packages, &[("_pykit.pth", &format!("{}\n", source.join("src").display()))]);
+
+    type Edit<'a> = &'a dyn Fn();
+    let cases: [(&str, &Path, &str, Edit); 2] = [
+        ("typescript", &ts, "tskit.load", &|| tskit("  readFileSync(path, \"latin1\");\n  return \"\";")),
+        ("python", &py, "pykit.read_config", &|| pykit("    open(path, \"w\").write(\"\")\n    return \"\"")),
+    ];
+    for (language, repo, id, edit) in cases {
+        let opts = cached(&dir.join(format!("cache-{language}")));
+        let read = |o: &Options| parts::analyze_parts(&[repo.to_path_buf()], o).unwrap();
+        let first = read(&opts);
+        assert!(first.iter().any(|g| g.node(id).map_or(false, |n| n.library)), "{language}: the linked library is read");
+        assert_eq!(shown(&read(&opts)), shown(&first), "{language}: the second reading is the first");
+        edit();
+        let changed = read(&opts);
+        assert_eq!(shown(&changed), shown(&read(&Options::default())), "{language}: the reading after an edit is a reading anew");
+        assert_ne!(shown(&changed), shown(&first), "{language}: the edit in the linked library is seen");
+    }
+    let _ = std::fs::remove_dir_all(&dir);
+}
