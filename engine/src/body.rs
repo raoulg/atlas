@@ -300,6 +300,31 @@ fn changed_values(mut gives: Vec<Held>, changed: Vec<Held>) -> Vec<Held> {
     gives
 }
 
+/// Spans of a source, to ask whether one of them covers a range: sorted by where they start, each with the furthest end of
+/// the spans up to it, so that a span starting at or before a range's start reaches its end where the furthest of them does.
+struct Spans {
+    starts: Vec<usize>,
+    reach: Vec<usize>,
+}
+
+impl Spans {
+    fn new(spans: impl IntoIterator<Item = Range>) -> Self {
+        let mut all: Vec<Range> = spans.into_iter().collect();
+        all.sort_unstable();
+        let reach = all.iter().scan(0, |far, (_, b)| {
+            *far = (*far).max(*b);
+            Some(*far)
+        });
+        Spans { reach: reach.collect(), starts: all.into_iter().map(|(a, _)| a).collect() }
+    }
+
+    /// Whether one of the spans starts at or before `a` and ends at or after `b`.
+    fn cover(&self, a: usize, b: usize) -> bool {
+        let k = self.starts.partition_point(|s| *s <= a);
+        k > 0 && self.reach[k - 1] >= b
+    }
+}
+
 /// Where a name the body writes is read (`Steps::reading`).
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Read {
@@ -349,6 +374,10 @@ pub struct Steps<'t, 's> {
     /// Of each name asked, where the climb from it to the body says it is read (`Steps::climb`). The climb reads the
     /// body's tree and its lookups, so a lookup the body adds asks again.
     climbs: RefCell<HashMap<usize, Read>>,
+    /// Of each node asked, the named nodes `UseSyntax::binders` says bind names for it itself (`Steps::own_binders`).
+    binders: RefCell<HashMap<usize, Vec<TsNode<'t>>>>,
+    /// Of each node asked, the guards among the named nodes it holds, each by its place among them (`Steps::guarded`).
+    guards: RefCell<HashMap<usize, Vec<(usize, (u32, u32))>>>,
 }
 
 /// A body read once: the node each of its nodes stands in, the named nodes each holds, and the names written in it in
@@ -420,8 +449,10 @@ impl<'t, 's> Index<'t, 's> {
                 }
             }
         };
-        let inside = |x: &&TsNode<'t>| n.start_byte() <= x.start_byte() && x.end_byte() <= n.end_byte();
-        self.written.get(name).into_iter().flatten().filter(inside).any(within)
+        // the places a name is written are in source order, so those within `n` are one run of them
+        let Some(all) = self.written.get(name) else { return false };
+        let from = all.partition_point(|x| x.start_byte() < n.start_byte());
+        all[from..].iter().take_while(|x| x.start_byte() < n.end_byte()).filter(|x| x.end_byte() <= n.end_byte()).any(within)
     }
 }
 
@@ -449,6 +480,8 @@ impl<'t, 's> Steps<'t, 's> {
             lookups: vec![],
             index: OnceCell::new(),
             climbs: RefCell::new(HashMap::new()),
+            binders: RefCell::new(HashMap::new()),
+            guards: RefCell::new(HashMap::new()),
         }
     }
 
@@ -481,6 +514,45 @@ impl<'t, 's> Steps<'t, 's> {
             Some((p, at)) => index.named.get(&p.id()).map_or(vec![], |all| all[..*at].iter().rev().copied().collect()),
             None => std::iter::successors(n.prev_named_sibling(), |s| s.prev_named_sibling()).collect(),
         }
+    }
+
+    /// The last of the named nodes `p` holds that is no comment.
+    fn last_named(&self, p: TsNode<'t>) -> Option<TsNode<'t>> {
+        self.named(p).iter().rev().find(|x| !x.kind().ends_with("comment")).copied()
+    }
+
+    /// The named nodes in which `p` binds names for itself (the parameters of a function written in place), as
+    /// `UseSyntax::binders` says: asked of each node once, however many of the nodes it holds ask.
+    fn own_binders(&self, p: TsNode<'t>) -> Vec<TsNode<'t>> {
+        if let Some(own) = self.binders.borrow().get(&p.id()) {
+            return own.clone();
+        }
+        let own: Vec<TsNode<'t>> = self.named(p).iter().filter(|x| (self.uses.binders)(p, **x) == Some(true)).copied().collect();
+        self.binders.borrow_mut().insert(p.id(), own.clone());
+        own
+    }
+
+    /// Whether `p` binds names for itself in a named node beside `child` (`own_binders`).
+    fn binds_beside(&self, p: TsNode<'t>, child: TsNode<'t>) -> bool {
+        self.own_binders(p).iter().any(|x| x.id() != child.id())
+    }
+
+    /// The guards among the statements before `n` in its block, the nearest first (`tree::guarded_by`): the guards of a
+    /// block are found once, however many of its statements ask.
+    fn guarded(&self, n: TsNode<'t>) -> Vec<(u32, u32)> {
+        let index = self.index();
+        let Some((p, at)) = index.parents.get(&n.id()).copied() else {
+            return guarded_by(self.before(n), self.src, &self.choices, self.syntax);
+        };
+        let mut guards = self.guards.borrow_mut();
+        let all = guards.entry(p.id()).or_insert_with(|| {
+            let held = index.named.get(&p.id()).map_or(&[][..], |all| &all[..]);
+            held.iter()
+                .enumerate()
+                .filter_map(|(k, st)| guarded_by([*st], self.src, &self.choices, self.syntax).pop().map(|g| (k, g)))
+                .collect()
+        });
+        all.iter().rev().filter(|(k, _)| *k < at).map(|(_, g)| *g).collect()
     }
 
     /// The outermost wrapper `n` stands in, or `n` itself (`tree::outermost`).
@@ -585,7 +657,7 @@ impl<'t, 's> Steps<'t, 's> {
                 return true;
             }
             let Some(up) = self.up(at).filter(|_| at.id() != self.body.id()) else { return false };
-            let last = named_children(up).into_iter().filter(|x| !x.kind().ends_with("comment")).last().is_some_and(|l| l.id() == at.id());
+            let last = self.last_named(up).is_some_and(|l| l.id() == at.id());
             let through = (wraps(u.wrappers, up) && wrapped(up).is_some_and(|w| w.id() == at.id()))
                 || (u.tails.contains(&up.kind()) && last && !(u.drops)(up, at, self.src))
                 || matches!((self.syntax.part)(up, at, self.src), Part::Arm(_));
@@ -681,9 +753,8 @@ impl<'t, 's> Steps<'t, 's> {
     pub fn uses(&mut self, held: &dyn Fn(TsNode<'t>) -> Vec<Held>, stands: &dyn Fn(TsNode<'t>) -> Vec<TsNode<'t>>) {
         let u = self.uses;
         self.stood = self.stood(stands);
-        let steps: Vec<(usize, usize)> =
-            self.sites.iter().filter(|s| s.span != (0, 0)).map(|s| (s.span.0 as usize, s.span.1 as usize)).collect();
-        let in_step = |n: TsNode| steps.iter().any(|(a, b)| *a <= n.start_byte() && n.end_byte() <= *b);
+        let steps = Spans::new(self.sites.iter().filter(|s| s.span != (0, 0)).map(|s| (s.span.0 as usize, s.span.1 as usize)));
+        let in_step = |n: TsNode| steps.cover(n.start_byte(), n.end_byte());
         let mut out: Vec<Use> = vec![];
         let mut stack = vec![self.body];
         while let Some(n) = stack.pop() {
@@ -1061,8 +1132,7 @@ impl<'t, 's> Steps<'t, 's> {
         }
         let (mut child, mut part) = (c, false);
         while let Some(p) = self.up(child).filter(|_| child.id() != self.body.id()) {
-            let last =
-                named_children(p).into_iter().filter(|x| !x.kind().ends_with("comment")).last().is_some_and(|l| l.id() == child.id());
+            let last = self.last_named(p).is_some_and(|l| l.id() == child.id());
             if wraps(u.wrappers, p) && wrapped(p).is_some_and(|w| w.id() == child.id()) {
                 child = p;
             } else if u.keeps.contains(&p.kind()) || self.in_lookup(p) {
@@ -1072,7 +1142,7 @@ impl<'t, 's> Steps<'t, 's> {
             {
                 // the value of an arm, or of a block it ends, is the value of the choice or the block
                 child = p;
-            } else if named_children(p).into_iter().any(|x| x.id() != child.id() && (u.binders)(p, x) == Some(true)) {
+            } else if self.binds_beside(p, child) {
                 // what a function written in place gives is that function's (`let wrong = || Error::Amount(..)`); handed to
                 // a library's call that is no step, it goes on in what that call gives, as a value handed to one does
                 match self.glued_call(p) {
@@ -1130,7 +1200,7 @@ impl<'t, 's> Steps<'t, 's> {
     fn function_around(&self, n: TsNode<'t>) -> Option<TsNode<'t>> {
         let mut child = n;
         while let Some(p) = self.up(child).filter(|_| child.id() != self.body.id()) {
-            if named_children(p).into_iter().any(|x| x.id() != child.id() && (self.uses.binders)(p, x) == Some(true)) {
+            if self.binds_beside(p, child) {
                 return Some(p);
             }
             child = p;
@@ -1194,8 +1264,7 @@ impl<'t, 's> Steps<'t, 's> {
             if (u.binders)(p, child).is_some() {
                 return Read::Not;
             }
-            let own = |c: &TsNode<'t>| c.id() != child.id() && self.writes(*c, name) && (u.binders)(p, *c) == Some(true);
-            if self.named(p).iter().any(own) {
+            if self.own_binders(p).iter().any(|c| c.id() != child.id() && self.writes(*c, name)) {
                 return Read::Not;
             }
             if let Some((targets, value)) = (u.binds)(p) {
@@ -1373,7 +1442,7 @@ impl<'t, 's> Steps<'t, 's> {
         let mut child = n;
         while child.id() != self.body.id() {
             let Some(p) = self.up(child) else { break };
-            out.extend(guarded_by(self.before(child), self.src, ids, syn));
+            out.extend(self.guarded(child));
             if let (Some(&c), Part::Arm(a)) = (ids.get(&p.id()), (syn.part)(p, child, self.src)) {
                 out.push((c, a));
             }
@@ -2178,6 +2247,21 @@ fn closes_at_end(s: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    proptest::proptest! {
+        /// Law: whether one of a body's spans covers a range is a question of the spans as a set: `Spans` answers as a scan
+        /// of every span does, whatever order the spans come in and however they nest or overlap.
+        #[test]
+        fn spans_cover_a_range_as_a_scan_of_them_does(
+            spans in proptest::collection::vec((0usize..60, 0usize..20), 0..12),
+            (a, len) in (0usize..70, 0usize..20),
+        ) {
+            let spans: Vec<Range> = spans.into_iter().map(|(a, len)| (a, a + len)).collect();
+            let b = a + len;
+            let scanned = spans.iter().any(|(s, e)| *s <= a && b <= *e);
+            proptest::prop_assert_eq!(Spans::new(spans.iter().copied()).cover(a, b), scanned);
+        }
+    }
 
     /// `fs::copy(a, b)`, `shutil.move(src, dst)`, `os.replace(a, b)` and `copyFile(a, b)` all read
     /// their first path and write their second.
