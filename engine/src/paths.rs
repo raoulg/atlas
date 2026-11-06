@@ -449,13 +449,15 @@ pub fn environment_named(names: &[Built]) -> Option<Built> {
 /// it is not set: the variable, once its name is said as text, an input with that default where
 /// there is one (`os.environ.get("STORE", "out.csv")`); still the lookup where the name is still to
 /// be said; and where no code says it, a value the code gives no name, since a lookup whose name
-/// the code does not decide names no variable.
+/// the code does not decide names no variable. A default that is the variable itself says nothing
+/// besides it, as in `or_else` (`$F` else `$F` is `$F`), whether the name was said where the
+/// lookup is written or handed after it: a lookup commutes with what is handed.
 fn looked_up(name: Built, default: Option<Built>) -> Built {
     if known(&name) {
-        let var = render(&name);
+        let var = environment(&render(&name));
         return match default {
-            Some(d) => vec![Seg::Option(format!("${var}"), d)],
-            None => environment(&var),
+            Some(d) if d != var => vec![Seg::Option(format!("${}", render(&name)), d)],
+            _ => var,
         };
     }
     if takes(&name) || first_var(&name, true).is_some() {
@@ -1931,6 +1933,7 @@ pub fn place_calls(store: &mut crate::builder::GraphBuilder, completed: Vec<Comp
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::flow::lies_in;
 
     #[test]
     fn a_request_asks_for_a_route() {
@@ -2337,6 +2340,49 @@ mod tests {
             }
         }
         assert_eq!(place(&lit("data/raw/*.csv"), "glob").as_deref(), Some("data/raw/*.csv"));
+    }
+
+    /// A place as `place` writes it, of one to four parts, a folder or not: names, holes, wildcards and patterns, its
+    /// runs of wildcards written once (`wildcards`), as every term is.
+    fn a_place() -> impl proptest::strategy::Strategy<Value = String> {
+        use proptest::prelude::*;
+        let part =
+            prop_oneof![Just("D"), Just("a"), Just("x.csv"), Just("{k}"), Just("{}"), Just("*"), Just("**"), Just("*.csv"), Just("IO-*")];
+        (proptest::collection::vec(part, 1..5), any::<bool>())
+            .prop_map(|(parts, folder)| format!("{}{}", wildcards(parts.join("/")), if folder { "/" } else { "" }))
+    }
+
+    proptest::proptest! {
+        /// Law: places on the disk are ordered by their terms (`mathematics.md`, "Paths as terms"), a strict partial
+        /// order: no place lies in itself, two places never lie in each other, and a place that lies in one that lies in
+        /// a third lies in the third.
+        #[test]
+        fn lying_in_is_a_strict_order(p in a_place(), q in a_place(), r in a_place()) {
+            proptest::prop_assert!(!lies_in(&p, &p));
+            proptest::prop_assert!(!(lies_in(&p, &q) && lies_in(&q, &p)), "{p} {q}");
+            if lies_in(&p, &q) && lies_in(&q, &r) {
+                proptest::prop_assert!(lies_in(&p, &r), "{p} in {q} in {r}");
+            }
+        }
+
+        /// Law: a listing of all of `D` reads the fiber `D/*` (`mathematics.md`, "Paths as terms"), so what is written,
+        /// made or listed below `D` is, or lies in, the place the listing reads, whatever `D` and the parts below it are:
+        /// written out, handed, or what the environment holds. Where the last part below `D` is a value the code does not
+        /// say, its place rests in the directory before its first unknown part (`place`), which may hold the listing
+        /// instead: the two places are then one, or one lies in the other.
+        #[test]
+        fn a_place_below_a_listed_directory_lies_in_it(d in a_path(), rest in proptest::collection::vec(a_part(), 1..3)) {
+            let below = rest.iter().fold(d.clone(), |b, q| join(&b, q, "/"));
+            let every = |b: &Built| join(b, &lit("*"), "/");
+            let Some(listed) = place(&every(&d), "iterdir") else { return Ok(()) };
+            let named = rest.last().is_some_and(known);
+            for (op, at) in [("write_text", below.clone()), ("mkdir", below.clone()), ("iterdir", every(&below))] {
+                if let Some(at) = place(&at, op) {
+                    let inside = at == listed || lies_in(&at, &listed);
+                    proptest::prop_assert!(inside || (!named && lies_in(&listed, &at)), "{op}: {at} and {listed}");
+                }
+            }
+        }
     }
 
     /// A part of a term with variables: a part, or the variable `v0` or `v1` (no part a strategy

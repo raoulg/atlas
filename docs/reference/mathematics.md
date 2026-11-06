@@ -250,7 +250,14 @@ writes, so a value between two of them is one part; `parent` drops exactly the l
 directory, `{p}/..`, taken once `p` is substituted: `parent` commutes with substitution (#284). A pattern below a directory (`D.glob("*/IO-*")`) is
 the fiber of `D` over the predicate "matches the pattern": the part of the directory the pattern
 holds. A listing of all of `D` (`D.iterdir()`, `D.glob("*")`) is the fiber over the predicate that
-always holds, `D` itself, and each element it yields is `D/*`. An element of a collection is also
+always holds, `D` itself, and each element it yields is `D/*`. So places on the disk are ordered by their terms, a
+strict partial order: `p` lies in `q` where `q` is a folder and `p` lies below it, or `q` is a pattern and `p`, or a
+folder `p` lies below, is one of the places it holds (`data/raw/{kind}/parts/` lies in `data/raw/`, `data/out.csv` in
+`data/*.csv`). A part is held by the same part, by `*` (any one part: a name, a hole, a pattern of one part) or by a
+pattern of one part that matches its name, and `**` holds any number of parts, none as well; a hole the code gives no
+name is held only by a wildcard, since two of them are two values, and a file the code names holds nothing. Making or
+writing a place changes what a listing of every place above it reads (writing `D/{k}/report.json` makes `D/{k}`, an
+element of `D/*`). An element of a collection is also
 what a function handed the collection to run on each element takes (`sorted(ps, key=lambda p: ..)`'s
 `p`) and what a pick of it gives (`max(ps)`, `ps[0]`). A lookup `d[k]` in a table the code writes is
 the value the key picks where the code decides `k`, and else the union of the values `d` holds. A
@@ -315,7 +322,11 @@ call no name holds is `{}` in every language. A suffix a path is given (`with_su
 as `parent` is. A pattern is the fiber below its directory, and what is read of what
 it yields is the same place. A place the program names a place below is a directory (`D/*/IO-*/`,
 which `glob` lists and `io_dir / "Metadata.xml"` reads in), so the listing and what is read in it
-fold into one folder. One file is one place, whatever operation touches it: the data read or
+fold into one folder. Two routes meet on the disk where a place one makes or writes is, or lies in, a place the other
+reads: what `unpack` makes in `data/raw/{kind}/` meets what `kinds` lists of `data/raw/`. The order is no line, since
+an inclusion is no function of the code, and no coarser place, since that would drop the term: each place keeps its
+own, and the order is a quotient of them, as a directory is of its files, by the folders and patterns the program
+itself touches. One file is one place, whatever operation touches it: the data read or
 written, a test whether it is there, a copy or a move into it or out of it, its removal
 (`File({main.folder}/note.json)` for the rename that moves a note in, the read and the `remove_file`
 alike). The place is the term; its label says the term's patterns in words, from the
@@ -346,9 +357,9 @@ is one in the same way, by what it serves: a set of methods at a path. `methods=
 **Where.** `paths.rs` (`Seg`, `join`, `place`, `folders`, `bound`, `each`, `chosen`, `substitute`, `with_suffix`,
 `environment_named`, `looked_up`, `or_else`, `within`, `Seg::Within`, `Callers`, `Cycles`, `wildcards`, `served`, `serving`),
 `model.rs` (`Route`, `Methods`, `Request`), the readers' `paths.rs` (`Eval::of`; Rust's `Eval::changed`), `flow.rs`
-(`Touch::place`), `plan.js` (`pathWords`), `knowledge.rs` (`PathFn`, `PathMethod::Within`, `ELEMENT_NAMES`,
+(`Touch::place`, `lies_in`, `Flow::lies_in`), `plan.js` (`pathWords`), `knowledge.rs` (`PathFn`, `PathMethod::Within`, `ELEMENT_NAMES`,
 `LISTING_ENTRIES`); the pairs `python/paths`, `places`, `kept`, `workbench`, `unset`, `opened`, `twice` (#324), `trees`
-(#325, #345) and `keys` (#352).
+(#325, #345), `keys` (#352) and `meets` (#381).
 
 ### A function's return is its summary
 **What.** What a function gives back is a term of its parameters, the same for every caller: its summary, the union of
