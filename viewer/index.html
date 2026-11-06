@@ -750,6 +750,9 @@ const viewData = () => {
   const open = {};
   for (const [k, set] of Object.entries(V.open)) if (set.size) open[k] = [...set];
   if (Object.keys(open).length) o.open = open;
+  const closed = {};
+  for (const [k, set] of Object.entries(V.closed)) if (set.size) closed[k] = [...set];
+  if (Object.keys(closed).length) o.closed = closed;
   return o;
 };
 function setView(o) {
@@ -759,6 +762,7 @@ function setView(o) {
   V.focus = new Set(o.focus || []);
   V.tests = !!o.tests;
   for (const k of Object.keys(V.open)) V.open[k] = new Set((o.open || {})[k] || []);
+  for (const k of Object.keys(V.closed)) V.closed[k] = new Set((o.closed || {})[k] || []);
   entrySel.value = V.route || (V.kind ? "kind:" + V.kind : V.part ? "part:" + V.part : "");
 }
 {
@@ -1079,6 +1083,9 @@ async function renderPlaat(mine) {
   const referenced = new Set([...pills.values()].flatMap(P => [...P.D.keys(), ...P.C.keys()]));
   for (const k of [...places.keys()]) if ((k.startsWith("t:") || k.startsWith("v:")) && !referenced.has(k)) places.delete(k);
   const keep = new Set(places.keys());
+  // a library's types stand in its frame while it is open (`libraryFrames`), and so does the frame of a family of it the reader
+  // opened; closed, the library is one box
+  const libFrames = libraryFrames(places);
   // open families are frames around their members, one at each moment of the data; a member stands
   // inside the frame of its moment, the family itself is the frame. A type opens where it stood closed:
   // in the kind it is a kind of, or as itself; a part stands on its own, as it did closed
@@ -1291,8 +1298,10 @@ async function renderPlaat(mine) {
     if (i >= 0) common = common.slice(0, i);
     return common.length ? nodeOf.get(common[common.length - 1]) : root;
   };
-  for (const p of [...places.values()].filter(p => (p.kind === "type" || p.kind === "ext") && keep.has(p.id) && !p.inFrame).sort((a, b) => a.label.localeCompare(b.label))) homeOf(p.id).children.push(leaf(p.id, placeW(p, 30), 36));
-  for (const F of famFrames.values()) { const n = frameNode(F.id, 30); titled(n, F); homeOf(F.id).children.push(n); for (const k of F.kids) n.children.push(leaf(k.id, 26 + textW(k.label, 6.9), 28)); }
+  for (const L of libFrames.values()) { const n = frameNode(L.id, 30); titled(n, L); homeOf(L.id).children.push(n); }
+  const inLibrary = (t, id) => { const f = libFrameOf(t); return f && libFrames.has(f) ? nodeOf.get(f) : homeOf(id); };
+  for (const p of [...places.values()].filter(p => (p.kind === "type" || p.kind === "ext") && keep.has(p.id) && !p.inFrame).sort((a, b) => a.label.localeCompare(b.label))) inLibrary(p.type, p.id).children.push(leaf(p.id, placeW(p, 30), 36));
+  for (const F of famFrames.values()) { const n = frameNode(F.id, 30); titled(n, F); inLibrary(F.fam, F.id).children.push(n); for (const k of F.kids) n.children.push(leaf(k.id, 26 + textW(k.label, 6.9), 28)); }
   // a place one step leaves for a later one, or one the code does not say which way it goes, lives
   // like memory in the smallest open step that holds every step using it
   if (!home) for (const [id, F] of worldFrames) usersOf.set(id, [...F.kids].flatMap(k => usersOf.get(k) || []));
@@ -1451,7 +1460,7 @@ async function renderPlaat(mine) {
     t.addEventListener("click", ev => { ev.stopPropagation(); goTo(other); });
   };
   // an opened box is drawn as a frame with the box's id: the fiber of the box, what `q` sends to it
-  const isFrame = id => pos.has(id) && (frames.has(id) || famFrames.has(id) || worldFrames.has(id));
+  const isFrame = id => pos.has(id) && (frames.has(id) || famFrames.has(id) || libFrames.has(id) || worldFrames.has(id));
   const light = id => {
     const ids = new Set([...nodeEls.keys()].filter(k => base(k) === base(id))), lit = new Set(ids);
     for (const k of worldFrames.get(id)?.kids || []) { ids.add(k); lit.add(k); }
@@ -1499,7 +1508,16 @@ async function renderPlaat(mine) {
     pointable(grp, F.id);
     place(grp, F.id);
   }
-  for (const id of [...pos.keys()].filter(id => frames.has(id) || famFrames.has(id)).sort((a, b) => pos.get(a).depth - pos.get(b).depth)) {
+  for (const id of [...pos.keys()].filter(id => frames.has(id) || famFrames.has(id) || libFrames.has(id)).sort((a, b) => pos.get(a).depth - pos.get(b).depth)) {
+    // a library open is a frame around the types it makes, titled by its name; clicking the title closes it into one box
+    if (libFrames.has(id)) {
+      const P = pos.get(id), L = libFrames.get(id), grp = el("g", {class: "frame fam library", "data-id": id}, fg);
+      const r = el("rect", {class: "bg", width: P.w, height: P.h}, grp);
+      const title = el("text", {class: "ftitle", x: 14, y: 20}, grp); title.textContent = "▾ " + L.title;
+      title.addEventListener("click", ev => { ev.stopPropagation(); plaatAnchor = id; V.closed.libraries.add(L.library); render(); });
+      place(grp, id, (from, to) => { if (!from.fresh) d3.select(r).attr("width", from.w).attr("height", from.h).transition().duration(DUR).attr("width", to.w).attr("height", to.h); });
+      continue;
+    }
     const P = pos.get(id), F = frames.get(id) || famFrames.get(id), isFam = !frames.has(id);
     const grp = el("g", {class: "frame" + (isFam ? " fam" : "") + (F.choice ? " choice" : ""), "data-id": id}, fg);
     const r = el("rect", {class: "bg", width: P.w, height: P.h}, grp);
@@ -1659,6 +1677,8 @@ async function renderPlaat(mine) {
       if (kind) selectPlace(p.id, p.label);
       if (kind) { if (p.toggleGroup) { V.open.places.add(p.toggleGroup); render(); } return; }
       const tid = p.type;
+      // a library closed opens into its frame, around the types it makes
+      if (libOfBox(tid)) { V.closed.libraries.delete(libOfBox(tid)); render(); return; }
       if (opens(tid) && !V.open.families.has(tid)) { V.open.families.add(tid); render(); }
       else if (byId.has(tid)) select(tid);
     }, () => pin(p.id));
@@ -1765,6 +1785,7 @@ function crumbs() {
   if (V.open.families.size) { lbl("opened types"); for (const f of V.open.families) chip(typeLabel(f), () => V.open.families.delete(f)); }
   if (split.length) { lbl("split"); for (const r of split) chip(r.slice(2), () => V.open.places.delete(r)); }
   if (V.open.dirs.size) { lbl("folders"); for (const d of V.open.dirs) chip(d, () => V.open.dirs.delete(d)); }
+  if (V.closed.libraries.size && !V.route && !V.kind) { lbl("closed libraries"); for (const L of V.closed.libraries) chip(L, () => V.closed.libraries.delete(L)); }
   if (V.focus.size && view === "plaat") {
     lbl("focus"); for (const u of V.focus) chip(unitLabel(u), () => V.focus.delete(u));
     // around the focus: the packages it exchanges the most data with, to add with a click

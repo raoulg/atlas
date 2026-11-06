@@ -31,7 +31,7 @@ use crate::repo::Repo;
 use crate::tree::named_children;
 
 use module::{first_docline, is_main_guard, load_module, new_parser, package_of, Module, Own};
-use passes::{collect_imports, collect_symbols, link, mark_exports, route_prefixes, star_imports};
+use passes::{array_types, collect_imports, collect_symbols, link, mark_exports, route_prefixes, star_imports};
 
 /// Whether a module runs as a program when it is run itself: `if __name__ == "__main__":` at its
 /// top level.
@@ -440,6 +440,7 @@ pub fn parse(repo: &Repo, packages: &[PathBuf], project_root: Option<&Path>, opt
     }
     drop(items);
     link(&modules, &mut store, &own, &types, &types_root);
+    array_types(&modules, &mut store, &own);
     let _items = crate::clock::stage("items");
     mark_exports(&modules, &mut store, &own);
     route_prefixes(&modules, &mut store, &types, &own);

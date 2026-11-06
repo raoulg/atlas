@@ -197,8 +197,9 @@ const partRank = n => Math.max(0, PARTS.findIndex(p => p.id === partOf(n)));
 // quotiented to either side; in the overview, the program without its test code unless `tests` keeps it); its opened sets are order ideals of the code's hierarchies, each the
 // refinement of a quotient: parts into packages, packages into subpackages, steps into their bodies
 // (one call by its path through the route, or every call of a function), families into their
-// members, coarse places into their parts, directories into their files
-const V = {route: null, kind: null, part: null, focus: new Set(), tests: false, open: {parts: new Set(), units: new Set(), steps: new Set(), functions: new Set(), families: new Set(), places: new Set(), dirs: new Set()}};
+// members, coarse places into their parts, directories into their files. What stands open until the reader closes it is
+// closed by name: a library's frame, around the types it makes
+const V = {route: null, kind: null, part: null, focus: new Set(), tests: false, open: {parts: new Set(), units: new Set(), steps: new Set(), functions: new Set(), families: new Set(), places: new Set(), dirs: new Set()}, closed: {libraries: new Set()}};
 const short = id => id.startsWith(ROOT) ? id.slice(ROOT.length) : id.replace(/^ext:/, "");
 const KG = {imports:"imports", calls:"calls", requests:"calls", instantiates:"calls", takes:"types", returns:"types", has:"types", mutates:"types", variant:"types", inherits:"inherits"};
 
@@ -439,6 +440,23 @@ const folds = k => RANKS.has(k) ? kindsOf(k).some(m => typeLabel(m) !== typeLabe
 // a type opens when it has kinds or parts of its own, or holds what it shares; (n) counts the types it opens into
 const opens = t => folds(t) || partsOf(t).length > 0 || sharedOf(t).length > 0;
 const opensInto = t => kindsOf(t).length + partsOf(t).length + sharedOf(t).length + (here(t) ? 1 : 0);
+// A library's types stand in their library: the lattice library › array type › dtype › rank family › shape, of which the
+// overview stands at the box a type has while its family is closed (a shape in its rank family), in its library's frame.
+// The library a type is of is the engine's (`flow.types.library`): what a type past the code or a library's class comes
+// from, a shaped array's array type's; a type is of its kind's library, the box it stands in while its family is closed
+const LIBRARY = new Map(Object.entries(TYPES.library || {}));
+const libraryOf = t => LIBRARY.get(kindOf(t)) || LIBRARY.get(t) || null;
+// the types of each library a plan of generators holds (`overviewBase`): a library is a box of its own where it holds two of
+// them or more, since a frame around one type would only name it again. A route and the routes of a kind draw no library
+let LIBRARIES = null;
+const libFolds = L => (LIBRARIES?.get(L)?.size || 0) > 1;
+// the library whose closed box a type stands in: its library, where that is a box of its own and the reader has closed it
+const libClosed = t => { const L = LIBRARIES && t !== V.route && libraryOf(t); return L && libFolds(L) && V.closed.libraries.has(L) ? L : null; };
+// a library's box has the id of a type, `lib:` and the library's name: closed, it is the box; open, the frame around its types
+const libBox = L => "lib:" + L;
+const libOfBox = t => (t?.startsWith("lib:") ? t.slice(4) : null);
+// the frame of the library a type is of, where its library is a box of its own, open or closed
+const libFrameOf = t => { const L = LIBRARIES && t && libraryOf(t); return L && libFolds(L) ? "t:" + libBox(L) : null; };
 const bare = id => byId.has(id) ? nameOf(byId.get(id)) : idName(id).name;
 // the types that go by each name two or more of them share, each by the modules its id says it stands in, a sum written in
 // place by none (`model::Shared`)
@@ -903,10 +921,11 @@ function routeTree() {
 
 // the subject of a route stands as itself; other types stand in their family until it is opened
 // a closed family holds its kinds: a type stands in its kind until that family is opened; a part of a type is structure of
-// its owner, drawn in its frame when opened, and the values of its type stand on their own
-const placeOfType = t => t === V.route || V.open.families.has(familyOf(t)) || V.open.families.has(kindOf(t)) || !folds(kindOf(t)) ? t : kindOf(t);
-// the route's subject stands as itself, in no family
-const frameOf = t => t === V.route ? undefined : [kindOf(t), t].find(f => V.open.families.has(f) && opens(f) && (f === t || folds(f)));
+// its owner, drawn in its frame when opened, and the values of its type stand on their own. A type of a closed library stands
+// in the library's box, whatever of the library is open
+const placeOfType = t => libClosed(t) ? libBox(libClosed(t)) : t === V.route || V.open.families.has(familyOf(t)) || V.open.families.has(kindOf(t)) || !folds(kindOf(t)) ? t : kindOf(t);
+// the route's subject stands as itself, in no family; a type of a closed library in none
+const frameOf = t => t === V.route || libClosed(t) ? undefined : [kindOf(t), t].find(f => V.open.families.has(f) && opens(f) && (f === t || folds(f)));
 // the box a value stands in, by the type or family it stands in: the name that holds it where the picture tells two apart by
 // it, the door whose parameter it is (the parameters of two doors are two values), the moment its maker made it. A family
 // opened is a frame with the id its closed box had, for each value it stood for (#182)
@@ -953,7 +972,7 @@ const valuesOf = id => {
 // what a box is and what it holds: a closed family's box, and an open family's frame (`frame`), is a value of the family's
 // type or of one of its kinds in the fiber, and a closed family holds its parts inside; any other box is a value of its type
 const closedFamily = p => (p.kind === "type" || p.kind === "ext") && !p.inFrame && !!p.type && p.type !== V.route && opens(p.type) && !V.open.families.has(p.type);
-const typesIn = p => p.frame || closedFamily(p) ? [p.type, ...kindsOf(p.type)].filter(here) : [p.type];
+const typesIn = p => libOfBox(p.type) ? [...(LIBRARIES?.get(libOfBox(p.type)) || [])] : p.frame || closedFamily(p) ? [p.type, ...kindsOf(p.type)].filter(here) : [p.type];
 const partsIn = p => closedFamily(p) ? partsOf(p.type).filter(here) : [];
 // how a picked set of values lights a box: whole where every type it is is in the set, in part where some are or where it
 // holds one inside. A closed box the set cuts in two by what it is is a family to open (the filter first); what a box holds
@@ -964,7 +983,9 @@ const lightOf = (S, p) => {
 };
 const cutBy = (S, places) => [...places].filter(p => closedFamily(p) && typesIn(p).some(t => S.has(t)) && !typesIn(p).every(t => S.has(t))).map(p => p.type);
 const typePlace = t => {
-  const n = byId.get(t), closedFam = t !== V.route && opens(t) && !V.open.families.has(t);
+  // a library closed is one box that says how many of the plan's types it stands for, as a folded directory says its files
+  const L = libOfBox(t), n = byId.get(t), closedFam = !L && t !== V.route && opens(t) && !V.open.families.has(t);
+  if (L) { const k = LIBRARIES?.get(L)?.size || 0; return {id: "t:" + t, label: `${L} · ${k} ${k === 1 ? "type" : "types"}`, kind: "ext", hue: null, type: t, library: L}; }
   // a family no type of the code's is (a rank of shaped arrays, `Float Tensor · 2D`) is of the library its members are
   return {id: "t:" + t, label: typeLabel(t) + (closedFam ? ` (${opensInto(t)})` : ""), kind: (n ? n.kind === "external" : t.startsWith("ext:")) ? "ext" : "type", hue: hueOf(n), type: t};
 };
@@ -2222,15 +2243,15 @@ const imageOf = (F, opened, folded, {fineKeys = false} = {}) => {
   }
   // where a box stands: in the smallest frame that holds all the steps that use it and the one that made it; a value no step
   // inside a step makes stands outside it, and a place of the world outside every step. In a plan of generators a type's home
-  // is a fact of the plan (`F₀`'s, the smallest package that holds what makes and takes its family): the box stands in the
-  // innermost frame drawn on the way to it
+  // is a fact of the plan (`F₀`'s, the smallest package that holds what makes and takes its family, or its library): the box
+  // stands in the innermost frame drawn on the way to it, and so does the frame of its library
   const chainOf = fid => { const c = []; for (let f = fid; f; f = fFrames.get(f)?.parent) c.unshift(f); return c; };
   const stepFrame = f => !fFrames.get(f).synthetic && !fFrames.get(f).anchor;
   let homeAt = null;
   const homesOf = ids => {
     if (!homeAt) {
       homeAt = new Map();
-      for (const [k, pl] of fp) if ("home" in pl) for (const b of new Set([q(k), famId(pl)])) if (b) { if (!homeAt.has(b)) homeAt.set(b, []); homeAt.get(b).push(pl.home); }
+      for (const [k, pl] of fp) if ("home" in pl) for (const b of new Set([q(k), famId(pl), libFrameOf(pl.type)])) if (b) { if (!homeAt.has(b)) homeAt.set(b, []); homeAt.get(b).push(pl.home); }
     }
     return ids.flatMap(id => homeAt.get(id) || []);
   };
@@ -2372,14 +2393,15 @@ const openBlock = step => {
   return ["step", step, () => V.open.steps.add(step)];
 };
 const checkOpenings = (F, view, folded, opened = isOpenKey) => {
-  const faults = [], open = V.open, was = Object.fromEntries(["steps", "families", "units", "parts"].map(k => [k, new Set(open[k])]));
+  const faults = [], open = V.open, was = Object.fromEntries(["steps", "families", "units", "parts"].map(k => [k, new Set(open[k])])), shut = new Set(V.closed.libraries);
   const tries = [
     ...[...view.blocks.values()].filter(B => B.frame && !B.frame.synthetic).map(B => openBlock(B.frame.step)),
     ...[...new Set([...view.places.values()].filter(p => p.type && opens(p.type) && !open.families.has(p.type)).map(p => familyOf(p.type)))].map(f => ["family", f, () => open.families.add(f)]),
+    ...[...view.places.values()].filter(p => libOfBox(p.type)).map(p => ["library", libOfBox(p.type), () => V.closed.libraries.delete(libOfBox(p.type))]),
   ];
   for (const [kind, what, apply] of tries) {
     try { apply(); const B = imageOf(F, opened, folded); for (const f of refines(view, B)) faults.push(`opening ${kind} ${what}: ${f}`); }
-    finally { for (const k of Object.keys(was)) open[k] = new Set(was[k]); }
+    finally { for (const k of Object.keys(was)) open[k] = new Set(was[k]); V.closed.libraries = new Set(shut); }
   }
   return faults;
 };
@@ -2551,7 +2573,8 @@ const overviewBase = () => {
   // it, changes it) to each that takes it: a function's codomain is what it gives back, whether or not another function
   // of the code takes it. The picture draws a family as one box, so a type's home is the smallest package that holds
   // every function that makes or takes a type of its family: a family no other package uses is internal to the package
-  // that uses it, and one that a package makes and another takes crosses the border between them
+  // that uses it, and one that a package makes and another takes crosses the border between them. A library closed is one
+  // box too, so a type of a library that is a box of its own has the home of every type of the library
   const chainOf = fid => { const c = []; for (let f = fid; f; f = frames.get(f)?.parent) c.unshift(f); return c; };
   const homeOf = fids => {
     let common = null;
@@ -2565,10 +2588,15 @@ const overviewBase = () => {
     const mk = [...(makes.get(t) || [])].filter(x => leafOf.has(x)), tk = [...(takes.get(t) || [])].filter(x => leafOf.has(x));
     if (mk.length || tk.length) used.set(t, [mk, tk]);
   }
+  // the library each type is of, where it holds two of the plan's types or more, is a box of its own: closed, all its types are
+  // one box, so they share one home, as a family's do
+  LIBRARIES = new Map();
+  for (const t of used.keys()) { const L = libraryOf(t); if (!L) continue; if (!LIBRARIES.has(L)) LIBRARIES.set(L, new Set()); LIBRARIES.get(L).add(t); }
+  const block = t => libFrameOf(t) || familyOf(t);
   const kin = new Map();
-  for (const [t, [mk, tk]] of used) { const f = familyOf(t); if (!kin.has(f)) kin.set(f, []); kin.get(f).push(...mk, ...tk); }
+  for (const [t, [mk, tk]] of used) { const f = block(t); if (!kin.has(f)) kin.set(f, []); kin.get(f).push(...mk, ...tk); }
   for (const [t, [mk, tk]] of used) {
-    const k = addPlace({...typePlace(t), home: homeOf(kin.get(familyOf(t)).map(x => leafOf.get(x)))});
+    const k = addPlace({...typePlace(t), home: homeOf(kin.get(block(t)).map(x => leafOf.get(x)))});
     for (const x of mk) pillOf(x).C.set(k, false);
     for (const x of tk) pillOf(x).D.set(k, false);
   }
@@ -2595,8 +2623,8 @@ const overviewBase = () => {
 };
 // ---- a focus is the fiber of F₀ over the packages in it, with the rest of the code around it ----
 // The packages in focus are packages of `F₀`. The fiber over them is their functions with every place those make, take
-// or touch; a type stands in its kind, so the box the overview draws for it is one block of `F₀`'s places, and the fiber
-// holds the block whole. The rest of the code is every other function, each in the coarsest package of `F₀` that holds
+// or touch; a type stands in its kind, and its kind in its library, so the box the overview draws for it is one block of
+// `F₀`'s places, and the fiber holds the block whole. The rest of the code is every other function, each in the coarsest package of `F₀` that holds
 // no code in focus, and those packages in one frame, the rest. The focus's plan `F_U` is the fiber with the rest joined
 // to it by the lines `F₀` draws between them: a line of the rest to a place of the fiber, a call between the rest and the
 // fiber. What the rest does among itself is no line of the focus. A type's home is `F₀`'s, the smallest package that
@@ -2619,7 +2647,8 @@ const focusBase = () => {
   // a package of the rest: one that holds no code in focus and lies in none that holds no code in focus
   const restTop = fid => !!unitAt(fid) && !holding.has(fid) && !(unitAt(fr.get(fid).parent) && !holding.has(fr.get(fid).parent));
   const restOf = fid => { let f = fid; while (f && !restTop(f)) f = fr.get(f).parent; return f; };
-  const rest = "n:unit:" + REST, kindIn = k => (F0.places.get(k)?.type ? "t:" + kindOf(F0.places.get(k).type) : k);
+  // the block of `F₀`'s places a type's box is: its kind, or its library where that is a box of its own
+  const rest = "n:unit:" + REST, kindIn = k => { const t = F0.places.get(k)?.type; return t ? libFrameOf(t) || "t:" + kindOf(t) : k; };
   const mine = [...F0.pills.values()].filter(P => isFocused(P.parent));
   const kinds = new Set(mine.flatMap(P => [...P.D.keys(), ...P.C.keys()]).map(kindIn));
   const star = new Set([...F0.places.keys()].filter(k => kinds.has(kindIn(k))));
@@ -2757,7 +2786,8 @@ const routeBase = () => {
 };
 // ---- every picture is the image of one fine plan under the map that what is open defines ----
 // The view state `V` holds what the reader looks at (a route, the routes of a kind, the packages in focus, one part, the
-// test code or not), which decides the fine plan `F`, and what the reader has open (`V.open`), which decides the map `q`.
+// test code or not), which decides the fine plan `F`, and what the reader has open (`V.open`) or closed (`V.closed`: the
+// libraries whose frame the overview and a focus draw as one box), which decides the map `q`.
 // Each view is its plan, its map, and the map of its coarsest picture, on which the side of a place is decided; the picture is
 // `F/q`, made by the same `coarsen` for every view. What follows the image is a quotient of it or a way of drawing it: a closed
 // box of the code's hierarchy that can be opened stands even where nothing crosses its edge, siblings that draw alike are one
@@ -2769,9 +2799,22 @@ const VIEWS = {
   overview: {fine: overviewBase, opened: overviewOpen, coarsest: () => false, opens: () => true},
 };
 const viewOf = () => (V.route ? "route" : V.kind ? "kind" : V.focus.size ? "focus" : "overview");
+// The frames of the open libraries, each with the id of its library's closed box: every box of a type of a library that is
+// a box of its own stands in the frame, a family's opened members with it, and the frame stands where its types' home is
+const libraryFrames = places => {
+  const frames = new Map();
+  for (const p of places.values()) {
+    const id = p.type && !libOfBox(p.type) && !libClosed(p.type) && libFrameOf(p.type);
+    if (!id) continue;
+    if (!frames.has(id)) frames.set(id, {id, library: libOfBox(id.slice(2)), title: libOfBox(id.slice(2)), kids: new Set()});
+    frames.get(id).kids.add(p.id);
+  }
+  return frames;
+};
 const plan = () => {
   const view = VIEWS[viewOf()];
   FIBER = null;
+  LIBRARIES = null;
   cutArrows.clear();
   const F = view.fine(), C = coarsen(F, view.opened, view.coarsest);
   for (const [fid, f] of F.frames) {
@@ -2780,7 +2823,8 @@ const plan = () => {
   }
   alike(C);
   window.atlasPlan = {fine: F, coarse: C, opened: view.opened};
-  return {...(view.drawn ? view.drawn(C) : C), calling: !!F.calls, fiber: F.fiber || null};
+  const drawn = view.drawn ? view.drawn(C) : C;
+  return {...drawn, libraries: libraryFrames(drawn.places), calling: !!F.calls, fiber: F.fiber || null};
 };
 
 // where a place of the world stands, by what the route does with its content (counted on the coarsest picture): left what

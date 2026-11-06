@@ -1170,6 +1170,26 @@ fn alias_targets(
     a.names.iter().filter_map(|n| resolve(&modules[&a.module], n, modules, nodes, own).map(Resolved::id)).collect()
 }
 
+/// The array type each shaped array names (`Node::array`), resolved where a module of the program's names it: `Tensor` in
+/// `Float[Tensor, "batch dim"]` is `torch.Tensor` in a module that imports it from torch. The shape's id keeps the array
+/// type as the annotation writes it, so the first module that names it says which one it is.
+pub(super) fn array_types(modules: &IndexMap<String, Module>, store: &mut GraphBuilder, own: &Own) {
+    let shaped: Vec<(String, String)> = store
+        .nodes
+        .values()
+        .filter(|n| n.kind == NodeKind::External)
+        .filter_map(|n| Some((n.id.clone(), crate::shapes::Array::of_id(&n.id)?.array)))
+        .collect();
+    for (id, array) in shaped {
+        let parts: Vec<String> = array.split('.').map(str::to_string).collect();
+        let named = |m: &&Module| m.symbols.contains_key(&parts[0]) || m.bindings.contains_key(&parts[0]);
+        let Some(found) = modules.values().filter(named).find_map(|m| resolve(m, &parts, modules, &store.nodes, own)) else { continue };
+        if let Some(n) = store.nodes.get_mut(&id) {
+            n.array = crate::model::ext::name(&found.id()).to_string();
+        }
+    }
+}
+
 /// The shaped array each function returns, where its signature returns that one type and it is a
 /// shaped array (`knowledge::SHAPED_ARRAYS`): what a call of it gives, which ty reads as the array
 /// type alone.
