@@ -8,6 +8,9 @@
 # secret CORPUS_PRIVATE, fetched with the read-only token CORPUS_TOKEN; it is measured, never sampled,
 # and nothing public names it or shows its code: it is known by its card alone.
 #
+# A program is read with the dependencies its lock files name (`uv sync --frozen`, `npm ci`, `cargo fetch --locked`),
+# so a name is one revision with one lock.
+#
 # name          repository                               revision                                   read by
 atlas-0.70.0    https://github.com/raoulg/atlas          4ebbbae0a877ef3609de15befe577897c3bec69b   perf
 goad_toolkit    https://github.com/raoulg/goad_toolkit   929d37cc588b27f599b7fbe2e4f5d9733619f897   perf laws
