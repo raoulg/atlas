@@ -1045,6 +1045,77 @@ fn an_input_is_its_default_where_no_caller_overrides_it() {
     assert!(facts.windows(2).all(|w| w[0] == w[1]), "{facts:?}");
 }
 
+/// The calls to `write` from the functions `inplace` and `bound` of a program written as `files` (path, text) under a
+/// fresh directory.
+fn calls_to_write(name: &str, files: &[(&str, String)]) -> BTreeSet<(String, String)> {
+    let root = std::env::temp_dir().join(format!("atlas-{name}-{}", std::process::id()));
+    for (file, text) in files {
+        let p = root.join(file);
+        std::fs::create_dir_all(p.parent().unwrap()).expect("makes the directory");
+        std::fs::write(p, text).expect("writes the file");
+    }
+    let g = analyze_repo(&[root.clone()], &Options::default()).expect("reads");
+    let _ = std::fs::remove_dir_all(&root);
+    let short = |id: &str| g.node(id).filter(|n| !n.library).map(|n| n.name.clone());
+    g.edges
+        .iter()
+        .filter(|e| e.kind == EdgeKind::Calls)
+        .filter_map(|e| Some((short(&e.src)?, short(&e.dst)?)))
+        .filter(|(src, dst)| (src == "inplace" || src == "bound") && dst == "write")
+        .collect()
+}
+
+/// A method called on a value built where it is called has the type it was built as, whatever the language's form: it is
+/// linked to the type's method exactly as it is on a value bound to a name first. `inplace` calls `write` on a value built
+/// in place, `bound` on one bound to a name; Python's `Html(text)`, TypeScript's `new Html(text)` and Rust's tuple-struct
+/// call `Html(text)` and constructor `Html::new(text)` each read the same two calls.
+#[test]
+fn a_method_on_a_value_built_in_place_is_linked_in_every_language() {
+    let python = |built: &str| {
+        vec![
+            ("pyproject.toml", "[project]\nname = \"demo\"\nversion = \"0\"\n".to_string()),
+            ("src/demo/__init__.py", String::new()),
+            (
+                "src/demo/core.py",
+                format!(
+                    "class Html:\n    def __init__(self, text: str) -> None:\n        self.text = text\n\n    def write(self, out: str) -> None:\n        print(out, self.text)\n\n\ndef inplace(text: str, out: str) -> None:\n    {built}.write(out)\n\n\ndef bound(text: str, out: str) -> None:\n    page = Html(text)\n    page.write(out)\n"
+                ),
+            ),
+        ]
+    };
+    let typescript = |built: &str| {
+        vec![
+            ("package.json", "{\"name\": \"demo\", \"version\": \"0.0.0\"}\n".to_string()),
+            (
+                "src/core.ts",
+                format!(
+                    "export class Html {{\n  constructor(private text: string) {{}}\n\n  write(out: string): void {{\n    console.log(out, this.text);\n  }}\n}}\n\nexport function inplace(text: string, out: string): void {{\n  {built}.write(out);\n}}\n\nexport function bound(text: string, out: string): void {{\n  const page = new Html(text);\n  page.write(out);\n}}\n"
+                ),
+            ),
+        ]
+    };
+    let rust = |built: &str| {
+        vec![
+            ("Cargo.toml", "[package]\nname = \"demo\"\nversion = \"0.1.0\"\nedition = \"2021\"\n".to_string()),
+            (
+                "src/lib.rs",
+                format!(
+                    "pub struct Html(pub String);\n\nimpl Html {{\n    pub fn new(text: String) -> Self {{\n        Html(text)\n    }}\n\n    pub fn write(&self, out: &str) {{\n        println!(\"{{}} {{}}\", out, self.0);\n    }}\n}}\n\npub fn inplace(text: String, out: &str) {{\n    {built}.write(out);\n}}\n\npub fn bound(text: String, out: &str) {{\n    let page = Html(text);\n    page.write(out);\n}}\n"
+                ),
+            ),
+        ]
+    };
+    let law = BTreeSet::from([("inplace".to_string(), "write".to_string()), ("bound".to_string(), "write".to_string())]);
+    for (name, files) in [
+        ("inplace-python", python("Html(text)")),
+        ("inplace-typescript", typescript("new Html(text)")),
+        ("inplace-rust-tuple", rust("Html(text)")),
+        ("inplace-rust-new", rust("Html::new(text)")),
+    ] {
+        assert_eq!(calls_to_write(name, &files), law, "{name}");
+    }
+}
+
 /// A name the body binds is the body's value, never the module's function of that name (`docs/reference/mathematics.md`,
 /// "Paths as terms": a binding is a name a function gives a value; #375). The shadows pair (`shadows/{python,rust,
 /// typescript}`) sorts letters onto a pile. `sort` binds a function that tidies a name, the letters it keeps, those it sends
