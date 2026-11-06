@@ -797,29 +797,41 @@ function focusFaults(tests) {
 }
 
 // All routes of a kind are the union of the routes' coarsest pictures, each route closed (mathematics.md, "One fine plan,
-// every picture its image", all routes of a kind): a route's box takes and gives what crosses the border of its route closed, the image of its finest plan with no
-// box open, each value as its type, since the routes of a kind have no order between them and so no moments. Asked of every
-// kind of route the program has, before the siblings that draw alike are merged
+// every picture its image", all routes of a kind): a route's box takes and gives what crosses the border of its route closed,
+// the image of its finest plan with no box open, as the route's own page plans it. The routes of a kind have no order between
+// them and so no moments: a value is its type, or its name where it has no type of the code's, and what the parse of the command
+// line makes is the entry's. Each line counts the fine lines of its route it stands for, and of them those it reaches. Asked of
+// every kind of route the program has, on the kind's plan, before the siblings that draw alike are merged
 function kindFaults() {
   const out = [], kinds = [...new Set([...M.byId.values()].filter(n => n.entry && n.entry.kind !== "test").map(n => n.entry.kind))];
+  const clear = () => { V.route = null; V.kind = null; V.part = null; V.focus = new Set(); V.tests = false; for (const k of Object.keys(V.open)) V.open[k] = new Set(); };
   for (const kind of kinds) {
-    V.route = null; V.kind = kind; V.focus = new Set();
-    for (const k of Object.keys(V.open)) V.open[k] = new Set();
-    const K = M.planBase(false), rs = M.overviewEntries().map(e => e.id);
+    clear(); V.kind = kind;
+    M.plan();
+    const K = window.atlasPlan.fine, rs = M.overviewEntries().map(e => e.id);
     for (const r of rs) {
-      V.kind = null; V.route = r;
+      clear(); V.route = r;
       M.plan();
       const F = window.atlasPlan.fine, foldable = ["cli", "script"].includes(M.byId.get(r).entry.kind);
       const closed = M.imageOf(F, () => false, foldable, {fineKeys: true});
-      const asType = k => (/^[tv]:/.test(k) && F.places.get(k)?.type ? "t:" + F.places.get(k).type : k);
-      const ways = {D: new Set(), C: new Set()};
-      for (const B of closed.pills.values()) for (const way of ["D", "C"]) for (const k of B[way].keys()) ways[way].add(asType(k));
-      const P = K.pills.get("n:" + r), drawn = JSON.stringify(P ? [[...P.D.keys()].sort(), [...P.C.keys()].sort()] : [[], []]), want = JSON.stringify([[...ways.D].sort(), [...ways.C].sort()]);
-      if (drawn !== want) out.push(`all ${kind} routes: ${r} draws ${drawn}, its route closed ${want}`);
-      V.route = null; V.kind = kind;
+      const asKind = k => {
+        const pl = F.places.get(k);
+        if (!/^[tv]:/.test(k)) return k;
+        if (pl?.at && closed.hidden.has(pl.at)) return "e:" + r;
+        return pl?.type ? "t:" + pl.type : k.replace(/@.*$/, "");
+      };
+      const want = new Map();
+      for (const B of closed.pills.values()) for (const [way, n, far] of [["D", B.Dn, B.Dr], ["C", B.Cn, B.Cr]]) for (const k of B[way].keys()) {
+        const key = `${way} ${asKind(k)}`, [c, cr] = want.get(key) || [0, 0];
+        want.set(key, [c + (n?.get(k) || 1), cr + (far?.get(k) || 0)]);
+      }
+      const P = K.pills.get("n:" + r), drawn = new Map();
+      for (const way of ["D", "C"]) for (const [k, [c, cr]] of P?.mult?.[way] || []) drawn.set(`${way} ${k}`, [c, cr]);
+      const say = m => JSON.stringify([...m].sort());
+      if (say(drawn) !== say(want)) out.push(`all ${kind} routes: ${r} draws ${say(drawn)}, its route closed ${say(want)}`);
     }
   }
-  V.kind = null;
+  clear();
   return out;
 }
 
