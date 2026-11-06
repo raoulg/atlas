@@ -1626,11 +1626,12 @@ const viaDispatch = (P, k) => {
   const args = n => (n?.params || []).filter(p => !p.receiver);
   // an override runs on the class of its key where that is known
   const i = t === (treeInfo.get(key)?.on || arrowOf(stepOf(key))?.receiver) ? -1 : args(mine).findIndex(p => writesType(p, t));
-  // where the dispatch's parameter at that position holds no value, the override's holds none either (#157)
+  // the override's parameter holds what the dispatch's parameter at that position holds, whatever the override's signature
+  // names it, and none where that holds none (#157)
   const p = i >= 0 && args(theirs)[i];
   if (p?.name) {
-    const x = (arrowOf(theirs.id)?.takes || []).find(x => writesType(p, x)), held = (x ? "t:" + (x === V.route ? V.route : kindOf(x)) : "v:" + p.name) + "|" + p.name;
-    if (latestEntry(held, Own, true)?.v === NONE) return false;
+    const x = (arrowOf(theirs.id)?.takes || []).find(x => writesType(p, x)), held = latestEntry((x ? "t:" + (x === V.route ? V.route : kindOf(x)) : "v:" + p.name) + "|" + p.name, Own, true);
+    if (held) return held.v === NONE ? false : held.v;
   }
   const by = p?.name, named = by && takes.find(v => places.get(v)?.name === by);
   const recv = i < 0 && (treeInfo.get(d)?.on || arrowOf(stepOf(d))?.receiver), on = recv && takes.find(v => places.get(v)?.type === recv);
@@ -1989,6 +1990,9 @@ for (const P of pills.values()) {
     // a name of a type the body's function does not declare and no step makes (a module's constant, `DEFAULT_SETTINGS`) is
     // what the module holds, from beyond, as a call is handed it
     if (!v && u.extern && !latestEntry(kindKey(base) + "|" + u.name, P, true, arms)) v = base;
+    // planned by itself, a body uses a parameter nothing here holds as a step of it takes one: the caller's value of that
+    // name (`condOf`)
+    if (!v && alone && u.name && !latestEntry(kindKey(base) + "|" + u.name, P, true, arms) && (byId.get(stepAt(P))?.params || []).some(p => !p.receiver && p.name === u.name)) v = condOf(base, u.name);
     if (!v) continue;
     // a name the step changes is taken where a step inside made it anew; the value its call handed it crosses the frame
     if (u.changed) { const at = places.get(v)?.at, f = P.parent; if (!at || !(at.startsWith(f + "/") || at.startsWith(f + "|") || at.startsWith(f + "~c"))) continue; }
