@@ -1,13 +1,17 @@
 name: studio
 
-# Atlas Studio for macOS and Windows, with the atlas CLI of the same commit inside: a disk image per
-# Mac (`atlas-studio-<target>.dmg`) and a setup program for Windows
+# Atlas Studio for macOS, Windows and Linux, with the atlas CLI of the same commit inside: a disk image
+# per Mac (`atlas-studio-<target>.dmg`), a setup program for Windows
 # (`atlas-studio-x86_64-pc-windows-msvc-setup.exe`, an NSIS installer that installs for the user alone,
-# without administrator rights). The version is Atlas's own, from the root Cargo.toml. Neither is
+# without administrator rights) and, for Linux on x86_64, a Debian package and an AppImage
+# (`atlas-studio-x86_64-unknown-linux-gnu.deb` and `.AppImage`, built on Ubuntu 22.04 so that they run on
+# it and on what is newer). Linux on arm64 has no build. The version is Atlas's own, from the root Cargo.toml. Neither is
 # signed by a paid identity: the Mac app is signed ad hoc, so a disk image downloaded in a browser
 # opens through System Settings › Privacy & Security › Open Anyway; a setup program downloaded in a
 # browser meets SmartScreen's "More info › Run anyway". `install-studio.sh` and `install-studio.ps1`
-# download without the mark of the internet, so neither step is needed. `release.yml` and
+# download without the mark of the internet, so neither step is needed. Every job ends by asking the
+# atlas inside what it answers (`--version`) and by serving a small repository with it and fetching the
+# page the window loads (`studio/smoke-serve.sh`), on all three platforms. `release.yml` and
 # `nightly.yml` call this workflow and publish what it makes; run by hand, it only keeps them as the
 # run's artifacts.
 
@@ -77,7 +81,10 @@ jobs:
           codesign --verify --deep --strict "$app"
           plutil -p "$app/Contents/Info.plist" | grep CFBundleShortVersionString
           test "$(plutil -extract CFBundleIdentifier raw "$app/Contents/Info.plist")" = "$STUDIO_ID"
-          if [ "${{ matrix.target }}" = aarch64-apple-darwin ]; then "$app/Contents/MacOS/atlas-code" --version; fi
+          if [ "${{ matrix.target }}" = aarch64-apple-darwin ]; then
+            "$app/Contents/MacOS/atlas-code" --version
+            sh studio/smoke-serve.sh "$app/Contents/MacOS/atlas-code"
+          fi
           hdiutil detach "$mount"
       - uses: actions/upload-artifact@v7
         with:
@@ -118,7 +125,66 @@ jobs:
           Get-ChildItem $dir | Select-Object Name, Length | Format-Table | Out-String | Write-Host
           & (Join-Path $dir 'atlas-code.exe') --version
           if ($LASTEXITCODE -ne 0) { exit 1 }
+      - name: the installed atlas serves a repository
+        shell: bash
+        run: sh studio/smoke-serve.sh "$LOCALAPPDATA/$STUDIO_APP/atlas-code.exe"
       - uses: actions/upload-artifact@v7
         with:
           name: atlas-studio-${{ env.TARGET }}
           path: atlas-studio-${{ env.TARGET }}-setup.exe
+
+  linux:
+    # the oldest Ubuntu GitHub hosts: what links against its glibc and WebKitGTK runs on newer ones
+    runs-on: ubuntu-22.04
+    env:
+      TARGET: x86_64-unknown-linux-gnu
+      # linuxdeploy runs without FUSE, and its bundled strip does not read the newest toolchains' objects
+      APPIMAGE_EXTRACT_AND_RUN: 1
+      NO_STRIP: true
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.ref || github.sha }}
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+      - name: the libraries Tauri needs
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential curl wget file patchelf libssl-dev libxdo-dev \
+            libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev
+      - name: the atlas CLI, as Studio's sidecar
+        run: |
+          cargo build --release --locked --target $TARGET -p atlas-code
+          mkdir -p studio/src-tauri/binaries
+          cp target/$TARGET/release/atlas-code studio/src-tauri/binaries/atlas-code-$TARGET
+      - name: the Debian package and the AppImage
+        working-directory: studio
+        run: |
+          version=$(grep -m1 '^version' ../Cargo.toml | cut -d'"' -f2)
+          npx --yes @tauri-apps/cli@2.12.2 build --ci --target $TARGET --bundles deb,appimage \
+            --config "{\"version\":\"$version\",\"productName\":\"$STUDIO_APP\",\"identifier\":\"$STUDIO_ID\"}"
+          bundle=src-tauri/target/$TARGET/release/bundle
+          cp "$bundle"/deb/*.deb "$GITHUB_WORKSPACE/atlas-studio-$TARGET.deb"
+          cp "$bundle"/appimage/*.AppImage "$GITHUB_WORKSPACE/atlas-studio-$TARGET.AppImage"
+      - name: the package installs Studio and its atlas, and the atlas serves a repository
+        run: |
+          package=$(dpkg-deb -f atlas-studio-$TARGET.deb Package)
+          sudo apt-get install -y ./atlas-studio-$TARGET.deb
+          dpkg -L "$package"
+          sidecar=$(dpkg -L "$package" | grep '/atlas-code$')
+          "$sidecar" --version
+          sh studio/smoke-serve.sh "$sidecar"
+      - name: the AppImage carries its atlas
+        run: |
+          chmod +x atlas-studio-$TARGET.AppImage
+          ./atlas-studio-$TARGET.AppImage --appimage-extract >/dev/null
+          squashfs-root/usr/bin/atlas-code --version
+          sh studio/smoke-serve.sh squashfs-root/usr/bin/atlas-code
+      - uses: actions/upload-artifact@v7
+        with:
+          name: atlas-studio-${{ env.TARGET }}
+          path: |
+            atlas-studio-${{ env.TARGET }}.deb
+            atlas-studio-${{ env.TARGET }}.AppImage
