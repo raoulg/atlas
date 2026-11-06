@@ -815,7 +815,9 @@ function focusFaults(tests) {
 // the image of its finest plan with no box open, as the route's own page plans it. The routes of a kind have no order between
 // them and so no moments: a value is its type, or its name where it has no type of the code's, and what the parse of the command
 // line makes is the entry's. Each line counts the fine lines of its route it stands for, and of them those it reaches. Asked of
-// every kind of route the program has, on the kind's plan, before the siblings that draw alike are merged
+// every kind of route the program has, on the kind's plan, before the siblings that draw alike are merged. The entries of
+// the routes are one family: closed, the kind's picture draws one entry box, into which every route's entry line goes with its
+// count; opened, it is the union of the routes' entries, each route's line into its own
 function kindFaults() {
   const out = [], kinds = [...new Set([...M.byId.values()].filter(n => n.entry && n.entry.kind !== "test").map(n => n.entry.kind))];
   const clear = () => { V.route = null; V.kind = null; V.part = null; V.focus = new Set(); V.tests = false; for (const k of Object.keys(V.open)) V.open[k] = new Set(); };
@@ -823,6 +825,7 @@ function kindFaults() {
     clear(); V.kind = kind;
     M.plan();
     const K = window.atlasPlan.fine, rs = M.overviewEntries().map(e => e.id);
+    out.push(...entryFaults(kind, K, rs));
     for (const r of rs) {
       clear(); V.route = r;
       M.plan();
@@ -846,6 +849,26 @@ function kindFaults() {
     }
   }
   clear();
+  return out;
+}
+
+// the entries of a kind's routes, closed and opened, against each route's entry line in the kind's plan
+function entryFaults(kind, K, rs) {
+  const out = [], fam = "e:~" + kind, entryLines = r => [...(K.pills.get("n:" + r)?.mult?.D || [])].filter(([k]) => k === "e:" + r);
+  for (const open of [false, true]) {
+    V.route = null; V.kind = kind; V.focus = new Set();
+    for (const k of Object.keys(V.open)) V.open[k] = new Set();
+    if (open) V.open.places.add(fam);
+    const view = M.imageOf(K, () => false, false), at = `all ${kind} routes${open ? ", their entries open" : ""}`;
+    const boxes = [...view.places.keys()].filter(k => k.startsWith("e:"));
+    const want = rs.length > 1 && !open ? [fam] : rs.filter(r => entryLines(r).length).map(r => "e:" + r);
+    if (JSON.stringify(boxes.sort()) !== JSON.stringify([...want].sort())) out.push(`${at}: the entry boxes are ${JSON.stringify(boxes.sort())}, the routes' entries ${JSON.stringify([...want].sort())}`);
+    for (const r of rs) for (const [k, [c]] of entryLines(r)) {
+      const id = rs.length > 1 && !open ? fam : k, got = view.pills.get("n:" + r)?.Dn?.get(id);
+      if (got !== c) out.push(`${at}: ${r} takes ${got ?? 0} from ${id}, its route's entry ${c}`);
+    }
+  }
+  V.open.places = new Set();
   return out;
 }
 
@@ -903,13 +926,14 @@ function pictureOf(C) {
   }
 }
 // The boxes each coordinate of `V.open` can hold in a view, read off its plan: the boxes of the code's hierarchy and the steps of
-// a route that its plan frames, the functions those run, the families of the types it holds, the groups of its places and the
-// entry of a route that parses its command line, the directories of its files and the places on the disk that hold others
+// a route that its plan frames, the functions those run, the families of the types it holds, the groups of its places, the
+// entry of a route that parses its command line and the entries of a kind's routes, the directories of its files and the places
+// on the disk that hold others
 function boxesOf(F, view) {
   const frames = [...F.frames.values()].filter(f => f.step && !f.synthetic && !f.anchor), steps = frames.map(f => f.step);
   const types = [...F.places.values()].filter(p => p.type).flatMap(p => [M.familyOf(p.type), M.kindOf(p.type)]);
   const files = [...F.places.keys()].map(M.filePath).filter(Boolean);
-  const entry = view === "route" && ["cli", "script"].includes(M.byId.get(V.route)?.entry?.kind) ? ["e:" + V.route] : [];
+  const entry = view === "route" && ["cli", "script"].includes(M.byId.get(V.route)?.entry?.kind) ? ["e:" + V.route] : [...(F.entries?.keys() || [])];
   return {
     parts: steps.filter(s => s.startsWith("part:")).map(s => s.slice(5)),
     units: steps.filter(s => s.startsWith("unit:")).map(s => s.slice(5)),
@@ -951,6 +975,34 @@ function generated(F, view, opened) {
     if (h && !view.frames.has(h) && F.frames.has(h)) out.push(`${c} is drawn, and its home ${h} is a closed box that holds every step that makes or takes it`);
     else if (want !== got) out.push(`${c} stands in ${got || "the picture"}, and its plan puts it in ${want || "the picture"}`);
   }
+  return out;
+}
+// A route ends at a place (sentence 3): a box that stands for a route closed gives something, a value, a place it changes or a
+// call it makes. A route whose code gives nothing and changes nothing is a finding of the program, said as one
+function endsFaults(name, F, C) {
+  const out = [], routes = new Set(M.overviewEntries().map(e => e.id));
+  const gives = B => !!B && (B.C.size > 0 || (B.calls?.size || 0) > 0 || !!B.backTo);
+  if (V.route) {
+    const folded = ["cli", "script"].includes(M.byId.get(V.route)?.entry?.kind);
+    const A = M.imageOf(F, () => false, folded), B = A.pills.get("n:" + V.route) || A.pills.get("o:" + V.route);
+    if (!gives(B)) out.push(`${name}: the route ${V.route} ends at no place`);
+  } else if (V.kind) for (const B of C.pills.values()) for (const r of B.steps || []) if (routes.has(r) && !gives(B)) out.push(`${name}: the route ${r} ends at no place`);
+  return out;
+}
+// every route of the program closed, alone and among the routes of its kind, ends at a place
+function routeEnds() {
+  const out = [];
+  for (const kind of [...new Set([...M.byId.values()].filter(n => n.entry).map(n => n.entry.kind))].sort()) {
+    setState({...blank(), kind});
+    const C = M.plan();
+    out.push(...endsFaults(`kind ${kind}`, window.atlasPlan.fine, C));
+  }
+  for (const n of [...M.byId.values()].filter(n => n.entry)) {
+    setState({...blank(), route: n.id});
+    const C = M.plan();
+    out.push(...endsFaults(`route ${n.id}`, window.atlasPlan.fine, C));
+  }
+  setState(blank());
   return out;
 }
 // the faults of one picture, held to its plan
@@ -1028,10 +1080,12 @@ function viewFaults() {
 }
 
 // with no route named, every route of the program but its tests; `--overview` asks the overview, with the test code and without;
-// `--focus` every focus, with the test code and without; `--kinds` the routes of each kind; `--views` every view state
+// `--focus` every focus, with the test code and without; `--kinds` the routes of each kind; `--views` every view state; `--ends`
+// whether every route ends at a place
 // the answer is written whole before the process ends: a pipe takes some 64 KB at a time
 const said = answer => process.stdout.write(JSON.stringify(answer), () => process.exit(0));
 if (routes[0] === "--views") said({"@views": {facts: [], faults: viewFaults()}});
+else if (routes[0] === "--ends") said({"@ends": {facts: [], faults: routeEnds()}});
 else if (routes[0] === "--kinds") said({"@kinds": {facts: [], faults: kindFaults()}});
 else if (routes[0] === "--focus") said({"@focus": {facts: [], faults: [...focusFaults(true), ...focusFaults(false)]}});
 else if (routes[0] === "--overview") {

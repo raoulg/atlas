@@ -517,6 +517,18 @@ const ENTRY_PLACE = {cli: l => `$ ${l}`, make: l => `$ make ${l}`, script: l => 
 // in A, an entry whose usage line B changed reads as A had it
 const entryLabel = n => { const e = SIDE === "a" && DIFF?.entries[n.id] || n.entry; return ENTRY_PLACE[e.kind](e.label, n) + (e.options || []).map(o => " " + o).join(""); };
 const entryPlace = id => ({id: "e:" + id, label: entryLabel(byId.get(id)), kind: "world"});
+// The entries of the routes of one kind are one family: what an importer hands, the command line, the request. Among the
+// routes of a kind it is one box, named by what its members' names share (`$ sunspots`, `sunspots`) or else by what the kind
+// is entered from, which opens into each route's entry
+const ENTRY_FROM = {cli: "$ command line", make: "$ make", script: "$ script", notebook: "notebook", route: "request", mcp: "MCP client", export: "importer", prophecy: "prophecy", test: "test runner"};
+const entryFamily = (kind, ids) => {
+  const labels = ids.map(id => entryLabel(byId.get(id)));
+  let common = labels.reduce((a, b) => { let i = 0; while (i < a.length && a[i] === b[i]) i++; return a.slice(0, i); });
+  if (common.length < Math.min(...labels.map(l => l.length))) common = common.slice(0, Math.max(0, ...[".", " ", "/", ":"].map(c => common.lastIndexOf(c))));
+  common = common.replace(/[.\s/:]+$/, "");
+  const label = `${common && common !== "$" ? common : ENTRY_FROM[kind] || kind} · ${ids.length}`;
+  return {id: "e:~" + kind, label, short: label, kind: "world", entryFamily: kind, members: ids.map(id => "e:" + id)};
+};
 // the steps of a body that belong to its entry: the parses of the command line (`Cli::parse()`,
 // `parseArgs(..)`) and the steps whose values only those parses take (the parser argparse is
 // handed); and the names of what the parses give, which come from the entry
@@ -739,11 +751,17 @@ const receiverMakers = (n, i) => {
 // the set-ups that cannot have built the value step `s` of body `b` runs on: of `ran`, those that set up an object of the class
 // of the method its call names and that no step the value may be made of runs. A set-up holds for a method only where the value
 // it runs on may be one it built; where the body does not say which value that is, none is ruled out. The same as `Ix::off`
-const offLocal = new WeakMap();
+const offLocal = new WeakMap(), builds = new Map();
+// the classes whose objects a function sets up, with all it runs
+const buildsOf = g => {
+  const k = `${SIDE}|${g}`;
+  if (!builds.has(k)) builds.set(k, new Set([...reach(g, null).nodes].map(f => byId.get(f)).filter(c => c?.ctor).map(c => c.cls)));
+  return builds.get(k);
+};
 const offAt = (n, b, s, ran) => {
   const m = s.site != null && byId.get(n?.sites?.[s.site]?.to), cls = m && !m.ctor && m.cls;
   if (!cls) return NONE;
-  const builders = [...ran].filter(g => [...reach(g, null).nodes].some(f => { const c = byId.get(f); return !!(c?.ctor && c.cls === cls); }));
+  const builders = [...ran].filter(g => buildsOf(g).has(cls));
   if (!builders.length) return NONE;
   if (!offLocal.has(b)) offLocal.set(b, new Map());
   const memo = offLocal.get(b);
@@ -2054,6 +2072,7 @@ const imageOf = (F, opened, folded, {fineKeys = false} = {}) => {
     const pl = fp.get(k);
     let id = k;
     if (pl && /^[tv]:/.test(k)) id = pl.at && hidden.has(pl.at) ? entryId : pl.type && k.startsWith("t:") ? boxIn(placeOfType(pl.type), pl) : k;
+    else if (k.startsWith("e:")) for (const [fid, fam] of F.entries || []) if (fam.members.includes(k) && !V.open.places.has(fid)) id = fid;
     qId.set(k, id);
     return id;
   };
@@ -2063,6 +2082,7 @@ const imageOf = (F, opened, folded, {fineKeys = false} = {}) => {
     if (fineKeys) { places.set(id, fp.get(k)); return id; }
     const pl = fp.get(k);
     if (id === entryId) places.set(id, entryPlace(V.route));
+    else if (F.entries?.has(id)) places.set(id, F.entries.get(id));
     else if (pl?.type && k.startsWith("t:")) {
       const pid = placeOfType(pl.type), b = typePlace(pid);
       places.set(id, {...b, id, label: b.label + (pl.held ? ` · ${pl.held}` : named(pl) ? ` · ${pl.name}` : ""), at: pl.at, name: named(pl) ? pl.name : undefined, held: pl.held, ...(pl.door ? {door: pl.door} : {})});
@@ -2119,13 +2139,19 @@ const imageOf = (F, opened, folded, {fineKeys = false} = {}) => {
     const incidence = [];
     const hands = S ? treeInfo.get(S.step)?.site?.hands || [] : [];
     const handed = pl => !!pl && hands.some(h => (h.name && !h.name.startsWith("#") ? h.name === pl.name : !!h.type && h.type === pl.type));
+    // a class has no arrow of its own: its border is its doors', so what a door gives back and no step of the class takes
+    // leaves the class (its initializer's instance, a method's return)
+    const doors = S && !F.generators && byId.get(S.step)?.kind === "class" && !fPills.has("o:" + S.step);
+    const door = P => P.parent === S.id || (P.own && fFrames.get(P.parent)?.parent === S.id);
+    const takenIn = doors ? new Set(B.members.flatMap(P => [...P.D.keys()])) : null;
     for (const P of B.members) {
       // a block of the code's hierarchy (a package, a part) is no composite: every line of its code is its own
       const mine = !S || P.id === "o:" + S.step || !!F.generators;
       for (const [way, m] of [["D", P.D], ["C", P.C]]) for (const [k, r] of m) {
         const pl = fp.get(k), isValue = /^[tv]:/.test(k);
         // a value made and taken inside the block is the block's own; a place it wrote and reads back is no input of it
-        if (S && isValue && ((within(pl?.at, S.id) && !hidden.has(pl.at)) || homeIn(pl, S.id))) { drop.set(`${P.id}|${way}|${k}`, "internal"); continue; }
+        const leaves = doors && way === "C" && door(P) && !takenIn.has(k);
+        if (S && isValue && !leaves && ((within(pl?.at, S.id) && !hidden.has(pl.at)) || homeIn(pl, S.id))) { drop.set(`${P.id}|${way}|${k}`, "internal"); continue; }
         if (S && way === "D" && !isValue && back.has(k)) { drop.set(`${P.id}|${way}|${k}`, "back"); continue; }
         // a value the step's own call is handed is its own arrow's input, whichever of its steps takes it inside
         incidence.push([way, P, k, mine ? r : !(way === "D" && isValue && handed(pl)), mine]);
@@ -2239,13 +2265,17 @@ const cutArrow = key => {
   // functions its body calls are on the path, as well as on the callers that make its paths whole (#237)
   const direct = new Set(callees(i.step, i.on, callAlts(key)).map(t => (byId.get(t)?.kind === "class" ? runsOf(t) || t : t)));
   const memo = [SIDE, i.step, i.on || "", siteId(i.site), [...(i.fed || [])].sort(), [...i.path, i.step].filter(f => made.has(f) || direct.has(f)).sort(), [...(i.before || [])].filter(f => made.has(f)).sort(), routeContext(key, i)].join("|");
-  if (!cutArrows.has(memo)) {
+  // a class route draws its own type apart from its kind: an arrow that holds neither that type nor the one of the route it
+  // was made in is the same arrow in both
+  const own = byId.get(V.route)?.kind === "class" && kindOf(V.route) !== V.route ? V.route : "";
+  const hit = cutArrows.get(memo)?.find(r => r.own === own || (!r.types.has(r.own) && !r.types.has(own)));
+  if (!hit) {
     const F = planBase([unfoldStep(key)]), P = imageOf(F, () => false, false, {fineKeys: true}).pills.get("n:" + key);
     // what the step hands on is at its own moment; the moment it has is its caller's to give
     const at = "@n:" + key, strip = k => (k.endsWith(at) ? k.slice(0, -at.length) : k);
     // the types its body holds, inside it as well as at its border: the route's fiber, on which its families are taken, is
     // the same whether the step is cut or open (#183)
-    const r = {key, route: V.route, dom: new Map(), cod: new Map(), dn: new Map(), cn: new Map(), goes: P?.goes || new Map(), mult: {D: new Map(), C: new Map()}, places: new Map(), split: F.splitBy, errs: new Set(), types: typesOf(F)};
+    const r = {key, route: V.route, own, dom: new Map(), cod: new Map(), dn: new Map(), cn: new Map(), goes: P?.goes || new Map(), mult: {D: new Map(), C: new Map()}, places: new Map(), split: F.splitBy, errs: new Set(), types: typesOf(F)};
     for (const [way, m, n, far, names, into] of [["D", P?.D, P?.Dn, P?.Dr, r.dn, r.dom], ["C", P?.C, P?.Cn, P?.Cr, r.cn, r.cod]]) for (const [k, flag] of m || []) {
       // what it hands on keeps the name that holds it, also one its call gives by no name, which the caller's own code reads
       // (`#..`, `Node::uses`), and a value of no type of the code's, which is its name (#183)
@@ -2267,12 +2297,13 @@ const cutArrow = key => {
       const [e, ep] = handed.flatMap(d => F.heldOf(d).filter(([, [h2, hp2]]) => h2 === h && hp2 === hp).map(([dp]) => [d, dp]))[0] || [];
       return e ? [[strip(c), cp, strip(e), ep, !!whole]] : [];
     }));
-    cutArrows.set(memo, r);
+    if (!cutArrows.has(memo)) cutArrows.set(memo, []);
+    cutArrows.get(memo).push(r);
   }
   // planned by itself, a step's figures are its call's: the figures of another call of the step are this call's
   // its figures are named by the occurrence that makes them or the value that holds them: another call's are this call's
   // a command line's names come from the entry of the route the step is planned in
-  const r = cutArrows.get(memo), fig = "w:Screen:fig:", esc = r.key.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), entry = "e:" + r.route;
+  const r = hit || cutArrows.get(memo).at(-1), fig = "w:Screen:fig:", esc = r.key.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), entry = "e:" + r.route;
   const re = k => (k === entry ? "e:" + V.route : r.key === key || !k.startsWith(fig) ? k : k.replace(new RegExp(esc + "(?=[/|~@^]|$)", "g"), key));
   const copy = m => new Map([...m].map(([k, v]) => [re(k), v]));
   // what it hands on as an error leaves by its border beside its result (#138)
@@ -2282,8 +2313,8 @@ const cutArrow = key => {
 // What a step's arrow reads of the route it is planned in, beyond the calls that lead to it: which places the route serves
 // that the step only gives their shape (`contentOf`), whether a touch it reaches is made whole by the route's users
 // (`users_of`), the kind of the route (a notebook shows its figures, a command line feeds names from the entry), whether the
-// step is a door of the route's class or builds it, and the route's own type where it stands apart from its kind. Routes that
-// agree on these plan the step to one arrow, so all routes of a kind make each arrow once
+// step is a door of the route's class or builds it; and, where the arrow holds it, the route's own type that stands apart from its
+// kind (`cutArrow`). Routes that agree on these plan the step to one arrow, so all routes of a kind make each arrow once
 // of the touches a step reaches, those a route may serve (a shape, a connection, a test) and whether one is made whole by a
 // route's users: what is the same in every route
 const servable = new Map();
@@ -2297,8 +2328,7 @@ const servableOf = (step, on, alts) => {
 };
 const routeContext = (key, i) => {
   const r = byId.get(V.route), {served} = contentOf([V.route], `${SIDE}|${V.route}|${V.kind}`), {users, shapes} = servableOf(i.step, i.on, callAlts(key));
-  const own = r?.kind === "class" && kindOf(V.route) !== V.route;
-  return [r?.entry?.kind || "", isDoorOf(key) ? 1 : 0, i.built || "", users || own ? V.route : "", shapes.map(t => (served(t) ? 1 : 0)).join("")].join("^");
+  return [r?.entry?.kind || "", isDoorOf(key) ? 1 : 0, i.built || "", users ? V.route : "", shapes.map(t => (served(t) ? 1 : 0)).join("")].join("^");
 };
 // the types a plan holds: those of its places, and those the bodies of its steps beyond the cut hold
 const typesOf = F => new Set([...[...F.places.values()].map(p => p.type).filter(Boolean), ...[...F.pills.values()].flatMap(P => [...(P.types || [])])]);
@@ -2706,7 +2736,12 @@ const kindBase = () => {
   routeParses = false;
   FIBER = fiber;
   const places = new Map([...seen].map(([id, pl]) => [id, id.startsWith("t:") ? typePlace(id.slice(2)) : pl]));
-  return {places, pills, frames: new Map(), found, updated, generators: true, fiber, split: new Set(), splitBy: [], heldOf: () => [], originOf: new Map()};
+  const routes = overviewEntries().map(e => e.id), entries = new Map();
+  if (routes.length > 1) {
+    const fam = entryFamily(V.kind, routes);
+    entries.set(fam.id, fam);
+  }
+  return {places, pills, frames: new Map(), found, updated, generators: true, fiber, split: new Set(), splitBy: [], heldOf: () => [], originOf: new Map(), entries};
 };
 // a route: its finest plan, built once from the code and independent of what is open
 const routeBase = () => {

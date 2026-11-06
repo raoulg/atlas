@@ -1624,7 +1624,7 @@ async function renderPlaat(mine) {
     const Q = pos.get(p.id), kind = placeKind(p.id);
     const grp = el("g", {class: "tnode" + (p.kind === "ext" ? " ghost" : "") + (p.kind === "ref" ? " ref" : "") + (kind ? " world" : "") + (kind ? "" : prophecyClass(byId.get(p.type))), "data-id": p.id}, ng);
     pointable(grp, p.id);
-    grp.addEventListener("mouseenter", () => { hoverTarget = () => { if (p.id.startsWith("e:")) select(p.id.slice(2)); else if (kind) selectPlace(p.id, p.label); else if (p.type) selectType(p.type); }; });
+    grp.addEventListener("mouseenter", () => { hoverTarget = () => { if (p.entryFamily) return; if (p.id.startsWith("e:")) select(p.id.slice(2)); else if (kind) selectPlace(p.id, p.label); else if (p.type) selectType(p.type); }; });
     grp.addEventListener("mouseleave", () => { hoverTarget = null; });
     if (kind) grp.style.setProperty("--k", `var(--k-${kind})`);
     el("rect", {class: "bg", width: Q.w, height: Q.h}, grp);
@@ -1646,6 +1646,8 @@ async function renderPlaat(mine) {
     clicks(grp, () => {
       plaatAnchor = p.id;
       if (p.folded) { selectPlace(p.id, p.label); V.open.dirs.add(p.folded); render(); return; }
+      // the entries of the routes of a kind are one box, which opens into each route's entry
+      if (p.entryFamily) { V.open.places.add(p.id); render(); return; }
       // the entry of a route opens to show how the command line is parsed, and closes again
       if (p.id.startsWith("e:")) {
         const id = p.id.slice(2);
@@ -1752,8 +1754,10 @@ function crumbs() {
   if (V.open.units.size && !V.route && !V.kind) { lbl("packages"); for (const u of V.open.units) chip(opened(u), () => V.open.units.delete(u)); }
   // an opened entry shows how its command line is parsed; any other opened place is split
   const openEntries = [...V.open.places].filter(r => r.startsWith("e:") && byId.get(r.slice(2))?.entry), split = [...V.open.places].filter(r => !r.startsWith("e:"));
-  if (V.open.steps.size || V.open.functions.size || openEntries.length) {
+  const entryFamilies = V.kind && !V.route ? [...V.open.places].filter(r => r === "e:~" + V.kind) : [];
+  if (V.open.steps.size || V.open.functions.size || openEntries.length || entryFamilies.length) {
     lbl("opened");
+    for (const r of entryFamilies) chip(`each ${KIND_LABEL[V.kind] || V.kind} route's entry`, () => V.open.places.delete(r));
     for (const r of openEntries) chip(`${entryTitle(r.slice(2))} · its parse`, () => V.open.places.delete(r));
     for (const id of V.open.steps) { const info = treeInfo.get(id), n = byId.get(stepOf(id)), name = n?.name || short(stepOf(id)); chip(info?.on && n?.cls ? `${typeLabel(info.on)}.${name}` : name, () => V.open.steps.delete(id)); }
     for (const f of V.open.functions) chip(`every ${byId.get(f)?.name || short(f)}`, () => V.open.functions.delete(f));

@@ -27,7 +27,7 @@
 //! What Atlas gets wrong today is marked in the file with the issue that tracks it: `known #N FACT` for a fact that does
 //! not hold, `known #N extra FACT` for one Atlas has and should not, `known #N fault TEXT` for a fault of the pictures
 //! (before any route, of every route of the program), and `known #N VIEW TEXT` for a fault of the program's views that its
-//! law (`overview`, `focus`, `kinds` or `views`) finds. The test reports each and passes, and fails once it holds or is
+//! law (`overview`, `focus`, `kinds`, `views` or `ends`) finds. The test reports each and passes, and fails once it holds or is
 //! gone, so that the mark goes with the fix.
 
 use atlas_engine::{flow, parts, Options};
@@ -66,7 +66,7 @@ struct Plan {
 }
 
 /// The laws of the views, each by the word its marks carry and the flag `plans.mjs` is asked with.
-const VIEW_LAWS: [&str; 4] = ["overview", "focus", "kinds", "views"];
+const VIEW_LAWS: [&str; 5] = ["overview", "focus", "kinds", "views", "ends"];
 
 fn read_plan(path: &Path) -> Plan {
     let text = std::fs::read_to_string(path).expect("reads the plan");
@@ -419,6 +419,18 @@ fn every_kind_view_is_the_union_of_its_routes_closed() {
 fn every_view_state_draws_the_image_of_its_plan() {
     let fails = views_hold("views");
     assert!(fails.is_empty(), "{} faults of the view states:\n{}", fails.len(), fails.join("\n"));
+}
+
+/// A route starts at an entry point and ends at a place, and both are visible (sentence 3): every route closed, alone and
+/// among the routes of its kind, gives something, a value, a place it changes or a call it makes. A route whose code gives
+/// nothing and changes nothing ends nowhere, a finding of the program. Ignored until a route's codomain is drawn whatever
+/// its type (#439): a value of no type of the code's that a route gives back, and a class built from its fields, end at no
+/// place in 543 routes of the pairs.
+#[test]
+#[ignore = "a route's codomain of no type of the code's is not drawn (#439)"]
+fn every_route_ends_at_a_place() {
+    let fails = views_hold("ends");
+    assert!(fails.is_empty(), "{} routes end at no place:\n{}", fails.len(), fails.join("\n"));
 }
 
 /// Test code is not saturated by the package quotient, so the fiber and the quotient do not commute (mathematics.md,

@@ -1092,7 +1092,17 @@ no fact of the union. Each route is planned cut at its first level (`ROUTE_DEPTH
 beyond the cut is the image of its body, so the route closed is the same image, and each line of a
 route's box counts the fine lines it stands for and those it reaches. A step that two routes run in the
 same context (the route's entry, whether it is a door, what it builds, whether it serves its route's own
-types) is one arrow, made once for both (`routeContext`).
+types) is one arrow, made once for both (`routeContext`); a class route draws its own type apart from its
+kind, so an arrow that holds that type is made for that route alone. A class has no arrow of its own: the
+border of a class route is its doors', so the instance its initializer builds and what a method gives back
+leave it unless a door of the class takes them.
+
+The entries of the routes of one kind are one family, what the kind is entered from: an importer, the
+command line, a request. Zooming out is a quotient, so in `F_K/q` the family is one box, named by what its
+members' names share (`$ sunspots`, `sunspots`) or else by what the kind is entered from, with the count of
+the entries it stands for, and every route's line from its entry goes into it with its count. Opened
+(`V.open.places`), it is the union of the routes' entries, each route's line from its own: the same rule as
+any family that a quotient collapses.
 
 Every view the page draws is a function of one value, the view state `V`, the one the page's address
 holds. Its coordinates are of two sorts. What the reader looks at decides the fine plan: a route
@@ -1141,7 +1151,8 @@ Each law is then a theorem of the construction, or it is not yet, and says which
 | Across the cut | a cut step's arrow is the image of its body, made by the same construction (`cutArrow`) | `plans.rs` at the budgets 1, 2 and 3 (`ATLAS_FINE_BUDGET`), which cut the small programs as a large one is cut: each line of a cut step counts the fine lines its body draws there, and each cut step of the closed picture, opened and planned anew, refines the picture it was cut in (`cutOpenings` in `plans.mjs`); at the same budgets a route whose body, unfolded, has 2^40 occurrences, which only an arrow made without unfolding the body can plan (`a_step_beyond_the_cut_is_made_without_unfolding_its_body`); `topology` with a small budget |
 | The overview | `F₀/q` maps onto `F₀/q′` along the blocks, as a route's pictures do, the calls a channel among them | the oracle; `plans.rs` (`every_package_view_is_the_image_of_its_plan`), for every set of open packages and parts of every program: each line counts the fine lines it stands for and none is reached, a type internal to a closed package draws none, each call goes between the blocks of its ends, and the picture is a function of the set of open boxes; all of it again without the test code, whose plan is the fiber of the plan with it |
 | A focus | `F_U` is a fiber of `F₀` closed under kinds, its homes `F₀`'s, and `q_U` a map on it | `plans.rs` (`every_focus_is_the_image_of_a_fiber_of_the_overviews_plan`), for every set of packages in focus and every set of open packages: each closed package has the border it has in the overview opened alike, each type the home `F₀` gives it, the plan is the star of the focus restated on its own (`starOf`), the oracle with `q_U`, the lines count the fine ones, every line has its ends, and closing in turn draws each picture it was; the program `plans/focus-shapes` |
-| All routes of a kind | `F_K` is the union of the routes' closed pictures, each route's box the image of its plan cut at its first level | `plans.rs` (`every_kind_view_is_the_union_of_its_routes_closed`): each route's box against the image of its finest plan with no box open, line by line with the fine lines each counts and those it reaches; where the cut draws otherwise, a fault marked with #438 |
+| All routes of a kind | `F_K` is the union of the routes' closed pictures, each route's box the image of its plan cut at its first level | `plans.rs` (`every_kind_view_is_the_union_of_its_routes_closed`): each route's box against the image of its finest plan with no box open, line by line with the fine lines each counts and those it reaches; where the cut draws otherwise, a fault marked with #438; the routes' entries one box closed, with each route's count, and opened the union of the routes' entries |
+| A route ends at a place | the codomain of a route closed is what crosses its border: what it gives back, writes, sends or runs | `plans.rs` (`every_route_ends_at_a_place`, ignored: a value of no type of the code's that a route gives back, and a class built from its fields, end at no place, #439): every route closed, alone and among its kind, gives a value, changes a place or makes a call |
 | Every view | `picture(V) = image(F(V), q(V))` by one `plan()` | `plans.rs` (`every_view_state_draws_the_image_of_its_plan`), on a walk of the view state of every program: endpoints, the oracle, the counts, each box at its plan's home (a type at its home in `F₀`), a coordinate the view does not read changes nothing, and each picture drawn again is the one it was; the coordinates of `V` read from the page |
 
 The oracle holds the pictures to one another, not to the program. Whether `F` says what the code
@@ -1155,9 +1166,10 @@ the pairs and of its programs.
 `changedThrough` and `changesOwner`,
 `coarsen`, `siblings`, `cutArrow` and `typesOf`, `handTo` and `checkOpenings`, the view state `V`, `VIEWS`, `viewOf`,
 `routeBase`, `overviewBase` and `overviewOpen`, the focus's `focusBase`, `focusOpen` and `restSides`, the kind view's
-`kindBase`, `closedRoute`, `ROUTE_DEPTH` and `routeContext` in `viewer/plan.js`,
+`kindBase`, `closedRoute`, `ROUTE_DEPTH`, `routeContext` and `entryFamily` in `viewer/plan.js`,
 `cutOpenings`, `ends`, `overviewFaults`, the focus's `starOf`, `borderOf` and `focusFaults`, the kind view's `kindFaults`,
-and the walk of the view state, `viewFaults`, `stateFaults`, `generated` and `coordinateFaults`, in `engine/tests/plans.mjs`;
+`entryFaults`, the walk of the view state, `viewFaults`, `stateFaults`, `generated` and `coordinateFaults`, and where a route ends,
+`endsFaults`, in `engine/tests/plans.mjs`;
 the field an argument reads, `Steps::fills` and `Steps::read_of` (`body.rs`); the class each field of a class holds, `Node::holds`;
 which parameters of no type of the code's hold a value, `builder::settle_parameters`; the fields a condition tests,
 `Steps::tests` (`body.rs`), and whether a figure is made sure of, `guarded` in `viewer/plan.js`; the names a body binds

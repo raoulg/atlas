@@ -114,7 +114,7 @@ known #438 kinds all export routes: news.read.headlines draws       # a fault of
 
 The test reports each mark and passes. It fails once the fact holds, or the extra fact or the fault is gone, so the mark
 goes with the fix. A `known #N fault` written before any `route` holds for every route of the program. A fault of the
-program's views is marked by the law that finds it (`overview`, `focus`, `kinds` or `views`) and holds wherever it is
+program's views is marked by the law that finds it (`overview`, `focus`, `kinds`, `views` or `ends`) and holds wherever it is
 written; a file with no route holds only such marks.
 
 ## The programs here
