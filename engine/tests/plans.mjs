@@ -825,23 +825,19 @@ function kindFaults() {
 
 // with no route named, every route of the program but its tests; `--overview` asks the overview, with the test code and without;
 // `--focus` every focus, with the test code and without; `--kinds` the routes of each kind
-if (routes[0] === "--kinds") {
-  process.stdout.write(JSON.stringify({"@kinds": {facts: [], faults: kindFaults()}}));
-  process.exit(0);
-}
-if (routes[0] === "--focus") {
-  process.stdout.write(JSON.stringify({"@focus": {facts: [], faults: [...focusFaults(true), ...focusFaults(false)]}}));
-  process.exit(0);
-}
-if (routes[0] === "--overview") {
+// the answer is written whole before the process ends: a pipe takes some 64 KB at a time
+const said = answer => process.stdout.write(JSON.stringify(answer), () => process.exit(0));
+if (routes[0] === "--kinds") said({"@kinds": {facts: [], faults: kindFaults()}});
+else if (routes[0] === "--focus") said({"@focus": {facts: [], faults: [...focusFaults(true), ...focusFaults(false)]}});
+else if (routes[0] === "--overview") {
   const fiber = testFaults();
-  process.stdout.write(JSON.stringify({"@overview": {facts: fiber.facts, faults: [...overviewFaults(true), ...overviewFaults(false), ...fiber.faults]}}));
-  process.exit(0);
+  said({"@overview": {facts: fiber.facts, faults: [...overviewFaults(true), ...overviewFaults(false), ...fiber.faults]}});
+} else {
+  const named = routes.length ? routes : [...M.byId.values()].filter(n => n.entry && n.entry.kind !== "test").map(n => n.id);
+  const result = {};
+  for (const r of named) {
+    if (Date.now() > DEADLINE) break;
+    result[r] = read(r);
+  }
+  process.stdout.write(JSON.stringify(result));
 }
-const named = routes.length ? routes : [...M.byId.values()].filter(n => n.entry && n.entry.kind !== "test").map(n => n.id);
-const result = {};
-for (const r of named) {
-  if (Date.now() > DEADLINE) break;
-  result[r] = read(r);
-}
-process.stdout.write(JSON.stringify(result));
