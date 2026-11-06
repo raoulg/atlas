@@ -1,6 +1,8 @@
 # A function whose value is used says what it gives back (principle `gives`): `get_store() -> ReadingStore` says
 # what it gives, so the store's `history` is a step of the route, and the route reads the `readings` table through it.
 
+known #438 kinds all export routes: harvest.export.Exporter draws
+
 route harvest.api.readings
 step readings/get_store
 step readings/get_store/ReadingStore()

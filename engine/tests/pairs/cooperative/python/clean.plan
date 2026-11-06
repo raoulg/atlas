@@ -6,6 +6,10 @@
 # and written in the other; arms of one choice never run one after the other, so the route finds what is there and
 # changes it. What a call runs on through `self` is the source the route is handed.
 
+known #438 kinds all export routes: news.read.cached_lines draws
+known #438 kinds all export routes: news.read.headlines draws
+known #438 kinds all export routes: news.read.lines draws
+
 route news.read.lines
 step lines/Trimmed.read
 step lines/Trimmed.read/Source.read one of 2                                           # `super().read()`, a choice

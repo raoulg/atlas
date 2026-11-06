@@ -25,7 +25,7 @@ const D = JSON.parse(fs.readFileSync(dataJson, "utf8"));
 // `ATLAS_FINE_BUDGET=n` cuts the plan as a large program's is cut (`plan.js`, `FINE_BUDGET`)
 const window = process.env.ATLAS_FINE_BUDGET ? {ATLAS_FINE_BUDGET: Number(process.env.ATLAS_FINE_BUDGET)} : {};
 const M = new Function("D", "window", fs.readFileSync(planJs, "utf8") + `
-return {V, plan, imageOf, coarsen, checkOpenings, overviewOpen, inUnit, partOf, MAKEFILES, treeInfo, stepLabel, oneOf, typeLabel, sideOfRoles, familyOf, kindOf, byId, ordersOn, stepOf, opens, frameOf, valueBox, foldDirs, filePath, valuesOf, closedFamily, typesIn, lightOf, cutBy, familyFrames, here, kindsOf, isData, worldPlaceOf, placeOfType, focusOpen: typeof focusOpen === "function" ? focusOpen : null, overviewEntries, planBase};`)(D, window);
+return {V, plan, imageOf, coarsen, checkOpenings, overviewOpen, inUnit, partOf, MAKEFILES, treeInfo, stepLabel, oneOf, typeLabel, sideOfRoles, familyOf, kindOf, byId, ordersOn, stepOf, opens, frameOf, valueBox, foldDirs, filePath, valuesOf, closedFamily, typesIn, lightOf, cutBy, familyFrames, here, kindsOf, isData, worldPlaceOf, placeOfType, focusOpen: typeof focusOpen === "function" ? focusOpen : null, overviewEntries, planBase, VIEWS, viewOf, dirsOf};`)(D, window);
 const {V} = M;
 
 const SIDES = {in: "left", out: "right", mid: "between", both: "both"};
@@ -53,6 +53,41 @@ function read(route) {
   V.route = route;
   for (const k of Object.keys(V.open)) V.open[k] = new Set();
   const C = M.plan(), F = window.atlasPlan.fine;
+  const {nodes, name, occ, valueName, values, placeName} = namesOf(F);
+  const facts = [];
+  // a step that is a call into a family says how many functions it may run, as its label does
+  for (const n of nodes.values()) {
+    if (n.parent === null || n.parent === undefined) continue;
+    const one = n.synthetic ? 0 : M.oneOf(n.key);
+    facts.push(`${n.synthetic ? "choice" : "step"} ${name.get(n.id)}${M.treeInfo.get(n.key)?.recursive ? " recursive" : ""}${one ? ` one of ${one}` : ""}`);
+  }
+  const channel = (k, r) => k.startsWith("e:") ? "call" : k.startsWith("w:") ? (r ? "reached" : "own") : r ? "value reached" : "value";
+  for (const P of F.pills.values()) {
+    for (const [k, r] of P.D) facts.push(`line ${valueName(k)} > ${occ(P.id)} ${channel(k, r)}`);
+    for (const [k, r] of P.C) facts.push(`line ${occ(P.id)} > ${valueName(k)} ${channel(k, r)}`);
+    if (P.backTo) facts.push(`line ${occ(P.id)} > ${occ(P.backTo)} back`);
+  }
+  // where a value stands with every step open, each type as itself
+  const open = new Set([...F.frames.values()].filter(f => f.step && !f.synthetic).map(f => f.step)), homes = homesOf(F, values);
+  for (const [k, h] of homes) facts.push(`home ${values.get(k)} ${h ? occ(h) : "outside"}`);
+  // where a place of the world stands, decided on the closed picture
+  for (const k of new Set([...F.pills.values()].flatMap(P => [...P.D.keys(), ...P.C.keys()]))) {
+    if (k.startsWith("e:")) { facts.push(`side entry left`); continue; }
+    if (!k.startsWith("w:")) continue;
+    const w = C.fine.ways.get(k), s = M.sideOfRoles([C.roles.get(k)].filter(Boolean), () => (w?.size === 1 ? [...w][0] : "mid"));
+    facts.push(`side ${placeName(k)} ${SIDES[s]}`);
+  }
+  const faults = [...alternatives(F, occ), ...pictures(F, open, occ, homes, valueName), ...familyOpenings(), ...pickings(), ...folderOpenings([...C.fine.ways.keys()].map(M.filePath).filter(Boolean))];
+  V.open.steps = new Set();
+  faults.push(...orderings(() => [M.plan(), M.coarsen(window.atlasPlan.fine)]));
+  if (window.ATLAS_FINE_BUDGET) faults.push(...cutOpenings(F, occ));
+  return {facts: [...new Set(facts)].sort(), faults};
+}
+
+// The names the facts of a route's plan use: an occurrence by the labels on its path from the route, a value by its type, its
+// name and the occurrence that made it, a place of the world by its term. Every value a line of the plan touches is named, in
+// the order of the lines, so that two values the names do not tell apart are told apart by their count alike in every use
+function namesOf(F) {
   // the names of the occurrences: the labels on the path from the route, a choice by its number in its step,
   // a second call of one name in one body by its count
   const order = new Map([...M.treeInfo.keys()].map((k, i) => [k, i]));
@@ -105,38 +140,17 @@ function read(route) {
     values.set(k, v);
     return v;
   };
-  const facts = [];
-  // a step that is a call into a family says how many functions it may run, as its label does
-  for (const n of nodes.values()) {
-    if (n.parent === null || n.parent === undefined) continue;
-    const one = n.synthetic ? 0 : M.oneOf(n.key);
-    facts.push(`${n.synthetic ? "choice" : "step"} ${name.get(n.id)}${M.treeInfo.get(n.key)?.recursive ? " recursive" : ""}${one ? ` one of ${one}` : ""}`);
-  }
-  const channel = (k, r) => k.startsWith("e:") ? "call" : k.startsWith("w:") ? (r ? "reached" : "own") : r ? "value reached" : "value";
-  for (const P of F.pills.values()) {
-    for (const [k, r] of P.D) facts.push(`line ${valueName(k)} > ${occ(P.id)} ${channel(k, r)}`);
-    for (const [k, r] of P.C) facts.push(`line ${occ(P.id)} > ${valueName(k)} ${channel(k, r)}`);
-    if (P.backTo) facts.push(`line ${occ(P.id)} > ${occ(P.backTo)} back`);
-  }
-  // where a value stands with every step open, each type as itself
-  const families = new Set([...F.places.values()].filter(p => p.type).flatMap(p => [M.familyOf(p.type), M.kindOf(p.type)]));
-  V.open.families = families;
-  const open = new Set([...F.frames.values()].filter(f => f.step && !f.synthetic).map(f => f.step));
+  for (const P of F.pills.values()) for (const k of [...P.D.keys(), ...P.C.keys()]) valueName(k);
+  return {nodes, name, occ, valueName, values, placeName};
+}
+// where each value of the plan stands with every step open, each type as itself
+function homesOf(F, values) {
+  const was = V.open.families;
+  V.open.families = new Set([...F.places.values()].filter(p => p.type).flatMap(p => [M.familyOf(p.type), M.kindOf(p.type)]));
   const all = M.imageOf(F, () => true, false), homes = new Map();
-  for (const [k] of values) if (/^[tv]:/.test(k)) { const h = all.homeOf([all.q(k)], false); homes.set(k, h); facts.push(`home ${values.get(k)} ${h ? occ(h) : "outside"}`); }
-  V.open.families = new Set();
-  // where a place of the world stands, decided on the closed picture
-  for (const k of new Set([...F.pills.values()].flatMap(P => [...P.D.keys(), ...P.C.keys()]))) {
-    if (k.startsWith("e:")) { facts.push(`side entry left`); continue; }
-    if (!k.startsWith("w:")) continue;
-    const w = C.fine.ways.get(k), s = M.sideOfRoles([C.roles.get(k)].filter(Boolean), () => (w?.size === 1 ? [...w][0] : "mid"));
-    facts.push(`side ${placeName(k)} ${SIDES[s]}`);
-  }
-  const faults = [...alternatives(F, occ), ...pictures(F, open, occ, homes, valueName), ...familyOpenings(), ...pickings(), ...folderOpenings([...C.fine.ways.keys()].map(M.filePath).filter(Boolean))];
-  V.open.steps = new Set();
-  faults.push(...orderings(() => [M.plan(), M.coarsen(window.atlasPlan.fine)]));
-  if (window.ATLAS_FINE_BUDGET) faults.push(...cutOpenings(F, occ));
-  return {facts: [...new Set(facts)].sort(), faults};
+  for (const [k] of values) if (/^[tv]:/.test(k)) homes.set(k, all.homeOf([all.q(k)], false));
+  V.open.families = was;
+  return homes;
 }
 
 // A choice in a body is a coproduct of its arms (mathematics.md, "Coproducts"): its frame holds alternatives, and one run takes
@@ -835,11 +849,190 @@ function kindFaults() {
   return out;
 }
 
+// ---- every view state draws the image of its fine plan ----
+// The view state `V` is one value, the one the page's address holds. Its coordinates are what the reader looks at (a route,
+// the routes of a kind, one part, the packages in focus, the test code or not), which decide the fine plan, and what the reader
+// has open, which decides the map `q`. The law walks that space: for every program, every view (the overview and each part
+// alone, each focus, each kind, each route), with the test code and without, at the closed picture, at each box of each
+// coordinate opened alone, and at sets of boxes of all coordinates together drawn from a seed. Each picture is held to its
+// plan: every line ends at a box it draws (`ends`), each line counts the fine lines it stands for and a box stands where the
+// plan puts it (`quotient`, or for a plan of generators `generated`), opening one more box refines it (`checkOpenings`), the
+// picture is a function of the view state (drawn again after every other, it is the same) and of the coordinates its view
+// reads alone (a coordinate it does not read leaves it as it is)
+const COORDINATES = {route: null, kind: null, part: null, focus: "set", tests: "flag", open: {parts: "set", units: "set", steps: "set", functions: "set", families: "set", places: "set", dirs: "set"}};
+// the coordinates each view reads; the others leave its picture as it is
+const READS = {
+  route: ["route", "open.steps", "open.functions", "open.families", "open.places", "open.dirs"],
+  kind: ["kind", "part", "open.families", "open.places", "open.dirs"],
+  focus: ["focus", "part", "tests", "open.units", "open.families", "open.places", "open.dirs"],
+  overview: ["part", "tests", "open.parts", "open.units", "open.families", "open.places", "open.dirs"],
+};
+const VIEW_SEED = Number(process.env.ATLAS_VIEWS_SEED || 437) >>> 0;
+// how many sets of boxes of all coordinates together each view is asked at, and how many boxes it opens alone at most
+const VIEW_SETS = Number(process.env.ATLAS_VIEWS_SETS || 4), VIEW_SINGLES = Number(process.env.ATLAS_VIEWS_SINGLES || 12);
+// A coordinate of `V` that the law does not draw is a view it cannot see: the keys are read from the page's own view state
+function coordinateFaults() {
+  const out = [], drawn = Object.keys(COORDINATES).filter(k => k !== "open"), open = Object.keys(COORDINATES.open);
+  for (const k of Object.keys(V)) if (k !== "open" && !drawn.includes(k)) out.push(`the view state has a coordinate ${k} that the law does not draw`);
+  for (const k of Object.keys(V.open)) if (!open.includes(k)) out.push(`the view state has a coordinate open.${k} that the law does not draw`);
+  for (const k of drawn) if (!(k in V)) out.push(`the law draws a coordinate ${k} that the view state does not have`);
+  for (const k of open) if (!(k in V.open)) out.push(`the law draws a coordinate open.${k} that the view state does not have`);
+  for (const r of Object.values(READS)) for (const c of r) if (!(c.startsWith("open.") ? open.includes(c.slice(5)) : drawn.includes(c))) out.push(`a view reads ${c}, no coordinate of the law`);
+  return out;
+}
+const blank = () => ({route: null, kind: null, part: null, focus: new Set(), tests: false, open: Object.fromEntries(Object.keys(V.open).map(k => [k, new Set()]))});
+const setState = S => {
+  V.route = S.route; V.kind = S.kind; V.part = S.part; V.focus = new Set(S.focus); V.tests = S.tests;
+  for (const k of Object.keys(V.open)) V.open[k] = new Set(S.open[k] || []);
+};
+const nameState = S => {
+  const o = {};
+  for (const k of ["route", "kind", "part"]) if (S[k]) o[k] = S[k];
+  if (S.focus.size) o.focus = [...S.focus].sort();
+  if (S.tests) o.tests = true;
+  for (const [k, v] of Object.entries(S.open)) if (v.size) (o.open ||= {})[k] = [...v].sort();
+  return JSON.stringify(o);
+};
+// a picture as what the page is handed of it: its boxes and frames, the lines of each with their counts, the side of each
+// place, the calls, the rest of a focus, the order of the disk
+function pictureOf(C) {
+  try {
+    return focusDrawn(C) + JSON.stringify([[...(C.meets?.frames.keys() || [])].sort(), [...(C.fiber || [])].sort()]);
+  } catch (e) {
+    return `a picture without what a plan's image carries: ${e.message}`;
+  }
+}
+// The boxes each coordinate of `V.open` can hold in a view, read off its plan: the boxes of the code's hierarchy and the steps of
+// a route that its plan frames, the functions those run, the families of the types it holds, the groups of its places and the
+// entry of a route that parses its command line, the directories of its files and the places on the disk that hold others
+function boxesOf(F, view) {
+  const frames = [...F.frames.values()].filter(f => f.step && !f.synthetic && !f.anchor), steps = frames.map(f => f.step);
+  const types = [...F.places.values()].filter(p => p.type).flatMap(p => [M.familyOf(p.type), M.kindOf(p.type)]);
+  const files = [...F.places.keys()].map(M.filePath).filter(Boolean);
+  const entry = view === "route" && ["cli", "script"].includes(M.byId.get(V.route)?.entry?.kind) ? ["e:" + V.route] : [];
+  return {
+    parts: steps.filter(s => s.startsWith("part:")).map(s => s.slice(5)),
+    units: steps.filter(s => s.startsWith("unit:")).map(s => s.slice(5)),
+    steps: view === "route" ? steps : [],
+    functions: view === "route" ? [...new Set(steps.map(M.stepOf))].filter(s => M.byId.has(s)) : [],
+    families: [...new Set(types)].filter(t => M.opens(t)).sort(),
+    places: [...new Set([...entry, ...[...F.places.values()].map(p => p.group).filter(Boolean)])].sort(),
+    dirs: [...new Set([...files.flatMap(M.dirsOf), ...Object.values(D.flow?.lies_in || {}).flat().map(q => q.slice(7))])].sort(),
+  };
+}
+// The image of a plan of generators (the overview, a focus, the routes of a kind), as the definition takes it: an occurrence
+// goes to its outermost closed frame, a type whose home lies in a closed block is internal to it, each other line counts the
+// fine lines it stands for and of them those it reaches, and a call goes between the blocks of its ends, internal to one that
+// holds both; a type box stands in the frame its home is, where that frame is drawn
+function generated(F, view, opened) {
+  const out = [];
+  const block = id => { let top = null; for (let f = F.pills.get(id).parent; f; f = F.frames.get(f)?.parent) if (!opened(F.frames.get(f).step)) top = f; return top || id; };
+  const inside = (home, S) => { for (let f = home; f; f = F.frames.get(f)?.parent) if (f === S) return true; return false; };
+  const want = new Map();
+  for (const P of F.pills.values()) for (const [way, m] of [["D", P.D], ["C", P.C]]) for (const [k, r] of m) {
+    const b = block(P.id);
+    if (b !== P.id && inside(F.places.get(k)?.home, b)) continue;
+    const key = JSON.stringify([b, way, view.q(k)]), [n, nr] = P.mult?.[way]?.get(k) || [1, r ? 1 : 0], e = want.get(key) || [0, 0];
+    want.set(key, [e[0] + n, e[1] + nr]);
+  }
+  const drawn = new Map();
+  for (const B of view.pills.values()) for (const [way, n, r] of [["D", B.Dn, B.Dr], ["C", B.Cn, B.Cr]]) for (const [c, k] of n || []) drawn.set(JSON.stringify([B.id, way, c]), [k, r?.get(c) || 0]);
+  for (const [k, [n, nr]] of want) if (JSON.stringify(drawn.get(k)) !== JSON.stringify([n, nr])) out.push(`the line ${k} counts ${JSON.stringify(drawn.get(k) ?? null)}, the fine lines ${JSON.stringify([n, nr])}`);
+  for (const k of drawn.keys()) if (!want.has(k)) out.push(`the line ${k} stands for no fine line`);
+  const calls = new Set((F.calls || []).map(([a, b]) => [block("n:" + a), block("n:" + b)]).filter(([x, y]) => x !== y).map(([x, y]) => `${x}>${y}`));
+  const drawnCalls = new Set([...view.pills.values()].flatMap(P => [...(P.calls || [])].map(b => `${P.id}>${b}`)));
+  for (const c of calls) if (!drawnCalls.has(c)) out.push(`no call ${c}`);
+  for (const c of drawnCalls) if (!calls.has(c)) out.push(`the call ${c} stands for no call of the code`);
+  // a type of an open family stands in the family's frame, which stands where the family's home is
+  const homes = new Map(), boxOf = k => { const c = view.q(k), p = view.places.get(c), f = p?.type && M.frameOf(p.type); return f ? M.valueBox(f, p) : c; };
+  for (const [k, pl] of F.places) if ("home" in pl && view.places.has(view.q(k))) { const c = boxOf(k); if (!homes.has(c)) homes.set(c, new Set()); homes.get(c).add(pl.home || null); }
+  for (const [c, hs] of homes) if (hs.size === 1) {
+    const h = [...hs][0], want = h && view.frames.has(h) ? h : null, got = view.homeOf([c], false) || null;
+    if (h && !view.frames.has(h) && F.frames.has(h)) out.push(`${c} is drawn, and its home ${h} is a closed box that holds every step that makes or takes it`);
+    else if (want !== got) out.push(`${c} stands in ${got || "the picture"}, and its plan puts it in ${want || "the picture"}`);
+  }
+  return out;
+}
+// the faults of one picture, held to its plan
+function stateFaults(name, S) {
+  setState(S);
+  window.atlasPlan = null;
+  const C = M.plan(), {fine: F, opened} = window.atlasPlan || {}, out = [], at = f => out.push(`${name}: ${f}`);
+  if (!F || !opened) { at("the picture is not the image of a plan"); return {out, C}; }
+  const view = M.viewOf(), {coarsest} = M.VIEWS[view];
+  const folded = view === "route" && ["cli", "script"].includes(M.byId.get(V.route)?.entry?.kind) && !V.open.places.has("e:" + V.route);
+  const image = M.imageOf(F, opened, folded);
+  for (const f of ends(C, M.coarsen(F, opened, coarsest))) at(f);
+  setState(S);
+  for (const f of M.checkOpenings(F, image, folded, opened)) at(f);
+  setState(S);
+  if (view === "route") {
+    const {occ, valueName, values} = namesOf(F), homes = homesOf(F, values), set = [...V.open.steps, ...[...F.frames.values()].filter(f => f.step && !f.synthetic && V.open.functions.has(M.stepOf(f.step))).map(f => f.step)];
+    for (const f of quotient(F, image, set, homes, occ, valueName)) at(f);
+  } else for (const f of generated(F, image, opened)) at(f);
+  setState(S);
+  return {out, C: M.plan()};
+}
+// a set of each coordinate's boxes, drawn: each box with a chance the set draws first
+const drawSet = (draw, xs) => { const p = draw(); return xs.filter(() => draw() < p); };
+function viewFaults() {
+  const out = coordinateFaults(), draw = random(VIEW_SEED);
+  const kinds = [...new Set([...M.byId.values()].filter(n => n.entry).map(n => n.entry.kind))].sort();
+  const parts = (D.parts || []).length > 1 ? D.parts.map(p => p.id) : [];
+  // the views: what the reader looks at, each a state with nothing open
+  const bases = [];
+  for (const tests of [false, true]) {
+    for (const part of [null, ...parts]) bases.push({...blank(), part, tests});
+    for (const kind of kinds) for (const part of [null, ...parts]) bases.push({...blank(), kind, part, tests});
+  }
+  setState(blank()); M.plan();
+  const F0 = window.atlasPlan.fine, units = [...F0.frames.values()].filter(f => f.step.startsWith("unit:")).map(f => f.step.slice(5));
+  for (const tests of [false, true]) for (const U of units.length <= 3 ? [...Array(1 << units.length).keys()].slice(1).map(m => units.filter((_, i) => m & (1 << i))) : [...units.map(u => [u]), ...[...Array(VIEW_SETS).keys()].map(() => drawSet(draw, units)).filter(u => u.length)]) bases.push({...blank(), focus: new Set(U), tests});
+  for (const n of [...M.byId.values()].filter(n => n.entry)) bases.push({...blank(), route: n.id});
+  const seen = new Map();
+  for (const base of bases) {
+    setState(base); M.plan();
+    const view = M.viewOf(), F = window.atlasPlan.fine, boxes = boxesOf(F, view), reads = new Set(READS[view]);
+    const coords = Object.keys(boxes).filter(k => reads.has("open." + k) && boxes[k].length);
+    const states = [base];
+    const singles = coords.flatMap(k => boxes[k].map(b => [k, b]));
+    for (const [k, b] of singles.length <= VIEW_SINGLES ? singles : [...Array(VIEW_SINGLES).keys()].map(() => singles[Math.floor(draw() * singles.length)])) states.push({...base, open: {...base.open, [k]: new Set([b])}});
+    for (let i = 0; i < VIEW_SETS && coords.length; i++) states.push({...base, open: {...base.open, ...Object.fromEntries(coords.map(k => [k, new Set(drawSet(draw, boxes[k]))]))}});
+    for (const S of states) {
+      const name = `${view} ${nameState(S)}`;
+      if (seen.has(name)) continue;
+      const {out: faults, C} = stateFaults(name, S);
+      out.push(...faults);
+      const picture = pictureOf(C);
+      seen.set(name, [S, picture]);
+      // a coordinate the view does not read leaves the picture as it is: one below it in what decides the view (a route before
+      // a kind, a kind before a focus), the part and the test code where it does not read them, and an open box of another view
+      const other = {...S, open: {...S.open}};
+      if (view === "route" && kinds.length) other.kind = kinds[0];
+      if ((view === "route" || view === "kind") && units.length) other.focus = new Set([units[0]]);
+      if (!reads.has("part") && parts.length) other.part = parts[0];
+      if (!reads.has("tests")) other.tests = !S.tests;
+      for (const k of Object.keys(other.open)) if (!reads.has("open." + k)) other.open[k] = new Set(["unread"]);
+      setState(other);
+      const again = pictureOf(M.plan());
+      if (again !== picture) out.push(`${name}: drawn with ${nameState(other)}, coordinates the view does not read, the picture differs`);
+    }
+  }
+  // the picture is a function of the view state: drawn again after all the others, each is the picture it was
+  for (const [name, [S, picture]] of [...seen].reverse()) {
+    setState(S);
+    if (pictureOf(M.plan()) !== picture) out.push(`${name}: drawn again after the other states, the picture differs`);
+  }
+  setState(blank());
+  return out.map(f => `seed ${VIEW_SEED}: ${f}`);
+}
+
 // with no route named, every route of the program but its tests; `--overview` asks the overview, with the test code and without;
-// `--focus` every focus, with the test code and without; `--kinds` the routes of each kind
+// `--focus` every focus, with the test code and without; `--kinds` the routes of each kind; `--views` every view state
 // the answer is written whole before the process ends: a pipe takes some 64 KB at a time
 const said = answer => process.stdout.write(JSON.stringify(answer), () => process.exit(0));
-if (routes[0] === "--kinds") said({"@kinds": {facts: [], faults: kindFaults()}});
+if (routes[0] === "--views") said({"@views": {facts: [], faults: viewFaults()}});
+else if (routes[0] === "--kinds") said({"@kinds": {facts: [], faults: kindFaults()}});
 else if (routes[0] === "--focus") said({"@focus": {facts: [], faults: [...focusFaults(true), ...focusFaults(false)]}});
 else if (routes[0] === "--overview") {
   const fiber = testFaults();

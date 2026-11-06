@@ -3,6 +3,10 @@
 # source that is a feed never reads its store and the route asks the network alone. What `read` gives is bytes, no
 # type of the code's: it goes back to the call that ran it.
 
+known #438 kinds all export routes: news.read.cached_lines draws
+known #438 kinds all export routes: news.read.headlines draws
+known #438 kinds all export routes: news.read.lines draws
+
 route news.read.lines
 step lines/Trimmed.read
 step lines/Trimmed.read/Source.read                                                    # `Source.read(self)`

@@ -2188,10 +2188,27 @@ const imageOf = (F, opened, folded, {fineKeys = false} = {}) => {
     P.folded = ids.length;
   }
   // where a box stands: in the smallest frame that holds all the steps that use it and the one that made it; a value no step
-  // inside a step makes stands outside it, and a place of the world outside every step
+  // inside a step makes stands outside it, and a place of the world outside every step. In a plan of generators a type's home
+  // is a fact of the plan (`F₀`'s, the smallest package that holds what makes and takes its family): the box stands in the
+  // innermost frame drawn on the way to it
   const chainOf = fid => { const c = []; for (let f = fid; f; f = fFrames.get(f)?.parent) c.unshift(f); return c; };
   const stepFrame = f => !fFrames.get(f).synthetic && !fFrames.get(f).anchor;
+  let homeAt = null;
+  const homesOf = ids => {
+    if (!homeAt) {
+      homeAt = new Map();
+      for (const [k, pl] of fp) if ("home" in pl) for (const b of new Set([q(k), famId(pl)])) if (b) { if (!homeAt.has(b)) homeAt.set(b, []); homeAt.get(b).push(pl.home); }
+    }
+    return ids.flatMap(id => homeAt.get(id) || []);
+  };
   const homeOf = (ids, world) => {
+    const hs = F.generators && !world ? homesOf(ids) : [];
+    if (hs.length) {
+      let common = chainOf(hs[0]);
+      for (const c of hs.slice(1).map(chainOf)) { let i = 0; while (i < common.length && i < c.length && common[i] === c[i]) i++; common = common.slice(0, i); }
+      while (common.length && !frames.has(common[common.length - 1])) common.pop();
+      return common.length ? common[common.length - 1] : null;
+    }
     const cs = ids.flatMap(i => [...(users.get(i) || []), ...(makers.get(i) || [])]).map(chainOf), mk = ids.flatMap(i => makers.get(i) || []).map(chainOf);
     if (!cs.length || cs.some(c => !c.length)) return null;
     let common = cs[0];

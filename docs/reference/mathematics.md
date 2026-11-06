@@ -1044,8 +1044,8 @@ type, drawn once. `F₀` is the graph of generators:
   the type it makes.
 
 What is open is the map `q`, as on a route: a function goes to its outermost closed package or part.
-A type whose home is a closed package, or lies inside it, is internal to it and on no border; any
-other line between a function and a type or a place is one line of its block, counting the fine
+A type whose home is a closed package, or lies inside it, is internal to it and on no border, and a
+type that is drawn stands in the innermost package drawn on the way to its home; any other line between a function and a type or a place is one line of its block, counting the fine
 lines it stands for, all of them its own. A call goes from the caller's block to the callee's, and is
 internal to a block that holds both. So a package that makes a type another package takes, and takes
 it itself, draws both lines: the line into it is the image of its own taking, and a picture without
@@ -1086,9 +1086,40 @@ All routes of a kind (every command, every test) are one picture: the union of e
 picture, the image of the route's finest plan with no step open, a route one box. Nothing opens in it;
 a route opens on its own page. So the box of a route takes and gives what crosses its border closed:
 the command line it starts from, the values from beyond it, the errors it hands on, the figures it
-draws on. The page draws today each route's closed morphism instead (`morphism(id, false, false)`),
-which leaves those out, and holds the law only where they do not occur: drawing every route's plan
-costs some seconds on a large program against milliseconds, a question of speed (#399).
+draws on. Its fine plan `F_K` is a plan of generators, as `F₀` is: a box for each route of the kind,
+and a value by its type alone, since the moment a value is made at is an occurrence of one route and
+no fact of the union. Each route is planned cut at its first level (`ROUTE_DEPTH`, `cutArrow`): a step
+beyond the cut is the image of its body, so the route closed is the same image, and each line of a
+route's box counts the fine lines it stands for and those it reaches. A step that two routes run in the
+same context (the route's entry, whether it is a door, what it builds, whether it serves its route's own
+types) is one arrow, made once for both (`routeContext`).
+
+Every view the page draws is a function of one value, the view state `V`, the one the page's address
+holds. Its coordinates are of two sorts. What the reader looks at decides the fine plan: a route
+(`V.route`), the routes of a kind (`V.kind`), one part (`V.part`), the packages in focus (`V.focus`)
+and whether the test code is drawn (`V.tests`). What the reader has open decides the map `q`: the
+parts, packages, steps and functions opened (`V.open.parts`, `units`, `steps`, `functions`), the
+families opened into their members (`families`), the groups of places and the directories on the disk
+opened (`places`, `dirs`). So a picture is
+
+    picture(V) = image(F(V), q(V))
+
+and the page computes it with one function, `plan()`. The view is the first of route, kind, focus and
+overview that `V` names, and each view is a row of one table (`VIEWS`): the fine plan it builds
+(`routeBase`, `kindBase`, `focusBase`, `overviewBase`), what it has open, the boxes it never opens, and
+what it draws beside the image (the rest of a focus on both sides). `plan()` takes the fine plan,
+coarsens it by `coarsen`, the same `imageOf` for every view, merges the siblings and hands the page
+the image. No view draws from a construction of its own.
+
+A view reads only some coordinates: a route reads its steps and functions, never the packages; the
+overview reads its packages and parts, never the steps. A coordinate a view does not read leaves its
+picture as it is, and the picture is a function of `V` alone: drawn again after every other state, it is
+the picture it was. The one law of the views walks this space on every small program: each view, with
+the test code and without, at the closed picture, at each box of each coordinate opened alone and at
+sets of them all drawn from a seed; each picture has both ends of every line among its boxes, refines
+the picture with one box fewer open (the oracle), counts the fine lines each line stands for, and draws
+each box where its plan puts it. The keys of `V` are read from the page, so a coordinate added to it
+and not walked by the law is a fault of the law.
 
 On the image the model merges the siblings (above, `siblings`) and takes the order of the places on the disk
 (`meet`, "Paths as terms"), and the page then does only what is a quotient of `F` or a way of drawing it: the storage quotient and the fold (above); a value with no name and no type of the code's
@@ -1110,7 +1141,8 @@ Each law is then a theorem of the construction, or it is not yet, and says which
 | Across the cut | a cut step's arrow is the image of its body, made by the same construction (`cutArrow`) | `plans.rs` at the budgets 1, 2 and 3 (`ATLAS_FINE_BUDGET`), which cut the small programs as a large one is cut: each line of a cut step counts the fine lines its body draws there, and each cut step of the closed picture, opened and planned anew, refines the picture it was cut in (`cutOpenings` in `plans.mjs`); at the same budgets a route whose body, unfolded, has 2^40 occurrences, which only an arrow made without unfolding the body can plan (`a_step_beyond_the_cut_is_made_without_unfolding_its_body`); `topology` with a small budget |
 | The overview | `F₀/q` maps onto `F₀/q′` along the blocks, as a route's pictures do, the calls a channel among them | the oracle; `plans.rs` (`every_package_view_is_the_image_of_its_plan`), for every set of open packages and parts of every program: each line counts the fine lines it stands for and none is reached, a type internal to a closed package draws none, each call goes between the blocks of its ends, and the picture is a function of the set of open boxes; all of it again without the test code, whose plan is the fiber of the plan with it |
 | A focus | `F_U` is a fiber of `F₀` closed under kinds, its homes `F₀`'s, and `q_U` a map on it | `plans.rs` (`every_focus_is_the_image_of_a_fiber_of_the_overviews_plan`), for every set of packages in focus and every set of open packages: each closed package has the border it has in the overview opened alike, each type the home `F₀` gives it, the plan is the star of the focus restated on its own (`starOf`), the oracle with `q_U`, the lines count the fine ones, every line has its ends, and closing in turn draws each picture it was; the program `plans/focus-shapes` |
-| All routes of a kind | the union of the routes' closed pictures | `plans.rs` (`every_kind_view_is_the_union_of_its_routes_closed`, ignored: the page draws the closed morphisms, #399) |
+| All routes of a kind | `F_K` is the union of the routes' closed pictures, each route's box the image of its plan cut at its first level | `plans.rs` (`every_kind_view_is_the_union_of_its_routes_closed`): each route's box against the image of its finest plan with no box open, line by line with the fine lines each counts and those it reaches; where the cut draws otherwise, a fault marked with #438 |
+| Every view | `picture(V) = image(F(V), q(V))` by one `plan()` | `plans.rs` (`every_view_state_draws_the_image_of_its_plan`), on a walk of the view state of every program: endpoints, the oracle, the counts, each box at its plan's home (a type at its home in `F₀`), a coordinate the view does not read changes nothing, and each picture drawn again is the one it was; the coordinates of `V` read from the page |
 
 The oracle holds the pictures to one another, not to the program. Whether `F` says what the code
 does is a test of its own, `engine/tests/plans.rs`: beside a small program a `.plan` file writes down
@@ -1121,10 +1153,11 @@ test runs the viewer's own model in node, the function every picture is drawn fr
 the pairs and of its programs.
 **Where.** `plan`, `sitesOf`, `figureOf`, `FIGURE_FIELDS`, `FIGURE_SLOTS` and `figurePart`, `setsAt` and `resolveWhole`, `throughOf` and `partIn`,
 `changedThrough` and `changesOwner`,
-`coarsen`, `siblings`, `cutArrow` and `typesOf`, `handTo` and `checkOpenings`, `overviewBase` and `overview`, the focus's
-`focusBase`, `focusOpen`, `restSides` and `focus` in `viewer/plan.js`,
-`cutOpenings`, `ends`, `overviewFaults`, the focus's `starOf`, `borderOf` and `focusFaults`, and the kind view's `kindFaults`
-in `engine/tests/plans.mjs`;
+`coarsen`, `siblings`, `cutArrow` and `typesOf`, `handTo` and `checkOpenings`, the view state `V`, `VIEWS`, `viewOf`,
+`routeBase`, `overviewBase` and `overviewOpen`, the focus's `focusBase`, `focusOpen` and `restSides`, the kind view's
+`kindBase`, `closedRoute`, `ROUTE_DEPTH` and `routeContext` in `viewer/plan.js`,
+`cutOpenings`, `ends`, `overviewFaults`, the focus's `starOf`, `borderOf` and `focusFaults`, the kind view's `kindFaults`,
+and the walk of the view state, `viewFaults`, `stateFaults`, `generated` and `coordinateFaults`, in `engine/tests/plans.mjs`;
 the field an argument reads, `Steps::fills` and `Steps::read_of` (`body.rs`); the class each field of a class holds, `Node::holds`;
 which parameters of no type of the code's hold a value, `builder::settle_parameters`; the fields a condition tests,
 `Steps::tests` (`body.rs`), and whether a figure is made sure of, `guarded` in `viewer/plan.js`; the names a body binds
