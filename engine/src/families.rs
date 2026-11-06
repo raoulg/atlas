@@ -192,8 +192,10 @@ pub fn families(g: &Graph) -> Families {
         }
     }
     let library: HashSet<&str> = g.nodes.iter().filter(|n| n.library).map(|n| n.id.as_str()).collect();
+    // a function with no body makes and takes nothing of its own: its signature is the family's type
+    let declared: HashSet<&str> = g.nodes.iter().filter(|n| n.declared).map(|n| n.id.as_str()).collect();
     let (mut makes, mut takes): (IndexMap<String, Vec<String>>, IndexMap<String, Vec<String>>) = Default::default();
-    for e in g.edges.iter().filter(|e| !library.contains(e.src.as_str())) {
+    for e in g.edges.iter().filter(|e| !library.contains(e.src.as_str()) && !declared.contains(e.src.as_str())) {
         let use_ = match e.kind {
             EdgeKind::Takes => &mut takes,
             EdgeKind::Returns | EdgeKind::Instantiates | EdgeKind::Mutates => &mut makes,

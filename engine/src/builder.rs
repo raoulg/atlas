@@ -372,6 +372,7 @@ impl GraphBuilder {
         }
         serve_data(&mut nodes);
         settle_fails(&mut nodes, &self.edges);
+        settle_declared_gives(&mut nodes, &self.edges);
         crate::flow::wire(&mut nodes, &self.edges);
         fill_nested(&mut nodes);
         settle_parameters(&mut nodes, &self.edges);
@@ -698,6 +699,25 @@ fn parsed(nodes: &IndexMap<String, Node>, id: &str, seen: &mut HashSet<String>, 
 /// name, wherever it is defined.
 fn caught_by(class: &str) -> &str {
     type_name(class)
+}
+
+/// What a call of a function with no body gives: a value of the type its signature declares. The declared function has no
+/// arrow of its own (`Node::declared`); the value its caller holds is typed by the family's signature, and a call that names
+/// no value of its own is given the types of the signature's `Returns`.
+fn settle_declared_gives(nodes: &mut IndexMap<String, Node>, edges: &[Edge]) {
+    let mut returns: HashMap<&str, Vec<&str>> = HashMap::new();
+    for e in edges.iter().filter(|e| e.kind == EdgeKind::Returns) {
+        let by = returns.entry(e.src.as_str()).or_default();
+        if !by.contains(&e.dst.as_str()) {
+            by.push(e.dst.as_str());
+        }
+    }
+    let declared: HashSet<String> = nodes.values().filter(|n| n.declared).map(|n| n.id.clone()).collect();
+    for n in nodes.values_mut() {
+        for s in n.sites.iter_mut().filter(|s| s.gives.is_empty() && declared.contains(&s.to)) {
+            s.gives = returns.get(s.to.as_str()).into_iter().flatten().map(|t| Held { ty: t.to_string(), ..Default::default() }).collect();
+        }
+    }
 }
 
 /// The error each call hands on to its body's border where the language hands on every error a call

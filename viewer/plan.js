@@ -502,7 +502,7 @@ const usesOf = () => {
     const u = {makes: new Map(), takes: new Map()};
     for (const e of D.edges) {
       const m = e.kind === "takes" ? u.takes : MAKES.has(e.kind) ? u.makes : null;
-      if (!m || byId.get(e.src)?.library || !inReading(e, SIDE)) continue;
+      if (!m || byId.get(e.src)?.library || byId.get(e.src)?.declared || !inReading(e, SIDE)) continue;
       if (!m.has(e.dst)) m.set(e.dst, new Set());
       m.get(e.dst).add(e.src);
     }

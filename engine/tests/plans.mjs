@@ -552,7 +552,7 @@ function arrowFaults(F, tests) {
   const leaf = new Set([...F.frames.keys()]);
   for (const e of D.edges) {
     const way = e.kind === "takes" ? "D" : ["returns", "instantiates", "mutates"].includes(e.kind) ? "C" : null, n = M.byId.get(e.src);
-    if (!way || !n || n.library || !["function", "method"].includes(n.kind) || (!tests && testCode(n)) || !M.isData(e.dst)) continue;
+    if (!way || !n || n.library || !["function", "method"].includes(n.kind) || n.declared || (!tests && testCode(n)) || !M.isData(e.dst)) continue;
     const P = F.pills.get("n:" + e.src);
     if (P && !leaf.has(P.parent)) continue;
     if (!P?.[way].has("t:" + e.dst)) out.push(`${pre}${M.stepLabel(e.src)} ${way === "D" ? "takes" : "makes"} ${M.typeLabel(e.dst)}, and its occurrence in the overview's fine plan does not`);

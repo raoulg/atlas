@@ -1215,7 +1215,6 @@ fn type_of(value: &str) -> &str {
 /// method without a default body): the method is declared, its own arrow as the engine forms it is empty, and the types
 /// the overview reads off who makes and takes them (`Families::makes`, `Families::takes`) do not name it (#430).
 #[test]
-#[ignore = "#430: red until it lands"]
 fn a_declared_method_has_an_empty_own_arrow_in_every_language() {
     let mut faults = vec![];
     for language in LANGUAGES {
@@ -1282,7 +1281,6 @@ fn the_own_arrow_is_one_in_the_engine_and_the_overview_in_every_language() {
 /// back to it (`T@step/?`) and what it hands on of that (`T@step`). The shortcut's default body draws lines of its own
 /// there, the Report it reads and the file it writes, as any body does.
 #[test]
-#[ignore = "#430: red until it lands"]
 fn a_declared_method_draws_no_line_of_its_own_in_every_language() {
     let mut faults = vec![];
     for language in LANGUAGES {
