@@ -686,3 +686,50 @@ fn a_folder_made_for_a_file_is_that_files_in_every_language() {
         assert_eq!(run_places(language, "folder-made", made), file, "{language}");
     }
 }
+
+/// An input the caller can override is its default where no caller overrides it (`docs/reference/mathematics.md`,
+/// "Paths as terms"; #428, #427, #383, #350). The defaults pair (`defaults/{python,rust,typescript}`) keeps a report
+/// where its caller says, `out/report.txt` unless told; a download of each kind below the folder `RAW` names; a note
+/// where its caller says, else in the workbench of the home it is handed. The command keeps the report twice, handing
+/// nothing and handing the default, and the note twice: once through `keep`'s fallback, once straight (`jot`). The
+/// clean side writes each language's own default (a parameter's default, an `Option` it unwraps) and asks for `RAW`;
+/// the shortcut falls back in the body (`path or …`, `path ?? …`) and to the empty path where `RAW` is not set. In
+/// every language and on both sides: a caller that hands nothing writes where the one that hands the default writes,
+/// one place and none unnamed (#383); the fallback is a term of the parameters, so the callers complete it to the
+/// place the same path written in place names (#350); and the empty default joined keeps the root the variable gives,
+/// the clean side's, never the literal below it (#428). The facts are the same in every reading.
+#[test]
+fn an_input_is_its_default_where_no_caller_overrides_it() {
+    use std::collections::BTreeSet;
+    // the Disk places each function of the program writes, by its name with the language's spelling taken away
+    let places = |g: &Graph, function: &str| -> BTreeSet<String> {
+        g.nodes
+            .iter()
+            .filter(|n| !n.library && n.id.rsplit('.').next().map(|s| s.replace('_', "").to_lowercase()).as_deref() == Some(function))
+            .flat_map(|n| &n.touches)
+            .filter(|t| t.kind == World::Disk)
+            .map(|t| t.artifact.clone())
+            .collect()
+    };
+    let root = |p: &String| p.split('/').next().unwrap_or_default().to_string();
+    let mut facts = vec![];
+    for language in ["python", "rust", "typescript"] {
+        let clean = pair(&format!("defaults/{language}/clean"));
+        let fetched: BTreeSet<String> = places(&clean, "fetch").iter().map(root).collect();
+        assert_eq!(fetched.len(), 1, "{language}: {fetched:?}");
+        for side in ["clean", "shortcut"] {
+            let g = pair(&format!("defaults/{language}/{side}"));
+            let report = places(&g, "savereport");
+            assert_eq!(report, BTreeSet::from(["out/report.txt".to_string()]), "{language} {side}: handing nothing is handing the default");
+            let jotted = places(&g, "jot");
+            assert_eq!(jotted.len(), 1, "{language} {side}: {jotted:?}");
+            let kept = places(&g, "keep");
+            assert!(jotted.is_subset(&kept), "{language} {side}: the fallback completed is the path in place: {kept:?} holds {jotted:?}");
+            let roots: BTreeSet<String> = places(&g, "fetch").iter().map(root).collect();
+            assert_eq!(roots, fetched, "{language} {side}: the empty default joined keeps its root");
+            assert!(roots.iter().all(|r| r.starts_with('{')), "{language} {side}: {roots:?} is a value no code decides");
+            facts.push((report, jotted, roots));
+        }
+    }
+    assert!(facts.windows(2).all(|w| w[0] == w[1]), "{facts:?}");
+}

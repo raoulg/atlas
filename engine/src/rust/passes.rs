@@ -586,7 +586,7 @@ pub(super) fn link(modules: &IndexMap<String, Module>, store: &mut GraphBuilder,
     // a path or a statement built from a function's parameters is whole where its callers hand them
     let handing: Vec<Evaluated> = args.iter().map(|arg| Evaluated { arg, eval: &eval }).collect();
     let entry = |f: &str| store.nodes.get(f).map_or(false, |n| n.entry.is_some());
-    let completed = crate::paths::complete(waiting, &handing, &family, &|_, _| vec![], &entry);
+    let completed = crate::paths::complete(waiting, &handing, &family, &crate::paths::no_defaults, &entry);
     crate::paths::place_calls(store, completed, false);
     drop(callers);
     let _globals = crate::clock::stage("globals");

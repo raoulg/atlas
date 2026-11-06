@@ -568,19 +568,21 @@ pub(super) fn link(modules: &IndexMap<String, Module>, store: &mut GraphBuilder,
     // a parameter a call leaves out holds its declared default, and an entry's what it is run with
     let completed = {
         let store = &*store;
-        let default = |f: &str, p: &str| -> Vec<Built> {
+        // (`paths::Defaults`): a default that is `None` is nothing
+        let default = |f: &str, p: &str| -> Option<Vec<Built>> {
             // a value built from its fields: the field's declared default
             if let Some((m, d)) = field_default(modules, store, f, p) {
-                return eval.of(At { m, scope: None, params: &[] }, d, 0);
+                return Some(eval.of(At { m, scope: None, params: &[] }, d, 0));
             }
-            let Some(n) = store.nodes.get(f) else { return vec![] };
-            let Some(m) = modules.get(&n.module) else { return vec![] };
-            let Some(def) = def_node(m, n) else { return vec![] };
+            let n = store.nodes.get(f)?;
+            let m = modules.get(&n.module)?;
+            let def = def_node(m, n)?;
             let declared =
                 paths::parameters(def, &m.src, n.kind == NodeKind::Method).into_iter().find(|(q, _)| q == p).and_then(|(_, d)| d);
             let entry =
                 n.entry.is_some().then(|| paths::entry_defaults(def, &m.src).into_iter().find(|(q, _)| q == p).map(|(_, d)| d)).flatten();
-            [entry, declared].into_iter().flatten().flat_map(|d| eval.of(At { m, scope: None, params: &[] }, d, 0)).collect()
+            let defaults: Vec<_> = [entry, declared].into_iter().flatten().collect();
+            (!defaults.is_empty()).then(|| defaults.into_iter().flat_map(|d| eval.of(At { m, scope: None, params: &[] }, d, 0)).collect())
         };
         let handing: Vec<Evaluated> = args.iter().map(|arg| Evaluated { arg, modules, eval: &eval }).collect();
         let entry = |f: &str| store.nodes.get(f).map_or(false, |n| n.entry.is_some());

@@ -264,7 +264,25 @@ fn after(path: &Built, base: &Built) -> Option<Built> {
 /// The values an input with a default holds: its default, each as reached through the input; no
 /// value where it declares none.
 pub fn option(name: &str, default: Vec<Built>) -> Vec<Built> {
-    default.iter().flat_map(chosen).map(|d| vec![Seg::Option(name.to_string(), d)]).collect()
+    default.iter().flat_map(chosen).map(|d| defaulted(name, d)).collect()
+}
+
+/// The input `name` with the default `d`, wherever it stands: in a whole value, in a join, written in
+/// for what a caller hands. The empty path names nothing, so an input whose default is the empty path
+/// is the input alone, a hole by its name: `process.argv[2] ?? ""` is `process.argv[2]!`,
+/// `os.environ.get("REPORT", "")` is `$REPORT`, and joined with more it keeps its place in the join
+/// (`join(settings["raw"] ?? "", kind)` is `{}/{kind}`).
+fn defaulted(name: &str, d: Built) -> Built {
+    if empty(&d) {
+        hole(name)
+    } else {
+        vec![Seg::Option(name.to_string(), d)]
+    }
+}
+
+/// Whether a value is the empty path, known as text throughout and naming nothing.
+fn empty(b: &Built) -> bool {
+    known(b) && render(b).is_empty()
 }
 
 /// One element of a collection whose terms are `values`, before the code binds it to a name, which
@@ -286,20 +304,22 @@ pub fn each(values: Vec<Built>) -> Vec<Built> {
     }
 }
 
-/// Whether a parameter stands in `b`, also among the values of its variables and in the name of a
-/// variable of the environment it looks up.
+/// Whether a parameter stands in `b`, also among the values of its variables, in the name of a
+/// variable of the environment it looks up and in the default of an input.
 fn takes(b: &Built) -> bool {
     b.iter().any(|s| match s {
         Seg::Param(_) | Seg::Held(..) => true,
         Seg::Var(_, vs) => vs.iter().any(takes),
-        Seg::Env(name, _) => takes(name),
+        Seg::Option(_, d) => takes(d),
+        Seg::Env(name, d) => takes(name) || d.as_ref().is_some_and(takes),
         Seg::Within(_, path, base) => takes(path) || takes(base),
         _ => false,
     })
 }
 
-/// The segments of `b` in the order they stand, also those among the values of its variables and
-/// in the name of a variable of the environment it looks up.
+/// The segments of `b` in the order they stand, also those among the values of its variables, in
+/// the name of a variable of the environment it looks up and in the default of an input: a default
+/// is a term of the parameters of the function that writes it, as any value there is.
 fn visit(b: &Built, f: &mut dyn FnMut(&Seg)) {
     for s in b {
         f(s);
@@ -309,7 +329,13 @@ fn visit(b: &Built, f: &mut dyn FnMut(&Seg)) {
                     visit(v, f);
                 }
             }
-            Seg::Env(name, _) => visit(name, f),
+            Seg::Option(_, d) => visit(d, f),
+            Seg::Env(name, d) => {
+                visit(name, f);
+                if let Some(d) = d {
+                    visit(d, f);
+                }
+            }
             Seg::Within(_, path, base) => {
                 visit(path, f);
                 visit(base, f);
@@ -319,25 +345,29 @@ fn visit(b: &Built, f: &mut dyn FnMut(&Seg)) {
     }
 }
 
-/// Whether the segment `s` stands in `b` itself, or in the name of a variable of the environment
-/// `b` looks up: one value in each term `b` gives, as a segment of `b` is, never a variable's.
+/// Whether the segment `s` stands in `b` itself, in the name of a variable of the environment `b`
+/// looks up or in the default of an input: one value in each term `b` gives, as a segment of `b`
+/// is, never a variable's.
 fn stands(b: &Built, s: &Seg) -> bool {
     b.iter().any(|x| {
         x == s
             || match x {
-                Seg::Env(name, _) => stands(name, s),
+                Seg::Option(_, d) => stands(d, s),
+                Seg::Env(name, d) => stands(name, s) || d.as_ref().is_some_and(|d| stands(d, s)),
                 Seg::Within(_, path, base) => stands(path, s) || stands(base, s),
                 _ => false,
             }
     })
 }
 
-/// The variable of `b` `chosen` takes a value for first: one that stands in `b` or in the name of a
-/// variable of the environment `b` looks up, where `open` is true or one of its values is whole.
+/// The variable of `b` `chosen` takes a value for first: one that stands in `b`, in the name of a
+/// variable of the environment `b` looks up or in the default of an input, where `open` is true or
+/// one of its values is whole.
 fn first_var(b: &Built, open: bool) -> Option<(String, Vec<Built>)> {
     b.iter().find_map(|s| match s {
         Seg::Var(n, vs) if open || !vs.iter().all(takes) => Some((n.clone(), vs.clone())),
-        Seg::Env(name, _) => first_var(name, open),
+        Seg::Option(_, d) => first_var(d, open),
+        Seg::Env(name, d) => first_var(name, open).or_else(|| d.as_ref().and_then(|d| first_var(d, open))),
         Seg::Within(_, path, base) => first_var(path, open).or_else(|| first_var(base, open)),
         _ => None,
     })
@@ -376,7 +406,8 @@ fn narrowed(b: &Built, name: &str, values: &[Built]) -> Built {
         .map(|s| match s {
             Seg::Var(n, _) if n == name => Seg::Var(n.clone(), values.to_vec()),
             Seg::Var(n, vs) => Seg::Var(n.clone(), vs.iter().map(|v| narrowed(v, name, values)).collect()),
-            Seg::Env(var, default) => Seg::Env(narrowed(var, name, values), default.clone()),
+            Seg::Option(x, d) => Seg::Option(x.clone(), narrowed(d, name, values)),
+            Seg::Env(var, default) => Seg::Env(narrowed(var, name, values), default.as_ref().map(|d| narrowed(d, name, values))),
             Seg::Within(n, path, base) => Seg::Within(n.clone(), narrowed(path, name, values), narrowed(base, name, values)),
             s => s.clone(),
         })
@@ -387,14 +418,20 @@ fn narrowed(b: &Built, name: &str, values: &[Built]) -> Built {
 /// a step up from `v`, as `written_in` takes one.
 fn put_var(b: &Built, name: &str, v: &Built) -> Built {
     let (mut out, mut said) = (vec![], false);
-    for s in b {
+    for (i, s) in b.iter().enumerate() {
         match s {
             Seg::Var(n, _) if n == name => {
-                out = join(&out, v, "");
+                out = if empty(v) { unit(out, b.get(i + 1)) } else { join(&out, v, "") };
                 said = true;
                 continue;
             }
             Seg::Lit(t) if said && up_first(t) => out = up_from(out, t),
+            // the empty path is the unit of a join where it is chosen, as where it is written (`join`)
+            Seg::Lit(t) if said && t.starts_with('/') && empty(&out) => {
+                if t.len() > 1 {
+                    out = lit(&t[1..]);
+                }
+            }
             Seg::Var(n, vs) => {
                 let mut values: Vec<Built> = vec![];
                 for y in vs.iter().map(|x| put_var(x, name, v)) {
@@ -404,7 +441,10 @@ fn put_var(b: &Built, name: &str, v: &Built) -> Built {
                 }
                 out.push(Seg::Var(n.clone(), values));
             }
-            Seg::Env(var, default) => out = join(&out, &looked_up(put_var(var, name, v), default.clone()), ""),
+            Seg::Option(x, d) => out = join(&out, &defaulted(x, put_var(d, name, v)), ""),
+            Seg::Env(var, default) => {
+                out = join(&out, &looked_up(put_var(var, name, v), default.as_ref().map(|d| put_var(d, name, v))), "")
+            }
             Seg::Within(n, path, base) => out = join(&out, &named_within(n, within(&put_var(path, name, v), &put_var(base, name, v))), ""),
             s => out = join(&out, &vec![s.clone()], ""),
         }
@@ -451,12 +491,14 @@ pub fn environment_named(names: &[Built]) -> Option<Built> {
 /// be said; and where no code says it, a value the code gives no name, since a lookup whose name
 /// the code does not decide names no variable. A default that is the variable itself says nothing
 /// besides it, as in `or_else` (`$F` else `$F` is `$F`), whether the name was said where the
-/// lookup is written or handed after it: a lookup commutes with what is handed.
+/// lookup is written or handed after it: a lookup commutes with what is handed. A default that is
+/// the empty path names nothing, so the lookup is the variable alone (`defaulted`).
 fn looked_up(name: Built, default: Option<Built>) -> Built {
+    let default = default.filter(|d| !empty(d));
     if known(&name) {
         let var = environment(&render(&name));
         return match default {
-            Some(d) if d != var => vec![Seg::Option(format!("${}", render(&name)), d)],
+            Some(d) if d != var => defaulted(&format!("${}", render(&name)), d),
             _ => var,
         };
     }
@@ -464,7 +506,7 @@ fn looked_up(name: Built, default: Option<Built>) -> Built {
         return vec![Seg::Env(name, default)];
     }
     match default {
-        Some(d) => vec![Seg::Option("value".into(), d)],
+        Some(d) => defaulted("value", d),
         None => hole("value"),
     }
 }
@@ -477,14 +519,16 @@ fn looked_up(name: Built, default: Option<Built>) -> Built {
 /// program hands (what the environment says, a value the code does not know) is that input with
 /// its default and nothing beside it, as an option of the command line is: one place, drawn as
 /// its default, which a run reads or writes whatever the input says. What a caller hands is
-/// followed to the caller, so it stays beside the default.
+/// followed to the caller, so it stays beside the default. A fallback that is the empty path names
+/// nothing, so an input with it is the input alone (`defaulted`).
 pub fn or_else(value: Vec<Built>, fallback: Vec<Built>) -> Vec<Built> {
     // a fallback that is the value itself says nothing besides it: `fs::canonicalize(p).ok().unwrap_or(p)`
     // is a path of the place `p` is
-    let fallback: Vec<Built> = fallback.into_iter().filter(|f| !value.contains(f)).collect();
-    if fallback.is_empty() && !value.is_empty() {
+    let said: Vec<Built> = fallback.iter().filter(|f| !value.contains(f) && !empty(f)).cloned().collect();
+    if said.is_empty() && !value.is_empty() {
         return value;
     }
+    let fallback = if value.is_empty() { fallback } else { said };
     // a variable of the environment whose name is still to be said is an input with the default,
     // the variable once the name is (`os.environ.get(name, "")` handed `"REPORT"` is
     // `os.environ.get("REPORT", "")`)
@@ -580,8 +624,9 @@ pub fn hole(s: &str) -> Built {
 }
 
 /// `a` then `b`, with `sep` between them; adjacent literal text merges. The empty path is the unit
-/// of a path's join, in every language (`Path("") / "x"`, `join("", "x")`, `PathBuf::from("").join("x")`
-/// are `x`), so nothing stands between it and what is joined to it.
+/// of a path's join on either side, in every language (`Path("") / "x"`, `join("", "x")`,
+/// `PathBuf::from("").join("x")` are `x`, and `Path("x") / ""` is `x`), after any base, one that ends
+/// in a value not said as well, so nothing stands between it and what is joined to it.
 pub fn join(a: &Built, b: &Built, sep: &str) -> Built {
     // a path within a base, joined at that base, is the path (`a.join(b.strip_prefix(a))` is `b`),
     // also where the `/` between them is already written (a value said for an input of `{a}/{w}`),
@@ -589,10 +634,13 @@ pub fn join(a: &Built, b: &Built, sep: &str) -> Built {
     if let Some(at) = rejoined(a, b, sep) {
         return at;
     }
+    if sep == "/" && empty(b) {
+        return a.clone();
+    }
     let mut out = a.clone();
-    let empty = sep == "/" && known(a) && render(a).is_empty();
+    let unit = sep == "/" && empty(a);
     let rest: Vec<Seg> =
-        if sep.is_empty() || empty { b.clone() } else { std::iter::once(Seg::Lit(sep.into())).chain(b.iter().cloned()).collect() };
+        if sep.is_empty() || unit { b.clone() } else { std::iter::once(Seg::Lit(sep.into())).chain(b.iter().cloned()).collect() };
     for s in rest {
         match (out.last_mut(), &s) {
             (Some(Seg::Lit(x)), Seg::Lit(y)) => x.push_str(y),
@@ -760,16 +808,29 @@ fn written_in(b: &Built, mut value: impl FnMut(&Seg) -> Option<Vec<Built>>) -> V
 /// variable every value `all` gives a segment.
 fn put(b: &Built, one: &[(Seg, Built)], all: &[(Seg, Vec<Built>)]) -> Built {
     let (mut out, mut said): (Built, bool) = (vec![], false);
-    for s in b {
-        if let Some((_, v)) = one.iter().find(|(k, _)| k == s) {
-            out = join(&out, v, "");
+    for (i, s) in b.iter().enumerate() {
+        // what is written in for the segment, where something is: what `one` gives it; a default,
+        // a lookup and a path within a base, each with what is handed written into it
+        let piece = match s {
+            _ if one.iter().any(|(k, _)| k == s) => one.iter().find(|(k, _)| k == s).map(|(_, v)| v.clone()),
+            // a default is a term of the parameters of the function that writes it: what the callers
+            // hand is written into it as into any value there (`out.unwrap_or_else(|| made(home))`)
+            Seg::Option(x, d) => Some(defaulted(x, put(d, one, all))),
+            // the variable whose name is written in: a lookup commutes with what is handed
+            Seg::Env(name, default) => Some(looked_up(put(name, one, all), default.as_ref().map(|d| put(d, one, all)))),
+            // a path within a base, both written in: decided where the base is now at its front
+            Seg::Within(n, path, base) => Some(named_within(n, within(&put(path, one, all), &put(base, one, all)))),
+            _ => None,
+        };
+        if let Some(v) = piece {
+            out = if empty(&v) { unit(out, b.get(i + 1)) } else { join(&out, &v, "") };
             said = true;
             continue;
         }
         match s {
             Seg::Lit(t) if said && up_first(t) => out = up_from(out, t),
             // the empty path is the unit of a join where it is written in, as where it is written (`join`)
-            Seg::Lit(t) if said && t.starts_with('/') && known(&out) && render(&out).is_empty() => {
+            Seg::Lit(t) if said && t.starts_with('/') && empty(&out) => {
                 if t.len() > 1 {
                     out = lit(&t[1..]);
                 }
@@ -785,13 +846,28 @@ fn put(b: &Built, one: &[(Seg, Built)], all: &[(Seg, Vec<Built>)]) -> Built {
                 values.truncate(MAX);
                 out = join(&out, &vec![Seg::Var(n.clone(), values)], "");
             }
-            // the variable whose name is written in: a lookup commutes with what is handed
-            Seg::Env(name, default) => out = join(&out, &looked_up(put(name, one, all), default.clone()), ""),
-            // a path within a base, both written in: decided where the base is now at its front
-            Seg::Within(n, path, base) => out = join(&out, &named_within(n, within(&put(path, one, all), &put(base, one, all))), ""),
             s => out = join(&out, &vec![s.clone()], ""),
         }
         said = false;
+    }
+    out
+}
+
+/// `out` with the empty path written after it, `next` the segment after that: the empty path is the
+/// unit of a join after any base, so the `/` `out` ends in goes where nothing more of the part follows
+/// (`{a}/{w}` with the empty path for `w` is `a`); a root that is only `/` stays.
+fn unit(mut out: Built, next: Option<&Seg>) -> Built {
+    if next.is_some_and(|n| !matches!(n, Seg::Lit(t) if t.starts_with('/'))) {
+        return out;
+    }
+    let alone = out.len() == 1;
+    if let Some(Seg::Lit(t)) = out.last_mut() {
+        if t.ends_with('/') && !(alone && t == "/") {
+            t.pop();
+            if t.is_empty() {
+                out.pop();
+            }
+        }
     }
     out
 }
@@ -1036,7 +1112,8 @@ pub fn place(b: &Built, op: &str) -> Option<String> {
 /// so the listing and the files in it are one folder, whatever the operation that names it.
 pub fn folders<'a>(places: impl Iterator<Item = &'a str> + Clone) -> HashSet<String> {
     let below: HashSet<&str> = places.clone().flat_map(|a| a.trim_end_matches('/').match_indices('/').map(move |(i, _)| &a[..i])).collect();
-    places.filter(|a| !a.ends_with('/') && below.contains(a)).map(str::to_string).collect()
+    // a touch that names no place is in no folder, below `/` as anywhere
+    places.filter(|a| !a.is_empty() && !a.ends_with('/') && below.contains(a)).map(str::to_string).collect()
 }
 
 /// The name of the one value `built` holds, where it is whole in `holders` (the functions of the
@@ -1059,16 +1136,6 @@ fn by_value<'b>(store: &crate::builder::GraphBuilder, holders: &[&str], mut buil
     let takes = |h: &&&str| store.nodes.get(**h).is_some_and(|n| n.params.iter().any(|p| !p.receiver && p.name == first));
     let [holder] = holders.iter().filter(takes).collect::<Vec<_>>()[..] else { return None };
     Some(format!("{}.{first}", store.owner(holder)?))
-}
-
-/// What names the place a value is: the value, where an input whose default is the empty path is
-/// the input alone, since the empty path names nothing: `process.argv[2] ?? ""` is named as
-/// `process.argv[2]!` is, `os.environ.get("REPORT", "")` as `$REPORT`.
-fn naming(b: &Built) -> Built {
-    match b.as_slice() {
-        [Seg::Option(x, d)] if known(d) && render(d).is_empty() => hole(x),
-        _ => b.clone(),
-    }
 }
 
 /// The deepest a value is followed out through the callers.
@@ -1205,9 +1272,21 @@ pub struct Callers<'c, H> {
     /// The cycles the calls make.
     pub cycles: &'c Cycles,
     pub family: &'c crate::builder::Family,
-    pub default: &'c dyn Fn(&str, &str) -> Vec<Built>,
+    pub default: &'c Defaults<'c>,
     pub entry: &'c dyn Fn(&str) -> bool,
     pub decides: &'c dyn Fn(&Built) -> bool,
+}
+
+/// The default the parameter `p` of the function `f` declares, if it declares one: the values it holds
+/// where a call leaves it out, none where the default is nothing (Python's `None`, TypeScript's optional
+/// parameter). Each reader says which of its syntax declares one; a language without parameter
+/// defaults hands `no_defaults`.
+pub type Defaults<'c> = dyn Fn(&str, &str) -> Option<Vec<Built>> + 'c;
+
+/// The defaults of a language whose parameters declare none (Rust: an input the caller may leave out is
+/// an `Option` with its fallback, `or_else`).
+pub fn no_defaults(_: &str, _: &str) -> Option<Vec<Built>> {
+    None
 }
 
 /// A completion of a value at one place of the callers.
@@ -1334,10 +1413,13 @@ impl<'c, H: Handing> Callers<'c, H> {
             return vec![Completion { whole: Whole::at(f), term: b.clone(), decided_in: here, set_up_in: None }];
         }
         let (calls, family) = (self.calls, self.family);
-        // a parameter a call leaves out holds its default, an input its callers may override
+        // a parameter a call leaves out holds its default, an input its callers may override; one that
+        // declares none holds what no code says. A default that is nothing (`None`, an optional
+        // parameter) is no value, so what is built from it is no term, and a default built beside it
+        // (`path or "out.txt"`) is what the call gives
         let unknown = |p: &str| match (self.default)(f, p) {
-            d if d.is_empty() => vec![hole(p)],
-            d => option(p, d),
+            Some(d) => option(p, d),
+            None => vec![hole(p)],
         };
         // the value where no caller hands its parameters, each value a variable can be once
         let given = |b: &Built, whole: Whole| -> Vec<Completion> {
@@ -1416,13 +1498,18 @@ impl<'c, H: Handing> Callers<'c, H> {
             return given(b, Whole::at(f));
         }
         let mut out: Vec<Completion> = if (self.entry)(f) { given(b, Whole::users(f)) } else { vec![] };
+        // whether a call leaves a parameter its default of nothing: no term there, and no value whole here
+        let mut none = false;
         for (a, named, next_met) in onward {
             let hands = |p: &str| theirs(named, p).and_then(|q| a.hands(&q));
             // through a base's method called on a parameter, the callers that hand that parameter
             // decide which member runs: the one `f` is a method of
             let class = f.rsplit_once('.').map_or("", |(c, _)| c);
             let next = named.and(a.on()).map(|q| (q, class));
-            for x in substitute(b, |p| hands(p).filter(|v| !v.is_empty()).unwrap_or_else(|| unknown(p))) {
+            // a call that hands a parameter nothing (`None`, `undefined`) leaves it out
+            let terms = substitute(b, |p| hands(p).filter(|v| !v.is_empty()).unwrap_or_else(|| unknown(p)));
+            none |= terms.is_empty();
+            for x in terms {
                 out.extend(self.of(a.caller(), &x, next, here.as_deref(), &next_met, depth + 1));
                 if out.len() >= COMPLETIONS {
                     return out;
@@ -1430,7 +1517,7 @@ impl<'c, H: Handing> Callers<'c, H> {
             }
         }
         // a cycle nothing outside calls, nor its users: whole where the walk went into it
-        if out.is_empty() && met.is_empty() {
+        if out.is_empty() && met.is_empty() && !none {
             return given(b, Whole::at(f));
         }
         out
@@ -1609,7 +1696,8 @@ pub fn held_by(g: &str, b: Built) -> Built {
         .map(|s| match s {
             Seg::Param(x) => Seg::Held(g.to_string(), x),
             Seg::Var(n, vs) => Seg::Var(n, vs.into_iter().map(|v| held_by(g, v)).collect()),
-            Seg::Env(name, default) => Seg::Env(held_by(g, name), default),
+            Seg::Option(x, d) => Seg::Option(x, held_by(g, d)),
+            Seg::Env(name, default) => Seg::Env(held_by(g, name), default.map(|d| held_by(g, d))),
             Seg::Within(n, path, base) => Seg::Within(n, held_by(g, path), held_by(g, base)),
             s => s,
         })
@@ -1671,7 +1759,7 @@ pub fn complete<H: Handing>(
     calls: Vec<Waiting>,
     handing: &[H],
     family: &crate::builder::Family,
-    default: &dyn Fn(&str, &str) -> Vec<Built>,
+    default: &Defaults,
     entry: &dyn Fn(&str) -> bool,
 ) -> Vec<Completed> {
     let cycles = Cycles::of(handing);
@@ -1693,6 +1781,7 @@ pub fn complete<H: Handing>(
                     false => callers.at(&f, &b, 0),
                 })
                 .collect();
+            let found = defaults_alone(found);
             // as built, each value a variable can be once
             let mut terms: Vec<Built> = vec![];
             for b in built.iter().flat_map(chosen) {
@@ -1703,6 +1792,21 @@ pub fn complete<H: Handing>(
             (f, t, terms, found)
         })
         .collect()
+}
+
+/// The completions of one call, an input nothing in the program hands drawn as its default and nothing
+/// beside it (`or_else`): where no caller says the input `x` of `x.unwrap_or(d)` (the users of an entry
+/// hand it, or nothing calls the function), the hole `x` is gone beside `x` with its default, as a
+/// parameter's declared default is drawn (`path: string = "out.txt"`).
+fn defaults_alone(found: Vec<Completion>) -> Vec<Completion> {
+    let defaulted: HashSet<String> = found
+        .iter()
+        .filter_map(|c| match c.term.as_slice() {
+            [Seg::Option(x, _)] => Some(x.clone()),
+            _ => None,
+        })
+        .collect();
+    found.into_iter().filter(|c| !matches!(c.term.as_slice(), [Seg::Hole(x)] if defaulted.contains(x))).collect()
 }
 
 /// Place the completed calls: a file is touched by the function that opens it, at every place
@@ -1744,11 +1848,7 @@ pub fn place_calls(store: &mut crate::builder::GraphBuilder, completed: Vec<Comp
         // a route that reaches none of the callers that make it whole sees the call as it was read,
         // a file named by the value its function holds as it is where nothing calls the function
         if wholes.iter().any(|w| !w.both(&f).0.is_empty()) {
-            let what = if t.kind == World::Disk {
-                by_value(store, &[f.as_str()], built.iter().map(naming).collect::<Vec<_>>().iter())
-            } else {
-                None
-            };
+            let what = if t.kind == World::Disk { by_value(store, &[f.as_str()], built.iter()) } else { None };
             let dir = if t.kind == World::Net { way_of_request(built.iter()).or(t.dir) } else { t.dir };
             store.instead(
                 &f,
@@ -1868,11 +1968,10 @@ pub fn place_calls(store: &mut crate::builder::GraphBuilder, completed: Vec<Comp
             // database is opened on is named as a file is, however the code joins its path.
             let file = t.kind == World::Disk || matches!(t.kind, World::Db(db) if crate::knowledge::opens_a_file(db, &t.op));
             let named = |built: &[&Built]| {
-                let built: Vec<Built> = built.iter().map(|b| naming(b)).collect();
-                let value = if file { by_value(store, &holders, built.iter()) } else { None };
+                let value = if file { by_value(store, &holders, built.iter().copied()) } else { None };
                 value.or_else(|| {
                     let mut terms: Vec<String> = vec![];
-                    for b in &built {
+                    for b in built {
                         let term = render(b).replace('\\', "/");
                         let said = b.iter().any(|s| !matches!(s, Seg::Hole(h) if !h.starts_with('$')));
                         // the empty path names nothing
@@ -1969,7 +2068,7 @@ mod tests {
 
     /// The completions of `read(path)`'s path through `calls`, with `default` for what a call
     /// leaves out.
-    fn completed(calls: &[Call], default: &dyn Fn(&str, &str) -> Vec<Built>, dir: crate::model::Dir) -> Vec<Completion> {
+    fn completed(calls: &[Call], default: &Defaults, dir: crate::model::Dir) -> Vec<Completion> {
         let t = crate::model::Touch::new(crate::model::World::Disk, Some(dir));
         let decides = |b: &Built| decided(b, &t);
         let family = crate::builder::Family::default();
@@ -1984,7 +2083,7 @@ mod tests {
     #[test]
     fn the_function_that_writes_the_path_decides_it() {
         use crate::model::Dir;
-        let none = |_: &str, _: &str| vec![];
+        let none = no_defaults;
         let handed = [Call("rows", "read", vec![("path", lit("data/rows.csv"))]), Call("main", "rows", vec![])];
         assert_eq!(
             completed(&handed, &none, Dir::Read),
@@ -1999,7 +2098,7 @@ mod tests {
             [Completion { whole: Whole::at("main"), term: lit("data/rows.csv"), decided_in: Some("main".into()), set_up_in: None }]
         );
         let left_out = [Call("main", "read", vec![])];
-        let default = |_: &str, p: &str| if p == "path" { vec![lit("out.csv")] } else { vec![] };
+        let default = |_: &str, p: &str| (p == "path").then(|| vec![lit("out.csv")]);
         assert_eq!(
             completed(&left_out, &default, Dir::Read),
             [Completion {
@@ -2092,9 +2191,11 @@ mod tests {
         for b in [hole("project"), [lit("out/"), hole("kind")].concat()] {
             assert_eq!(place(&[b.clone(), lit("/..")].concat(), "remove_dir_all"), place(&b, "remove_dir_all"), "{b:?}");
         }
+        // an input whose default is the empty path is the input alone, joined with more as where it is whole (#428)
         let unset = or_else(vec![environment("DATA_DIR")], vec![lit("")]);
+        assert_eq!(unset, [environment("DATA_DIR")]);
         let joined: Vec<Option<String>> = cross(&unset, &[lit("sub/report.txt")], "/").iter().map(|b| place(b, "read")).collect();
-        assert_eq!(joined, [Some("sub/report.txt".into())], "the empty path joins as nothing, and the variable is its input");
+        assert_eq!(joined, [place(&env("/sub/report.txt"), "read")], "the variable is its input, and keeps its place in the join");
     }
 
     /// A place the program names a place below is a directory, whatever operation names it: the
@@ -2103,6 +2204,7 @@ mod tests {
     fn a_place_with_places_below_is_a_folder() {
         let places = ["D/*/IO-*", "D/*/IO-*/Metadata.xml", "D/x.csv", "D/*/IO-*/"];
         assert_eq!(folders(places.into_iter()), HashSet::from(["D/*/IO-*".to_string()]));
+        assert!(folders(["/srv/x.html", ""].into_iter()).is_empty(), "what names no place is no folder");
     }
 
     /// A hole keeps the name the code gives the value: a value the code binds and no code Atlas
@@ -2195,15 +2297,18 @@ mod tests {
 
         /// Law: a join commutes with what is handed. `{P}/a/b` with `v` written in for `{P}` is `v`
         /// joined with `a/b`, also where `v` is the empty path, the unit of a join (`PathBuf::new()`):
-        /// then it is `a/b`, and no `/` stands before it.
+        /// then it is `a/b`, and no `/` stands before it. So on the other side, after any base: `a/b/{P}`
+        /// handed the empty path is `a/b`, and no `/` stands after it (#427).
         #[test]
         fn a_join_commutes_with_what_is_handed(rest in proptest::collection::vec(a_part(), 1..3), v in proptest::option::of(a_path())) {
             let p = vec![Seg::Param("P".into())];
-            let t = rest.iter().fold(p, |b, q| join(&b, q, "/"));
+            let t = rest.iter().fold(p.clone(), |b, q| join(&b, q, "/"));
             let v = v.unwrap_or_default();
             let hand = |x: &str| if x == "P" { vec![v.clone()] } else { vec![vec![Seg::Param(x.into())]] };
             let written = rest.iter().fold(v.clone(), |b, q| join(&b, q, "/"));
             proptest::prop_assert_eq!(substitute(&t, hand), vec![written]);
+            let base = rest.iter().skip(1).fold(rest[0].clone(), |b, q| join(&b, q, "/"));
+            proptest::prop_assert_eq!(substitute(&join(&base, &p, "/"), hand), substitute(&base, hand).iter().map(|b| join(b, &v, "/")).collect::<Vec<_>>());
         }
 
         /// Law: a join after a path taken within the same base is the identity, `a.join(b.strip_prefix(a))`
@@ -2465,7 +2570,7 @@ mod tests {
         let t = Touch::new(World::Disk, Some(Dir::Read));
         let decides = |b: &Built| decided(b, &t);
         let family = crate::builder::Family::default();
-        let none = |_: &str, _: &str| vec![];
+        let none = no_defaults;
         let calls = [Call("main", "read", vec![("path", lit("data"))]), Call("other", "read", vec![("path", hole("asked"))])];
         let cycles = Cycles::of(&calls);
         let callers =
@@ -2501,7 +2606,7 @@ mod tests {
     #[test]
     fn a_recursion_reaches_every_depth() {
         use crate::model::Dir;
-        let none = |_: &str, _: &str| vec![];
+        let none = no_defaults;
         let path = || vec![Seg::Param("path".into())];
         let main = || Call("main", "read", vec![("path", lit("data"))]);
         let probes: Vec<Vec<String>> = (0..=20)
@@ -2567,7 +2672,7 @@ mod tests {
     #[test]
     fn a_recursion_through_a_cycle_reaches_every_depth() {
         use crate::model::Dir;
-        let none = |_: &str, _: &str| vec![];
+        let none = no_defaults;
         let p = |name: &str| vec![Seg::Param(name.into())];
         let probes: Vec<Vec<String>> = (0..=20)
             .flat_map(|k| {

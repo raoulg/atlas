@@ -658,6 +658,10 @@ pub(super) fn bound_in(def: TsNode, src: &[u8]) -> HashSet<String> {
 /// `Some(x)` and `Ok(x)` are `x`.
 pub(super) const HOLDING: &[&str] = &["Some", "Ok"];
 
+/// The variant of `Option` that holds no value: handed to a parameter, it hands nothing, as a call
+/// that leaves a parameter out does in a language with defaults.
+pub(super) const NOTHING: &str = "None";
+
 /// `Option` and `Result` methods whose argument is the other arm: `find(g).unwrap_or_else(|| infer(g))`.
 pub(super) const OR_ELSE: &[&str] = &["unwrap_or_else", "unwrap_or", "or_else", "or", "map_or_else", "map_or"];
 

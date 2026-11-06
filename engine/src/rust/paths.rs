@@ -206,6 +206,9 @@ impl<'a> Eval<'a> {
                 return named_by(name, self.of(at, v, depth + 1));
             }
         }
+        if name == super::module::NOTHING {
+            return vec![];
+        }
         self.constant(at.m, &[name.to_string()]).unwrap_or_else(|| vec![hole(name)])
     }
 
