@@ -1079,12 +1079,28 @@ function viewFaults() {
   return out.map(f => `seed ${VIEW_SEED}: ${f}`);
 }
 
-// with no route named, every route of the program but its tests; `--overview` asks the overview, with the test code and without;
+// The own arrow of each function in the overview's fine plan `F₀`, with the test code: `own FUNCTION takes PLACE` and
+// `own FUNCTION gives PLACE`, each place by its key in the plan (`t:` a type, `w:` a place of the world)
+function ownArrows() {
+  V.route = null; V.kind = null; V.part = null; V.focus = new Set(); V.tests = true;
+  for (const k of Object.keys(V.open)) V.open[k] = new Set();
+  M.plan();
+  const facts = [];
+  for (const P of window.atlasPlan.fine.pills.values()) {
+    for (const k of P.D.keys()) facts.push(`own ${P.steps[0]} takes ${k}`);
+    for (const k of P.C.keys()) facts.push(`own ${P.steps[0]} gives ${k}`);
+  }
+  return facts.sort();
+}
+
+// with no route named, every route of the program but its tests; `--own` the own arrows of the overview's fine plan;
+// `--overview` asks the overview, with the test code and without;
 // `--focus` every focus, with the test code and without; `--kinds` the routes of each kind; `--views` every view state; `--ends`
 // whether every route ends at a place
 // the answer is written whole before the process ends: a pipe takes some 64 KB at a time
 const said = answer => process.stdout.write(JSON.stringify(answer), () => process.exit(0));
-if (routes[0] === "--views") said({"@views": {facts: [], faults: viewFaults()}});
+if (routes[0] === "--own") said({"@own": {facts: ownArrows(), faults: []}});
+else if (routes[0] === "--views") said({"@views": {facts: [], faults: viewFaults()}});
 else if (routes[0] === "--ends") said({"@ends": {facts: [], faults: routeEnds()}});
 else if (routes[0] === "--kinds") said({"@kinds": {facts: [], faults: kindFaults()}});
 else if (routes[0] === "--focus") said({"@focus": {facts: [], faults: [...focusFaults(true), ...focusFaults(false)]}});
