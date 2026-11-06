@@ -250,7 +250,14 @@ writes, so a value between two of them is one part; `parent` drops exactly the l
 directory, `{p}/..`, taken once `p` is substituted: `parent` commutes with substitution (#284). A pattern below a directory (`D.glob("*/IO-*")`) is
 the fiber of `D` over the predicate "matches the pattern": the part of the directory the pattern
 holds. A listing of all of `D` (`D.iterdir()`, `D.glob("*")`) is the fiber over the predicate that
-always holds, `D` itself, and each element it yields is `D/*`. An element of a collection is also
+always holds, `D` itself, and each element it yields is `D/*`. So places on the disk are ordered by their terms, a
+strict partial order: `p` lies in `q` where `q` is a folder and `p` lies below it, or `q` is a pattern and `p`, or a
+folder `p` lies below, is one of the places it holds (`data/raw/{kind}/parts/` lies in `data/raw/`, `data/out.csv` in
+`data/*.csv`). A part is held by the same part, by `*` (any one part: a name, a hole, a pattern of one part) or by a
+pattern of one part that matches its name, and `**` holds any number of parts, none as well; a hole the code gives no
+name is held only by a wildcard, since two of them are two values, and a file the code names holds nothing. Making or
+writing a place changes what a listing of every place above it reads (writing `D/{k}/report.json` makes `D/{k}`, an
+element of `D/*`). An element of a collection is also
 what a function handed the collection to run on each element takes (`sorted(ps, key=lambda p: ..)`'s
 `p`) and what a pick of it gives (`max(ps)`, `ps[0]`). A lookup `d[k]` in a table the code writes is
 the value the key picks where the code decides `k`, and else the union of the values `d` holds. A
@@ -315,7 +322,11 @@ call no name holds is `{}` in every language. A suffix a path is given (`with_su
 as `parent` is. A pattern is the fiber below its directory, and what is read of what
 it yields is the same place. A place the program names a place below is a directory (`D/*/IO-*/`,
 which `glob` lists and `io_dir / "Metadata.xml"` reads in), so the listing and what is read in it
-fold into one folder. One file is one place, whatever operation touches it: the data read or
+fold into one folder. Two routes meet on the disk where a place one makes or writes is, or lies in, a place the other
+reads: what `unpack` makes in `data/raw/{kind}/` meets what `kinds` lists of `data/raw/`. The order is no line, since
+an inclusion is no function of the code, and no coarser place, since that would drop the term: each place keeps its
+own, and the order is a quotient of them, as a directory is of its files, by the folders and patterns the program
+itself touches. One file is one place, whatever operation touches it: the data read or
 written, a test whether it is there, a copy or a move into it or out of it, its removal
 (`File({main.folder}/note.json)` for the rename that moves a note in, the read and the `remove_file`
 alike). The place is the term; its label says the term's patterns in words, from the
@@ -346,9 +357,9 @@ is one in the same way, by what it serves: a set of methods at a path. `methods=
 **Where.** `paths.rs` (`Seg`, `join`, `place`, `folders`, `bound`, `each`, `chosen`, `substitute`, `with_suffix`,
 `environment_named`, `looked_up`, `or_else`, `within`, `Seg::Within`, `Callers`, `Cycles`, `wildcards`, `served`, `serving`),
 `model.rs` (`Route`, `Methods`, `Request`), the readers' `paths.rs` (`Eval::of`; Rust's `Eval::changed`), `flow.rs`
-(`Touch::place`), `plan.js` (`pathWords`), `knowledge.rs` (`PathFn`, `PathMethod::Within`, `ELEMENT_NAMES`,
+(`Touch::place`, `lies_in`, `Flow::lies_in`), `plan.js` (`pathWords`), `knowledge.rs` (`PathFn`, `PathMethod::Within`, `ELEMENT_NAMES`,
 `LISTING_ENTRIES`); the pairs `python/paths`, `places`, `kept`, `workbench`, `unset`, `opened`, `twice` (#324), `trees`
-(#325, #345) and `keys` (#352).
+(#325, #345), `keys` (#352) and `meets` (#381).
 
 ### A function's return is its summary
 **What.** What a function gives back is a term of its parameters, the same for every caller: its summary, the union of
@@ -943,7 +954,10 @@ parse the command line to the entry. The closed picture is `F/q`:
   lines to it, one solid and one dashed;
 - sibling steps that draw the same lines on `F` (the same places, versions and channels) are one pill,
   and each of its lines stands for the lines of all of them. The merge is decided on `F`, not on the
-  picture, so opening a family, a group or a directory never splits a pill it did not open;
+  picture, so opening a family, a group or a directory never splits a pill it did not open. A call is a
+  line as data is, so siblings are one pill only where they call the same steps and are called by the
+  same ones, and a call to a member is a call to the pill it joined: the merge is a quotient of the
+  picture's steps, and like every quotient it keeps the image of each line, both ends a box;
 - where a box stands is decided on `F`: a value stands in the smallest frame that holds all its users
   and its maker (a choice; for a value the body binds by its own code, the body's frame, or the choice whose arm binds
   it; the route frame when nothing in the plan makes it), a place of the world stands
@@ -1007,8 +1021,8 @@ test code (A filter: the program without its test code), and is the fiber of the
 line of a touch carries the formula of who makes its path whole, so the fiber can be taken on the
 plan too, and both ways give one plan.
 
-On the image the page then does only what is a quotient of `F` or a way of drawing it: the merge of
-siblings, the storage quotient and the fold (above); a value with no name and no type of the code's
+On the image the model merges the siblings (above, `siblings`), and the page then does only what is a
+quotient of `F` or a way of drawing it: the storage quotient and the fold (above); a value with no name and no type of the code's
 drawn as a wire from its maker to its takers, a vertex between two arrows contracted (a homotopy, as
 in rule 6); a type no line touches left out, since it lies on no border; and a place the route
 finds and changes drawn twice, `from X ⇄` on the left and `into X ⇄` on the right, one place with
@@ -1023,7 +1037,7 @@ Each law is then a theorem of the construction, or it is not yet, and says which
 | Side | decided on `F/q₀` and carried by `q` | `topology` (a place that changes side) |
 | Closing | `q` is a function of the set of open boxes | `topology` (closing draws the picture it was) |
 | Reading | the own arrow of an opened step is its border | `topology` |
-| Endpoints | every image of a place or an occurrence is a box | `pictures.py walk` |
+| Endpoints | every image of a place or an occurrence is a box | `pictures.py walk`; `plans.rs`, for every set of open steps of every route and every set of open packages of every overview: every line of the picture the model hands the page, its siblings merged, has both ends among its boxes, and the members of a merged box draw the same lines, calls among them (`ends` in `plans.mjs`) |
 | Across the cut | a cut step's arrow is the image of its body, made by the same construction (`cutArrow`) | `plans.rs` at the budgets 1, 2 and 3 (`ATLAS_FINE_BUDGET`), which cut the small programs as a large one is cut: each line of a cut step counts the fine lines its body draws there, and each cut step of the closed picture, opened and planned anew, refines the picture it was cut in (`cutOpenings` in `plans.mjs`); at the same budgets a route whose body, unfolded, has 2^40 occurrences, which only an arrow made without unfolding the body can plan (`a_step_beyond_the_cut_is_made_without_unfolding_its_body`); `topology` with a small budget |
 | The overview | `F₀/q` maps onto `F₀/q′` along the blocks, as a route's pictures do, the calls a channel among them | the oracle; `plans.rs` (`every_package_view_is_the_image_of_its_plan`), for every set of open packages and parts of every program: each line counts the fine lines it stands for and none is reached, a type internal to a closed package draws none, each call goes between the blocks of its ends, and the picture is a function of the set of open boxes; all of it again without the test code, whose plan is the fiber of the plan with it |
 
@@ -1036,8 +1050,8 @@ test runs the viewer's own model in node, the function every picture is drawn fr
 the pairs and of its programs.
 **Where.** `plan`, `sitesOf`, `figureOf`, `FIGURE_FIELDS`, `FIGURE_SLOTS` and `figurePart`, `setsAt` and `resolveWhole`, `throughOf` and `partIn`,
 `changedThrough` and `changesOwner`,
-`coarsen`, `cutArrow` and `typesOf`, `handTo` and `checkOpenings`, `overviewBase` and `overview` in `viewer/plan.js`, `cutOpenings` and
-`overviewFaults` in `engine/tests/plans.mjs`;
+`coarsen`, `siblings`, `cutArrow` and `typesOf`, `handTo` and `checkOpenings`, `overviewBase` and `overview` in `viewer/plan.js`,
+`cutOpenings`, `ends` and `overviewFaults` in `engine/tests/plans.mjs`;
 the field an argument reads, `Steps::fills` and `Steps::read_of` (`body.rs`); the class each field of a class holds, `Node::holds`;
 which parameters of no type of the code's hold a value, `builder::settle_parameters`; the fields a condition tests,
 `Steps::tests` (`body.rs`), and whether a figure is made sure of, `guarded` in `viewer/plan.js`; the names a body binds

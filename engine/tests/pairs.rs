@@ -565,6 +565,45 @@ fn a_folder_is_placed_as_the_files_in_it_are() {
     }
 }
 
+/// Places on the disk are ordered by their terms (`docs/reference/mathematics.md`, "Paths as terms"): a listing of a
+/// folder reads the fiber below it, so two routes meet where a place one writes or makes lies in a place the other
+/// reads (#381). The meets pair (`meets/{python,rust,typescript}`) keeps downloads per kind in one folder: `fetch`
+/// writes a file below it, `unpack` makes a folder below it, `kinds` lists it. The clean side names the folder by one
+/// constant, and in every language the file and the folder each lie in the folder `kinds` lists, keeping a place of
+/// their own (the order is a quotient, no fact dropped). The shortcut takes the folder from settings Atlas does not
+/// follow for the writes and spells it out for the listing: nothing in its code says the three are one folder, so
+/// nothing it writes or makes lies in what it lists.
+#[test]
+fn a_place_written_below_a_listed_folder_lies_in_it() {
+    for language in ["python", "rust", "typescript"] {
+        for side in ["clean", "shortcut"] {
+            let g = pair(&format!("meets/{language}/{side}"));
+            let flow = atlas_engine::flow::of(&g);
+            let at = |name: &str, verb: &str| -> Vec<String> {
+                g.nodes
+                    .iter()
+                    .filter(|n| !n.library && n.name == name)
+                    .flat_map(|n| flow.drawn.get(&n.id).into_iter().flatten())
+                    .filter(|w| w.verb == verb && !w.place.file.is_empty())
+                    .map(|w| w.place.id.clone())
+                    .collect()
+            };
+            let listed = at("kinds", "lists");
+            assert_eq!(listed.len(), 1, "{language} {side}: the folder `kinds` lists, {listed:?}");
+            for (name, verb) in [("fetch", "writes"), ("unpack", "creates")] {
+                let placed = at(name, verb);
+                assert!(!placed.is_empty() && !placed.contains(&listed[0]), "{language} {side}: `{name}` keeps its own place, {placed:?}");
+                let meets = placed.iter().all(|p| flow.lies_in.get(p).is_some_and(|above| above.contains(&listed[0])));
+                let none = placed.iter().all(|p| flow.lies_in.get(p).is_none_or(|above| !above.contains(&listed[0])));
+                match side {
+                    "clean" => assert!(meets, "{language}: `{name}`'s {placed:?} lies in {listed:?}: {:?}", flow.lies_in),
+                    _ => assert!(none, "{language}: `{name}`'s {placed:?} lies in nothing listed: {:?}", flow.lies_in),
+                }
+            }
+        }
+    }
+}
+
 /// An empty default decides no place (`docs/reference/mathematics.md`, "Paths as terms"): the empty
 /// path names nothing, so an input that falls back to it is named as the input alone. The unset
 /// pair (`unset/{python,rust,typescript}`) keeps a report and a log in the files the environment

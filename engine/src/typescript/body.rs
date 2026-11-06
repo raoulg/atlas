@@ -1,7 +1,7 @@
 //! A function's body as TypeScript reads it: its steps in the order they run, what its calls touch,
 //! the values its names hold and what made them, and the syntax of its choices and comparisons.
 
-use std::cell::OnceCell;
+use std::cell::{OnceCell, RefCell};
 use std::collections::{HashMap, HashSet};
 
 use indexmap::IndexMap;
@@ -570,6 +570,9 @@ pub(super) struct Body<'a, 't> {
     pub(super) read: Read<'t>,
     /// The bindings the body's calls change in place (`changed_bindings`), found once the body is set up.
     in_place: OnceCell<HashSet<(String, Option<usize>)>>,
+    /// The values each name holds where it stands, by the name's node and the depth it is followed at (`held`), for the
+    /// names the steps have kept so far, by how many they are.
+    holds: RefCell<(usize, HashMap<(usize, u32), Vec<Held>>)>,
 }
 
 const STRINGS: &[&str] = &["string", "template_string"];
@@ -615,6 +618,7 @@ impl<'a, 't> Body<'a, 't> {
             keeps_command_line: HashSet::new(),
             read: Read::default(),
             in_place: OnceCell::new(),
+            holds: RefCell::new((0, HashMap::new())),
         };
         b.typed(n);
         for a in walk(body, &["assignment_expression"]) {
@@ -1333,8 +1337,37 @@ impl<'a, 't> Body<'a, 't> {
         declared.is_some_and(|d| d.id() != i.id() && self.locals.which(d, self.src) == self.locals.which(i, self.src))
     }
 
-    /// The values the name `i` holds where it stands (`hands`).
+    /// The values the name `i` holds where it stands (`hands`), each once. They are a function of the name's binding, the
+    /// depth it is followed at and the names the steps have kept (`kept`), the body being set up whole, so each is found
+    /// once and shared by every occurrence and every call that follows the name there: a name that stands for another
+    /// twice along eight bindings is followed along eight bindings, not along 2^8 occurrences. `kept` only grows
+    /// (`Steps::kept`), so how many names it holds says which of its states asks.
     fn held(&self, i: TsNode, kept: &HashSet<String>, depth: u32, out: &mut Vec<Held>) {
+        let key = (i.id(), depth);
+        {
+            let mut holds = self.holds.borrow_mut();
+            if holds.0 != kept.len() {
+                *holds = (kept.len(), HashMap::new());
+            }
+            if let Some(found) = holds.1.get(&key) {
+                out.extend(found.iter().cloned());
+                return;
+            }
+        }
+        let mut found = vec![];
+        self.held_anew(i, kept, depth, &mut found);
+        let mut once: Vec<Held> = Vec::with_capacity(found.len());
+        for h in found {
+            if !once.iter().any(|o| same(o, &h)) {
+                once.push(h);
+            }
+        }
+        out.extend(once.iter().cloned());
+        self.holds.borrow_mut().1.insert(key, once);
+    }
+
+    /// The values the name `i` holds where it stands, as `held` finds them, the names it follows asked of `held`.
+    fn held_anew(&self, i: TsNode, kept: &HashSet<String>, depth: u32, out: &mut Vec<Held>) {
         let name = text(i, self.src);
         if i.kind() == "this" {
             out.extend(self.cls.clone().map(|k| Held::new(k, "")));
@@ -2603,6 +2636,13 @@ impl<'a, 't> Body<'a, 't> {
             self.read.mutates.push((t, r));
         }
     }
+}
+
+/// Whether two values are the same in every part, where they come from included: what a consumer of `Body::held` reads
+/// of one it reads alike of the other.
+fn same(a: &Held, b: &Held) -> bool {
+    let Held { ty, name, at, bound, fills, through, param } = a;
+    (ty, name, at, bound, fills, through, param) == (&b.ty, &b.name, &b.at, &b.bound, &b.fills, &b.through, &b.param)
 }
 
 /// The names in an expression that stand for values, and `this`: not the key of a lookup, which

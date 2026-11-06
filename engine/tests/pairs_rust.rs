@@ -1912,3 +1912,87 @@ fn a_change_of_a_part_changes_the_whole() {
 fn places_a_path_through_helpers_is_the_path_in_place() {
     common::a_path_through_helpers_is_the_path_in_place("rust");
 }
+
+/// One side of the assigned pair (`tests/pairs/assigned/rust`): a level kept under a name, a function
+/// given two names, names gathered into a list. The clean side writes each once, the shortcut with
+/// the name assigned after a `let` of nothing, a tuple pattern as a parameter, a tuple pattern in a `let`.
+fn assigned(side: &str) -> Graph {
+    analyze(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/pairs/assigned/rust").join(side), &Options::default()).expect("reads")
+}
+
+/// What a function's steps are, each with what it is handed and what it gives: the shape of its body.
+fn shape(g: &Graph, f: &str) -> Vec<(String, String, Vec<String>, Vec<String>)> {
+    node(g, f).sites.iter().map(|s| (s.op.clone(), s.to.clone(), handed(s), gives(s).into_iter().map(String::from).collect())).collect()
+}
+
+/// A step handed a name assigned again is handed what the assignment gave it (#376): `let mut kept = None;
+/// kept = Some(level); draw(kept)` reads as `let kept = Some(level); draw(kept)` does, also where the
+/// `let` is a tuple pattern (`let (mut kept, mut count) = (None, 0)`). The two forms say the same, so
+/// `draw` is handed the same on both sides, and something.
+#[test]
+fn composition_a_name_assigned_again_is_handed_what_it_was_assigned() {
+    let (c, s) = (assigned("clean"), assigned("shortcut"));
+    for f in ["assigned.alone", "assigned.paired"] {
+        let hands = handed(step(&c, f, "assigned.draw"));
+        assert!(!hands.is_empty(), "{f}: draw is handed the level");
+        assert_eq!(handed(step(&s, f, "assigned.draw")), hands, "{f}");
+        assert_eq!(shape(&s, f), shape(&c, f), "{f}");
+    }
+}
+
+/// A tuple pattern binds each name it binds in a `let` as a pattern of one name would (#380): a `mut` name
+/// changed in place (`asked.push(s)` of `let (mut asked, mut unknown) = (vec![], false)`) holds a value of its
+/// own, so a part of it (`asked.first()`) takes it. The same function written with a `let` per name and with
+/// one tuple pattern reads the same: the same steps, each handed and giving the same.
+#[test]
+fn composition_a_tuple_pattern_in_a_let_binds_each_name_as_a_pattern_of_one_name_would() {
+    let (c, s) = (assigned("clean"), assigned("shortcut"));
+    assert!(!shape(&c, "assigned.gather").is_empty());
+    assert_eq!(shape(&s, "assigned.gather"), shape(&c, "assigned.gather"));
+}
+
+/// A tuple pattern as a parameter is one parameter of a product type, as `given: (A, B)` with `let (params, returns) =
+/// given` is (#380): each name it binds is a part of that parameter. The two forms read the same: one parameter at
+/// the place, and the same steps, each handed what the parts of that parameter hold.
+#[test]
+fn composition_a_tuple_pattern_as_a_parameter_binds_each_name_as_a_pattern_of_one_name_would() {
+    let (c, s) = (assigned("clean"), assigned("shortcut"));
+    let f = "assigned.set_holds";
+    assert_eq!(node(&c, f).params.len(), node(&s, f).params.len());
+    let types = |g: &Graph| node(g, f).params.iter().map(|p| p.ty.clone()).collect::<Vec<_>>();
+    assert_eq!(types(&s), types(&c));
+    // the parameter is named differently on the two sides; what a step is handed is the same value
+    let plain = |g: &Graph, whole: &str| -> Vec<_> {
+        shape(g, f).into_iter().map(|(o, t, h, v)| (o, t, h.into_iter().map(|x| x.replace(whole, "P")).collect::<Vec<_>>(), v)).collect()
+    };
+    assert!(plain(&c, "given").iter().any(|(_, _, h, _)| h.iter().any(|x| x.contains('P'))), "{:?}", shape(&c, f));
+    assert_eq!(plain(&s, "(params, returns)"), plain(&c, "given"));
+}
+
+/// One side of the interior pair (`tests/pairs/interior/rust`): counts kept in the fields of structs
+/// that change through `&self`, or in statics the methods raise.
+fn interior(side: &str) -> Graph {
+    analyze(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/pairs/interior/rust").join(side), &Options::default()).expect("reads")
+}
+
+/// A field of `self` that changes in place (`AtomicUsize`, `Arc<AtomicUsize>`, `Arc<Mutex<..>>`,
+/// `Cell`), changed through `&self`, is a change of `self`, as `&mut self` with `self.n += 1` is:
+/// isomorphic forms, one construct (#417). Each `bump(&self)` changes its struct as `Plain::bump(&mut
+/// self)` changes `Plain`; a method that only reads the field changes nothing. The same count kept
+/// in a `static` lands elsewhere: `Global(..)` is changed, no struct is, and Atlas tells the two
+/// apart by where the change lands.
+#[test]
+fn changes_a_field_that_changes_in_place_is_a_change_of_self() {
+    let (c, s) = (interior("clean"), interior("shortcut"));
+    assert_eq!(targets(&c, EdgeKind::Mutates, "interior.Plain.bump"), ["interior.Plain"]);
+    for class in ["Atomic", "Shared", "Locked", "Celled"] {
+        assert_eq!(targets(&c, EdgeKind::Mutates, &format!("interior.{class}.bump")), [format!("interior.{class}")], "{class}");
+    }
+    assert!(targets(&c, EdgeKind::Mutates, "interior.Reader.seen").is_empty(), "a read changes nothing");
+    assert_eq!(found(&c, "nothing"), Vec::<String>::new());
+    for class in ["Atomic", "Locked", "Celled"] {
+        let f = format!("interior.{class}.bump");
+        assert!(targets(&s, EdgeKind::Mutates, &f).is_empty(), "{f}: the static is changed, not the struct");
+        assert!(touches(&s, &f, "global").iter().any(|t| t.dir_name() == "write"), "{f}: a Global is written");
+    }
+}

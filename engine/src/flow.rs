@@ -147,17 +147,43 @@ pub struct Flow {
     /// For each node with touches, where each of them is drawn: its touches in order, then its
     /// calls as read (`instead`).
     pub drawn: BTreeMap<String, Vec<Where>>,
+    /// The order of the program's places on the disk (`lies_in`): each file or folder a touch rests in, to the
+    /// folders and patterns other touches rest in that hold it, from the top. A place lies in the folder a listing
+    /// reads where it is made or written below it, so two routes meet on the disk where a place one writes is, or lies
+    /// in, a place the other reads. It is a quotient of the places, as a directory is of its files: each place keeps
+    /// its own term.
+    #[serde(skip_serializing_if = "BTreeMap::is_empty")]
+    pub lies_in: BTreeMap<String, Vec<String>>,
 }
 
 /// The flow of a graph.
 pub fn of(g: &Graph) -> Flow {
-    let drawn = g
+    let drawn: BTreeMap<String, Vec<Where>> = g
         .nodes
         .iter()
         .filter(|n| !n.touches.is_empty() || !n.instead.is_empty())
         .map(|n| (n.id.clone(), n.touches.iter().chain(&n.instead).map(Touch::drawn).collect()))
         .collect();
-    Flow { bodies: bodies(g), arrows: arrows(g), types: crate::families::families(g), units: units(g), drawn }
+    let lies_in = order(&drawn);
+    Flow { bodies: bodies(g), arrows: arrows(g), types: crate::families::families(g), units: units(g), drawn, lies_in }
+}
+
+/// The order of the places `drawn` rests in on the disk (`Flow::lies_in`), by their ids.
+fn order(drawn: &BTreeMap<String, Vec<Where>>) -> BTreeMap<String, Vec<String>> {
+    let files: BTreeSet<&str> = drawn.values().flatten().map(|w| w.place.file.as_str()).filter(|f| !f.is_empty()).collect();
+    // only a folder or a pattern holds another place
+    let holders: Vec<&str> = files.iter().copied().filter(|q| q.ends_with('/') || q.contains(['*', '?', '['])).collect();
+    let mut out = BTreeMap::new();
+    for p in &files {
+        let mut above: Vec<&str> = holders.iter().copied().filter(|q| lies_in(p, q)).collect();
+        if above.is_empty() {
+            continue;
+        }
+        // from the top: a place lies in fewer places than one it holds
+        above.sort_by_key(|q| (holders.iter().filter(|r| lies_in(q, r)).count(), *q));
+        out.insert(format!("w:File:{p}"), above.into_iter().map(|q| format!("w:File:{q}")).collect());
+    }
+    out
 }
 
 /// The code quotiented by module path, one level at a time. A part's top level is the children
@@ -340,6 +366,78 @@ impl World {
             World::Llm | World::Model => "model",
             World::Global => "global",
         }
+    }
+}
+
+/// Whether the place `p` lies in the place `q` on the disk, `p` and `q` as `paths::place` writes them: places are ordered by
+/// their terms. A folder holds what lies below it (`data/raw/{unpack.kind}/a.zip/` lies in `data/raw/`), and a pattern
+/// holds the places it matches and what lies below them (`data/out.csv` and `data/a.zip/x` lie in `data/*.csv` and
+/// `data/*.zip`): a listing of `D` reads the fiber `D/*`, so what is made or written below `D` changes what it reads.
+/// The order is strict: no place lies in itself, nor in the same parts written as a folder. A part of `p` is held by
+/// the same part of `q`, or by `*`, which holds any one part (a name, a hole, a pattern of one part), or by a pattern of
+/// one part that matches its name; `**` holds any number of parts, none as well. A hole the code gives no name (`{}`)
+/// is held only by a wildcard, since two of them are two values. A file the code names holds nothing.
+pub fn lies_in(p: &str, q: &str) -> bool {
+    let parts = |s: &str| -> Vec<String> { s.trim_end_matches('/').split('/').map(str::to_string).collect() };
+    let (ps, qs) = (parts(p), parts(q));
+    if ps == qs {
+        return false;
+    }
+    let wild = |x: &str| x.contains(['*', '?', '[']);
+    let pattern = qs.iter().any(|x| wild(x));
+    if !pattern && !q.ends_with('/') {
+        return false;
+    }
+    // the parts of `p` a match of `q` takes from its front: each way `q` can match a prefix of `p`
+    let mut ends = vec![];
+    prefixes(&qs, &ps, 0, &mut ends);
+    ends.into_iter().any(|k| {
+        let rest = &ps[k..];
+        // below a match, in every place `p` is: some part of `p` is left that is more than `**`, which holds none as well
+        let below = rest.iter().any(|x| x != "**");
+        below || (k == ps.len() && pattern)
+    })
+}
+
+/// Each number of parts at the front of `p`, from `at`, that `q` matches (`lies_in`).
+fn prefixes(q: &[String], p: &[String], at: usize, out: &mut Vec<usize>) {
+    let Some((first, rest)) = q.split_first() else {
+        if !out.contains(&at) {
+            out.push(at);
+        }
+        return;
+    };
+    if first == "**" {
+        for k in at..=p.len() {
+            prefixes(rest, p, k, out);
+        }
+        return;
+    }
+    if at < p.len() && holds_part(first, &p[at]) {
+        prefixes(rest, p, at + 1, out);
+    }
+}
+
+/// Whether the part `q` of a place holds the part `p` (`lies_in`).
+fn holds_part(q: &str, p: &str) -> bool {
+    let wild = |x: &str| x.contains(['*', '?', '[']);
+    match q {
+        "*" => p != "**",
+        _ if p == "{}" => false,
+        _ if q == p => true,
+        _ if wild(q) && !q.contains('[') && !wild(p) && !p.contains('{') => glob(q.as_bytes(), p.as_bytes()),
+        _ => false,
+    }
+}
+
+/// Whether the name `p` matches the pattern `q` of one part, its `*` any run of characters and its `?` one.
+fn glob(q: &[u8], p: &[u8]) -> bool {
+    match (q.split_first(), p.split_first()) {
+        (None, None) => true,
+        (Some((b'*', rest)), _) => glob(rest, p) || (!p.is_empty() && glob(q, &p[1..])),
+        (Some((b'?', rest)), Some((_, tail))) => glob(rest, tail),
+        (Some((c, rest)), Some((d, tail))) if c == d => glob(rest, tail),
+        _ => false,
     }
 }
 

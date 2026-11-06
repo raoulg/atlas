@@ -159,6 +159,11 @@ const REVIEWED: &[(&str, &str, &str)] = &[
     ),
     (
         "choices",
+        "atlas-engine.python.body.link_body",
+        "`link_body` and `Body::new` each read `NodeKind` for a question of their own (whether a body is a module's, whether a method runs on an instance or on its class); that a `Node` is one struct for every kind is #13",
+    ),
+    (
+        "choices",
         "atlas-engine.rust.body.root",
         "`root`, `value_class` and `declared` read a name three ways: the name a value is a part of, the class of a value, the type a declaration gives it",
     ),
@@ -226,11 +231,6 @@ const REVIEWED: &[(&str, &str, &str)] = &[
         "places",
         "atlas-engine.typescript.parse",
         "wrong, #395: the files a test's pair holds are credited to `parse`, where the listing's file made the place whole, and not to the test that built the `Repo` whose root it is",
-    ),
-    (
-        "nothing",
-        "atlas-engine.cache.Cache.read_anew",
-        "wrong, #417: `read_anew` raises the count its clones share through `&self` (`AtomicUsize::fetch_add`), a change of the cache's value the Rust reader does not read on a field of `self`",
     ),
     (
         "places",

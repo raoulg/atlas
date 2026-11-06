@@ -905,6 +905,9 @@ pub(super) struct Body<'a, 't> {
     /// or a `static` that nothing changes (`const FLOOR: Floor = ..`). A name of one holds what the module holds, a value the
     /// body did not make.
     constants: HashMap<String, String>,
+    /// The fields of the body's own class that change in place (`knowledge::RUST_INTERIOR`, in the type or in what it
+    /// holds): a method that changes one through `&self` changes `self`, as `&mut self` does.
+    interior: HashSet<String>,
     read: Read<'t>,
 }
 
@@ -954,9 +957,11 @@ impl<'a, 't> Body<'a, 't> {
             unit: n.returns.as_ref().map_or(true, |r| r.value.is_empty() && !r.own),
             loop_values: HashSet::new(),
             constants: HashMap::new(),
+            interior: HashSet::new(),
             read: Read::default(),
         };
         b.constants = b.constants();
+        b.interior = b.interior_fields();
         b.parameters(d);
         b.binders(d, body);
         b.loop_values = b.iterations(body).into_iter().map(|(_, v)| v.id()).collect();
@@ -1061,6 +1066,14 @@ impl<'a, 't> Body<'a, 't> {
             if let Some(pat) = p.child_by_field_name("pattern").filter(|_| p.kind() == "parameter") {
                 for name in bound_names(pat, src) {
                     self.parameter.bind(text(name, src), d.start_byte(), d.end_byte(), true);
+                }
+                // a tuple pattern is one parameter; each name it binds is a part of that parameter, as `let (a, b) = p` binds them
+                if pat.kind() == "tuple_pattern" {
+                    let whole = text(pat, src).to_string();
+                    self.parameter.bind(&whole, d.start_byte(), d.end_byte(), true);
+                    for name in bound_names(pat, src) {
+                        self.aliases.bind(text(name, src), d.start_byte(), d.end_byte(), (whole.clone(), pat.start_byte()));
+                    }
                 }
             }
         }
@@ -1167,6 +1180,13 @@ impl<'a, 't> Body<'a, 't> {
         }
     }
 
+    /// Whether the root of a value names a place the body or its module holds: `self`, a name the body binds, or a
+    /// constant or a static of its module; not a variant that holds no value (`None`).
+    fn names_place(&self, root: TsNode<'t>) -> bool {
+        let (name, at) = (text(root, self.src), root.start_byte());
+        root.kind() == "self" || self.parameter.get(name, at).is_some() || self.item_written(name).is_some()
+    }
+
     /// A name a binding gives a part of another name's value holds that value (a projection bound
     /// to a name is still the projection): `let months = settings.months`, `let base =
     /// &config["base"]`, `let first = levels.first()?` (`Body::held_root`), `let record: Record = result?`, `let (date,
@@ -1180,7 +1200,7 @@ impl<'a, 't> Body<'a, 't> {
             // Some(a)) = (tag.world, args.first())` binds `a` to a part of `args`
             if let Some(pairs) = tuple_elements(n) {
                 for (p, v) in pairs {
-                    let Some(held) = self.held_root(v) else { continue };
+                    let Some(held) = self.held_root(v).filter(|h| self.names_place(*h)) else { continue };
                     for name in bound_names(p, src) {
                         if let Some((from, to)) = scope(name) {
                             self.aliases.bind(text(name, src), from, to, (text(held, src).to_string(), held.start_byte()));
@@ -1189,7 +1209,9 @@ impl<'a, 't> Body<'a, 't> {
                 }
                 continue;
             }
-            let Some(held) = n.child_by_field_name("value").and_then(|v| self.held_root(v)) else { continue };
+            let Some(held) = n.child_by_field_name("value").and_then(|v| self.held_root(v)).filter(|h| self.names_place(*h)) else {
+                continue;
+            };
             let patterns: Vec<TsNode> = match n.kind() {
                 "match_expression" => n
                     .child_by_field_name("body")
@@ -1431,6 +1453,27 @@ impl<'a, 't> Body<'a, 't> {
         )
     }
 
+    /// The names the `let`s of a body bind one at a time, each with its pattern, the type written for it and the value that
+    /// binds it: a `let` of a name, and each name of a tuple pattern a tuple written out is bound to (`tuple_elements`), as
+    /// a `let` of that name alone with the element of the tuple type at its place would.
+    fn bindings(&self, body: TsNode<'t>) -> Vec<(TsNode<'t>, TsNode<'t>, Option<TsNode<'t>>, Option<TsNode<'t>>)> {
+        let mut out = vec![];
+        for l in walk(body, &["let_declaration"]) {
+            let (ty, value) = (l.child_by_field_name("type"), l.child_by_field_name("value"));
+            if let Some(pairs) = tuple_elements(l) {
+                let types = ty.filter(|t| t.kind() == "tuple_type").map(named_children).filter(|t| t.len() == pairs.len());
+                for (i, (pat, element)) in pairs.into_iter().enumerate() {
+                    if matches!(pat.kind(), "identifier" | "mut_pattern") {
+                        out.push((l, pat, types.as_ref().map(|t| t[i]), Some(element)));
+                    }
+                }
+            } else if let Some(pat) = l.child_by_field_name("pattern").filter(|p| matches!(p.kind(), "identifier" | "mut_pattern")) {
+                out.push((l, pat, ty, value));
+            }
+        }
+        out
+    }
+
     /// Locals assigned from a constructor, a struct literal, or a function with a typed return;
     /// `.unwrap()`, `.expect(..)`, `.context(..)` hand on the type of the value they are called on.
     /// Gives the `let`s that write no type and whose value is of none the body knows, each with
@@ -1438,19 +1481,21 @@ impl<'a, 't> Body<'a, 't> {
     fn lets(&mut self, body: TsNode<'t>) -> Vec<(String, (usize, usize))> {
         let src = self.src;
         let mut untyped = vec![];
-        for l in walk(body, &["let_declaration"]) {
-            let Some(pat) = l.child_by_field_name("pattern").filter(|p| matches!(p.kind(), "identifier" | "mut_pattern")) else { continue };
+        for (l, pat, ty, given) in self.bindings(body) {
             let name = text(pat, src).trim_start_matches("mut ").to_string();
             let Some((from, to)) = scope(pat) else { continue };
-            if pat.kind() == "mut_pattern" || named_children(l).iter().any(|x| x.kind() == "mutable_specifier") {
+            if pat.kind() == "mut_pattern"
+                || (l.child_by_field_name("pattern").map(|x| x.id()) == Some(pat.id())
+                    && named_children(l).iter().any(|x| x.kind() == "mutable_specifier"))
+            {
                 self.mutable.bind(&name, from, to, ());
             }
-            let declared = type_names(l.child_by_field_name("type"), src);
+            let declared = type_names(ty, src);
             if let Some(t) = self.library_type(&declared) {
                 self.foreign.bind(&name, from, to, t);
             }
             let annotated = declared.iter().find_map(|t| self.resolve(t).and_then(|t| self.class_of(&t.id())));
-            let mut value = l.child_by_field_name("value");
+            let mut value = given;
             while let Some(v) = value {
                 value = match v.kind() {
                     _ if wraps(WRAPPERS, v) => wrapped(v),
@@ -1467,12 +1512,12 @@ impl<'a, 't> Body<'a, 't> {
                     _ => break,
                 };
             }
-            if let Some(made) = l.child_by_field_name("value") {
+            if let Some(made) = given {
                 self.made_by.bind(&name, from, to, made);
             }
             match annotated.or_else(|| value.and_then(|v| self.value_class(v))) {
                 Some(t) => self.locals.bind(&name, from, to, t),
-                None if l.child_by_field_name("type").is_none() => untyped.push((name, (from, to))),
+                None if ty.is_none() => untyped.push((name, (from, to))),
                 None => {}
             }
         }
@@ -1749,6 +1794,35 @@ impl<'a, 't> Body<'a, 't> {
         let library = || self.foreign.get(name, at).filter(|t| foreign_type(t, &OWN));
         let constant = || self.constants.get(name).filter(|_| self.parameter.get(name, at).is_none());
         self.locals.get(name, at).or_else(|| self.taken.get(name, at)).or_else(library).or_else(constant).cloned()
+    }
+
+    /// The fields of the body's own class whose type changes in place or holds one that does (`Cell<usize>`,
+    /// `Arc<AtomicUsize>`, `Arc<Mutex<Vec<u8>>>`), not a type of the program's that is named like one.
+    fn interior_fields(&self) -> HashSet<String> {
+        let own = |t: &Vec<String>| self.resolve(t).and_then(Resolved::code).is_some_and(|r| self.class_of(&r).is_some());
+        let fields = self.cls.as_ref().and_then(|c| self.store.classes.get(c)).map(|c| c.fields.as_slice()).unwrap_or_default();
+        fields
+            .iter()
+            .filter(|(_, types)| types.iter().any(|t| t.last().is_some_and(|l| knowledge::rust_interior(l)) && !own(t)))
+            .map(|(name, _)| name.clone())
+            .collect()
+    }
+
+    /// Whether a method changes a field of `self` that changes in place, through `&self` (`self.n.fetch_add(..)`,
+    /// `self.log.lock().unwrap().push(..)`): a change of `self`, as `self.n += 1` through `&mut self` is.
+    fn changes_own_field(&self, value: TsNode<'t>, method: &str) -> bool {
+        let src = self.src;
+        let root = opened(value, src);
+        let guarded = root.id() != beneath(value, WRAPPERS).id();
+        let field = (root.kind() == "field_expression").then_some(root).and_then(|r| {
+            let on = opened(r.child_by_field_name("value")?, src);
+            if on.kind() == "self" {
+                Some(text(r.child_by_field_name("field")?, src))
+            } else {
+                None
+            }
+        });
+        field.is_some_and(|f| self.interior.contains(f)) && knowledge::rust_changes(method, guarded)
     }
 
     /// The constants the body's module declares at its top, each with the class of the program its declared type holds
@@ -2429,6 +2503,12 @@ impl<'a, 't> Body<'a, 't> {
             steps.looks_up(c, on);
             return;
         }
+        if own.is_none() && self.changes_own_field(value, &method) {
+            let class = self.cls.clone().map(|c| (c, "self".to_string()));
+            if let Some(m) = class.filter(|m| !self.read.mutates.contains(m)) {
+                self.read.mutates.push(m);
+            }
+        }
         if own.is_none() && self.changes_library_value(value, &method) {
             let hands = self.call_hands(c, Some(value), &steps.kept);
             // what changes is the name the part is picked of, never the index that picks it (`fills` of `fills[k].push(..)`)
@@ -2476,6 +2556,9 @@ impl<'a, 't> Body<'a, 't> {
     /// as it makes it, is of a crate whose row of `knowledge::MUTATORS` has the method. A prelude
     /// type (`Vec`, `String`) is std's, and so is a slice or an array.
     fn changes_library_value(&self, value: TsNode<'t>, method: &str) -> bool {
+        if self.changes_own_field(value, method) {
+            return true;
+        }
         let ty = match (self.declared(value), self.picked(value, 0)) {
             (Some(ty), _) => ty,
             (None, Some(element)) => {

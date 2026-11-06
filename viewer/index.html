@@ -795,8 +795,6 @@ const interleave = (xs, ys) => {
   while (j < ys.length) put(ys[j++]);
   return out;
 };
-// whether a step of a union runs a function whose own arrow B changed
-const stepChanged = steps => !!DIFF && steps.some(s => byId.get(stepOf(s))?.ds === "changed");
 // whether B renamed a node, or the class it is a member of: its label then reads `old → new`
 const renamed = id => !!DIFF && !!id && (!!DIFF.renamed[id] || !!DIFF.renamed[byId.get(id)?.cls]);
 // a label a union reads otherwise in A and in B: `old → new` for a rename, else as B reads it; the
@@ -965,7 +963,8 @@ async function renderPlaat(mine) {
     }
     return {places, pills, frames, restArrows: [...rest.values()], roles, home, fine, oracle, calling: A.calling || B.calling};
   };
-  const {places, pills, frames, restArrows, roles, home, fine, oracle, calling: planCalls} = DIFF ? unite() : plan();
+  // the union's siblings that draw alike are one pill, as each plan's are (`siblings`)
+  const {places, pills, frames, restArrows, roles, home, fine, oracle, calling: planCalls} = DIFF ? siblings(unite()) : plan();
   // Storage quotients are computed on the visible fiber. A singleton keeps its concrete
   // expression; an opened quotient retains a frame around the same members.
   const storage = new Map(), worldFrames = new Map(), worldParent = new Map();
@@ -1059,34 +1058,6 @@ async function renderPlaat(mine) {
       worldFrames.get(id).kids = kids;
       for (const k of kids) worldParent.set(k, id);
     }
-  }
-  // siblings that draw the same lines on the finest plan (the same places, versions and channels) are one pill: a
-  // quotient of the plan's steps, so it is the same whatever else is open, and each of its lines stands for the
-  // lines of all of them. In a union, only siblings that both readings, or the same one, hold, and that changed alike.
-  // A step the reader opened stands on its own: opening the pill refines the quotient into its members
-  // A call is a line of the plan as data is, so siblings are one pill only where they call and are called alike, and a
-  // call to a member is a call to the pill it joined
-  const merged = new Map(), joinedTo = new Map(), callers = new Map();
-  for (const P of pills.values()) for (const b of P.calls || []) { if (!callers.has(b)) callers.set(b, []); callers.get(b).push(P.id); }
-  const counts = (P, n) => P[n] || new Map([...(n[0] === "D" ? P.D : P.C)].filter(([, r]) => n[1] === "n" || r).map(([k]) => [k, 1]));
-  for (const P of [...pills.values()]) {
-    if (P.own || P.hue || P.steps[0].startsWith("part:") || P.steps[0].startsWith("unit:") || P.steps.some(st => V.open.steps.has(st))) continue;
-    const lines = (P.fine ?? [...P.D.keys()].sort() + ">" + [...P.C.keys()].sort()) + "|" + [...(P.calls || [])].sort() + "<" + (callers.get(P.id) || []).sort();
-    const key = (P.parent || "") + "|" + lines + "|" + (P.backTo || "") + "|" + [...(P.sides || [])].sort() + "|" + stepChanged(P.steps);
-    const Q = merged.get(key);
-    if (!Q) { merged.set(key, P); continue; }
-    for (const n of ["Dn", "Cn", "Dr", "Cr"]) { const q = counts(Q, n); counts(P, n).forEach((c, k) => q.set(k, (q.get(k) || 0) + c)); Q[n] = q; }
-    for (const n of ["aDn", "aCn", "aDr", "aCr"]) if (Q[n] && P[n]) P[n].forEach((c, k) => Q[n].set(k, (Q[n].get(k) || 0) + c));
-    Q.steps.push(...P.steps); P.D.forEach((r, k) => Q.D.set(k, Q.D.get(k) && r)); P.C.forEach((r, k) => Q.C.set(k, Q.C.get(k) && r)); joinGoes(Q.goes, P.goes);
-    for (const [qs, ps] of [[Q.Ds, P.Ds], [Q.Cs, P.Cs]]) ps?.forEach((s, k) => qs.set(k, new Set([...(qs.get(k) || []), ...s])));
-    joinedTo.set(P.id, Q);
-    pills.delete(P.id);
-  }
-  for (const P of pills.values()) if (P.steps.length > 1) { joinedTo.set(P.id, P); P.id = "n:" + P.steps.join("+"); }
-  const callee = b => joinedTo.get(b)?.id ?? b;
-  for (const P of pills.values()) {
-    if (P.calls) P.calls = new Set([...P.calls].map(callee));
-    if (P.Ks) { const Ks = new Map(); P.Ks.forEach((s, b) => Ks.set(callee(b), new Set([...(Ks.get(callee(b)) || []), ...s]))); P.Ks = Ks; }
   }
   // a value with no name and no type of the code's is a wire, not a place where data rests: the step
   // that makes it points at the steps that take it
