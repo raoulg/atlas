@@ -6,7 +6,7 @@ pub struct Level {
 }
 
 pub struct Node {
-    pub holds: Vec<String>,
+    pub holds: Vec<Level>,
     pub returns: Vec<String>,
 }
 
@@ -29,11 +29,11 @@ pub fn paired(level: &Level) -> f64 {
 }
 
 /// The two names a function is given, one parameter written as a tuple pattern.
-pub fn set_holds(n: &mut Node, (params, returns): (Vec<String>, Option<Vec<String>>)) {
+pub fn set_holds(n: &mut Node, (params, returns): (Vec<Level>, Option<Vec<String>>)) {
     if let Some(r) = returns {
         n.returns = r;
     }
-    n.holds = params;
+    n.holds.extend(params);
 }
 
 /// Names gathered into a list the body changes in place, bound by one tuple pattern.
@@ -47,4 +47,9 @@ pub fn gather(names: &[String]) -> usize {
     }
     let first = asked.first();
     first.map_or(unknown as usize, |f| f.len())
+}
+
+/// The caller that fills the parameter.
+pub fn run(n: &mut Node, levels: Vec<Level>) {
+    set_holds(n, (levels, None));
 }

@@ -1951,18 +1951,22 @@ fn composition_a_tuple_pattern_in_a_let_binds_each_name_as_a_pattern_of_one_name
     assert_eq!(shape(&s, "assigned.gather"), shape(&c, "assigned.gather"));
 }
 
-/// A tuple pattern binds each name it binds as a parameter as a pattern of one name would (#380): each name is
-/// a parameter of the function, with the element of the tuple type at its place. Atlas reads the pattern as one
-/// parameter named by its text, so `returns` is no name of the function's. Giving each name a parameter of its
-/// own moves the places the call's arguments fill (`Slot::At(n)` counts the written parameters), which the
-/// shared builder counts; ignored until a call's tuple argument is spread over them.
+/// A tuple pattern as a parameter is one parameter of a product type, as `given: (A, B)` with `let (params, returns) =
+/// given` is (#380): each name it binds is a part of that parameter. The two forms read the same: one parameter at
+/// the place, and the same steps, each handed what the parts of that parameter hold.
 #[test]
-#[ignore = "a tuple pattern as a parameter is one parameter named by its text (#380)"]
 fn composition_a_tuple_pattern_as_a_parameter_binds_each_name_as_a_pattern_of_one_name_would() {
     let (c, s) = (assigned("clean"), assigned("shortcut"));
-    let params = |g: &Graph, f: &str| node(g, f).params.iter().map(|p| (p.name.clone(), p.ty.clone())).collect::<Vec<_>>();
-    assert_eq!(params(&s, "assigned.set_holds"), params(&c, "assigned.set_holds"));
-    assert_eq!(shape(&s, "assigned.set_holds"), shape(&c, "assigned.set_holds"));
+    let f = "assigned.set_holds";
+    assert_eq!(node(&c, f).params.len(), node(&s, f).params.len());
+    let types = |g: &Graph| node(g, f).params.iter().map(|p| p.ty.clone()).collect::<Vec<_>>();
+    assert_eq!(types(&s), types(&c));
+    // the parameter is named differently on the two sides; what a step is handed is the same value
+    let plain = |g: &Graph, whole: &str| -> Vec<_> {
+        shape(g, f).into_iter().map(|(o, t, h, v)| (o, t, h.into_iter().map(|x| x.replace(whole, "P")).collect::<Vec<_>>(), v)).collect()
+    };
+    assert!(plain(&c, "given").iter().any(|(_, _, h, _)| h.iter().any(|x| x.contains('P'))), "{:?}", shape(&c, f));
+    assert_eq!(plain(&s, "(params, returns)"), plain(&c, "given"));
 }
 
 /// One side of the interior pair (`tests/pairs/interior/rust`): counts kept in the fields of structs

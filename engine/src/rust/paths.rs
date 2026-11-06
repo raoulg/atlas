@@ -56,6 +56,7 @@ pub(super) fn param_names(f: TsNode, src: &[u8]) -> Vec<String> {
         .filter(|p| p.kind() == "parameter")
         .map(|p| match p.child_by_field_name("pattern") {
             Some(x) if matches!(x.kind(), "identifier" | "mut_pattern") => text(x, src).trim_start_matches("mut ").to_string(),
+            Some(x) if x.kind() == "tuple_pattern" => text(x, src).to_string(),
             _ => String::new(),
         })
         .collect()

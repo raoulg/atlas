@@ -1067,6 +1067,14 @@ impl<'a, 't> Body<'a, 't> {
                 for name in bound_names(pat, src) {
                     self.parameter.bind(text(name, src), d.start_byte(), d.end_byte(), true);
                 }
+                // a tuple pattern is one parameter; each name it binds is a part of that parameter, as `let (a, b) = p` binds them
+                if pat.kind() == "tuple_pattern" {
+                    let whole = text(pat, src).to_string();
+                    self.parameter.bind(&whole, d.start_byte(), d.end_byte(), true);
+                    for name in bound_names(pat, src) {
+                        self.aliases.bind(text(name, src), d.start_byte(), d.end_byte(), (whole.clone(), pat.start_byte()));
+                    }
+                }
             }
         }
         for n in walk(body, &["let_declaration", "let_condition", "match_arm", "closure_expression", "for_expression"]) {
