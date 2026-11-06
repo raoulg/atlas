@@ -594,6 +594,38 @@ function foldGroups(groups, files, to, drawn) {
   const alone = (c, g) => owners.get(c)?.size === 1 && owners.get(c).has(g);
   return new Map([...groups].map(([g, ks]) => [g, new Set([...ks].map(k => [k, to(k)]).filter(([k, c]) => drawn(c) && (c === k || alone(c, g))).map(([, c]) => c))]));
 }
+// The places of the program on the disk are ordered by their terms: a place lies in each folder above it and in each pattern
+// that holds it (`Flow::lies_in`, from the top; mathematics.md, "Paths as terms"). The order is a quotient of the places, as a
+// directory is of its files, whose blocks are the folders and patterns the program touches. A place stands in the outermost
+// place of its order that the picture draws and has not opened, whatever the crowd of files: closed, that place is one box
+// that stands for itself and what lies in it; opened, it is a frame with the id of its box around its own place
+// (`ownPlace`) and what stands in it. For the places a picture draws (`drawn`, their ids): `to`, a place to the closed
+// place it stands in; `parent`, a box to the opened place whose frame holds it (an opened place's own place to its frame,
+// and its frame to the frame around it); `open`, the opened places that frame what the picture draws
+const LIES_IN = new Map(Object.entries((D.flow || {}).lies_in || {}));
+const ownPlace = id => id + "~own";
+function meetsOf(drawn) {
+  const to = new Map(), parent = new Map(), open = new Set();
+  const opened = q => V.open.dirs.has(filePath(q));
+  // the opened places around a box, from the top, and the closed one it stands in
+  const around = p => {
+    const hs = (LIES_IN.get(p) || []).filter(q => q !== p && drawn.has(q)), c = hs.find(q => !opened(q));
+    return {outer: c ? hs.slice(0, hs.indexOf(c)) : hs, c};
+  };
+  for (const p of drawn) {
+    const {outer, c} = around(p);
+    if (c) to.set(p, c);
+    else if (outer.length) parent.set(p, outer[outer.length - 1]);
+    for (const q of outer) open.add(q);
+  }
+  for (const q of open) {
+    parent.set(ownPlace(q), q);
+    const {outer} = around(q);
+    if (outer.length) parent.set(q, outer[outer.length - 1]);
+    else parent.delete(q);
+  }
+  return {to, parent, open};
+}
 // a path with a pattern in it said in words, from the file up: `{root}/*/*/OW-bestanden/*.xml` is "every *.xml in
 // OW-bestanden/ in each folder two levels into {root}/". A wildcard the code writes is "each" or "every", a hole the
 // code gives no name (`{}`) "an unnamed folder"; a path without either, or a bare pattern (a file known by its
@@ -2386,9 +2418,50 @@ const siblings = C => {
   }
   return C;
 };
-// The picture the page draws is the coarse plan with its siblings that draw alike merged (`siblings`). One reading of a union
-// is not merged: the page merges the union of the two
-const alike = C => (SIDE ? C : siblings(C));
+// The order of the places on the disk taken on a picture (`meetsOf`): a place that stands in a closed place is drawn as it,
+// whose box stands for both, and an opened place that frames what the picture draws is a frame of its id around its own place.
+// Each line to a place goes to the box it is drawn as; `C.meets` holds the frames (`frames`: id, title, the boxes in it and the
+// frame around it) and the places of the picture the order took (`took`)
+const meet = C => {
+  const drawn = new Set([...C.places.keys()].filter(k => filePath(k)));
+  const {to, parent, open} = meetsOf(drawn);
+  const took = new Set([...to.keys(), ...to.values(), ...open]);
+  for (const k of parent.keys()) if (!k.endsWith("~own")) took.add(k);
+  C.meets = {frames: new Map(), took};
+  if (!took.size) return C;
+  const img = k => to.get(k) ?? (open.has(k) ? ownPlace(k) : k);
+  const and = (m, f) => { if (!m) return m; const out = new Map(); m.forEach((r, k) => out.set(f(k), out.has(f(k)) ? out.get(f(k)) && r : r)); return out; };
+  const sum = (m, f) => { if (!m) return m; const out = new Map(); m.forEach((n, k) => out.set(f(k), (out.get(f(k)) || 0) + n)); return out; };
+  const union = (m, f) => { if (!m) return m; const out = new Map(); m.forEach((s, k) => out.set(f(k), new Set([...(out.get(f(k)) || []), ...s]))); return out; };
+  for (const P of C.pills.values()) {
+    P.D = and(P.D, img); P.C = and(P.C, img);
+    for (const n of ["Dn", "Cn", "Dr", "Cr", "aDn", "aCn", "aDr", "aCr"]) P[n] = sum(P[n], img);
+    for (const n of ["Ds", "Cs"]) P[n] = union(P[n], img);
+  }
+  const members = new Map();
+  for (const [p, c] of to) { if (!members.has(c)) members.set(c, [c]); members.get(c).push(p); }
+  for (const [c, ms] of members) {
+    const q = C.places.get(c), sides = q.sides && new Set(ms.flatMap(m => [...(C.places.get(m)?.sides || [])]));
+    C.places.set(c, {...q, label: `${q.label} · ${ms.length - 1}`, short: `${q.short ?? q.label} · ${ms.length - 1}`, members: ms, folded: filePath(c), ...(sides ? {sides} : {})});
+  }
+  for (const p of to.keys()) C.places.delete(p);
+  for (const q of open) {
+    const p = C.places.get(q);
+    C.places.delete(q);
+    C.places.set(ownPlace(q), {...p, id: ownPlace(q), members: [q]});
+    placeGlyph.set(ownPlace(q), placeGlyph.get(q));
+    C.meets.frames.set(q, {id: q, label: p.label, short: p.short, dir: filePath(q), members: [q], kids: new Set(), parent: parent.get(q)});
+  }
+  for (const [k, q] of parent) C.meets.frames.get(q).kids.add(k);
+  // a frame stands for the places of the finest plan its boxes stand for
+  const finesIn = k => C.meets.frames.has(k) ? [...C.meets.frames.get(k).kids].flatMap(finesIn) : C.places.get(k)?.members || [k];
+  for (const F of C.meets.frames.values()) F.members = finesIn(F.id);
+  return C;
+};
+// The picture the page draws is the coarse plan with its siblings that draw alike merged (`siblings`) and its places ordered
+// on the disk (`meet`). One reading of a union is not taken alone: the page takes the union of the two
+const quotients = C => meet(siblings(C));
+const alike = C => (SIDE ? C : quotients(C));
 // ---- the overview is the image of one fine plan of generators ----
 // A view with no route has no order between its arrows, so its fine plan `F₀` has no moments: the functions of the code,
 // each with its own arrow (sentence 6: a package shows what its own code does, not what it reaches through another), a type

@@ -326,7 +326,10 @@ fold into one folder. Two routes meet on the disk where a place one makes or wri
 reads: what `unpack` makes in `data/raw/{kind}/` meets what `kinds` lists of `data/raw/`. The order is no line, since
 an inclusion is no function of the code, and no coarser place, since that would drop the term: each place keeps its
 own, and the order is a quotient of them, as a directory is of its files, by the folders and patterns the program
-itself touches. One file is one place, whatever operation touches it: the data read or
+itself touches. The picture takes it as it takes the storage quotient: a place stands in the outermost place of its
+order that the picture draws and has not opened, whatever the crowd of files. Closed, that place is one box that
+stands for itself and what lies in it, where the routes meet; opened, it is a frame with the id of its box around its
+own place and what stands in it, so refinement keeps what it does not refine. One file is one place, whatever operation touches it: the data read or
 written, a test whether it is there, a copy or a move into it or out of it, its removal
 (`File({main.folder}/note.json)` for the rename that moves a note in, the read and the `remove_file`
 alike). The place is the term; its label says the term's patterns in words, from the
@@ -357,7 +360,8 @@ is one in the same way, by what it serves: a set of methods at a path. `methods=
 **Where.** `paths.rs` (`Seg`, `join`, `place`, `folders`, `bound`, `each`, `chosen`, `substitute`, `with_suffix`,
 `environment_named`, `looked_up`, `or_else`, `within`, `Seg::Within`, `Callers`, `Cycles`, `wildcards`, `served`, `serving`),
 `model.rs` (`Route`, `Methods`, `Request`), the readers' `paths.rs` (`Eval::of`; Rust's `Eval::changed`), `flow.rs`
-(`Touch::place`, `lies_in`, `Flow::lies_in`), `plan.js` (`pathWords`), `knowledge.rs` (`PathFn`, `PathMethod::Within`, `ELEMENT_NAMES`,
+(`Touch::place`, `lies_in`, `Flow::lies_in`), `plan.js` (`pathWords`, `meetsOf` and `meet`; held by `orderings` in
+`engine/tests/plans.mjs`), `knowledge.rs` (`PathFn`, `PathMethod::Within`, `ELEMENT_NAMES`,
 `LISTING_ENTRIES`); the pairs `python/paths`, `places`, `kept`, `workbench`, `unset`, `opened`, `twice` (#324), `trees`
 (#325, #345), `keys` (#352) and `meets` (#381).
 
@@ -1021,8 +1025,8 @@ test code (A filter: the program without its test code), and is the fiber of the
 line of a touch carries the formula of who makes its path whole, so the fiber can be taken on the
 plan too, and both ways give one plan.
 
-On the image the model merges the siblings (above, `siblings`), and the page then does only what is a
-quotient of `F` or a way of drawing it: the storage quotient and the fold (above); a value with no name and no type of the code's
+On the image the model merges the siblings (above, `siblings`) and takes the order of the places on the disk
+(`meet`, "Paths as terms"), and the page then does only what is a quotient of `F` or a way of drawing it: the storage quotient and the fold (above); a value with no name and no type of the code's
 drawn as a wire from its maker to its takers, a vertex between two arrows contracted (a homotopy, as
 in rule 6); a type no line touches left out, since it lies on no border; and a place the route
 finds and changes drawn twice, `from X ⇄` on the left and `into X ⇄` on the right, one place with
