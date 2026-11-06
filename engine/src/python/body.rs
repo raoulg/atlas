@@ -19,8 +19,8 @@ use crate::knowledge::{self, OwnTypes};
 use crate::model::{ext, Bucket, Dir, EdgeKind, Held, Node, NodeKind, Resolved, Slot, Touch, World};
 use crate::pytypes::{By, Facts, FileArg, Target, Types, Value};
 use crate::tree::{
-    beneath, evaluation_order, field_children, literals, named_children, nth_of_kind, outermost, payload_of, text, unquote, walk, what_of,
-    ChoiceSyntax, CompareSyntax, Part,
+    beneath, evaluation_order, field_children, literals, named_children, nth_of_kind, outermost, parent, payload_of, text, unquote, walk,
+    what_of, ChoiceSyntax, CompareSyntax, Part,
 };
 
 /// What a change to each typed parameter changes, by name: the type the picture draws it as, the
@@ -94,7 +94,7 @@ fn lambda_binds(i: TsNode, e: TsNode, src: &[u8]) -> bool {
     let name = text(i, src);
     let mut x = i;
     while x.id() != e.id() {
-        let Some(p) = x.parent() else { return false };
+        let Some(p) = parent(x) else { return false };
         if p.kind() == "lambda"
             && p.child_by_field_name("parameters").is_some_and(|ps| walk(ps, &["identifier"]).iter().any(|n| text(*n, src) == name))
         {
@@ -111,7 +111,7 @@ fn lambda_binds(i: TsNode, e: TsNode, src: &[u8]) -> bool {
 fn own_parameter(at: TsNode, src: &[u8]) -> bool {
     let name = text(at, src);
     let mut def = at;
-    while let Some(p) = def.parent() {
+    while let Some(p) = parent(def) {
         def = p;
         if matches!(p.kind(), "function_definition" | "lambda") {
             break;
@@ -130,7 +130,7 @@ fn own_parameter(at: TsNode, src: &[u8]) -> bool {
 /// arms (`if c: x = a.b` / `else: x = d.e`).
 fn reaching<'t>(at: TsNode<'t>, name: &str, src: &[u8]) -> Vec<TsNode<'t>> {
     let mut scope = at;
-    while let Some(p) = scope.parent() {
+    while let Some(p) = parent(scope) {
         scope = p;
         if matches!(p.kind(), "function_definition" | "lambda") {
             break;
@@ -148,7 +148,7 @@ fn reaching<'t>(at: TsNode<'t>, name: &str, src: &[u8]) -> Vec<TsNode<'t>> {
     let within = |n: TsNode, outer: TsNode| outer.start_byte() <= n.start_byte() && n.end_byte() <= outer.end_byte();
     // the arms of the choice the latest binding stands in, where `at` stands outside that choice
     let mut arm = last;
-    while let Some(p) = arm.parent().filter(|p| p.id() != scope.id()) {
+    while let Some(p) = parent(arm).filter(|p| p.id() != scope.id()) {
         if matches!((CHOICES.part)(p, arm, src), Part::Arm(_)) && (CHOICES.chooses)(p, src) && !within(at, p) {
             let mut choice = p;
             while let Some(up) = (CHOICES.continues)(choice) {
@@ -236,7 +236,7 @@ fn projections_through<'t>(v: TsNode<'t>, looked: Lookups<'_, 't>) -> Vec<Option
 fn looped_by<'t>(at: TsNode<'t>, name: &str, src: &[u8]) -> Option<TsNode<'t>> {
     let names = |l: Option<TsNode>| l.is_some_and(|l| walk(l, &["identifier"]).iter().any(|n| text(*n, src) == name));
     let mut x = at;
-    while let Some(p) = x.parent() {
+    while let Some(p) = parent(x) {
         match p.kind() {
             "function_definition" | "lambda" => return None,
             "for_statement" if p.child_by_field_name("body").is_some_and(|b| b.id() == x.id()) && names(p.child_by_field_name("left")) => {
@@ -262,16 +262,16 @@ fn looped_by<'t>(at: TsNode<'t>, name: &str, src: &[u8]) -> Option<TsNode<'t>> {
 /// keyword's value or an `as` name, not a class or a keyword the pattern names.
 fn matched_by<'t>(at: TsNode<'t>, name: &str, src: &[u8]) -> Option<TsNode<'t>> {
     let mut x = at;
-    while let Some(p) = x.parent() {
+    while let Some(p) = parent(x) {
         if p.kind() == "case_clause" {
             let binds = named_children(p).into_iter().filter(|c| c.kind() == "case_pattern").any(|pat| {
                 walk(pat, &["identifier"]).into_iter().any(|i| {
                     let first = |q: TsNode, c: TsNode| named_children(q).first().is_some_and(|f| f.id() == c.id());
                     // a keyword, a class the pattern matches, or a value written by its dotted name
-                    let label = i.parent().is_some_and(|q| match q.kind() {
+                    let label = parent(i).is_some_and(|q| match q.kind() {
                         "keyword_pattern" => first(q, i),
                         "dotted_name" => {
-                            named_children(q).len() > 1 || q.parent().is_some_and(|c| c.kind() == "class_pattern" && first(c, q))
+                            named_children(q).len() > 1 || parent(q).is_some_and(|c| c.kind() == "class_pattern" && first(c, q))
                         }
                         _ => false,
                     });
@@ -279,7 +279,7 @@ fn matched_by<'t>(at: TsNode<'t>, name: &str, src: &[u8]) -> Option<TsNode<'t>> 
                 })
             });
             if binds {
-                return p.parent().and_then(|b| b.parent()).filter(|m| m.kind() == "match_statement")?.child_by_field_name("subject");
+                return parent(p).and_then(|b| parent(b)).filter(|m| m.kind() == "match_statement")?.child_by_field_name("subject");
             }
         }
         if matches!(p.kind(), "function_definition" | "lambda") {
@@ -443,7 +443,7 @@ pub(super) fn changed<'t>(body: TsNode<'t>, changes: &dyn Fn(TsNode<'t>) -> Vec<
         out.extend(
             walk(d, &["attribute", "subscript"])
                 .into_iter()
-                .filter(|t| t.parent().map_or(false, |p| p.kind() == "delete_statement" || p.kind() == "expression_list")),
+                .filter(|t| parent(*t).map_or(false, |p| p.kind() == "delete_statement" || p.kind() == "expression_list")),
         );
     }
     out.extend(walk(body, &["call"]).into_iter().flat_map(changes));
@@ -659,7 +659,7 @@ impl<'a> Seen<'a> {
 
     /// The shaped array the name `name`, where it is bound, is declared as (`declared_at`).
     fn declared_by(&self, name: TsNode) -> Option<String> {
-        let p = name.parent()?;
+        let p = parent(name)?;
         let called = |a: TsNode| match self
             .callee(a.child_by_field_name("right").filter(|r| r.kind() == "call")?.child_by_field_name("function")?)?
         {
@@ -674,7 +674,7 @@ impl<'a> Seen<'a> {
             },
             "pattern_list" | "tuple_pattern" => {
                 let a =
-                    p.parent().filter(|a| a.kind() == "assignment" && a.child_by_field_name("left").is_some_and(|l| l.id() == p.id()))?;
+                    parent(p).filter(|a| a.kind() == "assignment" && a.child_by_field_name("left").is_some_and(|l| l.id() == p.id()))?;
                 let parts: Vec<TsNode> = named_children(p);
                 let k = parts.iter().position(|x| x.id() == name.id())?;
                 let f = self.store.nodes.get(&called(a)?)?;
@@ -839,8 +839,7 @@ impl<'a> Seen<'a> {
     fn gives(&self, c: TsNode, assigned: &str, hands: &[Held], ext: &HashMap<(String, String), String>) -> Vec<Held> {
         let known = self.value(c).filter(|v| !v.is_class && !v.is_code);
         let tys = known.map(|v| self.drawn(v, ext)).unwrap_or_default();
-        let annotated = c
-            .parent()
+        let annotated = parent(c)
             .filter(|p| p.kind() == "assignment" && p.child_by_field_name("right").is_some_and(|r| r.id() == c.id()))
             .and_then(|p| p.child_by_field_name("type"))
             .and_then(|t| self.annotated_shape(t))
@@ -1201,11 +1200,11 @@ fn io_tables(m: &Module, facts: Option<&Facts>, own: &Own) -> HashMap<String, Ve
 fn io_refs(m: &Module, facts: Option<&Facts>, n: TsNode, own: &Own, what: &str) -> Vec<Touch> {
     let mut out = vec![];
     for a in walk(n, &["attribute"]) {
-        let called = a.parent().map_or(false, |p| p.kind() == "call" && p.child_by_field_name("function").map(|f| f.id()) == Some(a.id()));
+        let called = parent(a).map_or(false, |p| p.kind() == "call" && p.child_by_field_name("function").map(|f| f.id()) == Some(a.id()));
         // `openai.api_key = ..` assigns the attribute; it names no function
         let assigned =
-            a.parent().map_or(false, |p| p.kind() == "assignment" && p.child_by_field_name("left").map(|l| l.id()) == Some(a.id()));
-        if called || assigned || a.parent().map_or(false, |p| p.kind() == "attribute") {
+            parent(a).map_or(false, |p| p.kind() == "assignment" && p.child_by_field_name("left").map(|l| l.id()) == Some(a.id()));
+        if called || assigned || parent(a).map_or(false, |p| p.kind() == "attribute") {
             continue;
         }
         let parts = dotted(Some(a), &m.src);
@@ -1284,6 +1283,28 @@ pub(super) fn link_calls<'t>(
     let n = store.nodes[id].clone();
     let m = &modules[&n.module];
     let Some(d) = def_node(m, &n) else { return Linked::default() };
+    // a body asks the parents of its nodes and walks itself for one kind of node after another: both are answered from
+    // one walk of it (`tree::indexed`)
+    crate::tree::indexed(d, || link_body(modules, store, types, sites, ext, eval, own, changing, shaped, id, &n, d))
+}
+
+/// `link_calls` of the body of `n`, defined at `d`.
+#[allow(clippy::too_many_arguments)]
+fn link_body<'t>(
+    modules: &'t IndexMap<String, Module>,
+    store: &mut GraphBuilder,
+    types: &Types,
+    sites: &HashMap<(String, usize), String>,
+    ext: &HashMap<(String, String), String>,
+    eval: &Eval,
+    own: &Own,
+    changing: &Changing,
+    shaped: &HashMap<String, String>,
+    id: &str,
+    n: &Node,
+    d: TsNode<'t>,
+) -> Linked<'t> {
+    let m = &modules[&n.module];
     let in_module = n.kind == NodeKind::Module;
     let Some(body) = (if in_module { Some(d) } else { d.child_by_field_name("body") }) else { return Linked::default() };
     let mut steps = Steps::new(body, &m.src, &CHOICES, &USES);
@@ -1473,12 +1494,12 @@ impl<'a, 't> Body<'a, 't> {
     /// Whether `n` is the body's own: in a module's own code, not inside a definition, which
     /// belongs to that definition.
     fn holds(&self, n: TsNode) -> bool {
-        let mut p = n.parent();
+        let mut p = parent(n);
         while let Some(pp) = p.filter(|pp| pp.id() != self.body.id()) {
             if self.in_module && matches!(pp.kind(), "function_definition" | "class_definition") {
                 return false;
             }
-            p = pp.parent();
+            p = parent(pp);
         }
         true
     }
@@ -1495,7 +1516,7 @@ impl<'a, 't> Body<'a, 't> {
             // a call in a comprehension's element runs after the comprehension's loops
             let mut key = (c.end_byte(), 0, 0);
             let mut x = c;
-            while let Some(q) = x.parent().filter(|_| x.id() != self.body.id()) {
+            while let Some(q) = parent(x).filter(|_| x.id() != self.body.id()) {
                 if comprehensions.contains(&q.kind()) && q.child_by_field_name("body").map(|b| b.id()) == Some(x.id()) {
                     let after =
                         named_children(q).into_iter().filter(|k| k.kind() == "for_in_clause").map(|k| k.end_byte()).max().unwrap_or(0);
@@ -1507,7 +1528,7 @@ impl<'a, 't> Body<'a, 't> {
         }
         // the command line kept under a name; one a loop goes over is that loop's
         for w in self.words_read() {
-            let looped = w.parent().is_some_and(|l| matches!(l.kind(), "for_statement" | "for_in_clause"));
+            let looped = parent(w).is_some_and(|l| matches!(l.kind(), "for_statement" | "for_in_clause"));
             if !looped && (kept_as(w, self.src).is_some() || !unpacked_as(w, self.src).is_empty()) {
                 out.push(((w.end_byte(), 0, 0), Ran::Words(w)));
             }
@@ -1531,17 +1552,17 @@ impl<'a, 't> Body<'a, 't> {
         let mut out = vec![];
         for n in walk(self.body, &["attribute", "identifier"]).into_iter().filter(|n| self.holds(*n) && reads(n)) {
             // `sys.argv` itself, not the `sys` in it
-            if n.parent().is_some_and(|p| p.kind() == "attribute" && p.child_by_field_name("object").is_some_and(|o| o.id() == n.id())) {
+            if parent(n).is_some_and(|p| p.kind() == "attribute" && p.child_by_field_name("object").is_some_and(|o| o.id() == n.id())) {
                 continue;
             }
             let mut end = n;
             loop {
                 let value = outermost(end, WRAPPERS);
-                let Some(p) = value.parent() else { break };
+                let Some(p) = parent(value) else { break };
                 let on = |f: &str| p.child_by_field_name(f).is_some_and(|x| x.id() == value.id());
                 end = match p.kind() {
                     "subscript" if on("value") => p,
-                    "attribute" if on("object") => match p.parent().filter(|c| c.kind() == "call") {
+                    "attribute" if on("object") => match parent(p).filter(|c| c.kind() == "call") {
                         Some(call) => call,
                         None => break,
                     },
@@ -2328,7 +2349,7 @@ fn file_calls<'t>(
 fn kept_as(c: TsNode, src: &[u8]) -> Option<String> {
     let mut n = c;
     loop {
-        let p = n.parent()?;
+        let p = parent(n)?;
         let value = |field: &str| p.child_by_field_name(field).map(|v| v.id()) == Some(n.id());
         match p.kind() {
             k if WRAPPERS.contains(&k) => n = p,
@@ -2341,7 +2362,7 @@ fn kept_as(c: TsNode, src: &[u8]) -> Option<String> {
             }
             "named_expression" if value("value") => return p.child_by_field_name("name").map(|l| text(l, src).to_string()),
             // `with X as con` names what `X` gives, as `con = X` does
-            "as_pattern" if p.named_child(0).is_some_and(|v| v.id() == n.id()) && p.parent().is_some_and(|w| w.kind() == "with_item") => {
+            "as_pattern" if p.named_child(0).is_some_and(|v| v.id() == n.id()) && parent(p).is_some_and(|w| w.kind() == "with_item") => {
                 let alias = p.child_by_field_name("alias")?;
                 let name = if alias.kind() == "identifier" { alias } else { named_children(alias).into_iter().next()? };
                 return (name.kind() == "identifier" && text(name, src) != "_").then(|| text(name, src).to_string());
@@ -2355,7 +2376,7 @@ fn kept_as(c: TsNode, src: &[u8]) -> Option<String> {
 /// value of an assignment to a pattern: `uuid, soort, tekst = line.split(" ", 2)`.
 fn unpacked_as<'t>(c: TsNode<'t>, src: &[u8]) -> Vec<TsNode<'t>> {
     let value = outermost(c, WRAPPERS);
-    let Some(p) = value.parent().filter(|p| p.kind() == "assignment") else { return vec![] };
+    let Some(p) = parent(value).filter(|p| p.kind() == "assignment") else { return vec![] };
     if p.child_by_field_name("right").map(|r| r.id()) != Some(value.id()) {
         return vec![];
     }
@@ -2493,7 +2514,7 @@ fn first_argument(call: TsNode) -> Option<TsNode> {
 /// Whether a function handed to a call is handed by a keyword whose function's value the call
 /// uses (`key=score`).
 fn handed_for_its_value(a: TsNode, src: &[u8]) -> bool {
-    a.parent()
+    parent(a)
         .filter(|k| k.kind() == "keyword_argument")
         .and_then(|k| k.child_by_field_name("name"))
         .map_or(false, |n| knowledge::PYTHON_USES_HANDED.contains(&text(n, src)))
@@ -2501,7 +2522,7 @@ fn handed_for_its_value(a: TsNode, src: &[u8]) -> bool {
 
 /// Whether what a call gives back is used: anything but a call standing as a statement.
 fn value_used(call: TsNode) -> bool {
-    outermost(call, WRAPPERS).parent().map_or(false, |p| p.kind() != "expression_statement")
+    parent(outermost(call, WRAPPERS)).map_or(false, |p| p.kind() != "expression_statement")
 }
 
 /// A call's first positional argument.
@@ -2549,10 +2570,10 @@ const CHOICES: ChoiceSyntax = ChoiceSyntax {
         "elif_clause" | "conditional_expression" | "try_statement" | "case_clause" => true,
         "boolean_operator" => matches!(n.child_by_field_name("operator").map(|o| text(o, src)), Some("or" | "and")),
         // the cases of a `match` sit in its body block
-        "block" => n.parent().map_or(false, |p| p.kind() == "match_statement"),
+        "block" => parent(n).map_or(false, |p| p.kind() == "match_statement"),
         _ => false,
     },
-    continues: |n| if matches!(n.kind(), "elif_clause" | "case_clause") { n.parent() } else { None },
+    continues: |n| if matches!(n.kind(), "elif_clause" | "case_clause") { parent(n) } else { None },
     part: |c, child, _| {
         let is = |f: &str| c.child_by_field_name(f).map(|x| x.id()) == Some(child.id());
         match c.kind() {
@@ -2562,7 +2583,7 @@ const CHOICES: ChoiceSyntax = ChoiceSyntax {
                 Part::Arm(1 + named_children(c).iter().filter(|x| x.kind() == "elif_clause").count() as u32)
             }
             "elif_clause" if is("condition") => Part::Decides,
-            "elif_clause" if is("consequence") => Part::Arm(1 + c.parent().map_or(0, |p| nth_of_kind(p, c))),
+            "elif_clause" if is("consequence") => Part::Arm(1 + parent(c).map_or(0, |p| nth_of_kind(p, c))),
             "conditional_expression" => match named_children(c).iter().position(|x| x.id() == child.id()) {
                 Some(0) => Part::Arm(0),
                 Some(1) => Part::Decides,
@@ -2645,11 +2666,11 @@ const USES: UseSyntax = UseSyntax {
     reads: &[],
     // an annotation names a type, never a value the body reads (`both: list[Level] = ..`)
     label: |n, _| {
-        let annotated = std::iter::successors(n.parent(), |p| p.parent())
+        let annotated = std::iter::successors(parent(n), |p| parent(*p))
             .take_while(|p| !matches!(p.kind(), "block" | "module"))
             .any(|p| p.kind() == "type");
         annotated
-            || n.parent().is_some_and(|p| {
+            || parent(n).is_some_and(|p| {
                 let is = |f: &str| p.child_by_field_name(f).is_some_and(|x| x.id() == n.id());
                 (p.kind() == "attribute" && is("attribute")) || (p.kind() == "keyword_argument" && is("name"))
             })

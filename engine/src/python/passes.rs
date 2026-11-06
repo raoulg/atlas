@@ -525,7 +525,7 @@ pub(super) fn link(modules: &IndexMap<String, Module>, store: &mut GraphBuilder,
             let Some(body) = d.child_by_field_name("body") else { continue };
             let seen = Seen::new(m, types, &sites, modules, store, own);
             let cls = n.cls.as_deref().filter(|_| method);
-            let (receiver, params) = changed_params(&seen, &changing, d, body, method, cls);
+            let (receiver, params) = crate::tree::indexed(d, || changed_params(&seen, &changing, d, body, method, cls));
             found.push((id.clone(), receiver && method && n.name != "__init__" && cls.is_some(), params));
         }
         for (id, receiver, params) in found {
