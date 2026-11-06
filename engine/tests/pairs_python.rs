@@ -2340,6 +2340,34 @@ fn places_a_declared_program_is_a_command_in_every_layout() {
     assert!(package.node("tally.cli.main").is_some_and(|n| !n.exported), "{:?}", package.node("tally.cli.main").map(|n| &n.entry));
 }
 
+/// What a function is to its user does not depend on the order the reader marks it in (#435). A command a framework
+/// registers (`@click.command()`) that its package also exports in `__all__` is the command, with the options its user
+/// types, and a door as well, as a declared program its package exports is (`entries::mark_scripts`). The doors are
+/// marked before completion reads them, so the command is marked after its door: the law holds both marks together.
+#[test]
+#[ignore = "#435: red until it lands"]
+fn an_exported_command_is_the_command_and_a_door() {
+    let root = std::env::temp_dir().join(format!("atlas-python-exported-command-{}", std::process::id()));
+    let typings = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixture/typings");
+    std::fs::create_dir_all(root.join("src/cmds")).expect("makes the package");
+    let manifest = format!(
+        "[project]\nname = \"cmds\"\nversion = \"0\"\n\n[build-system]\nrequires = [\"uv_build\"]\nbuild-backend = \"uv_build\"\n\n\
+         [tool.ty.environment]\nextra-paths = [{:?}]\n",
+        typings.to_string_lossy()
+    );
+    std::fs::write(root.join("pyproject.toml"), manifest).expect("writes the manifest");
+    std::fs::write(root.join("src/cmds/__init__.py"), "from cmds.cli import greet\n\n__all__ = [\"greet\"]\n").expect("writes the root");
+    let cli = "import click\n\n\n@click.command()\n@click.option(\"--out\", default=\"hello.txt\")\ndef greet(out: str) -> None:\n    \
+               open(out, \"w\").write(\"hello\")\n";
+    std::fs::write(root.join("src/cmds/cli.py"), cli).expect("writes the command");
+    let g = analyze(&root, &Options::default()).expect("reads");
+    let _ = std::fs::remove_dir_all(&root);
+    let greet = g.node("cmds.cli.greet").expect("the command is in the graph");
+    let entry = greet.entry.as_ref().map(|e| (e.kind, e.label.as_str(), e.options.clone()));
+    assert_eq!(entry, Some((EntryKind::Cli, "greet", vec!["--out".to_string()])), "the command its user types");
+    assert!(greet.exported, "and a door its package names");
+}
+
 /// The places pair, `places/python`: rows read and kept, pages made from a template the package
 /// ships, a report a command writes, rows kept by kind and a cache, the same on both sides but for
 /// who decides where each lives.
