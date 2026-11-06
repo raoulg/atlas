@@ -9,8 +9,9 @@
 // - `side PLACE left|right|between|both`: where a place of the world stands, decided on the closed picture.
 //
 // Beside the facts it gives the faults of the pictures: for every set of open steps, the oracle's (each box that can
-// still be opened refines the picture) and the quotient's (each line of the picture is the image of the fine lines
-// that cross a block's border, by channel and count).
+// still be opened refines the picture), the quotient's (each line of the picture is the image of the fine lines
+// that cross a block's border, by channel and count) and the merge's (each line of the picture the page draws, its
+// siblings merged, has both its ends among its boxes: `ends`).
 import fs from "node:fs";
 import path from "node:path";
 
@@ -298,11 +299,38 @@ function pictures(F, openable, occ, homes, valueName) {
     const view = M.imageOf(F, k => k === route || V.open.steps.has(k), foldable);
     for (const f of M.checkOpenings(F, view, foldable)) faults.push(`${at}: ${f}`);
     for (const f of quotient(F, view, set, homes, occ, valueName)) faults.push(`${at}: ${f}`);
+    const C = M.plan();
+    for (const f of ends(C, M.coarsen(window.atlasPlan.fine))) faults.push(`${at}: ${f}`);
   }
   // sampled, a large program's route is asked of the sets drawn for it; in full, of none, each step alone and all
   faults.push(...closing(SAMPLED ? sets : [[], ...steps.map(s => [s]), ...(steps.length > 1 ? [steps] : [])], occ));
   V.open.steps = new Set();
   return faults;
+}
+
+// The picture the page draws is the coarse plan with its siblings that draw alike merged into one box (`siblings`), a quotient
+// of its steps, and a quotient keeps the image of every line (#412). So every line of the picture has both its ends among its
+// boxes: a line of data goes between a step and a place the picture draws, a call and a line back between two steps it draws.
+// And siblings are one box only where they draw the same lines: on the picture before the merge (`unmerged`), the members of
+// a box draw the same lines of data, call the same steps and are called by the same ones
+function ends(C, unmerged) {
+  const out = [];
+  for (const P of C.pills.values()) {
+    for (const k of P.D.keys()) if (!C.places.has(k)) out.push(`the line ${k} > ${P.id} starts at no box the picture draws`);
+    for (const k of P.C.keys()) if (!C.places.has(k)) out.push(`the line ${P.id} > ${k} ends at no box the picture draws`);
+    for (const b of P.calls || []) if (!C.pills.has(b)) out.push(`the call ${P.id} > ${b} ends at no box the picture draws`);
+    if (P.backTo && !C.pills.has(P.backTo)) out.push(`the line back ${P.id} > ${P.backTo} ends at no box the picture draws`);
+  }
+  const callers = new Map();
+  for (const P of unmerged.pills.values()) for (const b of P.calls || []) { if (!callers.has(b)) callers.set(b, []); callers.get(b).push(P.id); }
+  const lines = P => `${P.fine ?? [...P.D.keys()].sort() + " > " + [...P.C.keys()].sort()}; calls ${[...(P.calls || [])].sort()}; called by ${(callers.get(P.id) || []).sort()}`;
+  for (const Q of C.pills.values()) {
+    if (Q.steps.length < 2) continue;
+    const members = [...unmerged.pills.values()].filter(P => P.parent === Q.parent && P.steps.every(s => Q.steps.includes(s)));
+    const drawn = new Set(members.map(lines));
+    if (drawn.size > 1) out.push(`the box ${Q.id} joins siblings that draw other lines: ${members.map(P => `${P.id} draws ${lines(P)}`).join(", ")}`);
+  }
+  return out;
 }
 
 // A picture as what it draws: its boxes, the frames they stand in, the lines of each step with their counts, and the side
@@ -455,7 +483,9 @@ function overviewFaults(tests) {
     const drawnCalls = new Set([...view.pills.values()].flatMap(P => [...(P.calls || [])].map(b => `${P.id}>${b}`)));
     for (const c of calls) if (!drawnCalls.has(c)) out.push(`${at}: no call ${c}`);
     for (const c of drawnCalls) if (!calls.has(c)) out.push(`${at}: the call ${c} stands for no call of the code`);
-    first.set(set, drawnOf(M.plan()));
+    const C = M.plan();
+    for (const f of ends(C, M.coarsen(window.atlasPlan.fine, M.overviewOpen, () => false))) out.push(`${at}: ${f}`);
+    first.set(set, drawnOf(C));
   }
   for (const set of [...sets].reverse()) {
     openAs(set);
