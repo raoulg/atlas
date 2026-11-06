@@ -22,19 +22,21 @@ for _ in $(seq 1 60); do
   sleep 1
 done
 if [ -z "$url" ]; then echo "atlas serve gave no address:" >&2; cat "$work/err" >&2; exit 1; fi
-# the server answers with a short waiting page until the repository is read, then with the drawn one
+# the snapshot, the graph the page draws, is there once the repository is read
 for _ in $(seq 1 90); do
-  curl -fsS "$url/" > "$work/page.html" || true
-  grep -q '<html' "$work/page.html" && break
+  curl -fsS "$url/api/snapshot" > "$work/snapshot.json" 2>/dev/null || true
+  [ -s "$work/snapshot.json" ] && break
   sleep 1
 done
-if ! grep -q '<html' "$work/page.html"; then
-  echo "the page never became the drawn one; the server says:" >&2
+if ! grep -q 'smoke_marker' "$work/snapshot.json"; then
+  echo "the graph of the repository never named smoke_marker; the server says:" >&2
   curl -sS "$url/api/drawn" >&2 || true
   echo >&2
   cat "$work/err" >&2
   exit 1
 fi
+curl -fsS "$url/" > "$work/page.html"
+grep -q '<title>Atlas' "$work/page.html" || { echo "the page is not Atlas's:" >&2; head -c 300 "$work/page.html" >&2; exit 1; }
 curl -fsS "$url/api/files" > "$work/files.json"
 grep -q '"path":"app.py"' "$work/files.json" || { echo "the served files do not name app.py:" >&2; head -c 600 "$work/files.json" >&2; exit 1; }
-echo "atlas serve answered at $url: a page of $(wc -c < "$work/page.html" | tr -d ' ') bytes, and app.py in the files it lists"
+echo "atlas serve answered at $url: a page of $(wc -c < "$work/page.html" | tr -d ' ') bytes, smoke_marker in its graph and app.py in its files"
