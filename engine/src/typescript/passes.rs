@@ -1088,7 +1088,8 @@ pub(super) fn link(modules: &IndexMap<String, Module>, store: &mut GraphBuilder,
         let body = m.bodies.get(f).and_then(|(s, e)| m.tree.root_node().descendant_for_byte_range(*s, *e))?;
         eval.default_of(m, body, p)
     };
-    let completed = crate::paths::complete(linked.calls, &handing, &family, &default, &entry);
+    let holds = |g: &str, x: &str| eval.field(g, x);
+    let completed = crate::paths::complete(linked.calls, &handing, &family, &default, &holds, &entry);
     // a page's request without a host goes to the page's own origin
     crate::paths::place_calls(store, completed, true);
     drop(callers);

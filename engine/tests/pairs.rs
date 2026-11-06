@@ -899,3 +899,88 @@ fn an_input_is_its_default_where_no_caller_overrides_it() {
     }
     assert!(facts.windows(2).all(|w| w[0] == w[1]), "{facts:?}");
 }
+
+/// A field holds what the constructor that built the value set (`docs/reference/mathematics.md`, "A function's return is
+/// its summary"; #407, #395). The fields pair (`fields/{python,rust,typescript}`): a shelf holds its folder, its methods
+/// name a file in it; `open_archive` builds the archive and hands it on to the method that writes the note, `read_index`
+/// builds the drafts where it reads their index. The clean shelf is handed its folder, the shortcut's constructor puts
+/// it under one it names itself. In every language and on both sides: the index read on the shelf built in place is that
+/// shelf's alone, never the archive's (#407); the note written on the shelf handed in is made whole by the builder and
+/// the method together (the conjunction), and its place is decided where its start is written: by the builder on the
+/// clean side, by the constructor on the shortcut's (#395). The facts are the same in every reading.
+#[test]
+fn a_field_holds_what_the_constructor_that_built_the_value_set() {
+    // a function by its name with the language's spelling taken away, a type's constructor by one name
+    let name = |id: &str| -> String {
+        let last = id.rsplit(['.', ':']).next().unwrap_or_default().replace('_', "").to_lowercase();
+        if matches!(last.as_str(), "new" | "init" | "constructor") {
+            "constructor".to_string()
+        } else {
+            last
+        }
+    };
+    let touches = |g: &Graph, function: &str| -> BTreeSet<(String, Vec<String>, BTreeSet<String>)> {
+        g.nodes
+            .iter()
+            .filter(|n| !n.library && name(&n.id) == function)
+            .flat_map(|n| &n.touches)
+            .filter(|t| t.kind == World::Disk)
+            .map(|t| {
+                let by = t
+                    .by
+                    .iter()
+                    .map(|b| b.0.iter().map(|a| name(&a.to_string())).collect::<BTreeSet<_>>().into_iter().collect::<Vec<_>>().join("&"));
+                let by = by.collect();
+                (t.artifact.clone(), t.fixed_by.iter().map(|f| name(f)).collect(), by)
+            })
+            .collect()
+    };
+    let mut facts = vec![];
+    for language in ["python", "rust", "typescript"] {
+        for (side, below, decided) in [("clean", "", "openarchive"), ("shortcut", "shelves/", "constructor")] {
+            let g = pair(&format!("fields/{language}/{side}"));
+            let read: BTreeSet<String> = touches(&g, "readindex").into_iter().map(|(at, ..)| at).collect();
+            assert_eq!(read, BTreeSet::from([format!("{below}drafts/index.txt")]), "{language} {side}: the shelf built in place");
+            let written = touches(&g, "write");
+            let archive = written.iter().find(|(at, ..)| *at == format!("{below}archive/note.txt"));
+            let (_, fixed_by, by) = archive.unwrap_or_else(|| panic!("{language} {side}: {written:?}"));
+            assert_eq!(by, &BTreeSet::from(["keep&openarchive".to_string()]), "{language} {side}: the builder and the method");
+            assert_eq!(fixed_by, &[decided.to_string()], "{language} {side}: decided where the start is written");
+            facts.push((side, read, written));
+        }
+    }
+    for side in ["clean", "shortcut"] {
+        let same: Vec<_> = facts.iter().filter(|(s, ..)| *s == side).map(|(_, read, written)| (read, written)).collect();
+        assert!(same.windows(2).all(|w| w[0] == w[1]), "{side}: {same:?}");
+    }
+}
+
+/// A variant's field taken out by the pattern that matches it is the value built in, as a struct's field read back is
+/// (`docs/reference/mathematics.md`, "A function's return is its summary"; #349). The kept pair of sums
+/// (`sums/kept/{python,rust}`): an attachment is kept in a file of its own or in a folder with an index. The clean side
+/// keeps where as a variant built with its path (`Plek::Bestand(path)`, `Bestand(path)`) and takes it apart in a `match`
+/// (`Plek::Bestand(pad) =>`, `case Bestand(pad):`), so the reads under its arms are the places built in, decided where
+/// they are built; the shortcut writes the kind before the path into one string and splits it again, so no place it
+/// reads is one the code decides. The facts are the same in both readings. TypeScript's discriminated union is not read
+/// this way yet.
+#[test]
+fn a_variant_s_field_taken_out_by_a_match_is_the_value_built_in() {
+    let places = |g: &Graph| -> BTreeSet<(String, Vec<String>)> {
+        g.nodes
+            .iter()
+            .filter(|n| !n.library && n.id.ends_with("lees"))
+            .flat_map(|n| &n.touches)
+            .filter(|t| t.kind == World::Disk && !t.artifact.is_empty())
+            .map(|t| (t.artifact.clone(), t.fixed_by.iter().map(|f| f.rsplit('.').next().unwrap_or_default().to_string()).collect()))
+            .collect()
+    };
+    let built = BTreeSet::from([
+        ("bijlagen/bron.txt".to_string(), vec!["main".to_string()]),
+        ("bijlagen/los/index.txt".to_string(), vec!["main".to_string()]),
+    ]);
+    for language in ["python", "rust"] {
+        assert_eq!(places(&pair(&format!("sums/kept/{language}/clean"))), built, "{language}: the places built into the variants");
+        let split = places(&pair(&format!("sums/kept/{language}/shortcut")));
+        assert!(split.iter().all(|(at, by)| at.starts_with('{') && by.is_empty()), "{language}: no place the code decides: {split:?}");
+    }
+}

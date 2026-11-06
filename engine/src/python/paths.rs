@@ -2,6 +2,7 @@
 //! finds, and through the values a function's parameters are handed by its callers. An entry's
 //! parameters hold their declared defaults (`@click.option(.., default=..)`).
 
+use std::cell::RefCell;
 use std::collections::HashMap;
 use std::path::Path;
 
@@ -30,6 +31,10 @@ pub(super) struct Eval<'a> {
     /// What each expression read in a frame of its own gives (a function's returns, a parameter's default, the value a
     /// function gives an attribute, a constant), a term of that frame's parameters, made once in that frame.
     summaries: Summaries,
+    /// What a function sets an attribute of the object it runs on to, where that is no parameter of
+    /// its own (`self.root = Path("shelves") / name`), by the function's id and the attribute's: a term
+    /// of its parameters, which its callers complete (`Callers::holds`).
+    fields: RefCell<HashMap<(String, String), Vec<Built>>>,
 }
 
 /// Where an expression is evaluated: its module, and the function it is in with that function's
@@ -56,7 +61,13 @@ impl<'a, 't> At<'a, 't> {
 
 impl<'a> Eval<'a> {
     pub fn new(modules: &'a IndexMap<String, Module>, types: &'a Types, root: &'a Path) -> Self {
-        Eval { by_file: modules.values().map(|m| (path_str(&m.path), m)).collect(), types, root, summaries: Summaries::default() }
+        Eval {
+            by_file: modules.values().map(|m| (path_str(&m.path), m)).collect(),
+            types,
+            root,
+            summaries: Summaries::default(),
+            fields: RefCell::default(),
+        }
     }
 
     /// The module's file, by its path in the project.
@@ -214,7 +225,136 @@ impl<'a> Eval<'a> {
                 .map(|d| self.summaries.of(d.id(), || self.of(At { m, scope: None, params: &[] }, d, 0)))
                 .unwrap_or_else(|| vec![hole(p)]),
         };
-        Some(applied(&summary, value))
+        let given = applied(&summary, value);
+        // what a method reads of the object it runs on, of the one the code says built it
+        match c.child_by_field_name("function").filter(|f| f.kind() == "attribute").and_then(|f| f.child_by_field_name("object")) {
+            Some(on) => Some(self.built_on(at, on, given, depth + 1)),
+            None => Some(given),
+        }
+    }
+
+    /// The field a class pattern takes out by the name `n` (`case Tree(d)`, `case Tree(dir=d)`), as what the constructor
+    /// of the class holds by it: a class built from its fields (a dataclass) takes them out by place in the order it
+    /// declares them, any class by keyword.
+    fn taken_out(&self, m: &Module, n: TsNode) -> Option<Vec<Built>> {
+        let mut x = n.parent()?;
+        while matches!(x.kind(), "dotted_name" | "case_pattern") {
+            x = x.parent()?;
+        }
+        let (class, field) = match x.kind() {
+            "keyword_pattern" => {
+                let pattern = std::iter::successors(x.parent(), |c| c.parent())
+                    .find(|c| c.kind() != "case_pattern")
+                    .filter(|c| c.kind() == "class_pattern")?;
+                (pattern, text(named_children(x).into_iter().next()?, &m.src).to_string())
+            }
+            "class_pattern" => {
+                let at = named_children(x)
+                    .into_iter()
+                    .filter(|c| c.kind() == "case_pattern")
+                    .position(|c| c.start_byte() <= n.start_byte() && n.end_byte() <= c.end_byte())?;
+                (x, at.to_string())
+            }
+            _ => return None,
+        };
+        let name = named_children(class).into_iter().find(|c| c.kind() == "dotted_name")?;
+        let last = named_children(name).into_iter().last()?;
+        let Target::Here { file, at } = self.def(m, last)? else { return None };
+        let home = *self.by_file.get(&file)?;
+        let def = home.tree.root_node().descendant_for_byte_range(at, at)?.parent().filter(|d| d.kind() == "class_definition")?;
+        let id = function_id(home, def)?;
+        let field = match field.parse::<usize>() {
+            Ok(i) => {
+                let body = def.child_by_field_name("body")?;
+                let fields: Vec<String> = walk(body, &["assignment"])
+                    .into_iter()
+                    .filter(|a| a.child_by_field_name("type").is_some() && field_of(*a, &home.src).is_some_and(|c| c.id() == def.id()))
+                    .filter_map(|a| a.child_by_field_name("left").map(|l| text(l, &home.src).to_string()))
+                    .collect();
+                fields.get(i)?.clone()
+            }
+            Err(_) => field,
+        };
+        Some(vec![vec![Seg::Held(format!("{id}.__init__"), field, vec![])]])
+    }
+
+    /// What the object a function sets up holds by `x`, where it is no parameter of that function (`fields`).
+    pub fn field(&self, g: &str, x: &str) -> Option<Vec<Built>> {
+        self.fields.borrow().get(&(g.to_string(), x.to_string())).cloned()
+    }
+
+    /// The class of the value `e` is and the calls that built it, where the code says which: a call of the
+    /// class in the function `e` is in, a name the function binds once to one, or a call of one of the
+    /// package's functions whose every return builds a value of one class (`open_archive()`), outward from the
+    /// function the class is called in.
+    fn built(&self, at: At, e: TsNode, depth: u32) -> Option<(String, Vec<String>)> {
+        if depth > DEPTH {
+            return None;
+        }
+        let e = beneath(e, WRAPPERS);
+        let src = &at.m.src;
+        let here = || function_id(at.m, at.scope?);
+        match e.kind() {
+            "call" => {
+                let (file, offset) = self.callee_def(at.m, e.child_by_field_name("function")?)?;
+                let m = *self.by_file.get(&file)?;
+                let d = m.tree.root_node().descendant_for_byte_range(offset, offset)?.parent()?;
+                let init =
+                    d.kind() == "function_definition" && d.child_by_field_name("name").is_some_and(|n| text(n, &m.src) == "__init__");
+                let class = match d.kind() {
+                    "class_definition" => Some(d),
+                    _ if init => d.parent().and_then(|b| b.parent()).filter(|c| c.kind() == "class_definition"),
+                    _ => None,
+                };
+                if let Some(class) = class {
+                    return Some((function_id(m, class)?, vec![here()?]));
+                }
+                if d.kind() != "function_definition" {
+                    return None;
+                }
+                let names: Vec<String> = parameters(d, &m.src, in_class(d)).into_iter().map(|(n, _)| n).collect();
+                let inner = At { m, scope: Some(d), params: &names };
+                let returns = d
+                    .child_by_field_name("body")
+                    .map(|b| walk(b, &["return_statement"]))
+                    .unwrap_or_default()
+                    .into_iter()
+                    .filter(|r| enclosing_def(*r).map(|x| x.id()) == Some(d.id()))
+                    .filter_map(|r| named_children(r).into_iter().next());
+                let mut each = returns.map(|r| self.built(inner, r, depth + 1));
+                let first = each.next()??;
+                each.all(|x| x.as_ref() == Some(&first)).then_some(())?;
+                let (class, mut along) = first;
+                along.push(here()?);
+                Some((class, along))
+            }
+            "identifier" => {
+                let scope = at.scope?;
+                let name = text(e, src);
+                if at.params.iter().any(|p| p == name) {
+                    return None;
+                }
+                let binds: Vec<TsNode> = walk(scope, &["assignment", "augmented_assignment"])
+                    .into_iter()
+                    .filter(|a| a.child_by_field_name("left").is_some_and(|l| l.kind() == "identifier" && text(l, src) == name))
+                    .collect();
+                match binds.as_slice() {
+                    [a] if a.kind() == "assignment" && a.end_byte() <= e.start_byte() => {
+                        self.built(at, a.child_by_field_name("right")?, depth + 1)
+                    }
+                    _ => None,
+                }
+            }
+            _ => None,
+        }
+    }
+
+    /// What `values` hold of the value `on` is, where the code says which calls built it (`built`).
+    fn built_on(&self, at: At, on: TsNode, values: Vec<Built>, depth: u32) -> Vec<Built> {
+        match self.built(at, on, depth) {
+            Some((class, along)) => crate::paths::built_along(values, &class, &along),
+            None => values,
+        }
     }
 
     /// The values `e` can have.
@@ -269,7 +409,10 @@ impl<'a> Eval<'a> {
                     a if knowledge::ELEMENT_NAMES.iter().any(|(lib, class, name)| *name == a && self.of_class(at.m, obj, lib, class)) => {
                         vec![lit("*")]
                     }
-                    a => self.parsed(at, obj, a, depth).or_else(|| self.defined(at, e, depth)).unwrap_or_else(|| vec![named()]),
+                    a => self
+                        .parsed(at, obj, a, depth)
+                        .or_else(|| self.defined(at, e, depth).map(|values| self.built_on(at, obj, values, depth + 1)))
+                        .unwrap_or_else(|| vec![named()]),
                 }
             }
             "subscript" => {
@@ -569,6 +712,11 @@ impl<'a> Eval<'a> {
             return vec![vec![Seg::Package(self.file(at.m))]];
         }
         let named = self.local(at.m, e).unwrap_or_else(|| name.to_string());
+        // a name the pattern of the case it is read in takes out of the value matched: that case's, whichever case
+        // binds the name first
+        if let Some(v) = captured(e, name, &at.m.src).and_then(|c| self.taken_out(at.m, c)) {
+            return named_by(&named, v);
+        }
         self.defined(at, e, depth).map(|v| named_by(&named, v)).unwrap_or_else(|| vec![hole(name)])
     }
 
@@ -659,6 +807,10 @@ impl<'a> Eval<'a> {
         if p.kind() == "attribute" {
             p = p.parent()?;
         }
+        // `case Tree(d)`: what the constructor of the class matched holds by the field the pattern takes out
+        if let Some(held) = self.taken_out(m, n) {
+            return Some(held);
+        }
         // `with open(p) as f`: `f` is what the context gives, the file at `p`
         if p.kind() == "as_pattern_target" {
             let value = p.parent().filter(|a| a.kind() == "as_pattern").and_then(|a| named_children(a).into_iter().next())?;
@@ -693,7 +845,7 @@ impl<'a> Eval<'a> {
             "assignment" if p.child_by_field_name("type").is_some() && field_of(p, &m.src).is_some() => {
                 let class = field_of(p, &m.src)?;
                 let id = function_id(m, class)?;
-                Some(vec![vec![Seg::Held(format!("{id}.__init__"), name)]])
+                Some(vec![vec![Seg::Held(format!("{id}.__init__"), name, vec![])]])
             }
             "assignment" => {
                 let right = p.child_by_field_name("right")?;
@@ -704,7 +856,16 @@ impl<'a> Eval<'a> {
                     Some((d, id)) => {
                         let names: Vec<String> = parameters(d, &m.src, in_class(d)).into_iter().map(|(n, _)| n).collect();
                         let vals = self.summaries.of(right.id(), || self.of(At { m, scope: Some(d), params: &names }, right, 0));
-                        Some(vals.into_iter().map(|b| held_by(&id, b)).collect())
+                        // a parameter held as it is handed is the parameter; anything else the function
+                        // makes of its parameters is the attribute it sets, whose start its code says
+                        if let [b] = vals.as_slice() {
+                            if let [Seg::Param(_)] = b.as_slice() {
+                                return Some(vals.into_iter().map(|b| held_by(&id, b)).collect());
+                            }
+                        }
+                        let attribute = format!("self.{name}");
+                        self.fields.borrow_mut().insert((id.clone(), attribute.clone()), vals);
+                        Some(vec![vec![Seg::Held(id, attribute, vec![])]])
                     }
                     None => {
                         let value = |depth: u32| {
@@ -1012,6 +1173,26 @@ pub(super) fn file_args<'s, 't>(sig: &'s [Param], call: TsNode<'t>, src: &[u8]) 
         }
     }
     out
+}
+
+/// The capture of `name` in the pattern of the innermost `case` whose body `e` is read in.
+fn captured<'t>(e: TsNode<'t>, name: &str, src: &[u8]) -> Option<TsNode<'t>> {
+    let mut x = e.parent();
+    while let Some(c) = x {
+        if c.kind() == "case_clause" {
+            let pattern = named_children(c).into_iter().find(|p| p.kind() == "case_pattern")?;
+            let inside =
+                c.child_by_field_name("consequence").is_some_and(|b| b.start_byte() <= e.start_byte() && e.end_byte() <= b.end_byte());
+            if !inside {
+                return None;
+            }
+            return walk(pattern, &["identifier"])
+                .into_iter()
+                .find(|i| text(*i, src) == name && i.parent().and_then(|d| d.parent()).is_some_and(|p| p.kind() == "case_pattern"));
+        }
+        x = c.parent();
+    }
+    None
 }
 
 /// The id the graph knows a function by: its module, the classes around it, its name. A
