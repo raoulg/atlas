@@ -1,7 +1,7 @@
 name: nightly
 
 # The nightly build of `next`, made when it has moved and `ci`'s tests, run here on three platforms for
-# exactly that commit, are green: the CLI for five platforms and Atlas Studio for macOS and Windows
+# exactly that commit, are green: the CLI for five platforms and Atlas Studio for macOS, Windows and Linux
 # (`studio.yml`). A failing test is a red nightly and no new build; the last one stays. A push to `next`
 # runs no `ci` of its own, so this is where `next` is tested on Linux and Windows. While a release branch
 # `release-X.Y` is open, the nightly builds it instead: the nightly channel is then the release candidate,
@@ -113,7 +113,7 @@ jobs:
           name: atlas-code-${{ matrix.target }}
           path: atlas-code-${{ matrix.target }}.*
 
-  # Atlas Studio for macOS and Windows of the same commit: its installers go into the nightly with the CLI's
+  # Atlas Studio for macOS, Windows and Linux of the same commit: its installers go into the nightly with the CLI's
   # archives, so the release's Studio build runs every night before a tag needs it.
   studio:
     needs: [decide, test]
