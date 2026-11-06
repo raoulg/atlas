@@ -23,7 +23,7 @@ program's is cut, at the budgets 1, 2 and 3 (`ATLAS_FINE_BUDGET`), where a step 
 and each of its lines counts the fine lines its body draws there, and where each step beyond the cut, opened as the page
 opens it and planned anew, must refine the picture it was cut in; the facts are asked of the finest plan only. The
 overview of every program is asked the same of its own fine plan, the functions with their own arrows, a type as one
-place and the calls between functions. Each function's arrow there is its morphism: it takes every type of data the
+place and the calls between functions. Each function's arrow there is its morphism (a declared method, a function with no body, has none): it takes every type of data the
 function takes and gives every one it makes, whether or not another function of the code makes or takes it. For every
 set of open packages and parts, each line counts the fine lines it
 stands for, a type internal to a closed package draws none, each call goes between the blocks of its ends, opening one
