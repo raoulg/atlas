@@ -88,7 +88,7 @@ lets it be traced and Atlas does not yet; each gap is an ignored test in `pairs_
 
 | Principle | Python | TypeScript | Rust |
 |---|---|---|---|
-| doors | finding; `__all__` and a star's names export; overloads are a door's signatures, a property its getter; `Any` is unchecked | finding; overload signatures are a door's signatures, a property its getter; `any` is unchecked | forbidden: every signature is typed |
+| doors | finding; `__all__` and a star's names export; a package with a build system or `__init__.py` that exports nothing; overloads are a door's signatures, a property its getter; `Any` is unchecked | finding; what `main`, `module` or `exports` points to exports, a library of a `package.json` that exports nothing; overload signatures are a door's signatures, a property its getter; `any` is unchecked | finding for a lib crate with nothing `pub` at its root; a signature is forbidden to be untyped |
 | sums | finding; variant edges, named or written in place | finding; variant edges, named or written in place | finding; an enum's variants, a library's sum (`Result`) handed on |
 | overrides | finding; `keeps` from ty, against each base along the method resolution order | finding; what an override takes, which the compiler checks both ways; a type is its members | forbidden: a trait's implementation has the trait's signature |
 | places | finding; at the function whose code writes the path's start; `__file__` and `importlib.resources` read what the package ships | finding; at the function whose code writes the path's start; `import.meta.url` reads what the package ships | finding; at the function whose code writes the path's start; `include_str!` is no place, `env!("CARGO_MANIFEST_DIR")` a fixed one |
@@ -127,15 +127,26 @@ Atlas) guessing where a route goes.
   ([PEP 484](https://peps.python.org/pep-0484/)), `*args` and `**kwargs` among them. To keep
   `import package` fast, the exports can resolve lazily with a module `__getattr__`
   ([PEP 562](https://peps.python.org/pep-0562/)).
-- **TypeScript.** What the module `package.json` points to exports is the package's doors.
+- **TypeScript.** What the module `package.json` points to exports is the package's doors, or the
+  `index` at its root where it names none.
   Annotate what each one gives (`isolatedDeclarations` asks for it); a function handed to a
   call where it is declared (`memo((props) => ..)`) takes its parameters' types from the call.
 - **Rust.** `pub` items at a library crate's root, in the modules it makes public with
   `pub mod`, and what it re-exports with `pub use` are its doors, and the compiler asks
-  for every type. Atlas has nothing to ask here.
+  for every type. Atlas asks nothing of a signature here, only whether the crate has a door.
 
-Atlas checks: a Python package called `src`, a Python package that exports nothing at
-its root, and a door that does not say what it takes or what it gives.
+Atlas checks: a Python package called `src`, a package meant to be imported that exports
+nothing at its root, and a door that does not say what it takes or what it gives.
+
+A part is asked for doors where it is meant to be imported, as its manifest says: a Cargo package
+with a lib target; a `package.json` that is not `private` and names a `main`, `module` or `exports`,
+or names none of these and no `bin`; a Python package with a build system or an `__init__.py`. Its
+reader supplies this as a fact of the part (`Part::library`), and the rule is stated once, on the
+graph: a library in which no node is an entry of kind `Export` has no door. An app has routes, not
+doors, and the finding is silent for it: a crate with only a `main`, a `package.json` that is
+private or has only a `bin`, a project of scripts. Whether the author must name the exports (Python
+binds whatever its root binds unless `__all__` says so) is another fact, `Leaves::exports`, and does
+not decide this finding.
 
 A Python package's doors are the names `__all__` lists at its root, else every public name the
 root binds. `from .core import *` binds what the star brings: the names `core` lists in its

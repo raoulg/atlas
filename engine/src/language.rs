@@ -39,6 +39,9 @@ pub trait Language {
     fn structural(&self) -> bool {
         false
     }
+    /// Whether the part `part` of the graph `g`, read at `repo`, is meant to be imported, as its
+    /// manifest says: its routes in are then its doors. An app has routes, not doors.
+    fn library(&self, repo: &Repo, g: &Graph, part: &str) -> bool;
     /// Whether the part read at `part` reads the directory `dir` below it, which holds a manifest
     /// of the language, as its own; a manifest no part around it reads roots a part.
     fn reads(&self, part: &Repo, dir: &Path) -> bool;
@@ -127,6 +130,12 @@ impl Language for Python {
         })?;
         (!root.starts_with(repo.root())).then(|| (root.to_path_buf(), package.clone()))
     }
+    /// A package with a build system, or one that is a package at all (`__init__.py`); a project
+    /// of scripts is no library.
+    fn library(&self, repo: &Repo, g: &Graph, part: &str) -> bool {
+        let built = repo.text("pyproject.toml").and_then(|t| t.parse::<toml::Table>().ok()).is_some_and(|m| m.contains_key("build-system"));
+        built || g.node(part).is_some_and(|n| n.is_pkg)
+    }
     /// Where ty finds the modules the project and its libraries import: the project's types come
     /// from there however far its libraries are read.
     fn environment(&self, repo: &Repo, opts: &Options) -> Vec<Check> {
@@ -169,6 +178,14 @@ impl Language for Rust {
     }
     fn detect(&self, repo: &Repo, _opts: &Options) -> bool {
         repo.is_file("Cargo.toml")
+    }
+    /// A crate with a lib target: `src/lib.rs`, or a `[lib]` table.
+    fn library(&self, repo: &Repo, _g: &Graph, part: &str) -> bool {
+        let Ok(crates) = rust::crates(repo) else { return false };
+        crates.iter().filter(|c| c.name == part).any(|c| {
+            let lib = repo.text(c.dir.join("Cargo.toml")).and_then(|t| t.parse::<toml::Table>().ok()).and_then(|d| d.get("lib").cloned());
+            lib.is_some() || repo.is_file(c.dir.join("src/lib.rs"))
+        })
     }
     fn parse(&self, repo: &Repo, opts: &Options) -> Result<Graph> {
         let (mut b, root) = rust::parse(repo, opts)?;
@@ -222,6 +239,14 @@ impl Language for TypeScript {
         let _finish = crate::clock::stage("finish");
         entries::mark_tests(&mut b, &knowledge::JS_TESTS, &[repo.root().to_path_buf()]);
         Ok(b.finish(root, Some(repo.root()), self.lang()))
+    }
+    /// A `package.json` that is not `private` and names what it exports (`main`, `module`,
+    /// `exports`), or names none of these and no `bin`: a bare library. One with only a `bin` is an
+    /// app.
+    fn library(&self, repo: &Repo, _g: &Graph, _part: &str) -> bool {
+        let json = repo.text("package.json").and_then(|t| serde_json::from_str::<serde_json::Value>(&t).ok()).unwrap_or_default();
+        let names = |k: &str| !json[k].is_null();
+        json["private"].as_bool() != Some(true) && (["main", "module", "exports"].iter().any(|k| names(k)) || !names("bin"))
     }
     /// The compiler works out what a function gives, which a reader of its declaration does not
     /// see (`isolatedDeclarations` asks for it), and holds an override to what its base gives but

@@ -250,6 +250,55 @@ fn one_client_has_the_same_doors_in_every_language() {
     }
 }
 
+/// A package meant to be imported is met at its doors, in every language: a crate with a lib target, a `package.json`
+/// that is not private, a Python package with a build system. Its doors are what its root names (`pub fn` in `lib.rs`,
+/// what the module `package.json` points to exports, `__all__`). The clean side names `scale` and `metres`; the shortcut
+/// is the same package with the root naming nothing (private functions, no `exports`, an `__init__.py` with only a
+/// docstring), and each of the three is asked what a user may import.
+#[test]
+fn a_library_that_exports_nothing_has_no_door_in_every_language() {
+    use atlas_engine::principles::check;
+    use atlas_engine::{EntryKind, NodeKind};
+    let read = |lang: &str, side: &str| {
+        let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/pairs/exports").join(lang).join(side);
+        atlas_engine::analyze(&dir, &Options::default()).unwrap_or_else(|e| panic!("{lang}/{side} parses: {e}"))
+    };
+    let doors = |g: &Graph| -> Vec<String> {
+        let mut d: Vec<String> = g
+            .nodes
+            .iter()
+            .filter(|n| n.kind == NodeKind::Function && n.entry.as_ref().is_some_and(|e| e.kind == EntryKind::Export))
+            .map(|n| n.name.clone())
+            .collect();
+        d.sort();
+        d
+    };
+    let asked = |g: &Graph| check(g).into_iter().map(|f| (f.principle.to_string(), f.what)).collect::<Vec<_>>();
+    for lang in ["python", "typescript", "rust"] {
+        let (clean, shortcut) = (read(lang, "clean"), read(lang, "shortcut"));
+        assert!(clean.parts.iter().all(|p| p.library), "{lang}: the clean side is a library");
+        assert!(shortcut.parts.iter().all(|p| p.library), "{lang}: the shortcut is a library as well");
+        assert_eq!(doors(&clean), ["metres", "scale"], "{lang}: what its root names");
+        assert_eq!(asked(&clean), [], "{lang}: a package with doors is asked nothing");
+        assert!(doors(&shortcut).is_empty(), "{lang}: the shortcut names no door");
+        assert_eq!(asked(&shortcut), [("doors".to_string(), "units exports nothing at its root".to_string())], "{lang}");
+    }
+}
+
+/// An app has routes, not doors: a crate with only a `main`, a private `package.json` and a `package.json` with only a
+/// `bin` are no library, so exporting nothing is no finding. The manifest decides, not the code.
+#[test]
+fn an_app_exports_nothing_and_is_asked_no_door() {
+    use atlas_engine::principles::check;
+    for app in ["rust", "typescript-private", "typescript-bin"] {
+        let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/pairs/exports/apps").join(app);
+        let g = atlas_engine::analyze(&dir, &Options::default()).unwrap_or_else(|e| panic!("{app} parses: {e}"));
+        assert!(g.parts.iter().all(|p| !p.library), "{app}: an app is no library");
+        let asked: Vec<_> = check(&g).into_iter().filter(|f| f.principle == "doors").collect();
+        assert!(asked.is_empty(), "{app}: {asked:?}");
+    }
+}
+
 /// A shaped array is a type of its own and stands in its rank family (`docs/reference/mathematics.md`, "Shapes and their
 /// rank"). The clean components say the shape of what they take and give (`Float[Tensor, "batch dim"]`); the shortcut
 /// says `Tensor`. Each shape of the clean side stays its own type, and stands in a family shared by exactly the shapes of

@@ -658,7 +658,6 @@ fn exported(n: &Node) -> bool {
 
 fn doors(ix: &Index) -> Vec<Finding> {
     let g = ix.g;
-    let exports: Vec<&Node> = g.nodes.iter().filter(|n| exported(n)).collect();
     let mut out = vec![];
     let declared = ix.leaves(&g.root).exports;
     // `src/` is where packages live, not a name: installed, it collides with every other project laid out the same way
@@ -673,16 +672,19 @@ fn doors(ix: &Index) -> Vec<Finding> {
             )
             .with("named", [root.name.clone()]));
         }
-    } else if exports.is_empty() && declared {
-        if let Some(root) = ix.node(&g.root) {
+    } else {
+        // a part meant to be imported is met at its doors: one that exports nothing has none, whether or not its language asks the author to name them
+        for part in g.parts.iter().filter(|p| p.library) {
+            let exports = g.nodes.iter().any(|n| n.part == part.id && exported(n));
+            let Some(root) = ix.node(&part.id).or_else(|| ix.node(&g.root)).filter(|_| !exports) else { continue };
             out.push(ix.finding(
                 Principle::Doors,
                 root,
-                format!("{} exports nothing at its root", g.root),
-                vec![format!("{}: no `__all__`, and no public name of the package bound there", ix.file(root))],
+                format!("{} exports nothing at its root", part.id),
+                vec![format!("{}: no public name of the package is exported there", ix.file(root))],
                 format!(
-                    "Named in `__all__`, each door becomes a route Atlas can draw. What may a user of {} import, and from where?",
-                    g.root
+                    "Named as its doors, each export becomes a route Atlas can draw. What may a user of {} import, and from where?",
+                    part.id
                 ),
             ));
         }

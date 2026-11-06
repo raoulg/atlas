@@ -20,7 +20,7 @@ pub(super) const WRAPPERS: Wrappers =
     &["parenthesized_expression", "reference_expression", "unary_expression *", "try_expression", "await_expression"];
 
 pub(crate) struct Crate {
-    pub(super) name: String,
+    pub(crate) name: String,
     pub(crate) dir: PathBuf,
 }
 
