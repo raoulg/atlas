@@ -424,8 +424,11 @@ let FIBER = null;
 const here = t => !FIBER || FIBER.has(t);
 const kindsOf = t => (members.get(t) || []).filter(m => kindOf(m) === t && here(m));
 const partsOf = t => (members.get(t) || []).filter(m => kindOf(m) !== t);
-// a kind is a box of its own where the fiber holds two of its types
-const folds = k => kindsOf(k).length + (here(k) ? 1 : 0) > 1;
+// a kind is a box of its own where the fiber holds two of its types; a rank family (`Float Tensor · 3D`) wherever the fiber
+// holds one of its shapes, since the rank is the coarser reading of every shape, but a shape already named as its family
+// (a run alone, `Float Tensor · any rank`) is no finer level to open into
+const RANKS = new Set(TYPES.ranks || []);
+const folds = k => RANKS.has(k) ? kindsOf(k).some(m => typeLabel(m) !== typeLabel(k)) : kindsOf(k).length + (here(k) ? 1 : 0) > 1;
 // a type opens when it has kinds or parts of its own, or holds what it shares; (n) counts the types it opens into
 const opens = t => folds(t) || partsOf(t).length > 0 || sharedOf(t).length > 0;
 const opensInto = t => kindsOf(t).length + partsOf(t).length + sharedOf(t).length + (here(t) ? 1 : 0);
