@@ -1913,6 +1913,33 @@ fn places_a_path_through_helpers_is_the_path_in_place() {
     common::a_path_through_helpers_is_the_path_in_place("rust");
 }
 
+/// One side of the assigned pair (`tests/pairs/assigned/rust`): a level kept under a name, a function
+/// given two names, names gathered into a list. The clean side writes each once, the shortcut with
+/// the name assigned after a `let` of nothing, a tuple pattern as a parameter, a tuple pattern in a `let`.
+fn assigned(side: &str) -> Graph {
+    analyze(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/pairs/assigned/rust").join(side), &Options::default()).expect("reads")
+}
+
+/// What a function's steps are, each with what it is handed and what it gives: the shape of its body.
+fn shape(g: &Graph, f: &str) -> Vec<(String, String, Vec<String>, Vec<String>)> {
+    node(g, f).sites.iter().map(|s| (s.op.clone(), s.to.clone(), handed(s), gives(s).into_iter().map(String::from).collect())).collect()
+}
+
+/// A step handed a name assigned again is handed what the assignment gave it (#376): `let mut kept = None;
+/// kept = Some(level); draw(kept)` reads as `let kept = Some(level); draw(kept)` does, also where the
+/// `let` is a tuple pattern (`let (mut kept, mut count) = (None, 0)`). The two forms say the same, so
+/// `draw` is handed the same on both sides, and something.
+#[test]
+fn composition_a_name_assigned_again_is_handed_what_it_was_assigned() {
+    let (c, s) = (assigned("clean"), assigned("shortcut"));
+    for f in ["assigned.alone", "assigned.paired"] {
+        let hands = handed(step(&c, f, "assigned.draw"));
+        assert!(!hands.is_empty(), "{f}: draw is handed the level");
+        assert_eq!(handed(step(&s, f, "assigned.draw")), hands, "{f}");
+        assert_eq!(shape(&s, f), shape(&c, f), "{f}");
+    }
+}
+
 /// One side of the interior pair (`tests/pairs/interior/rust`): counts kept in the fields of structs
 /// that change through `&self`, or in statics the methods raise.
 fn interior(side: &str) -> Graph {

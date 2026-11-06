@@ -1172,6 +1172,13 @@ impl<'a, 't> Body<'a, 't> {
         }
     }
 
+    /// Whether the root of a value names a place the body or its module holds: `self`, a name the body binds, or a
+    /// constant or a static of its module; not a variant that holds no value (`None`).
+    fn names_place(&self, root: TsNode<'t>) -> bool {
+        let (name, at) = (text(root, self.src), root.start_byte());
+        root.kind() == "self" || self.parameter.get(name, at).is_some() || self.item_written(name).is_some()
+    }
+
     /// A name a binding gives a part of another name's value holds that value (a projection bound
     /// to a name is still the projection): `let months = settings.months`, `let base =
     /// &config["base"]`, `let first = levels.first()?` (`Body::held_root`), `let record: Record = result?`, `let (date,
@@ -1185,7 +1192,7 @@ impl<'a, 't> Body<'a, 't> {
             // Some(a)) = (tag.world, args.first())` binds `a` to a part of `args`
             if let Some(pairs) = tuple_elements(n) {
                 for (p, v) in pairs {
-                    let Some(held) = self.held_root(v) else { continue };
+                    let Some(held) = self.held_root(v).filter(|h| self.names_place(*h)) else { continue };
                     for name in bound_names(p, src) {
                         if let Some((from, to)) = scope(name) {
                             self.aliases.bind(text(name, src), from, to, (text(held, src).to_string(), held.start_byte()));
@@ -1194,7 +1201,9 @@ impl<'a, 't> Body<'a, 't> {
                 }
                 continue;
             }
-            let Some(held) = n.child_by_field_name("value").and_then(|v| self.held_root(v)) else { continue };
+            let Some(held) = n.child_by_field_name("value").and_then(|v| self.held_root(v)).filter(|h| self.names_place(*h)) else {
+                continue;
+            };
             let patterns: Vec<TsNode> = match n.kind() {
                 "match_expression" => n
                     .child_by_field_name("body")
