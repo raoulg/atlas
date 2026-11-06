@@ -250,9 +250,10 @@ fn one_client_has_the_same_doors_in_every_language() {
 /// A shaped array is a type of its own and stands in its rank family (`docs/reference/mathematics.md`, "Shapes and their
 /// rank"). The clean components say the shape of what they take and give (`Float[Tensor, "batch dim"]`); the shortcut
 /// says `Tensor`. Each shape of the clean side stays its own type, and stands in a family shared by exactly the shapes of
-/// its dtype, array type and rank, where the graph holds two of them: the quotient is the rank, never the names (`batch
-/// dim` and `batch ndim` are two types of one family), and never the dtype (`Int[Tensor, batch seq]` is rank 2 and
-/// alone). A family is named by what it is (`Float Tensor · 2D`), never as a shape the code could have written. The
+/// its dtype, array type and rank, however few: the quotient is the rank, a map on each shape alone, never the names
+/// (`batch dim` and `batch ndim` are two types of one family), and never the dtype (`Int[Tensor, batch seq]` is alone in
+/// its rank, and in a family of its own). A run alone (`...`) is named as its family and stands in one only beside
+/// another shape. A family is named by what it is (`Float Tensor · 2D`), never as a shape the code could have written. The
 /// shortcut's steps all take and give the one `Tensor`, so the picture cannot tell a reducer from a projection: what the
 /// code does not say, Atlas does not draw.
 #[test]
@@ -270,7 +271,7 @@ fn a_shape_stands_in_its_rank_family_and_stays_a_type_of_its_own() {
         match types.kind.get(t) {
             Some(k) => {
                 assert!(Array::of_id(k).is_none(), "{a} stands in {k}, which reads as a shape the code does not write");
-                assert!(!kin.is_empty(), "{a} is alone in its rank and stands in {k}");
+                assert!(types.ranks.contains(k), "{k} is not said to be a rank family: {:?}", types.ranks);
                 for u in &kin {
                     assert_eq!(types.kind.get(*u), Some(k), "{a} and {u} share a rank");
                 }
@@ -278,9 +279,14 @@ fn a_shape_stands_in_its_rank_family_and_stays_a_type_of_its_own() {
                     assert!(same(a, b), "{u} stands in {k} beside {a}");
                 }
             }
-            None => assert!(kin.is_empty(), "{a} shares its rank with {kin:?} and stands in no family"),
+            None => {
+                assert!(atlas_engine::shapes::name(t).is_some(), "{a} stands in no rank family");
+                assert!(kin.is_empty(), "{a} shares its rank with {kin:?} and stands in no family");
+            }
         }
     }
+    let alone = shaped.iter().find(|(_, a)| a.to_string() == "Int[Tensor, batch seq]").map(|(t, _)| t).expect("the clean side's Int shape");
+    assert!(types.kind.contains_key(alone), "a shape alone in its rank stands in its family");
     assert!(types.kind.values().collect::<BTreeSet<_>>().len() >= 2, "the clean side has families of two ranks: {:?}", types.kind);
     // the shortcut: one type for every tensor, in no family
     let tensors = |f: &str, kind: EdgeKind| -> Vec<String> {

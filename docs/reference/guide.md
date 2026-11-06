@@ -17,7 +17,7 @@ reads a repository.
 Read it from left to right:
 
 - **On the left** are the places whose content the route finds and uses, each folded under the type
-  that keeps it: `Repo`, the repository's files and the manifests by which it finds the repository's
+  that keeps it, with how many it holds: `Repo`, the repository's files and the manifests by which it finds the repository's
   parts, and `Environment`, where the libraries the code calls are kept. A click opens a type into
   its files. The green `>_` box is where the route starts.
 - **In the middle** are the steps. A rounded pill is a function. A box with a coloured
