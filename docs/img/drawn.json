@@ -1515,11 +1515,7 @@
    ],
    [
     "w:Disk:in",
-    "from disk"
-   ],
-   [
-    "w:Disk:{root}/",
-    "Disk({root}/)"
+    "from disk \u00b7 1"
    ],
    [
     "w:Global:atlas-engine.clock.CLOCK",
@@ -1555,11 +1551,11 @@
    ],
    [
     "w:Type:atlas-engine.environment.Environment",
-    "Environment"
+    "Environment \u00b7 27"
    ],
    [
     "w:Type:atlas-engine.repo.Repo",
-    "Repo"
+    "Repo \u00b7 7"
    ]
   ],
   "edges": [
@@ -1645,10 +1641,6 @@
    ],
    [
     "w:Disk:in",
-    "n:atlas-engine.analyze/1"
-   ],
-   [
-    "w:Disk:{root}/",
     "n:atlas-engine.analyze/1"
    ],
    [
