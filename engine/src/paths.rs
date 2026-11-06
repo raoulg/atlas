@@ -449,13 +449,15 @@ pub fn environment_named(names: &[Built]) -> Option<Built> {
 /// it is not set: the variable, once its name is said as text, an input with that default where
 /// there is one (`os.environ.get("STORE", "out.csv")`); still the lookup where the name is still to
 /// be said; and where no code says it, a value the code gives no name, since a lookup whose name
-/// the code does not decide names no variable.
+/// the code does not decide names no variable. A default that is the variable itself says nothing
+/// besides it, as in `or_else` (`$F` else `$F` is `$F`), whether the name was said where the
+/// lookup is written or handed after it: a lookup commutes with what is handed.
 fn looked_up(name: Built, default: Option<Built>) -> Built {
     if known(&name) {
-        let var = render(&name);
+        let var = environment(&render(&name));
         return match default {
-            Some(d) => vec![Seg::Option(format!("${var}"), d)],
-            None => environment(&var),
+            Some(d) if d != var => vec![Seg::Option(format!("${}", render(&name)), d)],
+            _ => var,
         };
     }
     if takes(&name) || first_var(&name, true).is_some() {
