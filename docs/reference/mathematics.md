@@ -762,6 +762,7 @@ image.
 | files fold into the directories that hold them, one box per side their files stand on; directories nested in one another that hold the same files are one box, drawn as the deepest, and opening it opens them all; opening a directory refines the fold | the disk is a tree, and a fold is its quotient by directory, met with the side; directories with the same files are one block of that quotient, so the box is one class and opens as one (`foldDirs`, held by `plans.mjs` and `pictures.py topology`) |
 | a dotted line joins the packages whose code calls each other, whatever data also joins them; opened, it refines to what inside is called, down to the function's own box | the calls are a relation, and a quotient of a relation keeps its image; a line drawn only where another is absent is no relation and would come back on opening |
 | a type with parts is a family frame; its parts stand inside it opened | zoom by composition is a quotient by the relation "is a part of" |
+| a type of a library stands in its library's frame, open until the reader closes it into one box; the overview stands one fold above the finest level the code writes | the library is the coarsest level of the lattice library › array type › dtype › rank family › shape, each a quotient of the next (A library's types stand in their library) |
 | the overview draws a type once, the box that what makes it and what takes it share, at every zoom of the packages | the routes of an overview have no order between them, so a value has no moment there: its identity is its type |
 | the layers of a route run left to right, entry to places reached | a graph without cycles can be drawn in layers (presentation, no claim) |
 
@@ -1046,7 +1047,10 @@ type, drawn once. `F₀` is the graph of generators:
 - a type of data that the code makes or takes is one place, from each function that makes it (gives
   it back, builds it, changes it) to each that takes it: a function's codomain is what it gives back
   (sentence 2), whether or not another function of the code takes it. Its home is the smallest package
-  that holds all of them, so a type no other package uses is internal to the one that uses it;
+  that holds all of them, so a type no other package uses is internal to the one that uses it. The
+  picture draws a family as one box, and a library closed as one box, so the home is that of the block:
+  every function that makes or takes a type of its family, or of its library where that is a box of its
+  own (A library's types stand in their library);
 - every place of the world is at its concrete place, from or to each function whose own code touches
   it; between parts, a route served over HTTP comes in through its part's place and a request to
   another part's routes goes out to that part's;
@@ -1070,8 +1074,9 @@ A focus, the overview with a set `U` of packages singled out (shift-click), is a
 construction of its own. Its plan `F_U` is the star of `U` in `F₀`:
 
 - the functions of the packages in `U`, with every place they make, take or touch. A type stands in its
-  kind (`kindOf`), so the box the overview draws for it is one block of `F₀`'s places, and `F_U` holds
-  the block whole: a box of the focus is the box of the overview, never a part of it;
+  kind (`kindOf`), and its kind in its library where that is a box of its own, so the box the overview
+  draws for it is one block of `F₀`'s places, and `F_U` holds the block whole: a box of the focus is the
+  box of the overview, never a part of it;
 - the rest of the code, every other function, each in the coarsest package of `F₀` that holds no code in
   `U`, and those packages in one frame, *the rest*. A function of the rest keeps of its lines only those
   to a place of the star and its calls with an end in `U`; what the rest does among itself is no line of
@@ -1121,7 +1126,8 @@ holds. Its coordinates are of two sorts. What the reader looks at decides the fi
 and whether the test code is drawn (`V.tests`). What the reader has open decides the map `q`: the
 parts, packages, steps and functions opened (`V.open.parts`, `units`, `steps`, `functions`), the
 families opened into their members (`families`), the groups of places and the directories on the disk
-opened (`places`, `dirs`). So a picture is
+opened (`places`, `dirs`), and of what stands open until the reader closes it, the libraries closed
+(`V.closed.libraries`). So a picture is
 
     picture(V) = image(F(V), q(V))
 
@@ -1165,6 +1171,7 @@ Each law is then a theorem of the construction, or it is not yet, and says which
 | All routes of a kind | `F_K` is the union of the routes' closed pictures, each route's box the image of its plan cut at its first level | `plans.rs` (`every_kind_view_is_the_union_of_its_routes_closed`): each route's box against the image of its finest plan with no box open, line by line with the fine lines each counts and those it reaches; where the cut draws otherwise, a fault marked with #438; the routes' entries one box closed, with each route's count, and opened the union of the routes' entries |
 | A route ends at a place | the codomain of a route closed is what crosses its border: what it gives back, writes, sends or runs | `plans.rs` (`every_route_ends_at_a_place`, ignored: a value of no type of the code's that a route gives back, and a class built from its fields, end at no place, #439): every route closed, alone and among its kind, gives a value, changes a place or makes a call |
 | Every view | `picture(V) = image(F(V), q(V))` by one `plan()` | `plans.rs` (`every_view_state_draws_the_image_of_its_plan`), on a walk of the view state of every program: endpoints, the oracle, the counts, each box at its plan's home (a type at its home in `F₀`), a coordinate the view does not read changes nothing, and each picture drawn again is the one it was; the coordinates of `V` read from the page |
+| A library's frame | a library is a block of `F₀`'s types, its home the block's, and closing it is a coarser `q` | the walk of the view state (`libraryFaults`): in the overview and a focus each box of a type of an open library stands in its frame, which holds no other and stands at the library's home; closed, the library is one box that counts its types; closing an open frame draws the image of the open picture (`refines`) and moves no other box; a route and a kind draw no library; the programs `plans/library-frame` and `plans/library-frame-rust` |
 
 The oracle holds the pictures to one another, not to the program. Whether `F` says what the code
 does is a test of its own, `engine/tests/plans.rs`: beside a small program a `.plan` file writes down
@@ -1316,6 +1323,31 @@ returns. The declared shape refines the checker's type and stands for it only wh
 **Where.** `shapes.rs` (`Array`, `Axis`, `Rank`, `family_id`, `name`), `families.rs` (the rank as a kind), principle
 `overrides` (`Array::fits`); on wires `python/body.rs` (`Seen::declared_shape`) and `python/passes.rs`
 (`shaped_returns`); the pairs `shapes/python` and `modules/python`.
+
+### A library's types stand in their library
+**What.** The types a program holds are ordered by a lattice of quotients, each coarser than the one below it: library ›
+array type › dtype › rank family › shape. A shape is a type; its rank family the quotient by the rank (Shapes and their
+rank); its dtype and array type the quotients that forget the rank, then the dtype; its library the quotient that keeps
+only what makes the values. Each level is a partition of the types, and zooming moves along the chain one level at a time.
+**In Atlas.** A type is of the library whose values it is: a type past the code or a library's class of the top package
+its module is in (`torch` for `torch.nn.Module`), a shaped array of its array type's (`Float[Tensor, "batch dim"]` with
+`Tensor` imported from torch is torch's, though jaxtyping writes its shape), and a type of the library its kind is of, the
+box it stands in while its family is closed. Forms that say the same are one construct: `Float[Tensor, "batch dim"]`,
+Rust's `ndarray::Array2<f32>` and `ArrayView<_, Ix3>`, burn's `Tensor<B, 3>` and a TypeScript shape type each name a
+library, a dtype and a rank, whether or not a runtime enforces them, and each reader supplies only how its language spells
+them. The overview and a focus draw the library: one of two types or more of the plan is a frame around the boxes of its
+types, open until the reader closes it (`V.closed.libraries`); closed, it is one box that says how many types of the plan
+it stands for, `torch · 6 types`, as a folded directory says its files. A library of one type is that type, since a frame
+would only name it again. The overview stands one fold above the finest level the code writes: a shape stands in its rank
+family until the family is opened, and the family in its library's frame. A level the code does not write is no step of
+its own: a bare `torch.Tensor` stands as `Tensor` in the frame, and the dtype and array type stand in the label of a rank
+family's box (`Float Tensor · 2D`). A library closed is one box, so its types share one home, as a family's do: the
+smallest package that holds every function that makes or takes a type of it, and the frame stands there. A route draws its
+values at their moments and draws no library.
+**Where.** `families::library_of` (`flow.types.library`), `Node::array` (`python/passes.rs`, `array_types`); `libraryOf`,
+`LIBRARIES`, `libClosed`, `libFrameOf`, `libraryFrames` and `placeOfType` in `viewer/plan.js`, the overview's home by
+block in `overviewBase`, the focus's star in `focusBase`; held by `libraryFaults` in `engine/tests/plans.mjs`, on the
+programs `plans/library-frame` (Python, jaxtyping) and `plans/library-frame-rust` (ndarray).
 
 ### Method resolution order
 **What.** A linear extension of the order of inheritance: one sequence of a class and its
