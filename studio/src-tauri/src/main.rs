@@ -369,17 +369,31 @@ fn terminal_close(terminals: tauri::State<'_, Terminals>, id: u32) -> Result<(),
     terminals.close(id)
 }
 
-/// Which build Studio is, as its sidecar says: the same commit and channel.
-async fn this_build(app: &tauri::AppHandle) -> Result<update::Build, String> {
+/// The build Studio runs: its sidecar's answer when Studio started, kept while it runs, since the app may be
+/// replaced under it.
+#[derive(Default)]
+struct Running(tokio::sync::OnceCell<update::Build>);
+
+/// Which build is installed, as its sidecar says now: the same commit and channel as the app on disk.
+async fn installed_build(app: &tauri::AppHandle) -> Result<update::Build, String> {
     let out =
         app.shell().sidecar("atlas-code").map_err(|e| e.to_string())?.args(["--version"]).output().await.map_err(|e| e.to_string())?;
     update::build_of(&String::from_utf8_lossy(&out.stdout)).ok_or_else(|| "Studio's atlas does not say which build it is".into())
 }
 
-/// Whether a newer build of Studio's channel is out: from the answer kept, asked of GitHub again when
-/// it is a day old, another build asked it, or `now` asks for it.
+/// Which build Studio is: the one installed when it started.
+async fn this_build(app: &tauri::AppHandle) -> Result<update::Build, String> {
+    app.state::<Running>().0.get_or_try_init(|| installed_build(app)).await.cloned()
+}
+
+/// Whether a newer build of Studio's channel waits: installed already, for Studio to start again on, or out,
+/// from the answer kept, asked of GitHub again when it is a day old, another build asked it, or `now` asks
+/// for it.
 async fn newer_build(app: &tauri::AppHandle, now: bool) -> Result<Option<update::Newer>, String> {
     let build = this_build(app).await?;
+    if let Some(installed) = update::installed(&build, &installed_build(app).await?) {
+        return tauri::async_runtime::spawn_blocking(move || Some(update::shown(installed))).await.map_err(|e| e.to_string());
+    }
     let cache = update::Cache::of(app).ok_or("Studio has no cache folder")?;
     let mut asked = cache.asked();
     if now || asked.stale(&build, update::now()) {
@@ -459,6 +473,12 @@ async fn install_update(app: tauri::AppHandle) -> Result<(), String> {
         app.restart();
     }
     Ok(())
+}
+
+/// Start Studio again, on the build installed under it.
+#[tauri::command]
+fn restart(app: tauri::AppHandle) {
+    app.restart();
 }
 
 /// Once an hour Studio looks whether its answer is a day old, and says so when a newer build is out:
@@ -553,6 +573,7 @@ fn main() {
         .plugin(tauri_plugin_opener::init())
         .manage(StudioState::default())
         .manage(Terminals::default())
+        .manage(Running::default())
         .register_uri_scheme_protocol("preview", |context, request| {
             // the files of the workspace of the window that asks
             let state = context.app_handle().state::<StudioState>();
@@ -566,6 +587,11 @@ fn main() {
         .menu(|app| workspaces::menu(app, &workspaces::recent(app)))
         .setup(|app| {
             settings::apply(app.handle(), &settings::appearance(app.handle()).theme);
+            // the build that runs, taken now, before the app can be replaced under it
+            let handle = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                let _ = this_build(&handle).await;
+            });
             watch_updates(app.handle().clone());
             Ok(())
         })
@@ -610,6 +636,7 @@ fn main() {
             workspace_files,
             export_view,
             check_update,
+            restart,
             whats_new,
             studio_build,
             get_settings,
