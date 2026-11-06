@@ -1082,7 +1082,13 @@ pub(super) fn link(modules: &IndexMap<String, Module>, store: &mut GraphBuilder,
     let handing: Vec<paths::Evaluated> = linked.args.iter().map(|arg| paths::Evaluated { arg, eval: &eval }).collect();
     let entry = |f: &str| store.nodes.get(f).map_or(false, |n| n.entry.is_some());
     let family = store.family();
-    let completed = crate::paths::complete(linked.calls, &handing, &family, &|_, _| vec![], &entry);
+    // a parameter a call leaves out holds its declared default
+    let default = |f: &str, p: &str| -> Option<Vec<crate::paths::Built>> {
+        let m = store.nodes.get(f).and_then(|n| modules.get(&n.module))?;
+        let body = m.bodies.get(f).and_then(|(s, e)| m.tree.root_node().descendant_for_byte_range(*s, *e))?;
+        eval.default_of(m, body, p)
+    };
+    let completed = crate::paths::complete(linked.calls, &handing, &family, &default, &entry);
     // a page's request without a host goes to the page's own origin
     crate::paths::place_calls(store, completed, true);
     drop(callers);

@@ -208,6 +208,11 @@ const REVIEWED: &[(&str, &str, &str)] = &[
         "`\"default\"` is the language's name for the default export, read in two lines of one function",
     ),
     (
+        "choices",
+        "atlas-engine.paths.join",
+        "`\"/\"` is a path's separator: the empty path is the unit of a path's join on either side, one law read in two lines of one function, and a join of text (`\"\"`) has no unit to drop",
+    ),
+    (
         "places",
         "atlas-code.run",
         "`run` is `main`'s body, split off so that what it holds drops before the exit status is returned: the command line's default repository, the directory it is run in, is the entry's decision, as it was `main`'s",

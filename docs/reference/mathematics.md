@@ -278,8 +278,13 @@ loop over a table goes over its keys (`for k in d`, `d.keys()`, `for (const k in
 is the union of the keys the code writes. An element of a listing has a name as well as a path
 (`e.name`, `e.file_name()`), and that name joined below the directory listed is the element, `D/*`.
 The empty path `""` names nothing: an input whose default is the empty path is the input alone, a
-hole, never the place the empty term would be. It is the unit of a join (`PathBuf::new().join(x)` is
-`x`), where it is written and where a caller hands it: a join commutes with what is handed. The step
+hole, never the place the empty term would be, and joined with more it keeps its place in the join
+(`join(settings["raw"] ?? "", kind)` is `{}/{kind}`). It is the unit of a join on either side, after any
+base (`PathBuf::new().join(x)` is `x`, `Path("x") / ""` is `x`), where it is written and where a caller hands
+it: a join commutes with what is handed. A default is a term of the parameters of the function that
+declares it, so what a caller hands is written into it as into any term there (`out or made(home)`
+completes to the place `made(Path("work"))` names in place), and a call that hands nothing (`None`,
+`undefined`) leaves the parameter to its default, as a call that leaves it out does. The step
 up `..` names no file or folder of its own: `{p}/..` is the directory of `p`, decided once `p` is. A
 path resolved against a base (`new URL(rel, base)`) starts at the base, as a join does. A path the code
 changes in place is the term it holds after each change, as a name bound anew is (`p.push(x)` is
@@ -371,12 +376,12 @@ is one in the same way, by what it serves: a set of methods at a path. `methods=
 (`app.all`) is the top of the set. Its label, `GET|POST /items`, writes the set in the order of
 `knowledge::REQUEST_WAYS`; a request meets a route whose set holds its method, at its path.
 **Where.** `paths.rs` (`Seg`, `join`, `place`, `folders`, `bound`, `each`, `chosen`, `substitute`, `with_suffix`,
-`environment_named`, `looked_up`, `or_else`, `within`, `Seg::Within`, `Callers`, `Cycles`, `wildcards`, `served`, `serving`),
+`environment_named`, `looked_up`, `or_else`, `defaulted`, `Defaults`, `within`, `Seg::Within`, `Callers`, `Cycles`, `wildcards`, `served`, `serving`),
 `model.rs` (`Route`, `Methods`, `Request`), the readers' `paths.rs` (`Eval::of`; Rust's `Eval::changed`), `flow.rs`
 (`Touch::place`, `lies_in`, `Flow::lies_in`), `plan.js` (`pathWords`, `meetsOf` and `meet`; held by `orderings` in
 `engine/tests/plans.mjs`), `knowledge.rs` (`PathFn`, `PathMethod::Within`, `ELEMENT_NAMES`,
 `LISTING_ENTRIES`); the pairs `python/paths`, `places`, `kept`, `workbench`, `unset`, `opened`, `twice` (#324), `trees`
-(#325, #345), `keys` (#352) and `meets` (#381).
+(#325, #345), `keys` (#352), `meets` (#381) and `defaults` (#428, #427, #383, #350).
 
 ### A function's return is its summary
 **What.** What a function gives back is a term of its parameters, the same for every caller: its summary, the union of

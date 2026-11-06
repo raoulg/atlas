@@ -66,6 +66,26 @@ pub(super) fn function_node(body: TsNode) -> Option<TsNode> {
     }
 }
 
+/// The default the parameter `p` of the function `f` declares: its value (`file: string = "out.txt"`), or
+/// for an optional parameter (`file?: string`) `undefined`, which is nothing; none where it declares none.
+fn declared_default<'t>(f: TsNode<'t>, p: &str, src: &[u8]) -> Option<Option<TsNode<'t>>> {
+    let ps = f.child_by_field_name("parameters")?;
+    let param = named_children(ps).into_iter().find(|x| x.child_by_field_name("pattern").map(|n| text(n, src)) == Some(p))?;
+    match param.child_by_field_name("value") {
+        Some(v) => Some(Some(v)),
+        None => (param.kind() == "optional_parameter").then_some(None),
+    }
+}
+
+impl<'a> Eval<'a> {
+    /// What the parameter `p` of the function whose body is `body` in `m` holds where a call leaves it
+    /// out (`paths::Defaults`): its declared default, a value of the module's own frame.
+    pub(super) fn default_of(&self, m: &'a Module, body: TsNode<'a>, p: &str) -> Option<Vec<Built>> {
+        let declared = function_node(body).and_then(|f| declared_default(f, p, &m.src))?;
+        Some(declared.map(|d| self.top(m, d)).unwrap_or_default())
+    }
+}
+
 /// A function's parameters by name, in order; a destructured one has none.
 pub(super) fn param_names(f: TsNode, src: &[u8]) -> Vec<String> {
     let Some(ps) = f.child_by_field_name("parameters").or_else(|| f.child_by_field_name("parameter")) else { return vec![] };
@@ -143,6 +163,8 @@ impl<'a> Eval<'a> {
                 };
                 union(self.of(at, a, depth + 1), self.of(at, b, depth + 1))
             }
+            // the value that is none: handed to a parameter, it hands nothing, as leaving it out does
+            "undefined" => vec![],
             "identifier" | "shorthand_property_identifier" => self.name(at, e, depth),
             "member_expression" => self.member(at, e, depth),
             // `process.env[name]`: what the environment holds for the variable, where the code decides
