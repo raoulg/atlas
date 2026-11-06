@@ -109,10 +109,13 @@ A fact Atlas gets wrong is written down as it should be and marked with the issu
 known #101 line Store·store@run/Store() > run value                # a fact that does not hold
 known #134 extra line main/remove > main back                     # a fact Atlas has and should not
 known #N fault Page@Doc()/Doc() stands in                           # a fault of the pictures, matched as part of its text
+known #438 kinds all export routes: news.read.headlines draws       # a fault of a view, by the law that finds it
 ```
 
 The test reports each mark and passes. It fails once the fact holds, or the extra fact or the fault is gone, so the mark
-goes with the fix. A `known #N fault` written before any `route` holds for every route of the program.
+goes with the fix. A `known #N fault` written before any `route` holds for every route of the program. A fault of the
+program's views is marked by the law that finds it (`overview`, `focus`, `kinds`, `views` or `ends`) and holds wherever it is
+written; a file with no route holds only such marks.
 
 ## The programs here
 

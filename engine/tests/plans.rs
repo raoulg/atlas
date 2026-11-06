@@ -26,7 +26,8 @@
 //!
 //! What Atlas gets wrong today is marked in the file with the issue that tracks it: `known #N FACT` for a fact that does
 //! not hold, `known #N extra FACT` for one Atlas has and should not, `known #N fault TEXT` for a fault of the pictures
-//! (before any route, of every route of the program). The test reports each and passes, and fails once it holds or is
+//! (before any route, of every route of the program), and `known #N VIEW TEXT` for a fault of the program's views that its
+//! law (`overview`, `focus`, `kinds`, `views` or `ends`) finds. The test reports each and passes, and fails once it holds or is
 //! gone, so that the mark goes with the fix.
 
 use atlas_engine::{flow, parts, Options};
@@ -44,6 +45,8 @@ struct Known {
     extra: bool,
     /// a fault of the pictures, matched as part of the fault's text
     fault: bool,
+    /// the law of the views that finds the fault, for a fault of the program's views
+    view: Option<String>,
 }
 
 /// What a `.plan` file says of one route.
@@ -53,12 +56,17 @@ struct Expected {
     known: Vec<Known>,
 }
 
-/// A `.plan` file: the faults known of every route of the program, and the routes it writes down, in its order.
+/// A `.plan` file: the faults known of every route of the program and of its views, and the routes it writes down, in its
+/// order.
 #[derive(Default)]
 struct Plan {
     faults: Vec<Known>,
+    views: Vec<Known>,
     routes: Vec<(String, Expected)>,
 }
+
+/// The laws of the views, each by the word its marks carry and the flag `plans.mjs` is asked with.
+const VIEW_LAWS: [&str; 5] = ["overview", "focus", "kinds", "views", "ends"];
 
 fn read_plan(path: &Path) -> Plan {
     let text = std::fs::read_to_string(path).expect("reads the plan");
@@ -77,10 +85,12 @@ fn read_plan(path: &Path) -> Plan {
         let known = (words[0] == "known").then(|| {
             let issue = words.get(1).filter(|w| w.starts_with('#')).unwrap_or_else(|| panic!("{}: known names its issue", at()));
             let (extra, fault) = (words.get(2) == Some(&"extra"), words.get(2) == Some(&"fault"));
-            let fact = words[if extra || fault { 3 } else { 2 }..].join(" ");
-            Known { issue: issue.to_string(), fact, extra, fault }
+            let view = words.get(2).filter(|w| VIEW_LAWS.contains(w)).map(|w| w.to_string());
+            let fact = words[if extra || fault || view.is_some() { 3 } else { 2 }..].join(" ");
+            Known { issue: issue.to_string(), fact, extra, fault: fault || view.is_some(), view }
         });
         match (known, plan.routes.last_mut()) {
+            (Some(k), _) if k.view.is_some() => plan.views.push(k),
             (Some(k), None) if k.fault => plan.faults.push(k),
             (_, None) => panic!("{}: a fact before its route", at()),
             (Some(k), Some((_, e))) => {
@@ -216,6 +226,39 @@ fn faults_of(marks: &[&Known], faults: &[String], fails: &mut Vec<String>, known
     }
 }
 
+/// The faults one law of the views finds of every program, against the marks of that law: what fails, a mark whose fault is
+/// gone among it.
+fn views_hold(law: &str) -> Vec<String> {
+    let (tests, all) = all_programs();
+    let (next, fails) = (AtomicUsize::new(0), Mutex::new(vec![]));
+    let workers = std::thread::available_parallelism().map_or(4, |n| n.get());
+    let flag = format!("--{law}");
+    std::thread::scope(|s| {
+        for _ in 0..workers {
+            s.spawn(|| {
+                while let Some(program) = all.get(next.fetch_add(1, Ordering::Relaxed)) {
+                    let name = program.strip_prefix(&tests).unwrap().display().to_string();
+                    let file = program.with_extension("plan");
+                    let plan = if file.is_file() { read_plan(&file) } else { Plan::default() };
+                    let marks: Vec<&Known> = plan.views.iter().filter(|k| k.view.as_deref() == Some(law)).collect();
+                    let (mut f, mut known) = (vec![], vec![]);
+                    let faults: Vec<String> = asked(program, &data(program), None, &[&flag]).into_values().flat_map(|(_, x)| x).collect();
+                    faults_of(&marks, &faults, &mut f, &mut known);
+                    for k in marks.iter().filter(|k| !faults.iter().any(|x| x.contains(&k.fact))) {
+                        f.push(format!("gone now, so the mark goes: known {} {law} {}", k.issue, k.fact));
+                    }
+                    let mut fails = fails.lock().unwrap();
+                    fails.extend(f.into_iter().map(|x| format!("{name}: {x}")));
+                    for k in known {
+                        println!("{name}: known {k}");
+                    }
+                }
+            });
+        }
+    });
+    fails.into_inner().unwrap()
+}
+
 /// The programs under `pairs` and `plans`; `ATLAS_PLANS=pairs/pipeline` keeps only those under that path.
 fn all_programs() -> (PathBuf, Vec<PathBuf>) {
     let tests = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests");
@@ -333,27 +376,7 @@ fn every_picture_of_a_cut_plan_is_its_image() {
 /// that plan, and for every set of open packages its picture is the image of that fiber.
 #[test]
 fn every_package_view_is_the_image_of_its_plan() {
-    let (tests, all) = all_programs();
-    let (next, fails) = (AtomicUsize::new(0), Mutex::new(vec![]));
-    let workers = std::thread::available_parallelism().map_or(4, |n| n.get());
-    std::thread::scope(|s| {
-        for _ in 0..workers {
-            s.spawn(|| {
-                while let Some(program) = all.get(next.fetch_add(1, Ordering::Relaxed)) {
-                    let name = program.strip_prefix(&tests).unwrap().display().to_string();
-                    let file = program.with_extension("plan");
-                    let plan = if file.is_file() { read_plan(&file) } else { Plan::default() };
-                    let marks: Vec<&Known> = plan.faults.iter().filter(|k| k.fault).collect();
-                    for (_, (_, faults)) in asked(program, &data(program), None, &["--overview"]) {
-                        let (mut f, mut known) = (vec![], vec![]);
-                        faults_of(&marks, &faults, &mut f, &mut known);
-                        fails.lock().unwrap().extend(f.into_iter().map(|x| format!("{name}: {x}")));
-                    }
-                }
-            });
-        }
-    });
-    let fails = fails.into_inner().unwrap();
+    let fails = views_hold("overview");
     assert!(fails.is_empty(), "{} faults of the overviews:\n{}", fails.len(), fails.join("\n"));
 }
 
@@ -369,56 +392,45 @@ fn every_package_view_is_the_image_of_its_plan() {
 /// home is a fact of `F₀`, the same in every view. All of it with the test code and without it.
 #[test]
 fn every_focus_is_the_image_of_a_fiber_of_the_overviews_plan() {
-    let (tests, all) = all_programs();
-    let (next, fails) = (AtomicUsize::new(0), Mutex::new(vec![]));
-    let workers = std::thread::available_parallelism().map_or(4, |n| n.get());
-    std::thread::scope(|s| {
-        for _ in 0..workers {
-            s.spawn(|| {
-                while let Some(program) = all.get(next.fetch_add(1, Ordering::Relaxed)) {
-                    let name = program.strip_prefix(&tests).unwrap().display().to_string();
-                    let file = program.with_extension("plan");
-                    let plan = if file.is_file() { read_plan(&file) } else { Plan::default() };
-                    let marks: Vec<&Known> = plan.faults.iter().filter(|k| k.fault).collect();
-                    for (_, (_, faults)) in asked(program, &data(program), None, &["--focus"]) {
-                        let (mut f, mut known) = (vec![], vec![]);
-                        faults_of(&marks, &faults, &mut f, &mut known);
-                        fails.lock().unwrap().extend(f.into_iter().map(|x| format!("{name}: {x}")));
-                    }
-                }
-            });
-        }
-    });
-    let fails = fails.into_inner().unwrap();
+    let fails = views_hold("focus");
     assert!(fails.is_empty(), "{} faults of the focus:\n{}", fails.len(), fails.join("\n"));
 }
 
 /// All routes of a kind are the union of the routes' coarsest pictures, each route closed, its values as their types
-/// (mathematics.md, "One fine plan, every picture its image", all routes of a kind; #399): every route's box takes and gives what crosses the border of its route
-/// closed, the image of the route's finest plan with no box open. The page draws each route's closed morphism instead, which
-/// leaves out what the route's plan holds (the command line it starts from, a value from beyond, an error it hands on, a
-/// figure): ignored until the kind view is drawn from the routes' plans, a question of speed (a closed route is a cut step's
-/// arrow, some 11 s for the 457 routes of Atlas's own exports at the smallest budget).
+/// (mathematics.md, "One fine plan, every picture its image", all routes of a kind; #434): the kind view's fine plan has a
+/// box for each route, which takes and gives what crosses the border of its route closed. Each route's box is held to the
+/// image of the route's finest plan with no box open, line by line, with the fine lines each stands for and those it
+/// reaches; a route the page plans cut at its first level (`cutArrow`) and that draws otherwise is a fault of the cut (#438).
 #[test]
-#[ignore = "the kind view is drawn from each route's closed morphism, not from its plan (#399)"]
 fn every_kind_view_is_the_union_of_its_routes_closed() {
-    let (tests, all) = all_programs();
-    let (next, fails) = (AtomicUsize::new(0), Mutex::new(vec![]));
-    let workers = std::thread::available_parallelism().map_or(4, |n| n.get());
-    std::thread::scope(|s| {
-        for _ in 0..workers {
-            s.spawn(|| {
-                while let Some(program) = all.get(next.fetch_add(1, Ordering::Relaxed)) {
-                    let name = program.strip_prefix(&tests).unwrap().display().to_string();
-                    for (_, (_, faults)) in asked(program, &data(program), None, &["--kinds"]) {
-                        fails.lock().unwrap().extend(faults.into_iter().map(|x| format!("{name}: {x}")));
-                    }
-                }
-            });
-        }
-    });
-    let fails = fails.into_inner().unwrap();
+    let fails = views_hold("kinds");
     assert!(fails.is_empty(), "{} routes the kind view draws otherwise than closed:\n{}", fails.len(), fails.join("\n"));
+}
+
+/// Every view the page draws is the image of its fine plan through one function, `plan()`, on one view state `V`
+/// (mathematics.md, "One fine plan, every picture its image", the view state; #437). For every program the law walks that state: each view (the overview and each
+/// part alone, each focus, each kind, each route), with the test code and without, at the closed picture, at each box of
+/// each coordinate of `V.open` alone and at sets of them all drawn from a seed (`ATLAS_VIEWS_SEED`). Each picture has both
+/// ends of every line among its boxes, opening one more box refines it (the oracle), each line counts the fine lines it
+/// stands for and each box stands where its plan puts it (a type at its home in `F₀`); a coordinate the view does not read
+/// leaves its picture as it is, and drawn again after every other state, each picture is the one it was. The keys of `V`
+/// are read from the page: a coordinate the law does not walk is a fault.
+#[test]
+fn every_view_state_draws_the_image_of_its_plan() {
+    let fails = views_hold("views");
+    assert!(fails.is_empty(), "{} faults of the view states:\n{}", fails.len(), fails.join("\n"));
+}
+
+/// A route starts at an entry point and ends at a place, and both are visible (sentence 3): every route closed, alone and
+/// among the routes of its kind, gives something, a value, a place it changes or a call it makes. A route whose code gives
+/// nothing and changes nothing ends nowhere, a finding of the program. Ignored until a route's codomain is drawn whatever
+/// its type (#439): a value of no type of the code's that a route gives back, and a class built from its fields, end at no
+/// place in 543 routes of the pairs.
+#[test]
+#[ignore = "a route's codomain of no type of the code's is not drawn (#439)"]
+fn every_route_ends_at_a_place() {
+    let fails = views_hold("ends");
+    assert!(fails.is_empty(), "{} routes end at no place:\n{}", fails.len(), fails.join("\n"));
 }
 
 /// Test code is not saturated by the package quotient, so the fiber and the quotient do not commute (mathematics.md,

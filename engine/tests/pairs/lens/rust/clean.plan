@@ -7,6 +7,8 @@
 # it touches stays its caller's. `kept_summary` builds its Summary only where the line is the day's (`.then(|| ..)`, a
 # choice as `unwrap_or_else` is). Each file is read, used and written by the route: it stands on both sides.
 
+known #438 kinds all export routes: harvest.ReadingStore draws
+
 route harvest.ReadingStore
 step ReadingStore()/ReadingStore.new
 step ReadingStore()/ReadingStore.new/ReadingStore() # the struct built by its literal
