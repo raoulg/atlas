@@ -62,6 +62,10 @@ In Studio the Atlas view draws no header of its own: its controls (the project, 
 
 While Atlas draws, a bar shows how far reading the project's code is; the picture opens when it is done, and a second bar in the picture follows the library calls. Each bar keeps even with the time its phase took at the last few starts of `atlas-code serve` for this repository of the same kind (the slowest of the last three, kept in `.atlas/timings.json`; a bar that expects too little would wait before its end): a start that finds the index of its build of Atlas apart from one that reads everything, as the first start after a new build does. Then it slows down without arriving while the phase takes longer.
 
+## The sidebar
+
+The button at the top of the sidebar, ⌘B (View › Toggle Sidebar; Ctrl+B on Windows and Linux, which a shell in the terminal keeps for itself) folds it to a rail of the section icons, ◇ Atlas view and ◷ History, which still switch the view. The sidebar is hidden, not rebuilt, so the file tree keeps its open folders and its place. The choice is kept in the webview's `localStorage` (`atlas-studio-sidebar`), shared by the windows of one build.
+
 ## Files
 
 The sidebar shows the workspace's files as Atlas reads them: what `atlas-code serve` answers at `/api/files`, the listing `Repo` reads, without hidden directories, what git ignores, dependencies and build output. A filled dot marks a file the graph defines something in (a module, class or function); an open dot marks a physical file only. The tree follows the working tree while the workspace is open.

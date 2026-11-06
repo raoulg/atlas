@@ -380,6 +380,17 @@ const settingsPage = window.AtlasSettings.mount(byId('settings'), {
   closed: () => { if (workspace) selectView(activeView); else showState('welcome'); },
 });
 
+// the sidebar folds to a rail: ⌘B on macOS (the View menu's), Ctrl+B elsewhere unless the terminal has focus
+const onMac = /Mac/i.test(navigator.platform);
+const sidebar = window.AtlasSidebar.mount({
+  workbench: byId('workbench'),
+  button: byId('sidebar-toggle'),
+  held: [byId('file-tree'), byId('lesson-list')],
+  storage: window.localStorage,
+  mac: onMac,
+  skip: (event) => !onMac && Boolean(event.target.closest?.('.terminal-panel')),
+});
+
 // the menu bar's items, said by name
 listen('studio-menu', ({payload}) => {
   const action = payload?.action;
@@ -389,6 +400,7 @@ listen('studio-menu', ({payload}) => {
   else if (action === 'recents') { if (workspaces.isShown()) workspaces.refresh(); }
   else if (action === 'view.atlas' && workspace) selectView('atlas');
   else if (action === 'view.history' && workspace) selectView('history');
+  else if (action === 'view.sidebar') sidebar.toggle();
   else if (action === 'view.terminal') showTerminal();
   else if (action === 'view.scheme') toggleScheme();
   else if (action === 'update.check') checkNow();

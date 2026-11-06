@@ -106,10 +106,17 @@ pub fn menu<R: Runtime>(app: &AppHandle<R>, recent: &[Recent]) -> tauri::Result<
     let file =
         file.separator().item(&MenuItemBuilder::with_id("settings", "Settings…").accelerator("CmdOrCtrl+,").build(app)?).separator().quit();
     let edit = SubmenuBuilder::new(app, "Edit").undo().redo().separator().cut().copy().paste().select_all().build()?;
+    // ⌘B is the menu's on macOS. Elsewhere a menu accelerator would take Ctrl+B from a shell in the
+    // terminal (readline, tmux), so the page binds Ctrl+B itself and leaves it to the terminal.
+    let sidebar_item = MenuItemBuilder::with_id("view.sidebar", "Toggle Sidebar");
+    #[cfg(target_os = "macos")]
+    let sidebar_item = sidebar_item.accelerator("CmdOrCtrl+B");
+    let sidebar_item = sidebar_item.build(app)?;
     let view = SubmenuBuilder::new(app, "View")
         .item(&MenuItemBuilder::with_id("view.atlas", "Atlas View").accelerator("CmdOrCtrl+1").build(app)?)
         .item(&MenuItemBuilder::with_id("view.history", "History").accelerator("CmdOrCtrl+2").build(app)?)
         .separator()
+        .item(&sidebar_item)
         .item(&MenuItemBuilder::with_id("view.terminal", "Terminal").accelerator("Ctrl+`").build(app)?)
         .separator()
         .item(&MenuItemBuilder::with_id("view.scheme", "Light or Dark").accelerator("CmdOrCtrl+Shift+L").build(app)?);
