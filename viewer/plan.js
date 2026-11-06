@@ -284,9 +284,24 @@ const bodyOf = (id, on) => {
 const arrowCache = new Map();
 const arrowOf = id => {
   const a = ARROWS[id], n = byId.get(id);
+  if (a && n?.declared) return callArrow(id, a);
   if (!a || !SIDE || !n || n.kind === "class") return a;
   const ck = `${SIDE}|${id}`;
   if (!arrowCache.has(ck)) arrowCache.set(ck, {...a, takes: (a.takes || []).filter(x => edgeOn(id, x, "takes")), gives: (a.gives || []).filter(x => edgeOn(id, x, "returns")), changes: (a.changes || []).filter(x => edgeOn(id, x, "mutates"))});
+  return arrowCache.get(ck);
+};
+// a method its family only declares runs no body and has no arrow of its own (`Node::declared`); a step of it is a call of
+// it, on a value of the family, which runs one of its members (docs/reference/mathematics.md, Coproducts). What the call
+// is handed crosses its frame to the member that takes it, so the step takes nothing of its own; it hands on what its
+// members give back, the coproduct of their codomains
+const callArrow = (id, a) => {
+  const ck = `${SIDE}|call|${id}`;
+  if (!arrowCache.has(ck)) {
+    const members = [...new Set((bodyOf(id, null).alts || []).map(o => keyed(o)[0]))].filter(m => !byId.get(m)?.declared).map(arrowOf).filter(Boolean);
+    const union = k => [...new Set(members.flatMap(m => m[k] || []))];
+    const any = k => members.some(m => m[k]);
+    arrowCache.set(ck, {...a, gives: union("gives"), changes: union("changes"), changed: union("changed"), gives_back: any("gives_back"), returns_value: any("returns_value")});
+  }
   return arrowCache.get(ck);
 };
 const stepsIn = b => b.items.flatMap(it => it.members ? it.members : [it]);

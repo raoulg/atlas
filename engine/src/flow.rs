@@ -1237,14 +1237,19 @@ fn arrow_of(ix: &Ix, n: &Node, contexts: &FxHashMap<(u32, u32), Vec<(&Key, &Done
         let (at, own) = (in_every_context(ix, &n.id, "", contexts, false), in_every_context(ix, &n.id, "", contexts, true));
         return Arrow { reads_back: at.reads_back, own_reads_back: own.reads_back, updates: at.updates, ..Default::default() };
     }
-    // a function with no body has no arrow of its own: its signature is its family's type, and a call of it is the
-    // coproduct of its members
-    if n.declared {
-        return Arrow::default();
-    }
     let ctor = n.ctor;
     let gives = ix.targets(&n.id, EdgeKind::Returns);
     let (at, own) = (in_every_context(ix, &n.id, "", contexts, false), in_every_context(ix, &n.id, "", contexts, true));
+    // a function with no body has no arrow of its own: it takes, gives and changes nothing, its signature being its
+    // family's type. What a call of it does at places is what its members do, the coproduct of theirs
+    if n.declared {
+        return Arrow {
+            receiver: n.cls.clone().filter(|_| !ctor && !n.on_class).unwrap_or_default(),
+            reads_back: at.reads_back,
+            updates: at.updates,
+            ..Default::default()
+        };
+    }
     // a function whose signature does not say what it gives back gives back a value where its callers use one
     let returns_value = n.returns.as_ref().map_or(false, |r| !r.value.is_empty()) || (ix.unsaid(n) && ix.used(&n.id));
     Arrow {
