@@ -32,6 +32,10 @@ pub(super) struct Eval<'a> {
     /// What each expression read in a frame of its own gives (a function's returns, the value a constructor gives a
     /// field, a constant's), a term of that frame's parameters, made once in that frame.
     summaries: Summaries,
+    /// What a constructor sets a field of the object it builds to, where that is no parameter of its own
+    /// (`this.root = join("shelves", name)`), by the constructor's id and the field's: a term of its
+    /// parameters, which its callers complete (`Callers::holds`).
+    fields: std::cell::RefCell<HashMap<(String, String), Vec<Built>>>,
 }
 
 /// Where an expression is evaluated: its module, and the function it is in with that function's
@@ -102,7 +106,7 @@ pub(super) fn param_names(f: TsNode, src: &[u8]) -> Vec<String> {
 
 impl<'a> Eval<'a> {
     pub fn new(modules: &'a IndexMap<String, Module>, root: &'a Path, bases: HashMap<String, Vec<String>>) -> Self {
-        Eval { modules, root, bases, summaries: Summaries::default() }
+        Eval { modules, root, bases, summaries: Summaries::default(), fields: Default::default() }
     }
 
     /// The module's file, relative to the package root.
@@ -398,7 +402,7 @@ impl<'a> Eval<'a> {
         let ctor = members
             .iter()
             .find(|x| x.kind() == "method_definition" && x.child_by_field_name("name").map(|n| text(n, src)) == Some("constructor"));
-        let held = |p: String| vec![vec![Seg::Held(format!("{id}.constructor"), p)]];
+        let held = |p: String| vec![vec![Seg::Held(format!("{id}.constructor"), p, vec![])]];
         if let Some(ctor) = ctor {
             let params = ctor.child_by_field_name("parameters").map(named_children).unwrap_or_default();
             if params.iter().any(|p| is_property(*p) && p.child_by_field_name("pattern").map(|x| text(x, src)) == Some(name)) {
@@ -412,7 +416,16 @@ impl<'a> Eval<'a> {
             if let Some(right) = set.and_then(|a| a.child_by_field_name("right")) {
                 let names = param_names(*ctor, src);
                 let vals = self.summaries.of(right.id(), || self.of(At { m, scope: Some(*ctor), params: &names }, right, 0));
-                return Some(vals.into_iter().map(|b| held_by(&format!("{id}.constructor"), b)).collect());
+                // a parameter held as it is handed is the parameter; anything else the constructor makes
+                // of its parameters is the field it sets, whose start its code says
+                if let [b] = vals.as_slice() {
+                    if let [Seg::Param(_)] = b.as_slice() {
+                        return Some(vals.into_iter().map(|b| held_by(&format!("{id}.constructor"), b)).collect());
+                    }
+                }
+                let (ctor, field) = (format!("{id}.constructor"), format!("this.{name}"));
+                self.fields.borrow_mut().insert((ctor.clone(), field.clone()), vals);
+                return Some(vec![vec![Seg::Held(ctor, field, vec![])]]);
             }
         }
         let field = members
@@ -778,7 +791,83 @@ impl<'a> Eval<'a> {
         let def = named_children(class.child_by_field_name("body")?)
             .into_iter()
             .find(|x| x.kind() == "method_definition" && x.child_by_field_name("name").map(|n| text(n, &home.src)) == Some(name))?;
-        self.handed_to(at, home, def, args, depth)
+        let values = self.handed_to(at, home, def, args, depth)?;
+        Some(self.built_on(at, object, values, depth + 1))
+    }
+
+    /// What the object a constructor builds holds by `x`, where it is no parameter of the constructor (`fields`).
+    pub fn field(&self, g: &str, x: &str) -> Option<Vec<Built>> {
+        self.fields.borrow().get(&(g.to_string(), x.to_string())).cloned()
+    }
+
+    /// The id the graph knows the function `f` of `m` by.
+    fn function_id(&self, m: &Module, f: TsNode) -> Option<String> {
+        let root = m.tree.root_node();
+        m.bodies
+            .iter()
+            .find(|(_, (s, e))| root.descendant_for_byte_range(*s, *e).and_then(function_node).is_some_and(|d| d.id() == f.id()))
+            .map(|(id, _)| id.clone())
+    }
+
+    /// The class of the value `e` is and the calls that built it, where the code says which: a `new` of the
+    /// program's class in the function `e` is in, a name declared as one, or a call of one of the program's
+    /// functions whose every return builds a value of one class (`openArchive()`), outward from the function
+    /// the class is built in.
+    fn built<'s>(&'s self, at: At<'s, 's>, e: TsNode<'s>, depth: u32) -> Option<(String, Vec<String>)> {
+        if depth > DEPTH {
+            return None;
+        }
+        let e = beneath(e, WRAPPERS);
+        let here = || self.function_id(at.m, at.scope?);
+        match e.kind() {
+            "new_expression" => {
+                let (home, class) = self.class_called(at, e.child_by_field_name("constructor")?)?;
+                let id = format!("{}.{}", home.id, text(class.child_by_field_name("name")?, &home.src));
+                Some((id, vec![here()?]))
+            }
+            "call_expression" => {
+                let f = e.child_by_field_name("function").filter(|f| f.kind() == "identifier")?;
+                let (home, def) = self.function_named(at.m, text(f, &at.m.src))?;
+                let names = param_names(def, &home.src);
+                let inner = At { m: home, scope: Some(def), params: &names };
+                let mut each = returns(def).into_iter().map(|r| self.built(inner, r, depth + 1));
+                let first = each.next()??;
+                each.all(|x| x.as_ref() == Some(&first)).then_some(())?;
+                let (class, mut along) = first;
+                along.push(here()?);
+                Some((class, along))
+            }
+            _ => {
+                let (at, v) = self.named_value(at, e)?;
+                self.built(at, v, depth + 1)
+            }
+        }
+    }
+
+    /// What `values` hold of the value `on` is, where the code says which calls built it (`built`).
+    fn built_on<'s>(&'s self, at: At<'s, 's>, on: TsNode<'s>, values: Vec<Built>, depth: u32) -> Vec<Built> {
+        match self.built(at, on, depth) {
+            Some((class, along)) => crate::paths::built_along(values, &class, &along),
+            None => values,
+        }
+    }
+
+    /// The function of the program `name` names in `m`: one the module declares, or one it imports from another of
+    /// its modules.
+    fn function_named(&self, m: &'a Module, name: &str) -> Option<(&'a Module, TsNode<'a>)> {
+        let mut found = top_function(m, name).map(|d| (m, d));
+        let mut bound = m.bindings.get(name).cloned();
+        for _ in 0..8 {
+            if found.is_some() {
+                break;
+            }
+            let Some(Bound::Own(target)) = bound else { break };
+            let Some((mid, n)) = target.rsplit_once('.') else { break };
+            let Some(home) = self.modules.get(mid) else { break };
+            found = top_function(home, n).map(|d| (home, d));
+            bound = home.bindings.get(n).cloned();
+        }
+        found
     }
 
     /// The program's class a name is, where `e` names one: declared in the module, or imported from

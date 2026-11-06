@@ -671,6 +671,10 @@ pub(super) fn bound_in(def: TsNode, src: &[u8]) -> HashSet<String> {
 /// `Some(x)` and `Ok(x)` are `x`.
 pub(super) const HOLDING: &[&str] = &["Some", "Ok"];
 
+/// The methods of `bool` that give an `Option` holding what they are handed where the value is true,
+/// as `if c { Some(x) } else { None }` does: `c.then_some(x)` holds `x`, `c.then(|| x)` what the closure gives.
+pub(super) const HOLDING_IF: &[&str] = &["then_some", "then"];
+
 /// The variant of `Option` that holds no value: handed to a parameter, it hands nothing, as a call
 /// that leaves a parameter out does in a language with defaults.
 pub(super) const NOTHING: &str = "None";

@@ -375,7 +375,14 @@ const builtFor = (g, seen) => {
 const setUpBefore = (g, seen, before) => {
   if (!before?.has(g)) return false;
   const classes = methodClasses(seen);
-  return [...reach(g, null).nodes].some(f => { const c = byId.get(f); return !!(c?.ctor && c.cls) && classes.has(c.cls); });
+  return [...reach(g, null).nodes].some(f => madeIn(f).some(k => classes.has(k)));
+};
+// the classes the function `f` builds objects of itself: its own class where it is a constructor, and each class its body
+// builds without a constructor of its own (a struct's literal, `Shelf { root }`, is a call of the struct)
+const madeIn = f => {
+  const c = byId.get(f), out = c?.ctor && c.cls ? [c.cls] : [];
+  for (const s of stepsIn(bodyOf(f, null))) if (byId.get(s.to)?.kind === "class" && !runsOf(s.to)) out.push(s.to);
+  return out;
 };
 const inRoute = (t, root, path, before = null) => {
   if (!root || (!(t.by || []).length && !(t.users_of || []).length) || (t.users_of || []).includes(root)) return true;

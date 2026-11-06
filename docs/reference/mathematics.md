@@ -406,11 +406,25 @@ value another frame gives is that frame's summary, followed from that frame's st
 expression and never of how many functions a value passes through. A call back into a function whose summary is being
 made (a recursion of returns) gives a value not followed there, a hole: the least fixpoint of a return through its own
 function is not a term of the algebra (`root(p) = p ∪ root(p/..)` is every ancestor of `p`), and Atlas does not guess it.
+A constructor is a function like any other: a struct's literal (`Shelf { root }`), a variant's (`Check::Tree(dir)`) and a
+class's call (`Shelf(Path("drafts"))`, `new Shelf("drafts")`) are calls of the type's constructor, which hand each field
+its value, and a field read back, of a struct by its name or of a variant by the pattern that takes it out
+(`Check::Tree(d) =>`, `case Tree(d):`), is the constructor's summary of that field: what the constructor sets it to (its
+parameter, or `Path("shelves") / name`), which its callers complete. Where the code says which call built the value (a
+construction in the function that reads it, a name bound once to one, a function every return of which builds one), the
+field is the summary written in at that call alone; where it does not (`self.root` of whatever value a method runs on),
+at every call that builds one, each a condition of the place it names. A place is decided where the start of its path is
+written: in the constructor where the constructor writes it, in the caller that handed it where the constructor holds what
+it is handed.
 **In Atlas.** A function's summary is made once per reading, the first time a call needs it, and every call writes into
 it; reading a program costs each function's returns once, never once per caller.
 **Where.** `paths.rs` (`Summaries`, `applied`), the readers' `paths.rs` (`Eval::handed_to` in Rust and TypeScript,
 `Eval::given` in Python; the fields, defaults and constants each reads); the law `a_path_through_helpers_is_the_path_in_place`
-(`engine/tests/common/mod.rs`, held in `pairs_python`, `pairs_rust` and `pairs_typescript`) (#396).
+(`engine/tests/common/mod.rs`, held in `pairs_python`, `pairs_rust` and `pairs_typescript`) (#396). A field: `Seg::Held`,
+with the calls that built the value (`built_along`), completed in `Callers::of` through `Callers::holds`; Rust's
+constructions (`Eval::constructions`), the readers' `Eval::built`; the laws
+`a_field_holds_what_the_constructor_that_built_the_value_set` and `a_variant_s_field_taken_out_by_a_match_is_the_value_built_in`
+(`engine/tests/pairs.rs`; #407, #395, #349).
 
 ### Places by the type that holds them
 **What.** A quotient of the places by the program's type whose code builds each place's path: the

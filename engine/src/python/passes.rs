@@ -587,7 +587,8 @@ pub(super) fn link(modules: &IndexMap<String, Module>, store: &mut GraphBuilder,
         let handing: Vec<Evaluated> = args.iter().map(|arg| Evaluated { arg, modules, eval: &eval }).collect();
         let entry = |f: &str| store.nodes.get(f).map_or(false, |n| n.entry.is_some());
         let family = store.family();
-        crate::paths::complete(waiting, &handing, &family, &default, &entry)
+        let holds = |g: &str, x: &str| eval.field(g, x);
+        crate::paths::complete(waiting, &handing, &family, &default, &holds, &entry)
     };
     crate::paths::place_calls(store, completed, false);
     drop(callers);
