@@ -594,10 +594,9 @@ fn a_client_is_a_door() {
 /// from the code: a constant (`DATA / "raw"`), what a parameter is handed (`unpack(.., out)`),
 /// an entry's declared default (`--out`). A file or a folder named under an unknown directory is
 /// that name under that directory, by the name the code gives it (`data/{kind}/report.json`, the
-/// folder `data/raw/{unpack.kind}/a.zip/`).
-///
-/// known #381: what `unpack` makes lies in `data/raw/`, which `kinds` lists, but the two routes
-/// do not meet there yet; the mark goes with the fix.
+/// folder `data/raw/{unpack.kind}/a.zip/`). Places on the disk are ordered by their terms, so two
+/// routes also meet where a place one makes or writes lies in a place the other reads: what `unpack`
+/// makes lies in `data/raw/`, which `kinds` lists (`Flow::lies_in`, #381), and keeps its own place.
 #[test]
 fn routes_meet_on_the_disk() {
     let g = fixture();
@@ -613,6 +612,14 @@ fn routes_meet_on_the_disk() {
         places("fixture.files.read_report").contains(&("disk_read", "data/{kind}/report.json")),
         "{:?}",
         places("fixture.files.read_report")
+    );
+    let flow = atlas_engine::flow::of(&g);
+    let at = |id: &str, verb: &str| flow.drawn[id].iter().filter(|w| w.verb == verb).map(|w| w.place.id.clone()).collect::<Vec<_>>();
+    let (made, listed) = (at("fixture.files.unpack", "creates"), at("fixture.files.kinds", "lists"));
+    assert!(
+        made.iter().any(|m| listed.iter().any(|l| flow.lies_in.get(m).is_some_and(|above| above.contains(l)))),
+        "{made:?} lies in {listed:?}: {:?}",
+        flow.lies_in
     );
 }
 
