@@ -5,7 +5,7 @@
 
 mod common;
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
 use atlas_engine::parts::analyze_repo;
@@ -1309,5 +1309,319 @@ fn a_variant_s_field_taken_out_by_a_match_is_the_value_built_in() {
         assert_eq!(places(&pair(&format!("sums/kept/{language}/clean"))), built, "{language}: the places built into the variants");
         let split = places(&pair(&format!("sums/kept/{language}/shortcut")));
         assert!(split.iter().all(|(at, by)| at.starts_with('{') && by.is_empty()), "{language}: no place the code decides: {split:?}");
+    }
+}
+
+/// The pair `abstract` (`tests/pairs/abstract/{python,rust,typescript}`): two families whose members each write a report
+/// somewhere of their own, and an entry for each that runs the family's method on a value of the family's type, which a
+/// factory picks. On the clean side the family only declares the method, in both of each language's forms: an abstract
+/// method (`@abstractmethod`, TypeScript's `abstract`) and a protocol's or an interface's (`Protocol`, `interface`); in
+/// Rust both are a trait's method without a default body. On the shortcut the base writes a report of its own, a default
+/// its members override (`out/report.txt`, `store/report.txt`). Each entry, the method it calls, and the members that
+/// fill it in, as the code names them.
+const DECLARED: [(&str, &str, [&str; 2]); 2] = [
+    ("publish", "Exporter.export", ["CsvExporter.export", "JsonExporter.export"]),
+    ("archive", "Store.keep", ["Shelf.keep", "Vault.keep"]),
+];
+
+/// What the shortcut's bases write of their own.
+const DEFAULTS: [(&str, &str); 2] = [("Exporter.export", "out/report.txt"), ("Store.keep", "store/report.txt")];
+
+const LANGUAGES: [&str; 3] = ["python", "rust", "typescript"];
+
+fn declared_pair(language: &str) -> &'static common::Pair {
+    static PAIRS: [std::sync::OnceLock<common::Pair>; 3] = [const { std::sync::OnceLock::new() }; 3];
+    let i = LANGUAGES.iter().position(|l| *l == language).expect("a language of the pair");
+    PAIRS[i].get_or_init(|| common::pair(&format!("abstract/{language}")))
+}
+
+/// The program's function whose id ends in `short` (`Exporter.export`): the class and the name the code gives it.
+fn function<'g>(g: &'g Graph, short: &str) -> &'g atlas_engine::Node {
+    let callable = |n: &atlas_engine::Node| matches!(n.kind, atlas_engine::NodeKind::Method | atlas_engine::NodeKind::Function);
+    g.nodes
+        .iter()
+        .find(|n| !n.library && callable(n) && n.id.ends_with(&format!(".{short}")))
+        .unwrap_or_else(|| panic!("no function {short}"))
+}
+
+/// The id of the program's entry `name` (`publish`).
+fn entry_named(g: &Graph, name: &str) -> String {
+    g.nodes.iter().find(|n| !n.library && n.entry.is_some() && n.name == name).unwrap_or_else(|| panic!("no entry {name}")).id.clone()
+}
+
+/// A function's own arrow as the engine forms it (sentence 2): the types of the code's its arrow takes, and those it
+/// gives (gives back, builds, changes), each as the place the viewer's plan names it (`t:` and the type), and the places of
+/// the world its own body reads (`takes`) and writes (`gives`). What it reaches through its calls is no part of it
+/// (sentence 6).
+fn own_in_engine(g: &Graph, id: &str) -> BTreeSet<String> {
+    let arrows = atlas_engine::flow::arrows(g);
+    let a = arrows.get(id).cloned().unwrap_or_default();
+    let own = |t: &String| g.node(t).is_some_and(|n| !n.library && n.kind == atlas_engine::NodeKind::Class);
+    let mut out: BTreeSet<String> = a.takes.iter().filter(|t| own(t)).map(|t| format!("takes t:{t}")).collect();
+    out.extend(a.gives.iter().chain(&a.changes).filter(|t| own(t)).map(|t| format!("gives t:{t}")));
+    if !a.builds.is_empty() {
+        out.insert(format!("gives t:{}", a.builds));
+    }
+    for t in &g.node(id).expect("the function is a node").touches {
+        let way = if t.dir == Some(atlas_engine::Dir::Read) { "takes" } else { "gives" };
+        out.insert(format!("{way} w:File:{}", t.artifact));
+    }
+    out
+}
+
+/// The own arrow of every function in the overview's fine plan `F₀`, as the viewer's model builds it (`plans.mjs --own`),
+/// by the function: each place its occurrence takes and gives.
+fn own_in_overview(g: &Graph, name: &str) -> BTreeMap<String, BTreeSet<String>> {
+    let plans = common::planned_routes(g, name, None, &["--own"]);
+    let mut out: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
+    for f in plans.get("@own").into_iter().flatten() {
+        let Some((function, line)) = f.strip_prefix("own ").and_then(|f| f.split_once(' ')) else { continue };
+        out.entry(function.to_string()).or_default().insert(line.to_string());
+    }
+    out
+}
+
+/// The facts of the finest plan of the route of `entry` (`publish`), as `plans.mjs` writes them.
+fn route_plan(g: &Graph, name: &str, entry: &str) -> BTreeSet<String> {
+    let id = entry_named(g, entry);
+    common::planned_routes(g, name, None, &[&id]).remove(&id).unwrap_or_default()
+}
+
+/// The lines of a plan, each as `(from, to, channel)`.
+fn plan_lines(facts: &BTreeSet<String>) -> Vec<(String, String, String)> {
+    facts
+        .iter()
+        .filter_map(|f| f.strip_prefix("line "))
+        .filter_map(|l| {
+            let (from, rest) = l.split_once(" > ")?;
+            let (to, channel) = rest.split_once(' ')?;
+            Some((from.to_string(), to.to_string(), channel.to_string()))
+        })
+        .collect()
+}
+
+/// The type label of a value of a plan (`Receipt@publish/Exporter.export` is a `Receipt`).
+fn type_of(value: &str) -> &str {
+    value.split(['@', '·']).next().unwrap_or(value)
+}
+
+/// A function with no body has an empty own arrow (sentence 2: its domain is its parameters plus what its body consumes,
+/// its codomain what it returns plus what it writes; a declared method runs no body, so it consumes, returns and writes
+/// nothing). Its signature is the type of the arrow each of its members must be, never an arrow of its own. So in every
+/// language and in both of each language's forms (an abstract method, a protocol's or an interface's method, a trait's
+/// method without a default body): the method is declared, its own arrow as the engine forms it is empty, and the types
+/// the overview reads off who makes and takes them (`Families::makes`, `Families::takes`) do not name it (#430).
+#[test]
+fn a_declared_method_has_an_empty_own_arrow_in_every_language() {
+    let mut faults = vec![];
+    for language in LANGUAGES {
+        let g = &declared_pair(language).clean;
+        let types = atlas_engine::families::families(g);
+        for (_, base, _) in DECLARED {
+            let n = function(g, base);
+            if !n.declared {
+                faults.push(format!("{language}: {base} is not read as declared"));
+            }
+            let own = own_in_engine(g, &n.id);
+            if !own.is_empty() {
+                faults.push(format!("{language}: {base} has the own arrow {own:?}"));
+            }
+            for (way, uses) in [("makes", &types.makes), ("takes", &types.takes)] {
+                for (t, _) in uses.iter().filter(|(_, by)| by.contains(&n.id)) {
+                    faults.push(format!("{language}: the overview's types say {base} {way} {t}"));
+                }
+            }
+        }
+    }
+    assert!(faults.is_empty(), "{}", faults.join("\n"));
+}
+
+/// A default body is a body: a method a base defines and its members override has the own arrow its body forms, as any
+/// function does. The shortcut's bases write a report of their own, so their own arrow takes the Report, gives the
+/// Receipt and writes their file, in every language, where the clean side's declared method has none (#430).
+#[test]
+fn a_default_body_has_its_own_arrow_in_every_language() {
+    for language in LANGUAGES {
+        let g = &declared_pair(language).shortcut;
+        for (base, file) in DEFAULTS {
+            let n = function(g, base);
+            assert!(!n.declared, "{language}: {base} has a body");
+            let own = own_in_engine(g, &n.id);
+            let named = |way: &str, end: &str| own.iter().any(|o| o.starts_with(way) && o.ends_with(end));
+            assert!(named("takes t:", ".Report") && named("gives t:", ".Receipt"), "{language}: {base} {own:?}");
+            assert!(own.contains(&format!("gives w:File:{file}")), "{language}: {base} {own:?}");
+        }
+    }
+}
+
+/// A function's own arrow is one quantity, whoever forms it: the overview's fine plan `F₀` gives each function's
+/// occurrence its own arrow (`docs/reference/mathematics.md`, "One fine plan, every picture its image"), and that is the
+/// arrow the engine forms. So for the declared methods, their members and the bases with a default body, on both sides of
+/// the pair and in every language, the two agree: neither changes without the other.
+#[test]
+fn the_own_arrow_is_one_in_the_engine_and_the_overview_in_every_language() {
+    for language in LANGUAGES {
+        let p = declared_pair(language);
+        for (side, g) in [("clean", &p.clean), ("shortcut", &p.shortcut)] {
+            let overview = own_in_overview(g, &format!("abstract-own-one-{language}-{side}"));
+            for short in DECLARED.iter().flat_map(|(_, base, members)| std::iter::once(*base).chain(members.iter().copied())) {
+                let id = &function(g, short).id;
+                assert_eq!(overview.get(id).cloned().unwrap_or_default(), own_in_engine(g, id), "{language} {side}: {short}");
+            }
+        }
+    }
+}
+
+/// A declared method draws no line of its own (#430): in the overview's fine plan `F₀` the occurrence of a declared
+/// method takes and gives nothing, and in the plan of a route that calls it, the step of the call, a choice of the members
+/// that fill it in, takes nothing its own body would read and writes nothing: its only lines are what its members hand
+/// back to it (`T@step/?`) and what it hands on of that (`T@step`). The shortcut's default body draws lines of its own
+/// there, the Report it reads and the file it writes, as any body does.
+#[test]
+fn a_declared_method_draws_no_line_of_its_own_in_every_language() {
+    let mut faults = vec![];
+    for language in LANGUAGES {
+        let p = declared_pair(language);
+        for (side, g) in [("clean", &p.clean), ("shortcut", &p.shortcut)] {
+            let overview = own_in_overview(g, &format!("abstract-own-lines-{language}-{side}"));
+            for (entry, base, _) in DECLARED {
+                let in_overview = overview.get(&function(g, base).id).cloned().unwrap_or_default();
+                let step = format!("{entry}/{base}");
+                let facts = route_plan(g, &format!("abstract-lines-{language}-{side}-{entry}"), entry);
+                let own: Vec<_> = plan_lines(&facts)
+                    .into_iter()
+                    .filter(|(from, to, _)| *from == step || *to == step)
+                    .filter(|(from, to, channel)| {
+                        let back = *to == step && from.ends_with(&format!("@{step}/?")) && channel == "value";
+                        let on = *from == step && to.ends_with(&format!("@{step}")) && channel == "value";
+                        !back && !on
+                    })
+                    .collect();
+                if side == "shortcut" {
+                    assert!(!in_overview.is_empty(), "{language} shortcut: in the overview, {base}'s default body draws its lines");
+                    assert!(own.iter().any(|(_, _, c)| c == "own"), "{language} shortcut: {step} writes its file: {own:?}");
+                    continue;
+                }
+                if !in_overview.is_empty() {
+                    faults.push(format!("{language}: in the overview, {base} draws {in_overview:?}"));
+                }
+                if !own.is_empty() {
+                    faults.push(format!("{language}: in the route {entry}, {step} draws {own:?}"));
+                }
+            }
+        }
+    }
+    assert!(faults.is_empty(), "{}", faults.join("\n"));
+}
+
+/// A call of a declared method runs one of the members that fill it in: where the code does not say which, it may run
+/// each of them, and its codomain is the coproduct of theirs (`docs/reference/mathematics.md`, Coproducts: a call into a
+/// family). So in every language, on both sides, the step of the call in its route is a choice of each member (and of the
+/// base's own body where it has one), and what the route writes, as the engine reads it along the route (`flow::along`)
+/// and as its plan draws it, is the union of what those bodies write; and the step hands on what its members hand back.
+#[test]
+fn a_call_of_a_declared_method_runs_each_member_in_every_language() {
+    for language in LANGUAGES {
+        let p = declared_pair(language);
+        for (side, g) in [("clean", &p.clean), ("shortcut", &p.shortcut)] {
+            for (entry, base, members) in DECLARED {
+                let at = format!("{language} {side} {entry}");
+                let n = function(g, base);
+                let runs: Vec<&atlas_engine::Node> = members.iter().map(|m| function(g, m)).chain((!n.declared).then_some(n)).collect();
+                let written: BTreeSet<String> = runs.iter().flat_map(|f| f.touches.iter().map(|t| t.artifact.clone())).collect();
+                let along: BTreeSet<String> = atlas_engine::flow::along(g, &entry_named(g, entry))
+                    .into_values()
+                    .flatten()
+                    .filter_map(|k| k.strip_prefix("w:File:").map(String::from))
+                    .collect();
+                assert_eq!(along, written, "{at}: along the route");
+                let facts = route_plan(g, &format!("abstract-runs-{language}-{side}-{entry}"), entry);
+                let drawn: BTreeSet<String> =
+                    facts.iter().filter_map(|f| f.strip_prefix("side File(")?.split_once(')').map(|(p, _)| p.to_string())).collect();
+                assert_eq!(drawn, written, "{at}: in the plan");
+                let step = format!("{entry}/{base}");
+                assert!(facts.contains(&format!("step {step} one of {}", runs.len())), "{at}: {step} runs one of {}", runs.len());
+                // the steps below the call that run the method on a class, apart from the steps of the base's own body
+                let method = base.rsplit('.').next().unwrap_or(base);
+                let alternatives: BTreeSet<String> = facts
+                    .iter()
+                    .filter_map(|f| f.strip_prefix(&format!("step {step}/")))
+                    .filter(|s| !s.contains('/') && s.ends_with(&format!(".{method}")))
+                    .map(String::from)
+                    .collect();
+                assert_eq!(alternatives, members.iter().map(|m| m.to_string()).collect(), "{at}: the members {step} runs");
+                let lines = plan_lines(&facts);
+                let back: BTreeSet<&str> = lines
+                    .iter()
+                    .filter(|(from, to, _)| members.iter().any(|m| *from == format!("{step}/{m}")) && to.ends_with(&format!("@{step}/?")))
+                    .map(|(_, to, _)| type_of(to))
+                    .collect();
+                let on: BTreeSet<&str> = lines
+                    .iter()
+                    .filter(|(from, to, _)| *from == step && to.ends_with(&format!("@{step}")))
+                    .map(|(_, to, _)| type_of(to))
+                    .collect();
+                assert!(!back.is_empty() && back == on, "{at}: {step} hands on {on:?}, its members hand back {back:?}");
+            }
+        }
+    }
+}
+
+/// Isomorphic is the same: an abstract method, a protocol's, an interface's and a trait's method without a default body
+/// say one thing, a signature the members fill in, and a default body says another in every language. So what Atlas
+/// reads of each side of the pair is one reading in every language, by the names the code gives: whether each method is
+/// declared, its own arrow in the engine and in the overview, and the plan of each route through it.
+#[test]
+fn a_declared_method_reads_alike_in_every_language() {
+    // a type by the name the code gives it
+    let short = |s: &str| -> String {
+        match s.split_once(" t:") {
+            Some((way, t)) => format!("{way} t:{}", t.rsplit('.').next().unwrap_or(t)),
+            None => s.to_string(),
+        }
+    };
+    for side in ["clean", "shortcut"] {
+        let reading = |language: &str| {
+            let p = declared_pair(language);
+            let g = if side == "clean" { &p.clean } else { &p.shortcut };
+            let overview = own_in_overview(g, &format!("abstract-own-alike-{language}-{side}"));
+            let mut out = BTreeSet::new();
+            for (entry, base, _) in DECLARED {
+                let n = function(g, base);
+                out.insert(format!("{base} declared {}", n.declared));
+                out.extend(own_in_engine(g, &n.id).iter().map(|o| format!("{base} engine {}", short(o))));
+                out.extend(overview.get(&n.id).into_iter().flatten().map(|o| format!("{base} overview {}", short(o))));
+                let step = format!("{entry}/{base}");
+                let facts = route_plan(g, &format!("abstract-alike-{language}-{side}-{entry}"), entry);
+                // the call and what stands directly in it, a member or the choice of one: how each language writes a
+                // body is its own
+                let method = format!(".{}", base.rsplit('.').next().unwrap_or(base));
+                let at_call = |token: &str| {
+                    let path = token.rsplit('@').next().unwrap_or(token);
+                    match path.strip_prefix(&format!("{step}/")) {
+                        Some(rest) => rest == "?" || (!rest.contains('/') && rest.ends_with(&method)),
+                        None => path == step,
+                    }
+                };
+                let kept = |f: &&String| {
+                    let tokens: Vec<&str> = f.split(' ').filter(|t| t.contains(&step)).collect();
+                    f.starts_with("side ") || (!tokens.is_empty() && tokens.iter().all(|t| at_call(t)))
+                };
+                // each language spells a function's name its own way (`exporter_for`, `exporterFor`)
+                out.extend(facts.iter().filter(kept).map(|f| format!("{entry} {}", f.to_lowercase().replace('_', ""))));
+            }
+            out
+        };
+        let python = reading("python");
+        for language in &LANGUAGES[1..] {
+            let theirs = reading(language);
+            let only = |a: &BTreeSet<String>, b: &BTreeSet<String>| a.difference(b).cloned().collect::<Vec<_>>();
+            assert!(
+                python == theirs,
+                "{side}: python and {language} read apart\nonly python: {:?}\nonly {language}: {:?}",
+                only(&python, &theirs),
+                only(&theirs, &python)
+            );
+        }
     }
 }

@@ -143,11 +143,16 @@ Each part is read in one language, so the graph's languages are the image of its
 the union of theirs for a merge (`model::Languages`); one language is a value of the closed set Atlas reads (`Lang`).
 A call into a family runs one of its overrides, decided at run time, so its codomain is the coproduct of theirs: it
 hands on each error any of them can end with, as a call hands on each its one callee can end with, never one chosen
-for it (#213).
+for it (#213). A method a family only declares (an abstract method, a protocol's or an interface's method, a trait's
+method without a default body) runs no body, so it has no arrow of its own: it takes, gives and touches nothing, in
+every view. Its signature is the type of the arrows its members are, a hom-set they inhabit, never an arrow; it stands
+where the family's quotient draws it, on the border of the family opened by base class. A call of it is the coproduct
+of its members alone, and where the code does not say which member runs, it may run each (#430).
 **Where.** Principles `sums` and `choices`; `Node::whens` (`body.rs`), `arms_of` and `guarded_by` (`tree.rs`), `Item::Choice` (`flow.rs`),
 the MCP tool `choices`; `parts::apart`, `parts::versions`, `parts::beyond`, `parts::merge`, `Language::library_code`, `Graph::rename`, `Graph::libraries` and
 `model::Dependency`, held by `engine/tests/versions.rs`, `two_versions_of_a_library_are_two_libraries` and
-`a_library_two_parts_read_is_read_over_both_their_reach` (`pairs.rs`) and `a_merge_holds_each_id_once` (`merge.rs`); `Site::fails` and `settle_fails` (`builder.rs`).
+`a_library_two_parts_read_is_read_over_both_their_reach` (`pairs.rs`) and `a_merge_holds_each_id_once` (`merge.rs`); `Site::fails` and `settle_fails` (`builder.rs`);
+a declared method: `Node::declared`, set by each reader, held by the pair `abstract` (`pairs.rs`, `a_declared_method_*`).
 
 ### Lenses
 **What.** A lens on S has `get: S → A` and `put: A × S → S`, and a lawful one gets back what
