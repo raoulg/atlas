@@ -790,6 +790,9 @@ fn a_test_is_an_entry_of_kind_test_in_every_language() {
         for language in ["rust", "typescript"] {
             assert_eq!(read(language), python, "{language} {side}");
         }
+    }
+}
+
 /// The places the finest plan of each route of `g` (`common::planned`) reads under an occurrence whose path ends in `at`:
 /// those a line goes from into it on its own channel.
 fn read_under(g: &Graph, name: &str, at: &str) -> BTreeSet<String> {
