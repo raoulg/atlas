@@ -33,6 +33,11 @@ internal to a package, one a package makes, takes and hands to another, and one 
 function takes). The same is asked of the overview without
 the test code, whose fine plan must be the fiber of the one with it, taken on that plan, for every set of open packages
 (`overview-tests` holds, in each language, a store with its tests beside it and a package of tests alone).
+A focus, the overview with some packages singled out, is asked the same of its own plan, the fiber of the overview's
+over the packages in focus with the rest of the code around it, for every set of packages in focus and every set of
+open boxes; besides, each package of the focus drawn closed has the border it has in the overview, and each type
+stands where the overview puts it (`focus-shapes` holds four ranks of one tensor type, each named otherwise by the
+package that takes it, and a class one package makes and another takes).
 
 ```bash
 cargo test -p atlas-engine --test plans -- --nocapture                              # every program
