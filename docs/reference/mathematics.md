@@ -1025,6 +1025,41 @@ test code (A filter: the program without its test code), and is the fiber of the
 line of a touch carries the formula of who makes its path whole, so the fiber can be taken on the
 plan too, and both ways give one plan.
 
+A focus, the overview with a set `U` of packages singled out (shift-click), is a fiber of `F₀`, not a
+construction of its own. Its plan `F_U` is the star of `U` in `F₀`:
+
+- the functions of the packages in `U`, with every place they make, take or touch. A type stands in its
+  kind (`kindOf`), so the box the overview draws for it is one block of `F₀`'s places, and `F_U` holds
+  the block whole: a box of the focus is the box of the overview, never a part of it;
+- the rest of the code, every other function, each in the coarsest package of `F₀` that holds no code in
+  `U`, and those packages in one frame, *the rest*. A function of the rest keeps of its lines only those
+  to a place of the star and its calls with an end in `U`; what the rest does among itself is no line of
+  the focus, and a function of the rest with no such line is not in `F_U`;
+- a type's home is `F₀`'s, the smallest package that holds every function of the program that makes or
+  takes it, so it is the same in every view: in a package of `U` it stands there, above them it stands
+  outside every package. A home computed from the functions of the focus alone would move a type into
+  a package of `U` that the overview draws outside it.
+
+What is open is the map `q_U`: a package of `U` as the reader has it open, the rest one block until
+it is opened, and then each package of the rest a closed block, which never opens (a package of the
+rest is brought into the focus by naming it, which is another fiber). The picture is `F_U/q_U`, by
+the same `imageOf` as every picture, so the border of a closed package of `U` is the border it has in
+the overview opened to the same packages: the same type boxes on the same sides. The rest is one block
+on both sides, as a place that is read and written is (`from X ⇄`, `into X ⇄`): the page draws it as
+`~in` on the left, with what it hands the focus and its calls into it, and as `~out` on the right, with
+what it takes and the calls the focus makes into it; opened, each of its packages stands so in a frame
+on each side, one block drawn twice. A type only the rest makes and only the focus takes (or the
+reverse) is a vertex between two arrows: it is contracted to the arrow from each maker to each taker,
+which counts the boxes it stands for, as a wire is (above).
+
+All routes of a kind (every command, every test) are one picture: the union of each route's coarsest
+picture, the image of the route's finest plan with no step open, a route one box. Nothing opens in it;
+a route opens on its own page. So the box of a route takes and gives what crosses its border closed:
+the command line it starts from, the values from beyond it, the errors it hands on, the figures it
+draws on. The page draws today each route's closed morphism instead (`morphism(id, false, false)`),
+which leaves those out, and holds the law only where they do not occur: drawing every route's plan
+costs some seconds on a large program against milliseconds, a question of speed (#399).
+
 On the image the model merges the siblings (above, `siblings`) and takes the order of the places on the disk
 (`meet`, "Paths as terms"), and the page then does only what is a quotient of `F` or a way of drawing it: the storage quotient and the fold (above); a value with no name and no type of the code's
 drawn as a wire from its maker to its takers, a vertex between two arrows contracted (a homotopy, as
@@ -1044,6 +1079,8 @@ Each law is then a theorem of the construction, or it is not yet, and says which
 | Endpoints | every image of a place or an occurrence is a box | `pictures.py walk`; `plans.rs`, for every set of open steps of every route and every set of open packages of every overview: every line of the picture the model hands the page, its siblings merged, has both ends among its boxes, and the members of a merged box draw the same lines, calls among them (`ends` in `plans.mjs`) |
 | Across the cut | a cut step's arrow is the image of its body, made by the same construction (`cutArrow`) | `plans.rs` at the budgets 1, 2 and 3 (`ATLAS_FINE_BUDGET`), which cut the small programs as a large one is cut: each line of a cut step counts the fine lines its body draws there, and each cut step of the closed picture, opened and planned anew, refines the picture it was cut in (`cutOpenings` in `plans.mjs`); at the same budgets a route whose body, unfolded, has 2^40 occurrences, which only an arrow made without unfolding the body can plan (`a_step_beyond_the_cut_is_made_without_unfolding_its_body`); `topology` with a small budget |
 | The overview | `F₀/q` maps onto `F₀/q′` along the blocks, as a route's pictures do, the calls a channel among them | the oracle; `plans.rs` (`every_package_view_is_the_image_of_its_plan`), for every set of open packages and parts of every program: each line counts the fine lines it stands for and none is reached, a type internal to a closed package draws none, each call goes between the blocks of its ends, and the picture is a function of the set of open boxes; all of it again without the test code, whose plan is the fiber of the plan with it |
+| A focus | `F_U` is a fiber of `F₀` closed under kinds, its homes `F₀`'s, and `q_U` a map on it | `plans.rs` (`every_focus_is_the_image_of_a_fiber_of_the_overviews_plan`), for every set of packages in focus and every set of open packages: each closed package has the border it has in the overview opened alike, each type the home `F₀` gives it, the plan is the star of the focus restated on its own (`starOf`), the oracle with `q_U`, the lines count the fine ones, every line has its ends, and closing in turn draws each picture it was; the program `plans/focus-shapes` |
+| All routes of a kind | the union of the routes' closed pictures | `plans.rs` (`every_kind_view_is_the_union_of_its_routes_closed`, ignored: the page draws the closed morphisms, #399) |
 
 The oracle holds the pictures to one another, not to the program. Whether `F` says what the code
 does is a test of its own, `engine/tests/plans.rs`: beside a small program a `.plan` file writes down
@@ -1054,8 +1091,10 @@ test runs the viewer's own model in node, the function every picture is drawn fr
 the pairs and of its programs.
 **Where.** `plan`, `sitesOf`, `figureOf`, `FIGURE_FIELDS`, `FIGURE_SLOTS` and `figurePart`, `setsAt` and `resolveWhole`, `throughOf` and `partIn`,
 `changedThrough` and `changesOwner`,
-`coarsen`, `siblings`, `cutArrow` and `typesOf`, `handTo` and `checkOpenings`, `overviewBase` and `overview` in `viewer/plan.js`,
-`cutOpenings`, `ends` and `overviewFaults` in `engine/tests/plans.mjs`;
+`coarsen`, `siblings`, `cutArrow` and `typesOf`, `handTo` and `checkOpenings`, `overviewBase` and `overview`, the focus's
+`focusBase`, `focusOpen`, `restSides` and `focus` in `viewer/plan.js`,
+`cutOpenings`, `ends`, `overviewFaults`, the focus's `starOf`, `borderOf` and `focusFaults`, and the kind view's `kindFaults`
+in `engine/tests/plans.mjs`;
 the field an argument reads, `Steps::fills` and `Steps::read_of` (`body.rs`); the class each field of a class holds, `Node::holds`;
 which parameters of no type of the code's hold a value, `builder::settle_parameters`; the fields a condition tests,
 `Steps::tests` (`body.rs`), and whether a figure is made sure of, `guarded` in `viewer/plan.js`; the names a body binds
