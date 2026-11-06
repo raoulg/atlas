@@ -1776,10 +1776,10 @@ impl<'a, 't> Body<'a, 't> {
                 if parts.is_empty() {
                     return None;
                 }
-                self.resolve_value(v, &parts)
-                    .map(Resolved::id)
-                    .as_deref()
-                    .and_then(|f| self.returned_class(f))
+                // a tuple struct called with its fields (`Html(text)`) is a value of the struct the path resolves to
+                self.resolve(&parts)
+                    .and_then(|r| self.class_of(&r.id()))
+                    .or_else(|| self.resolve_value(v, &parts).map(Resolved::id).as_deref().and_then(|f| self.returned_class(f)))
                     .or_else(|| self.resolve(&parts[..parts.len() - 1]).and_then(|r| self.class_of(&r.id())))
             }
             _ => None,
