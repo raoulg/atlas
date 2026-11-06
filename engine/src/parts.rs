@@ -54,7 +54,7 @@ pub fn graph_of(repo: &Repo, opts: &Options) -> Result<Graph> {
     let mut g = lang.parse(repo, opts)?;
     let finish = crate::clock::stage("finish");
     crate::entries::read_makefile(repo, &mut g);
-    assign(&mut g, lang.lang());
+    assign(&mut g, repo, lang.as_ref());
     drop(finish);
     let _fiber = crate::clock::stage("fiber");
     Ok(crate::view::View::apply(&crate::view::reached(&g, opts.libraries), &g))
@@ -476,7 +476,8 @@ pub fn joined(name: &str, graphs: Vec<Graph>) -> Graph {
 /// A graph's parts and every node's part: the top-level packages it holds (a crate of a
 /// workspace, a Python package, an app); what sits beside them (scripts, notebooks) belongs
 /// to the first.
-pub fn assign(g: &mut Graph, language: Lang) {
+pub fn assign(g: &mut Graph, repo: &Repo, language: &dyn crate::language::Language) {
+    let lang = language.lang();
     // a library read for its types is the environment's, not a part of the repository
     let mut ids: Vec<String> = g
         .nodes
@@ -489,8 +490,19 @@ pub fn assign(g: &mut Graph, language: Lang) {
     }
     // the package named after the graph comes first: scripts and notebooks are routes into it
     ids.sort_by_key(|id| id != &g.root);
-    let (leaves, structural) = (crate::language::leaves(language), crate::language::structural(language));
-    g.parts = ids.iter().map(|id| Part { id: id.clone(), language, dir: g.project_root.clone(), leaves, structural }).collect();
+    let (leaves, structural) = (language.leaves(), language.structural());
+    let parts: Vec<Part> = ids
+        .iter()
+        .map(|id| Part {
+            id: id.clone(),
+            language: lang,
+            dir: g.project_root.clone(),
+            leaves,
+            library: language.library(repo, g, id),
+            structural,
+        })
+        .collect();
+    g.parts = parts;
     let known: HashSet<&String> = ids.iter().collect();
     for n in &mut g.nodes {
         let head = n.id.split('.').next().unwrap_or("").to_string();

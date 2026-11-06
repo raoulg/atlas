@@ -1,0 +1,11 @@
+[project]
+name = "downloads"
+version = "0.1.0"
+requires-python = ">=3.11"
+
+[project.scripts]
+downloads = "downloads.cli:main"
+
+[build-system]
+requires = ["uv_build"]
+build-backend = "uv_build"

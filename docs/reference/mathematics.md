@@ -178,9 +178,15 @@ nodes and the edges between them.
 **What.** The predicate *test code* on the functions of the graph: a function is test code when it
 is a test (an entry of kind `test`), when a reader marks it as test code (`Node::test`), or when it
 stands in a module that is. Each language says what it compiles or collects only to test: Rust's
-`#[test]`, an item under `#[cfg(test)]` and a crate's `tests/`; pytest's `test_*.py`, `*_test.py`
-and `conftest.py`; a `*.test.ts`, a `*.spec.ts` and what lies below `__tests__`. The readers hold
-it; no project declares it.
+`#[test]`, an item under `#[cfg(test)]` and a crate's `tests/`; pytest's `test_*.py`, `*_test.py`,
+`conftest.py` and a project's `tests/`; a `*.test.ts`, a `*.spec.ts`, what lies below `__tests__`
+and a `tests/` beside a package's code. The readers hold it; no project declares it. A test is
+what the runner collects and reports one by one: pytest's `test*` function of a file it collects
+(or such a method of a `Test*` class), Cargo's `#[test]` function, the callback a `*.test.ts`
+hands `it` or `test`, labelled by its string. The file that holds them is a module of test code,
+never a test itself: one entry per collected test in every language (pytest collecting `test_*` is
+Cargo collecting `#[test]` is vitest collecting `it`). The test code is read where the runner's
+layout puts it, beside the package as well as in it: a project's tests are in its graph.
 **In Atlas.** The overview is drawn on the fiber where the code is no test code, unless the reader
 keeps the test code (the sight's `tests`). The fiber is the full subgraph on the functions of the
 program: their own arrows, the calls between two of them, the packages and parts that hold a module
@@ -194,9 +200,16 @@ answers what the program does, and test code is not the program: Cargo builds it
 crate, pytest collects it, and a test is a way in from outside the program (the principles' reading).
 The test code stays in the graph: its tests are routes of their own, and one click keeps it.
 **Where.** `testCode` and `overviewBase` (`kept`, `whole`) in `viewer/plan.js`; the principles'
-`test` in `principles.rs`, the same predicate; the readers: `rust/passes.rs` (`cfg_test`),
-`rust.rs`, `python.rs` with `knowledge::python_test_file`, `typescript.rs` with
-`knowledge::TYPESCRIPT_TEST_FILES`. Held by `engine/tests/plans.rs`
+`test` in `principles.rs`, the same predicate; `entries::mark_tests`, which marks test code and
+makes each collected test an entry, called by each language's `parse` with its runner's
+`knowledge::TestConventions` (`PYTEST`, `CARGO_TEST`, `JS_TESTS`); the readers supply their syntax
+and layout: `rust/passes.rs` (`cfg_test`), `python.rs` (`tests_beside`: the tests beside the
+package, by the module names pytest gives them from the project's root, `tests.test_cli`),
+`typescript.rs` (the tests beside `src/`) and `typescript/passes.rs` (`collect_tests`: a registered
+callback is a function named by its string). Held by `engine/tests/pairs.rs`
+(`a_test_is_an_entry_of_kind_test_in_every_language`, on `engine/tests/pairs/tests`: the fiber, the
+test code and the tests' labels agree across the languages, and a test kept inside the package
+cuts its module, one kept beside it cuts none; issues #403, #404) and `engine/tests/plans.rs`
 (`every_package_view_is_the_image_of_its_plan`: the fine plan without the test code is the fiber,
 taken on the plan, of the one with it, and every picture is the image of that fiber, for every set
 of open packages; `test_code_cuts_a_package_in_two`: the counterexample to taking the quotient
@@ -265,8 +278,13 @@ loop over a table goes over its keys (`for k in d`, `d.keys()`, `for (const k in
 is the union of the keys the code writes. An element of a listing has a name as well as a path
 (`e.name`, `e.file_name()`), and that name joined below the directory listed is the element, `D/*`.
 The empty path `""` names nothing: an input whose default is the empty path is the input alone, a
-hole, never the place the empty term would be. It is the unit of a join (`PathBuf::new().join(x)` is
-`x`), where it is written and where a caller hands it: a join commutes with what is handed. The step
+hole, never the place the empty term would be, and joined with more it keeps its place in the join
+(`join(settings["raw"] ?? "", kind)` is `{}/{kind}`). It is the unit of a join on either side, after any
+base (`PathBuf::new().join(x)` is `x`, `Path("x") / ""` is `x`), where it is written and where a caller hands
+it: a join commutes with what is handed. A default is a term of the parameters of the function that
+declares it, so what a caller hands is written into it as into any term there (`out or made(home)`
+completes to the place `made(Path("work"))` names in place), and a call that hands nothing (`None`,
+`undefined`) leaves the parameter to its default, as a call that leaves it out does. The step
 up `..` names no file or folder of its own: `{p}/..` is the directory of `p`, decided once `p` is. A
 path resolved against a base (`new URL(rel, base)`) starts at the base, as a join does. A path the code
 changes in place is the term it holds after each change, as a name bound anew is (`p.push(x)` is
@@ -358,12 +376,12 @@ is one in the same way, by what it serves: a set of methods at a path. `methods=
 (`app.all`) is the top of the set. Its label, `GET|POST /items`, writes the set in the order of
 `knowledge::REQUEST_WAYS`; a request meets a route whose set holds its method, at its path.
 **Where.** `paths.rs` (`Seg`, `join`, `place`, `folders`, `bound`, `each`, `chosen`, `substitute`, `with_suffix`,
-`environment_named`, `looked_up`, `or_else`, `within`, `Seg::Within`, `Callers`, `Cycles`, `wildcards`, `served`, `serving`),
+`environment_named`, `looked_up`, `or_else`, `defaulted`, `Defaults`, `within`, `Seg::Within`, `Callers`, `Cycles`, `wildcards`, `served`, `serving`),
 `model.rs` (`Route`, `Methods`, `Request`), the readers' `paths.rs` (`Eval::of`; Rust's `Eval::changed`), `flow.rs`
 (`Touch::place`, `lies_in`, `Flow::lies_in`), `plan.js` (`pathWords`, `meetsOf` and `meet`; held by `orderings` in
 `engine/tests/plans.mjs`), `knowledge.rs` (`PathFn`, `PathMethod::Within`, `ELEMENT_NAMES`,
 `LISTING_ENTRIES`); the pairs `python/paths`, `places`, `kept`, `workbench`, `unset`, `opened`, `twice` (#324), `trees`
-(#325, #345), `keys` (#352) and `meets` (#381).
+(#325, #345), `keys` (#352), `meets` (#381) and `defaults` (#428, #427, #383, #350).
 
 ### A function's return is its summary
 **What.** What a function gives back is a term of its parameters, the same for every caller: its summary, the union of
@@ -510,7 +528,17 @@ nothing calls. A
 caller that handed the rest hands it down the calls into the touch's function, so it holds only on
 them; a caller that set up the object a method on the calls runs on (its calls reach a constructor
 of that method's class) holds wherever it ran before, also in a step beside the calls (`main`
-building the shelf in `open_shelf` and keeping its report in the step after). A role one condition
+building the shelf in `open_shelf` and keeping its report in the step after), and only where the value the method runs on
+may be one it built. That value is one the body names, and the body says which steps it may be made of: the steps that bind
+its name and ran before the call, and those that make what each of them is handed, through every step. A name holds what
+the binding nearest before the call made, and what one before it made where that one stands in an arm the call is not in,
+up to a binding that runs whenever the call does; in a loop, where no binding in the loop runs before the call in the same
+round, it holds in a later round what a binding after the call in the loop made in the round before, so the call is handed
+each of them (`shelf = open_drafts()`, then in the loop `shelf.keep_report(..)` and `shelf = open_shelf()`: the report is
+kept on both shelves). A set-up none of those steps runs built another object, and holds for nothing the call runs: of two
+shelves set up before a read, the read on the drafts counts the drafts' set-up alone. Where the body does not say which
+value it is (a parameter, a value its own code binds, a field of the value its method runs on), any set-up of the class
+that ran before may have built it. A role one condition
 plays is no part of the set: the graph says which a caller plays, as above, and the function a
 request is from is kept beside it, in `Whole { asks, with }`, where the request is drawn.
 Where two callers meet a path, the conjunction is the union of theirs (`Whole::and`), so the meet
@@ -521,10 +549,12 @@ other. The graph's JSON writes each conjunction `a&b`, its conditions in order, 
 `users_of:e`, and the alternatives in order; a conjunction of one entry's users alone is written in
 `users_of`. It reads them back once.
 **Where.** `model.rs` (`Atom`, `Both`, `absorb`, `Touch::by`, `Touch::in_route`), `paths.rs` (`Whole`,
-`Callers::of`, `place_calls`), `flow.rs` (`holds`, what ran before a call: `Ix::prior`, the memo's `Key`;
+`Callers::of`, `place_calls`), `flow.rs` (`holds`, what ran before a call: `Ix::prior`, the memo's `Key`; the set-ups
+that cannot have built the value a call runs on: `makers`, `receiver_makers`, `Ix::off`;
 `along`; the contexts of an arrow: `contexts`, `in_every_context`), `plan.js` (`inRoute`, `before`,
-`ranBefore`); the pairs `handing`, `setup` and `order`, the programs `plans/setup-in-a-loop` and
-`plans/setup-in-an-arm`, and `engine/tests/ran_before.rs`, which holds the engine's reading and the page's
+`ranBefore`, `makersOf`, `receiverMakers`, `offAt`, and what a call in a loop is handed: `laterRounds`); the pairs
+`handing`, `setup` and `order` (each in Python, Rust and TypeScript, `engine/tests/pairs.rs`), the programs
+`plans/setup-in-a-loop` and `plans/setup-in-an-arm`, both in the three languages, and `engine/tests/ran_before.rs`, which holds the engine's reading and the page's
 to one answer, and a function's arrow to what its route, written out occurrence by occurrence, does at places.
 
 ### Yoneda: what changed
@@ -1025,6 +1055,41 @@ test code (A filter: the program without its test code), and is the fiber of the
 line of a touch carries the formula of who makes its path whole, so the fiber can be taken on the
 plan too, and both ways give one plan.
 
+A focus, the overview with a set `U` of packages singled out (shift-click), is a fiber of `F₀`, not a
+construction of its own. Its plan `F_U` is the star of `U` in `F₀`:
+
+- the functions of the packages in `U`, with every place they make, take or touch. A type stands in its
+  kind (`kindOf`), so the box the overview draws for it is one block of `F₀`'s places, and `F_U` holds
+  the block whole: a box of the focus is the box of the overview, never a part of it;
+- the rest of the code, every other function, each in the coarsest package of `F₀` that holds no code in
+  `U`, and those packages in one frame, *the rest*. A function of the rest keeps of its lines only those
+  to a place of the star and its calls with an end in `U`; what the rest does among itself is no line of
+  the focus, and a function of the rest with no such line is not in `F_U`;
+- a type's home is `F₀`'s, the smallest package that holds every function of the program that makes or
+  takes it, so it is the same in every view: in a package of `U` it stands there, above them it stands
+  outside every package. A home computed from the functions of the focus alone would move a type into
+  a package of `U` that the overview draws outside it.
+
+What is open is the map `q_U`: a package of `U` as the reader has it open, the rest one block until
+it is opened, and then each package of the rest a closed block, which never opens (a package of the
+rest is brought into the focus by naming it, which is another fiber). The picture is `F_U/q_U`, by
+the same `imageOf` as every picture, so the border of a closed package of `U` is the border it has in
+the overview opened to the same packages: the same type boxes on the same sides. The rest is one block
+on both sides, as a place that is read and written is (`from X ⇄`, `into X ⇄`): the page draws it as
+`~in` on the left, with what it hands the focus and its calls into it, and as `~out` on the right, with
+what it takes and the calls the focus makes into it; opened, each of its packages stands so in a frame
+on each side, one block drawn twice. A type only the rest makes and only the focus takes (or the
+reverse) is a vertex between two arrows: it is contracted to the arrow from each maker to each taker,
+which counts the boxes it stands for, as a wire is (above).
+
+All routes of a kind (every command, every test) are one picture: the union of each route's coarsest
+picture, the image of the route's finest plan with no step open, a route one box. Nothing opens in it;
+a route opens on its own page. So the box of a route takes and gives what crosses its border closed:
+the command line it starts from, the values from beyond it, the errors it hands on, the figures it
+draws on. The page draws today each route's closed morphism instead (`morphism(id, false, false)`),
+which leaves those out, and holds the law only where they do not occur: drawing every route's plan
+costs some seconds on a large program against milliseconds, a question of speed (#399).
+
 On the image the model merges the siblings (above, `siblings`) and takes the order of the places on the disk
 (`meet`, "Paths as terms"), and the page then does only what is a quotient of `F` or a way of drawing it: the storage quotient and the fold (above); a value with no name and no type of the code's
 drawn as a wire from its maker to its takers, a vertex between two arrows contracted (a homotopy, as
@@ -1044,6 +1109,8 @@ Each law is then a theorem of the construction, or it is not yet, and says which
 | Endpoints | every image of a place or an occurrence is a box | `pictures.py walk`; `plans.rs`, for every set of open steps of every route and every set of open packages of every overview: every line of the picture the model hands the page, its siblings merged, has both ends among its boxes, and the members of a merged box draw the same lines, calls among them (`ends` in `plans.mjs`) |
 | Across the cut | a cut step's arrow is the image of its body, made by the same construction (`cutArrow`) | `plans.rs` at the budgets 1, 2 and 3 (`ATLAS_FINE_BUDGET`), which cut the small programs as a large one is cut: each line of a cut step counts the fine lines its body draws there, and each cut step of the closed picture, opened and planned anew, refines the picture it was cut in (`cutOpenings` in `plans.mjs`); at the same budgets a route whose body, unfolded, has 2^40 occurrences, which only an arrow made without unfolding the body can plan (`a_step_beyond_the_cut_is_made_without_unfolding_its_body`); `topology` with a small budget |
 | The overview | `F₀/q` maps onto `F₀/q′` along the blocks, as a route's pictures do, the calls a channel among them | the oracle; `plans.rs` (`every_package_view_is_the_image_of_its_plan`), for every set of open packages and parts of every program: each line counts the fine lines it stands for and none is reached, a type internal to a closed package draws none, each call goes between the blocks of its ends, and the picture is a function of the set of open boxes; all of it again without the test code, whose plan is the fiber of the plan with it |
+| A focus | `F_U` is a fiber of `F₀` closed under kinds, its homes `F₀`'s, and `q_U` a map on it | `plans.rs` (`every_focus_is_the_image_of_a_fiber_of_the_overviews_plan`), for every set of packages in focus and every set of open packages: each closed package has the border it has in the overview opened alike, each type the home `F₀` gives it, the plan is the star of the focus restated on its own (`starOf`), the oracle with `q_U`, the lines count the fine ones, every line has its ends, and closing in turn draws each picture it was; the program `plans/focus-shapes` |
+| All routes of a kind | the union of the routes' closed pictures | `plans.rs` (`every_kind_view_is_the_union_of_its_routes_closed`, ignored: the page draws the closed morphisms, #399) |
 
 The oracle holds the pictures to one another, not to the program. Whether `F` says what the code
 does is a test of its own, `engine/tests/plans.rs`: beside a small program a `.plan` file writes down
@@ -1054,8 +1121,10 @@ test runs the viewer's own model in node, the function every picture is drawn fr
 the pairs and of its programs.
 **Where.** `plan`, `sitesOf`, `figureOf`, `FIGURE_FIELDS`, `FIGURE_SLOTS` and `figurePart`, `setsAt` and `resolveWhole`, `throughOf` and `partIn`,
 `changedThrough` and `changesOwner`,
-`coarsen`, `siblings`, `cutArrow` and `typesOf`, `handTo` and `checkOpenings`, `overviewBase` and `overview` in `viewer/plan.js`,
-`cutOpenings`, `ends` and `overviewFaults` in `engine/tests/plans.mjs`;
+`coarsen`, `siblings`, `cutArrow` and `typesOf`, `handTo` and `checkOpenings`, `overviewBase` and `overview`, the focus's
+`focusBase`, `focusOpen`, `restSides` and `focus` in `viewer/plan.js`,
+`cutOpenings`, `ends`, `overviewFaults`, the focus's `starOf`, `borderOf` and `focusFaults`, and the kind view's `kindFaults`
+in `engine/tests/plans.mjs`;
 the field an argument reads, `Steps::fills` and `Steps::read_of` (`body.rs`); the class each field of a class holds, `Node::holds`;
 which parameters of no type of the code's hold a value, `builder::settle_parameters`; the fields a condition tests,
 `Steps::tests` (`body.rs`), and whether a figure is made sure of, `guarded` in `viewer/plan.js`; the names a body binds

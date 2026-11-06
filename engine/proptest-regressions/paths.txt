@@ -5,3 +5,4 @@
 # It is recommended to check this file in to source control so that
 # everyone who runs the test benefits from these saved cases.
 cc 697a81694b0a5a477947fd5439da8497d670255d8b259e793ef367a5d5868832 # shrinks to prefix = None, v = "F", default = Some([Hole("$F")]), rest = [], up = false
+cc ee4f9c6dd32c70f6149b11c168d2c4e0a4c1ce4c0a22c7f418f8dfcc12ac4b4c # shrinks to a = [Lit("~/"), Hole("$H")], rest = [[Lit("a")]], other = [Lit("~/"), Hole("$H")] (#427)

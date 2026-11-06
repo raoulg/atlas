@@ -25,7 +25,7 @@ const D = JSON.parse(fs.readFileSync(dataJson, "utf8"));
 // `ATLAS_FINE_BUDGET=n` cuts the plan as a large program's is cut (`plan.js`, `FINE_BUDGET`)
 const window = process.env.ATLAS_FINE_BUDGET ? {ATLAS_FINE_BUDGET: Number(process.env.ATLAS_FINE_BUDGET)} : {};
 const M = new Function("D", "window", fs.readFileSync(planJs, "utf8") + `
-return {V, plan, imageOf, coarsen, checkOpenings, overviewOpen, inUnit, partOf, MAKEFILES, treeInfo, stepLabel, oneOf, typeLabel, sideOfRoles, familyOf, kindOf, byId, ordersOn, stepOf, opens, frameOf, valueBox, foldDirs, filePath, valuesOf, closedFamily, typesIn, lightOf, cutBy, familyFrames, here, kindsOf, isData, worldPlaceOf};`)(D, window);
+return {V, plan, imageOf, coarsen, checkOpenings, overviewOpen, inUnit, partOf, MAKEFILES, treeInfo, stepLabel, oneOf, typeLabel, sideOfRoles, familyOf, kindOf, byId, ordersOn, stepOf, opens, frameOf, valueBox, foldDirs, filePath, valuesOf, closedFamily, typesIn, lightOf, cutBy, familyFrames, here, kindsOf, isData, worldPlaceOf, placeOfType, focusOpen: typeof focusOpen === "function" ? focusOpen : null, overviewEntries, planBase};`)(D, window);
 const {V} = M;
 
 const SIDES = {in: "left", out: "right", mid: "between", both: "both"};
@@ -655,16 +655,189 @@ function testFaults() {
   return {facts: [...facts].sort(), faults: out};
 }
 
-// with no route named, every route of the program but its tests; `--overview` asks the overview, with the test code and without
-if (routes[0] === "--overview") {
+// A focus is the fiber of `F₀` over the packages in it, with the rest of the code around it (mathematics.md, "One fine plan,
+// every picture its image", the focus). Restated here from `F₀` and the packages in focus `U`: the functions of the packages in
+// focus with every place they make, take or touch, a type with every type of its kind (the box the overview draws is one
+// block of `F₀`'s places); every other function with its lines to those places and its calls into the focus, and where it
+// draws neither it stands nowhere; the frames of the focus as in `F₀`, those in focus that lie in no package in focus at the
+// top, and the rest's: each package that holds no code in focus and lies in none that holds none, in the rest's frame; a
+// type's home `F₀`'s where it is a package of the focus, else outside every package; the calls with an end in the focus
+const REST_FRAME = "n:unit:~rest";
+function starOf(F0, U) {
+  const unitAt = fid => (F0.frames.get(fid)?.step.startsWith("unit:") ? F0.frames.get(fid).step.slice(5) : null);
+  const inFocus = fid => { for (let f = fid; f; f = F0.frames.get(f).parent) if (U.includes(unitAt(f))) return true; return false; };
+  const holds = fid => [...F0.frames.keys()].some(g => inFocus(g) && (() => { for (let f = g; f; f = F0.frames.get(f).parent) if (f === fid) return true; return false; })());
+  const kind = k => (F0.places.get(k)?.type ? M.kindOf(F0.places.get(k).type) : k);
+  const mine = [...F0.pills.values()].filter(P => inFocus(P.parent));
+  const kinds = new Set(mine.flatMap(P => [...P.D.keys(), ...P.C.keys()]).map(kind));
+  const star = k => kinds.has(kind(k));
+  const calls = F0.calls.filter(c => c.some(f => inFocus(F0.pills.get("n:" + f)?.parent)));
+  const called = new Set(calls.flat().map(f => "n:" + f));
+  const pills = new Map();
+  for (const P of F0.pills.values()) {
+    if (inFocus(P.parent)) { pills.set(P.id, P); continue; }
+    const D = new Map([...P.D].filter(([k]) => star(k))), C = new Map([...P.C].filter(([k]) => star(k)));
+    if (D.size || C.size || called.has(P.id)) pills.set(P.id, {...P, D, C});
+  }
+  const frames = new Map();
+  for (const [fid, f] of F0.frames) {
+    if (inFocus(fid)) frames.set(fid, {...f, parent: inFocus(f.parent) ? f.parent : null});
+    else if (unitAt(fid) && !holds(fid)) frames.set(fid, {...f, parent: unitAt(f.parent) && !holds(f.parent) ? f.parent : REST_FRAME});
+  }
+  if ([...frames.values()].some(f => f.parent === REST_FRAME)) frames.set(REST_FRAME, {id: REST_FRAME, parent: null});
+  const places = new Map([...F0.places].filter(([k]) => star(k)).map(([k, pl]) => [k, "home" in pl ? {...pl, home: inFocus(pl.home) ? pl.home : undefined} : pl]));
+  return {...F0, places, pills, frames, calls};
+}
+// The sets of packages put in focus: each subset while there are few, else each alone and each pair
+function focusSets(F0) {
+  const units = [...F0.frames.values()].filter(f => f.step.startsWith("unit:")).map(f => f.step.slice(5));
+  return units.length <= 4
+    ? [...Array(1 << units.length).keys()].slice(1).map(m => units.filter((_, i) => m & (1 << i)))
+    : [...units.map(u => [u]), ...units.flatMap((a, i) => units.slice(i + 1).map(b => [a, b]))];
+}
+// a focus as what it draws, its arrows to and from the rest with it; a picture that cannot be read so says why
+function focusDrawn(C) {
+  try {
+    return drawnOf(C) + JSON.stringify((C.restArrows || []).map(([r, at, side, ts]) => [r, at, side, [...ts.keys()].sort()]).sort());
+  } catch (e) {
+    return `a picture without what a plan's image carries: ${e.message}`;
+  }
+}
+// The boxes at the border of a package drawn closed, by the way the lines cross it: a type box it is joined to, and a type a
+// counted arrow to or from the rest stands for, as the box it is drawn as
+function borderOf(C, id) {
+  const P = C.pills.get(id), ways = {D: new Set(), C: new Set()};
+  if (!P) return null;
+  for (const way of ["D", "C"]) for (const k of P[way].keys()) if (k.startsWith("t:")) ways[way].add(k);
+  for (const [r, at, side, ts] of C.restArrows || []) {
+    const ks = ts instanceof Map ? [...ts.keys()] : [...ts].map(t => "t:" + M.placeOfType(t));
+    if (at === id) ks.forEach(k => ways[side === "~in" ? "D" : "C"].add(k));
+    if (r === id) ks.forEach(k => ways[side === "~in" ? "C" : "D"].add(k));
+  }
+  return JSON.stringify([[...ways.D].sort(), [...ways.C].sort()]);
+}
+// For every set of packages in focus `U` and every set of open boxes (its packages and the rest): the focus's fine plan is the
+// fiber of `F₀` restated above (`starOf`); its picture is the image of that plan under `q_U` as the overview's is of `F₀`
+// (each line counts the fine lines it stands for and none is reached, a type internal to a closed package draws none, each call
+// goes between the blocks of its ends, opening one more box refines the picture, the picture is a function of the set of open
+// boxes, and the picture the page draws has both ends of every line among its boxes); a package of the focus drawn closed has
+// at its border the type boxes the overview draws at its border, the overview opened as the focus is and at the packages above
+// it; and a type box stands in the frame the overview puts it in, where that frame is drawn, else outside every package: a
+// type's home is a fact of `F₀`, the same in every view. All of it with the test code and without it
+function focusFaults(tests) {
+  const out = [], pre = tests ? "" : "without the test code, ";
+  const clear = () => { for (const k of Object.keys(V.open)) V.open[k] = new Set(); };
+  V.route = null; V.kind = null; V.part = null; V.focus = new Set(); V.tests = tests;
+  clear();
+  M.plan();
+  const F0 = window.atlasPlan.fine;
+  for (const U of focusSets(F0)) {
+    const name = `${pre}the focus on ${U.join(", ")}`, star = starOf(F0, U);
+    const above = new Set();
+    for (const [fid, f] of F0.frames) if (U.includes(f.step.slice(5))) for (let g = f.parent; g; g = F0.frames.get(g).parent) above.add(F0.frames.get(g).step);
+    const boxes = [...star.frames.values()].map(f => f.step || "unit:~rest");
+    const sets = boxes.length <= ALL_SUBSETS
+      ? [...Array(1 << boxes.length).keys()].map(m => boxes.filter((_, i) => m & (1 << i)))
+      : [[], ...boxes.map(b => [b]), ...boxes.flatMap((a, i) => boxes.slice(i + 1).map(b => [a, b])), boxes];
+    const first = new Map();
+    for (const set of sets) {
+      const at = `${name}${set.length ? `, with ${set.join(", ")} open` : ""}`;
+      V.focus = new Set(U); clear(); openAs(set);
+      window.atlasPlan = null;
+      const C = M.plan(), F = window.atlasPlan?.fine;
+      first.set(set, focusDrawn(C));
+      // the overview, opened as the focus is and at every package above one in focus
+      const own = [...V.open.units];
+      V.focus = new Set(); clear(); openAs([...set.filter(s => s !== "unit:~rest"), ...above]);
+      const O = M.plan();
+      for (const [fid, f] of (F || star).frames) {
+        if (!f.step || f.step === "unit:~rest" || f.parent === REST_FRAME || !C.pills.has(fid) || !O.pills.has(fid)) continue;
+        const a = borderOf(C, fid), b = borderOf(O, fid);
+        if (a !== b) out.push(`${at}: ${fid} has at its border ${a}, in the overview ${b}`);
+      }
+      for (const c of [...C.places.keys()].filter(k => k.startsWith("t:"))) {
+        if (!C.home) { out.push(`${at}: the focus places no box where F₀ puts it`); break; }
+        const h = O.home?.([c], false), want = h && C.frames.has(h) ? h : null, got = C.home([c], false) || null;
+        if (want !== got) out.push(`${at}: ${c} stands in ${got || "the picture"}, and F₀ puts it in ${want || "the picture"}`);
+      }
+      V.focus = new Set(U); clear(); V.open.units = new Set(own);
+      if (!F || F === F0) { out.push(`${at}: the focus is drawn by a construction of its own, not from F₀`); continue; }
+      if (!set.length && planOf(F) !== planOf(star)) out.push(`${name}: the fine plan is not the fiber of F₀ over the focus: ${planOf(F)} against ${planOf(star)}`);
+      const view = M.imageOf(F, M.focusOpen, false);
+      for (const f of M.checkOpenings(F, view, false, M.focusOpen)) out.push(`${at}: ${f}`);
+      const block = id => { let top = null; for (let f = F.pills.get(id).parent; f; f = F.frames.get(f)?.parent) if (!M.focusOpen(F.frames.get(f).step)) top = f; return top || id; };
+      const inside = (home, S) => { for (let f = home; f; f = F.frames.get(f)?.parent) if (f === S) return true; return false; };
+      const want = new Map();
+      for (const P of F.pills.values()) for (const [way, m] of [["D", P.D], ["C", P.C]]) for (const k of m.keys()) {
+        const b = block(P.id);
+        if (b !== P.id && inside(F.places.get(k)?.home, b)) continue;
+        const key = JSON.stringify([b, way, view.q(k)]);
+        want.set(key, (want.get(key) || 0) + 1);
+      }
+      const drawn = new Map();
+      for (const B of view.pills.values()) for (const [way, n, r] of [["D", B.Dn, B.Dr], ["C", B.Cn, B.Cr]]) for (const [c, k] of n || []) {
+        drawn.set(JSON.stringify([B.id, way, c]), k);
+        if (r?.get(c)) out.push(`${at}: ${B.id} reaches ${c}, a line of its own code`);
+      }
+      for (const [k, n] of want) if (drawn.get(k) !== n) out.push(`${at}: the line ${k} counts ${drawn.get(k) ?? "nothing"}, the fine lines ${n}`);
+      for (const k of drawn.keys()) if (!want.has(k)) out.push(`${at}: the line ${k} stands for no fine line`);
+      const calls = new Set(F.calls.map(([a, b]) => [block("n:" + a), block("n:" + b)]).filter(([x, y]) => x !== y).map(([x, y]) => `${x}>${y}`));
+      const drawnCalls = new Set([...view.pills.values()].flatMap(P => [...(P.calls || [])].map(b => `${P.id}>${b}`)));
+      for (const c of calls) if (!drawnCalls.has(c)) out.push(`${at}: no call ${c}`);
+      for (const c of drawnCalls) if (!calls.has(c)) out.push(`${at}: the call ${c} stands for no call of the code`);
+      for (const f of ends(C, M.coarsen(F, M.focusOpen, () => false))) out.push(`${at}: ${f}`);
+    }
+    for (const set of [...sets].reverse()) {
+      V.focus = new Set(U); clear(); openAs(set);
+      if (focusDrawn(M.plan()) !== first.get(set)) out.push(`${name}${set.length ? `, with ${set.join(", ")} open` : ""}: drawn again after the other sets, the picture differs`);
+    }
+  }
+  V.focus = new Set(); clear();
+  return out;
+}
+
+// All routes of a kind are the union of the routes' coarsest pictures, each route closed (mathematics.md, "One fine plan,
+// every picture its image", all routes of a kind): a route's box takes and gives what crosses the border of its route closed, the image of its finest plan with no
+// box open, each value as its type, since the routes of a kind have no order between them and so no moments. Asked of every
+// kind of route the program has, before the siblings that draw alike are merged
+function kindFaults() {
+  const out = [], kinds = [...new Set([...M.byId.values()].filter(n => n.entry && n.entry.kind !== "test").map(n => n.entry.kind))];
+  for (const kind of kinds) {
+    V.route = null; V.kind = kind; V.focus = new Set();
+    for (const k of Object.keys(V.open)) V.open[k] = new Set();
+    const K = M.planBase(false), rs = M.overviewEntries().map(e => e.id);
+    for (const r of rs) {
+      V.kind = null; V.route = r;
+      M.plan();
+      const F = window.atlasPlan.fine, foldable = ["cli", "script"].includes(M.byId.get(r).entry.kind);
+      const closed = M.imageOf(F, () => false, foldable, {fineKeys: true});
+      const asType = k => (/^[tv]:/.test(k) && F.places.get(k)?.type ? "t:" + F.places.get(k).type : k);
+      const ways = {D: new Set(), C: new Set()};
+      for (const B of closed.pills.values()) for (const way of ["D", "C"]) for (const k of B[way].keys()) ways[way].add(asType(k));
+      const P = K.pills.get("n:" + r), drawn = JSON.stringify(P ? [[...P.D.keys()].sort(), [...P.C.keys()].sort()] : [[], []]), want = JSON.stringify([[...ways.D].sort(), [...ways.C].sort()]);
+      if (drawn !== want) out.push(`all ${kind} routes: ${r} draws ${drawn}, its route closed ${want}`);
+      V.route = null; V.kind = kind;
+    }
+  }
+  V.kind = null;
+  return out;
+}
+
+// with no route named, every route of the program but its tests; `--overview` asks the overview, with the test code and without;
+// `--focus` every focus, with the test code and without; `--kinds` the routes of each kind
+// the answer is written whole before the process ends: a pipe takes some 64 KB at a time
+const said = answer => process.stdout.write(JSON.stringify(answer), () => process.exit(0));
+if (routes[0] === "--kinds") said({"@kinds": {facts: [], faults: kindFaults()}});
+else if (routes[0] === "--focus") said({"@focus": {facts: [], faults: [...focusFaults(true), ...focusFaults(false)]}});
+else if (routes[0] === "--overview") {
   const fiber = testFaults();
-  process.stdout.write(JSON.stringify({"@overview": {facts: fiber.facts, faults: [...overviewFaults(true), ...overviewFaults(false), ...fiber.faults]}}));
-  process.exit(0);
+  said({"@overview": {facts: fiber.facts, faults: [...overviewFaults(true), ...overviewFaults(false), ...fiber.faults]}});
+} else {
+  const named = routes.length ? routes : [...M.byId.values()].filter(n => n.entry && n.entry.kind !== "test").map(n => n.id);
+  const result = {};
+  for (const r of named) {
+    if (Date.now() > DEADLINE) break;
+    result[r] = read(r);
+  }
+  process.stdout.write(JSON.stringify(result));
 }
-const named = routes.length ? routes : [...M.byId.values()].filter(n => n.entry && n.entry.kind !== "test").map(n => n.id);
-const result = {};
-for (const r of named) {
-  if (Date.now() > DEADLINE) break;
-  result[r] = read(r);
-}
-process.stdout.write(JSON.stringify(result));

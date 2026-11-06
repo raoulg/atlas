@@ -9,9 +9,11 @@
 //! `inRoute`) and says it of its finest plan (`ran_before.mjs`, in node). The law: for every route that starts at a
 //! function, the two readings name the same occurrences, and under each the same places. (The route of a class is its
 //! doors, each called by the entry with no order between them; `orders` reads each door as a function of its own, never
-//! the class as one body.) Its subjects are the `setup` pair, where the step that sets the shelf up runs beside the
-//! methods that keep files on it, the `order` pair, where the route sets a second shelf up after it kept its report, and
-//! two programs made for the order in a loop and in a nested arm (`plans/setup-in-a-loop`, and `plans/setup-in-an-arm` in Python, Rust and TypeScript).
+//! the class as one body.) Its subjects, each in Python, Rust and TypeScript, are the `setup` pair, where the step that
+//! sets the shelf up runs beside the methods that keep files on it, the `order` pair, where the route sets a second shelf
+//! up after it kept its report and reads from the second, so that a set-up holds for a method only where the value the
+//! method runs on may be one it built, and two programs made for the order in a loop and in a nested arm
+//! (`plans/setup-in-a-loop`, `plans/setup-in-an-arm`).
 //!
 //! A function's arrow (`flow::arrows`) reads back what it does in the contexts it is called in, one of them the route
 //! that starts at it. The second law: what a function does at places holds what that route, written out occurrence by
@@ -76,12 +78,22 @@ fn differences(engine: &Reading, page: &Reading) -> Vec<String> {
 }
 
 /// The subjects: the pairs and programs where a step sets up the object a later call runs on.
-const SUBJECTS: [&str; 8] = [
+const SUBJECTS: [&str; 18] = [
     "pairs/setup/python/clean",
     "pairs/setup/python/shortcut",
+    "pairs/setup/rust/clean",
+    "pairs/setup/rust/shortcut",
+    "pairs/setup/typescript/clean",
+    "pairs/setup/typescript/shortcut",
     "pairs/order/python/clean",
     "pairs/order/python/shortcut",
-    "plans/setup-in-a-loop",
+    "pairs/order/rust/clean",
+    "pairs/order/rust/shortcut",
+    "pairs/order/typescript/clean",
+    "pairs/order/typescript/shortcut",
+    "plans/setup-in-a-loop/python",
+    "plans/setup-in-a-loop/rust",
+    "plans/setup-in-a-loop/typescript",
     "plans/setup-in-an-arm/python",
     "plans/setup-in-an-arm/rust",
     "plans/setup-in-an-arm/typescript",

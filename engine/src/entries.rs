@@ -1,8 +1,9 @@
 //! Routes into a program: where a web app serves its routes, the entry points a Python project's
-//! `pyproject.toml` declares, what the human hands an entry on the command line, Makefile targets.
+//! `pyproject.toml` declares, the tests a runner collects, what the human hands an entry on the
+//! command line, Makefile targets.
 
 use std::collections::{BTreeMap, HashMap, HashSet};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use regex::Regex;
 
@@ -130,6 +131,35 @@ pub fn mark_scripts(repo: &Repo, store: &mut GraphBuilder, project_root: Option<
                 n.entry = Some(entry);
             }
             Some(_) => {}
+        }
+    }
+}
+
+/// Test code is one predicate, and a test is an entry of kind `test`, in every language: a module
+/// is test code where its runner's conventions say its file is (`runner.files`, by its path below
+/// the nearest of the reading's `roots`), and a function of a file the runner collects from is a
+/// test where the runner collects it, by its name and its class's or by a mark it carries
+/// (`TestConventions::collects`). A test is labelled by its name: the function's, or the string a
+/// registered callback is handed with, which its reader gives it as its name. Test code the reader
+/// marks by its syntax (Rust's `#[cfg(test)]`) stays marked.
+pub fn mark_tests(store: &mut GraphBuilder, runner: &knowledge::TestConventions, roots: &[PathBuf]) {
+    let below = |file: &str| {
+        let file = Path::new(file);
+        roots.iter().filter_map(|r| file.strip_prefix(r).ok()).min_by_key(|rel| rel.components().count()).map(Path::to_path_buf)
+    };
+    let mut collected: HashSet<String> = HashSet::new();
+    for n in store.nodes.values_mut().filter(|n| n.kind == NodeKind::Module && !n.library && !n.file.is_empty()) {
+        let Some(rel) = below(&n.file) else { continue };
+        n.test |= runner.test_file(&rel);
+        if runner.collects_from(&rel) {
+            collected.insert(n.id.clone());
+        }
+    }
+    let functions = store.nodes.values_mut().filter(|n| matches!(n.kind, NodeKind::Function | NodeKind::Method) && !n.library);
+    for n in functions.filter(|n| collected.contains(&n.module)) {
+        let class = n.cls.as_deref().map(|c| c.rsplit('.').next().unwrap_or(c));
+        if runner.collects(&n.name, class, &n.decorators) {
+            n.entry = Some(Entry::new(EntryKind::Test, n.name.clone()));
         }
     }
 }

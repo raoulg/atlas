@@ -43,7 +43,7 @@ fn under_cfg_test(n: TsNode, src: &[u8]) -> bool {
 /// Test code by where it stands: an item under `#[cfg(test)]`, which an inline `mod tests { .. }`
 /// gives all it holds (the graph keeps them in the module around it), and a file module declared
 /// under one (`#[cfg(test)] mod tests;`), with every module below it.
-pub(super) fn mark_tests(modules: &IndexMap<String, Module>, store: &mut GraphBuilder) {
+pub(super) fn mark_cfg_test(modules: &IndexMap<String, Module>, store: &mut GraphBuilder) {
     // module -> the lines of its items that are compiled only for tests
     let mut lines: HashMap<&str, Vec<(u32, u32)>> = HashMap::new();
     // the files and directories of the test modules declared in a file of their own
@@ -145,11 +145,10 @@ pub(super) fn mark_exports(modules: &IndexMap<String, Module>, store: &mut Graph
     }
 }
 
-/// The route a function is: a test, the `main` of a binary, or what the crate exports.
-fn entry_of(m: &Module, item: TsNode, src: &[u8], name: &str, attrs: &[String]) -> Option<Entry> {
-    if attrs.iter().any(|a| a == "test") {
-        Some(Entry::new(EntryKind::Test, name.to_string()))
-    } else if let Some(bin) = m.bin.as_ref().filter(|_| name == "main") {
+/// The route a function is: the `main` of a binary, or what the crate exports. A test is the
+/// runner's (`entries::mark_tests`).
+fn entry_of(m: &Module, item: TsNode, src: &[u8], name: &str) -> Option<Entry> {
+    if let Some(bin) = m.bin.as_ref().filter(|_| name == "main") {
         Some(Entry::new(EntryKind::Cli, bin.clone()))
     } else if exported(m, item, src) {
         Some(Entry::new(EntryKind::Export, name.to_string()))
@@ -170,7 +169,7 @@ pub(super) fn collect_symbols(m: &mut Module, store: &mut GraphBuilder) {
                 let (params, returns, sig) = signature(item, src);
                 store.sigs.insert(nid.clone(), sig);
                 let attrs = attrs_of(item, src);
-                let entry = entry_of(m, item, src, &name, &attrs);
+                let entry = entry_of(m, item, src, &name);
                 store.add_node(Node {
                     id: nid.clone(),
                     kind: NodeKind::Function,
@@ -442,7 +441,6 @@ pub(super) fn collect_impls(
                 module: m.id.clone(),
                 doc: doc_of(f, src),
                 cls: Some(cls.clone()),
-                entry: attrs.iter().any(|a| a == "test").then(|| Entry::new(EntryKind::Test, mname.clone())),
                 decorators: attrs,
                 on_class: !takes_self(&params),
                 ctor: constructs(&params, &returns, cls.rsplit('.').next().unwrap_or(&cls)),
@@ -586,7 +584,7 @@ pub(super) fn link(modules: &IndexMap<String, Module>, store: &mut GraphBuilder,
     // a path or a statement built from a function's parameters is whole where its callers hand them
     let handing: Vec<Evaluated> = args.iter().map(|arg| Evaluated { arg, eval: &eval }).collect();
     let entry = |f: &str| store.nodes.get(f).map_or(false, |n| n.entry.is_some());
-    let completed = crate::paths::complete(waiting, &handing, &family, &|_, _| vec![], &entry);
+    let completed = crate::paths::complete(waiting, &handing, &family, &crate::paths::no_defaults, &entry);
     crate::paths::place_calls(store, completed, false);
     drop(callers);
     let _globals = crate::clock::stage("globals");

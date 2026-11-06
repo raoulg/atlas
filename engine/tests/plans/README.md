@@ -33,6 +33,11 @@ internal to a package, one a package makes, takes and hands to another, and one 
 function takes). The same is asked of the overview without
 the test code, whose fine plan must be the fiber of the one with it, taken on that plan, for every set of open packages
 (`overview-tests` holds, in each language, a store with its tests beside it and a package of tests alone).
+A focus, the overview with some packages singled out, is asked the same of its own plan, the fiber of the overview's
+over the packages in focus with the rest of the code around it, for every set of packages in focus and every set of
+open boxes; besides, each package of the focus drawn closed has the border it has in the overview, and each type
+stands where the overview puts it (`focus-shapes` holds four ranks of one tensor type, each named otherwise by the
+package that takes it, and a class one package makes and another takes).
 
 ```bash
 cargo test -p atlas-engine --test plans -- --nocapture                              # every program
@@ -149,7 +154,7 @@ smallest that showed one law:
 | `folds-two-levels` | files folded into directories nested in one another that hold the same files (`data/`, `data/*/`) are one box: opening it shows the files in one step (#227) |
 | `leaf-binds-a-local` | a name a body binds by an expression no step makes is the body's own value, whatever the expression reads: a leaf that makes its mask from the samples takes nothing from beyond, one that reads the module's floor takes it from beyond (#318) |
 | `door-tensor-pad` | a value a step planned by itself takes by a name its caller holds is the caller's: a cut door names the one value of its kind from beyond as its opened picture does, by its type alone (#319) |
-| `setup-in-a-loop` | what ran before a step in a loop is every call of the loop: a shelf a later call opens is the one an earlier call keeps its report on in the next round (#329) |
+| `setup-in-a-loop` | what ran before a step in a loop is every call of the loop: a shelf a later call opens is the one an earlier call keeps its report on in the next round (#329), and the call is handed it: a name the loop rebinds after a call holds, in the next round, what the rebinding made (#354); in Python, Rust and TypeScript |
 | `setup-in-an-arm` | what ran before a step in an arm is what ran before its choice and before it in its arm: a set-up in an arm counts for a call in a choice inside that arm (#329), and that choice is a frame inside the arm, never another arm beside it (#357); in Python, Rust and TypeScript |
 | `changed-in-an-arm` | a name the body binds by its own code holds the body's value, in its frame, for every step after the binding: a change in one arm makes it anew at the choice's moment, which the step after the choice takes, and a change in a loop takes it, never the latest of its kind the loop gives; in Python, Rust and TypeScript (#366) |
 | `siblings-call` | siblings are one box only where they draw the same lines, calls among them: in the overview, `total` and `report` call `price` and `tax` and are called by `main`, and are one box, as `price` and `tax` are; `stamp` takes and shows what they do but calls nothing, `discount` takes what `price` takes but `main` calls it, and each stands on its own; every call ends at the box its callee joined (#412) |

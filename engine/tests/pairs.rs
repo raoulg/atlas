@@ -3,6 +3,9 @@
 //! a shortcut (a place the code does not name, an open question), never as if it were clean and
 //! never not at all. What differs between the two pictures is what Atlas lays bare.
 
+mod common;
+
+use std::collections::BTreeSet;
 use std::path::PathBuf;
 
 use atlas_engine::parts::analyze_repo;
@@ -244,6 +247,55 @@ fn one_client_has_the_same_doors_in_every_language() {
             .map(|n| n.name.as_str())
             .collect();
         assert_eq!(doors, ["item", "order"], "{side}: the functions its root names");
+    }
+}
+
+/// A package meant to be imported is met at its doors, in every language: a crate with a lib target, a `package.json`
+/// that is not private, a Python package with a build system. Its doors are what its root names (`pub fn` in `lib.rs`,
+/// what the module `package.json` points to exports, `__all__`). The clean side names `scale` and `metres`; the shortcut
+/// is the same package with the root naming nothing (private functions, no `exports`, an `__init__.py` with only a
+/// docstring), and each of the three is asked what a user may import.
+#[test]
+fn a_library_that_exports_nothing_has_no_door_in_every_language() {
+    use atlas_engine::principles::check;
+    use atlas_engine::{EntryKind, NodeKind};
+    let read = |lang: &str, side: &str| {
+        let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/pairs/exports").join(lang).join(side);
+        atlas_engine::analyze(&dir, &Options::default()).unwrap_or_else(|e| panic!("{lang}/{side} parses: {e}"))
+    };
+    let doors = |g: &Graph| -> Vec<String> {
+        let mut d: Vec<String> = g
+            .nodes
+            .iter()
+            .filter(|n| n.kind == NodeKind::Function && n.entry.as_ref().is_some_and(|e| e.kind == EntryKind::Export))
+            .map(|n| n.name.clone())
+            .collect();
+        d.sort();
+        d
+    };
+    let asked = |g: &Graph| check(g).into_iter().map(|f| (f.principle.to_string(), f.what)).collect::<Vec<_>>();
+    for lang in ["python", "typescript", "rust"] {
+        let (clean, shortcut) = (read(lang, "clean"), read(lang, "shortcut"));
+        assert!(clean.parts.iter().all(|p| p.library), "{lang}: the clean side is a library");
+        assert!(shortcut.parts.iter().all(|p| p.library), "{lang}: the shortcut is a library as well");
+        assert_eq!(doors(&clean), ["metres", "scale"], "{lang}: what its root names");
+        assert_eq!(asked(&clean), [], "{lang}: a package with doors is asked nothing");
+        assert!(doors(&shortcut).is_empty(), "{lang}: the shortcut names no door");
+        assert_eq!(asked(&shortcut), [("doors".to_string(), "units exports nothing at its root".to_string())], "{lang}");
+    }
+}
+
+/// An app has routes, not doors: a crate with only a `main`, a private `package.json` and a `package.json` with only a
+/// `bin` are no library, so exporting nothing is no finding. The manifest decides, not the code.
+#[test]
+fn an_app_exports_nothing_and_is_asked_no_door() {
+    use atlas_engine::principles::check;
+    for app in ["rust", "typescript-private", "typescript-bin"] {
+        let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/pairs/exports/apps").join(app);
+        let g = atlas_engine::analyze(&dir, &Options::default()).unwrap_or_else(|e| panic!("{app} parses: {e}"));
+        assert!(g.parts.iter().all(|p| !p.library), "{app}: an app is no library");
+        let asked: Vec<_> = check(&g).into_iter().filter(|f| f.principle == "doors").collect();
+        assert!(asked.is_empty(), "{app}: {asked:?}");
     }
 }
 
@@ -685,4 +737,165 @@ fn a_folder_made_for_a_file_is_that_files_in_every_language() {
         assert_eq!(file.len(), 1, "{language}: {file:?}");
         assert_eq!(run_places(language, "folder-made", made), file, "{language}");
     }
+}
+
+/// Test code is one predicate and a test is an entry of kind `test`, in every language (`mathematics.md`, "A filter: the
+/// program without its test code"; #403, #404). The tests pair (`tests/{python,rust,typescript}`) is one shelf with one
+/// door, `load`, and one test of it, handed a sample by a helper. The clean side keeps the test where the runner's layout
+/// puts it beside the package (pytest's `tests/`, a crate's `tests/`, a `tests/` beside `src/`); the shortcut keeps it in
+/// the package beside the store it tests (a `test_*.py` in the package, a `#[test]` in `store.rs`, a `*.test.ts` beside
+/// `disk.ts`), where the runner collects it and the package ships it. On both sides, in the three languages alike, the
+/// fiber without the test code has the same functions and the test code the same, every test the runner collects is an
+/// entry of kind `test` by the same label, and its route calls the door. On the shortcut side the test code lies in a
+/// module below the package's root that holds the program's code as well, the store, so the overview's fiber cuts it in
+/// two; on the clean side no module below a root holds both.
+#[test]
+fn a_test_is_an_entry_of_kind_test_in_every_language() {
+    use atlas_engine::model::{EntryKind, Node, NodeKind};
+    use std::collections::BTreeSet;
+    type Read = (BTreeSet<String>, BTreeSet<String>, BTreeSet<String>, BTreeSet<String>);
+    for side in ["clean", "shortcut"] {
+        let read = |language: &str| -> Read {
+            let g = pair(&format!("tests/{language}/{side}"));
+            let test = |n: &Node| n.entry.as_ref().is_some_and(|e| e.kind == EntryKind::Test);
+            let test_code = |n: &Node| n.test || test(n) || g.node(&n.module).is_some_and(|m| m.test);
+            let functions: Vec<&Node> =
+                g.nodes.iter().filter(|n| !n.library && matches!(n.kind, NodeKind::Function | NodeKind::Method)).collect();
+            let names = |keep: &dyn Fn(&Node) -> bool| functions.iter().filter(|n| keep(n)).map(|n| n.name.clone()).collect();
+            let labels = g.nodes.iter().filter(|n| test(n)).map(|n| n.entry.as_ref().unwrap().label.clone()).collect();
+            for t in g.nodes.iter().filter(|n| test(n)) {
+                let calls: Vec<&str> = g
+                    .edges
+                    .iter()
+                    .filter(|e| e.src == t.id && e.kind == EdgeKind::Calls)
+                    .filter_map(|e| g.node(&e.dst))
+                    .map(|d| d.name.as_str())
+                    .collect();
+                assert!(calls.contains(&"load"), "{language} {side}: {} calls {calls:?}, not the door", t.id);
+            }
+            // a module holds what lies in it or in a module below it; a root lies below none
+            let modules: Vec<&Node> = g.nodes.iter().filter(|n| !n.library && n.kind == NodeKind::Module).collect();
+            let within = |id: &str, m: &str| id == m || id.starts_with(&format!("{m}."));
+            let below_root = |m: &&&Node| modules.iter().any(|a| a.id != m.id && within(&m.id, &a.id));
+            let holds = |m: &Node, code: bool| functions.iter().any(|f| within(&f.module, &m.id) && test_code(f) == code);
+            let cut = modules.iter().filter(below_root).filter(|m| holds(m, true) && holds(m, false)).map(|m| m.id.clone()).collect();
+            (names(&|n| !test_code(n)), names(&|n| test_code(n)), labels, cut)
+        };
+        let python = read("python");
+        assert_eq!(python.0, BTreeSet::from(["load".to_string()]), "{side}: the program's functions");
+        assert_eq!(python.1, BTreeSet::from(["sample".to_string(), "test_loads".to_string()]), "{side}: the test code");
+        assert_eq!(python.2, BTreeSet::from(["test_loads".to_string()]), "{side}: the tests");
+        let cut = if side == "shortcut" { BTreeSet::from(["shelf.store".to_string()]) } else { BTreeSet::new() };
+        assert_eq!(python.3, cut, "{side}: the modules the test code cuts");
+        for language in ["rust", "typescript"] {
+            assert_eq!(read(language), python, "{language} {side}");
+        }
+    }
+}
+
+/// The places the finest plan of each route of `g` (`common::planned`) reads under an occurrence whose path ends in `at`:
+/// those a line goes from into it on its own channel.
+fn read_under(g: &Graph, name: &str, at: &str) -> BTreeSet<String> {
+    let read = |f: &String| -> Option<String> {
+        let (from, to) = f.strip_prefix("line ")?.strip_suffix(" own")?.split_once(" > ")?;
+        (to.ends_with(at) && from.starts_with("File(")).then(|| from.to_string())
+    };
+    common::planned(g, name, None).values().flatten().filter_map(read).collect()
+}
+
+/// A set-up that ran before holds for a method only where the value the method runs on may be one that set-up built
+/// (`docs/reference/mathematics.md`, "Who makes a path whole"; #368). The order pair (#359), in Python, Rust and
+/// TypeScript: `review` keeps its report on the shelf `open_shelf` built, then sets the drafts up. The clean side reads
+/// the report back from the shelf before it sets the drafts up; the shortcut reads it from the drafts, where it never kept
+/// one. Both set-ups ran before the shortcut's read, but the read runs on `drafts`, which only `open_drafts` made: under
+/// it the route reads `drafts/report.txt` alone, and `review` reads back nothing it wrote, as the engine's arrow and the
+/// page's plan both say. The clean `review` reads back the report it kept.
+#[test]
+fn a_set_up_holds_for_a_method_only_on_the_value_it_built() {
+    let out = "w:File:out/report.txt".to_string();
+    for (language, review) in [("python", "shelf.cli.review"), ("rust", "shelf.review"), ("typescript", "shelf.cli.review")] {
+        let (clean, shortcut) = (pair(&format!("order/{language}/clean")), pair(&format!("order/{language}/shortcut")));
+        let reads_back = |g: &Graph| atlas_engine::flow::arrows(g).remove(review).unwrap_or_default().reads_back;
+        assert_eq!(reads_back(&clean), [out.clone()], "{language}: the clean `review` reads back the report it kept");
+        assert_eq!(reads_back(&shortcut), Vec::<String>::new(), "{language}: the shortcut reads the drafts, where it kept none");
+        let under = read_under(&shortcut, &format!("order-{language}"), "/review/Shelf.report/read");
+        assert_eq!(under, BTreeSet::from(["File(drafts/report.txt)".to_string()]), "{language}: the read runs on the drafts alone");
+    }
+}
+
+/// In a loop, a name rebound after a call holds, in the next round, what the rebinding made: the call is handed every
+/// binding of the name that ran before it in the loop's order (`docs/reference/mathematics.md`, "Who makes a path whole";
+/// #354). `plans/setup-in-a-loop`, in Python, Rust and TypeScript: `main` sets the drafts up, and each round keeps its
+/// report on the shelf and then opens the shelf on `out`. The value the report is kept on is made by both steps, as the
+/// engine reads the body (`flow::receiver_makers`) and as the page's plan hands it: `write` under it takes both shelves.
+#[test]
+fn a_call_in_a_loop_is_handed_what_the_round_before_bound() {
+    for (language, keep, makers) in [
+        ("python", "keep_report", ["open_drafts", "open_shelf"]),
+        ("rust", "keep_report", ["open_drafts", "open_shelf"]),
+        ("typescript", "keepReport", ["openDrafts", "openShelf"]),
+    ] {
+        let at = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/plans/setup-in-a-loop").join(language);
+        let g = analyze_repo(&[at], &Options::default()).unwrap();
+        let n = g.node("rounds.main").expect("the route");
+        let site = n.sites.iter().position(|s| s.to.ends_with(keep)).expect("keeps the report");
+        let made: Vec<&str> = atlas_engine::flow::receiver_makers(n, site)
+            .expect("the body says which values the shelf is")
+            .into_iter()
+            .map(|j| n.sites[j].to.rsplit('.').next().unwrap_or_default())
+            .collect();
+        assert_eq!(made, makers, "{language}: the drafts set up before the loop, and the shelf the round before opened");
+        let facts = common::planned(&g, &format!("rounds-{language}"), None).remove("rounds.main").unwrap_or_default();
+        let into = format!(" > main/Shelf.{keep}/write value");
+        let handed: BTreeSet<String> =
+            facts.iter().filter_map(|f| f.strip_prefix("line Shelf·shelf@")?.strip_suffix(into.as_str()).map(String::from)).collect();
+        assert_eq!(handed, makers.iter().map(|m| format!("main/{m}")).collect(), "{language}: `write` takes both shelves");
+    }
+}
+
+/// An input the caller can override is its default where no caller overrides it (`docs/reference/mathematics.md`,
+/// "Paths as terms"; #428, #427, #383, #350). The defaults pair (`defaults/{python,rust,typescript}`) keeps a report
+/// where its caller says, `out/report.txt` unless told; a download of each kind below the folder `RAW` names; a note
+/// where its caller says, else in the workbench of the home it is handed. The command keeps the report twice, handing
+/// nothing and handing the default, and the note twice: once through `keep`'s fallback, once straight (`jot`). The
+/// clean side writes each language's own default (a parameter's default, an `Option` it unwraps) and asks for `RAW`;
+/// the shortcut falls back in the body (`path or …`, `path ?? …`) and to the empty path where `RAW` is not set. In
+/// every language and on both sides: a caller that hands nothing writes where the one that hands the default writes,
+/// one place and none unnamed (#383); the fallback is a term of the parameters, so the callers complete it to the
+/// place the same path written in place names (#350); and the empty default joined keeps the root the variable gives,
+/// the clean side's, never the literal below it (#428). The facts are the same in every reading.
+#[test]
+fn an_input_is_its_default_where_no_caller_overrides_it() {
+    use std::collections::BTreeSet;
+    // the Disk places each function of the program writes, by its name with the language's spelling taken away
+    let places = |g: &Graph, function: &str| -> BTreeSet<String> {
+        g.nodes
+            .iter()
+            .filter(|n| !n.library && n.id.rsplit('.').next().map(|s| s.replace('_', "").to_lowercase()).as_deref() == Some(function))
+            .flat_map(|n| &n.touches)
+            .filter(|t| t.kind == World::Disk)
+            .map(|t| t.artifact.clone())
+            .collect()
+    };
+    let root = |p: &String| p.split('/').next().unwrap_or_default().to_string();
+    let mut facts = vec![];
+    for language in ["python", "rust", "typescript"] {
+        let clean = pair(&format!("defaults/{language}/clean"));
+        let fetched: BTreeSet<String> = places(&clean, "fetch").iter().map(root).collect();
+        assert_eq!(fetched.len(), 1, "{language}: {fetched:?}");
+        for side in ["clean", "shortcut"] {
+            let g = pair(&format!("defaults/{language}/{side}"));
+            let report = places(&g, "savereport");
+            assert_eq!(report, BTreeSet::from(["out/report.txt".to_string()]), "{language} {side}: handing nothing is handing the default");
+            let jotted = places(&g, "jot");
+            assert_eq!(jotted.len(), 1, "{language} {side}: {jotted:?}");
+            let kept = places(&g, "keep");
+            assert!(jotted.is_subset(&kept), "{language} {side}: the fallback completed is the path in place: {kept:?} holds {jotted:?}");
+            let roots: BTreeSet<String> = places(&g, "fetch").iter().map(root).collect();
+            assert_eq!(roots, fetched, "{language} {side}: the empty default joined keeps its root");
+            assert!(roots.iter().all(|r| r.starts_with('{')), "{language} {side}: {roots:?} is a value no code decides");
+            facts.push((report, jotted, roots));
+        }
+    }
+    assert!(facts.windows(2).all(|w| w[0] == w[1]), "{facts:?}");
 }

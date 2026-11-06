@@ -20,7 +20,7 @@ pub(super) const WRAPPERS: Wrappers =
     &["parenthesized_expression", "reference_expression", "unary_expression *", "try_expression", "await_expression"];
 
 pub(crate) struct Crate {
-    pub(super) name: String,
+    pub(crate) name: String,
     pub(crate) dir: PathBuf,
 }
 
@@ -657,6 +657,10 @@ pub(super) fn bound_in(def: TsNode, src: &[u8]) -> HashSet<String> {
 /// The variants of `Option` and `Result` that hold the value they give: where a value is followed,
 /// `Some(x)` and `Ok(x)` are `x`.
 pub(super) const HOLDING: &[&str] = &["Some", "Ok"];
+
+/// The variant of `Option` that holds no value: handed to a parameter, it hands nothing, as a call
+/// that leaves a parameter out does in a language with defaults.
+pub(super) const NOTHING: &str = "None";
 
 /// `Option` and `Result` methods whose argument is the other arm: `find(g).unwrap_or_else(|| infer(g))`.
 pub(super) const OR_ELSE: &[&str] = &["unwrap_or_else", "unwrap_or", "or_else", "or", "map_or_else", "map_or"];

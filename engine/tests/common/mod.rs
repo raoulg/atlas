@@ -58,6 +58,7 @@ pub fn clean_copy(language: &str, name: &str) -> PathBuf {
 /// The `clean` side of a prophecy pair with `addition` appended to its file `file`, as a vision
 /// that is decided: what `prophetize` writes, and the revelation of the tree it is written into.
 /// The pair itself stays as it is; the tree is a copy.
+#[allow(dead_code)]
 pub fn decided(language: &str, file: &str, addition: &str, supersedes: &[(&str, &str)]) -> (Prophetized, Vec<Stand>) {
     let pair = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/pairs/prophecy").join(language).join("clean");
     let copy = std::env::temp_dir().join(format!("atlas-prophetize-{language}-{}", std::process::id())).join("clean");
@@ -77,6 +78,7 @@ pub fn decided(language: &str, file: &str, addition: &str, supersedes: &[(&str, 
 
 /// The `clean` side of a prophecy pair with `addition` appended to its file `file`, written to a
 /// copy of its own that the caller removes: the copy, and what Atlas reads of it.
+#[allow(dead_code)]
 pub fn written(language: &str, file: &str, addition: &str) -> (PathBuf, atlas_engine::Graph) {
     let pair = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/pairs/prophecy").join(language).join("clean");
     let copy = std::env::temp_dir().join(format!("atlas-sealed-{language}-{}", std::process::id())).join("clean");

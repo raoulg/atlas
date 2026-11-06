@@ -357,6 +357,70 @@ fn every_package_view_is_the_image_of_its_plan() {
     assert!(fails.is_empty(), "{} faults of the overviews:\n{}", fails.len(), fails.join("\n"));
 }
 
+/// A focus is the fiber of the overview's fine plan `F₀` over the packages in it, with the rest of the code around it, and
+/// its picture is the image of that fiber under the map the open boxes define, as the overview's is of `F₀` (mathematics.md,
+/// "One fine plan, every picture its image", the focus; #399). For every set of packages in focus (each subset while there are few,
+/// else each alone and each pair) and every set of open boxes (its packages and the rest): the focus's fine plan is the fiber
+/// of `F₀` as the test restates it; each line counts the fine lines it stands for, a type internal to a closed package draws
+/// none, each call goes between the blocks of its ends, opening one more box refines the picture, the picture is a function
+/// of the set of open boxes, and every line of the picture the page draws ends at a box it draws; a package of the focus drawn
+/// closed has at its border the type boxes the overview draws at its border (`plans/focus-shapes`: four ranks of one tensor
+/// type, each named otherwise by the package that takes it); and a type box stands where the overview puts it: a type's
+/// home is a fact of `F₀`, the same in every view. All of it with the test code and without it.
+#[test]
+fn every_focus_is_the_image_of_a_fiber_of_the_overviews_plan() {
+    let (tests, all) = all_programs();
+    let (next, fails) = (AtomicUsize::new(0), Mutex::new(vec![]));
+    let workers = std::thread::available_parallelism().map_or(4, |n| n.get());
+    std::thread::scope(|s| {
+        for _ in 0..workers {
+            s.spawn(|| {
+                while let Some(program) = all.get(next.fetch_add(1, Ordering::Relaxed)) {
+                    let name = program.strip_prefix(&tests).unwrap().display().to_string();
+                    let file = program.with_extension("plan");
+                    let plan = if file.is_file() { read_plan(&file) } else { Plan::default() };
+                    let marks: Vec<&Known> = plan.faults.iter().filter(|k| k.fault).collect();
+                    for (_, (_, faults)) in asked(program, &data(program), None, &["--focus"]) {
+                        let (mut f, mut known) = (vec![], vec![]);
+                        faults_of(&marks, &faults, &mut f, &mut known);
+                        fails.lock().unwrap().extend(f.into_iter().map(|x| format!("{name}: {x}")));
+                    }
+                }
+            });
+        }
+    });
+    let fails = fails.into_inner().unwrap();
+    assert!(fails.is_empty(), "{} faults of the focus:\n{}", fails.len(), fails.join("\n"));
+}
+
+/// All routes of a kind are the union of the routes' coarsest pictures, each route closed, its values as their types
+/// (mathematics.md, "One fine plan, every picture its image", all routes of a kind; #399): every route's box takes and gives what crosses the border of its route
+/// closed, the image of the route's finest plan with no box open. The page draws each route's closed morphism instead, which
+/// leaves out what the route's plan holds (the command line it starts from, a value from beyond, an error it hands on, a
+/// figure): ignored until the kind view is drawn from the routes' plans, a question of speed (a closed route is a cut step's
+/// arrow, some 11 s for the 457 routes of Atlas's own exports at the smallest budget).
+#[test]
+#[ignore = "the kind view is drawn from each route's closed morphism, not from its plan (#399)"]
+fn every_kind_view_is_the_union_of_its_routes_closed() {
+    let (tests, all) = all_programs();
+    let (next, fails) = (AtomicUsize::new(0), Mutex::new(vec![]));
+    let workers = std::thread::available_parallelism().map_or(4, |n| n.get());
+    std::thread::scope(|s| {
+        for _ in 0..workers {
+            s.spawn(|| {
+                while let Some(program) = all.get(next.fetch_add(1, Ordering::Relaxed)) {
+                    let name = program.strip_prefix(&tests).unwrap().display().to_string();
+                    for (_, (_, faults)) in asked(program, &data(program), None, &["--kinds"]) {
+                        fails.lock().unwrap().extend(faults.into_iter().map(|x| format!("{name}: {x}")));
+                    }
+                }
+            });
+        }
+    });
+    let fails = fails.into_inner().unwrap();
+    assert!(fails.is_empty(), "{} routes the kind view draws otherwise than closed:\n{}", fails.len(), fails.join("\n"));
+}
+
 /// Test code is not saturated by the package quotient, so the fiber and the quotient do not commute (mathematics.md,
 /// "Saturation"): in each language, a package that holds test code beside ordinary code (`plans/overview-tests`: a pytest
 /// file, a `#[cfg(test)] mod tests`, a `*.test.ts` beside the store) is a box both overviews draw, with other lines. A filter

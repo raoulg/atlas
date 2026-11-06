@@ -465,35 +465,17 @@ const inUnit = (id, u) => { const m = byId.get(id)?.module ?? ""; return u.endsW
 const UNITS = (D.flow || {}).units || {tops: [], kids: {}};
 const unitsBelow = u => UNITS.kids[u] || [];
 const topUnits = part => (UNITS.tops.find(([p]) => p === part) || [null, []])[1];
-const unitLabel = u => { if (u === "~in" || u === "~out") { const n = aroundFocus().length; return `the rest · ${n} ${n === 1 ? "package" : "packages"}`; } if (u.startsWith("~")) return unitLabel(u.slice(4)); const base = u.replace(/\$$/, ""), last = base === "_root" ? "scripts at the root" : base.split(".").pop(); return u.endsWith("$") ? `${last} itself` : last; };
+const unitLabel = u => { if (u === "~in" || u === "~out" || u === REST) { const n = FOCUS.rest.length; return `the rest · ${n} ${n === 1 ? "package" : "packages"}`; } if (u.startsWith("~")) return unitLabel(u.slice(4)); const base = u.replace(/\$$/, ""), last = base === "_root" ? "scripts at the root" : base.split(".").pop(); return u.endsWith("$") ? `${last} itself` : last; };
 const partOfUnit = u => { const m = [...byId.values()].find(n => n.kind === "module" && inUnit(n.id, u)); return m ? partOf(m) : partOf({}); };
-const inFocus = id => [...V.focus].some(u => inUnit(id, u));
-// the rest of the code around a focus: `~in` hands data to it, `~out` takes data from it; opened, each
-// is the packages it holds (`~in:app.serve`)
+// the rest of the code around a focus is one block (`~rest`), drawn on both sides of the focus: as `~in` it hands data to
+// the focus, as `~out` it takes data from it; opened, each side holds the packages of the rest (`~in:app.serve`)
+// (`focusBase`, `restSides`)
+const REST = "~rest";
 const isRest = u => u.startsWith("~");
-// the packages of the rest that hand the focus data (`~in`) or take data from it (`~out`), each with the types
-function restExchange(side) {
-  const out = new Map(), around = aroundFocus();
-  for (const [t, takers] of usesOf().takes) {
-    const makers = usesOf().makes.get(t);
-    if (!makers || !isData(t)) continue;
-    const [from, into] = side === "~in" ? [makers, takers] : [takers, makers];
-    if (![...into].some(inFocus)) continue;
-    for (const p of around) if ([...from].some(x => inUnit(x, p))) { if (!out.has(p)) out.set(p, new Set()); out.get(p).add(t); }
-  }
-  return out;
-}
-// the packages of the focus's parts that are not in it, nor around or inside one that is
-function aroundFocus() {
-  const parts = new Set([...V.focus].map(partOfUnit));
-  return [...parts].flatMap(p => topUnits(p)).filter(u => !MAKEFILES.has(u) && ![...V.focus].some(f => { const a = f.replace(/\$$/, ""), b = u.replace(/\$$/, ""); return a === b || a.startsWith(b + ".") || b.startsWith(a + "."); }));
-}
-// the packages around a focus: those that hand data to it or take data from it, the most first
-function neighbours() {
-  const cands = aroundFocus();
-  const crossing = c => { let k = 0; for (const [t, takers] of usesOf().takes) { const makers = usesOf().makes.get(t); if (!makers || !isData(t)) continue; const tk = [...takers], mk = [...makers]; if ((mk.some(x => inUnit(x, c)) && tk.some(inFocus)) || (mk.some(inFocus) && tk.some(x => inUnit(x, c)))) k++; } return k; };
-  return cands.map(u => ({u, n: crossing(u)})).filter(x => x.n).sort((a, b) => b.n - a.n || a.u.localeCompare(b.u));
-}
+// the focus last planned: the packages of its rest, those of them that share a type with it (the most first), and the
+// packages in it (`focusBase`)
+let FOCUS = {rest: [], around: [], steps: new Set()};
+const neighbours = () => FOCUS.around;
 // a unit's routes: its entries, then its doors, what other units call in it
 function unitRoutes(u) {
   const es = overviewEntries().filter(e => inUnit(e.id, u)).map(e => e.id), seen = new Set(es);
@@ -718,20 +700,76 @@ const ranInside = (n, b) => {
   ranLocal.set(b, out);
   return out;
 };
-// what ran before step `s` of body `b`: what ran before the body, and what ran before `s` inside it
+// the sites of body `n` whose results the name `name` may hold where call `i` reads it, in call order (mathematics.md, "Who
+// makes a path whole"): the binding nearest before it and, where that one stands in an arm the call is not in, those before
+// it too, up to one that runs whenever the call does, never one in another arm of a choice the call is in; in a loop that
+// holds the call, where no binding in the loop runs before it in the same round, every binding after it in the loop, which a
+// later round finds. A value no name holds (`#3`) is its maker's. Null where the name may hold what no step of the body makes
+// (a parameter, a value the body binds by its own code). The same as `flow.rs`'s `makers`
+const makersOf = (n, i, name) => {
+  const sites = n?.sites || [], gives = j => (sites[j].gives || []).some(g => g.name === name);
+  if (!name || i >= sites.length) return null;
+  if (name.startsWith("#")) { const j = sites.findIndex((_, j) => j !== i && gives(j)); return j < 0 ? null : [j]; }
+  if ((n.binds || []).some(b => b.name === name)) return null;
+  const at = sites[i].arms || [], line = sites[i].line;
+  const apart = j => (sites[j].arms || []).some(([c, x]) => at.some(([d, y]) => c === d && x !== y));
+  const whenever = j => (sites[j].arms || []).every(([c, x]) => at.some(([d, y]) => c === d && x === y));
+  const out = new Set();
+  let last = null;
+  for (let j = i - 1; j >= 0; j--) if (gives(j) && !apart(j)) { out.add(j); if (whenever(j)) { last = sites[j].line; break; } }
+  if (last == null) return null;
+  for (const [a, z] of (n.loop_lines || []).filter(([a, z]) => a <= line && line <= z)) if (!(a <= last && last <= z)) for (let j = i + 1; j < sites.length; j++) if (gives(j) && a <= sites[j].line && sites[j].line <= z) out.add(j);
+  return [...out].sort((x, y) => x - y);
+};
+// the sites of body `n` the value call `i` runs on may be made of: those that bind it, and those that make what each of them
+// is handed, through every step; null where the body does not say which object it is. The same as `flow.rs`'s `receiver_makers`
+const receiverMakers = (n, i) => {
+  const site = n?.sites?.[i], h = site && !site.on_receiver && (site.hands || []).find(x => (x.fills || []).includes("receiver"));
+  if (!h) return null;
+  const out = new Set(), todo = [[i, h.name || ""]];
+  while (todo.length) {
+    const [at, name] = todo.pop(), ms = makersOf(n, at, name);
+    if (!ms) return null;
+    for (const j of ms) if (!out.has(j)) { out.add(j); for (const x of n.sites[j].hands || []) todo.push([j, x.name || ""]); }
+  }
+  return out;
+};
+// the set-ups that cannot have built the value step `s` of body `b` runs on: of `ran`, those that set up an object of the class
+// of the method its call names and that no step the value may be made of runs. A set-up holds for a method only where the value
+// it runs on may be one it built; where the body does not say which value that is, none is ruled out. The same as `Ix::off`
+const offLocal = new WeakMap();
+const offAt = (n, b, s, ran) => {
+  const m = s.site != null && byId.get(n?.sites?.[s.site]?.to), cls = m && !m.ctor && m.cls;
+  if (!cls) return NONE;
+  const builders = [...ran].filter(g => [...reach(g, null).nodes].some(f => { const c = byId.get(f); return !!(c?.ctor && c.cls === cls); }));
+  if (!builders.length) return NONE;
+  if (!offLocal.has(b)) offLocal.set(b, new Map());
+  const memo = offLocal.get(b);
+  if (!memo.has(s)) {
+    const made = receiverMakers(n, s.site);
+    memo.set(s, made && new Set(stepsIn(b).filter(x => made.has(x.site)).flatMap(x => [...ranAfter(NONE, x)])));
+  }
+  const by = memo.get(s);
+  return by ? new Set(builders.filter(g => !by.has(g))) : NONE;
+};
+// what ran before step `s` of body `b`: what ran before the body, and what ran before `s` inside it, but for the set-ups that
+// cannot have built the value it runs on (`offAt`)
 const ranBefore = (n, b, before, s) => {
   const more = [...(ranInside(n, b).get(s) || [])].filter(f => !before.has(f));
-  return more.length ? new Set([...before, ...more]) : before;
+  const ran = more.length ? new Set([...before, ...more]) : before, off = offAt(n, b, s, ran);
+  return off.size ? new Set([...ran].filter(f => !off.has(f))) : ran;
 };
 function routeTree() {
   const closedRoutes = ids => ids.map(id => ({id, open: false, kids: [], hue: null}));
   if (V.route && !has(byId.get(V.route))) return [];
+  // with no route, the boxes of the code's hierarchy, as the page looks for a symbol in them (`openTo`); the pictures of
+  // the overview and the focus are the images of their fine plans (`overview`, `focus`)
   if (!V.route && !V.kind) {
     const unitNodes = (us, part) => us.filter(u => !SIDE || MAKEFILES.has(u) || held("u:" + u, n => inUnit(n.id, u))).map(u => { const open = V.open.units.has(u); return {id: "unit:" + u, open, kids: open ? unitKids(u, part) : [], hue: null, choice: false}; });
     const unitKids = (u, part) => { const below = u.endsWith("$") || MAKEFILES.has(u) ? [] : unitsBelow(u, part); return below.length > 1 ? unitNodes(below, part) : closedRoutes(unitRoutes(u)); };
     // a focus: the packages chosen, each opened as before, and the rest of the code on either side
     if (V.focus.size) {
-      const rest = r => { const open = V.open.units.has(r); return {id: "unit:" + r, open, kids: open ? [...restExchange(r).keys()].sort().map(p => ({id: `unit:${r}:${p}`, open: false, kids: [], hue: null, choice: false})) : [], hue: null, choice: false}; };
+      const rest = r => ({id: "unit:" + r, open: false, kids: [], hue: null, choice: false});
       return [...[...V.focus].sort().flatMap(u => unitNodes([u], partOfUnit(u))), rest("~in"), rest("~out")];
     }
     if (multi && !V.part) return PARTS.filter(p => !SIDE || held("p:" + p.id, n => partOf(n) === p.id)).map(p => { const open = V.open.parts.has(p.id); return {id: "part:" + p.id, open, kids: open ? unitNodes(topUnits(p.id), p.id) : [], hue: null, choice: false}; });
@@ -964,13 +1002,12 @@ const contentOf = (anchors, seen) => {
   }
   return routeContent.get(seen);
 };
-// one reading's picture before it is laid out: its places, its pills and frames, each value at its
-// moments, and in a focus the arrows from and to the rest of the code
+// one reading's picture of a route before it is laid out, or of the routes of a kind: its places, its pills and frames,
+// each value at its moments
 const planBase = (fine, tree = null) => {
 // `tree`: the plan of one step beyond the cut by itself (`cutArrow`), which does not know the values of its callers
 const alone = !!tree;
 const places = new Map();   // id -> {id, label, kind: world | type | ext, hue, fam}
-const restLinks = new Map();  // in a focus: unit -> the types it takes from the rest and hands to it
 const addPlace = p => { if (!places.has(p.id)) places.set(p.id, p); return p.id; };
 const worldPlace = t => worldPlaceOf(t, true);
 const anchors = V.route ? [V.route] : overviewEntries().map(e => e.id);
@@ -981,8 +1018,6 @@ const kindKey = k => k.startsWith("t:") && places.get(k)?.type ? "t:" + (places.
 // a step's morphism: its own body, or (closed) its interface and everything it touches below
 // noReceiver: the step is seen from its own class (a library class's route), so the receiver is not an input
 const morphism = (id, own, isAnchor, noReceiver, opts = {}) => {
-  if (id.startsWith("part:")) return partMorphism(id.slice(5), own);
-  if (id.startsWith("unit:")) return unitMorphism(id.slice(5), own);
   const f = byId.get(id), dom = [], cod = [], goes = new Map();  // [placeId, reach]
   if (!f) return {dom: new Map(), cod: new Map(), goes};
   if (isAnchor && f.entry) dom.push([addPlace(entryPlace(id)), false]);
@@ -1028,54 +1063,6 @@ const morphism = (id, own, isAnchor, noReceiver, opts = {}) => {
   }
   const sig = arr => { const m = new Map(); for (const [p, r] of arr) m.set(p, (m.has(p) ? m.get(p) : true) && r); return m; };
   return {dom: sig(dom), cod: sig(cod), goes};
-};
-// a part: the routes it serves over HTTP come in through its own place, the routes of other
-// parts it requests go out to theirs; closed, it also reaches whatever its routes reach
-const httpPlace = p => ({id: "w:Web:http:" + p, label: `HTTP(${p})`, short: `HTTP(${p})`, kind: "world"});
-const partMorphism = (p, own) => {
-  const dom = new Map(), cod = new Map(), goes = new Map();
-  if (entries.some(e => has(e) && partOf(e) === p && e.entry.kind === "route" && /^[A-Z|]+ \//.test(e.entry.label))) dom.set(addPlace(httpPlace(p)), false);
-  for (const e of D.edges) if (e.kind === "requests" && has(e)) {
-    const a = partOf(byId.get(e.src) || {}), b = partOf(byId.get(e.dst) || {});
-    if (a === p && b !== p) cod.set(addPlace(httpPlace(b)), false);
-  }
-  if (!own) for (const e of overviewEntries().filter(e => partOf(e) === p)) {
-    const r = morphism(e.id, false, false);
-    r.dom.forEach((v, k) => { if (!k.startsWith("t:") && !dom.has(k)) dom.set(k, true); });
-    r.cod.forEach((v, k) => { if (!k.startsWith("t:") && !cod.has(k)) cod.set(k, true); });
-    joinGoes(goes, r.goes);
-  }
-  return {dom, cod, goes};
-};
-// a unit, closed: the places its own code touches (not what it reaches through other units), and
-// the types that cross its edge: in where it takes what another unit makes, out where it makes what
-// another unit takes
-const unitMorphism = (u, own) => {
-  const dom = new Map(), cod = new Map(), goes = new Map();
-  if (own) return {dom, cod, goes};
-  // the rest of the code, seen from a focus, is joined to it by counted arrows, not by boxes
-  if (isRest(u)) return {dom, cod, goes};
-  for (const n of byId.values()) if (inUnit(n.id, u) && has(n)) {
-    const back = new Set(arrowOf(n.id)?.own_reads_back || []);
-    for (const tc of (n.touches || []).filter(has)) {
-      if (served(tc) || (isIn(tc) && !tc.shape && back.has(tc.place.id))) continue;
-      go(goes, tc);
-      (isIn(tc) ? dom : cod).set(addPlace(worldPlace(tc)), false);
-    }
-  }
-  // a type crossing the unit's edge is a joint drawn as a box; in a focus, only when another unit in
-  // the focus is on its other side, and an arrow from or to the rest otherwise
-  const inside = id => inUnit(id, u), theirs = xs => [...(xs || [])].filter(x => !inside(x) && byId.has(x));
-  const side = (xs, put, way, t) => {
-    const other = theirs(xs);
-    if (!other.length) return;
-    if (!V.focus.size || other.some(inFocus)) { put.set(addPlace(typePlace(t)), false); return; }
-    if (!restLinks.has(u)) restLinks.set(u, {in: new Set(), out: new Set()});
-    restLinks.get(u)[way].add(t);
-  };
-  for (const [t, takers] of usesOf().takes) if (isData(t) && [...takers].some(inside)) side(usesOf().makes.get(t), dom, "in", t);
-  for (const [t, makers] of usesOf().makes) if (isData(t) && [...makers].some(inside)) side(usesOf().takes.get(t), cod, "out", t);
-  return {dom, cod, goes};
 };
 // a result with no place of its own (a str, a dict) goes back to the step that called it
 // a value it changes in place is no result: the step's result of no type goes back beside it (`rename(board, ..)`
@@ -1332,22 +1319,6 @@ if (fine) {
     }
   }
 }
-// a focus and the rest of the code: one arrow each way per unit in focus, counting the types that
-// cross; an opened rest has one arrow per package in it, from the package that makes the types or
-// to the one that takes them, and holds only the packages with an arrow
-const restArrows = [];  // [rest pill, unit pill, side, types]
-const around = V.focus.size ? aroundFocus() : [];
-for (const [u, {in: ins, out: outs}] of restLinks) {
-  for (const [r, ts] of [["~in", ins], ["~out", outs]]) {
-    if (!ts.size) continue;
-    if (!V.open.units.has(r)) { restArrows.push(["n:unit:" + r, "n:unit:" + u, r, ts]); continue; }
-    const byPkg = new Map();
-    for (const t of ts) for (const p of around) if ([...((r === "~in" ? usesOf().makes : usesOf().takes).get(t) || [])].some(x => inUnit(x, p))) { if (!byPkg.has(p)) byPkg.set(p, new Set()); byPkg.get(p).add(t); }
-    for (const [p, s] of byPkg) restArrows.push([`n:unit:${r}:${p}`, "n:unit:" + u, r, s]);
-  }
-}
-const linkedRest = new Set(restArrows.map(a => a[0]));
-for (const P of [...pills.values()]) if (/^unit:~(in|out):/.test(P.steps[0]) && !linkedRest.has(P.id)) pills.delete(P.id);
 // a type a step takes and hands on is two moments of the data, not one box: memory is versioned in
 // call order (a step that hands on T makes a new T, later steps take the latest). The overview has no
 // order between its routes and so no moments: a type is the joint itself, one box that what makes it
@@ -1484,7 +1455,22 @@ const latestEntry = (key, P, inner = false, arms = null) => {
 const latestGet = (key, P, inner = false, arms = null) => { const e = latestEntry(key, P, inner, arms); return e && e.v !== NONE ? e.v : null; };
 // whether the name a step takes `k` by holds no value here, and the other values that name holds beside `v`
 const holdsNone = (P, k, nm = (P.dn && P.dn.get(k)) || "", within = false) => !!nm && latestEntry(kindKey(k) + "|" + nm, P, within)?.v === NONE;
-const alsoOf = (P, k, nm, within, v) => { const e = nm && v ? latestEntry(kindKey(k) + "|" + nm, P, within) : null; return e && e.v === v ? e.also : []; };
+const alsoOf = (P, k, nm, within, v) => {
+  const e = v ? latestEntry(kindKey(k) + "|" + nm, P, within) : null, also = e && e.v === v ? e.also : [];
+  const later = within || !v ? [] : laterRounds(P, k, nm).filter(w => w !== v && !also.includes(w));
+  return later.length ? [...also, ...later] : also;
+};
+// in a loop a later round runs after every call of the round before (mathematics.md, "Who makes a path whole"): a call the loop
+// runs is handed, by a name, also what a binding of that name after it in the loop made in the round before (`makersOf`), at
+// that binding's moment (#354)
+const madeBy = new Map();
+const laterRounds = (P, k, nm) => {
+  if (!nm || nm.startsWith("#")) return [];
+  const info = treeInfo.get(P.own ? frames.get(P.parent)?.step : P.steps[0]), from = info?.from && treeInfo.get(info.from);
+  if (info?.siteNo == null || !from) return [];
+  const later = (makersOf(byId.get(from.step), info.siteNo, nm) || []).filter(j => j > info.siteNo);
+  return later.flatMap(j => (madeBy.get(`${info.from}/${j}`) || []).filter(m => m.kind === kindKey(k) && m.name === nm).map(m => version(m.k, m.v)));
+};
 // what the call hands a step and what the function says it takes are one value when they are of one
 // kind and at most one of them has a name: the value by the name and the type the call gives it.
 // Two values of a kind with names of their own are two values
@@ -1503,6 +1489,13 @@ const oneOfKind = (m, names, keep) => {
   return out;
 };
 for (const P of pills.values()) if (!P.steps[0].startsWith("unit:") && !P.cut) { P.D = oneOfKind(P.D, P.dn, P.keep); P.C = oneOfKind(P.C, P.cn); }
+// what each step makes under a name and at which moment, read before any step takes it: a call in a loop takes what a later
+// step of the loop makes (`laterRounds`). A step in an arm makes it at a moment its choice decides, which is left to the arm
+for (const P of pills.values()) if (!P.steps[0].startsWith("unit:") && !armOf(P)) {
+  const key = P.own ? frames.get(P.parent)?.step : P.steps[0], made = [];
+  for (const k of P.C.keys()) { const nm = P.cn?.get(k); if (isMem(k) && !inside(k) && nm && !nm.startsWith("#")) made.push({k, kind: kindKey(k), name: nm, v: `${k}@${remadeAt(ownMoment(P))}`}); }
+  if (key && made.length) madeBy.set(key, [...(madeBy.get(key) || []), ...made]);
+}
 // planned by itself, a step does not know its caller's values: a value it takes by a name its body did not make is the
 // caller's value of that name where the caller has one, else the latest of its kind the body made (`X ~y?`)
 const condOf = (k, nm) => { const id = k + "?"; if (!places.has(id)) places.set(id, {...places.get(k), id, name: nm, cond: true}); return id; };
@@ -1599,7 +1592,7 @@ const viaDispatch = (P, k) => {
 // projection glued into the call (#121); `receiverPart` keeps the fields of it the call reads (`left`, #172). A parameter
 // filled through a projection is that projection: `paramPart` keeps, by the frame and the parameter's name, the value it holds
 // and the fields of it the call reads (`other` of `self.left.lend(self.right)` is the board through `right`, #173)
-const entered = new Set(), receiverAt = new Map(), receiverPart = new Map(), paramPart = new Map();
+const entered = new Set(), receiverAt = new Map(), receiverAlso = new Map(), receiverPart = new Map(), paramPart = new Map();
 const sameValue = (a, b) => !!a && !!b && (originOf.get(a) || a) === (originOf.get(b) || b);
 // the part of the value `v` that what the body of frame `c` hands by `h` is: the part the instance it runs on is, where `h`
 // is that instance, or the part a parameter of it holds, where `h` is that parameter and still holds the value
@@ -1628,7 +1621,7 @@ const enter = fid => {
   // it is a value of the class the method is written in too: inside the body the latest of that kind, and the value its name
   // holds (`self`), whichever subclass it is (`Source.read` run on a `Trimmed` by `super().read()`)
   const rv = receiverAt.get(fid), self = (fn?.params || []).find(p => p.receiver)?.name;
-  if (rv) { const k = "t:" + kindOf(recv); latestSet(k + "|", rv, Own, fid, true); if (self) latestSet(k + "|" + self, rv, Own, fid, true); }
+  if (rv) { const k = "t:" + kindOf(recv), also = receiverAlso.get(fid) || []; latestSet(k + "|", rv, Own, fid, true, also); if (self) latestSet(k + "|" + self, rv, Own, fid, true, also); }
 };
 // the frame of the body a frame's call is made in, through the choices between them
 const bodyFrame = fid => { let c = fid; while (c && frames.get(c)?.synthetic) c = frames.get(c).parent; return c; };
@@ -1666,8 +1659,9 @@ const handTo = (fid, f, info, Own, fn, recv) => {
   }
   if (parts.size) paramPart.set(fid, parts);
   for (const [p, vs] of holds) {
-    // the receiver is the latest of its kind inside the body, and the value its name holds (`self`)
-    if (p.receiver) { if (!vs.length) continue; const v = vs[0]; receiverAt.set(fid, v); if (part) receiverPart.set(fid, part); latestSet(kindKey(v) + "|", v, Own, fid, true); if (p.name) latestSet(kindKey(v) + "|" + p.name, v, Own, fid, true); continue; }
+    // the receiver is the latest of its kind inside the body, and the value its name holds (`self`), with any other its call may
+    // hand it (a loop's later round)
+    if (p.receiver) { if (!vs.length) continue; const v = vs[0]; receiverAt.set(fid, v); if (vs.length > 1) receiverAlso.set(fid, vs.slice(1)); if (part) receiverPart.set(fid, part); latestSet(kindKey(v) + "|", v, Own, fid, true, vs.slice(1)); if (p.name) latestSet(kindKey(v) + "|" + p.name, v, Own, fid, true, vs.slice(1)); continue; }
     if (!p.name) continue;
     // a parameter is looked for by its own type and name: what fills it through a projection is of another type; one of
     // no type of the code's as a value of no type, whatever it holds
@@ -2074,7 +2068,7 @@ for (const P of pills.values()) {
   if (top && !counted.has(top)) { counted.add(top); for (const [k, s] of top.goes) countRole(k, s, top.hb || [...top.cod.keys()].some(c => c !== k)); }
   for (const [k, s] of P.goes || []) if (!top?.goes.has(k)) countRole(k, s, !!P.backTo || [...P.C.keys()].some(c => c !== k));
 }
-return {places, pills, frames, restArrows, roles};
+return {places, pills, frames, restArrows: [], roles};
 };
 // ---- a route is one finest plan, and every picture of it is its image under the quotient the reader has chosen ----
 // Occurrences (the steps of the route, each a call), values (a type, the name that holds it, the moment it was made) and the
@@ -2584,8 +2578,122 @@ const overview = () => {
   window.atlasPlan = {fine: F, coarse: C};
   return {...C, calling: true};
 };
+// ---- a focus is the fiber of F₀ over the packages in it, with the rest of the code around it ----
+// The packages in focus are packages of `F₀`. The fiber over them is their functions with every place those make, take
+// or touch; a type stands in its kind, so the box the overview draws for it is one block of `F₀`'s places, and the fiber
+// holds the block whole. The rest of the code is every other function, each in the coarsest package of `F₀` that holds
+// no code in focus, and those packages in one frame, the rest. The focus's plan `F_U` is the fiber with the rest joined
+// to it by the lines `F₀` draws between them: a line of the rest to a place of the fiber, a call between the rest and the
+// fiber. What the rest does among itself is no line of the focus. A type's home is `F₀`'s, the smallest package that
+// holds every function of the program that makes or takes it: in a package of the focus it stands there, above one it
+// stands outside every package. What is open is the map `q_U`: a package of the focus as the reader has it open, the rest
+// one block until it is opened, and then each of its packages a closed block (a package of the rest joins the focus,
+// it does not open)
+const focusBase = () => {
+  const F0 = overviewBase(), fr = F0.frames;
+  const unitAt = fid => (fr.get(fid)?.step.startsWith("unit:") ? fr.get(fid).step.slice(5) : null);
+  const focused = new Map();
+  const isFocused = fid => {
+    if (!fid) return false;
+    if (!focused.has(fid)) focused.set(fid, V.focus.has(unitAt(fid)) || isFocused(fr.get(fid).parent));
+    return focused.get(fid);
+  };
+  // a frame holds the focus when a package of the focus lies in it or is it
+  const holding = new Set();
+  for (const fid of fr.keys()) if (isFocused(fid)) for (let f = fid; f; f = fr.get(f).parent) holding.add(f);
+  // a package of the rest: one that holds no code in focus and lies in none that holds no code in focus
+  const restTop = fid => !!unitAt(fid) && !holding.has(fid) && !(unitAt(fr.get(fid).parent) && !holding.has(fr.get(fid).parent));
+  const restOf = fid => { let f = fid; while (f && !restTop(f)) f = fr.get(f).parent; return f; };
+  const rest = "n:unit:" + REST, kindIn = k => (F0.places.get(k)?.type ? "t:" + kindOf(F0.places.get(k).type) : k);
+  const mine = [...F0.pills.values()].filter(P => isFocused(P.parent));
+  const kinds = new Set(mine.flatMap(P => [...P.D.keys(), ...P.C.keys()]).map(kindIn));
+  const star = new Set([...F0.places.keys()].filter(k => kinds.has(kindIn(k))));
+  const pills = new Map();
+  for (const P of F0.pills.values()) {
+    if (isFocused(P.parent)) { pills.set(P.id, P); continue; }
+    const only = m => new Map([...m].filter(([k]) => star.has(k)));
+    pills.set(P.id, {...P, D: only(P.D), C: only(P.C), goes: only(P.goes), whole: only(P.whole)});
+  }
+  const calls = F0.calls.filter(c => c.some(f => isFocused(F0.pills.get("n:" + f)?.parent)));
+  // a function of the rest stands where it draws a line to the fiber or a call into it
+  const called = new Set(calls.flat().map(f => "n:" + f));
+  for (const [id, P] of pills) if (!isFocused(P.parent) && !P.D.size && !P.C.size && !called.has(id)) pills.delete(id);
+  const frames = new Map(), tops = [];
+  for (const [fid, f] of fr) {
+    if (isFocused(fid)) frames.set(fid, isFocused(f.parent) ? f : {...f, parent: null});
+    else if (unitAt(fid) && !holding.has(fid)) { const top = restTop(fid); frames.set(fid, top ? {...f, parent: rest} : f); if (top) tops.push(unitAt(fid)); }
+  }
+  const places = new Map([...star].map(k => { const pl = F0.places.get(k); return [k, "home" in pl ? {...pl, home: isFocused(pl.home) ? pl.home : undefined} : pl]; }));
+  // the packages of the rest that share a type with the focus, each with the boxes of the types it shares
+  const shares = new Map();
+  for (const P of pills.values()) {
+    if (isFocused(P.parent)) continue;
+    const u = unitAt(restOf(P.parent)), ts = [...P.D.keys(), ...P.C.keys()].filter(k => places.get(k)?.type).map(k => "t:" + placeOfType(places.get(k).type));
+    if (!shares.has(u)) shares.set(u, new Set());
+    ts.forEach(t => shares.get(u).add(t));
+  }
+  FOCUS = {
+    rest: tops,
+    around: [...shares].filter(([, s]) => s.size).map(([u, s]) => ({u, n: s.size})).sort((a, b) => b.n - a.n || a.u.localeCompare(b.u)),
+    steps: new Set([...frames.values()].filter(f => isFocused(f.id)).map(f => f.step)),
+  };
+  if (tops.length) frames.set(rest, {id: rest, step: "unit:" + REST, parent: null, hue: null, title: stepName("unit:" + REST)});
+  return {...F0, places, pills, frames, calls};
+};
+// the map `q_U`: a package of the focus is open as the reader has it, the rest while the reader has it open, and a package
+// of the rest never
+const focusOpen = key => (key === "unit:" + REST ? V.open.units.has(REST) : FOCUS.steps.has(key) && V.open.units.has(key.slice(5)));
+// The rest is one block, and the page draws it on both sides of the focus, as it draws a place of the world that is read
+// and written: what it hands the focus on the left (`~in`), what it takes from it on the right (`~out`), its calls into
+// the focus from the left and the focus's calls into it to the right. Opened, its packages stand so, in a frame on each
+// side. A type that only the rest makes and only the focus takes, or only the focus makes and only the rest takes, is a
+// vertex between two arrows: it is drawn as the arrow from each maker to each taker, counting the boxes it stands for
+// (`· 4 types`), as a wire is
+const restSides = C => {
+  const rest = "n:unit:" + REST, open = C.frames.has(rest), twins = new Map(), side = new Map();
+  const twinOf = (P, s) => (P.id === rest ? "n:unit:" + s : `n:unit:${s}:${P.steps[0].slice(5)}`);
+  const pills = new Map(), frames = new Map([...C.frames].filter(([id]) => id !== rest));
+  const none = () => new Map();
+  for (const P of C.pills.values()) {
+    if (P.id !== rest && P.parent !== rest) { pills.set(P.id, {...P, D: new Map(P.D), C: new Map(P.C), Dn: new Map(P.Dn || []), Cn: new Map(P.Cn || []), Dr: new Map(P.Dr || []), Cr: new Map(P.Cr || [])}); continue; }
+    const a = twinOf(P, "~in"), b = twinOf(P, "~out"), parent = open ? "n:unit:" : null;
+    const into = {...P, id: a, steps: [a.slice(2)], D: none(), Dn: none(), Dr: none(), C: new Map(P.C), Cn: new Map(P.Cn || []), Cr: new Map(P.Cr || []), parent: open ? parent + "~in" : null};
+    const from = {...P, id: b, steps: [b.slice(2)], C: none(), Cn: none(), Cr: none(), D: new Map(P.D), Dn: new Map(P.Dn || []), Dr: new Map(P.Dr || []), calls: undefined, parent: open ? parent + "~out" : null};
+    for (const T of [into, from]) if (!open || T.D.size || T.C.size || T.calls?.size) { pills.set(T.id, T); side.set(T.id, T === into ? "~in" : "~out"); }
+    twins.set(P.id, b);
+  }
+  if (open) for (const s of ["~in", "~out"]) frames.set("n:unit:" + s, {...C.frames.get(rest), id: "n:unit:" + s, step: "unit:" + s, title: stepName("unit:" + s)});
+  // a call into the rest goes to the side that takes
+  for (const P of pills.values()) if (P.calls) P.calls = new Set([...P.calls].map(b => twins.get(b) || b).filter(b => pills.has(b)));
+  const makers = new Map(), takers = new Map(), at = (m, k) => { if (!m.has(k)) m.set(k, []); return m.get(k); };
+  for (const P of pills.values()) { for (const k of P.C.keys()) at(makers, k).push(P); for (const k of P.D.keys()) at(takers, k).push(P); }
+  const arrows = new Map(), places = new Map(C.places);
+  for (const [k, pl] of C.places) {
+    if (!k.startsWith("t:") || !pl.type) continue;
+    const mk = makers.get(k) || [], tk = takers.get(k) || [], ofRest = Ps => Ps.every(P => side.has(P.id)), noRest = Ps => !Ps.some(P => side.has(P.id));
+    const handed = ofRest(mk) && noRest(tk), taken = noRest(mk) && ofRest(tk);
+    if (!mk.length || !tk.length || !(handed || taken)) continue;
+    for (const m of mk) for (const t of tk) {
+      const [r, u] = handed ? [m.id, t.id] : [t.id, m.id], key = `${r}>${u}`;
+      if (!arrows.has(key)) arrows.set(key, [r, u, handed ? "~in" : "~out", new Map()]);
+      arrows.get(key)[3].set(k, pl.label);
+    }
+    for (const P of [...mk, ...tk]) for (const n of ["D", "C", "Dn", "Cn", "Dr", "Cr"]) P[n]?.delete(k);
+    places.delete(k);
+  }
+  return {...C, places, pills, frames, restArrows: [...arrows.values()]};
+};
+const focus = () => {
+  const F = focusBase(), C = coarsen(F, focusOpen, () => false), rest = "n:unit:" + REST;
+  // a package of the focus stands even where nothing crosses its edge, so that it can be opened, and so does the rest
+  for (const [fid, f] of F.frames) if (!C.frames.has(fid) && f.parent !== rest && (!f.parent || C.frames.has(f.parent)) && !C.pills.has(fid)) C.pills.set(fid, {id: fid, steps: [f.step], D: new Map(), C: new Map(), Dn: new Map(), Cn: new Map(), Dr: new Map(), Cr: new Map(), goes: new Map(), parent: f.parent, hue: null});
+  alike(C);
+  window.atlasPlan = {fine: F, coarse: C, opened: focusOpen};
+  return {...restSides(C), calling: true};
+};
 const plan = () => {
   if (!V.route && !V.kind && !V.focus.size) return overview();
+  if (!V.route && !V.kind) return focus();
   if (!V.route) return alike(planBase(false));
   FINE = true;
   FIBER = null;

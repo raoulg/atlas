@@ -947,8 +947,8 @@ async function renderPlaat(mine) {
     const rest = new Map();
     for (const [s, p] of [["a", A], ["b", B]]) for (const [r, at, way, ts] of p.restArrows) {
       const k = `${r}>${at}`;
-      if (!rest.has(k)) rest.set(k, [r, at, way, new Set(), new Set()]);
-      ts.forEach(t => rest.get(k)[3].add(t)); rest.get(k)[4].add(s);
+      if (!rest.has(k)) rest.set(k, [r, at, way, new Map(), new Set()]);
+      ts.forEach((label, t) => rest.get(k)[3].set(t, label)); rest.get(k)[4].add(s);
     }
     const roles = new Map(A.roles);
     for (const [k, r] of B.roles) { const q = roles.get(k); roles.set(k, q ? Object.fromEntries(Object.keys(r).map(f => [f, q[f] || r[f]])) : r); }
@@ -1132,7 +1132,7 @@ async function renderPlaat(mine) {
     return I;
   };
   const insideUnit = u => {
-    const ps = u === "~in" || u === "~out" ? [...restExchange(u).keys()] : [isRest(u) ? u.slice(u.indexOf(":") + 1) : u];
+    const ps = u === "~in" || u === "~out" ? FOCUS.rest : [isRest(u) ? u.slice(u.indexOf(":") + 1) : u];
     return insideCode(n => ps.some(p => inUnit(n.id, p)));
   };
   // a closed step holds its body: the steps it runs and every function they reach, each with its own
@@ -1328,9 +1328,10 @@ async function renderPlaat(mine) {
     });
     if (P.backTo) addEdge(P.id, P.backTo, {back: true, hue: P.hue, sides: P.sides, ...(P.said ? {label: P.said} : {})});
   }
-  // a focus and the rest of the code: one arrow each way per unit, counting the types that cross
+  // a focus and the rest of the code: a type only one side makes and only the other takes is an arrow from maker to
+  // taker, counting the boxes of the types it stands for (`restSides`)
   for (const [rest, at, r, ts, sides] of restArrows) {
-    const info = {label: `${ts.size} ${ts.size === 1 ? "type" : "types"}`, title: [...ts].map(typeLabel).sort().join(", "), sides};
+    const info = {label: `${ts.size} ${ts.size === 1 ? "type" : "types"}`, title: [...ts.values()].sort().join(", "), sides};
     if (r === "~in") addEdge(rest, at, info); else addEdge(at, rest, info);
   }
   // code that calls other code: a dotted line, from the caller. The calls are a channel of their own,
@@ -1600,8 +1601,8 @@ async function renderPlaat(mine) {
     clicks(grp, ev => {
       if (P.steps[0].startsWith("unit:")) {
         const u = P.steps[0].slice(5);
-        // the rest opens into its packages; a package of it joins the focus
-        if (u === "~in" || u === "~out") { V.open.units.add(u); plaatAnchor = P.id; render(); focusPanel(); return; }
+        // the rest, on either side, opens into its packages; a package of it joins the focus
+        if (u === "~in" || u === "~out") { V.open.units.add(REST); plaatAnchor = P.id; render(); focusPanel(); return; }
         if (isRest(u)) { V.focus.add(u.slice(4)); plaatFit = true; render(); focusPanel(); return; }
         if (ev.shiftKey) { if (V.focus.has(u)) V.focus.delete(u); else V.focus.add(u); plaatFit = true; render(); focusPanel(); return; }
       }
@@ -1735,8 +1736,9 @@ function crumbs() {
   if (V.kind) chip(`All ${KIND_LABEL[V.kind]}`, () => { V.kind = null; if (!V.route) entrySel.value = ""; });
   if (V.route) chip(entryTitle(V.route), () => { V.route = null; entrySel.value = V.kind ? "kind:" + V.kind : ""; V.open.steps.clear(); });
   if (!V.kind && !V.route && !V.part) C.appendChild(html("span", "none", entries.length ? "all" : "none"));
-  // the overview is the program without its test code, a fiber the reader can let go of; shown where there is test code
-  if (!V.route && !V.kind && !V.focus.size && OWN.some(n => has(n) && testCode(n))) {
+  // the overview, and the focus that is its fiber, is the program without its test code, a fiber the reader can let go of;
+  // shown where there is test code
+  if (!V.route && !V.kind && OWN.some(n => has(n) && testCode(n))) {
     lbl("code");
     const b = html("button", V.tests ? "add" : null, V.tests ? "+ without test code" : "without test code ✕");
     b.title = V.tests ? "leave the test code out: the program alone" : "draw the test code too: tests, test modules and what they touch";
@@ -1746,7 +1748,7 @@ function crumbs() {
   if (view === "plaat" && pinned.size) { lbl("pinned"); chip(`${pinned.size} ${pinned.size === 1 ? "box" : "boxes"}`, () => pinned.clear()); }
   if (lit) { lbl("lit"); chip(`values of ${typeLabel(lit.pick)}${lit.drawn === 0 ? " · none here" : ""}`, () => { lit = null; }); }
   if (V.open.parts.size && !V.route) { lbl("parts"); for (const p of V.open.parts) chip(p, () => V.open.parts.delete(p)); }
-  const opened = u => u === "~in" ? "the rest, handing in" : u === "~out" ? "the rest, taking" : unitLabel(u);
+  const opened = u => u === REST ? "the rest" : unitLabel(u);
   if (V.open.units.size && !V.route && !V.kind) { lbl("packages"); for (const u of V.open.units) chip(opened(u), () => V.open.units.delete(u)); }
   // an opened entry shows how its command line is parsed; any other opened place is split
   const openEntries = [...V.open.places].filter(r => r.startsWith("e:") && byId.get(r.slice(2))?.entry), split = [...V.open.places].filter(r => !r.startsWith("e:"));
@@ -1766,7 +1768,7 @@ function crumbs() {
     const ns = neighbours();
     if (ns.length) lbl("around");
     for (const {u, n} of ns.slice(0, 5)) add(`+ ${unitLabel(u)} · ${n}`, `add ${u} to the focus: ${n} ${n === 1 ? "type" : "types"} across`, () => V.focus.add(u));
-    if (ns.length > 5) add(`+${ns.length - 5} more`, "open the rest beside the focus", () => { V.open.units.add("~in"); V.open.units.add("~out"); });
+    if (ns.length > 5) add(`+${ns.length - 5} more`, "open the rest beside the focus", () => V.open.units.add(REST));
   }
   // one ✕ for every opened box and every pinned one: back to the coarsest zoom. The route, the
   // filters and the focus stay: they chose what is drawn, and closing the quotient does not undo them
@@ -2152,6 +2154,8 @@ async function render() {
     if (view === "plaat") { await renderPlaat(mine); } else if (view === "types") { renderTypes(); fit(); } else { await renderSig(); }
   } catch (err) { scene.node().classList.remove("busy"); fault(err); return; }
   if (mine !== renderSeq) return;
+  // the packages around a focus are a fact of its plan (`focusBase`)
+  if (view === "plaat" && V.focus.size) crumbs();
   legend();
   relabel();
   if (selected) scene.node().querySelectorAll(`[data-id="${CSS.escape(selected)}"]`).forEach(x => x.classList.add("selected"));
