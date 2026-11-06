@@ -2016,7 +2016,9 @@ impl<'a, 't> Body<'a, 't> {
         if part || owner.kind() == "identifier" {
             let mut held = vec![];
             self.held(owner, kept, 0, &mut held);
-            if !held.is_empty() {
+            // a name that is no part of another's value is handed on with the class of the code's the value holds
+            let typed = held.iter().all(|h| !h.ty.is_empty() && ext::path(&h.ty).is_none());
+            if !held.is_empty() && (part || typed) {
                 return held.into_iter().map(|h| Held { at: owner.start_byte() as u32, ..h }).collect();
             }
         }
