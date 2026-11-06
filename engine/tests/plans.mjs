@@ -314,7 +314,7 @@ function pictures(F, openable, occ, homes, valueName) {
     const at = set.length ? `with ${set.map(s => occ("n:" + s)).join(", ")} open` : "closed";
     const view = M.imageOf(F, k => k === route || V.open.steps.has(k), foldable);
     for (const f of M.checkOpenings(F, view, foldable)) faults.push(`${at}: ${f}`);
-    for (const f of quotient(F, view, set, homes, occ, valueName)) faults.push(`${at}: ${f}`);
+    for (const f of quotient(F, view, set, homes, occ, valueName, foldable)) faults.push(`${at}: ${f}`);
     const C = M.plan();
     for (const f of ends(C, M.coarsen(window.atlasPlan.fine))) faults.push(`${at}: ${f}`);
   }
@@ -425,7 +425,7 @@ function closing(sets, occ) {
 // and gives) and reaches through it otherwise. A step beyond the cut is the image of its body: each of its lines stands
 // for the fine lines its body draws there (`mult`), of which some it reaches. The picture must draw exactly these counts,
 // and a value it draws stands where it stands with every step open.
-function quotient(F, view, set, homes, occ, valueName) {
+function quotient(F, view, set, homes, occ, valueName, folded = false) {
   const out = [], route = V.route, open = new Set([route, ...set]);
   // a box of the picture by the name of what it stands for in the plan
   const fineOf = new Map();
@@ -459,8 +459,11 @@ function quotient(F, view, set, homes, occ, valueName) {
       if (S && value && below(pl?.at, S) && !view.hidden.has(pl.at)) continue;
       if (S && way === "D" && !value && back.has(k)) continue;
       // a line of a step beyond the cut counts the fine lines its body draws there, and of them the ones it reaches; the
-      // block reaches all of them where it reaches through the step, and the ones the step reaches where it is the step
-      const far = mine ? r : !(way === "D" && value && handed(pl)), [n, nr] = P.mult?.[way]?.get(k) || [1, r ? 1 : 0];
+      // block reaches all of them where it reaches through the step, and the ones the step reaches where it is the step.
+      // Under the fold of the command line, what the parse inside its body made is the entry's: the lines from the entry
+      // are the fine lines of what the parse made (`fold`)
+      const fold = folded && P.fold && way === "D" && k === "e:" + route;
+      const far = mine ? r : !(way === "D" && value && handed(pl)), [n, nr] = (fold ? P.fold : P.mult?.[way]?.get(k)) || [1, r ? 1 : 0];
       add(b, way, view.q(k), n, mine ? nr : far ? n : 0);
     }
   }
@@ -1098,7 +1101,7 @@ function stateFaults(name, S) {
   setState(S);
   if (view === "route") {
     const {occ, valueName, values} = namesOf(F), homes = homesOf(F, values), set = [...V.open.steps, ...[...F.frames.values()].filter(f => f.step && !f.synthetic && V.open.functions.has(M.stepOf(f.step))).map(f => f.step)];
-    for (const f of quotient(F, image, set, homes, occ, valueName)) at(f);
+    for (const f of quotient(F, image, set, homes, occ, valueName, folded)) at(f);
   } else for (const f of generated(F, image, opened)) at(f);
   setState(S);
   for (const f of libraryFaults(F, M.plan(), opened, READS[view].includes("closed.libraries"))) at(f);

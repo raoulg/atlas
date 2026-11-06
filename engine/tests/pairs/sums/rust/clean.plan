@@ -4,8 +4,6 @@
 # function a caller can call. The methods run on the caller's instance, one value from beyond; what `new` builds goes
 # back to the caller.
 
-known #438 kinds all export routes: kennis.Kennisbank draws
-
 route kennis.Kennisbank
 step Kennisbank()/Kennisbank.new
 step Kennisbank()/Kennisbank.new/Kennisbank() # the struct expression `new` builds the store by

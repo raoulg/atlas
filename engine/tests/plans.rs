@@ -400,7 +400,7 @@ fn every_focus_is_the_image_of_a_fiber_of_the_overviews_plan() {
 /// (mathematics.md, "One fine plan, every picture its image", all routes of a kind; #434): the kind view's fine plan has a
 /// box for each route, which takes and gives what crosses the border of its route closed. Each route's box is held to the
 /// image of the route's finest plan with no box open, line by line, with the fine lines each stands for and those it
-/// reaches; a route the page plans cut at its first level (`cutArrow`) and that draws otherwise is a fault of the cut (#438).
+/// reaches; a route the page plans cut at its first level (`cutArrow`) and that draws otherwise is a fault of the cut.
 #[test]
 fn every_kind_view_is_the_union_of_its_routes_closed() {
     let fails = views_hold("kinds");
