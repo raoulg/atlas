@@ -2,8 +2,8 @@
 //! (`Float[Tensor, "batch seq dim"]`). The shape is a word over axes; a shape admits another when
 //! every array of the one is an array of the other, a preorder the `overrides` principle reads. Its
 //! rank (how many axes, or at least how many) is a map from shapes to ranks: its fibers are the
-//! rank families, named by dtype, array type and rank (`Float Tensor · 2D`, `Float Tensor · ≥1D`),
-//! never by a shape, since no annotation says it. The most general shape of a rank (`_ _`, `... _`)
+//! rank families, named by dtype, array type and rank (`Float Tensor · 2D`, `Float Tensor · ≥1D`,
+//! `Float Tensor · any rank`), never by a shape, since no annotation says it. The most general shape of a rank (`_ _`, `... _`)
 //! bounds its family: every shape of the rank fits it. Exact shapes stay types of their own: a named
 //! axis is a variable bound per call, so `batch dim` and `batch ndim` are two types of one family
 //! (`docs/reference/mathematics.md`, "Shapes and their rank").
@@ -76,6 +76,7 @@ impl fmt::Display for Rank {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             Rank::Exact(k) => write!(f, "{k}D"),
+            Rank::AtLeast(0) => f.write_str("any rank"),
             Rank::AtLeast(k) => write!(f, "≥{k}D"),
         }
     }
@@ -100,6 +101,11 @@ impl Array {
     /// A shaped array's id (`ext:jaxtyping.Float[Tensor, batch dim]`) as an array.
     pub fn of_id(id: &str) -> Option<Array> {
         Array::read(crate::knowledge::shaped(id)?)
+    }
+
+    /// The name of this shape's rank family, in no annotation's notation: `Float Tensor · 2D`.
+    pub fn family_name(&self) -> String {
+        format!("{} {} · {}", self.dtype, self.array, self.rank())
     }
 
     pub fn rank(&self) -> Rank {
@@ -165,7 +171,14 @@ impl fmt::Display for Array {
 pub fn family_id(id: &str) -> Option<String> {
     let name = crate::knowledge::shaped(id)?;
     let a = Array::read(name)?;
-    Some(format!("{}{} {} · {}", &id[..id.len() - name.len()], a.dtype, a.array, a.rank()))
+    Some(format!("{}{}", &id[..id.len() - name.len()], a.family_name()))
+}
+
+/// The name a shaped array goes by where it is not its shape: a shape of one open run alone (`Float[Tensor, ...]`)
+/// promises no axis, so it is named as what it says, `Float Tensor · any rank`. Every other shape is named by itself.
+pub fn name(id: &str) -> Option<String> {
+    let a = Array::of_id(id)?;
+    matches!(a.axes.as_slice(), [Axis::Variadic(w)] if w == "...").then(|| a.family_name())
 }
 
 #[cfg(test)]
@@ -218,6 +231,20 @@ mod tests {
         for s in ["Float[Tensor, batch dim]", "Float[Tensor, ... dim]", "Float[Tensor, ]"] {
             assert!(Array::of_id(&id(s)).is_none(), "{} reads as a shape", id(s));
         }
+    }
+
+    /// A run alone promises no axis: its rank is any, and it is named as that, as no annotation writes it. A named run
+    /// (`*lead`) binds per call and stays a shape of its own, as does every shape with an axis.
+    #[test]
+    fn a_run_alone_is_named_any_rank() {
+        let id = |s: &str| crate::model::ext::of(&format!("jaxtyping.{s}"));
+        assert_eq!(a("Float[Tensor, ...]").rank().to_string(), "any rank");
+        assert_eq!(name(&id("Float[Tensor, ...]")).as_deref(), Some("Float Tensor · any rank"));
+        assert_eq!(name(&id("Int[ndarray, ...]")).as_deref(), Some("Int ndarray · any rank"));
+        for s in ["Float[Tensor, *lead]", "Float[Tensor, ... dim]", "Float[Tensor, _ _]", "Float[Tensor, batch]"] {
+            assert_eq!(name(&id(s)), None, "{s}");
+        }
+        assert_eq!(family_id(&id("Float[Tensor, ...]")), Some(id("Float Tensor · any rank")));
     }
 
     fn axis() -> impl Strategy<Value = String> {

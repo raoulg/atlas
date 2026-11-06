@@ -138,12 +138,14 @@ on the boxes the view draws: a step takes a value by the name that holds it, els
 its kind (an override runs on the value its call runs on); two values with names of their own
 are two values, also when they have one type (`Serial([a, b])` takes both).
 
-A view is its fibers and its ideals: `{route, kind, part, focus, open: {parts, units, steps,
+A view is its fibers and its ideals: `{route, kind, part, focus, tests, open: {parts, units, steps,
 functions, families, places, dirs}}`. The page writes it to its address after every drawing, so
 a picture is a link, and `atlas-code view --view` and the MCP tool `view` draw a page in a view an
 agent wrote. A step opens by its path through the route (`pkg.cli.build/2`, the third call of
 `build`) or, for whoever names functions rather than calls, every step of a function at once
-(`open.functions`). The page applies the fibers first, then the quotients by the ideals' cuts.
+(`open.functions`). The overview leaves the test code out, a fiber `tests: true` lets go of
+(`mathematics.md`, "A filter: the program without its test code"). The page applies the fibers
+first, then the quotients by the ideals' cuts.
 
 A storage quotient groups only places in the current fiber. A symbolic disk place used both
 ways stands as one place, rather than belonging to both directional groups. A single member stands as itself,
@@ -438,9 +440,11 @@ children of its own package, a crate's modules, an app's directories; scripts an
 notebooks beside them as one each), a package's subpackages, and at the bottom a module's
 routes and doors (the functions other packages call in it). A package closed is one step:
 the places its own code touches, not what it reaches through other packages, and the
-types that cross its edge. A type crosses where one package makes it (gives it back,
-builds it, changes it) and another takes it, and between packages it is drawn once, as
-the joint. What crosses is data: a class one of whose operations reaches a database,
+types that cross its edge. Each type of data a function makes (gives it back, builds it,
+changes it) or takes is one place, drawn once, in the smallest package that holds every
+function that makes or takes it: a type one package makes and another takes crosses
+between them as the joint, and a type no other package uses stays inside the one that
+does, there as the output or input of its functions. What crosses is data: a class one of whose operations reaches a database,
 the web, a model or a program (a sink, a repository, a client), and a library's type
 whose calls reach one (`sqlite3.Connection`), is a door to that place, and the place is
 drawn instead. A file or the screen makes no door: a value may save or show itself.

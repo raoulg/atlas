@@ -3235,3 +3235,109 @@ fn a_change_of_a_part_changes_the_whole() {
         &["added", "added_looked_up"],
     );
 }
+
+/// A path built through helpers, however many, is the path built in place: a function's return is its summary, written
+/// into at each call (#396).
+#[test]
+fn places_a_path_through_helpers_is_the_path_in_place() {
+    common::a_path_through_helpers_is_the_path_in_place("python");
+}
+
+/// The modules pair (#422): one torch model, each submodule called (`self.image(x)`, `model(x)`) on the clean side and its
+/// `forward` called by name on the other. torch's `Module.__call__` runs `forward` (`knowledge::PYTHON_CALL_RUNS`), so the
+/// two forms say the same and read as one graph: every call, every value a step is handed and gives, alike.
+#[test]
+fn a_module_called_is_its_forward_called() {
+    let side = |s: &str| {
+        analyze(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/pairs/modules/python").join(s), &Options::default()).unwrap()
+    };
+    let read = |g: &Graph| -> BTreeSet<String> {
+        let mut out: BTreeSet<String> = g
+            .edges
+            .iter()
+            .filter(|e| !g.node(&e.src).is_some_and(|n| n.library))
+            .map(|e| format!("{} {:?} {}", e.src, e.kind, e.dst))
+            .collect();
+        for n in g.nodes.iter().filter(|n| !n.library) {
+            for s in &n.sites {
+                // a value no name holds is named by where it is written, which the two forms write apart
+                let held = |h: &[atlas_engine::Held]| {
+                    h.iter().map(|h| format!("{}:{}", h.name.split('@').next().unwrap_or(""), h.ty)).collect::<Vec<_>>().join(",")
+                };
+                out.insert(format!("{} -> {} [{}] [{}] {:?}", n.id, s.to, held(&s.hands), held(&s.gives), s.args));
+            }
+        }
+        out
+    };
+    let (called, named) = (side("clean"), side("shortcut"));
+    assert!(edge(&called, "encoders.model.Fusion.forward", "encoders.model.Encoder.forward", EdgeKind::Calls));
+    assert!(edge(&called, "encoders.model.predict", "encoders.model.Fusion.forward", EdgeKind::Calls));
+    assert_eq!(read(&called), read(&named));
+}
+
+/// A value the code declares as a shaped array is that shaped array on every wire, though ty reads it as its array type
+/// alone, as jaxtyping tells a type checker to (`docs/reference/mathematics.md`, "Shapes and their rank"): a parameter and an
+/// annotated local by their annotations, a value a call of the code's own function gives by what that function returns, a
+/// part of a tuple it returns by that part. And a wire carries one type: a value a step is handed by name is of the type
+/// the step before it gave it under that name.
+#[test]
+fn every_wire_of_a_typed_forward_pass_carries_its_shape() {
+    use atlas_engine::shapes::Array;
+    let g = analyze(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/pairs/modules/python/clean"), &Options::default()).unwrap();
+    let class = |t: &str| g.node(t).is_some_and(|n| n.kind == NodeKind::Class);
+    let mut wires = 0;
+    for id in ["encoders.model.main", "encoders.model.predict", "encoders.model.Fusion.forward"] {
+        let mut given: std::collections::HashMap<String, String> = Default::default();
+        for s in &g.node(id).unwrap().sites {
+            for h in s.hands.iter().filter(|h| !class(&h.ty)) {
+                assert!(Array::of_id(&h.ty).is_some(), "{id} hands {} to {} as `{}`", h.name, s.to, h.ty);
+                if let Some(t) = given.get(&h.name) {
+                    assert_eq!(t, &h.ty, "{id}: {} is given as one type and handed on as another", h.name);
+                }
+                wires += 1;
+            }
+            for h in s.gives.iter().filter(|h| !class(&h.ty)) {
+                assert!(Array::of_id(&h.ty).is_some(), "{id}: {} gives {} as `{}`", s.to, h.name, h.ty);
+                given.insert(h.name.clone(), h.ty.clone());
+                wires += 1;
+            }
+        }
+    }
+    assert!(wires >= 12, "{wires} wires");
+}
+
+/// Only a torch module's call runs its forward (#422): a class that is no module is called through its own `__call__`,
+/// whatever else it names `forward`, and so is a module that defines `__call__` itself, and a class below one. The rule
+/// is torch's alone; no other class's call is given a `forward`.
+#[test]
+fn only_a_torch_module_called_runs_its_forward() {
+    let g = analyze(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/pairs/modules/python/other"), &Options::default()).unwrap();
+    let called: BTreeSet<&str> =
+        g.edges.iter().filter(|e| e.src == "callers.model.run" && e.kind == EdgeKind::Calls).map(|e| e.dst.as_str()).collect();
+    assert_eq!(called, BTreeSet::from(["callers.model.Scaler.__call__", "callers.model.Gate.__call__"]));
+    assert!(edge(&g, "callers.model.Gate.__call__", "callers.model.Gate.forward", EdgeKind::Calls));
+}
+
+/// An instance handed to a call is no call of it (#423): `print(model)` hands the model on as a value, and the code does
+/// not say that the receiver calls it. Calling an instance runs its `__call__`, or a torch module's `forward`; handing it on
+/// runs neither, in both forms alike. Only `model(..)` itself, or `model.forward(..)`, is a call of what it runs.
+#[test]
+fn an_instance_handed_on_is_no_call_of_it() {
+    let side = |s: &str| {
+        analyze(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/pairs/modules/python").join(s), &Options::default()).unwrap()
+    };
+    let reaches = |g: &Graph, from: &str| -> BTreeSet<String> {
+        let edges = g.edges.iter().filter(|e| e.src == from && e.kind == EdgeKind::Calls).map(|e| e.dst.clone());
+        let sites = g.node(from).into_iter().flat_map(|n| &n.sites).map(|s| s.to.clone()).filter(|t| !t.is_empty());
+        edges.chain(sites).filter(|t| !g.node(t).is_some_and(|n| n.library)).collect()
+    };
+    for s in ["clean", "shortcut"] {
+        let g = side(s);
+        assert_eq!(
+            reaches(&g, "encoders.model.main"),
+            BTreeSet::from(["encoders.model.Fusion".into(), "encoders.model.batch".into(), "encoders.model.predict".into()]),
+            "{s}"
+        );
+    }
+    assert!(reaches(&side("other"), "callers.model.show").is_empty());
+}

@@ -321,7 +321,10 @@ fn every_picture_of_a_cut_plan_is_its_image() {
 /// plan, every picture its image"; #69): for every set of open packages and parts of every program, each line of the picture
 /// counts the fine lines it stands for, a type internal to a closed package draws none, a call goes between the blocks of its
 /// ends, opening one more box refines the picture (the oracle), and the picture is a function of the set of open boxes. The
-/// faults known of a program are known here too.
+/// faults known of a program are known here too. All of it holds of the overview without the test code as well, which is the
+/// image of the fiber of the plan where the code is no test code (mathematics.md, "A filter: the program without its test
+/// code"; #400): its fine plan, built from the code without its test code, is the fiber of the fine plan with it, taken on
+/// that plan, and for every set of open packages its picture is the image of that fiber.
 #[test]
 fn every_package_view_is_the_image_of_its_plan() {
     let (tests, all) = all_programs();
@@ -346,6 +349,23 @@ fn every_package_view_is_the_image_of_its_plan() {
     });
     let fails = fails.into_inner().unwrap();
     assert!(fails.is_empty(), "{} faults of the overviews:\n{}", fails.len(), fails.join("\n"));
+}
+
+/// Test code is not saturated by the package quotient, so the fiber and the quotient do not commute (mathematics.md,
+/// "Saturation"): in each language, a package that holds test code beside ordinary code (`plans/overview-tests`: a pytest
+/// file, a `#[cfg(test)] mod tests`, a `*.test.ts` beside the store) is a box both overviews draw, with other lines. A filter
+/// taken on the quotient keeps or drops a box whole, and so cannot draw the fiber's picture: this box is the counterexample.
+#[test]
+fn test_code_cuts_a_package_in_two() {
+    let tests = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests");
+    let mut all = vec![];
+    programs(&tests.join("plans/overview-tests"), &mut all);
+    assert_eq!(all.len(), 3, "a program in each language");
+    for program in &all {
+        let asked = asked(program, &data(program), None, &["--overview"]);
+        let facts = asked.values().flat_map(|(facts, _)| facts.iter()).collect::<Vec<_>>();
+        assert!(facts.iter().any(|f| f.starts_with("cut unit:")), "{}: no package is cut in two by the test code", program.display());
+    }
 }
 
 /// How many levels the route of `a_step_beyond_the_cut_is_made_without_unfolding_its_body` calls down, each twice.
@@ -382,4 +402,56 @@ fn a_step_beyond_the_cut_is_made_without_unfolding_its_body() {
     }
     let _ = std::fs::remove_dir_all(&program);
     assert!(fails.is_empty(), "{} faults of the cut plans:\n{}", fails.len(), fails.join("\n"));
+}
+
+/// An opened group of places (the storage quotient) splits into its places, and they fold further into their directories
+/// (mathematics.md, "Places by the type that holds them"): the page draws an opened group by `foldGroups` of the viewer's
+/// model. For groups and folds drawn from a seed, every member of a group is a box the picture draws, no box stands in two
+/// groups, a directory stands in a group only where every file it folds is that group's, and every place a group holds
+/// stays in the picture, as itself in the group or as the directory it folds into beside it.
+#[test]
+fn an_opened_group_holds_its_files_as_the_disk_folds_them() {
+    let program = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/plans/overview-packages");
+    let file = std::env::temp_dir().join(format!("atlas-fold-groups-{}.json", std::process::id()));
+    std::fs::write(&file, data(&program)).expect("writes the data");
+    let check = r#"
+        const fs = require("node:fs");
+        const [planJs, dataJson] = process.argv.slice(1);
+        const D = JSON.parse(fs.readFileSync(dataJson, "utf8"));
+        const foldGroups = new Function("D", "window", fs.readFileSync(planJs, "utf8") + "\nreturn foldGroups;")(D, {});
+        let a = 7;
+        const random = () => { a = (a + 0x6d2b79f5) >>> 0; let t = Math.imul(a ^ (a >>> 15), 1 | a); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
+        const pick = n => Math.floor(random() * n);
+        const faults = [];
+        for (let round = 0; round < 500; round++) {
+          // files f0.., places that are no file p0.., directories d0..; each file folds into a directory or stands as itself
+          const files = [...Array(1 + pick(8)).keys()].map(i => `f${i}`), others = [...Array(pick(3)).keys()].map(i => `p${i}`);
+          const into = new Map(files.map(f => [f, random() < 0.7 ? `d${pick(3)}` : f]));
+          const to = k => into.get(k) ?? k;
+          const drawnBoxes = new Set([...files.map(to), ...others].filter(() => random() < 0.95));
+          const drawn = k => drawnBoxes.has(k);
+          const groups = new Map();
+          for (const k of [...files, ...others]) { const g = pick(4); if (g < 2) { if (!groups.has(`g${g}`)) groups.set(`g${g}`, new Set()); groups.get(`g${g}`).add(k); } }
+          const out = foldGroups(groups, files, to, drawn), seen = new Map();
+          for (const [g, ks] of out) for (const k of ks) {
+            if (!drawn(k)) faults.push(`${round}: ${g} holds ${k}, which the picture does not draw`);
+            if (seen.has(k)) faults.push(`${round}: ${k} stands in ${seen.get(k)} and in ${g}`);
+            seen.set(k, g);
+            for (const f of files) if (to(f) === k && f !== k && ![...(groups.get(g) || [])].includes(f)) faults.push(`${round}: ${g} holds ${k}, which folds ${f}, no file of ${g}`);
+          }
+          for (const [g, ks] of groups) for (const k of ks) if (drawn(to(k)) && !out.get(g).has(to(k)) && !(to(k) !== k && [...out.values()].every(s => !s.has(to(k))))) faults.push(`${round}: ${k} of ${g} is lost`);
+        }
+        process.stdout.write(JSON.stringify(faults.slice(0, 20)));
+    "#;
+    let out = Command::new("node")
+        .arg("-e")
+        .arg(check)
+        .arg(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../viewer/plan.js"))
+        .arg(&file)
+        .output()
+        .expect("node runs the viewer's model: the test needs node on the PATH");
+    let _ = std::fs::remove_file(&file);
+    assert!(out.status.success(), "the model fails\n{}", String::from_utf8_lossy(&out.stderr));
+    let faults: Vec<String> = serde_json::from_slice(&out.stdout).expect("the check prints JSON");
+    assert!(faults.is_empty(), "{} faults of opened groups:\n{}", faults.len(), faults.join("\n"));
 }

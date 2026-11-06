@@ -5,8 +5,9 @@ name: laws
 # site that breaks fails the run, and the run's summary names the seed and the `ATLAS_SAMPLE_N` that
 # bring the site back on the same revisions. A broken site is a question, about the law, the code or
 # the sampler, and gets an issue before anything is changed. The programs are Atlas itself, as `next`
-# has it, and public programs in each language Atlas reads, each at a fixed revision so that a site
-# can be asked again; a new revision is a change to this file.
+# has it, and the public programs of the corpus that `laws` reads (`tools/corpus.txt`), in each language
+# Atlas reads, each at a fixed revision so that a site can be asked again. A private program of the
+# corpus is never sampled: the report names the sites it asks.
 
 on:
   schedule:
@@ -32,30 +33,27 @@ jobs:
         with:
           ref: next
           path: atlas
-      - name: the programs, at fixed revisions
-        run: |
-          get() { git init -q "programs/$1" && git -C "programs/$1" fetch -q --depth 1 "https://github.com/raoulg/$1" "$2" && git -C "programs/$1" checkout -q FETCH_HEAD; }
-          get goad_toolkit 929d37cc588b27f599b7fbe2e4f5d9733619f897
-          get vectormesh 201a85048dc872bfc3115d09542529302b45a3ec
-          get pluim a5b8c804da33c93b1e36344072adccc3479b5b24
-          get ordash 1b4942228b1b22a91c065e1093a14a106fab9f2b
       # the sampled route pictures run the viewer's model in node, as engine/tests/plans.rs does
       - uses: actions/setup-node@v5
         with:
           node-version: 22
       - uses: dtolnay/rust-toolchain@stable
+      - uses: astral-sh/setup-uv@v10.3.0
+      - name: the corpus, at its revisions
+        run: uv run atlas/tools/perf.py corpus fetch --into programs --for laws
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: atlas
       - name: sample the laws
         working-directory: atlas
         env:
-          ATLAS_SAMPLE_REPOS: ${{ github.workspace }}/atlas:${{ github.workspace }}/programs/goad_toolkit:${{ github.workspace }}/programs/vectormesh:${{ github.workspace }}/programs/pluim:${{ github.workspace }}/programs/ordash
           ATLAS_SAMPLE_SECONDS: ${{ inputs.seconds || '1200' }}
           ATLAS_SAMPLE_SEED: ${{ inputs.seed }}
           ATLAS_SAMPLE_OUT: ${{ github.workspace }}/sample.json
         run: |
           set -o pipefail
+          ATLAS_SAMPLE_REPOS="$GITHUB_WORKSPACE/atlas:$(uv run tools/perf.py corpus paths --into ../programs --for laws)"
+          export ATLAS_SAMPLE_REPOS
           cargo test --release --locked -p atlas-engine --test sample -- --ignored --nocapture 2>&1 | tee "$GITHUB_WORKSPACE/sample.log"
       - name: what was asked
         if: always()

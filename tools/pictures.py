@@ -29,6 +29,10 @@ closed picture did not (a line the open box draws across its frame is one the cl
 moves no box from outside a frame into it, and closing the box (by its frame, a folder by its chip) draws the closed
 picture again. It fails when a box does otherwise.
 
+A sample is as good as its draw, and no number of routes proves the law: with `ATLAS_TOPOLOGY_SECONDS=s` topology takes
+the routes in an order drawn from a seed (`ATLAS_SEED`, else a fresh one, printed first) and stops when s seconds have
+passed, saying how many routes it opened. A route that breaks is asked again with the seed it names.
+
 With `ATLAS_FINE_BUDGET=n` in the environment the page cuts each route's finest plan at about n steps instead of its own
 budget, so that a small program is cut as a large one is: a step beyond the cut stands for its arrow, and opening it
 must refine the picture as any other box does.
@@ -37,9 +41,11 @@ must refine the picture as any other box does.
 import json
 import os
 import pathlib
+import random
 import re
 import subprocess
 import sys
+import time
 
 
 def page_of(atlas: str, repo: str, out: pathlib.Path) -> tuple[pathlib.Path, str, re.Match, dict]:
@@ -112,12 +118,14 @@ TOPOLOGY = """async (spec) => {
     const keys = new Map();
     for (const id of coarse.boxes.keys()) if (/^n:/.test(id)) for (const k of keyOf(id).split("+")) keys.set(k, id);
     const under = k => { let best = null; for (const [kc, id] of keys) if ((k === kc || k.startsWith(kc + "/") || k.startsWith(kc + "~") || k.startsWith(kc + "|")) && (!best || kc.length > best[0].length)) best = [kc, id]; return best && best[1]; };
-    // a file, or a directory below one, lies in the folded box of the directory that holds it, on its side where it splits
+    // a file, or a directory below one, lies in the folded box of the directory that holds it, on its side where it splits;
+    // the twin `X ⇄`, where a place the route uses and changes is changed, lies in the folded box's twin
     const folders = [...coarse.boxes.keys()].filter(b => coarse.dirs.has(b));
     const inFolder = id => {
-      const path = id.slice(7).replace(/~[a-z]+$/, ""), side = id.match(/~([a-z]+)$/)?.[1] || fine.sides.get(id);
+      const twin = id.endsWith(" ⇄") ? " ⇄" : "", plain = twin ? id.slice(0, -2) : id;
+      const path = plain.slice(7).replace(/~[a-z]+$/, ""), side = plain.match(/~([a-z]+)$/)?.[1] || fine.sides.get(plain);
       const at = folders.filter(b => { const d = coarse.dirs.get(b); return path.startsWith(d) && path !== d; });
-      return at.find(b => b.endsWith("~" + side)) || at[0];
+      return at.find(b => b.endsWith("~" + side + twin)) || at.find(b => b.endsWith("~" + side)) || at[0];
     };
     return id => {
       if (coarse.boxes.has(id)) return id;
@@ -246,8 +254,15 @@ def topology(atlas: str, repo: str, out: pathlib.Path, routes: int, opens: int) 
     from playwright.sync_api import sync_playwright
 
     page_file, _, project, graph = page_of(atlas, repo, out)
-    entries = [n["id"] for n in graph["nodes"] if n.get("entry") and n["entry"]["kind"] != "test"][:routes]
-    bad = checked = drawn_more = 0
+    entries = [n["id"] for n in graph["nodes"] if n.get("entry") and n["entry"]["kind"] != "test"]
+    budget = float(os.environ.get("ATLAS_TOPOLOGY_SECONDS") or 0)
+    if budget:
+        seed = int(os.environ.get("ATLAS_SEED") or random.randrange(2**32))
+        print(f"seed {seed}, {budget:g} s, {len(entries)} routes", flush=True)
+        random.Random(seed).shuffle(entries)
+    entries = entries[:routes]
+    deadline = time.monotonic() + budget if budget else float("inf")
+    bad = checked = drawn_more = opened = 0
     with sync_playwright() as p:
         browser = p.chromium.launch(channel="chrome")
         ctx = browser.new_context(viewport={"width": 1400, "height": 900}, reduced_motion="reduce")
@@ -268,6 +283,11 @@ def topology(atlas: str, repo: str, out: pathlib.Path, routes: int, opens: int) 
             return True
 
         for route in entries:
+            if time.monotonic() > deadline:
+                break
+            opened += 1
+            if opened % 10 == 0:
+                print(f"{opened} routes opened", flush=True)
             if not load(route):
                 continue
             plan_faults = tab.evaluate("window.atlasPicture.oracle || []")
@@ -309,7 +329,7 @@ def topology(atlas: str, repo: str, out: pathlib.Path, routes: int, opens: int) 
                                 print("   ", key, x)
         # a focus keeps the rest of the code on either side of it when its package is opened
         tops = [u for _, us in graph.get("flow", {}).get("units", {}).get("tops", []) for u in us][:opens]
-        for u in tops:
+        for u in tops if time.monotonic() <= deadline else []:
             ends = []
             for view in ({"focus": [u]}, {"focus": [u], "open": {"units": [u]}}):
                 tab.goto("about:blank")
@@ -325,7 +345,7 @@ def topology(atlas: str, repo: str, out: pathlib.Path, routes: int, opens: int) 
                 bad += 1
                 print("focus on", u, "· opens it and loses the rest of the code on", "the way in" if ends[0][0] and not ends[1][0] else "the way out")
         browser.close()
-    print(f"{checked} boxes opened in {len(entries)} routes, {bad} that do not refine the picture they open from, {drawn_more} that draw a line more than the closed box did")
+    print(f"{checked} boxes opened in {opened} of {len(entries)} routes, {bad} that do not refine the picture they open from, {drawn_more} that draw a line more than the closed box did", flush=True)
     return bad
 
 

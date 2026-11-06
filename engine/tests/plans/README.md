@@ -18,10 +18,15 @@ program's is cut, at the budgets 1, 2 and 3 (`ATLAS_FINE_BUDGET`), where a step 
 and each of its lines counts the fine lines its body draws there, and where each step beyond the cut, opened as the page
 opens it and planned anew, must refine the picture it was cut in; the facts are asked of the finest plan only. The
 overview of every program is asked the same of its own fine plan, the functions with their own arrows, a type as one
-place and the calls between functions: for every set of open packages and parts, each line counts the fine lines it
+place and the calls between functions. Each function's arrow there is its morphism: it takes every type of data the
+function takes and gives every one it makes, whether or not another function of the code makes or takes it. For every
+set of open packages and parts, each line counts the fine lines it
 stands for, a type internal to a closed package draws none, each call goes between the blocks of its ends, opening one
 more box refines the picture, and the picture is a function of the set of open boxes (`overview-packages` holds a type
-internal to a package and one a package makes, takes and hands to another).
+internal to a package, one a package makes, takes and hands to another, and one a function gives back that no
+function takes). The same is asked of the overview without
+the test code, whose fine plan must be the fiber of the one with it, taken on that plan, for every set of open packages
+(`overview-tests` holds, in each language, a store with its tests beside it and a package of tests alone).
 
 ```bash
 cargo test -p atlas-engine --test plans -- --nocapture                              # every program

@@ -174,6 +174,34 @@ names it as Atlas says it everywhere, by its own name (`model::said`).
 nodes and the edges between them.
 **Where.** `design.md` §1, "Fibers".
 
+### A filter: the program without its test code
+**What.** The predicate *test code* on the functions of the graph: a function is test code when it
+is a test (an entry of kind `test`), when a reader marks it as test code (`Node::test`), or when it
+stands in a module that is. Each language says what it compiles or collects only to test: Rust's
+`#[test]`, an item under `#[cfg(test)]` and a crate's `tests/`; pytest's `test_*.py`, `*_test.py`
+and `conftest.py`; a `*.test.ts`, a `*.spec.ts` and what lies below `__tests__`. The readers hold
+it; no project declares it.
+**In Atlas.** The overview is drawn on the fiber where the code is no test code, unless the reader
+keeps the test code (the sight's `tests`). The fiber is the full subgraph on the functions of the
+program: their own arrows, the calls between two of them, the packages and parts that hold a module
+of the program, and of the types and places what those functions make, take and touch. A touch
+whose path its callers make whole is a line where one conjunction of its formula holds (Who makes a
+path whole), read with the test code false: a function that reads the path a test hands it reads
+nothing of the program's there. A package holds tests beside the code they test, so the predicate is
+not saturated by the package quotient (Saturation): the fiber is taken first, on the code, and the
+overview is the quotient of what is left. The default leaves the test code out because the overview
+answers what the program does, and test code is not the program: Cargo builds it only to test the
+crate, pytest collects it, and a test is a way in from outside the program (the principles' reading).
+The test code stays in the graph: its tests are routes of their own, and one click keeps it.
+**Where.** `testCode` and `overviewBase` (`kept`, `whole`) in `viewer/plan.js`; the principles'
+`test` in `principles.rs`, the same predicate; the readers: `rust/passes.rs` (`cfg_test`),
+`rust.rs`, `python.rs` with `knowledge::python_test_file`, `typescript.rs` with
+`knowledge::TYPESCRIPT_TEST_FILES`. Held by `engine/tests/plans.rs`
+(`every_package_view_is_the_image_of_its_plan`: the fine plan without the test code is the fiber,
+taken on the plan, of the one with it, and every picture is the image of that fiber, for every set
+of open packages; `test_code_cuts_a_package_in_two`: the counterexample to taking the quotient
+first, in each language), on `engine/tests/plans/overview-tests`; issue #400.
+
 ### Coequalizer: a quotient
 **What.** A coequalizer identifies what an equivalence relates.
 **In Atlas.** Zooming out identifies the nodes of a class (by base class, by package, by
@@ -322,6 +350,24 @@ is one in the same way, by what it serves: a set of methods at a path. `methods=
 `LISTING_ENTRIES`); the pairs `python/paths`, `places`, `kept`, `workbench`, `unset`, `opened`, `twice` (#324), `trees`
 (#325, #345) and `keys` (#352).
 
+### A function's return is its summary
+**What.** What a function gives back is a term of its parameters, the same for every caller: its summary, the union of
+the terms its `return`s evaluate to in its own frame. A call gives the summary with each parameter replaced by the term
+the call hands it, and substitution composes: the summary of `g(f(x))` is `g`'s summary with `f`'s written in, which is
+the term the two bodies make written as one expression. So how the code is factored moves no place: a path built through
+a chain of helpers is the path built in place. The same holds for every expression written in a frame other than the one
+that reads it: the value a constructor gives a field (a term of the constructor's parameters, which its callers complete),
+a parameter's default, a constant a module keeps. A reader follows one frame's own expression to a bound of its own; a
+value another frame gives is that frame's summary, followed from that frame's start, so the bound is a property of one
+expression and never of how many functions a value passes through. A call back into a function whose summary is being
+made (a recursion of returns) gives a value not followed there, a hole: the least fixpoint of a return through its own
+function is not a term of the algebra (`root(p) = p ∪ root(p/..)` is every ancestor of `p`), and Atlas does not guess it.
+**In Atlas.** A function's summary is made once per reading, the first time a call needs it, and every call writes into
+it; reading a program costs each function's returns once, never once per caller.
+**Where.** `paths.rs` (`Summaries`, `applied`), the readers' `paths.rs` (`Eval::handed_to` in Rust and TypeScript,
+`Eval::given` in Python; the fields, defaults and constants each reads); the law `a_path_through_helpers_is_the_path_in_place`
+(`engine/tests/common/mod.rs`, held in `pairs_python`, `pairs_rust` and `pairs_typescript`) (#396).
+
 ### Places by the type that holds them
 **What.** A quotient of the places by the program's type whose code builds each place's path: the
 type a value of which holds its root (its field, `self.root`, also of a value whose type the code
@@ -338,7 +384,8 @@ and their terms are the same with it closed or open, and two programs that keep 
 one through a type and one through bare paths, keep the same places (isomorphic is the same);
 only the first draws the group, since only its code says the files belong together.
 **Where.** `paths.rs` (`place_calls`, the holder of a touch), `model.rs` (`Touch::holder`),
-`flow.rs` (`Touch::place`, its coarse place), `index.html` (the storage quotient); the pair
+`flow.rs` (`Touch::place`, its coarse place), `index.html` (the storage quotient), `plan.js` (`foldGroups`: an opened
+group's places as the disk folds them); the pair
 `workbench`.
 
 ### A door keeps its place
@@ -937,9 +984,10 @@ type, drawn once. `F₀` is the graph of generators:
   own code does, not what it reaches through another package), in the package that holds it, the
   smallest the overview opens to (a module); its frames are the code's hierarchy, parts, packages and
   subpackages;
-- a type of data that the code both makes and takes is one place, from each function that makes it
-  (gives it back, builds it, changes it) to each that takes it; its home is the smallest package that
-  holds all of them;
+- a type of data that the code makes or takes is one place, from each function that makes it (gives
+  it back, builds it, changes it) to each that takes it: a function's codomain is what it gives back
+  (sentence 2), whether or not another function of the code takes it. Its home is the smallest package
+  that holds all of them, so a type no other package uses is internal to the one that uses it;
 - every place of the world is at its concrete place, from or to each function whose own code touches
   it; between parts, a route served over HTTP comes in through its part's place and a request to
   another part's routes goes out to that part's;
@@ -954,7 +1002,10 @@ lines it stands for, all of them its own. A call goes from the caller's block to
 internal to a block that holds both. So a package that makes a type another package takes, and takes
 it itself, draws both lines: the line into it is the image of its own taking, and a picture without
 it would gain the line when the package is opened. A closed package with no line still stands, so
-that it can be opened.
+that it can be opened. Without the test code, `F₀` is built on the fiber of the code where it is no
+test code (A filter: the program without its test code), and is the fiber of the `F₀` with it: each
+line of a touch carries the formula of who makes its path whole, so the fiber can be taken on the
+plan too, and both ways give one plan.
 
 On the image the page then does only what is a quotient of `F` or a way of drawing it: the merge of
 siblings, the storage quotient and the fold (above); a value with no name and no type of the code's
@@ -974,7 +1025,7 @@ Each law is then a theorem of the construction, or it is not yet, and says which
 | Reading | the own arrow of an opened step is its border | `topology` |
 | Endpoints | every image of a place or an occurrence is a box | `pictures.py walk` |
 | Across the cut | a cut step's arrow is the image of its body, made by the same construction (`cutArrow`) | `plans.rs` at the budgets 1, 2 and 3 (`ATLAS_FINE_BUDGET`), which cut the small programs as a large one is cut: each line of a cut step counts the fine lines its body draws there, and each cut step of the closed picture, opened and planned anew, refines the picture it was cut in (`cutOpenings` in `plans.mjs`); at the same budgets a route whose body, unfolded, has 2^40 occurrences, which only an arrow made without unfolding the body can plan (`a_step_beyond_the_cut_is_made_without_unfolding_its_body`); `topology` with a small budget |
-| The overview | `F₀/q` maps onto `F₀/q′` along the blocks, as a route's pictures do, the calls a channel among them | the oracle; `plans.rs` (`every_package_view_is_the_image_of_its_plan`), for every set of open packages and parts of every program: each line counts the fine lines it stands for and none is reached, a type internal to a closed package draws none, each call goes between the blocks of its ends, and the picture is a function of the set of open boxes |
+| The overview | `F₀/q` maps onto `F₀/q′` along the blocks, as a route's pictures do, the calls a channel among them | the oracle; `plans.rs` (`every_package_view_is_the_image_of_its_plan`), for every set of open packages and parts of every program: each line counts the fine lines it stands for and none is reached, a type internal to a closed package draws none, each call goes between the blocks of its ends, and the picture is a function of the set of open boxes; all of it again without the test code, whose plan is the fiber of the plan with it |
 
 The oracle holds the pictures to one another, not to the program. Whether `F` says what the code
 does is a test of its own, `engine/tests/plans.rs`: beside a small program a `.plan` file writes down
@@ -1005,7 +1056,10 @@ locals pairs (`common::a_recursive_call_takes_what_its_call_hands_it`, `common::
 **What.** A set is saturated by an equivalence when it never cuts a class in two.
 **In Atlas.** A filter and a quotient commute exactly when the filter's predicate is saturated by
 the quotient's equivalence. Otherwise the order of a view is meaning, and Atlas takes the filter
-first, so the reader decides what exists before the quotient decides how it groups. A type picked
+first, so the reader decides what exists before the quotient decides how it groups. Test code is
+such a predicate: a package holds tests beside the code they test, so the overview without the test
+code is the quotient of the fiber, and a package that holds both is a box both overviews draw with
+other lines (A filter: the program without its test code). A type picked
 in the Type lattice is the set of its values, the type and every type below it (a class below its base, a type
 below the family `kind` puts it in, a shape below its rank family: the lattice draws both orders as one), and the Flowchart
 lights its fiber in a route: a box is lit by what it is, so a closed family the pick cuts in two
@@ -1099,16 +1153,24 @@ after a run where the rank is open (`_ _`, `... _`), is an upper bound of it: ev
 **In Atlas.** Each shape the code writes is a type of its own, named by its shape: two names are two variables, so
 `batch dim` and `batch ndim` are two types, and so are `Float[..]` and `Int[..]`. A shape stands in its rank family
 as a subclass stands in its base (Coequalizer: a quotient), where the program's types hold two shapes of that rank:
-closed, `Float Tensor · 2D` stands for the rank-2 float tensors the picture holds (`· ≥1D` where the rank is open);
+closed, `Float Tensor · 2D` stands for the rank-2 float tensors the picture holds (`· ≥1D` where the rank is open,
+`· any rank` where no axis is promised);
 opened, it is a frame around the shapes themselves. The family is named by its dtype, array type and rank, never in
 the annotation's own notation: `Float[Tensor, _ _]` would read as a type the code wrote, and a box that says what the
-code does not is a guess. A shape the code writes as `_ _` is a member of its family like any other. The family is a
+code does not is a guess. A shape the code writes as `_ _` is a member of its family like any other. A run alone
+(`...`) promises no axis, and its notation says nothing a reader needs: it is named as what it says,
+`Float Tensor · any rank`, whether or not a family holds it. The family is a
 quotient of the picture, never a fact of the graph:
 the shapes, the steps and their lines are the same with it closed or open. The preorder is what an override keeps
 (Behavioural subtyping); a family is never ordered above another in the picture, since the ranks are no base the
-code names. Names are not unified across axes, so `batch batch` is read as `batch _`.
-**Where.** `shapes.rs` (`Array`, `Axis`, `Rank`, `family_id`), `families.rs` (the rank as a kind), principle
-`overrides` (`Array::fits`); the pair `shapes/python`.
+code names. Names are not unified across axes, so `batch batch` is read as `batch _`. A shape is the type of the value
+on a wire as well as of a signature, though the type checker reads it as its array type alone (jaxtyping tells it
+`Float[Tensor, "batch dim"]` is a `Tensor`): a name holds the shape its parameter or its annotated assignment declares,
+and a call of the code's own function gives the shape that function returns, or, unpacked, the part of the tuple it
+returns. The declared shape refines the checker's type and stands for it only where that type is its array type.
+**Where.** `shapes.rs` (`Array`, `Axis`, `Rank`, `family_id`, `name`), `families.rs` (the rank as a kind), principle
+`overrides` (`Array::fits`); on wires `python/body.rs` (`Seen::declared_shape`) and `python/passes.rs`
+(`shaped_returns`); the pairs `shapes/python` and `modules/python`.
 
 ### Method resolution order
 **What.** A linear extension of the order of inheritance: one sequence of a class and its
@@ -1139,10 +1201,18 @@ name `Plain.show()`) is of that class alone; a declared one (a parameter, an ann
 may be that class or any below it. A Rust trait is below its supertraits (`trait Block: Named`), so a value of it
 runs their methods along its order. A call through a trait (`Language::parse(&words, text)`) names no class: the
 type it runs on is the value's it is handed first, as in `words.parse(text)`, which is the same call written another
-way.
+way. Calling an instance (`head(x)`) runs a method of its class on it, and is that method called on it
+(`head.__call__(x)`), the same call written another way: the value called is the value it runs on. Which method is
+the first `__call__` along the order, unless a library's class says otherwise: torch's `Module` runs `forward`, so a
+call of a module runs the first `forward` along its class's order that comes before `Module` (`head(x)` is
+`head.forward(x)`), and a class before `Module` that defines `__call__` itself is called through that. The library's
+word is a table (`knowledge::PYTHON_CALL_RUNS`), never a rule for every `__call__`: a class no such library class is
+above is called through its `__call__`, whatever else it names `forward`.
 **Where.** `model::linearization`, `model::initializer_along`; `principles.rs` (`Index::mro`),
 `builder.rs` (`family`, `method_of`, `initializer_of`), `flow.rs` (`method_on`, `method_after`,
 `built_from`, `Step::named`, `Ix::step_of`, `Ix::runs_below`, `Runs`: what a call runs, asked by the route and by the passes that settle parameters and errors);
+the method a called instance runs in `pytypes.rs` (`Reader::runs_on_call`, `By::Runs`) and its receiver in `body.rs`
+(`Step::called`); the pair `modules/python`;
 Rust's supertraits in `rust/passes.rs` (`collect_impls`), its unit structs and calls through a trait in `rust/body.rs`
 (`Body::unit_struct`, `Body::on_first`).
 

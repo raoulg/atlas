@@ -869,6 +869,21 @@ pub fn shaped(id: &str) -> Option<&str> {
     SHAPED_ARRAYS.iter().find_map(|p| crate::model::ext::path(id)?.strip_prefix(p)?.strip_prefix('.'))
 }
 
+/// Library classes whose instances, when called, run another method of theirs, by the library module
+/// ty finds the class in (or one above it), the class's name and the method: torch's `Module.__call__`
+/// runs `forward`, so `self.head(x)` is `self.head.forward(x)`. A call of an instance of a subclass
+/// reaches the first such method along the subclass's bases, in their order, that comes before the
+/// library's class; a class on the way that defines `__call__` itself is called as any class is.
+/// An empty table follows no such call.
+pub const PYTHON_CALL_RUNS: &[(&str, &str, &str)] = &[("torch.nn", "Module", "forward")];
+
+/// The method a call of an instance of the library class `class`, which ty finds in the module
+/// `module`, runs (`PYTHON_CALL_RUNS`).
+pub fn python_call_runs(module: &str, class: &str) -> Option<&'static str> {
+    let within = |lib: &str| module == lib || module.strip_prefix(lib).is_some_and(|r| r.starts_with('.'));
+    PYTHON_CALL_RUNS.iter().find(|(lib, c, _)| *c == class && within(lib)).map(|(_, _, m)| *m)
+}
+
 /// Functions that wrap a callback-taking function into one that returns a promise: what they
 /// make is the function they are handed. By package and name.
 pub const PROMISIFIERS: &[(&str, &str)] = &[("util", "promisify")];

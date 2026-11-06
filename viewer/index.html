@@ -746,6 +746,7 @@ const viewData = () => {
   if (V.kind) o.kind = V.kind;
   if (V.part) o.part = V.part;
   if (V.focus.size) o.focus = [...V.focus];
+  if (V.tests) o.tests = true;
   const open = {};
   for (const [k, set] of Object.entries(V.open)) if (set.size) open[k] = [...set];
   if (Object.keys(open).length) o.open = open;
@@ -756,6 +757,7 @@ function setView(o) {
   V.kind = o.kind || null;
   V.part = o.part || null;
   V.focus = new Set(o.focus || []);
+  V.tests = !!o.tests;
   for (const k of Object.keys(V.open)) V.open[k] = new Set((o.open || {})[k] || []);
   entrySel.value = V.route || (V.kind ? "kind:" + V.kind : V.part ? "part:" + V.part : "");
 }
@@ -1012,7 +1014,9 @@ async function renderPlaat(mine) {
     } else {
       const sides = new Set([...F.kids].flatMap(k => [...(places.get(k)?.sides || [])]));
       const glyph = placeGlyph.get(shown[0]);
-      const p = {id: F.id, label: F.label, short: F.label, glyph, kind: "world", toggleGroup: F.group, members: [...F.kids], ...(F.way ? {way: F.way} : {}), ...(DIFF ? {sides} : {})};
+      // closed, a group says how many places it stands for (`Workbench · 7`), so it never reads as the type that keeps them
+      const label = `${F.label} · ${[...F.kids].filter(k => k !== F.id).length}`;
+      const p = {id: F.id, label, short: label, glyph, kind: "world", toggleGroup: F.group, members: [...F.kids], ...(F.way ? {way: F.way} : {}), ...(DIFF ? {sides} : {})};
       placeGlyph.set(p.id, glyph);
       for (const k of F.kids) { worldShown.set(k, p); places.delete(k); }
       places.set(p.id, p);
@@ -1047,6 +1051,13 @@ async function renderPlaat(mine) {
     for (const [d, cs] of classes) for (const [s, ps] of cs) {
       const id = cs.size > 1 ? `w:File:${d}~${s}` : "w:File:" + d, k = cs.size > 1 ? ps.length : dirFold.n.get(d);
       if (standing.has(id) || [...pills.values()].some(P => P.D.has(id) || P.C.has(id))) places.set(id, {id, label: `File(${pathWords(d)}) · ${k}`, short: `${pathWords(d)} · ${k}`, kind: "world", folded: d, ...(cs.size > 1 ? {members: ps.map(p => "w:File:" + p), ...(WAY[s] ? {way: WAY[s]} : {})} : {}), ...(DIFF ? {sides: folded.get(id)} : {})});
+    }
+    // an opened group holds its files as the disk folds them (`foldGroups`)
+    const regrouped = foldGroups(new Map([...worldFrames].map(([id, F]) => [id, F.kids])), [...dirFold.to.keys()].map(p => "w:File:" + p), to, k => places.has(k));
+    for (const [id, kids] of regrouped) {
+      for (const k of worldFrames.get(id).kids) worldParent.delete(k);
+      worldFrames.get(id).kids = kids;
+      for (const k of kids) worldParent.set(k, id);
     }
   }
   // siblings that draw the same lines on the finest plan (the same places, versions and channels) are one pill: a
@@ -1744,6 +1755,14 @@ function crumbs() {
   if (V.kind) chip(`All ${KIND_LABEL[V.kind]}`, () => { V.kind = null; if (!V.route) entrySel.value = ""; });
   if (V.route) chip(entryTitle(V.route), () => { V.route = null; entrySel.value = V.kind ? "kind:" + V.kind : ""; V.open.steps.clear(); });
   if (!V.kind && !V.route && !V.part) C.appendChild(html("span", "none", entries.length ? "all" : "none"));
+  // the overview is the program without its test code, a fiber the reader can let go of; shown where there is test code
+  if (!V.route && !V.kind && !V.focus.size && OWN.some(n => has(n) && testCode(n))) {
+    lbl("code");
+    const b = html("button", V.tests ? "add" : null, V.tests ? "+ without test code" : "without test code ✕");
+    b.title = V.tests ? "leave the test code out: the program alone" : "draw the test code too: tests, test modules and what they touch";
+    b.onclick = () => { V.tests = !V.tests; plaatFit = true; render(); };
+    C.appendChild(b);
+  }
   if (view === "plaat" && pinned.size) { lbl("pinned"); chip(`${pinned.size} ${pinned.size === 1 ? "box" : "boxes"}`, () => pinned.clear()); }
   if (lit) { lbl("lit"); chip(`values of ${typeLabel(lit.pick)}${lit.drawn === 0 ? " · none here" : ""}`, () => { lit = null; }); }
   if (V.open.parts.size && !V.route) { lbl("parts"); for (const p of V.open.parts) chip(p, () => V.open.parts.delete(p)); }
@@ -2090,6 +2109,8 @@ async function jumpTo(n) {
     entrySel.value = V.part ? "part:" + V.part : "";
     plaatFit = true;
   }
+  // a module of test code is found in the overview that keeps the test code
+  if (n.kind === "module" && testCode(n)) V.tests = true;
   if (n.kind === "class" && V.route) {
     if (familyOf(n.id) !== n.id) V.open.families.add(familyOf(n.id));
     await render();

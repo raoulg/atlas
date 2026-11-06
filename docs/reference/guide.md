@@ -26,7 +26,8 @@ Read it from left to right:
 - **On the right** is what the route leaves: the places it writes, and those it reads only to
   check or count what it wrote there. `analyze` leaves little: the `Screen`, where it says which file
   it skipped or could not type, and the globals of ruff_db's panic handler, which it sets to catch a
-  panic inside ty, so that one file's fault leaves that file untyped and the rest is read. A place one step writes and a later step reads stands
+  panic inside ty, so that one file's fault leaves that file untyped and the rest is read; the `CLOCK` its
+  stages are timed on (`--timings`), and the index of the trees it parsed, `INDEXED`, which it keeps and reads again. A place one step writes and a later step reads stands
   between the two, inside the step that runs both, as the value between two arrows does. A
   place the route uses and also changes stands twice, `from X ⇄` on the left and `into X ⇄` on
   the right; ⇄ goes from the one to the other. A line marked `?` goes to a place the code does

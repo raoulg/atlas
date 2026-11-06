@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 336" role="img" aria-label="Calling a torch module and calling its forward are one call: from batch 256, self.head(z) and self.head.forward(z) both reach batch 47 through one step, Head.forward. Handing the module on, print(model), passes it as a value to the screen; it does not run Fusion.forward.">
+<defs><marker id="bd-k" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" style="fill:var(--key)"/></marker><marker id="bd-g" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" style="fill:var(--ink-3)"/></marker><marker id="bd-d" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" style="fill:var(--del)"/></marker></defs>
+<text x="30" y="34" style="font-family:var(--sans);font-size:16px;fill:var(--ink);text-anchor:start;font-weight:600">called: it runs its forward</text>
+<rect x="40" y="140" width="116" height="36" rx="3" style="fill:var(--panel);stroke:var(--ink-3);stroke-width:1.4"/><rect x="40" y="140" width="4" height="36" style="fill:var(--ink-3)"/><text x="100.0" y="163.0" style="font-family:var(--mono);font-size:14px;fill:var(--ink);text-anchor:middle">batch 256</text>
+<rect x="330" y="140" width="106" height="36" rx="3" style="fill:var(--panel);stroke:var(--ink-3);stroke-width:1.4"/><rect x="330" y="140" width="4" height="36" style="fill:var(--ink-3)"/><text x="385.0" y="163.0" style="font-family:var(--mono);font-size:14px;fill:var(--ink);text-anchor:middle">batch 47</text>
+<path d="M156,150 C210,78 280,78 328,150" style="fill:none;stroke:var(--key);stroke-width:2" marker-end="url(#bd-k)"/>
+<path d="M156,166 C210,238 280,238 328,166" style="fill:none;stroke:var(--key);stroke-width:2" marker-end="url(#bd-k)"/>
+<text x="242" y="82" style="font-family:var(--mono);font-size:14px;fill:var(--key);text-anchor:middle;font-weight:600">self.head(z)</text>
+<text x="242" y="244" style="font-family:var(--mono);font-size:14px;fill:var(--key);text-anchor:middle;font-weight:600">self.head.forward(z)</text>
+<text x="242" y="165" style="font-family:var(--sans);font-size:30px;fill:var(--key);text-anchor:middle;font-weight:600">=</text>
+<text x="30" y="286" style="font-family:var(--sans);font-size:14px;fill:var(--ink-2);text-anchor:start">two ways of writing one call: one step, Head.forward</text>
+<line x1="480" y1="20" x2="480" y2="296" style="stroke:var(--line);stroke-width:1.5"/>
+<text x="510" y="34" style="font-family:var(--sans);font-size:16px;fill:var(--ink);text-anchor:start;font-weight:600">handed on: it is a value</text>
+<rect x="520" y="140" width="92" height="36" rx="3" style="fill:var(--panel);stroke:var(--ink-3);stroke-width:1.4"/><rect x="520" y="140" width="4" height="36" style="fill:var(--ink-3)"/><text x="568.0" y="163.0" style="font-family:var(--mono);font-size:14px;fill:var(--ink);text-anchor:middle">model</text>
+<rect x="668" y="140" width="86" height="36" rx="18.0" style="fill:var(--ink-3);fill-opacity:0.12;stroke:var(--ink-3);stroke-width:1.8"/><text x="711.0" y="163.0" style="font-family:var(--mono);font-size:14px;fill:var(--ink-3);text-anchor:middle;font-weight:600">print</text>
+<rect x="810" y="140" width="110" height="36" rx="3" style="fill:var(--key);fill-opacity:0.10;stroke:var(--ink-3);stroke-width:1.4"/>
+<text x="865" y="163" style="font-family:var(--sans);font-size:14px;fill:var(--ink);text-anchor:middle">Screen</text>
+<path d="M612,158 L666,158" style="fill:none;stroke:var(--ink-3);stroke-width:2" marker-end="url(#bd-g)"/>
+<path d="M754,158 L808,158" style="fill:none;stroke:var(--ink-3);stroke-width:2" marker-end="url(#bd-g)"/>
+<rect x="668" y="66" width="152" height="36" rx="18.0" style="fill:none;stroke:var(--del);stroke-width:1.8;stroke-dasharray:6 4"/><text x="744.0" y="89.0" style="font-family:var(--mono);font-size:14px;fill:var(--del);text-anchor:middle;font-weight:600">Fusion.forward</text>
+<path d="M566,140 C566,100 600,84 666,84" style="fill:none;stroke:var(--del);stroke-width:2;stroke-dasharray:6 4" marker-end="url(#bd-d)"/>
+<text x="600" y="104" style="font-family:var(--sans);font-size:26px;fill:var(--del);text-anchor:middle;font-weight:600">≠</text>
+<text x="744" y="226" style="font-family:var(--mono);font-size:14px;fill:var(--ink);text-anchor:middle">print(model)</text>
+<text x="510" y="286" style="font-family:var(--sans);font-size:14px;fill:var(--ink-2);text-anchor:start">printed, saved or copied: no step into forward</text>
+<text x="30" y="322" style="font-family:var(--sans);font-size:13px;fill:var(--ink-3);text-anchor:start">teal: a step that runs · grey: a value, and what is done with it · red dashed: a run that does not happen</text>
+</svg>

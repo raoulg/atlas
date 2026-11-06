@@ -3,11 +3,12 @@ name: perf
 # How fast `next` builds, reads and tests, measured on one runner type and kept as a series per measure on
 # the branch `perf-data` (`history.jsonl` and a README of charts). Every night: the release build timed
 # clean, `atlas-code view` cold, warm and after a file no reader asks about, and `atlas-code serve` from a cold
-# start, on Atlas itself and on the programs `laws.yml` reads, each test binary on its own. A measure past its baseline is suspect, and says nothing yet: the same run builds the last
+# start, on Atlas itself and on the corpus (`tools/corpus.txt`), each test binary on its own. A measure past its baseline is suspect, and says nothing yet: the same run builds the last
 # commit that lay within it and measures the two interleaved on this runner. Only what that reproduces is
 # reported, graded by its size: a small slowdown comments on the tracking issue, a large one is bisected on
 # the spot and opens an urgent issue that names its landing. Every week the same comparison is made between
-# `next` and the last release. By hand, any range can be bisected for a measure, and any two commits compared,
+# `next` and the last release, on the measures of a release's table; by hand, between the last release and any
+# ref (`to`), for a release's notes. By hand, any range can be bisected for a measure, and any two commits compared,
 # with where each reading's time went, also on commits of Atlas that both read. A run that cannot measure
 # fails; nothing here runs on a push or a pull request. `tools/perf.py` measures and judges;
 # `docs/reference/performance.md` says how.
@@ -26,7 +27,7 @@ on:
       from:
         description: "bisect: the commit it was fast at; compare: A"
       to:
-        description: "bisect: the commit it is slow at (default: next); compare: B (default: the dispatched ref)"
+        description: "bisect: the commit it is slow at (default: next); compare: B (default: the dispatched ref); weekly: the ref measured against the last release (default: origin/next)"
       measure:
         description: "bisect: the measure, as perf-data names it (read/atlas/cold/seconds); compare: the measures, separated by spaces"
       subject:
@@ -43,13 +44,8 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  # the subjects of a reproduction: Atlas in each commit's own tree, the programs as fetched
-  SUBJECTS: >-
-    --subject atlas=.
-    --subject goad_toolkit=${{ github.workspace }}/programs/goad_toolkit
-    --subject vectormesh=${{ github.workspace }}/programs/vectormesh
-    --subject pluim=${{ github.workspace }}/programs/pluim
-    --subject ordash=${{ github.workspace }}/programs/ordash
+  # the subjects of a reproduction: Atlas in each commit's own tree, the corpus as fetched
+  SUBJECTS: --subject atlas=. --programs ${{ github.workspace }}/programs
 
 jobs:
   nightly:
@@ -75,19 +71,20 @@ jobs:
           else
             git worktree add --orphan -b perf-data "$GITHUB_WORKSPACE/data"
           fi
-      - name: the programs, at the revisions laws.yml reads
-        run: |
-          get() { git init -q "programs/$1" && git -C "programs/$1" fetch -q --depth 1 "https://github.com/raoulg/$1" "$2" && git -C "programs/$1" checkout -q FETCH_HEAD; }
-          get goad_toolkit 929d37cc588b27f599b7fbe2e4f5d9733619f897
-          get vectormesh 201a85048dc872bfc3115d09542529302b45a3ec
-          get pluim a5b8c804da33c93b1e36344072adccc3479b5b24
-          get ordash 1b4942228b1b22a91c065e1093a14a106fab9f2b
+      # two commits built with their tests do not fit beside the runner's preinstalled toolchains
+      - name: room on the disk
+        run: sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL && df -h /
       # engine/tests/plans.rs runs the viewer's model in node
       - uses: actions/setup-node@v5
         with:
           node-version: 22
       - uses: dtolnay/rust-toolchain@stable
       - uses: astral-sh/setup-uv@v10.3.0
+      - name: the corpus, at its revisions
+        env:
+          CORPUS_TOKEN: ${{ secrets.CORPUS_TOKEN }}
+          CORPUS_PRIVATE: ${{ secrets.CORPUS_PRIVATE }}
+        run: uv run atlas/tools/perf.py corpus fetch --into programs --for perf
       - name: the dependencies, fetched before the build is timed
         working-directory: atlas
         run: cargo fetch --locked
@@ -103,12 +100,7 @@ jobs:
       - name: the readings, cold, warm and after a file no reader asks about, and serve from a cold start
         working-directory: atlas
         run: |
-          uv run tools/perf.py read --atlas "$RUNNER_TEMP/atlas-code" --out "$RUN" \
-            --subject atlas=. \
-            --subject goad_toolkit=../programs/goad_toolkit \
-            --subject vectormesh=../programs/vectormesh \
-            --subject pluim=../programs/pluim \
-            --subject ordash=../programs/ordash
+          uv run tools/perf.py read --atlas "$RUNNER_TEMP/atlas-code" --out "$RUN" --subject atlas=. --programs ../programs
       # the test binaries' build is not measured, so it may come from the cache
       - uses: Swatinem/rust-cache@v2
         with:
@@ -141,7 +133,9 @@ jobs:
             --url "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" \
             --data-url "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/tree/perf-data" \
             --summary "$GITHUB_STEP_SUMMARY" --alert "$GITHUB_WORKSPACE/alert.md"
+      # a night is kept even where its reproduction failed: the series holds what was measured
       - name: the series, kept
+        if: always() && steps.record.outcome == 'success'
         working-directory: data
         run: |
           git config user.name "atlas perf"
@@ -185,7 +179,7 @@ jobs:
   weekly:
     if: (github.event_name == 'schedule' && github.event.schedule == '30 5 * * 1') || (github.event_name == 'workflow_dispatch' && inputs.mode == 'weekly')
     runs-on: ubuntu-24.04
-    timeout-minutes: 150
+    timeout-minutes: 240
     steps:
       # the tool is next's on the schedule and the dispatched ref's by hand, so that a measure is measured
       # before it lands; what is measured is next either way, built in a worktree of its own
@@ -194,27 +188,34 @@ jobs:
           ref: ${{ github.event_name == 'workflow_dispatch' && github.sha || 'next' }}
           path: atlas
           fetch-depth: 0
-      - name: the programs, at the revisions laws.yml reads
-        run: |
-          get() { git init -q "programs/$1" && git -C "programs/$1" fetch -q --depth 1 "https://github.com/raoulg/$1" "$2" && git -C "programs/$1" checkout -q FETCH_HEAD; }
-          get goad_toolkit 929d37cc588b27f599b7fbe2e4f5d9733619f897
-          get vectormesh 201a85048dc872bfc3115d09542529302b45a3ec
-          get pluim a5b8c804da33c93b1e36344072adccc3479b5b24
-          get ordash 1b4942228b1b22a91c065e1093a14a106fab9f2b
+      # two commits built with their tests do not fit beside the runner's preinstalled toolchains
+      - name: room on the disk
+        run: sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL && df -h /
+      # the test suite is a measure: engine/tests/plans.rs runs the viewer's model in node
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
       - uses: dtolnay/rust-toolchain@stable
       - uses: astral-sh/setup-uv@v10.3.0
+      - name: the corpus, at its revisions
+        env:
+          CORPUS_TOKEN: ${{ secrets.CORPUS_TOKEN }}
+          CORPUS_PRIVATE: ${{ secrets.CORPUS_PRIVATE }}
+        run: uv run atlas/tools/perf.py corpus fetch --into programs --for perf
+      # the release's table (`--table`: every program of the corpus, the build, the tests, and the cards), and Atlas
+      # reading itself at the commit measured
       - name: next against the last release
         working-directory: atlas
+        env:
+          TO: ${{ github.event_name == 'workflow_dispatch' && inputs.to || '' }}
         run: |
-          release=$(git tag -l 'v*' --sort=-v:refname | head -1)
+          release=$(git tag -l 'v*' --sort=-v:refname | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | head -1)
           echo "RELEASE=$release" >> "$GITHUB_ENV"
           # shellcheck disable=SC2086 # $SUBJECTS splits into its --subject arguments
-          uv run tools/perf.py reproduce --repo . --a "$release" --b origin/next $SUBJECTS \
+          uv run tools/perf.py reproduce --repo . --a "$release" --b "${TO:-origin/next}" $SUBJECTS --table \
             --measure read/atlas/cold/seconds --measure read/atlas/warm/seconds --measure read/atlas/cold/peak_rss \
             --measure read/atlas/unasked/seconds \
             --measure read/atlas/serve/seconds --measure read/atlas/serve/first/seconds --measure read/atlas/serve/redraw/seconds \
-            --measure read/vectormesh/cold/seconds --measure read/goad_toolkit/cold/seconds \
-            --measure build/release/seconds \
             --out "$GITHUB_WORKSPACE/weekly.json"
           uv run tools/perf.py conclude --reproduced "$GITHUB_WORKSPACE/weekly.json" --release "$release" \
             --standing "$GITHUB_WORKSPACE/standing.md"
@@ -260,18 +261,19 @@ jobs:
           ref: next
           path: atlas
           fetch-depth: 0
-      - name: the programs, at the revisions laws.yml reads
-        run: |
-          get() { git init -q "programs/$1" && git -C "programs/$1" fetch -q --depth 1 "https://github.com/raoulg/$1" "$2" && git -C "programs/$1" checkout -q FETCH_HEAD; }
-          get goad_toolkit 929d37cc588b27f599b7fbe2e4f5d9733619f897
-          get vectormesh 201a85048dc872bfc3115d09542529302b45a3ec
-          get pluim a5b8c804da33c93b1e36344072adccc3479b5b24
-          get ordash 1b4942228b1b22a91c065e1093a14a106fab9f2b
+      # two commits built with their tests do not fit beside the runner's preinstalled toolchains
+      - name: room on the disk
+        run: sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL && df -h /
       - uses: actions/setup-node@v5
         with:
           node-version: 22
       - uses: dtolnay/rust-toolchain@stable
       - uses: astral-sh/setup-uv@v10.3.0
+      - name: the corpus, at its revisions
+        env:
+          CORPUS_TOKEN: ${{ secrets.CORPUS_TOKEN }}
+          CORPUS_PRIVATE: ${{ secrets.CORPUS_PRIVATE }}
+        run: uv run atlas/tools/perf.py corpus fetch --into programs --for perf
       - name: bisected
         working-directory: atlas
         run: |
@@ -319,15 +321,16 @@ jobs:
           ref: ${{ github.sha }}
           path: atlas
           fetch-depth: 0
-      - name: the programs, at the revisions laws.yml reads
-        run: |
-          get() { git init -q "programs/$1" && git -C "programs/$1" fetch -q --depth 1 "https://github.com/raoulg/$1" "$2" && git -C "programs/$1" checkout -q FETCH_HEAD; }
-          get goad_toolkit 929d37cc588b27f599b7fbe2e4f5d9733619f897
-          get vectormesh 201a85048dc872bfc3115d09542529302b45a3ec
-          get pluim a5b8c804da33c93b1e36344072adccc3479b5b24
-          get ordash 1b4942228b1b22a91c065e1093a14a106fab9f2b
+      # two commits built with their tests do not fit beside the runner's preinstalled toolchains
+      - name: room on the disk
+        run: sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL && df -h /
       - uses: dtolnay/rust-toolchain@stable
       - uses: astral-sh/setup-uv@v10.3.0
+      - name: the corpus, at its revisions
+        env:
+          CORPUS_TOKEN: ${{ secrets.CORPUS_TOKEN }}
+          CORPUS_PRIVATE: ${{ secrets.CORPUS_PRIVATE }}
+        run: uv run atlas/tools/perf.py corpus fetch --into programs --for perf
       - name: compared
         working-directory: atlas
         run: |

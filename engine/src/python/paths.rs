@@ -13,9 +13,13 @@ use crate::pytypes::{FileArg, Param, Target, Types};
 use crate::tree::{beneath, named_children, path_str, text, unquote, walk};
 
 use crate::knowledge::{self, PathAttribute, PathFn, PathMethod};
-use crate::paths::{bound as named_by, cross, each, environment_named, held_by, hole, lit, or_else, parent, substitute, union};
+use crate::paths::{applied, bound as named_by, cross, each, environment_named, held_by, hole, lit, or_else, parent, union, Summaries};
 pub(super) use crate::paths::{Built, Seg};
 
+/// How deep one frame's own expression is followed: a function's, a parameter's default, the value
+/// a function gives an attribute, a module's. What another frame gives is that frame's summary
+/// (`Summaries`), followed from its own start, so a path built through helpers is followed as far as
+/// the same path written in place.
 const DEPTH: u32 = 40;
 
 /// Evaluates paths in the modules of one project.
@@ -23,6 +27,9 @@ pub(super) struct Eval<'a> {
     by_file: HashMap<String, &'a Module>,
     types: &'a Types,
     root: &'a Path,
+    /// What each expression read in a frame of its own gives (a function's returns, a parameter's default, the value a
+    /// function gives an attribute, a constant), a term of that frame's parameters, made once in that frame.
+    summaries: Summaries,
 }
 
 /// Where an expression is evaluated: its module, and the function it is in with that function's
@@ -49,7 +56,7 @@ impl<'a, 't> At<'a, 't> {
 
 impl<'a> Eval<'a> {
     pub fn new(modules: &'a IndexMap<String, Module>, types: &'a Types, root: &'a Path) -> Self {
-        Eval { by_file: modules.values().map(|m| (path_str(&m.path), m)).collect(), types, root }
+        Eval { by_file: modules.values().map(|m| (path_str(&m.path), m)).collect(), types, root, summaries: Summaries::default() }
     }
 
     /// The module's file, by its path in the project.
@@ -167,13 +174,17 @@ impl<'a> Eval<'a> {
         let def = m.tree.root_node().descendant_for_byte_range(offset, offset)?.parent().filter(|d| d.kind() == "function_definition")?;
         let declared = parameters(def, &m.src, in_class(def));
         let names: Vec<String> = declared.iter().map(|(n, _)| n.clone()).collect();
-        let inner = At { m, scope: Some(def), params: &names };
-        let returns = walk(def.child_by_field_name("body")?, &["return_statement"])
-            .into_iter()
-            .filter(|r| enclosing_def(*r).map(|d| d.id()) == Some(def.id()));
-        let gives =
-            returns.filter_map(|r| named_children(r).into_iter().next()).fold(vec![], |acc, x| union(acc, self.of(inner, x, depth + 1)));
-        if gives.is_empty() {
+        let summary = self.summaries.of(def.id(), || {
+            let inner = At { m, scope: Some(def), params: &names };
+            let body = def.child_by_field_name("body");
+            let returns = body
+                .map(|b| walk(b, &["return_statement"]))
+                .unwrap_or_default()
+                .into_iter()
+                .filter(|r| enclosing_def(*r).map(|d| d.id()) == Some(def.id()));
+            returns.filter_map(|r| named_children(r).into_iter().next()).fold(vec![], |acc, x| union(acc, self.of(inner, x, 0)))
+        });
+        if summary.is_empty() {
             return None;
         }
         let mut handed: HashMap<String, Vec<Built>> = HashMap::new();
@@ -200,10 +211,10 @@ impl<'a> Eval<'a> {
                 .iter()
                 .find(|(n, _)| n == p)
                 .and_then(|(_, d)| *d)
-                .map(|d| self.of(At { m, scope: None, params: &[] }, d, depth + 1))
+                .map(|d| self.summaries.of(d.id(), || self.of(At { m, scope: None, params: &[] }, d, 0)))
                 .unwrap_or_else(|| vec![hole(p)]),
         };
-        Some(gives.iter().flat_map(|b| substitute(b, value)).collect())
+        Some(applied(&summary, value))
     }
 
     /// The values `e` can have.
@@ -692,25 +703,30 @@ impl<'a> Eval<'a> {
                 match enclosing_def(p).filter(|_| here.scope.is_none()).and_then(|d| function_id(m, d).map(|id| (d, id))) {
                     Some((d, id)) => {
                         let names: Vec<String> = parameters(d, &m.src, in_class(d)).into_iter().map(|(n, _)| n).collect();
-                        let vals = self.of(At { m, scope: Some(d), params: &names }, right, depth + 1);
+                        let vals = self.summaries.of(right.id(), || self.of(At { m, scope: Some(d), params: &names }, right, 0));
                         Some(vals.into_iter().map(|b| held_by(&id, b)).collect())
                     }
                     None => {
-                        // a door made without a place takes the one a later call on it names
-                        if let Some(placed) = self.placed_later(here, right, n, depth) {
-                            return Some(placed);
-                        }
-                        let mut values = self.of(here, right, depth + 1);
-                        // what the same function adds to it afterwards (`x |= {..}`, `x += [..]`)
-                        if let Some(d) = enclosing_def(p) {
-                            for aug in walk(d, &["augmented_assignment"]) {
-                                let same = aug.child_by_field_name("left").map(|l| l.kind() == "identifier" && text(l, &m.src) == name);
-                                if let (Some(true), Some(r)) = (same, aug.child_by_field_name("right")) {
-                                    values = union(values, self.of(here, r, depth + 1));
+                        let value = |depth: u32| {
+                            // a door made without a place takes the one a later call on it names
+                            if let Some(placed) = self.placed_later(here, right, n, depth) {
+                                return placed;
+                            }
+                            let mut values = self.of(here, right, depth + 1);
+                            // what the same function adds to it afterwards (`x |= {..}`, `x += [..]`)
+                            if let Some(d) = enclosing_def(p) {
+                                for aug in walk(d, &["augmented_assignment"]) {
+                                    let same = aug.child_by_field_name("left").map(|l| l.kind() == "identifier" && text(l, &m.src) == name);
+                                    if let (Some(true), Some(r)) = (same, aug.child_by_field_name("right")) {
+                                        values = union(values, self.of(here, r, depth + 1));
+                                    }
                                 }
                             }
-                        }
-                        Some(values)
+                            values
+                        };
+                        // a value the module keeps: made once, in the module's own frame
+                        let kept = here.scope.is_none() && enclosing_def(p).is_none();
+                        Some(if kept { self.summaries.of(right.id(), || value(0)) } else { value(depth) })
                     }
                 }
             }

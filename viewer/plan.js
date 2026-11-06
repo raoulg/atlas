@@ -194,11 +194,11 @@ const langOf = n => (PARTS.find(p => p.id === partOf(n)) || {}).language || D.la
 const partRank = n => Math.max(0, PARTS.findIndex(p => p.id === partOf(n)));
 // what the picture shows, as data: a view. Its fibers keep the part of the code the reader looks at
 // (one route, the routes of one kind, one part, the packages in focus, with the rest of the code
-// quotiented to either side); its opened sets are order ideals of the code's hierarchies, each the
+// quotiented to either side; in the overview, the program without its test code unless `tests` keeps it); its opened sets are order ideals of the code's hierarchies, each the
 // refinement of a quotient: parts into packages, packages into subpackages, steps into their bodies
 // (one call by its path through the route, or every call of a function), families into their
 // members, coarse places into their parts, directories into their files
-const V = {route: null, kind: null, part: null, focus: new Set(), open: {parts: new Set(), units: new Set(), steps: new Set(), functions: new Set(), families: new Set(), places: new Set(), dirs: new Set()}};
+const V = {route: null, kind: null, part: null, focus: new Set(), tests: false, open: {parts: new Set(), units: new Set(), steps: new Set(), functions: new Set(), families: new Set(), places: new Set(), dirs: new Set()}};
 const short = id => id.startsWith(ROOT) ? id.slice(ROOT.length) : id.replace(/^ext:/, "");
 const KG = {imports:"imports", calls:"calls", requests:"calls", instantiates:"calls", takes:"types", returns:"types", has:"types", mutates:"types", variant:"types", inherits:"inherits"};
 
@@ -211,6 +211,9 @@ for (const n of OWN) if (n.kind === "class" || n.kind === "function") { if (!sym
 const out = new Map(), inn = new Map();
 for (const e of D.edges) { if (!out.has(e.src)) out.set(e.src, []); out.get(e.src).push(e); if (!inn.has(e.dst)) inn.set(e.dst, []); inn.get(e.dst).push(e); }
 const modOf = n => n.kind === "module" ? n.id : n.module;
+// test code, as the readers hold it: a test, code a reader marks as test code (a Rust `#[cfg(test)]` item, a crate's
+// `tests/`), or code in a test module (pytest's `test_*.py`, a `*.test.ts`). The same predicate as the principles'
+const testCode = n => !!n && (!!n.test || n.entry?.kind === "test" || !!byId.get(modOf(n))?.test);
 // a box takes the hue of its package: the first level of the code quotiented by module path, the
 // level a part's overview shows; what lies outside the code has no package. The legend names the
 // packages the picture shows.
@@ -568,6 +571,25 @@ function foldDirs(paths) {
     if (at !== p) { to.set(p, at); n.set(at, holds(at)); }
   }
   return {to, n};
+}
+// The members of each opened group of places (the storage quotient, `groups`: a group's id to the places it holds) once the
+// disk folds files into directories (`to`: a place to the box it is drawn as, `files`: every file the fold takes, `drawn`:
+// whether the picture draws a box). An opened group splits into its places, and they fold further into their directories
+// (mathematics.md, "Places by the type that holds them"): a directory stands in the group where every file it folds is one
+// of the group's, and beside it where it folds files of another group or of none, so that every member is a box the
+// picture draws and no box stands in two groups
+function foldGroups(groups, files, to, drawn) {
+  const owner = new Map();
+  for (const [g, ks] of groups) for (const k of ks) owner.set(k, g);
+  const owners = new Map();
+  for (const f of files) {
+    const c = to(f);
+    if (c === f) continue;
+    if (!owners.has(c)) owners.set(c, new Set());
+    owners.get(c).add(owner.get(f) ?? null);
+  }
+  const alone = (c, g) => owners.get(c)?.size === 1 && owners.get(c).has(g);
+  return new Map([...groups].map(([g, ks]) => [g, new Set([...ks].map(k => [k, to(k)]).filter(([k, c]) => drawn(c) && (c === k || alone(c, g))).map(([, c]) => c))]));
 }
 // a path with a pattern in it said in words, from the file up: `{root}/*/*/OW-bestanden/*.xml` is "every *.xml in
 // OW-bestanden/ in each folder two levels into {root}/". A wildcard the code writes is "each" or "every", a hole the
@@ -2182,8 +2204,9 @@ const imageOf = (F, opened, folded, {fineKeys = false} = {}) => {
     if (!free.has(b)) free.set(b, []);
     free.get(b).push(id);
   }
+  // a function of the overview opens to nothing, so what it takes stays drawn apart
   for (const [b, ids] of free) {
-    if (ids.length < 2 || fineKeys) continue;
+    if (ids.length < 2 || fineKeys || F.generators) continue;
     const P = pills.get(b);
     for (const id of ids) { P.D.delete(id); P.Dn?.delete(id); P.Dr?.delete(id); places.delete(id); joined.set(id, b); }
     P.folded = ids.length;
@@ -2332,15 +2355,21 @@ const coarsen = (F, opened = isOpenKey, coarsest = key => key === V.route) => {
 // as one place, what makes it and what takes it sharing it, and the places of the world. Its frames are the code's
 // hierarchy: parts, packages, subpackages, modules. What the reader has open is the map `q`, as on a route: a function goes
 // to its outermost closed package, and a type is internal to a closed package that holds every function that makes or takes
-// it. A call is a line of its own channel, from the caller to the callee
+// it. A call is a line of its own channel, from the caller to the callee.
+// Without the test code (`V.tests` off) `F₀` is built on the fiber of the code where the function is no test code: the
+// functions, packages and parts of the program alone, and of the types and places what they make, take and touch. A
+// package holds test code and ordinary code side by side, so the predicate is not saturated by the package quotient: the
+// fiber is taken first, and what is open is the quotient of what is left
 const overviewOpen = key => (key.startsWith("part:") ? V.open.parts.has(key.slice(5)) : key.startsWith("unit:") ? V.open.units.has(key.slice(5)) : true);
 // the place a part's routes are served at over HTTP: what requests them goes out to it, its routes come in from it
 const httpAt = p => ({id: "w:Web:http:" + p, label: `HTTP(${p})`, short: `HTTP(${p})`, kind: "world"});
 const overviewBase = () => {
   const places = new Map(), pills = new Map(), frames = new Map(), leaves = [];
   const addPlace = p => { if (!places.has(p.id)) places.set(p.id, p); return p.id; };
-  // in one reading of a union, a package is there while code of it is; a level with a single child is passed through
-  const shown = u => !SIDE || MAKEFILES.has(u) || held("u:" + u, n => inUnit(n.id, u));
+  // in one reading of a union, a package is there while code of it is, and without the test code while code of the program
+  // is; a level with a single child is passed through
+  const kept = n => V.tests || !testCode(n);
+  const shown = u => MAKEFILES.has(u) || (!SIDE || held("u:" + u, n => inUnit(n.id, u))) && (V.tests || held("u:" + u + "~program", n => inUnit(n.id, u) && kept(n)));
   const units = (us, part, parent) => {
     for (const u of us.filter(shown)) {
       const fid = "n:unit:" + u, below = u.endsWith("$") || MAKEFILES.has(u) ? [] : unitsBelow(u);
@@ -2351,7 +2380,7 @@ const overviewBase = () => {
   };
   const parts = multi && !V.part;
   if (parts) {
-    for (const p of PARTS.filter(p => !SIDE || held("p:" + p.id, n => partOf(n) === p.id))) {
+    for (const p of PARTS.filter(p => (!SIDE || held("p:" + p.id, n => partOf(n) === p.id)) && (V.tests || held("p:" + p.id + "~program", n => partOf(n) === p.id && kept(n))))) {
       const fid = "n:part:" + p.id;
       frames.set(fid, {id: fid, step: "part:" + p.id, parent: null, hue: null, title: stepName("part:" + p.id)});
       units(topUnits(p.id), p.id, fid);
@@ -2360,27 +2389,39 @@ const overviewBase = () => {
   // each function of the code in the package that holds it, the smallest the overview opens to
   const leafOf = new Map();
   for (const n of OWN) {
-    if (!has(n)) continue;
+    if (!has(n) || !kept(n)) continue;
     const l = leaves.find(([u, p]) => partOf(n) === p && inUnit(n.id, u));
     if (l) leafOf.set(n.id, l[2]);
   }
   const pillOf = id => {
-    if (!pills.has("n:" + id)) pills.set("n:" + id, {id: "n:" + id, steps: [id], D: new Map(), C: new Map(), goes: new Map(), parent: leafOf.get(id), hue: null});
+    if (!pills.has("n:" + id)) pills.set("n:" + id, {id: "n:" + id, steps: [id], D: new Map(), C: new Map(), goes: new Map(), whole: new Map(), parent: leafOf.get(id), hue: null});
     return pills.get("n:" + id);
   };
-  // the places a function's own code touches, but where the code only makes sure of a place the routes read or write
-  const {found, updated, served} = contentOf(overviewEntries().map(e => e.id), `${SIDE}|null|null|false`);
+  // the places a function's own code touches, but where the code only makes sure of a place the routes read or write. A
+  // touch whose path its callers make whole is there where one conjunction of them is (`Touch::by`, a monotone formula):
+  // each line keeps its formula (`whole`, none where the touch's own code makes the path whole), and without the test code
+  // the formula is read with the test code false
+  const {found, updated, served} = contentOf(overviewEntries().filter(kept).map(e => e.id), `${SIDE}|null|null|false|${V.tests}`);
+  const conditionsOf = t => (t.by || []).length || (t.users_of || []).length
+    ? [...(t.users_of || []).map(e => [e]), ...(t.by || []).map(f => f.split("&").map(g => (g.startsWith(USERS) ? g.slice(USERS.length) : g)))]
+    : null;
   for (const id of leafOf.keys()) {
     const back = new Set(arrowOf(id)?.own_reads_back || []);
     for (const tc of (byId.get(id).touches || []).filter(has)) {
       if (served(tc) || (isIn(tc) && !tc.shape && back.has(tc.place.id))) continue;
-      const P = pillOf(id);
+      const cs = conditionsOf(tc);
+      if (cs && !cs.some(c => c.every(g => kept(byId.get(g))))) continue;
+      const P = pillOf(id), k = addPlace(worldPlaceOf(tc, true)), w = P.whole.get(k);
       go(P.goes, tc);
-      (isIn(tc) ? P.D : P.C).set(addPlace(worldPlaceOf(tc, true)), false);
+      (isIn(tc) ? P.D : P.C).set(k, false);
+      P.whole.set(k, w === null || !cs ? null : [...(w || []), ...cs]);
     }
   }
-  // a type of data that the code makes and takes is a joint: one place, from each function that makes it (gives it back,
-  // builds it, changes it) to each that takes it. Its home is the smallest package that holds all of them
+  // a type of data that the code makes or takes is one place, from each function that makes it (gives it back, builds
+  // it, changes it) to each that takes it: a function's codomain is what it gives back, whether or not another function
+  // of the code takes it. The picture draws a family as one box, so a type's home is the smallest package that holds
+  // every function that makes or takes a type of its family: a family no other package uses is internal to the package
+  // that uses it, and one that a package makes and another takes crosses the border between them
   const chainOf = fid => { const c = []; for (let f = fid; f; f = frames.get(f)?.parent) c.unshift(f); return c; };
   const homeOf = fids => {
     let common = null;
@@ -2388,11 +2429,16 @@ const overviewBase = () => {
     return common?.length ? common[common.length - 1] : undefined;
   };
   const {makes, takes} = usesOf();
-  for (const [t, ms] of makes) {
+  const used = new Map();
+  for (const t of new Set([...makes.keys(), ...takes.keys()])) {
     if (!isData(t)) continue;
-    const mk = [...ms].filter(x => leafOf.has(x)), tk = [...(takes.get(t) || [])].filter(x => leafOf.has(x));
-    if (!mk.length || !tk.length) continue;
-    const k = addPlace({...typePlace(t), home: homeOf([...mk, ...tk].map(x => leafOf.get(x)))});
+    const mk = [...(makes.get(t) || [])].filter(x => leafOf.has(x)), tk = [...(takes.get(t) || [])].filter(x => leafOf.has(x));
+    if (mk.length || tk.length) used.set(t, [mk, tk]);
+  }
+  const kin = new Map();
+  for (const [t, [mk, tk]] of used) { const f = familyOf(t); if (!kin.has(f)) kin.set(f, []); kin.get(f).push(...mk, ...tk); }
+  for (const [t, [mk, tk]] of used) {
+    const k = addPlace({...typePlace(t), home: homeOf(kin.get(familyOf(t)).map(x => leafOf.get(x)))});
     for (const x of mk) pillOf(x).C.set(k, false);
     for (const x of tk) pillOf(x).D.set(k, false);
   }

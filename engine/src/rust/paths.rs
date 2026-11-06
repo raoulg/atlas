@@ -11,13 +11,15 @@ use tree_sitter::Node as TsNode;
 use super::module::{def_node, expand, path_parts, resolve, resolve_value, shadowed, Module};
 use crate::knowledge::{self, PathFn, PathMethod};
 use crate::model::{ext, Node, NodeKind, Resolved};
-use crate::paths::{bound as named_by, cross, each, environment_named, held_by, hole, lit, or_else, parent, substitute, union, Built, Seg};
+use crate::paths::{
+    applied, bound as named_by, cross, each, environment_named, held_by, hole, lit, or_else, parent, union, Built, Seg, Summaries,
+};
 use crate::tree::{beneath, named_children, text, unquote, walk};
 
-/// How deep an expression is followed, into the functions it calls and the values they read: a
-/// path a field keeps, made by a function the constructor calls, read in a closure of a method
-/// another method calls (`self.root.join(d.strip_prefix(&self.here)?)` with `here: Repo::real(&root)`),
-/// is some twenty expressions deep.
+/// How deep one frame's own expression is followed: a function's, the value a constructor gives a
+/// field, a constant's. What another frame gives (a function it calls, a field, a constant) is that
+/// frame's summary (`Summaries`), followed from its own start, so a path built through helpers is
+/// followed as far as the same path written in place.
 const DEPTH: u32 = 20;
 
 /// Evaluates paths and statements in the crates of one workspace.
@@ -32,6 +34,9 @@ pub(super) struct Eval<'a> {
     /// The `const` and `static` items of a module, by its id and their name, the first of a name
     /// where it declares two: found once, when a constant of the module is first asked for.
     constants: RefCell<HashMap<String, HashMap<String, TsNode<'a>>>>,
+    /// What each expression read in a frame of its own gives (a function's returns, the value a constructor gives a
+    /// field, a constant's), a term of that frame's parameters, made once in that frame.
+    summaries: Summaries,
 }
 
 /// Where an expression is evaluated: its module, and the function it is in with that function's
@@ -76,7 +81,14 @@ pub(super) fn takes_self(f: TsNode) -> bool {
 
 impl<'a> Eval<'a> {
     pub fn new(modules: &'a IndexMap<String, Module>, nodes: &IndexMap<String, Node>, crate_ids: &'a HashMap<String, String>) -> Self {
-        Eval { modules, nodes: nodes.clone(), crate_ids, literals: OnceCell::new(), constants: RefCell::new(HashMap::new()) }
+        Eval {
+            modules,
+            nodes: nodes.clone(),
+            crate_ids,
+            literals: OnceCell::new(),
+            constants: RefCell::new(HashMap::new()),
+            summaries: Summaries::default(),
+        }
     }
 
     /// The values `e` can have.
@@ -97,7 +109,7 @@ impl<'a> Eval<'a> {
             "identifier" => self.name(at, text(e, src), e.start_byte(), depth),
             "scoped_identifier" => {
                 let parts = path_parts(Some(e), src);
-                self.constant(at.m, &parts, depth).unwrap_or_else(|| vec![hole(parts.last().map(String::as_str).unwrap_or("value"))])
+                self.constant(at.m, &parts).unwrap_or_else(|| vec![hole(parts.last().map(String::as_str).unwrap_or("value"))])
             }
             "field_expression" => {
                 let field = e.child_by_field_name("field").map(|f| text(f, src)).unwrap_or("value");
@@ -107,11 +119,11 @@ impl<'a> Eval<'a> {
                     return values;
                 }
                 let held = match e.child_by_field_name("value") {
-                    Some(v) if v.kind() == "self" => self.held(at, field, depth),
+                    Some(v) if v.kind() == "self" => self.held(at, field),
                     Some(v) => self
                         .parsed(at, v, depth)
                         .and_then(|ty| self.option(&ty, None, field, depth))
-                        .or_else(|| self.type_of(at, v, depth + 1).and_then(|ty| self.held_in(&ty, field, depth))),
+                        .or_else(|| self.type_of(at, v, depth + 1).and_then(|ty| self.held_in(&ty, field))),
                     None => None,
                 };
                 held.unwrap_or_else(|| vec![hole(field)])
@@ -193,7 +205,7 @@ impl<'a> Eval<'a> {
                 return named_by(name, self.of(at, v, depth + 1));
             }
         }
-        self.constant(at.m, &[name.to_string()], depth).unwrap_or_else(|| vec![hole(name)])
+        self.constant(at.m, &[name.to_string()]).unwrap_or_else(|| vec![hole(name)])
     }
 
     /// What the function makes of `values`, which the name holds where `v` binds it, by the changes it makes
@@ -313,9 +325,9 @@ impl<'a> Eval<'a> {
 
     /// The value of the `const` or `static` a path names: in the module, where its `use` leads,
     /// or in the module the path names.
-    fn constant(&self, m: &'a Module, parts: &[String], depth: u32) -> Option<Vec<Built>> {
+    fn constant(&self, m: &'a Module, parts: &[String]) -> Option<Vec<Built>> {
         let (home, name, v) = self.constant_value(m, parts)?;
-        Some(named_by(&name, self.of(At { m: home, scope: None, params: &[] }, v, depth + 1)))
+        Some(named_by(&name, self.summaries.of(v.id(), || self.of(At { m: home, scope: None, params: &[] }, v, 0))))
     }
 
     /// The `const` or `static` a path names: its module, its name there and the value it is
@@ -496,14 +508,14 @@ impl<'a> Eval<'a> {
 
     /// A field of the value a method runs on, as the struct literals that build that type set it
     /// (`Self { root }` in `new(root)`), from what the functions they are in are handed.
-    fn held(&self, at: At<'a, '_>, field: &str, depth: u32) -> Option<Vec<Built>> {
-        self.held_in(&self.impl_type(at.m, at.scope?)?, field, depth)
+    fn held(&self, at: At<'a, '_>, field: &str) -> Option<Vec<Built>> {
+        self.held_in(&self.impl_type(at.m, at.scope?)?, field)
     }
 
     /// A field of a value of the program's type `ty`, as the struct literals that build that type set
     /// it, from what the functions they are in are handed: of the value a method runs on, or of any
     /// value whose type the code says (`tmp.root` of a `Tmp`).
-    fn held_in(&self, ty: &str, field: &str, depth: u32) -> Option<Vec<Built>> {
+    fn held_in(&self, ty: &str, field: &str) -> Option<Vec<Built>> {
         let ty = ty.to_string();
         let mut out = vec![];
         // a library's code builds none of the program's types
@@ -522,7 +534,7 @@ impl<'a> Eval<'a> {
             let (Some(value), Some(f)) = (value, enclosing_fn(lit)) else { continue };
             let Some(id) = self.fn_id(m, f) else { continue };
             let names = param_names(f, &m.src);
-            let vals = self.of(At { m, scope: Some(f), params: &names }, value, depth + 1);
+            let vals = self.summaries.of(value.id(), || self.of(At { m, scope: Some(f), params: &names }, value, 0));
             out = union(out, vals.into_iter().map(|b| held_by(&id, b)).collect());
         }
         (!out.is_empty()).then_some(out)
@@ -884,16 +896,25 @@ impl<'a> Eval<'a> {
         let n = self.nodes.get(&id).filter(|n| matches!(n.kind, NodeKind::Function | NodeKind::Method))?;
         let home = self.modules.get(&n.module)?;
         let def = def_node(home, n)?;
-        let names = param_names(def, &home.src);
-        let inner = At { m: home, scope: Some(def), params: &names };
-        let gives = returns(def.child_by_field_name("body")?).into_iter().fold(vec![], |acc, x| union(acc, self.of(inner, x, depth + 1)));
-        if gives.is_empty() {
-            return None;
-        }
         // a method called by its path is handed its receiver first
         let args = if takes_self(def) { args.get(1..).unwrap_or_default() } else { args };
+        self.handed_to(at, home, def, args, depth)
+    }
+
+    /// What the function `def` of `home` gives back where `at` hands it `args`: its summary, made once in its own
+    /// frame, with each parameter replaced by what the call hands it; none where it gives back no value.
+    fn handed_to(&self, at: At<'a, '_>, home: &'a Module, def: TsNode<'a>, args: &[TsNode<'a>], depth: u32) -> Option<Vec<Built>> {
+        let names = param_names(def, &home.src);
+        let summary = self.summaries.of(def.id(), || {
+            let inner = At { m: home, scope: Some(def), params: &names };
+            let body = def.child_by_field_name("body");
+            body.map(returns).unwrap_or_default().into_iter().fold(vec![], |acc, x| union(acc, self.of(inner, x, 0)))
+        });
+        if summary.is_empty() {
+            return None;
+        }
         let handed: HashMap<&str, Vec<Built>> = names.iter().zip(args).map(|(p, a)| (p.as_str(), self.of(at, *a, depth + 1))).collect();
-        Some(gives.iter().flat_map(|b| substitute(b, |p| handed.get(p).cloned().unwrap_or_else(|| vec![hole(p)]))).collect())
+        Some(applied(&summary, |p| handed.get(p).cloned().unwrap_or_else(|| vec![hole(p)])))
     }
 
     /// What one of the program's methods gives back, called on a value whose type the code says
@@ -903,15 +924,7 @@ impl<'a> Eval<'a> {
         let ty = self.type_of(at, recv, depth + 1)?;
         let n = self.nodes.get(&format!("{ty}.{method}")).filter(|n| n.kind == NodeKind::Method)?;
         let home = self.modules.get(&n.module)?;
-        let def = def_node(home, n)?;
-        let names = param_names(def, &home.src);
-        let inner = At { m: home, scope: Some(def), params: &names };
-        let gives = returns(def.child_by_field_name("body")?).into_iter().fold(vec![], |acc, x| union(acc, self.of(inner, x, depth + 1)));
-        if gives.is_empty() {
-            return None;
-        }
-        let handed: HashMap<&str, Vec<Built>> = names.iter().zip(args).map(|(p, a)| (p.as_str(), self.of(at, *a, depth + 1))).collect();
-        Some(gives.iter().flat_map(|b| substitute(b, |p| handed.get(p).cloned().unwrap_or_else(|| vec![hole(p)]))).collect())
+        self.handed_to(at, home, def_node(home, n)?, args, depth)
     }
 
     /// The program's type of the value `e` is, where the code says it: the value a method runs on,
@@ -1043,7 +1056,7 @@ impl<'a> Eval<'a> {
             [x] if x.kind() == "integer_literal" => vec![lit(text(*x, src))],
             // a field of the value the method is called on: what its type's struct literals set it to
             [s, dot, field] if text(*s, src) == "self" && dot.kind() == "." && field.kind() == "identifier" => {
-                self.held(at, text(*field, src), depth).unwrap_or_else(|| vec![hole(text(*field, src))])
+                self.held(at, text(*field, src)).unwrap_or_else(|| vec![hole(text(*field, src))])
             }
             [x, dot, m, call]
                 if x.kind() == "identifier"
