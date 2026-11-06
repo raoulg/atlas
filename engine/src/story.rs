@@ -95,6 +95,8 @@ pub fn choices(g: &Graph, entry: &str) -> Option<String> {
         let Some(b) = s.bodies.get(&k).filter(|_| calls.insert((k.clone(), call.named))) else { continue };
         // a body's choices once, however many calls run it; what each call may run instead
         let items = if seen.insert(k) { b.items.as_slice() } else { &[] };
+        // the line of each choice of this body told so far, for the choices that stand in one of its arms
+        let mut lines: HashMap<u32, u32> = HashMap::new();
         let sites = s.nodes.get(call.to.as_str()).map(|n| n.sites.as_slice()).unwrap_or(&[]);
         let named = |st: &Step| {
             if s.nodes.contains_key(st.to.as_str()) {
@@ -111,10 +113,15 @@ pub fn choices(g: &Graph, entry: &str) -> Option<String> {
         for item in items {
             let steps: Vec<&Step> = match item {
                 Item::Step(st) => vec![st],
-                Item::Choice { members, when, .. } => {
+                Item::Choice { choice, members, when, within, .. } => {
                     found += 1;
                     let line = members.iter().filter_map(|m| m.step.site.and_then(|i| sites.get(i))).map(|s| s.line).min().unwrap_or(0);
+                    lines.insert(*choice, line);
                     out.push_str(&format!("\n{} · line {line}\n", s.step_name(&call)));
+                    if let Some((outer, br)) = within {
+                        let at = lines.get(outer).map_or_else(String::new, |l| format!(" at line {l}"));
+                        out.push_str(&format!("  stands in arm {} of the choice{at}\n", letter(*br)));
+                    }
                     let mut branches: Vec<usize> = members.iter().map(|m| m.branch).collect();
                     branches.sort_unstable();
                     branches.dedup();
@@ -308,6 +315,8 @@ impl<'g> Story<'g> {
         let shown_step = |st: &Step| !st.site.map_or(false, |i| entrys.contains(&i));
         // a call is named by its place among the body's sites, a step no site is by what it runs
         let occurrence = |st: &Step| format!("{at}/{}", st.site.map_or_else(|| st.to.clone(), |i| i.to_string()));
+        // the number and level of each choice told so far: a choice within one of its branches is told inside that branch
+        let mut told: HashMap<u32, (String, usize)> = HashMap::new();
         for item in &b.items {
             match item {
                 Item::Step(st) if !shown_step(st) => {}
@@ -315,12 +324,17 @@ impl<'g> Story<'g> {
                     let site = st.site.and_then(|i| sites.get(i));
                     self.step(st, site, &occurrence(st), &next(), "", level, depth, t, above)
                 }
-                Item::Choice { members, when, .. } => {
+                Item::Choice { choice, members, when, within, .. } => {
                     let members: Vec<_> = members.iter().filter(|m| shown_step(&m.step)).collect();
                     if members.is_empty() {
                         continue;
                     }
-                    let k = next();
+                    let inside = within.and_then(|(c, br)| told.get(&c).map(|(n, l)| (format!("{n}{}", letter(br)), *l)));
+                    let (k, level) = match inside {
+                        Some((arm, l)) => (in_arm(&t.text, &arm), l + 1),
+                        None => (next(), level),
+                    };
+                    told.insert(*choice, (k.clone(), level));
                     for m in members {
                         self.step(
                             &m.step,
@@ -504,6 +518,17 @@ fn effects(touches: &[&Touch]) -> String {
         .map(|(v, items)| if items.is_empty() { v } else { format!("{v} {}", items.join(" | ")) })
         .collect::<Vec<_>>()
         .join(" · ")
+}
+
+/// The number of the next item inside the branch labelled `arm`: after the steps already told under it.
+fn in_arm(text: &str, arm: &str) -> String {
+    let used = text
+        .lines()
+        .filter_map(|l| l.trim_start().split_once("  ")?.0.strip_prefix(arm)?.strip_prefix('.'))
+        .filter_map(|r| r.split(|c: char| !c.is_ascii_digit()).next()?.parse::<usize>().ok())
+        .max()
+        .unwrap_or(0);
+    format!("{arm}.{}", used + 1)
 }
 
 /// The letters of the `i`th branch, from 0, as a spreadsheet names its columns: `a` to `z`, then
