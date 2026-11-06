@@ -31,11 +31,11 @@ repository, the full commit it is read at, and what reads it.
 
 ```text
 atlas-0.70.0    https://github.com/raoulg/atlas          4ebbbae0a877ef3609de15befe577897c3bec69b   perf
-goad_toolkit    https://github.com/raoulg/goad_toolkit   929d37cc588b27f599b7fbe2e4f5d9733619f897   perf laws
+goad_toolkit-locked https://github.com/raoulg/goad_toolkit   929d37cc588b27f599b7fbe2e4f5d9733619f897   perf laws
 ```
 
 Adding a program is that one line. A name is one revision: a program read at another commit gets another name
-(`atlas-0.70.0`, then `atlas-0.75.0`), so that its series starts afresh, and `record` refuses a night that reads
+(`atlas-0.70.0`, then `atlas-0.75.0`), and so does a program read with another lock (`vectormesh-locked`, read with what its `uv.lock` names), so that its series starts afresh, and `record` refuses a night that reads
 a name at another revision than the series has it at. Atlas is in the corpus at the commit of v0.70.0, beside
 `atlas`, Atlas at the commit measured: the first measures the reader on a subject that does not move, the second
 what a user of `next` sees on Atlas's own code. A program is read with its dependencies, as its author has them. Fetching what a lock file names is one

@@ -13,8 +13,8 @@
 #
 # name          repository                               revision                                   read by
 atlas-0.70.0    https://github.com/raoulg/atlas          4ebbbae0a877ef3609de15befe577897c3bec69b   perf
-goad_toolkit    https://github.com/raoulg/goad_toolkit   929d37cc588b27f599b7fbe2e4f5d9733619f897   perf laws
-vectormesh      https://github.com/raoulg/vectormesh     201a85048dc872bfc3115d09542529302b45a3ec   perf laws
+goad_toolkit-locked https://github.com/raoulg/goad_toolkit   929d37cc588b27f599b7fbe2e4f5d9733619f897   perf laws
+vectormesh-locked https://github.com/raoulg/vectormesh     201a85048dc872bfc3115d09542529302b45a3ec   perf laws
 ordash          https://github.com/raoulg/ordash         1b4942228b1b22a91c065e1093a14a106fab9f2b   perf laws
 pluim           https://github.com/raoulg/pluim          a5b8c804da33c93b1e36344072adccc3479b5b24   laws
 private-1       private                                  0d49bb1ee34bc0981561d0d4414f54fde1c71292   perf
