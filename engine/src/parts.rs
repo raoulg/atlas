@@ -10,7 +10,7 @@ use anyhow::Result;
 use crate::cache::{Check, Written};
 use crate::knowledge;
 use crate::model::{ext, Dependency, Edge, EdgeKind, Graph, Lang, Node, NodeKind, Part};
-use crate::options::Options;
+use crate::options::{Entry, Options, Reach};
 use crate::paths::{served, serving, Served};
 use crate::repo::{Answers, Repo, Stamp};
 
@@ -48,7 +48,8 @@ pub fn roots(repo: &Repo, opts: &Options) -> Vec<(PathBuf, Lang)> {
 }
 
 /// The graph of a repository as read: parsed in its language, with the routes its Makefile adds
-/// and its parts, kept to what the program reaches.
+/// and its parts, kept to what the program reaches: its own code's reach, with what the
+/// repository's other parts reach of a library it reads from the same directory (`opts.reach`).
 pub fn graph_of(repo: &Repo, opts: &Options) -> Result<Graph> {
     let lang = crate::language::of(repo, opts)?;
     let mut g = lang.parse(repo, opts)?;
@@ -57,7 +58,81 @@ pub fn graph_of(repo: &Repo, opts: &Options) -> Result<Graph> {
     assign(&mut g, repo, lang.as_ref());
     drop(finish);
     let _fiber = crate::clock::stage("fiber");
-    Ok(crate::view::View::apply(&crate::view::reached(&g, opts.libraries), &g))
+    let outside = outside(&g, &opts.reach);
+    Ok(crate::view::View::apply(&crate::view::reached_with(&g, opts.libraries, &outside), &g))
+}
+
+/// What `reach` names of the libraries `g` reads, by the ids `g` holds them under.
+fn outside(g: &Graph, reach: &Reach) -> crate::view::Outside {
+    let mut out = crate::view::Outside::default();
+    for (root, d) in &g.libraries {
+        for e in reach.get(&d.dir).into_iter().flatten() {
+            let id = if e.id.is_empty() { root.clone() } else { format!("{root}.{}", e.id) };
+            if e.named {
+                out.named.insert(id)
+            } else {
+                out.called.insert(id)
+            };
+        }
+    }
+    out
+}
+
+/// What the code of the part `g` reaches directly of each library it reads, by the directory the
+/// library is read from: each node its own code calls or builds, and each type it names.
+fn entries(g: &Graph) -> Reach {
+    let nodes: HashMap<&str, &Node> = g.nodes.iter().map(|n| (n.id.as_str(), n)).collect();
+    let mut out = Reach::new();
+    for e in &g.edges {
+        let (Some(src), Some(dst)) = (nodes.get(e.src.as_str()), nodes.get(e.dst.as_str())) else { continue };
+        if src.library || src.kind == NodeKind::External || !dst.library {
+            continue;
+        }
+        let named = match e.kind {
+            EdgeKind::Calls | EdgeKind::Instantiates => false,
+            EdgeKind::Takes | EdgeKind::Returns | EdgeKind::Mutates | EdgeKind::Has | EdgeKind::Inherits | EdgeKind::Variant => true,
+            _ => continue,
+        };
+        let Some(root) = root_of(&g.libraries, &dst.id) else { continue };
+        let below = |id: &str| id.strip_prefix(root).unwrap_or_default().trim_start_matches('.').to_string();
+        let entry = Entry { id: below(&dst.id), module: below(&dst.module), file: dst.file.clone(), named };
+        out.entry(g.libraries[root].dir.clone()).or_default().insert(entry);
+    }
+    out
+}
+
+/// For each part, what the repository's other parts reach of a library it reads from a directory
+/// they read it from too and its own code does not: what a reading of the part over the union of
+/// the parts' reach takes besides its own. The parts' reach is each part's own code's (`entries`).
+fn beyond(graphs: &[&Graph]) -> Vec<Reach> {
+    let reached: Vec<Reach> = graphs.iter().map(|g| entries(g)).collect();
+    let mut readers: HashMap<&str, usize> = HashMap::new();
+    for g in graphs {
+        let dirs: BTreeSet<&str> = g.libraries.values().map(|d| d.dir.as_str()).collect();
+        for d in dirs {
+            *readers.entry(d).or_default() += 1;
+        }
+    }
+    let mut union: Reach = Reach::new();
+    for r in &reached {
+        for (dir, entries) in r {
+            union.entry(dir.clone()).or_default().extend(entries.iter().cloned());
+        }
+    }
+    graphs
+        .iter()
+        .zip(&reached)
+        .map(|(g, own)| {
+            let dirs: BTreeSet<&str> = g.libraries.values().map(|d| d.dir.as_str()).filter(|d| readers[d] > 1).collect();
+            dirs.into_iter()
+                .filter_map(|dir| {
+                    let mine = own.get(dir);
+                    let more: BTreeSet<Entry> = union.get(dir)?.iter().filter(|e| mine.map_or(true, |m| !m.contains(e))).cloned().collect();
+                    (!more.is_empty()).then(|| (dir.to_string(), more))
+                })
+                .collect()
+        })
+        .collect()
 }
 
 /// Each part's own graph, read in its language: what `atlas-code check` asks, part by part. Each
@@ -112,15 +187,16 @@ fn read_current_parts(repos: &[PathBuf], opts: &Options) -> Result<Option<(Vec<G
     };
     drop(listing);
     let opts = Options { package: None, ..opts.clone() };
-    let mut graphs = vec![];
-    for (part, at) in &found {
+    // each part read, with where it was found
+    let mut graphs: Vec<(Graph, usize)> = vec![];
+    for (i, (part, at)) in found.iter().enumerate() {
         let _part = crate::clock::part(&crate::tree::path_str(at));
         let (graph, witness) = indexed_graph(part, &opts);
         witnesses.parts.push(witness);
         match graph {
             // a manifest without code of its own (tooling, a docs site, a workspace's root) is not a part
             Ok(g) if g.nodes.is_empty() && found.len() > 1 => eprintln!("skipped {}: no code of its own", part.root().display()),
-            Ok(g) => graphs.push((g, at.clone())),
+            Ok(g) => graphs.push((g, i)),
             Err(e) if found.len() > 1 => eprintln!("skipped {}: {e}", part.root().display()),
             Err(e) => return Err(e),
         }
@@ -128,6 +204,21 @@ fn read_current_parts(repos: &[PathBuf], opts: &Options) -> Result<Option<(Vec<G
     if graphs.is_empty() {
         anyhow::bail!("no code found in {}", repos.iter().map(|r| r.display().to_string()).collect::<Vec<_>>().join(", "));
     }
+    // a library several parts read from one directory is read over what all of them reach, so that
+    // each part's reading of it is one reading (#377): a part read anew with what the others reach
+    // besides its own
+    let more = beyond(&graphs.iter().map(|(g, _)| g).collect::<Vec<_>>());
+    for ((g, i), reach) in graphs.iter_mut().zip(more) {
+        if reach.is_empty() {
+            continue;
+        }
+        let (part, at) = &found[*i];
+        let _part = crate::clock::part(&crate::tree::path_str(at));
+        let (graph, witness) = indexed_graph(part, &Options { reach, ..opts.clone() });
+        witnesses.parts[*i] = witness;
+        *g = graph?;
+    }
+    let graphs: Vec<(Graph, PathBuf)> = graphs.into_iter().map(|(g, i)| (g, found[i].1.clone())).collect();
     let _index = crate::clock::stage("index");
     Ok(witnesses.current(true)?.then(|| {
         let mut graphs = apart(graphs);
@@ -262,13 +353,14 @@ impl Snapshot {
 fn indexed_graph(part: &Repo, opts: &Options) -> (Result<Graph>, Witness) {
     let cache = opts.cache.as_ref().and_then(|cache| cache.workspace(part.root()));
     let key = format!(
-        "{}\n{}\n{}\n{}\n{:?}\n{:?}",
+        "{}\n{}\n{}\n{}\n{:?}\n{:?}\n{:?}",
         crate::repo::Repo::real(&part.root()).display(),
         part.language().map_or("", Lang::name),
         part.asked().map_or_else(String::new, |p| p.display().to_string()),
         opts.libraries,
         opts.named,
-        opts.package
+        opts.package,
+        opts.reach
     );
     let index = crate::clock::stage("index");
     let kept = cache.as_ref().and_then(|cache| cache.get("part", &key)).and_then(|bytes| serde_json::from_slice::<Snapshot>(&bytes).ok());
@@ -407,32 +499,37 @@ fn renamed(id: &str, (root, to): (&str, &String)) -> String {
 
 /// A library the parts read from several directories is one library per directory, since a directory
 /// is one code (`Dependency`): for each part, the root of each such library it holds with the name it
-/// takes there. A library the parts read from one directory keeps its name. Each directory's library is
-/// named after its version (`serde_json-1_0_151`; a dot in a name is no package boundary) where the
-/// versions tell the directories apart, and otherwise under where the first part that reads it from that
-/// directory lies (`places`), as that part's own code is. A part's own code keeps its names.
+/// takes there. A library is known by the name the code imports it by, whichever root a part holds it
+/// under (a part that reads two versions holds each under its version already). A library the parts
+/// read from one directory keeps its name. Each directory's library is named after its version
+/// (`serde_json-1_0_151`; a dot in a name is no package boundary) where the versions tell the
+/// directories apart, and otherwise under where the first part that reads it from that directory lies
+/// (`places`), as that part's own code is. A part's own code keeps its names.
 fn versions(parts: &[(Graph, PathBuf)], held: &[(BTreeSet<String>, BTreeSet<String>)], places: &[&str]) -> Vec<HashMap<String, String>> {
-    // for each library, the directories it is read from in order, each with its version and the parts reading it there
-    let mut read: BTreeMap<&str, Vec<(&Dependency, Vec<usize>)>> = BTreeMap::new();
+    // for each library, the directories it is read from in order, each with its version and the parts
+    // reading it there, with the root each holds it under
+    let mut read: BTreeMap<&str, Vec<(&Dependency, Vec<(usize, &str)>)>> = BTreeMap::new();
     for (i, (g, _)) in parts.iter().enumerate() {
         let roots: BTreeSet<&str> =
             g.nodes.iter().filter_map(|n| root_of(&g.libraries, &n.id)).filter(|r| !held[i].0.contains(*r)).collect();
         for root in roots {
-            let at = read.entry(root).or_default();
-            match at.iter_mut().find(|(d, _)| d.dir == g.libraries[root].dir) {
-                Some((_, readers)) => readers.push(i),
-                None => at.push((&g.libraries[root], vec![i])),
+            let d = &g.libraries[root];
+            let at = read.entry(if d.name.is_empty() { root } else { d.name.as_str() }).or_default();
+            match at.iter_mut().find(|(e, _)| e.dir == d.dir) {
+                Some((_, readers)) => readers.push((i, root)),
+                None => at.push((d, vec![(i, root)])),
             }
         }
     }
     let mut out = vec![HashMap::new(); parts.len()];
-    for (root, at) in read.into_iter().filter(|(_, at)| at.len() > 1) {
+    for (name, at) in read.into_iter().filter(|(_, at)| at.len() > 1) {
         let versions: BTreeSet<&str> = at.iter().map(|(d, _)| d.version.as_str()).filter(|v| !v.is_empty()).collect();
         let by_version = versions.len() == at.len();
         for (d, readers) in &at {
-            let name = if by_version { format!("{root}-{}", d.version.replace('.', "_")) } else { under(places[readers[0]], root) };
-            for &i in readers {
-                out[i].insert(root.to_string(), name.clone());
+            let (first, root) = readers[0];
+            let to = if by_version { format!("{name}-{}", d.version.replace('.', "_")) } else { under(places[first], root) };
+            for &(i, root) in readers {
+                out[i].insert(root.to_string(), to.clone());
             }
         }
     }
@@ -521,7 +618,8 @@ pub fn assign(g: &mut Graph, repo: &Repo, language: &dyn crate::language::Langua
 /// The graphs are glued along what they share (`mathematics.md`, Coproducts): an id two of them hold
 /// names one node, a library both read from one directory or a name past the code both name, and the
 /// merge holds it once, as the first graph that holds it reads it, with the lines out of it that graph
-/// draws.
+/// draws. The parts of a repository read a library they share over what all of them reach
+/// (`read_current_parts`), so each part's reading of its node is that one reading.
 pub fn merge(name: &str, graphs: Vec<Graph>) -> Graph {
     let mut out = Graph {
         root: name.to_string(),

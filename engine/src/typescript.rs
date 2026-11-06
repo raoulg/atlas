@@ -127,6 +127,12 @@ pub fn environment(repo: &Repo) -> Vec<crate::cache::Check> {
     root.ancestors().map(|a| crate::cache::Check::Tree(a.join(knowledge::NODE_PACKAGES))).collect()
 }
 
+/// Where the code of the package `name` lies, imported from the file `from` of the package at
+/// `repo`, as Node finds it.
+pub fn library_code(repo: &Repo, env: &mut crate::environment::Environment, from: &Path, name: &str) -> Option<PathBuf> {
+    libraries::library_code(repo, env, from, name)
+}
+
 pub fn parse(repo: &Repo, opts: &crate::Options) -> Result<(GraphBuilder, String)> {
     let root = root_name(repo);
     let base = code_base(repo);
@@ -206,7 +212,7 @@ pub fn parse(repo: &Repo, opts: &crate::Options) -> Result<(GraphBuilder, String
     }
     drop(items);
     let reach = crate::clock::stage("reach");
-    libraries::read(repo, &mut modules, &mut store, opts.libraries);
+    libraries::read(repo, &opts.reach, &mut modules, &mut store, opts.libraries);
     drop(reach);
     let items = crate::clock::stage("items");
     for m in modules.values_mut() {

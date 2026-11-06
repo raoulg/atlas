@@ -195,7 +195,7 @@ pub fn parts_at(repo: &Path, rev: Option<&str>, opts: &crate::Options) -> Result
 /// commit of another clone is the same reading.
 fn revision_key(repo: &Path, commit: &str, opts: &crate::Options) -> Result<String> {
     let (_, rel, name) = located(repo)?;
-    let crate::Options { libraries, named, package, cache: _ } = opts;
+    let crate::Options { libraries, named, package, cache: _, reach: _ } = opts;
     Ok(format!(
         "{commit}\n{}\n{}\nlibraries {libraries}\npackage {package:?}\nnamed {named:?}\nin {}",
         crate::tree::path_str(&rel),

@@ -1,20 +1,31 @@
 //! Where a project's libraries are kept, which the readers ask for a library's files.
 
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 /// Where a project's libraries are kept: the folders its language's tool fills with the code of
 /// what the project depends on (Cargo's registry sources, Node's `node_modules`, Python's
-/// site-packages), and what a reading takes from them, as checks of how each stands.
+/// site-packages), the version of each library a lock pins, and what a reading takes from them,
+/// as checks of how each stands.
 #[derive(Clone, Debug, Default)]
 pub struct Environment {
     pub roots: Vec<PathBuf>,
+    /// The version a lock pins of a library, by the package that depends on it and the library's
+    /// name; under the empty package, the version of a library the lock pins only one of.
+    pub pins: HashMap<(String, String), String>,
     pub checks: Vec<crate::cache::Check>,
 }
 
 impl Environment {
     /// The environment whose libraries lie in `roots`, in the order its tool looks.
     pub fn new(roots: Vec<PathBuf>) -> Environment {
-        Environment { roots, checks: vec![] }
+        Environment { roots, ..Environment::default() }
+    }
+
+    /// The version the lock pins of the library `name` for the package `dependent`.
+    pub fn pinned(&self, dependent: &str, name: &str) -> Option<&str> {
+        let pin = |p: &str| self.pins.get(&(p.to_string(), name.to_string()));
+        pin(dependent).or_else(|| pin("")).map(String::as_str)
     }
 
     /// The folder of the library `name` (`serde-1.0.200`, `react`): below the first root that
