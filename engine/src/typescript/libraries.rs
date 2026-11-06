@@ -25,6 +25,7 @@ use crate::effects;
 use crate::environment::Environment;
 use crate::knowledge::{self, Registry};
 use crate::model::{Dependency, Node, NodeKind};
+use crate::options::Reach;
 use crate::repo::Repo;
 use crate::tree::{span, text, walk};
 use path_clean::clean;
@@ -127,6 +128,24 @@ impl Package {
     }
 }
 
+/// Where the code of the package `name` lies, imported from the file `from` of the package at
+/// `repo`, as Node finds it: in `node_modules` beside the file's directory or beside one above it,
+/// where a link there points. A package of the repository's own, linked into `node_modules` (a
+/// workspace's member), is read as its own part; a package below the repository is named from it,
+/// like its own files. What was asked of the disk to find it is noted in `env`.
+pub(crate) fn library_code(repo: &Repo, env: &mut Environment, from: &Path, name: &str) -> Option<PathBuf> {
+    let dir = env.real(from)?.parent()?.to_path_buf();
+    let mut node = Environment::node(&dir);
+    let found = node.package(name, "package.json");
+    env.checks.append(&mut node.checks);
+    let code = env.real(&found?)?;
+    let here = Repo::real(&repo.root());
+    if code.starts_with(&here) && !code.components().any(|c| c.as_os_str() == knowledge::NODE_PACKAGES) {
+        return None;
+    }
+    Some(code.strip_prefix(&here).map(|r| clean(&repo.root().join(r))).unwrap_or(code))
+}
+
 /// Where a name is defined: the file, the definition's id, and how many of the names followed
 /// it stands for (`Client` of `Client.create` is one).
 type Def = (PathBuf, String, usize);
@@ -135,9 +154,8 @@ type Def = (PathBuf, String, usize);
 struct Libraries {
     /// Where Node keeps them.
     env: Environment,
-    /// The repository as the caller named it, and on disk: a package below it is shown below it.
-    root: PathBuf,
-    here: PathBuf,
+    /// The repository the packages are found from.
+    repo: Repo,
     packages: HashMap<PathBuf, Option<Package>>,
     /// Where a package of a name is found from a directory.
     found: HashMap<(PathBuf, String), Option<PathBuf>>,
@@ -153,11 +171,10 @@ struct Libraries {
 }
 
 impl Libraries {
-    fn new(root: &Path) -> Libraries {
+    fn new(repo: &Repo) -> Libraries {
         Libraries {
             env: Environment::default(),
-            root: root.to_path_buf(),
-            here: crate::repo::Repo::real(&root),
+            repo: repo.clone(),
             packages: HashMap::new(),
             found: HashMap::new(),
             owner: HashMap::new(),
@@ -169,24 +186,15 @@ impl Libraries {
         }
     }
 
-    /// The package `name` as Node finds it from a file: in `node_modules` beside the file's
-    /// directory or beside one above it.
+    /// The package `name` as Node finds it from a file (`library_code`), each found once from a
+    /// directory.
     fn locate(&mut self, from: &Path, name: &str) -> Option<PathBuf> {
         let dir = self.env.real(from)?.parent()?.to_path_buf();
         let key = (dir.clone(), name.to_string());
         if let Some(known) = self.found.get(&key) {
             return known.clone();
         }
-        let found = Environment::node(&dir).package(name, "package.json");
-        // a package of the repository's own, linked into `node_modules` (a workspace's member), is
-        // read as its own part
-        let own = |d: &PathBuf| {
-            self.env
-                .real(d)
-                .map_or(false, |abs| abs.starts_with(&self.here) && !abs.components().any(|c| c.as_os_str() == knowledge::NODE_PACKAGES))
-        };
-        // a package below the repository is named from it, like its own files
-        let found = found.filter(|d| !own(d)).map(|d| d.strip_prefix(&self.here).map(|r| clean(&self.root.join(r))).unwrap_or(d));
+        let found = library_code(&self.repo, &mut self.env, from, name);
         self.found.insert(key, found.clone());
         found
     }
@@ -330,7 +338,7 @@ impl Libraries {
         let mut m = self.parse(file)?;
         let pkg = self.holding(file)?;
         let version = pkg.manifest["version"].as_str().unwrap_or_default().to_string();
-        store.libraries.insert(pkg.root.clone(), Dependency { dir: crate::tree::path_str(&pkg.dir), version });
+        store.libraries.insert(pkg.root.clone(), Dependency { dir: crate::tree::path_str(&pkg.dir), version, name: pkg.root.clone() });
         let local: Vec<(String, String)> = m
             .bindings
             .iter()
@@ -438,18 +446,31 @@ fn targets(m: &Module) -> Vec<(PathBuf, Vec<String>)> {
 /// Read the packages the program's code calls, `depth` rounds deep: the files that define what
 /// its calls go into, then the files of the same packages that the last round's calls go into.
 /// Read together, every name bound to a library's code goes to its definition where Atlas read it.
-pub(super) fn read(repo: &Repo, modules: &mut IndexMap<String, Module>, store: &mut GraphBuilder, depth: usize) {
+/// What the repository's other parts reach of a package read from the same directory (`reach`) is
+/// read in the first round, as what the program's own calls go into is.
+pub(super) fn read(repo: &Repo, reach: &Reach, modules: &mut IndexMap<String, Module>, store: &mut GraphBuilder, depth: usize) {
     if depth == 0 {
         return;
     }
-    let mut lib = Libraries::new(repo.root());
+    let mut lib = Libraries::new(repo);
     for m in modules.values_mut() {
         lib.link(m);
     }
     let mut round: Vec<String> = modules.keys().cloned().collect();
     let mut used: Option<HashSet<PathBuf>> = None;
+    let mut entries: Vec<(PathBuf, PathBuf)> = vec![];
+    for (dir, reached) in reach {
+        let package_dir = PathBuf::from(dir);
+        if lib.package(&package_dir).is_some() {
+            entries.extend(reached.iter().map(|e| (package_dir.clone(), PathBuf::from(&e.file))));
+        }
+    }
     for _ in 0..depth {
         let (mut fresh, mut reached) = (vec![], HashSet::new());
+        for (pkg, file) in std::mem::take(&mut entries) {
+            reached.insert(pkg);
+            fresh.extend(lib.read(&file, modules, store));
+        }
         for id in &round {
             for (file, names) in targets(&modules[id]) {
                 let Some((def, _, _)) = lib.follow(&file, &names, 0) else { continue };

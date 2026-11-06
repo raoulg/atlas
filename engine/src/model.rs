@@ -1820,13 +1820,16 @@ pub struct Part {
 
 /// A library read as code, as the dependency it is: the directory its code is read from, which
 /// names that code (Cargo's registry keeps one directory per version, an environment its own
-/// copy), and the version its manifest names, `""` where it names none.
+/// copy), the version its manifest names, `""` where it names none, and the name the code imports
+/// it by, which the directories of one library's versions share.
 #[derive(Serialize, Deserialize, TS, Clone, Debug, Default, PartialEq, Eq)]
 #[ts(export)]
 pub struct Dependency {
     pub dir: String,
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub version: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub name: String,
 }
 
 /// What a language leaves its author to write: what its compiler neither asks for nor works out,

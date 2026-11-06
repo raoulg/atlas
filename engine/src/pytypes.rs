@@ -403,6 +403,9 @@ pub struct Ty {
     kept: Option<Kept>,
     /// Where the project's libraries are.
     pub env: Environment,
+    /// The places ty looks for a module in, in its order, but the standard library: where a
+    /// library's code is found by its name.
+    pub places: Environment,
 }
 
 /// Where what ty says of an installed library's file is kept: under everything ty finds the
@@ -467,9 +470,10 @@ impl Ty {
         let root = absolute(at)?;
         let (db, setup) = TyDb::new(repo, at, &root);
         let (environment, env) = (setup.environment, setup.env.clone());
+        let places = Environment::new(setup.places().into_iter().filter(|(_, w)| *w != Whose::Standard).map(|(p, _)| p).collect());
         let kept = cache.map(|c| Kept::new(c, setup));
         let own = own.iter().filter_map(|(_, p)| absolute(p)).map(|p| key(p.as_std_path())).collect();
-        Some(Ty { db, environment, own, said: RefCell::default(), failed: RefCell::default(), keys: RefCell::default(), kept, env })
+        Some(Ty { db, environment, own, said: RefCell::default(), failed: RefCell::default(), keys: RefCell::default(), kept, env, places })
     }
 
     /// Ask about `files`, with `project` the files Atlas reads: a call into one of them goes to
@@ -959,6 +963,9 @@ impl Setup {
                     let earlier: Vec<PathBuf> = places[..i].iter().filter(|(_, w)| *w != Whose::Standard).map(|(q, _)| q.clone()).collect();
                     let held = |n: &str| offers[..i].iter().any(|o| o.get(n).map_or(false, |x| x.regular));
                     self.env.elsewhere(p, &earlier, &held, 0, &mut out);
+                    // the manifest of the project the code is the source of, which names its version
+                    let manifests = [Some(p.as_path()), p.parent()].into_iter().flatten().map(|d| d.join("pyproject.toml"));
+                    out.extend(manifests.map(|m| (Whose::Elsewhere, Check::File(m))));
                 }
             }
         }
@@ -978,6 +985,48 @@ impl Setup {
         }
         crate::cache::digest(lines.join("\n").as_bytes())
     }
+}
+
+/// Where the code of the library the code imports as `name` lies, as ty finds a top-level module
+/// in the places it looks in (`env`, in its order): the first that holds it as a package or a
+/// module, else the first that holds a portion of it, a namespace package.
+pub fn library_code(env: &Environment, name: &str) -> Option<PathBuf> {
+    let held = |r: &PathBuf| {
+        let package = r.join(name);
+        let module = r.join(format!("{name}.py"));
+        match () {
+            _ if ["__init__.py", "__init__.pyi"].iter().any(|i| package.join(i).is_file()) => Some(package),
+            _ if module.is_file() => Some(module),
+            _ => None,
+        }
+    };
+    env.roots.iter().find_map(held).or_else(|| env.roots.iter().map(|r| r.join(name)).find(|p| p.is_dir()))
+}
+
+/// The version of the library whose code lies at `code`, as its distribution says: an installed
+/// one's metadata directory beside it (`notekit-0.2.0.dist-info`, by the name it installs), else the
+/// project its source is in (`pyproject.toml`, `[project] version`), `""` where neither says.
+pub fn library_version(code: &Path, name: &str) -> String {
+    let normal = |s: &str| s.to_lowercase().replace(['-', '.'], "_");
+    let installed = code.parent().and_then(|site| std::fs::read_dir(site).ok()).into_iter().flatten().flatten().find_map(|e| {
+        let file = e.file_name().to_string_lossy().to_string();
+        let (dist, version) = file.strip_suffix(".dist-info")?.rsplit_once('-')?;
+        let tops = std::fs::read_to_string(e.path().join("top_level.txt")).unwrap_or_default();
+        (normal(dist) == normal(name) || tops.lines().any(|t| t.trim() == name)).then(|| version.to_string())
+    });
+    installed.or_else(|| source_manifest(code).and_then(|m| project_version(&m))).unwrap_or_default()
+}
+
+/// The manifest of the project a library's source lies in: the nearest `pyproject.toml` above it,
+/// in the two directories a layout puts between (`src/notekit`).
+fn source_manifest(code: &Path) -> Option<PathBuf> {
+    code.ancestors().skip(1).take(2).map(|d| d.join("pyproject.toml")).find(|m| m.is_file())
+}
+
+/// The version a project's manifest names.
+fn project_version(manifest: &Path) -> Option<String> {
+    let t: toml::Table = std::fs::read_to_string(manifest).ok()?.parse().ok()?;
+    t.get("project")?.get("version")?.as_str().map(String::from)
 }
 
 /// What a reading of the Python project at `at`, a directory of the reading `repo`, takes from

@@ -126,8 +126,15 @@ along the libraries and places of the world they share (a pushout over those): t
 holds one name stay two, each name injected under where its part lies (`orders/app`, `billing/app`).
 Two parts share a library when they read the same code, and the directory a library is read from names its code
 (Cargo's registry keeps one directory per version, an environment its own copy): a library the parts read from one
-directory is one library under its own name, and a node both parts keep is held once, as the first part reads it
-(the common refinement of the two readings is #377). A library read from several
+directory is one library under its own name. Each part keeps of it the fiber over what that part reaches, so two
+parts that reach it differently read its nodes differently: one keeps `save` as the border of its fiber, with what
+`save`'s callees touch glued into it, the other reads the callees. The node both keep is the common refinement of the
+two readings, which is the fiber over the union of what they reach: every part that shares the directory reads it over
+what all of them reach, so each part's node is that one reading and the merge holds it, in whichever order the parts
+come (#377). Where a library's code lies is the language's to say, from the file that imports it
+(`Language::library_code`): Cargo's per crate, from the crate's manifest and the workspace's one lock, so two members
+on two versions name two directories (#378); TypeScript's through `node_modules`; Python's through the environment's
+search places. A library read from several
 directories is one library per directory, since a version's types and bodies are its own (rustc tells `Value` of
 1.0.151 from 1.0.154's): each takes its name with its version after it (`serde_json-1_0_151`), or, where the
 versions do not tell the directories apart, the place where its first reader lies, and the names past its fiber take
@@ -138,8 +145,9 @@ A call into a family runs one of its overrides, decided at run time, so its codo
 hands on each error any of them can end with, as a call hands on each its one callee can end with, never one chosen
 for it (#213).
 **Where.** Principles `sums` and `choices`; `Node::whens` (`body.rs`), `arms_of` and `guarded_by` (`tree.rs`), `Item::Choice` (`flow.rs`),
-the MCP tool `choices`; `parts::apart`, `parts::versions`, `parts::merge`, `Graph::rename`, `Graph::libraries` and
-`model::Dependency`, held by `engine/tests/versions.rs` and `a_merge_holds_each_id_once` (`merge.rs`); `Site::fails` and `settle_fails` (`builder.rs`).
+the MCP tool `choices`; `parts::apart`, `parts::versions`, `parts::beyond`, `parts::merge`, `Language::library_code`, `Graph::rename`, `Graph::libraries` and
+`model::Dependency`, held by `engine/tests/versions.rs`, `two_versions_of_a_library_are_two_libraries` and
+`a_library_two_parts_read_is_read_over_both_their_reach` (`pairs.rs`) and `a_merge_holds_each_id_once` (`merge.rs`); `Site::fails` and `settle_fails` (`builder.rs`).
 
 ### Lenses
 **What.** A lens on S has `get: S → A` and `put: A × S → S`, and a lawful one gets back what

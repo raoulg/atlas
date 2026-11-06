@@ -116,6 +116,17 @@ struct Library<'g> {
     bases: HashMap<&'g str, Vec<&'g str>>,
     /// Each class's methods.
     members: HashMap<&'g str, Vec<&'g Node>>,
+    /// What code outside the graph reaches of its libraries.
+    outside: Outside,
+}
+
+/// What the code of a repository's other parts reaches of the libraries a part reads from the
+/// same directories, by the ids the part's graph holds them under: what that code calls or builds,
+/// and the types it names. The program is all of the parts, so what they reach is the program's.
+#[derive(Clone, Debug, Default)]
+pub struct Outside {
+    pub called: HashSet<String>,
+    pub named: HashSet<String>,
 }
 
 /// What the program reaches of a library: each function or class by the number of calls from the
@@ -133,7 +144,7 @@ impl Reach {
 }
 
 impl<'g> Library<'g> {
-    fn of(g: &'g Graph) -> Self {
+    fn of(g: &'g Graph, outside: &Outside) -> Self {
         let nodes: HashMap<&str, &Node> = g.nodes.iter().map(|n| (n.id.as_str(), n)).collect();
         let library: HashSet<&str> = g.nodes.iter().filter(|n| n.library).map(|n| n.id.as_str()).collect();
         let (mut calls, mut types, mut bases, mut members): (
@@ -159,7 +170,7 @@ impl<'g> Library<'g> {
                 members.entry(c).or_default().push(n);
             }
         }
-        Library { nodes, library, calls, types, bases, members }
+        Library { nodes, library, calls, types, bases, members, outside: outside.clone() }
     }
 
     fn ancestors(&self, c: &str) -> Vec<String> {
@@ -189,6 +200,9 @@ impl<'g> Library<'g> {
             );
             named.extend(self.types.get(n.id.as_str()).into_iter().flatten().filter(|d| library.contains(**d)).map(|d| d.to_string()));
         }
+        // what the other parts' code reaches, as the program's own code does
+        todo.extend(self.outside.called.iter().filter(|d| library.contains(d.as_str())).map(|d| (d.clone(), 1)));
+        named.extend(self.outside.named.iter().filter(|d| library.contains(d.as_str())).cloned());
         loop {
             while let Some((id, d)) = todo.pop_front() {
                 if d > rounds || far.get(&id).map_or(false, |&f| f <= d) {
@@ -273,7 +287,13 @@ impl<'g> Library<'g> {
 /// place its code reaches inside the library as far as Atlas read it, and runs what is kept that
 /// this code runs. Of a library's file the graph keeps the text its kept nodes show.
 pub fn reached(g: &Graph, rounds: usize) -> impl View {
-    let lib = Library::of(g);
+    reached_with(g, rounds, &Outside::default())
+}
+
+/// What the program reaches (`reached`), where the program is the graph's code with the code of
+/// the repository's other parts, which reaches `outside` of the libraries the graph reads.
+pub fn reached_with(g: &Graph, rounds: usize, outside: &Outside) -> impl View {
+    let lib = Library::of(g, outside);
     let reach = lib.reach(rounds);
     let mut kept: HashSet<String> = reach.far.keys().cloned().chain(reach.named.iter().cloned()).collect();
     let holders: Vec<String> =

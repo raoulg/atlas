@@ -6,7 +6,7 @@
 mod common;
 
 use std::collections::BTreeSet;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use atlas_engine::parts::analyze_repo;
 use atlas_engine::{Atom, EdgeKind, Graph, Options, World};
@@ -43,30 +43,175 @@ fn two_parts_are_named_apart() {
 /// under the library's own name, and both parts call it. Two parts whose dependencies drift to two
 /// versions read two libraries, each named after its version, and each part calls the one it runs,
 /// which does what that version's code does: 0.1.0 writes its file whole, 0.2.0 writes beside it and
-/// renames it in. Neither side holds an id twice (`mathematics.md`, Coproducts; #372).
+/// renames it in. Neither side holds an id twice (`mathematics.md`, Coproducts; #372). So in every
+/// language (`versions/{python,rust,typescript}`), with the vendored package installed as its tool
+/// installs it (Cargo by path, uv editable from its source, npm by a link into `node_modules`), and
+/// in one Cargo workspace whose two members are one part (`versions/rust/workspace`, #378): its crates'
+/// calls go into the version each crate's manifest and the lock give it.
 #[test]
 fn two_versions_of_a_library_are_two_libraries() {
-    use std::collections::BTreeSet;
-    let (clean, shortcut) = (pair("versions/rust/clean"), pair("versions/rust/shortcut"));
-    let library = |g: &Graph| g.nodes.iter().filter(|n| n.library).map(|n| n.id.as_str().to_string()).collect::<BTreeSet<_>>();
-    let saves = |g: &Graph, main: &str| {
-        g.node(main).unwrap().sites.iter().map(|s| s.to.clone()).filter(|t| t.ends_with(".save")).collect::<Vec<_>>()
+    let versions = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/pairs/versions");
+    let parts = ["clean/orders", "clean/billing", "shortcut/orders", "shortcut/billing"];
+    let (python, typescript) = (installed("versions/python", &parts, uv_sync), installed("versions/typescript", &parts, npm_install));
+    let subjects = [
+        ("rust", versions.join("rust")),
+        ("rust workspace", versions.join("rust/workspace")),
+        ("python", python),
+        ("typescript", typescript),
+    ];
+    let read = |dir: &Path, side: &str| analyze_repo(&[dir.join(side)], &Options::default()).unwrap();
+    let graphs: Vec<(&str, Graph, Graph)> = subjects.iter().map(|(l, dir)| (*l, read(dir, "clean"), read(dir, "shortcut"))).collect();
+    for (_, dir) in &subjects[2..] {
+        let _ = std::fs::remove_dir_all(dir);
+    }
+    for (language, clean, shortcut) in &graphs {
+        one_directory_is_one_library(language, clean, shortcut);
+    }
+}
+
+/// A library two parts read from one directory is read over what both of them reach: the graph keeps
+/// of a library the fiber over what the project reaches, and the project is both parts
+/// (`mathematics.md`, Coproducts; #377). The shared program (`shared/{python,rust,typescript}`) has no
+/// shortcut, since the two sides would be one code: `orders` reaches `notekit`'s `save` alone,
+/// `billing` reaches `save` and what it calls, `write` beside it and `sync` in a module of its own.
+/// Read alone, `orders` keeps `save` as the border of its fiber, with what `write` touches glued into
+/// it, and does not read the module `sync` is in. Read with `billing`, in either order, `save` is one
+/// reading in both parts and in the merge: it calls `write` and `sync` and touches nothing itself.
+#[test]
+fn a_library_two_parts_read_is_read_over_both_their_reach() {
+    let shared = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/pairs/shared");
+    let parts = ["shop/orders", "shop/billing"];
+    let (python, typescript) = (installed("shared/python", &parts, uv_sync), installed("shared/typescript", &parts, npm_install));
+    let subjects = [("rust", shared.join("rust")), ("python", python), ("typescript", typescript)];
+    for (language, dir) in &subjects {
+        read_over_both_parts(language, &dir.join("shop"));
+    }
+    for (_, dir) in &subjects[1..] {
+        let _ = std::fs::remove_dir_all(dir);
+    }
+}
+
+/// The shared pair's law, on the repository `shop` as `language` reads it.
+fn read_over_both_parts(language: &str, shop: &Path) {
+    let (orders, billing) = (shop.join("orders"), shop.join("billing"));
+    let function = |g: &Graph, name: &str| {
+        let f = g.nodes.iter().find(|n| n.library && n.name == name && n.kind == atlas_engine::NodeKind::Function);
+        f.map(|n| n.id.clone())
     };
-    let renames = |g: &Graph, id: &str| g.node(id).unwrap().touches.iter().any(|t| t.op == "rename");
-    assert_eq!(library(&clean), BTreeSet::from(["notekit".to_string(), "notekit.save".to_string()]));
-    for main in ["orders.main", "billing.main"] {
-        assert_eq!(saves(&clean, main), ["notekit.save"], "{main}");
+    // what a graph reads `save` as: its steps and touches, and the lines out of it
+    let reading = |g: &Graph| {
+        let save = function(g, "save").unwrap_or_else(|| panic!("{language}: no save"));
+        let n = g.node(&save).unwrap();
+        let mut out: Vec<String> = g.edges.iter().filter(|e| e.src == save).map(|e| format!("{:?} {}", e.kind, e.dst)).collect();
+        out.sort();
+        (serde_json::to_string(&n.sites).unwrap(), serde_json::to_string(&n.touches).unwrap(), out)
+    };
+    let calls = |g: &Graph, to: &str| match (function(g, "save"), function(g, to)) {
+        (Some(save), Some(to)) => g.edges.iter().any(|e| e.src == save && e.dst == to && e.kind == EdgeKind::Calls),
+        _ => false,
+    };
+    let touches = |g: &Graph| g.node(&function(g, "save").unwrap()).unwrap().touches.len();
+    let alone = analyze_repo(&[orders.clone()], &Options::default()).unwrap();
+    assert!(!calls(&alone, "write") && !calls(&alone, "sync"), "{language}: read alone, orders reaches no callee of save");
+    assert!(touches(&alone) > 0, "{language}: read alone, orders glues what write touches into save");
+    let each: Vec<_> =
+        atlas_engine::parts::analyze_parts(&[shop.to_path_buf()], &Options::default()).unwrap().iter().map(|g| reading(g)).collect();
+    assert_eq!(each.len(), 2, "{language}");
+    assert_eq!(each[0], each[1], "{language}: the two parts read save as one reading");
+    let forward = analyze_repo(&[orders.clone(), billing.clone()], &Options::default()).unwrap();
+    let backward = analyze_repo(&[billing, orders], &Options::default()).unwrap();
+    for g in [&forward, &backward] {
+        assert!(calls(g, "write") && calls(g, "sync") && touches(g) == 0, "{language}: {}", reading(g).0);
     }
-    assert!(renames(&clean, "notekit.save"));
-    let versions = ["notekit-0_1_0", "notekit-0_1_0.save", "notekit-0_2_0", "notekit-0_2_0.save"];
-    assert_eq!(library(&shortcut), versions.iter().map(|v| v.to_string()).collect::<BTreeSet<_>>());
-    assert_eq!(saves(&shortcut, "orders.main"), ["notekit-0_1_0.save"]);
-    assert_eq!(saves(&shortcut, "billing.main"), ["notekit-0_2_0.save"]);
-    assert!(!renames(&shortcut, "notekit-0_1_0.save") && renames(&shortcut, "notekit-0_2_0.save"));
-    for g in [&clean, &shortcut] {
+    assert_eq!(reading(&forward), reading(&backward), "{language}: the merge is the same in both orders");
+    assert_eq!(reading(&forward), each[0], "{language}: the merge holds the parts' one reading");
+}
+
+/// The versions pair's law, on its two sides as `language` reads them.
+fn one_directory_is_one_library(language: &str, clean: &Graph, shortcut: &Graph) {
+    // the roots of the libraries whose code the graph holds
+    let roots = |g: &Graph| -> BTreeSet<String> {
+        let holds = |r: &str| g.nodes.iter().any(|n| n.library && (n.id == r || n.id.starts_with(&format!("{r}."))));
+        g.libraries.keys().filter(|r| holds(r)).cloned().collect()
+    };
+    // what the part's `main` calls to save
+    let save = |g: &Graph, part: &str| -> String {
+        let main = g.nodes.iter().find(|n| !n.library && n.part == part && n.name == "main" && n.kind == atlas_engine::NodeKind::Function);
+        let saves: Vec<String> = main.unwrap().sites.iter().map(|s| s.to.clone()).filter(|t| t.ends_with(".save")).collect();
+        assert_eq!(saves.len(), 1, "{language}: {part} saves once: {saves:?}");
+        saves[0].clone()
+    };
+    let moves = |t: &atlas_engine::Touch| atlas_engine::effects::fs_op(&t.op) == atlas_engine::effects::FsOp::Moves;
+    let renames = |g: &Graph, id: &str| g.node(id).unwrap_or_else(|| panic!("{language}: no {id}")).touches.iter().any(moves);
+    assert_eq!(roots(clean), BTreeSet::from(["notekit".to_string()]), "{language}");
+    let (orders, billing) = (save(clean, "orders"), save(clean, "billing"));
+    assert!(orders == billing && orders.starts_with("notekit.") && renames(clean, &orders), "{language}: {orders} {billing}");
+    assert_eq!(roots(shortcut), BTreeSet::from(["notekit-0_1_0".to_string(), "notekit-0_2_0".to_string()]), "{language}");
+    let (orders, billing) = (save(shortcut, "orders"), save(shortcut, "billing"));
+    assert!(orders.starts_with("notekit-0_1_0.") && billing.starts_with("notekit-0_2_0."), "{language}: {orders} {billing}");
+    assert_eq!(orders.strip_prefix("notekit-0_1_0"), billing.strip_prefix("notekit-0_2_0"), "{language}: one name below each version");
+    assert!(!renames(shortcut, &orders) && renames(shortcut, &billing), "{language}");
+    for g in [clean, shortcut] {
         let ids: Vec<&str> = g.nodes.iter().map(|n| n.id.as_str()).collect();
-        assert_eq!(ids.len(), ids.iter().collect::<BTreeSet<_>>().len(), "{ids:?}");
+        assert_eq!(ids.len(), ids.iter().collect::<BTreeSet<_>>().len(), "{language}: {ids:?}");
     }
+}
+
+/// The pair `name` with the vendored package each of its `parts` depends on installed as the
+/// language's tool installs it (`install`), in a directory of its own. Nothing is fetched.
+fn installed(name: &str, parts: &[&str], install: fn(&Path)) -> PathBuf {
+    let from = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/pairs").join(name);
+    let to = std::env::temp_dir().join(format!("atlas-pairs-{}-{}", name.replace('/', "-"), std::process::id()));
+    let _ = std::fs::remove_dir_all(&to);
+    copy(&from, &to);
+    for part in parts {
+        install(&to.join(part));
+    }
+    to
+}
+
+fn copy(from: &Path, to: &Path) {
+    std::fs::create_dir_all(to).unwrap();
+    for e in std::fs::read_dir(from).unwrap().flatten() {
+        let target = to.join(e.file_name());
+        if e.file_type().unwrap().is_dir() {
+            copy(&e.path(), &target);
+        } else {
+            std::fs::copy(e.path(), target).unwrap();
+        }
+    }
+}
+
+/// What `uv sync` makes of the project at `dir` whose one dependency is an editable path source: a
+/// `.venv` whose site-packages holds the distribution's metadata and a `.pth` that puts its source
+/// on the path.
+fn uv_sync(dir: &Path) {
+    let manifest: toml::Table = std::fs::read_to_string(dir.join("pyproject.toml")).unwrap().parse().unwrap();
+    let source = manifest["tool"]["uv"]["sources"]["notekit"]["path"].as_str().unwrap();
+    let source = path_clean::clean(dir.join(source));
+    let theirs: toml::Table = std::fs::read_to_string(source.join("pyproject.toml")).unwrap().parse().unwrap();
+    let version = theirs["project"]["version"].as_str().unwrap();
+    let venv = dir.join(".venv");
+    let site = if cfg!(windows) { venv.join("Lib/site-packages") } else { venv.join("lib/python3.13/site-packages") };
+    let info = site.join(format!("notekit-{version}.dist-info"));
+    std::fs::create_dir_all(&info).unwrap();
+    let home = format!("home = {}\nversion_info = 3.13.0\ninclude-system-site-packages = false\n", dir.display());
+    std::fs::write(venv.join("pyvenv.cfg"), home).unwrap();
+    std::fs::write(info.join("METADATA"), format!("Metadata-Version: 2.4\nName: notekit\nVersion: {version}\n")).unwrap();
+    std::fs::write(site.join("_notekit.pth"), format!("{}\n", source.join("src").display())).unwrap();
+}
+
+/// What `npm install` makes of the package at `dir` whose one dependency is a `file:` directory: a
+/// link to it in its `node_modules` (a junction on Windows).
+fn npm_install(dir: &Path) {
+    let manifest: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(dir.join("package.json")).unwrap()).unwrap();
+    let source = path_clean::clean(dir.join(manifest["dependencies"]["notekit"].as_str().unwrap().strip_prefix("file:").unwrap()));
+    let link = dir.join("node_modules/notekit");
+    std::fs::create_dir_all(link.parent().unwrap()).unwrap();
+    #[cfg(unix)]
+    std::os::unix::fs::symlink(&source, &link).unwrap();
+    #[cfg(windows)]
+    assert!(std::process::Command::new("cmd").arg("/C").arg("mklink").arg("/J").arg(&link).arg(&source).status().unwrap().success());
 }
 
 /// Isomorphic is the same (`CLAUDE.md`): one program draws one set of places in every language.

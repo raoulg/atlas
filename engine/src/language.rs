@@ -9,6 +9,7 @@ use std::path::{Path, PathBuf};
 use anyhow::Result;
 
 use crate::cache::Check;
+use crate::environment::Environment;
 use crate::lang::Lang;
 use crate::model::{Graph, Leaves};
 use crate::options::Options;
@@ -55,6 +56,12 @@ pub trait Language {
     fn environment(&self, _repo: &Repo, _opts: &Options) -> Vec<Check> {
         vec![]
     }
+    /// Where the code of the library the code imports as `name` lies, imported from the file `from`
+    /// of the part read at `repo`, as the language's tool finds it where `env` keeps the part's
+    /// libraries: the directory its code is read from, which names that code. None where its code is
+    /// not on disk, or is the repository's own and read as a part. What is asked of the disk to find
+    /// it is noted in `env`.
+    fn library_code(&self, repo: &Repo, env: &mut Environment, from: &Path, name: &str) -> Option<PathBuf>;
 }
 
 /// `Disk(dir) -> read -> Repo`: the repository at `dir`, or for a package named on its own the
@@ -142,6 +149,11 @@ impl Language for Python {
         let (packages, project_root) = Python::reading(repo, opts);
         pytypes::environment(repo, &python::types_root(&packages, project_root.as_deref()))
     }
+    /// A module's name is its path below the places ty looks in (`env`), the same from every file
+    /// of the project: no manifest says where a library is.
+    fn library_code(&self, _repo: &Repo, env: &mut Environment, _from: &Path, name: &str) -> Option<PathBuf> {
+        pytypes::library_code(env, name)
+    }
 }
 
 impl Python {
@@ -211,6 +223,11 @@ impl Language for Rust {
         }
         rust::environment(repo)
     }
+    /// The manifest of the crate `from` lies in declares the dependency, and the lock pins its
+    /// version for that crate: `Cargo.toml` names it, `Cargo.lock` the folder Cargo keeps it in.
+    fn library_code(&self, repo: &Repo, env: &mut Environment, from: &Path, name: &str) -> Option<PathBuf> {
+        rust::library_code(repo, env, from, name)
+    }
 }
 
 pub struct TypeScript;
@@ -268,6 +285,10 @@ impl Language for TypeScript {
             return vec![];
         }
         typescript::environment(repo)
+    }
+    /// The nearest `node_modules` above `from` that holds the package, by its `package.json`.
+    fn library_code(&self, repo: &Repo, env: &mut Environment, from: &Path, name: &str) -> Option<PathBuf> {
+        typescript::library_code(repo, env, from, name)
     }
 }
 

@@ -471,6 +471,13 @@ fn read_libraries(
     drop(typing);
     let _reach = crate::clock::stage("reach");
     let mut reached = types.libs.clone();
+    // what the repository's other parts reach of a library read from the same directory, reached
+    // as the code's own calls are
+    for (dir, entries) in &opts.reach {
+        let Some(root) = Path::new(dir).file_stem().and_then(|s| s.to_str()) else { continue };
+        let mid = |m: &str| if m.is_empty() { root.to_string() } else { format!("{root}.{m}") };
+        reached.extend(entries.iter().map(|e| (mid(&e.module), PathBuf::from(&e.file))));
+    }
     let used: HashSet<String> = reached.iter().map(|(m, _)| package_of(m)).collect();
     let mut readable = Readable::default();
     let here = crate::repo::Repo::real(&root_dir);
@@ -491,13 +498,17 @@ fn read_libraries(
             let Ok(m) = load_module(parser, &mid, &shown, is_pkg, &text) else { continue };
             drop(parse);
             store.files.insert(crate::tree::path_str(&shown), String::from_utf8_lossy(&m.src).to_string());
-            // the library as the dependency it is: the directory of its top-level package, or its one module
-            let (root, depth) = (mid.split('.').next().unwrap_or(&mid), mid.split('.').count() - 1 + usize::from(is_pkg));
-            if let Some(top) = shown.ancestors().nth(depth) {
-                store
-                    .libraries
-                    .entry(root.to_string())
-                    .or_insert_with(|| Dependency { dir: crate::tree::path_str(top), ..Default::default() });
+            // the library as the dependency it is: where its code lies, its top-level package or its one
+            // module, with the version its distribution names
+            let root = mid.split('.').next().unwrap_or(&mid);
+            if !store.libraries.contains_key(root) {
+                if let Some(code) = crate::pytypes::library_code(&ty.places, root) {
+                    let version = crate::pytypes::library_version(&code, root);
+                    let dir = code.strip_prefix(&here).map(|r| root_dir.join(r)).unwrap_or(code);
+                    store
+                        .libraries
+                        .insert(root.to_string(), Dependency { dir: crate::tree::path_str(&dir), version, name: root.to_string() });
+                }
             }
             store.add_node(Node {
                 id: mid.clone(),
