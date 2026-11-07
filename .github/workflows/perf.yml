@@ -1,9 +1,10 @@
 name: perf
 
-# How fast `next` reads, measured on one runner type and kept as a series per measure on the branch `perf-data`
+# How fast Atlas reads, measured on one runner type and kept as a series per measure on the branch `perf-data`
 # (`history.jsonl` and a README of charts). Nothing here compiles Atlas where a release on GitHub holds its build: every
-# night, the nightly pre-release built from `next`'s commit reads the programs `perf` reads of the corpus
-# (`tools/corpus.txt`) cold and warm, three rounds; a commit no nightly holds is a night skipped, said in the summary. A
+# night, the newest nightly pre-release (the open release branch while one is open, else `next`) reads the programs
+# `perf` reads of the corpus (`tools/corpus.txt`) cold and warm, three rounds; a night whose newest build the series has
+# measured already is skipped, said in the summary. A
 # measure past its baseline is suspect, and says nothing yet: the same run measures it again against the last commit that
 # lay within it, interleaved on this runner, with the builds the releases hold. Only what that reproduces is reported,
 # graded by its size: a small slowdown comments on the tracking issue, a large one opens an urgent issue, to be bisected
@@ -56,29 +57,14 @@ jobs:
     env:
       RUN: ${{ github.workspace }}/run.json
     steps:
-      # the tool is next's on the schedule and the dispatched ref's by hand; what is measured is next's commit either way
+      # the tool is next's on the schedule and the dispatched ref's by hand; what is measured is what the nightly channel
+      # built last either way
       - uses: actions/checkout@v7
         with:
           ref: ${{ github.event_name == 'workflow_dispatch' && github.sha || 'next' }}
           path: atlas
           fetch-depth: 0 # a reproduction checks out the commit it measures against
-      - uses: astral-sh/setup-uv@v10.3.0
-      # the build the nightly pre-release holds of next's commit; without one the night is skipped, not built
-      - name: the nightly build of next
-        id: build
-        working-directory: atlas
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          uv run tools/perf.py download --repo . --commit origin/next --out "$RUNNER_TEMP/atlas-code"
-      - name: a night without a build
-        if: steps.build.outputs.found != 'true'
-        env:
-          COMMIT: ${{ steps.build.outputs.commit }}
-        run: |
-          echo "No nightly pre-release holds a build of next at ${COMMIT:0:7}: nothing measured tonight." | tee -a "$GITHUB_STEP_SUMMARY"
       - name: the series so far
-        if: steps.build.outputs.found == 'true'
         working-directory: atlas
         run: |
           if git ls-remote --exit-code --heads origin perf-data >/dev/null; then
@@ -88,6 +74,22 @@ jobs:
           else
             git worktree add --orphan -b perf-data "$GITHUB_WORKSPACE/data"
           fi
+      - uses: astral-sh/setup-uv@v10.3.0
+      # the build of the newest nightly pre-release: the open release branch while one is open, else next. A night whose
+      # newest build is the one the series measured last, or that has none, is skipped, never built
+      - name: the newest nightly build
+        id: build
+        working-directory: atlas
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          uv run tools/perf.py download --repo . --newest-nightly --data "$GITHUB_WORKSPACE/data" --out "$RUNNER_TEMP/atlas-code"
+      - name: a night without a new build
+        if: steps.build.outputs.found != 'true'
+        env:
+          SAID: ${{ steps.build.outputs.said }}
+        run: |
+          echo "Nothing measured tonight: $SAID." | tee -a "$GITHUB_STEP_SUMMARY"
       # the corpus's TypeScript programs install their packages with npm
       - uses: actions/setup-node@v5
         if: steps.build.outputs.found == 'true'
@@ -153,7 +155,7 @@ jobs:
           git config user.name "atlas perf"
           git config user.email "noreply@github.com"
           git add -A
-          git commit -q -m "perf: next at ${COMMIT:0:7}"
+          git commit -q -m "perf: the nightly build of ${COMMIT:0:7}"
           git push origin perf-data
       # a large slowdown is an issue of its own, which asks for its bisection; a small one goes to the tracking issue
       - name: the issue

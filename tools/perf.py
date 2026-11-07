@@ -4,7 +4,7 @@
 """How fast Atlas builds, reads and tests, kept as a series per measure, and a signal when one gets slower.
 
     uv run tools/perf.py corpus (fetch | paths) --into DIR --for (perf | laws)
-    uv run tools/perf.py download --repo DIR --commit REF --out FILE
+    uv run tools/perf.py download --repo DIR (--commit REF | --newest-nightly [--data DIR]) --out FILE
     uv run tools/perf.py time NAME --out RUN -- COMMAND...
     uv run tools/perf.py read --atlas ATLAS [--subject NAME=PATH ...] [--programs DIR] [--kinds KIND ...] [--rounds N] [--timings FILE] --out RUN
     uv run tools/perf.py tests --workspace DIR --out RUN [-- CARGO_TEST_ARGS...]
@@ -20,7 +20,8 @@ run that gives a release its table) and its laws are sampled on (`laws`), each a
 of one reader out in DIR, one folder per name, a private one with the secrets CORPUS_PRIVATE and CORPUS_TOKEN, and
 installs what its lock files name (`install_dependencies`); `paths` names the folders. `--programs DIR` gives `read`,
 `reproduce` and `bisect` the programs `perf` reads as subjects. `download` writes the build a release on GitHub holds
-of a commit (`downloaded`) to FILE, and says on the step's output whether there was one. Nothing printed or written of a private program
+of a commit (`downloaded`), or that of the newest nightly, to FILE, and says on the step's output whether there was one
+and which commit it is. Nothing printed or written of a private program
 names its code: a reading that fails says so without Atlas's words, and its stages name only its libraries.
 
 `time`, `read` and `tests` measure and add their measures to the run file RUN (JSON):
@@ -985,43 +986,79 @@ def published(repo: Path, commit: str) -> list[str]:
     return tags + sorted(done.stdout.split(), reverse=True)
 
 
-def downloaded(repo: Path, commit: str, to: Path, scratch: Path) -> str | None:
-    """The build of `commit` that a release on GitHub holds for this machine (`published`), written to `to`: the
-    release it came from, or None where no release holds one that could be downloaded."""
+def newest_nightly(repo: Path) -> tuple[str, str] | None:
+    """The newest nightly pre-release on GitHub and the commit it was built from: `(tag, commit)`. Its stamp
+    (`nightly-<yyyymmddHHMM>`) orders the builds; the moving pointer `nightly` is none of them."""
+    slug = github_repository(repo)
+    if not slug or not shutil.which("gh"):
+        return None
+    query = '.[] | select(.tag_name | startswith("nightly-")) | "\\(.tag_name) \\(.target_commitish)"'
+    command = ["gh", "api", f"repos/{slug}/releases?per_page=100", "--paginate", "-q", query]
+    done = subprocess.run(command, capture_output=True, text=True, check=False)
+    builds = sorted(tuple(line.split()) for line in done.stdout.splitlines() if len(line.split()) == 2)
+    return builds[-1] if builds else None
+
+
+def asset_of(repo: Path, tag: str, to: Path, scratch: Path) -> bool:
+    """The build for this machine that the release `tag` holds, written to `to`; whether there was one."""
     target = TARGETS.get((platform.system(), platform.machine()))
     slug = github_repository(repo)
     if not target or not slug or not shutil.which("gh"):
-        return None
+        return False
     asset = f"atlas-code-{target}.tar.gz"
+    into = scratch / f"download-{tag}"
+    shutil.rmtree(into, ignore_errors=True)
+    command = ["gh", "release", "download", tag, "-R", slug, "-p", asset, "-D", str(into)]
+    done = subprocess.run(command, capture_output=True, text=True, check=False)
+    if done.returncode:
+        print(f"{tag} gave no {asset}: {done.stderr.strip()}")
+        return False
+    with tarfile.open(into / asset) as archive:
+        files = [m for m in archive.getmembers() if m.isfile()]
+        if len(files) != 1:
+            print(f"{tag}'s {asset} holds {len(files)} files, not one binary")
+            return False
+        with archive.extractfile(files[0]) as source, open(to, "wb") as out:
+            shutil.copyfileobj(source, out)
+    to.chmod(0o755)
+    shutil.rmtree(into, ignore_errors=True)
+    return True
+
+
+def downloaded(repo: Path, commit: str, to: Path, scratch: Path) -> str | None:
+    """The build of `commit` that a release on GitHub holds for this machine (`published`), written to `to`: the
+    release it came from, or None where no release holds one that could be downloaded."""
     for tag in published(repo, commit):
-        into = scratch / f"download-{commit[:12]}"
-        shutil.rmtree(into, ignore_errors=True)
-        command = ["gh", "release", "download", tag, "-R", slug, "-p", asset, "-D", str(into)]
-        done = subprocess.run(command, capture_output=True, text=True, check=False)
-        if done.returncode:
-            print(f"{tag} gave no {asset}: {done.stderr.strip()}")
-            continue
-        with tarfile.open(into / asset) as archive:
-            files = [m for m in archive.getmembers() if m.isfile()]
-            if len(files) != 1:
-                print(f"{tag}'s {asset} holds {len(files)} files, not one binary")
-                continue
-            with archive.extractfile(files[0]) as source, open(to, "wb") as out:
-                shutil.copyfileobj(source, out)
-        to.chmod(0o755)
-        shutil.rmtree(into, ignore_errors=True)
-        return f"the release {tag}" if version_of(tag) else f"the nightly {tag}"
+        if asset_of(repo, tag, to, scratch):
+            return f"the release {tag}" if version_of(tag) else f"the nightly {tag}"
     return None
 
 
 def command_download(args: argparse.Namespace) -> None:
+    """The build of `--commit`, or that of the newest nightly (`--newest-nightly`): what the nightly channel built last,
+    the open release branch while one is open and `next` otherwise. With `--data`, a build of the commit the series
+    recorded last is not downloaded: a night with nothing new built has nothing new to measure."""
     repo = args.repo.resolve(strict=True)
-    commit = git(repo, "rev-parse", f"{args.commit}^{{commit}}")
     args.out.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix="atlas-perf-download-") as scratch:
-        build = downloaded(repo, commit, args.out.resolve(), Path(scratch))
-    print(f"{commit[:7]}: {build or 'no release on GitHub holds a build of it'}")
-    output(found="true" if build else "false", commit=commit, build=build or "")
+        if args.newest_nightly:
+            newest = newest_nightly(repo)
+            if newest is None:
+                said, commit, build = "no nightly pre-release on GitHub", "", None
+            else:
+                tag, commit = newest
+                runs = history(args.data) if args.data else []
+                if runs and runs[-1]["commit"] == commit:
+                    said, build = f"{tag}, of {commit[:7]}, is the build the series measured last: nothing new to measure", None
+                else:
+                    build = f"the nightly {tag}" if asset_of(repo, tag, args.out.resolve(), Path(scratch)) else None
+                    said = f"{commit[:7]}: {build or f'{tag} holds no build for this machine'}"
+        else:
+            commit = git(repo, "rev-parse", f"{args.commit}^{{commit}}")
+            build = downloaded(repo, commit, args.out.resolve(), Path(scratch))
+            said = f"{commit[:7]}: {build or 'no release on GitHub holds a build of it'}"
+    print(said)
+    output(found="true" if build else "false", commit=commit, build=build or "", said=said)
 
 
 class Bench:
@@ -1691,7 +1728,10 @@ def main() -> None:
 
     p = commands.add_parser("download", help="the build a release on GitHub holds of a commit: vX.Y.Z, else a nightly")
     p.add_argument("--repo", type=Path, default=Path("."))
-    p.add_argument("--commit", required=True)
+    which = p.add_mutually_exclusive_group(required=True)
+    which.add_argument("--commit", help="a commit, a tag or a branch")
+    which.add_argument("--newest-nightly", action="store_true", help="the commit the newest nightly pre-release was built from")
+    p.add_argument("--data", type=Path, help="the series: with --newest-nightly, nothing is downloaded for the commit it measured last")
     p.add_argument("--out", type=Path, required=True)
     p.set_defaults(func=command_download)
 

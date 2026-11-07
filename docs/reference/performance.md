@@ -1,7 +1,7 @@
 # Atlas's performance, measured every night
 
 Atlas can get slower without anyone seeing it: a reading that regresses, a change that makes a large program take
-much more memory. The workflow `.github/workflows/perf.yml` measures `next` every night and says when something got
+much more memory. The workflow `.github/workflows/perf.yml` measures the nightly build every night and says when something got
 slower. It runs on a schedule and on `workflow_dispatch` only: no push, pull request, commit or landing runs anything
 for it. `tools/perf.py` measures and judges; the series is kept on the branch
 [`perf-data`](https://github.com/raoulg/atlas/tree/perf-data), whose README draws it.
@@ -14,10 +14,12 @@ for it. `tools/perf.py` measures and judges; the series is kept on the branch
 | `read/<subject>/<cold\|warm>/phase/<read\|check\|flow\|page>` | the phases `atlas-code view --timings FILE` reports of the same commands: reading the repository, `atlas-code check`'s principles, `flow::of`, and drawing and writing the page. |
 | `read/<subject>/<cold\|warm>/linked/<program\|library>` | how many bodies the reading of the graph linked, the program's and those of the library code it read (its `stats.linked_bodies` and `stats.linked_library_bodies`), as `--timings` reports them; a warm reading takes the graph from the index, and with it the count it was read with. |
 
-The night compiles nothing. It reads with the build the nightly pre-release holds of `next`'s commit (`nightly-<stamp>`,
-which `nightly.yml` makes with that commit as its target, `perf.py download`). A commit no nightly holds, because
-`next` moved after the nightly build, its tests were red, or the nightly builds an open release branch instead, is a
-night skipped: the summary says so in one line, and the series gets no run. The subjects are the programs `perf` reads
+The night compiles nothing. It reads with the build of the newest nightly pre-release (`nightly-<stamp>`, which
+`nightly.yml` makes an hour before, with the commit it built as its target; `perf.py download --newest-nightly`): what
+the nightly channel ships, the open release branch while one is open and `next` otherwise. The series records the
+commit measured, whichever branch it came from. A night whose newest build is of the commit the series recorded last
+(`next` did not move, or its tests were red and no new build was made) has nothing new to measure: it is skipped, the
+summary says so in one line, and the series gets no run. The subjects are the programs `perf` reads
 of the corpus (below), each at its fixed revision. Atlas at the commit measured is no subject: it moves with every
 commit, so its series would measure the code read together with the reader. All readings use Atlas's defaults
 (`--libraries 1`).
