@@ -19,18 +19,19 @@ branch [`perf-data`](https://github.com/raoulg/atlas/tree/perf-data), whose READ
 | `read/<subject>/serve/redraw/seconds` | then, in the same session, `docs/x.svg` added: the seconds serve spends drawing again, from the first answer that says it draws to the first that says it is done (at least the 20 ms between two answers); 0 when it starts no drawing within 5 s, which its watch, looking every second, would have. |
 | `tests/<package>/<binary>/seconds`, `tests/total/seconds` | each test binary of `cargo test --no-run`, run on its own in its package's directory, as `cargo test` runs it. libtest's own timings (`--format json`, `--report-time`) need nightly Rust, so a binary is timed from outside. Ignored tests and doc tests are not run. |
 
-The subjects are Atlas itself, at the commit measured, and the corpus. All readings use Atlas's defaults
+The subjects of a night are Atlas itself, at the commit measured, and the corpus. All readings use Atlas's defaults
 (`--libraries 1`).
 
 ## The corpus
 
 A benchmark measures the same programs every time, at revisions that do not move, so that a series measures
 the reader and not a growing subject. The corpus is one list, `tools/corpus.txt`, that `perf.yml` and `laws.yml`
-both read (`tools/perf.py corpus fetch --into DIR --for perf|laws`): a line per program, its name, its
-repository, the full commit it is read at, and what reads it.
+both read (`tools/perf.py corpus fetch --into DIR --for perf|release|laws`): a line per program, its name, its
+repository, the full commit it is read at, and what reads it: `perf` the nightly series, `release` the weekly run
+that gives a release its table (below), `laws` the laws' sample.
 
 ```text
-atlas-0.70.0    https://github.com/raoulg/atlas          4ebbbae0a877ef3609de15befe577897c3bec69b   perf
+atlas-0.70.0    https://github.com/raoulg/atlas          4ebbbae0a877ef3609de15befe577897c3bec69b   perf release
 goad_toolkit-locked https://github.com/raoulg/goad_toolkit   929d37cc588b27f599b7fbe2e4f5d9733619f897   perf laws
 ```
 
@@ -126,14 +127,27 @@ about the runner, or about the measure.
 ## Creep, against the last release
 
 A slowdown of a few percent per landing never makes one night suspect. Every Monday the job `weekly`
-measures `next` against the last release tag the same way, interleaved on one runner: Atlas reading itself
-cold, warm and after a file no reader asks about, its peak memory, serve's cold start on Atlas (to its first
-drawing, to its complete one, and its redraw after the file), and the release's table (below): each program of
-the corpus cold, warm, served and its peak memory, the clean release build and the test suite, with the cards of
-`next`'s readings. The standing goes, one line per measure, to the issue *Atlas's performance against the last
-release*. Run by hand (`mode: weekly`) from a branch, the job takes that branch's `tools/perf.py` and
-`tools/corpus.txt` and measures `next`, or the ref `to` names (`origin/release-0.71`): a new measure is measured on
-the runner before it lands, and a release is measured against the one before.
+measures `next` against the last release tag the same way, interleaved on one runner, on the release's table: each
+program of the corpus that `release` reads (`atlas-0.70.0`, Rust; `private-1`, Python and TypeScript;
+`vectormesh-locked`, Python), each at its fixed revision, read cold and warm, with the peak memory of the cold
+reading, all from one round of readings, and with the cards of `next`'s readings. Atlas at the commit measured is
+no subject here: it moves with every commit, and the nightly series holds it. The standing goes, one line per
+measure, to the issue *Atlas's performance against the last release*. Run by hand (`mode: weekly`) from a branch,
+the job takes that branch's `tools/perf.py` and `tools/corpus.txt` and measures `next`, or the ref `to` names
+(`origin/release-0.73`, or `release-0.73`, which the job reads as that): a new measure is measured on the runner
+before it lands, and a release is measured against the one before.
+
+Nothing is compiled for it. `reproduce --prebuilt` reads each side with the build a release on GitHub holds of its
+commit: a release tag `vX.Y.Z` with that release's `atlas-code-x86_64-unknown-linux-gnu.tar.gz`, a commit of a branch
+with the nightly pre-release built from it (`nightly-<stamp>`, whose target is that commit). Both are made by the
+same `cargo build --release --locked --target …` of the release workflows. A side no release holds, a branch that
+moved since its last nightly, is built on the runner as a reproduction builds it, and the output and the standing
+say so: one side downloaded and one built here were not made alike.
+
+Three rounds each: all three of B past all three of A happens by chance once in 20, against once in 252 for the
+five rounds a suspect night is measured with before it opens an issue. That is enough for the differences a user
+notices; a small difference, 10 s against 12 s, is no question for a release, and what grows night by night the
+series finds.
 
 ## Looking back
 
@@ -179,12 +193,10 @@ drawn as bars throughout.
   50 MB). A measure taken from two nights has no rounds to judge, and is grey. The floor judges one program; several
   small programs that move alike, each grey, are a shift all the same, and the line shows them so. A measure no
   program changed beyond noise draws no line: those are named in one sentence.
-- **The table**, folded: a row per program of the corpus that `perf` reads, named by its card, with its cold read, warm
-  read, read again after a file no reader asks about, serve from a cold start to the first and to the complete
-  picture, serve drawing again after that file, and peak memory (that of the cold read); and a row of Atlas's
-  clean release build and its test suite. Each measure is a pair of bars, the release before and this one, from the interleaved
-  run of the two where it measured it, both on one runner (`mode: weekly`, `to` the release branch), and else from
-  each release's night. Two nights ran on two runners, often of other CPUs, and say less than one interleaved run.
+- **The table**, folded: a row per program of the corpus that `release` reads, named by its card, with its cold read,
+  warm read and peak memory (that of the cold read). Each measure is a pair of bars, the release before and this
+  one, from the weekly run (the latest scheduled one, or one dispatched with `to=origin/release-X.Y`), both on one
+  runner, and else from each release's night. A release does not wait on a run of its own. Two nights ran on two runners, often of other CPUs, and say less than one interleaved run.
   A program that joined the corpus after both releases were measured has no row yet.
 - **Every release**, folded: each of those measures on the night of every release since the series began, a bar per
   release. A release's night is the last night that measured a commit of the release and none of the release
@@ -214,9 +226,9 @@ One `ubuntu-24.04` runner a night, about 25 minutes when nothing is suspect: the
 and an unasked reading, a cold serve start and the card of Atlas and of each program of the corpus, the tests'
 build (from the cache of this job) and one run of every test binary. A suspect night adds the reproduction (two
 builds and five interleaved rounds of what is suspect) and, for a large slowdown, the bisection; the job's
-timeout is 150 minutes. The weekly job builds two commits with their tests and measures the table and Atlas's
-own readings interleaved, within 240 minutes. Each job first removes toolchains the runner holds and no job uses,
-so that two builds and their tests fit on its disk.
+timeout is 150 minutes. The weekly job downloads two builds and measures the table interleaved, three rounds, within 120 minutes, which
+leaves room to build a side no release holds. Each other job first removes toolchains the runner holds and no job
+uses, so that two builds and their tests fit on its disk.
 
 ## Running it by hand
 

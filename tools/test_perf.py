@@ -52,12 +52,13 @@ def graph(library: bool) -> dict:
 
 class Corpus(unittest.TestCase):
     def test_the_corpus_holds_its_own_laws(self):
-        """tools/corpus.txt as it is: every program at a full commit, a name per program, a private one measured alone."""
+        """tools/corpus.txt as it is: every program at a full commit, a name per program, a private one never sampled."""
         programs = perf.corpus()
         self.assertTrue(any("perf" in p.readers for p in programs))
+        self.assertTrue(any("release" in p.readers for p in programs))
         for p in programs:
             if p.private:
-                self.assertEqual(p.readers, ("perf",))
+                self.assertNotIn("laws", p.readers)
 
     def test_every_lock_a_program_commits_is_installed_by_its_tool_where_it_lies(self):
         """Fetching a lock's dependencies is one construct: each committed lock file, in any language and at any depth,
@@ -219,9 +220,9 @@ class Page(unittest.TestCase):
         result = {"a": "a" * 40, "b": "b" * 40, "measures": measures, "cards": {"public-x": card, "hidden-y": card}}
         night = {"commit": "c" * 40, "runner": {"cpu": "cpu"}, "metrics": {"read/public-x/cold/seconds": {"value": 4.0}}}
         data = perf.bench_data(programs, [], {"0.1.0": night, "0.2.0": night}, "0.1.0", "0.2.0", result)
-        self.assertEqual(len(data["rows"]), len(programs) + 1)
+        self.assertEqual(len(data["rows"]), len(programs))
         unmeasured = {"a": "a" * 40, "b": "b" * 40, "measures": {m: g for m, g in measures.items() if "hidden-y" not in m}}
-        self.assertEqual(len(perf.bench_data(programs, [], {}, "0.1.0", "0.2.0", unmeasured)["rows"]), len(programs))
+        self.assertEqual(len(perf.bench_data(programs, [], {}, "0.1.0", "0.2.0", unmeasured)["rows"]), len(programs) - 1)
         with tempfile.TemporaryDirectory() as d:
             (Path(d) / "bench.json").write_text(json.dumps(data))
             docs, release_page.DOCS = release_page.DOCS, Path(d)

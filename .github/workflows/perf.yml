@@ -7,8 +7,8 @@ name: perf
 # commit that lay within it and measures the two interleaved on this runner. Only what that reproduces is
 # reported, graded by its size: a small slowdown comments on the tracking issue, a large one is bisected on
 # the spot and opens an urgent issue that names its landing. Every week the same comparison is made between
-# `next` and the last release, on the measures of a release's table; by hand, between the last release and any
-# ref (`to`), for a release's notes. By hand, any range can be bisected for a measure, and any two commits compared,
+# `next` and the last release, on the measures of a release's table, with the builds the releases on GitHub hold;
+# by hand, between the last release and any ref (`to`), for a release's notes. By hand, any range can be bisected for a measure, and any two commits compared,
 # with where each reading's time went, also on commits of Atlas that both read. A run that cannot measure
 # fails; nothing here runs on a push or a pull request. `tools/perf.py` measures and judges;
 # `docs/reference/performance.md` says how.
@@ -27,7 +27,7 @@ on:
       from:
         description: "bisect: the commit it was fast at; compare: A"
       to:
-        description: "bisect: the commit it is slow at (default: next); compare: B (default: the dispatched ref); weekly: the ref measured against the last release (default: origin/next)"
+        description: "bisect: the commit it is slow at (default: next); compare: B (default: the dispatched ref); weekly: the ref measured against the last release, a branch with or without origin/ (default: origin/next)"
       measure:
         description: "bisect: the measure, as perf-data names it (read/atlas/cold/seconds); compare: the measures, separated by spaces"
       subject:
@@ -182,26 +182,26 @@ jobs:
             data/README.md
           if-no-files-found: ignore
 
-  # next against the last release, measured interleaved on one runner: creep that no single night shows
+  # next against the last release, measured interleaved on one runner: creep that no single night shows, and a
+  # release's table. Each side reads with the build a release on GitHub holds of it (`--prebuilt`: the stable release
+  # at its tag, else the nightly built from its commit); a side no release holds is built here, and the standing says so
   weekly:
     if: (github.event_name == 'schedule' && github.event.schedule == '30 5 * * 1') || (github.event_name == 'workflow_dispatch' && inputs.mode == 'weekly')
     runs-on: ubuntu-24.04
-    timeout-minutes: 240
+    timeout-minutes: 120
     steps:
       # the tool is next's on the schedule and the dispatched ref's by hand, so that a measure is measured
-      # before it lands; what is measured is next either way, built in a worktree of its own
+      # before it lands; what is measured is next either way, or the ref `to` names
       - uses: actions/checkout@v7
         with:
           ref: ${{ github.event_name == 'workflow_dispatch' && github.sha || 'next' }}
           path: atlas
           fetch-depth: 0
-      # two commits built with their tests do not fit beside the runner's preinstalled toolchains
-      - name: room on the disk
-        run: sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL && df -h /
-      # the test suite is a measure: engine/tests/plans.rs runs the viewer's model in node
+      # the corpus's TypeScript programs install their packages with npm
       - uses: actions/setup-node@v5
         with:
           node-version: 22
+      # the corpus's Rust programs fetch their crates with cargo; a side no release holds is built with it
       - uses: dtolnay/rust-toolchain@stable
       - uses: astral-sh/setup-uv@v10.3.0
       # the corpus's dependencies come from the tools' downloads, kept between runs for one list of programs
@@ -215,22 +215,22 @@ jobs:
         env:
           CORPUS_TOKEN: ${{ secrets.CORPUS_TOKEN }}
           CORPUS_PRIVATE: ${{ secrets.CORPUS_PRIVATE }}
-        run: uv run atlas/tools/perf.py corpus fetch --into programs --for perf
-      # the release's table (`--table`: every program of the corpus, the build, the tests, and the cards), and Atlas
-      # reading itself at the commit measured
+        run: uv run atlas/tools/perf.py corpus fetch --into programs --for release
+      # the release's table (`--table`: each program `release` reads cold and warm, its peak memory, and the cards),
+      # three rounds: all three of B past all three of A is 1 in 20 by chance, enough for a difference a user notices
       - name: next against the last release
         working-directory: atlas
         env:
+          GH_TOKEN: ${{ github.token }}
           TO: ${{ github.event_name == 'workflow_dispatch' && inputs.to || '' }}
         run: |
           release=$(git tag -l 'v*' --sort=-v:refname | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | head -1)
           echo "RELEASE=$release" >> "$GITHUB_ENV"
-          # shellcheck disable=SC2086 # $SUBJECTS splits into its --subject arguments
-          uv run tools/perf.py reproduce --repo . --a "$release" --b "${TO:-origin/next}" $SUBJECTS --table \
-            --measure read/atlas/cold/seconds --measure read/atlas/warm/seconds --measure read/atlas/cold/peak_rss \
-            --measure read/atlas/unasked/seconds \
-            --measure read/atlas/serve/seconds --measure read/atlas/serve/first/seconds --measure read/atlas/serve/redraw/seconds \
-            --out "$GITHUB_WORKSPACE/weekly.json"
+          # a branch is named as the checkout has it, origin/<branch>; `release-0.73` is taken as that too
+          to=${TO:-origin/next}
+          git rev-parse --verify -q "$to^{commit}" >/dev/null || to="origin/$to"
+          uv run tools/perf.py reproduce --repo . --a "$release" --b "$to" --programs "$GITHUB_WORKSPACE/programs" --for release \
+            --table --rounds 3 --prebuilt --out "$GITHUB_WORKSPACE/weekly.json"
           uv run tools/perf.py conclude --reproduced "$GITHUB_WORKSPACE/weekly.json" --release "$release" \
             --standing "$GITHUB_WORKSPACE/standing.md"
           cat "$GITHUB_WORKSPACE/standing.md" >> "$GITHUB_STEP_SUMMARY"
