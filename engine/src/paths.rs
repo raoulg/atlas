@@ -1948,6 +1948,7 @@ fn defaults_alone(found: Vec<Completion>) -> Vec<Completion> {
 /// a completion names no place, the call keeps the touch it was read with.
 pub fn place_calls(store: &mut crate::builder::GraphBuilder, completed: Vec<Completed>, origin: bool) {
     use crate::model::{Crossing, EdgeKind, Request, Touch, World};
+    store.doors_read = true;
     let routes = served(store.nodes.values());
     // the class each of the program's methods is of: the type whose code it is; a library's types
     // keep no places of the program

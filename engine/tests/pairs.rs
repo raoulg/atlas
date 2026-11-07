@@ -1045,6 +1045,53 @@ fn an_input_is_its_default_where_no_caller_overrides_it() {
     assert!(facts.windows(2).all(|w| w[0] == w[1]), "{facts:?}");
 }
 
+/// A door is an entry, and a path built from an entry's parameters is whole where its users hand them as well as where
+/// the program's own callers do (`docs/reference/mathematics.md`, "Who makes a path whole": a route that starts at an
+/// entry whose users hand it; #435). In every language the defaults pair (`defaults/{python,rust,typescript}`) exports
+/// `keep`, a note kept where its caller says, else in the workbench of the home it is handed, and its command hands it
+/// `work`. So `keep` keeps the note where `jot` keeps it straight, and at the workbench of the home its users hand, a
+/// place made whole by the users of `keep` alone. Which form the root names its doors with (`__all__` over the names
+/// `__init__.py` imports, `pub fn` and `pub use` in `lib.rs`, `export { … } from` in the module `package.json` points
+/// to) says nothing of what a door is: its places are the same set in every language and on both sides.
+#[test]
+fn an_exported_function_keeps_its_users_places_in_every_language() {
+    // the Disk places a function of the program writes, by its name with the language's spelling taken away, each with
+    // whether the users of an entry make it whole
+    let places = |g: &Graph, function: &str| -> BTreeSet<(String, bool)> {
+        g.nodes
+            .iter()
+            .filter(|n| !n.library && n.id.rsplit('.').next().map(|s| s.replace('_', "").to_lowercase()).as_deref() == Some(function))
+            .flat_map(|n| &n.touches)
+            .filter(|t| t.kind == World::Disk)
+            .map(|t| (t.artifact.clone(), t.by.iter().any(|c| c.0.iter().any(|a| matches!(a, Atom::Starts(_))))))
+            .collect()
+    };
+    let mut facts = vec![];
+    for language in ["rust", "typescript", "python"] {
+        for side in ["clean", "shortcut"] {
+            let g = pair(&format!("defaults/{language}/{side}"));
+            let doors: BTreeSet<String> = g
+                .nodes
+                .iter()
+                .filter(|n| !n.library && n.entry.as_ref().is_some_and(|e| e.kind == atlas_engine::EntryKind::Export))
+                .map(|n| n.name.replace('_', "").to_lowercase())
+                .collect();
+            assert!(doors.contains("keep"), "{language} {side}: `keep` is a door, {doors:?}");
+            let jotted: BTreeSet<(String, bool)> = places(&g, "jot");
+            let kept = places(&g, "keep");
+            let users: BTreeSet<&(String, bool)> = kept.difference(&jotted).collect();
+            assert!(jotted.is_subset(&kept), "{language} {side}: {kept:?} holds {jotted:?}");
+            assert!(
+                users.len() == 1 && users.iter().all(|(p, by_users)| *by_users && p.starts_with('{')),
+                "{language} {side}: `keep` keeps one place more, the users' home, a value no code decides: {kept:?}"
+            );
+            facts.push(((language, side), kept));
+        }
+    }
+    let first = &facts[0].1;
+    assert!(facts.iter().all(|(_, kept)| kept == first), "the places of `keep` in every reading: {facts:#?}");
+}
+
 /// The calls to `write` from the functions `inplace` and `bound` of a program written as `files` (path, text) under a
 /// fresh directory.
 fn calls_to_write(name: &str, files: &[(&str, String)]) -> BTreeSet<(String, String)> {

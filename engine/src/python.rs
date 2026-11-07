@@ -439,10 +439,11 @@ pub fn parse(repo: &Repo, packages: &[PathBuf], project_root: Option<&Path>, opt
         store.bindings.insert(m.id.clone(), m.bindings.clone());
     }
     drop(items);
+    mark_exports(&modules, &mut store, &own);
+    crate::entries::mark_scripts(repo, &mut store, project_root);
     link(&modules, &mut store, &own, &types, &types_root);
     array_types(&modules, &mut store, &own);
     let _items = crate::clock::stage("items");
-    mark_exports(&modules, &mut store, &own);
     route_prefixes(&modules, &mut store, &types, &own);
     store.mark_library();
     Ok((store, root))

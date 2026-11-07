@@ -23,3 +23,5 @@ def count(f: TextIO) -> int:
 def emit(out: TextIO, n: int) -> None:
     """Write the count to the file handed in."""
     out.write(f"{n}\n")
+
+__all__ = ["main"]

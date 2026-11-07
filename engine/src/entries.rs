@@ -123,14 +123,8 @@ pub fn mark_scripts(repo: &Repo, store: &mut GraphBuilder, project_root: Option<
                 &[NodeKind::Function, NodeKind::Method, NodeKind::Class, NodeKind::Module][..],
             ),
         };
-        let Some(n) = store.nodes.get_mut(&nid).filter(|n| loads.contains(&n.kind)) else { continue };
-        match n.entry.as_ref().map(|e| e.kind) {
-            None => n.entry = Some(entry),
-            Some(EntryKind::Export) if d.group.is_none() => {
-                n.exported = true;
-                n.entry = Some(entry);
-            }
-            Some(_) => {}
+        if store.nodes.get(&nid).is_some_and(|n| loads.contains(&n.kind)) {
+            store.enter(&nid, entry);
         }
     }
 }
