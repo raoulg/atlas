@@ -1,8 +1,6 @@
 # The knowledge base with the shortcut: `graaf` gives the lines back as Strings, of no type of the code's, so the Bron
 # put by `voeg_toe` never comes back as a Node: no value of the code's leaves the get.
 
-known #438 kinds all export routes: kennis.Kennisbank draws
-
 route kennis.Kennisbank
 step Kennisbank()/Kennisbank.new
 step Kennisbank()/Kennisbank.new/Kennisbank() # the struct expression `new` builds the store by
