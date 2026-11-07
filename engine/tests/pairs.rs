@@ -100,7 +100,12 @@ fn read_over_both_parts(language: &str, shop: &Path) {
     };
     // what a graph reads `save` as: its steps and touches, and the lines out of it
     let reading = |g: &Graph| {
-        let save = function(g, "save").unwrap_or_else(|| panic!("{language}: no save"));
+        let save = function(g, "save").unwrap_or_else(|| {
+            let libs: Vec<String> = g.libraries.iter().map(|(r, d)| format!("{r} dir={:?} as path={:?}", d.dir, Path::new(&d.dir).components().collect::<Vec<_>>())).collect();
+            let nodes: Vec<String> = g.nodes.iter().filter(|n| n.library).map(|n| format!("{} {:?} file={:?}", n.id, n.kind, n.file)).collect();
+            let own: Vec<String> = g.nodes.iter().filter(|n| !n.library).map(|n| format!("{} sites={:?}", n.id, n.sites.iter().map(|s| s.to.clone()).collect::<Vec<_>>())).collect();
+            panic!("{language}: no save in part {:?}\nlibraries: {libs:#?}\nlibrary nodes: {nodes:#?}\nown: {own:#?}\nreal shop: {:?}", g.parts.iter().map(|p| p.id.clone()).collect::<Vec<_>>(), std::fs::canonicalize(shop))
+        });
         let n = g.node(&save).unwrap();
         let mut out: Vec<String> = g.edges.iter().filter(|e| e.src == save).map(|e| format!("{:?} {}", e.kind, e.dst)).collect();
         out.sort();
