@@ -1625,3 +1625,60 @@ fn a_declared_method_reads_alike_in_every_language() {
         }
     }
 }
+
+/// A type written through the module that holds it is that type, and the module is no type (`docs/reference/mathematics.md`,
+/// "Pushout: forms that say the same thing" and "Types are objects"). The clean shop imports each type by its name (`Order`,
+/// `Module`); the other side imports the module and writes the type through it: Python's `model.Order` and, of a library,
+/// `nn.Module` and `torch.nn.Module`, Rust's `model::Order` and `crate::model::Label`, TypeScript's `model.Order` of
+/// `import * as model`. Isomorphic is the same: in every language the two sides have the same nodes and the same edges but
+/// their imports, which say how the code reaches a name, and draw the same flow and findings. So a parameter written with a
+/// qualifier takes exactly the type it names, and no node, and no edge but an import or a module's own `contains`, names a
+/// module it is written through.
+#[test]
+fn a_type_written_through_its_module_is_that_type_in_every_language() {
+    let read = |g: &Graph| -> BTreeSet<String> {
+        let mut out: BTreeSet<String> = g.nodes.iter().map(|n| n.id.clone()).collect();
+        out.extend(g.edges.iter().filter(|e| e.kind != EdgeKind::Imports).map(|e| format!("{} {:?} {}", e.src, e.kind, e.dst)));
+        out
+    };
+    let through = ["shop.model", "ext:torch", "ext:torch.nn"];
+    let named_as_types = |g: &Graph| -> Vec<String> {
+        let mut out: Vec<String> =
+            g.nodes.iter().filter(|n| n.id.starts_with("ext:") && through.contains(&n.id.as_str())).map(|n| n.id.clone()).collect();
+        let module = |id: &str| through.contains(&id) || g.node(id).is_some_and(|n| n.kind == atlas_engine::NodeKind::Module);
+        out.extend(
+            g.edges
+                .iter()
+                .filter(|e| !matches!(e.kind, EdgeKind::Imports | EdgeKind::Contains) && (module(&e.src) || module(&e.dst)))
+                .map(|e| format!("{} {:?} {}", e.src, e.kind, e.dst)),
+        );
+        out
+    };
+    let arrows = |g: &Graph, f: &str, kind: EdgeKind| -> Vec<String> {
+        g.edges.iter().filter(|e| e.src == f && e.kind == kind).map(|e| e.dst.clone()).collect()
+    };
+    for language in ["python", "rust", "typescript"] {
+        let (clean, qualified) = (pair(&format!("qualified/{language}/clean")), pair(&format!("qualified/{language}/shortcut")));
+        assert_eq!(arrows(&qualified, "shop.post.ship", EdgeKind::Takes), ["shop.model.Order"], "{language}");
+        assert_eq!(arrows(&qualified, "shop.post.ship", EdgeKind::Returns), ["shop.model.Label"], "{language}");
+        if language == "python" {
+            for f in ["shop.net.frozen", "shop.net.scored"] {
+                for kind in [EdgeKind::Takes, EdgeKind::Returns] {
+                    assert_eq!(arrows(&qualified, f, kind), ["ext:torch.nn.Module"], "{language}: {f} {kind:?}");
+                }
+            }
+        }
+        assert_eq!(named_as_types(&qualified), Vec::<String>::new(), "{language}: a module is named as a type");
+        let (c, q) = (read(&clean), read(&qualified));
+        assert!(
+            c == q,
+            "{language}: the two spellings read apart\nonly clean: {:?}\nonly qualified: {:?}",
+            c.difference(&q).collect::<Vec<_>>(),
+            q.difference(&c).collect::<Vec<_>>()
+        );
+        let drawn = |g: &Graph| serde_json::to_value(atlas_engine::flow::of(g)).unwrap();
+        assert_eq!(drawn(&qualified), drawn(&clean), "{language}: the flow is the same");
+        let asked = |g: &Graph| atlas_engine::principles::check(g).into_iter().map(|f| (f.principle, f.node)).collect::<Vec<_>>();
+        assert_eq!(asked(&qualified), asked(&clean), "{language}: and so are the findings");
+    }
+}
