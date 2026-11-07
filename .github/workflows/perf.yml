@@ -1,21 +1,23 @@
 name: perf
 
-# How fast `next` builds, reads and tests, measured on one runner type and kept as a series per measure on
-# the branch `perf-data` (`history.jsonl` and a README of charts). Every night: the release build timed
-# clean, `atlas-code view` cold, warm and after a file no reader asks about, and `atlas-code serve` from a cold
-# start, on Atlas itself and on the corpus (`tools/corpus.txt`), each test binary on its own. A measure past its baseline is suspect, and says nothing yet: the same run builds the last
-# commit that lay within it and measures the two interleaved on this runner. Only what that reproduces is
-# reported, graded by its size: a small slowdown comments on the tracking issue, a large one is bisected on
-# the spot and opens an urgent issue that names its landing. Every week the same comparison is made between
-# `next` and the last release, on the measures of a release's table; by hand, between the last release and any
-# ref (`to`), for a release's notes. By hand, any range can be bisected for a measure, and any two commits compared,
-# with where each reading's time went, also on commits of Atlas that both read. A run that cannot measure
-# fails; nothing here runs on a push or a pull request. `tools/perf.py` measures and judges;
-# `docs/reference/performance.md` says how.
+# How fast Atlas reads, measured on one runner type and kept as a series per measure on the branch `perf-data`
+# (`history.jsonl` and a README of charts). Nothing here compiles Atlas where a release on GitHub holds its build: every
+# night, the newest nightly pre-release (the open release branch while one is open, else `next`) reads the programs
+# `perf` reads of the corpus (`tools/corpus.txt`) cold and warm, three rounds; a night whose newest build the series has
+# measured already is skipped, said in the summary. A
+# measure past its baseline is suspect, and says nothing yet: the same run measures it again against the last commit that
+# lay within it, interleaved on this runner, with the builds the releases hold. Only what that reproduces is reported,
+# graded by its size: a small slowdown comments on the tracking issue, a large one opens an urgent issue, to be bisected
+# by hand. Every week the same comparison is made between `next` and the last release, on the measures of a release's
+# table; by hand, between the last release and any ref (`to`), for a release's notes. By hand, any range can be bisected
+# for a measure, and any two commits compared, with where each reading's time went, also on commits of Atlas that both
+# read. A run that cannot measure fails; nothing here runs on a push or a pull request. `tools/perf.py` measures and
+# judges; `docs/reference/performance.md` says how.
 
 on:
-  # no schedule while the measurement is wider than its question: it runs by hand until it downloads its builds and
-  # measures three programs cold and warm
+  schedule:
+    - cron: "30 4 * * *" # every night
+    - cron: "30 5 * * 1" # every Monday: next against the last release
   workflow_dispatch:
     inputs:
       mode:
@@ -26,7 +28,7 @@ on:
       from:
         description: "bisect: the commit it was fast at; compare: A"
       to:
-        description: "bisect: the commit it is slow at (default: next); compare: B (default: the dispatched ref); weekly: the ref measured against the last release (default: origin/next)"
+        description: "bisect: the commit it is slow at (default: next); compare: B (default: the dispatched ref); weekly: the ref measured against the last release, a branch with or without origin/ (default: origin/next)"
       measure:
         description: "bisect: the measure, as perf-data names it (read/atlas/cold/seconds); compare: the measures, separated by spaces"
       subject:
@@ -51,13 +53,15 @@ jobs:
     if: (github.event_name == 'schedule' && github.event.schedule == '30 4 * * *') || (github.event_name == 'workflow_dispatch' && inputs.mode == 'nightly')
     # one runner type, named, so that a new image is a change to this file and not a step in the series
     runs-on: ubuntu-24.04
-    timeout-minutes: 150
+    timeout-minutes: 90
     env:
       RUN: ${{ github.workspace }}/run.json
     steps:
+      # the tool is next's on the schedule and the dispatched ref's by hand; what is measured is what the nightly channel
+      # built last either way
       - uses: actions/checkout@v7
         with:
-          ref: next
+          ref: ${{ github.event_name == 'workflow_dispatch' && github.sha || 'next' }}
           path: atlas
           fetch-depth: 0 # a reproduction checks out the commit it measures against
       - name: the series so far
@@ -70,66 +74,68 @@ jobs:
           else
             git worktree add --orphan -b perf-data "$GITHUB_WORKSPACE/data"
           fi
-      # two commits built with their tests do not fit beside the runner's preinstalled toolchains
-      - name: room on the disk
-        run: sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL && df -h /
-      # engine/tests/plans.rs runs the viewer's model in node
+      - uses: astral-sh/setup-uv@v10.3.0
+      # the build of the newest nightly pre-release: the open release branch while one is open, else next. A night whose
+      # newest build is the one the series measured last, or that has none, is skipped, never built
+      - name: the newest nightly build
+        id: build
+        working-directory: atlas
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          uv run tools/perf.py download --repo . --newest-nightly --data "$GITHUB_WORKSPACE/data" --out "$RUNNER_TEMP/atlas-code"
+      - name: a night without a new build
+        if: steps.build.outputs.found != 'true'
+        env:
+          SAID: ${{ steps.build.outputs.said }}
+        run: |
+          echo "Nothing measured tonight: $SAID." | tee -a "$GITHUB_STEP_SUMMARY"
+      # the corpus's TypeScript programs install their packages with npm
       - uses: actions/setup-node@v5
+        if: steps.build.outputs.found == 'true'
         with:
           node-version: 22
+      # the corpus's Rust programs fetch their crates with cargo; a side of a reproduction no release holds is built with it
       - uses: dtolnay/rust-toolchain@stable
-      - uses: astral-sh/setup-uv@v10.3.0
+        if: steps.build.outputs.found == 'true'
       # the corpus's dependencies come from the tools' downloads, kept between runs for one list of programs
       - uses: actions/cache@v4
+        if: steps.build.outputs.found == 'true'
         with:
           path: |
             ~/.cache/uv
             ~/.npm
           key: corpus-downloads-${{ runner.os }}-${{ hashFiles('atlas/tools/corpus.txt') }}
       - name: the corpus, at its revisions
+        if: steps.build.outputs.found == 'true'
         env:
           CORPUS_TOKEN: ${{ secrets.CORPUS_TOKEN }}
           CORPUS_PRIVATE: ${{ secrets.CORPUS_PRIVATE }}
         run: uv run atlas/tools/perf.py corpus fetch --into programs --for perf
-      - name: the dependencies, fetched before the build is timed
-        working-directory: atlas
-        run: cargo fetch --locked
-      # its own target directory, which no cache restores, and no RUSTC_WRAPPER: every crate compiles
-      - name: the release build, clean
-        working-directory: atlas
-        env:
-          CARGO_TARGET_DIR: ${{ github.workspace }}/clean
-        run: |
-          uv run tools/perf.py time build/release --out "$RUN" -- cargo build --release --locked -p atlas-code
-          cp "$CARGO_TARGET_DIR/release/atlas-code" "$RUNNER_TEMP/atlas-code"
-          rm -rf "$CARGO_TARGET_DIR"
-      - name: the readings, cold, warm and after a file no reader asks about, and serve from a cold start
+      - name: the readings, cold and warm, three rounds
+        if: steps.build.outputs.found == 'true'
         working-directory: atlas
         run: |
-          uv run tools/perf.py read --atlas "$RUNNER_TEMP/atlas-code" --out "$RUN" --subject atlas=. --programs ../programs
-      # the test binaries' build is not measured, so it may come from the cache
-      - uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: atlas
-      - name: the tests, one binary at a time
-        working-directory: atlas
-        run: uv run tools/perf.py tests --workspace . --out "$RUN"
+          uv run tools/perf.py read --atlas "$RUNNER_TEMP/atlas-code" --out "$RUN" --programs ../programs --kinds cold warm --rounds 3
       - name: held to the series
         id: record
+        if: steps.build.outputs.found == 'true'
         working-directory: atlas
+        env:
+          COMMIT: ${{ steps.build.outputs.commit }}
         run: |
-          uv run tools/perf.py record --data "$GITHUB_WORKSPACE/data" --run "$RUN" \
-            --commit "$(git rev-parse HEAD)" \
+          uv run tools/perf.py record --data "$GITHUB_WORKSPACE/data" --run "$RUN" --commit "$COMMIT" \
             --url "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" \
             --data-url "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/tree/perf-data" \
             --summary "$GITHUB_STEP_SUMMARY" --suspects "$GITHUB_WORKSPACE/suspects.json"
       - name: what is suspect, measured again against the last commit within its baseline
         if: steps.record.outputs.suspect == 'true'
         working-directory: atlas
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
-          # shellcheck disable=SC2086 # $SUBJECTS splits into its --subject arguments
-          uv run tools/perf.py reproduce --repo . --suspects "$GITHUB_WORKSPACE/suspects.json" $SUBJECTS \
-            --bisect-large --out "$GITHUB_WORKSPACE/reproduced.json"
+          uv run tools/perf.py reproduce --repo . --suspects "$GITHUB_WORKSPACE/suspects.json" --programs "$GITHUB_WORKSPACE/programs" \
+            --prebuilt --out "$GITHUB_WORKSPACE/reproduced.json"
       - name: graded
         id: conclude
         if: steps.record.outputs.suspect == 'true'
@@ -143,13 +149,15 @@ jobs:
       - name: the series, kept
         if: always() && steps.record.outcome == 'success'
         working-directory: data
+        env:
+          COMMIT: ${{ steps.build.outputs.commit }}
         run: |
           git config user.name "atlas perf"
           git config user.email "noreply@github.com"
           git add -A
-          git commit -q -m "perf: next at $(git -C ../atlas rev-parse --short HEAD)"
+          git commit -q -m "perf: the nightly build of ${COMMIT:0:7}"
           git push origin perf-data
-      # a large slowdown is an issue of its own, which names its landing; a small one goes to the tracking issue
+      # a large slowdown is an issue of its own, which asks for its bisection; a small one goes to the tracking issue
       - name: the issue
         if: steps.conclude.outputs.alert == 'true'
         env:
@@ -181,26 +189,26 @@ jobs:
             data/README.md
           if-no-files-found: ignore
 
-  # next against the last release, measured interleaved on one runner: creep that no single night shows
+  # next against the last release, measured interleaved on one runner: creep that no single night shows, and a
+  # release's table. Each side reads with the build a release on GitHub holds of it (`--prebuilt`: the stable release
+  # at its tag, else the nightly built from its commit); a side no release holds is built here, and the standing says so
   weekly:
     if: (github.event_name == 'schedule' && github.event.schedule == '30 5 * * 1') || (github.event_name == 'workflow_dispatch' && inputs.mode == 'weekly')
     runs-on: ubuntu-24.04
-    timeout-minutes: 240
+    timeout-minutes: 120
     steps:
       # the tool is next's on the schedule and the dispatched ref's by hand, so that a measure is measured
-      # before it lands; what is measured is next either way, built in a worktree of its own
+      # before it lands; what is measured is next either way, or the ref `to` names
       - uses: actions/checkout@v7
         with:
           ref: ${{ github.event_name == 'workflow_dispatch' && github.sha || 'next' }}
           path: atlas
           fetch-depth: 0
-      # two commits built with their tests do not fit beside the runner's preinstalled toolchains
-      - name: room on the disk
-        run: sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL && df -h /
-      # the test suite is a measure: engine/tests/plans.rs runs the viewer's model in node
+      # the corpus's TypeScript programs install their packages with npm
       - uses: actions/setup-node@v5
         with:
           node-version: 22
+      # the corpus's Rust programs fetch their crates with cargo; a side no release holds is built with it
       - uses: dtolnay/rust-toolchain@stable
       - uses: astral-sh/setup-uv@v10.3.0
       # the corpus's dependencies come from the tools' downloads, kept between runs for one list of programs
@@ -215,21 +223,21 @@ jobs:
           CORPUS_TOKEN: ${{ secrets.CORPUS_TOKEN }}
           CORPUS_PRIVATE: ${{ secrets.CORPUS_PRIVATE }}
         run: uv run atlas/tools/perf.py corpus fetch --into programs --for perf
-      # the release's table (`--table`: every program of the corpus, the build, the tests, and the cards), and Atlas
-      # reading itself at the commit measured
+      # the release's table (`--table`: each program `perf` reads cold and warm, its peak memory, and the cards),
+      # three rounds: all three of B past all three of A is 1 in 20 by chance, enough for a difference a user notices
       - name: next against the last release
         working-directory: atlas
         env:
+          GH_TOKEN: ${{ github.token }}
           TO: ${{ github.event_name == 'workflow_dispatch' && inputs.to || '' }}
         run: |
           release=$(git tag -l 'v*' --sort=-v:refname | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | head -1)
           echo "RELEASE=$release" >> "$GITHUB_ENV"
-          # shellcheck disable=SC2086 # $SUBJECTS splits into its --subject arguments
-          uv run tools/perf.py reproduce --repo . --a "$release" --b "${TO:-origin/next}" $SUBJECTS --table \
-            --measure read/atlas/cold/seconds --measure read/atlas/warm/seconds --measure read/atlas/cold/peak_rss \
-            --measure read/atlas/unasked/seconds \
-            --measure read/atlas/serve/seconds --measure read/atlas/serve/first/seconds --measure read/atlas/serve/redraw/seconds \
-            --out "$GITHUB_WORKSPACE/weekly.json"
+          # a branch is named as the checkout has it, origin/<branch>; `release-0.73` is taken as that too
+          to=${TO:-origin/next}
+          git rev-parse --verify -q "$to^{commit}" >/dev/null || to="origin/$to"
+          uv run tools/perf.py reproduce --repo . --a "$release" --b "$to" --programs "$GITHUB_WORKSPACE/programs" \
+            --table --rounds 3 --prebuilt --out "$GITHUB_WORKSPACE/weekly.json"
           uv run tools/perf.py conclude --reproduced "$GITHUB_WORKSPACE/weekly.json" --release "$release" \
             --standing "$GITHUB_WORKSPACE/standing.md"
           cat "$GITHUB_WORKSPACE/standing.md" >> "$GITHUB_STEP_SUMMARY"
