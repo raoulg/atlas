@@ -14,8 +14,9 @@ name: perf
 # judges; `docs/reference/performance.md` says how.
 
 on:
-  # no schedule while the measurement is wider than its question: it runs by hand until it downloads its builds and
-  # measures three programs cold and warm
+  schedule:
+    - cron: "30 4 * * *" # every night
+    - cron: "30 5 * * 1" # every Monday: next against the last release
   workflow_dispatch:
     inputs:
       mode:
