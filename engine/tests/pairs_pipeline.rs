@@ -268,11 +268,13 @@ fn the_same_from_outside_typescript() {
 }
 
 /// The clean `load` reads the file the command names: `load(download(SILSO, raw))` hands it what
-/// `download` gives back, which is `to`, the path the command handed `download`.
+/// `download` gives back, which is `to`, the path the command handed `download`. Where no caller
+/// names one, its users read its default, the library's `RAW`: the same file.
 #[test]
 fn the_same_from_outside_python_clean_reads_the_path_download_gives_back() {
     let read = touches(clean(), "sunspots.series.load", "disk_read");
-    assert!(read.iter().any(|t| t.artifact == "data/raw/sunspots.csv" && !t.fixed && t.by == by(["sunspots.cli.run"])), "{read:#?}");
+    let whole = by_run_or_users("sunspots.cli.run", "sunspots.series.load");
+    assert!(read.iter().any(|t| t.artifact == "data/raw/sunspots.csv" && !t.fixed && t.by == whole), "{read:#?}");
 }
 
 /// The directory the clean functions make for their file is the directory of the path the
@@ -393,26 +395,32 @@ fn python_clean_trend_is_a_plot() {
 }
 
 /// Library code does not decide where data lives: the command names the URL and the files, and
-/// the library takes them as arguments. Each place is made whole at the entry.
+/// the library takes them as arguments. Each place is made whole at the entry; the raw file also by
+/// the users of the doors that write and read it (`download` and `load`, which the package exports),
+/// where they leave it to the library's default, `RAW`, which whoever calls them may override.
 #[test]
 fn python_clean_the_places_are_made_whole_at_the_entry() {
     let c = clean();
     assert_eq!(found(c, "places"), Vec::<String>::new());
-    let at_the_entry = |f: &str, kind: &str, artifact: &str| {
+    let run = by(["sunspots.cli.run"]);
+    for (f, kind, artifact, whole) in [
+        ("sunspots.download.download", "net", "www.sidc.be", run.clone()),
+        (
+            "sunspots.download.download",
+            "disk_write",
+            "data/raw/sunspots.csv",
+            by_run_or_users("sunspots.cli.run", "sunspots.download.download"),
+        ),
+        ("sunspots.series.load", "disk_read", "data/raw/sunspots.csv", by_run_or_users("sunspots.cli.run", "sunspots.series.load")),
+        ("sunspots.plot.Plot.save", "disk_write", "figures/sunspots.png", run.clone()),
+    ] {
         let ts = touches(c, f, kind);
-        assert!(
-            ts.iter().any(|t| t.artifact == artifact && !t.fixed && t.by == by(["sunspots.cli.run"])),
-            "{f} {kind} {artifact}: {ts:#?}"
-        );
-    };
-    at_the_entry("sunspots.download.download", "net", "www.sidc.be");
-    at_the_entry("sunspots.download.download", "disk_write", "data/raw/sunspots.csv");
-    at_the_entry("sunspots.plot.Plot.save", "disk_write", "figures/sunspots.png");
-    // the read is made whole by `cli.run`, and by the users of `load`, which the package exports
+        assert!(ts.iter().any(|t| t.artifact == artifact && !t.fixed && t.by == whole), "{f} {kind} {artifact}: {ts:#?}");
+    }
+    // every read of `load` is the file the run or the users of `load` make whole
     let reads = touches(c, "sunspots.series.load", "disk_read");
     let by_users = |t: &Touch| t.by.iter().all(|c| c.0.iter().all(|a| matches!(a, Atom::Starts(f) if f == "sunspots.series.load")));
-    assert!(reads.iter().all(|t| !t.fixed && (t.by == by(["sunspots.cli.run"]) || by_users(t))), "{reads:#?}");
-    assert!(reads.iter().any(|t| t.by == by(["sunspots.cli.run"])) && reads.iter().any(|t| by_users(t)), "{reads:#?}");
+    assert!(reads.iter().all(|t| !t.fixed && (t.by.contains(&Both::one("sunspots.cli.run")) || by_users(t))), "{reads:#?}");
 }
 
 // ---------- Python, sloppy ----------

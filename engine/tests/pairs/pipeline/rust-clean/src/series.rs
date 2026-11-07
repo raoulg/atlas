@@ -2,8 +2,8 @@
 //!
 //! SILSO's file has no header; each line holds seven numbers separated by semicolons and padded
 //! with spaces (year, month, decimal date, mean, standard deviation, observations, definitive),
-//! and a month without an observation has `-1` for its mean. It is kept at `RAW` unless the caller
-//! names another file.
+//! and a month without an observation has `-1` for its mean. It is read from `RAW`, where `download`
+//! keeps it, unless the caller names another file.
 
 use std::num::NonZeroUsize;
 use std::path::Path;
@@ -12,10 +12,8 @@ use chrono::NaiveDate;
 use csv::{ReaderBuilder, Trim};
 use serde::Deserialize;
 
+use crate::download::RAW;
 use crate::error::Error;
-
-/// Where SILSO's file is kept.
-pub const RAW: &str = "data/raw/sunspots.csv";
 
 /// The mean of a month without an observation.
 const MISSING: f64 = -1.0;

@@ -2,13 +2,13 @@
 //
 // SILSO's file has no header; each line holds seven numbers separated by semicolons and padded
 // with spaces (year, month, decimal date, mean, standard deviation, observations, definitive),
-// and a month without an observation has `-1` for its mean. It is kept at `RAW` unless the caller
-// names another file.
+// and a month without an observation has `-1` for its mean. It is read from `RAW`, where `download`
+// keeps it, unless the caller names another file.
 
 import { readFile } from "node:fs/promises";
 
-/** Where SILSO's file is kept. */
-export const RAW = "data/raw/sunspots.csv";
+import { RAW } from "./download.js";
+
 const FIELDS = 7;
 const MISSING = -1;
 

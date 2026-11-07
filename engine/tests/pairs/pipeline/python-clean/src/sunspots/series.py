@@ -1,14 +1,16 @@
 """The monthly mean sunspot number as a frame indexed by month.
 
 SILSO's file has no header; its columns are separated by semicolons, and a month without an
-observation has `-1` for its mean. It is kept at `RAW` unless the caller names another file.
+observation has `-1` for its mean. It is read from `RAW`, where `download` keeps it, unless the caller
+names another file.
 """
 
 from pathlib import Path
 
 import pandas as pd
 
-RAW = Path("data/raw/sunspots.csv")
+from sunspots.download import RAW
+
 COLUMNS = ["year", "month", "decimal_date", "mean", "std", "observations", "definitive"]
 MISSING = -1
 

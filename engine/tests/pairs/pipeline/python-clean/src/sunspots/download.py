@@ -1,10 +1,10 @@
-"""A file from the web, kept as it came."""
+"""A file from the web, kept as it came: SILSO's, at `RAW` unless the caller names another."""
 
 from pathlib import Path
 
 import requests
 
-from sunspots.series import RAW
+RAW = Path("data/raw/sunspots.csv")
 
 
 def download(url: str, to: Path = RAW) -> Path:

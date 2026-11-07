@@ -1,7 +1,8 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 
-import { RAW } from "./series.js";
+/** Where SILSO's file is kept. */
+export const RAW = "data/raw/sunspots.csv";
 
 /** Fetches `url` and writes its body to `to` as it came, where `load` reads by default, creating the directory it goes in; gives `to`. */
 export async function download(url: string, to: string = RAW): Promise<string> {

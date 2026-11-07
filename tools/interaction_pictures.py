@@ -61,12 +61,15 @@ def init(*imports):
 SERIES_HEAD = '''"""The monthly mean sunspot number as a frame indexed by month.
 
 SILSO's file has no header; its columns are separated by semicolons, and a month without an
-observation has `-1` for its mean.
+observation has `-1` for its mean. It is read from `RAW`, where `download` keeps it, unless the caller
+names another file.
 """
 
 from pathlib import Path
 
 import pandas as pd
+
+from sunspots.download import RAW
 
 COLUMNS = ["year", "month", "decimal_date", "mean", "std", "observations", "definitive"]
 MISSING = -1
@@ -74,7 +77,7 @@ MISSING = -1
 
 LOAD = '''
 
-def load(path: Path) -> pd.DataFrame:
+def load(path: Path = RAW) -> pd.DataFrame:
     """The months in SILSO's file at `path` that have a mean, indexed by their first day."""
     table = pd.read_csv(path, sep=";", header=None, names=COLUMNS, skipinitialspace=True, na_values=[MISSING])
     first_days = pd.to_datetime(table[["year", "month"]].assign(day=1))
@@ -185,7 +188,6 @@ import typer
 %s
 
 SILSO = "https://www.sidc.be/SILSO/DATA/SN_m_tot_V2.0.csv"
-RAW = Path("data/raw/sunspots.csv")
 %s
 app = typer.Typer()
 
@@ -211,7 +213,7 @@ def history():
     commits.append(('Download SILSO\'s monthly sunspot numbers', {
         'download.py': download,
         '__init__.py': init(('download', ['download'])),
-        'cli.py': CLI_HEAD % ('from sunspots.download import download', '') + '''def run(raw: Path = RAW) -> None:
+        'cli.py': CLI_HEAD % ('from sunspots.download import RAW, download', '') + '''def run(raw: Path = RAW) -> None:
     """Download SILSO's monthly sunspot numbers where none are kept."""
     if not raw.exists():
         download(SILSO, raw)
@@ -219,7 +221,7 @@ def history():
     # 2 the preprocessing
     s2 = {**commits[0][1], 'series.py': SERIES_HEAD + LOAD,
           '__init__.py': init(('download', ['download']), ('series', ['load']))}
-    s2['cli.py'] = CLI_HEAD % ('from sunspots.download import download\nfrom sunspots.series import load', '') + '''def run(raw: Path = RAW) -> None:
+    s2['cli.py'] = CLI_HEAD % ('from sunspots.download import RAW, download\nfrom sunspots.series import load', '') + '''def run(raw: Path = RAW) -> None:
     """Download SILSO's monthly sunspot numbers where none are kept, and describe the months that have a mean."""
     if not raw.exists():
         download(SILSO, raw)
@@ -229,7 +231,7 @@ def history():
     # 3 the first figure
     s3 = {**s2, 'settings.py': SETTINGS_HEAD + SETTINGS_LOOKS, 'plot.py': PLOT_HEAD + TREND_MEANS % ('', ''),
           '__init__.py': init(('download', ['download']), ('plot', ['Plot', 'Trend']), ('series', ['load']), ('settings', ['Settings']))}
-    s3['cli.py'] = CLI_HEAD % ('from sunspots.download import download\nfrom sunspots.plot import Trend\nfrom sunspots.series import load\nfrom sunspots.settings import Settings',
+    s3['cli.py'] = CLI_HEAD % ('from sunspots.download import RAW, download\nfrom sunspots.plot import Trend\nfrom sunspots.series import load\nfrom sunspots.settings import Settings',
                                'FIGURE = Path("figures/sunspots.png")\n') + '''def run(raw: Path = RAW, figure: Path = FIGURE) -> None:
     """Download SILSO's monthly sunspot numbers where none are kept and save a figure of them."""
     if not raw.exists():
@@ -242,7 +244,7 @@ def history():
           'settings.py': SETTINGS_HEAD + '    months: int = 13\n' + SETTINGS_LOOKS,
           'plot.py': PLOT_HEAD + TREND_MEANS % (', with their smoothed mean over them', TREND_SMOOTHED),
           '__init__.py': init(('download', ['download']), ('plot', ['Plot', 'Trend']), ('series', ['load', 'smooth']), ('settings', ['Settings']))}
-    s4['cli.py'] = CLI_HEAD % ('from sunspots.download import download\nfrom sunspots.plot import Trend\nfrom sunspots.series import load, smooth\nfrom sunspots.settings import Settings',
+    s4['cli.py'] = CLI_HEAD % ('from sunspots.download import RAW, download\nfrom sunspots.plot import Trend\nfrom sunspots.series import load, smooth\nfrom sunspots.settings import Settings',
                                'FIGURE = Path("figures/sunspots.png")\n') + '''def run(raw: Path = RAW, figure: Path = FIGURE, months: int = 13) -> None:
     """Download SILSO's monthly sunspot numbers where none are kept, smooth them and save their trend."""
     settings = Settings(months=months)
@@ -256,7 +258,7 @@ def history():
     s5 = {**s4, 'series.py': SERIES_HEAD + LOAD + TRUSTED + SMOOTH,
           'settings.py': SETTINGS_HEAD + '    months: int = 13\n    minimum: int = 1\n' + SETTINGS_LOOKS,
           '__init__.py': init(('download', ['download']), ('plot', ['Plot', 'Trend']), ('series', ['load', 'smooth', 'trusted']), ('settings', ['Settings']))}
-    s5['cli.py'] = CLI_HEAD % ('from sunspots.download import download\nfrom sunspots.plot import Trend\nfrom sunspots.series import load, smooth, trusted\nfrom sunspots.settings import Settings',
+    s5['cli.py'] = CLI_HEAD % ('from sunspots.download import RAW, download\nfrom sunspots.plot import Trend\nfrom sunspots.series import load, smooth, trusted\nfrom sunspots.settings import Settings',
                                'FIGURE = Path("figures/sunspots.png")\n') + '''def run(raw: Path = RAW, figure: Path = FIGURE, months: int = 13, minimum: int = 1) -> None:
     """Download SILSO's monthly sunspot numbers where none are kept, smooth them and save their trend."""
     settings = Settings(months=months, minimum=minimum)
@@ -272,7 +274,7 @@ def history():
           'plot.py': PLOT_HEAD + TREND_MEANS % (', with their smoothed mean over them', TREND_SMOOTHED) + CYCLES,
           '__init__.py': init(('download', ['download']), ('plot', ['Cycles', 'Plot', 'Trend']),
                               ('series', ['load', 'peaks', 'smooth', 'trusted']), ('settings', ['Settings']))}
-    s6['cli.py'] = CLI_HEAD % ('from sunspots.download import download\nfrom sunspots.plot import Cycles, Trend\nfrom sunspots.series import load, peaks, smooth, trusted\nfrom sunspots.settings import Settings',
+    s6['cli.py'] = CLI_HEAD % ('from sunspots.download import RAW, download\nfrom sunspots.plot import Cycles, Trend\nfrom sunspots.series import load, peaks, smooth, trusted\nfrom sunspots.settings import Settings',
                                'FIGURE = Path("figures/sunspots.png")\nCYCLES = Path("figures/cycles.png")\n') + '''def run(raw: Path = RAW, figure: Path = FIGURE, cycles: Path = CYCLES, months: int = 13, minimum: int = 1) -> None:
     """Download SILSO's monthly sunspot numbers where none are kept, smooth them, save their trend and the maxima of their cycles."""
     settings = Settings(months=months, minimum=minimum)
