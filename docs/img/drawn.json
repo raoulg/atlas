@@ -1471,7 +1471,7 @@
    ],
    [
     "atlas-engine.parts.graph_of",
-    "\u25b8 graph_of \u00b7 +27 types13"
+    "\u25b8 graph_of \u00b7 +32 types15"
    ],
    [
     "e:atlas-engine.analyze",
@@ -1515,7 +1515,19 @@
    ],
    [
     "w:Disk:in",
-    "from disk \u00b7 1"
+    "from disk \u00b7 2"
+   ],
+   [
+    "w:File:{d}/pyproject.toml",
+    "File({d}/pyproject.toml)"
+   ],
+   [
+    "w:File:{}/package.json",
+    "File(package.json in an unnamed folder){}/package.json"
+   ],
+   [
+    "w:File:{}/top_level.txt",
+    "File(top_level.txt in an unnamed folder){}/top_level.txt"
    ],
    [
     "w:Global:atlas-engine.clock.CLOCK",
@@ -1551,11 +1563,11 @@
    ],
    [
     "w:Type:atlas-engine.environment.Environment",
-    "Environment \u00b7 27"
+    "Environment \u00b7 29"
    ],
    [
     "w:Type:atlas-engine.repo.Repo",
-    "Repo \u00b7 7"
+    "Repo \u00b7 3"
    ]
   ],
   "edges": [
@@ -1641,6 +1653,18 @@
    ],
    [
     "w:Disk:in",
+    "n:atlas-engine.analyze/1"
+   ],
+   [
+    "w:File:{d}/pyproject.toml",
+    "n:atlas-engine.analyze/1"
+   ],
+   [
+    "w:File:{}/package.json",
+    "n:atlas-engine.analyze/1"
+   ],
+   [
+    "w:File:{}/top_level.txt",
     "n:atlas-engine.analyze/1"
    ],
    [
