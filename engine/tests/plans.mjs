@@ -25,7 +25,7 @@ const D = JSON.parse(fs.readFileSync(dataJson, "utf8"));
 // `ATLAS_FINE_BUDGET=n` cuts the plan as a large program's is cut (`plan.js`, `FINE_BUDGET`)
 const window = process.env.ATLAS_FINE_BUDGET ? {ATLAS_FINE_BUDGET: Number(process.env.ATLAS_FINE_BUDGET)} : {};
 const M = new Function("D", "window", fs.readFileSync(planJs, "utf8") + `
-return {V, plan, imageOf, coarsen, checkOpenings, refines, overviewOpen, inUnit, partOf, MAKEFILES, treeInfo, stepLabel, oneOf, typeLabel, sideOfRoles, familyOf, kindOf, byId, ordersOn, stepOf, opens, frameOf, valueBox, foldDirs, filePath, valuesOf, closedFamily, typesIn, lightOf, cutBy, familyFrames, here, kindsOf, isData, worldPlaceOf, placeOfType, focusOpen: typeof focusOpen === "function" ? focusOpen : null, overviewEntries, planBase, VIEWS, viewOf, dirsOf};`)(D, window);
+return {V, plan, imageOf, coarsen, checkOpenings, refines, overviewOpen, inUnit, partOf, MAKEFILES, treeInfo, stepLabel, oneOf, typeLabel, sideOfRoles, familyOf, kindOf, byId, ordersOn, stepOf, opens, frameOf, valueBox, foldDirs, filePath, valuesOf, closedFamily, typesIn, lightOf, cutBy, familyFrames, here, kindsOf, isData, worldPlaceOf, placeOfType, focusOpen: typeof focusOpen === "function" ? focusOpen : null, overviewEntries, planBase, VIEWS, viewOf, dirsOf, worldUse, storageGroups};`)(D, window);
 const {V} = M;
 
 const SIDES = {in: "left", out: "right", mid: "between", both: "both"};
@@ -353,8 +353,11 @@ function ends(C, unmerged) {
 // blocks are the folders and patterns the program touches (mathematics.md, "Paths as terms"; #381). So a place the picture draws
 // stands in the outermost place of its order that the picture draws and has not opened: closed, that place's box stands for
 // it, and no box of its own is drawn; opened, the place stands in its frame again, as refinement keeps what it does not refine.
-// Asked with the folders and patterns closed, each opened alone, and all opened; `picture` draws the picture and the one before
-// the order is taken
+// The places by the type that holds them are a quotient of the places too (`storageGroups`, mathematics.md "Places by the type
+// that holds them"), and two quotients draw one picture only where each block of the one lies in one block of the other: a
+// group holds a place that lies in another the picture draws only where it holds the outermost of them as well, else the place
+// would stand in the group's box and in the frame of its folder at once. Asked with the folders and patterns closed, each opened
+// alone, and all opened; `picture` draws the picture and the one before the order is taken
 const LIES_IN = Object.entries(D.flow?.lies_in || {});
 function orderings(picture) {
   if (!LIES_IN.length) return [];
@@ -364,8 +367,10 @@ function orderings(picture) {
     const [C, before] = picture(), at = set.length ? `with ${set.join(", ")} open` : "with every folder closed";
     const drawn = new Set([...before.places.keys()].filter(k => k.startsWith("w:File:")));
     const box = k => (C.meets?.frames.has(k) ? k : C.places.has(k) ? k : null);
+    const groups = [...M.storageGroups(C, M.worldUse(C)).values()].filter(G => G.kids.size >= 2);
     for (const p of drawn) {
       const hs = (D.flow.lies_in[p] || []).filter(q => q !== p && drawn.has(q)), c = hs.find(q => !V.open.dirs.has(q.slice(7)));
+      for (const G of groups) if (hs.length && G.kids.has(p) && !G.kids.has(hs[0])) out.push(`${at}: ${p} lies in ${hs[0]}, and the group ${G.id} holds it without ${hs[0]}`);
       if (c) {
         if (C.places.has(p)) out.push(`${at}: ${p} lies in ${c}, which is closed, and is drawn as a box of its own`);
         if (!C.places.get(c)?.members?.includes(p)) out.push(`${at}: ${p} lies in ${c}, which is closed, and its box does not stand for it`);

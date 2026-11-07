@@ -18,7 +18,8 @@ the model hands the page, its siblings that draw alike merged into one box (`sib
 among its boxes, and merge only siblings that draw the same lines, calls among them (#412). And every place on the disk
 that lies in another the picture draws (`lies_in`, mathematics.md "Paths as terms") must stand in the outermost of them
 that is closed, its box standing for it, or, with them all open, in the frame of the innermost, with the folders and
-patterns closed, each opened alone and all opened, in routes and in the overview (the pair `meets`; #381). They are asked again with the plan cut as a large
+patterns closed, each opened alone and all opened, in routes and in the overview (the pair `meets`; #381), and no group of the
+places by the type that holds them may hold such a place without the outermost place it lies in (`held-in-a-folder`). They are asked again with the plan cut as a large
 program's is cut, at the budgets 1, 2 and 3 (`ATLAS_FINE_BUDGET`), where a step beyond the cut is the image of its body
 and each of its lines counts the fine lines its body draws there, and where each step beyond the cut, opened as the page
 opens it and planned anew, must refine the picture it was cut in; the facts are asked of the finest plan only. The
