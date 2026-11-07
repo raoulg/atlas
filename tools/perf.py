@@ -3,22 +3,24 @@
 # ///
 """How fast Atlas builds, reads and tests, kept as a series per measure, and a signal when one gets slower.
 
-    uv run tools/perf.py corpus (fetch | paths) --into DIR --for (perf | release | laws)
+    uv run tools/perf.py corpus (fetch | paths) --into DIR --for (perf | laws)
+    uv run tools/perf.py download --repo DIR --commit REF --out FILE
     uv run tools/perf.py time NAME --out RUN -- COMMAND...
-    uv run tools/perf.py read --atlas ATLAS [--subject NAME=PATH ...] [--programs DIR] [--rounds N] [--timings FILE] --out RUN
+    uv run tools/perf.py read --atlas ATLAS [--subject NAME=PATH ...] [--programs DIR] [--kinds KIND ...] [--rounds N] [--timings FILE] --out RUN
     uv run tools/perf.py tests --workspace DIR --out RUN [-- CARGO_TEST_ARGS...]
     uv run tools/perf.py record --data DIR --run RUN --commit SHA [--url URL] [--summary FILE] [--suspects FILE]
-    uv run tools/perf.py reproduce --repo DIR --a SHA --b SHA (--suspects FILE | --measure M ... | --table) [--subject NAME=PATH ...] [--programs DIR [--for READER]] [--rounds N] [--prebuilt] [--timings FILE] --out FILE
+    uv run tools/perf.py reproduce --repo DIR --a SHA --b SHA (--suspects FILE | --measure M ... | --table) [--subject NAME=PATH ...] [--programs DIR] [--rounds N] [--prebuilt] [--timings FILE] --out FILE
     uv run tools/perf.py stages --timings FILE [--reproduced FILE]
     uv run tools/perf.py conclude --data DIR --reproduced FILE [--summary FILE] [--alert FILE] [--standing FILE]
     uv run tools/perf.py bisect --repo DIR --from SHA --to SHA --measure M [--subject NAME=PATH ...] --out FILE
     uv run tools/perf.py release-bars [--data DIR] [--reproduced FILE] --repo DIR --before TAG --after REF [--version V] [--out FILE]
 
-`corpus` reads the corpus, `tools/corpus.txt`: the programs Atlas is measured on every night (`perf`) and in the weekly
-run that gives a release its table (`release`), and its laws are sampled on (`laws`), each at a fixed revision. `fetch`
-checks those of one reader out in DIR, one folder per name, a private one with the secrets CORPUS_PRIVATE and
-CORPUS_TOKEN, and installs what its lock files name (`install_dependencies`); `paths` names the folders. `--programs DIR`
-gives `read`, `reproduce` and `bisect` the programs `perf` reads as subjects, or those of the reader `--for` names. Nothing printed or written of a private program
+`corpus` reads the corpus, `tools/corpus.txt`: the programs Atlas is measured on (`perf`: every night, and in the weekly
+run that gives a release its table) and its laws are sampled on (`laws`), each at a fixed revision. `fetch` checks those
+of one reader out in DIR, one folder per name, a private one with the secrets CORPUS_PRIVATE and CORPUS_TOKEN, and
+installs what its lock files name (`install_dependencies`); `paths` names the folders. `--programs DIR` gives `read`,
+`reproduce` and `bisect` the programs `perf` reads as subjects. `download` writes the build a release on GitHub holds
+of a commit (`downloaded`) to FILE, and says on the step's output whether there was one. Nothing printed or written of a private program
 names its code: a reading that fails says so without Atlas's words, and its stages name only its libraries.
 
 `time`, `read` and `tests` measure and add their measures to the run file RUN (JSON):
@@ -26,7 +28,8 @@ names its code: a reading that fails says so without Atlas's words, and its stag
 - `time` runs a command once: its wall time and the peak resident memory of its largest process.
 - `read` draws each subject with `atlas-code view --timings`, cold (an empty cache and no index), warm (the
   same again) and unasked (again, with a file no reader asks about added), and serves it with `atlas-code serve`
-  from a cold start, once a night (`--rounds` more for a median): the wall time, peak memory and the phases Atlas
+  from a cold start, or the kinds `--kinds` names, once (`--rounds` more for a median; the night takes cold and warm,
+  three rounds): the wall time, peak memory and the phases Atlas
   reports (read, check, flow, page), with how many bodies the reading linked, the program's and the libraries';
   of serve, the time to its first drawing, to its complete one, and what it spends drawing again after the same
   file. Each subject gets its card, from the graph `atlas-code analyze` reads of it: languages, files, lines,
@@ -49,7 +52,7 @@ there; a large one is bisected on the spot, so that it names its commit. `conclu
 into the history's last run, the summary and the text of the tracking issue (`--alert`, only for what was
 reproduced), or the standing of `next` against a release (`--standing`). `bisect` finds the landing in a
 range that made a measure slower, or gives each landing's share where no single one did. `reproduce --table`
-measures the release's table: TABLE of each program `--programs` holds (`--for release` in the weekly run), with the cards of B's
+measures the release's table: TABLE of each program of the corpus that `perf` reads, with the cards of B's
 readings. `release-bars` writes a release's speed (`docs/releases/<version>/bench.json`, the `Bench:` line of its
 notes): each measure of the release before beside this one, from the interleaved run of the two where it measured
 it, else from each release's night in the series; their geometric mean ratio, with whether each changed beyond
@@ -100,6 +103,7 @@ CHARTED = 90  # runs a chart shows
 # the series needs before it opens an issue; the weekly run takes three (`--rounds 3`), all three past all three 1 in 20,
 # enough for a difference a user notices
 ROUNDS = 5
+NIGHT_ROUNDS = 3  # rounds of a night's readings, its measure their median
 BUILD_ROUNDS = 2  # a clean build is long: two rounds each
 LARGE = 1.5  # a reproduced measure this many times A is large: bisected on the spot, marked urgent
 PER_LANDING = 12  # a range of at most this many landings is measured landing by landing; a longer one is halved
@@ -108,13 +112,13 @@ PER_LANDING = 12  # a range of at most this many landings is measured landing by
 # the corpus
 
 CORPUS = Path(__file__).resolve().parent / "corpus.txt"
-READERS = ("perf", "release", "laws")
+READERS = ("perf", "laws")
 
 
 @dataclass(frozen=True)
 class Program:
     """A program of the corpus: its name, its repository (a URL, or `private`), the commit it is read at, and
-    what reads it (`perf`, the nightly series; `release`, the weekly run and a release's table; `laws`)."""
+    what reads it (`perf`, `laws`)."""
 
     name: str
     repository: str
@@ -242,9 +246,9 @@ def command_corpus(args: argparse.Namespace) -> None:
         print(f"{p.name}: {p.revision[:12]}" + (", private" if p.private else ""))
 
 
-def programs_in(folder: Path | None, reader: str = "perf", file: Path = CORPUS) -> list[tuple[str, Path]]:
-    """The subjects of the corpus that `reader` reads, as `corpus fetch --for reader` lays them out in `folder`."""
-    return [(p.name, folder / p.name) for p in corpus(file) if reader in p.readers] if folder else []
+def programs_in(folder: Path | None, file: Path = CORPUS) -> list[tuple[str, Path]]:
+    """The subjects of the corpus that `perf` reads, as `corpus fetch` lays them out in `folder`."""
+    return [(p.name, folder / p.name) for p in corpus(file) if "perf" in p.readers] if folder else []
 
 
 # measuring
@@ -577,9 +581,10 @@ def command_read(args: argparse.Namespace) -> None:
         scratch = Path(scratch)
         for name, path in given:
             subject = path.resolve(strict=True)
-            samples: dict[str, dict[str, list[float]]] = {kind: {} for kind in KINDS}
+            kinds = tuple(k for k in KINDS if k in (args.kinds or KINDS))
+            samples: dict[str, dict[str, list[float]]] = {kind: {} for kind in kinds}
             for round_ in range(args.rounds):
-                got_round = read_round(atlas, name, subject, args.libraries, scratch, scratch / f"cache-{name}", KINDS, reports.setdefault(name, {}))
+                got_round = read_round(atlas, name, subject, args.libraries, scratch, scratch / f"cache-{name}", kinds, reports.setdefault(name, {}))
                 for kind, got in got_round.items():
                     for measure, value in got.items():
                         samples[kind].setdefault(measure, []).append(value)
@@ -877,6 +882,10 @@ def command_record(args: argparse.Namespace) -> None:
     past = history(args.data)
     one_revision(run.get("cards", {}), past)
     verdicts = judged(run, past)
+    # what a night is judged by is the table's measures; the phases, the bodies linked and the warm peak are kept and
+    # shown beside them, and a reading is only slower where its seconds or its cold peak are
+    for v in verdicts:
+        v.suspect = v.suspect and in_table(v.measure)
     suspect = [v.measure for v in verdicts if v.suspect]
     # a measure reproduced slower on the run before is known: it stays marked, and is neither measured again
     # nor reported again, until its baseline has taken it in
@@ -1003,6 +1012,16 @@ def downloaded(repo: Path, commit: str, to: Path, scratch: Path) -> str | None:
         shutil.rmtree(into, ignore_errors=True)
         return f"the release {tag}" if version_of(tag) else f"the nightly {tag}"
     return None
+
+
+def command_download(args: argparse.Namespace) -> None:
+    repo = args.repo.resolve(strict=True)
+    commit = git(repo, "rev-parse", f"{args.commit}^{{commit}}")
+    args.out.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix="atlas-perf-download-") as scratch:
+        build = downloaded(repo, commit, args.out.resolve(), Path(scratch))
+    print(f"{commit[:7]}: {build or 'no release on GitHub holds a build of it'}")
+    output(found="true" if build else "false", commit=commit, build=build or "")
 
 
 class Bench:
@@ -1210,11 +1229,12 @@ def bisected(bench: Bench, frm: str, to: str, measure: str, rounds: int) -> dict
 
 
 def bench_of(args: argparse.Namespace, scratch: Path) -> Bench:
-    given = subjects(args.subject or []) + programs_in(args.programs, args.reader)
+    given = subjects(args.subject or []) + programs_in(args.programs)
     return Bench(args.repo.resolve(strict=True), scratch, args.build, given, args.libraries, args.prebuilt)
 
 
-# the release's table: per program of the corpus that `release` reads, these readings, all from one round of readings
+# the release's table, and what a night is judged by: per program of the corpus that `perf` reads, these readings,
+# all from one round of readings
 TABLE = (
     ("cold/seconds", "cold read"),
     ("warm/seconds", "warm read"),
@@ -1227,12 +1247,18 @@ def table_measures(programs: list[str]) -> list[str]:
     return [f"read/{p}/{m}" for p in programs for m, _ in TABLE]
 
 
+def in_table(measure: str) -> bool:
+    """Whether `measure` is a measure of the table, of any subject."""
+    parts = measure.split("/")
+    return parts[0] == "read" and "/".join(parts[2:]) in {m for m, _ in TABLE}
+
+
 def command_reproduce(args: argparse.Namespace) -> None:
     given = json.loads(args.suspects.read_text()) if args.suspects else {}
     a, b = args.a or given.get("a"), args.b or given.get("b")
     measures = list(args.measure or given.get("measures", []))
     if args.table:
-        measures += [m for m in table_measures([name for name, _ in programs_in(args.programs, args.reader)]) if m not in measures]
+        measures += [m for m in table_measures([name for name, _ in programs_in(args.programs)]) if m not in measures]
     if not (a and b and measures):
         raise SystemExit("reproduce: give --a, --b and the measures (--measure, --table or --suspects)")
     repo = args.repo.resolve(strict=True)
@@ -1620,7 +1646,7 @@ def command_release_bars(args: argparse.Namespace) -> None:
     nights: dict[str, dict | None] = {}
     for i, (name, ref) in enumerate(shown):
         nights[name] = night_of(runs, repo, ref, shown[i - 1][1] if i else None)
-    data = bench_data([p for p in corpus() if "release" in p.readers], runs, nights, before, version, result)
+    data = bench_data([p for p in corpus() if "perf" in p.readers], runs, nights, before, version, result)
     out = args.out or repo / "docs" / "releases" / version / "bench.json"
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(json.dumps(data, indent=1) + "\n")
@@ -1656,11 +1682,18 @@ def main() -> None:
     p.add_argument("--atlas", type=Path, required=True)
     p.add_argument("--subject", action="append", help="NAME=PATH")
     p.add_argument("--programs", type=Path, help="the corpus's programs perf reads, as `corpus fetch` laid them out here")
-    p.add_argument("--rounds", type=int, default=1)
+    p.add_argument("--kinds", nargs="+", choices=KINDS, help=f"the readings to take (default all: {' '.join(KINDS)})")
+    p.add_argument("--rounds", type=int, default=1, help=f"rounds of readings, each measure their median (the night takes {NIGHT_ROUNDS})")
     p.add_argument("--libraries", type=int, default=1)
     p.add_argument("--timings", type=Path, help="keep what Atlas reported of each reading here, its stages among it")
     p.add_argument("--out", type=Path, required=True)
     p.set_defaults(func=command_read)
+
+    p = commands.add_parser("download", help="the build a release on GitHub holds of a commit: vX.Y.Z, else a nightly")
+    p.add_argument("--repo", type=Path, default=Path("."))
+    p.add_argument("--commit", required=True)
+    p.add_argument("--out", type=Path, required=True)
+    p.set_defaults(func=command_download)
 
     p = commands.add_parser("tests", help="time each test binary")
     p.add_argument("--workspace", type=Path, default=Path("."))
@@ -1685,8 +1718,7 @@ def main() -> None:
         p = commands.add_parser(name, help=text)
         p.add_argument("--repo", type=Path, default=Path("."))
         p.add_argument("--subject", action="append", help="NAME=PATH: relative, in each commit's tree; absolute, one for both")
-        p.add_argument("--programs", type=Path, help="the corpus's programs one reader reads, as `corpus fetch` laid them out here")
-        p.add_argument("--for", dest="reader", choices=READERS, default="perf", help="the reader whose programs --programs holds")
+        p.add_argument("--programs", type=Path, help="the corpus's programs perf reads, as `corpus fetch` laid them out here")
         p.add_argument("--rounds", type=int, default=ROUNDS, help=f"interleaved rounds of each commit (default {ROUNDS})")
         p.add_argument("--libraries", type=int, default=1)
         p.add_argument(

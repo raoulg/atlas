@@ -55,7 +55,6 @@ class Corpus(unittest.TestCase):
         """tools/corpus.txt as it is: every program at a full commit, a name per program, a private one never sampled."""
         programs = perf.corpus()
         self.assertTrue(any("perf" in p.readers for p in programs))
-        self.assertTrue(any("release" in p.readers for p in programs))
         for p in programs:
             if p.private:
                 self.assertNotIn("laws", p.readers)
@@ -142,6 +141,14 @@ class Series(unittest.TestCase):
         perf.one_revision({"atlas": {"revision": "d" * 40, "pinned": False}}, past)
         with self.assertRaisesRegex(SystemExit, "another name"):
             perf.one_revision({"x": {"revision": "b" * 40, "pinned": True}}, past)
+
+    def test_a_night_is_judged_by_the_tables_measures(self):
+        """A reading is slower where its seconds or its cold peak are: a phase, a count or the warm peak never makes a
+        night suspect, and what is reproduced is what the release's table shows."""
+        for m in perf.table_measures(["x"]):
+            self.assertTrue(perf.in_table(m))
+        for m in ("read/x/cold/phase/read", "read/x/warm/peak_rss", "read/x/cold/linked/library", "build/release/seconds", "tests/total/seconds"):
+            self.assertFalse(perf.in_table(m))
 
     def test_a_pair_from_one_runner_goes_before_two_nights(self):
         measure = "read/x/cold/seconds"

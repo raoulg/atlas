@@ -1,45 +1,57 @@
 # Atlas's performance, measured every night
 
-Atlas can get slower without anyone seeing it: a build that takes much longer, a reading that regresses,
-a test suite that grows. The workflow `.github/workflows/perf.yml` measures `next` every night and says
-when something got slower. It runs on a schedule and on `workflow_dispatch` only: no push, pull request,
-commit or landing runs anything for it. `tools/perf.py` measures and judges; the series is kept on the
-branch [`perf-data`](https://github.com/raoulg/atlas/tree/perf-data), whose README draws it.
+Atlas can get slower without anyone seeing it: a reading that regresses, a change that makes a large program take
+much more memory. The workflow `.github/workflows/perf.yml` measures `next` every night and says when something got
+slower. It runs on a schedule and on `workflow_dispatch` only: no push, pull request, commit or landing runs anything
+for it. `tools/perf.py` measures and judges; the series is kept on the branch
+[`perf-data`](https://github.com/raoulg/atlas/tree/perf-data), whose README draws it.
 
 ## What is measured
 
 | measure | how |
 | --- | --- |
-| `build/release/seconds`, `build/release/peak_rss` | `cargo build --release --locked -p atlas-code` in a target directory of its own that no cache restores, with no `RUSTC_WRAPPER`: every crate compiles. The dependencies are fetched in a step before it, so the network is not timed. Peak memory is that of the largest process of the build (a `rustc` or the linker). |
-| `read/<subject>/<cold\|warm>/seconds`, `…/peak_rss` | `atlas-code view --no-open` of a subject. Cold: an empty cache (`XDG_CACHE_HOME`) and no index (`.atlas/index` at the top of the subject's worktree); warm: the same command again. One reading a night: the rounds of one run lie within a percent of each other on the runner, and a reading that is off makes the measure suspect, which the reproduction then measures five times. |
+| `read/<subject>/<cold\|warm>/seconds`, `…/peak_rss` | `atlas-code view --no-open` of a subject. Cold: an empty cache (`XDG_CACHE_HOME`) and no index (`.atlas/index` at the top of the subject's worktree); warm: the same command again. Three rounds a night, the measure their median. Peak memory is the cold reading's; the warm reading's is kept beside it. |
 | `read/<subject>/<cold\|warm>/phase/<read\|check\|flow\|page>` | the phases `atlas-code view --timings FILE` reports of the same commands: reading the repository, `atlas-code check`'s principles, `flow::of`, and drawing and writing the page. |
 | `read/<subject>/<cold\|warm>/linked/<program\|library>` | how many bodies the reading of the graph linked, the program's and those of the library code it read (its `stats.linked_bodies` and `stats.linked_library_bodies`), as `--timings` reports them; a warm reading takes the graph from the index, and with it the count it was read with. |
+
+The night compiles nothing. It reads with the build the nightly pre-release holds of `next`'s commit (`nightly-<stamp>`,
+which `nightly.yml` makes with that commit as its target, `perf.py download`). A commit no nightly holds, because
+`next` moved after the nightly build, its tests were red, or the nightly builds an open release branch instead, is a
+night skipped: the summary says so in one line, and the series gets no run. The subjects are the programs `perf` reads
+of the corpus (below), each at its fixed revision. Atlas at the commit measured is no subject: it moves with every
+commit, so its series would measure the code read together with the reader. All readings use Atlas's defaults
+(`--libraries 1`).
+
+Build time and the test suite are not a nightly series: each would take a full compile of Atlas. Nor are the reading
+after a file no reader asks about and serve's cold start. The series keeps the nights that measured them, and their
+charts end where those nights end. `tools/perf.py` measures each of them by hand: `time` the build, `tests` the test
+binaries, `read --kinds unasked serve` the two readings.
+
+| measure | how |
+| --- | --- |
+| `build/release/seconds`, `build/release/peak_rss` | `cargo build --release --locked -p atlas-code` in a target directory of its own that no cache restores, with no `RUSTC_WRAPPER`: every crate compiles. The dependencies are fetched in a step before it, so the network is not timed. Peak memory is that of the largest process of the build (a `rustc` or the linker). |
 | `read/<subject>/unasked/seconds`, `…/peak_rss`, `…/phase/…`, `…/linked/…` | the same command once more, right after the warm one, with a file no reader asks about added to the subject (`docs/x.svg`, taken away after): a reading that rests on what its readers asked of the repository keeps its index; one that rests on the whole listing reads again. |
 | `read/<subject>/serve/seconds`, `…/serve/first/seconds`, `…/serve/peak_rss` | `atlas-code serve --no-open` from a cold start (an empty cache and no index), asked `/api/drawn` every 20 ms: the seconds until it names a drawing and draws no more, the complete one, and until it first names one. A build that draws a preliminary picture first names two drawings, and its first comes before its complete one; a build that draws once names one, and the two are the same. Peak memory is the whole session's, the redraw below in it. |
 | `read/<subject>/serve/redraw/seconds` | then, in the same session, `docs/x.svg` added: the seconds serve spends drawing again, from the first answer that says it draws to the first that says it is done (at least the 20 ms between two answers); 0 when it starts no drawing within 5 s, which its watch, looking every second, would have. |
 | `tests/<package>/<binary>/seconds`, `tests/total/seconds` | each test binary of `cargo test --no-run`, run on its own in its package's directory, as `cargo test` runs it. libtest's own timings (`--format json`, `--report-time`) need nightly Rust, so a binary is timed from outside. Ignored tests and doc tests are not run. |
 
-The subjects of a night are Atlas itself, at the commit measured, and the corpus. All readings use Atlas's defaults
-(`--libraries 1`).
-
 ## The corpus
 
 A benchmark measures the same programs every time, at revisions that do not move, so that a series measures
 the reader and not a growing subject. The corpus is one list, `tools/corpus.txt`, that `perf.yml` and `laws.yml`
-both read (`tools/perf.py corpus fetch --into DIR --for perf|release|laws`): a line per program, its name, its
-repository, the full commit it is read at, and what reads it: `perf` the nightly series, `release` the weekly run
-that gives a release its table (below), `laws` the laws' sample.
+both read (`tools/perf.py corpus fetch --into DIR --for perf|laws`): a line per program, its name, its
+repository, the full commit it is read at, and what reads it: `perf` the nightly series and the weekly run that gives a
+release its table (below), `laws` the laws' sample.
 
 ```text
-atlas-0.70.0    https://github.com/raoulg/atlas          4ebbbae0a877ef3609de15befe577897c3bec69b   perf release
-goad_toolkit-locked https://github.com/raoulg/goad_toolkit   929d37cc588b27f599b7fbe2e4f5d9733619f897   perf laws
+atlas-0.70.0    https://github.com/raoulg/atlas          4ebbbae0a877ef3609de15befe577897c3bec69b   perf
+goad_toolkit-locked https://github.com/raoulg/goad_toolkit   929d37cc588b27f599b7fbe2e4f5d9733619f897   laws
 ```
 
 Adding a program is that one line. A name is one revision: a program read at another commit gets another name
 (`atlas-0.70.0`, then `atlas-0.75.0`), and so does a program read with another lock (`vectormesh-locked`, read with what its `uv.lock` names), so that its series starts afresh, and `record` refuses a night that reads
-a name at another revision than the series has it at. Atlas is in the corpus at the commit of v0.70.0, beside
-`atlas`, Atlas at the commit measured: the first measures the reader on a subject that does not move, the second
-what a user of `next` sees on Atlas's own code. A program is read with its dependencies, as its author has them. Fetching what a lock file names is one
+a name at another revision than the series has it at. Atlas is in the corpus at the commit of v0.70.0, so
+that the reader is measured on Atlas's own code at a subject that does not move. A program is read with its dependencies, as its author has them. Fetching what a lock file names is one
 construct in every language, and each committed lock file, at any depth, is installed by its tool in its own
 directory: `Cargo.lock` by `cargo fetch --locked` (the crates in Cargo's registry), `uv.lock` by `uv sync --frozen`
 (the program's `.venv`, which is the environment ty reads), `package-lock.json` by `npm ci`, `pnpm-lock.yaml` and
@@ -102,24 +114,27 @@ counting nights is guessing; a slowdown is reported when it is reproduced.
   not judged.
 - **Suspect**: a run lies past its baseline by more than the largest of 20 % of the baseline, three
   spreads of the window (its median absolute deviation, scaled to a standard deviation), and a floor of
-  0.5 s or 50 MB. A suspect measure says nothing yet: it is a reason to measure again.
+  0.5 s or 50 MB. Only the measures of the release's table make a night suspect: a reading's cold and warm
+  seconds and its cold peak memory. The phases, the bodies linked and the warm peak are kept and shown beside
+  them, and say where the time went once a reading is slower. A suspect measure says nothing yet: it is a reason
+  to measure again.
 - **Reproduced**: in the same run, the last commit on which the measure lay within its baseline (A) and
-  the commit measured (B) are built and measured interleaved, A B A B, five rounds (two for a clean build), the
-  readings of one subject taken together from one round of readings, as the night takes them, the test
-  binaries of both built alike without debug information,
-  on this runner: what the machine does to one it does to the other. The slowdown is reproduced when every
+  the commit measured (B) are measured interleaved, A B A B, five rounds, the readings of one subject taken
+  together from one round of readings, as the night takes them, each with the build a release on GitHub holds of
+  it (`reproduce --prebuilt`, as the weekly run takes them; A is built on the runner only where the newest seven
+  nightlies no longer hold it), on this runner: what the machine does to one it does to the other. The slowdown is reproduced when every
   round of B is slower than every round of A, and the medians differ by more than the floor. Five rounds
   each, all of B past all of A, happens by chance once in 252.
 - **Graded by its size**: reproduced below 1.5 times A is *small*: it is commented on the tracking issue
   *Atlas got slower: the nightly measure of next* (label `performance`), with the two commits and the
-  A/B numbers, to find out where it came from. From 1.5 times A it is *large*: the range from A to B is
-  bisected in the same run, and an issue of its own, titled *Urgent*, names the landing. Not reproduced,
+  A/B numbers, to find out where it came from. From 1.5 times A it is *large*: an issue of its own, titled *Urgent*, names the range from
+  A to B and how to bisect it (`mode: bisect`, below), which builds every landing it measures and so runs by hand. Not reproduced,
   it was the runner: a line in the summary, nothing more.
 
 A measure reproduced on one night is known on the next: it is marked in the summary and the charts, and
 neither measured again nor reported again until its baseline has taken it in. The run fails only when
-it could not measure (a build, a reading or a test that fails, a subject that could not be fetched, a
-series that could not be kept): a regression is a finding, a failure is a gap.
+it could not measure (a reading that fails, a build that could not be downloaded or made, a subject that could
+not be fetched, a series that could not be kept): a regression is a finding, a failure is a gap.
 
 A slower measure is a question, as a finding of `atlas-code check` is: about the change between the two commits,
 about the runner, or about the measure.
@@ -128,10 +143,9 @@ about the runner, or about the measure.
 
 A slowdown of a few percent per landing never makes one night suspect. Every Monday the job `weekly`
 measures `next` against the last release tag the same way, interleaved on one runner, on the release's table: each
-program of the corpus that `release` reads (`atlas-0.70.0`, Rust; `private-1`, Python and TypeScript;
+program of the corpus that `perf` reads (`atlas-0.70.0`, Rust; `private-1`, Python and TypeScript;
 `vectormesh-locked`, Python), each at its fixed revision, read cold and warm, with the peak memory of the cold
-reading, all from one round of readings, and with the cards of `next`'s readings. Atlas at the commit measured is
-no subject here: it moves with every commit, and the nightly series holds it. The standing goes, one line per
+reading, all from one round of readings, and with the cards of `next`'s readings: the programs of the night, three rounds each. The standing goes, one line per
 measure, to the issue *Atlas's performance against the last release*. Run by hand (`mode: weekly`) from a branch,
 the job takes that branch's `tools/perf.py` and `tools/corpus.txt` and measures `next`, or the ref `to` names
 (`origin/release-0.73`, or `release-0.73`, which the job reads as that): a new measure is measured on the runner
@@ -193,7 +207,7 @@ drawn as bars throughout.
   50 MB). A measure taken from two nights has no rounds to judge, and is grey. The floor judges one program; several
   small programs that move alike, each grey, are a shift all the same, and the line shows them so. A measure no
   program changed beyond noise draws no line: those are named in one sentence.
-- **The table**, folded: a row per program of the corpus that `release` reads, named by its card, with its cold read,
+- **The table**, folded: a row per program of the corpus that `perf` reads, named by its card, with its cold read,
   warm read and peak memory (that of the cold read). Each measure is a pair of bars, the release before and this
   one, from the weekly run (the latest scheduled one, or one dispatched with `to=origin/release-X.Y`), both on one
   runner, and else from each release's night. A release does not wait on a run of its own. Two nights ran on two runners, often of other CPUs, and say less than one interleaved run.
@@ -222,13 +236,12 @@ GitHub shows that README at the branch; the documentation site is not touched.
 
 ## Cost
 
-One `ubuntu-24.04` runner a night, about 25 minutes when nothing is suspect: the clean build, a cold, a warm
-and an unasked reading, a cold serve start and the card of Atlas and of each program of the corpus, the tests'
-build (from the cache of this job) and one run of every test binary. A suspect night adds the reproduction (two
-builds and five interleaved rounds of what is suspect) and, for a large slowdown, the bisection; the job's
-timeout is 150 minutes. The weekly job downloads two builds and measures the table interleaved, three rounds, within 120 minutes, which
-leaves room to build a side no release holds. Each other job first removes toolchains the runner holds and no job
-uses, so that two builds and their tests fit on its disk.
+One `ubuntu-24.04` runner a night: a download, three rounds of a cold and a warm reading of each program `perf`
+reads, and their cards. A suspect night adds the reproduction: a second download and five interleaved rounds of the
+suspect subject's readings. The job's timeout is 90 minutes, which leaves room to build an A no nightly holds. The
+weekly job downloads two builds and measures the table interleaved, three rounds, within 120 minutes, which leaves room
+to build a side no release holds. `bisect` and `compare` build the commits they measure; each first removes toolchains
+the runner holds and no job uses, so that two builds and their tests fit on its disk.
 
 ## Running it by hand
 
