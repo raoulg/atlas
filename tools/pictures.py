@@ -104,11 +104,12 @@ FAMILIES = """async (done) => {
 }"""
 
 # Opens one box of the route in the page and says what the picture did: `null` lists the boxes that open, `{id, kind}` opens one.
-# The quotient map sends each box of the open picture to the box of the closed one it lies in, or to itself.
+# The quotient map sends each box of the open picture to the box of the closed one it lies in, or to itself. A line is
+# written `a ⟶ b`: a box's id may hold `>` (`v::Vec<String>`).
 TOPOLOGY = """async (spec) => {
   const sleep = ms => new Promise(r => setTimeout(r, ms));
   const settle = async n0 => { for (let i = 0; i < 100 && window.atlasPicture.n === n0; i++) await sleep(50); await sleep(30); };
-  const snap = () => { const P = window.atlasPicture; return {n: P.n, folded: new Map(window.atlasPlan?.coarse?.folded || []), boxes: new Map(P.boxes), sides: new Map(P.sides || []), lines: P.lines.map(([a, b]) => a + ">" + b), dirs: new Map(P.folders || [])}; };
+  const snap = () => { const P = window.atlasPicture; return {n: P.n, folded: new Map(window.atlasPlan?.coarse?.folded || []), boxes: new Map(P.boxes), sides: new Map(P.sides || []), lines: P.lines.map(([a, b]) => a + " ⟶ " + b), dirs: new Map(P.folders || [])}; };
   const keyOf = id => id.replace(/^[no]:/, "");
   const closedFamily = g => g.matches('g.tnode[data-id^="t:"]') && /\\(\\d+\\)/.test(g.querySelector(".title")?.textContent || "");
   // a box of files folded into a directory opens that directory
@@ -151,7 +152,7 @@ TOPOLOGY = """async (spec) => {
   g.dispatchEvent(new MouseEvent("click", {bubbles: true}));
   await settle(n0);
   const fine = snap(), phi = phiFor(coarse, fine), image = new Set();
-  for (const l of fine.lines) { const [a, b] = l.split(">"); const A = phi(a), B = phi(b); if (A !== B) image.add(A + ">" + B); }
+  for (const l of fine.lines) { const [a, b] = l.split(" ⟶ "); const A = phi(a), B = phi(b); if (A !== B) image.add(A + " ⟶ " + B); }
   const base = new Set(coarse.lines), lost = [...base].filter(l => !image.has(l));
   // what a step reads back of what it wrote is a value inside it (rule 4), so no line from a place may appear on opening
   const gained = [...image].filter(l => !base.has(l));
@@ -187,7 +188,7 @@ ORDER = """async (specs) => {
     await settle(n0);
   }
   const P = window.atlasPicture;
-  return {boxes: P.boxes.map(b => b[0] + " in " + b[1]).sort(), lines: P.lines.map(l => l.join(">")).sort()};
+  return {boxes: P.boxes.map(b => b[0] + " in " + b[1]).sort(), lines: P.lines.map(l => l.join(" ⟶ ")).sort()};
 }"""
 
 
