@@ -3361,3 +3361,10 @@ fn an_instance_handed_on_is_no_call_of_it() {
     }
     assert!(reaches(&side("other"), "callers.model.show").is_empty());
 }
+
+/// The ends pair: `loudest` gives back a `float` and ends at it, `Level` is a dataclass built from its fields and ends at
+/// the class it builds; the shortcut prints the loudest level and ends at the screen (#439).
+#[test]
+fn a_route_ends_at_what_it_gives_back() {
+    common::a_route_ends_at_what_it_gives_back("python", "float");
+}

@@ -8,3 +8,5 @@ line Outcome·o > line value
 home Outcome·o line
 
 side entry left
+home _@line line
+line line > _@line value                                                 # what it gives its caller, of no type of the code's

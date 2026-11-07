@@ -850,7 +850,8 @@ function routeTree() {
     const n = byId.get(step), forced = V.open.steps.has(key) || V.open.functions.has(step);
     // the class a step builds: the class its call names, or the class a route starts at for its initializer door; an
     // initializer called by another (`super(text)`) builds nothing, it fills in the value its caller builds
-    treeInfo.get(key).built = by.built ?? (key !== V.route && by.from === V.route && libraryClass(V.route) && isInit(step) ? V.route : undefined);
+    // an initializer that is a route of its own builds its class: its caller, beyond the plan, builds a value of it
+    treeInfo.get(key).built = by.built ?? (key !== V.route && by.from === V.route && libraryClass(V.route) && isInit(step) ? V.route : key === V.route && isInit(step) ? byId.get(step).cls : undefined);
     fineCount++;
     // a step that builds a class runs its initializer (`call`); a class built from its fields runs nothing, and its
     // methods are what a route of its own starts at
@@ -1144,6 +1145,14 @@ const unfollowed = key => {
   return names.size > 0 && (c.sites || []).some(t => byId.get(t.to) && byId.get(t.to).kind !== "class" && (t.gives || []).some(g => names.has(g.name)));
 };
 const goesBack = (key, cod, errs) => (unfollowed(key) || handsBack(stepOf(key), cod, errs)) && !takenBeside(key) && !treeInfo.get(key)?.site?.dropped;
+// a result with no place of its own that the route gives its caller beyond the plan (the route's own, a door's of the class
+// the route starts at) has no step to go back to: it rests in Memory of the type the signature gives, at the route's border.
+// A wire is a value contracted between its maker and its taker; at the border the taker is beyond, so it stays a place
+const resultPlace = key => {
+  const t = byId.get(stepOf(key))?.returns?.value || "";
+  return addPlace({id: "v::" + t, label: t || "·", kind: "type", hue: hueOf(null), type: null, result: true});
+};
+const givesBeyond = (key, cod, errs) => handsBack(stepOf(key), cod, errs) && !treeInfo.get(key)?.site?.dropped;
 // a result of no type of the code's that goes back is that one line, labelled by the name that holds it: no value beside it
 const backName = (key, cod) => {
   const ns = (treeInfo.get(key)?.site?.gives || []).filter(g => g.name && !g.type).map(g => g.name);
@@ -1313,6 +1322,7 @@ const build = (node, parent, caller) => {
     }
     const hb = !!parent && !caller && node.id !== V.route && !lib && !/^(part|unit|op):/.test(node.id) && goesBack(node.id, own.cod, own.errs);
     const said = hb ? backName(node.id, own.cod) : null;
+    if ((node.id === V.route ? !lib : !!caller) && givesBeyond(node.id, own.cod, own.errs)) own.cod.set(resultPlace(node.id), false);
     // what its own code uses outside its steps is its own arrow's, however its steps are planned
     if (own.dom.size || own.cod.size || own.uses?.length || hb || (back.length && !lib && !node.id.startsWith("unit:"))) {
       const oid = "o:" + node.id, own_ = {id: oid, steps: [node.id], D: own.dom, C: own.cod, dn: own.dn, cn: own.cn, goes: own.goes, parent: fid, hue: node.hue, own: true, beyond: own.beyond, none: own.none, keep: own.keep, made: own.made, ...(own.uses?.length ? {uses: own.uses} : {}), ...(own.errs?.size ? {errs: own.errs, inner: own.inner} : {}), ...(own.raised?.size ? {raised: own.raised} : {}), ...(said ? {said} : {}), ...(node.id !== V.route && !lib ? {border: true} : {})};
@@ -1331,6 +1341,7 @@ const build = (node, parent, caller) => {
   if (cut) for (const pl of m.places.values()) addPlace(pl);
   const hb = parent && !caller && goesBack(node.id, m.cod, m.errs);
   const said = hb ? backName(node.id, m.cod) : null;
+  if (caller && givesBeyond(node.id, m.cod, m.errs)) m.cod.set(resultPlace(node.id), false);
   if (caller) m.dom.set(addPlace(entryPlace(caller)), false);
   // a unit stands even when nothing crosses its edge, so that it can be opened
   if (!m.dom.size && !m.cod.size && !hb && !node.id.startsWith("unit:")) return [];

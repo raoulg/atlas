@@ -1996,3 +1996,10 @@ fn changes_a_field_that_changes_in_place_is_a_change_of_self() {
         assert!(touches(&s, &f, "global").iter().any(|t| t.dir_name() == "write"), "{f}: a Global is written");
     }
 }
+
+/// The ends pair: `loudest` gives back an `f64` and ends at it, `Level` is a struct built from its fields and ends at the
+/// struct it builds; the shortcut prints the loudest level and ends at the screen (#439).
+#[test]
+fn a_route_ends_at_what_it_gives_back() {
+    common::a_route_ends_at_what_it_gives_back("rust", "f64");
+}
