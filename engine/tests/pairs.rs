@@ -1054,7 +1054,6 @@ fn an_input_is_its_default_where_no_caller_overrides_it() {
 /// `__init__.py` imports, `pub fn` and `pub use` in `lib.rs`, `export { … } from` in the module `package.json` points
 /// to) says nothing of what a door is: its places are the same set in every language and on both sides.
 #[test]
-#[ignore = "#435: red until it lands"]
 fn an_exported_function_keeps_its_users_places_in_every_language() {
     // the Disk places a function of the program writes, by its name with the language's spelling taken away, each with
     // whether the users of an entry make it whole

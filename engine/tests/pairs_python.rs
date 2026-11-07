@@ -2345,7 +2345,6 @@ fn places_a_declared_program_is_a_command_in_every_layout() {
 /// types, and a door as well, as a declared program its package exports is (`entries::mark_scripts`). The doors are
 /// marked before completion reads them, so the command is marked after its door: the law holds both marks together.
 #[test]
-#[ignore = "#435: red until it lands"]
 fn an_exported_command_is_the_command_and_a_door() {
     let root = std::env::temp_dir().join(format!("atlas-python-exported-command-{}", std::process::id()));
     let typings = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixture/typings");

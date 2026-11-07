@@ -95,6 +95,8 @@ pub enum Declared {
 /// The nodes and edges found so far, and the tables that resolve names into them.
 #[derive(Default)]
 pub struct GraphBuilder {
+    /// Completion has read which functions are doors.
+    pub doors_read: bool,
     pub nodes: IndexMap<String, Node>,
     pub edges: Vec<Edge>,
     /// The edges by source, target and kind, and for a change by the input it changes.
@@ -228,8 +230,28 @@ impl GraphBuilder {
     /// A name a package exports, as a route into it: a function or a class, by its label, unless
     /// it is already a route of another kind.
     pub fn export(&mut self, id: &str, label: String) {
-        if let Some(n) = self.nodes.get_mut(id).filter(|n| matches!(n.kind, NodeKind::Function | NodeKind::Class) && n.entry.is_none()) {
-            n.entry = Some(crate::model::Entry::new(crate::model::EntryKind::Export, label));
+        if self.nodes.get(id).is_some_and(|n| matches!(n.kind, NodeKind::Function | NodeKind::Class)) {
+            self.enter(id, crate::model::Entry::new(crate::model::EntryKind::Export, label));
+        }
+    }
+
+    /// Make `entry` a route into the node `id`. The kind a node ends as does not depend on the order
+    /// the marks come in: a door yields to every other kind and leaves the node exported, and any
+    /// other kind stays where it is once it is set. Doors are marked before completion reads them;
+    /// a door marked after is a fault of the reader.
+    pub fn enter(&mut self, id: &str, entry: crate::model::Entry) {
+        use crate::model::EntryKind;
+        let door = entry.kind == EntryKind::Export;
+        debug_assert!(!(self.doors_read && door), "a door marked after completion read the doors: {id}");
+        let Some(n) = self.nodes.get_mut(id) else { return };
+        match n.entry.as_ref().map(|e| e.kind) {
+            None => n.entry = Some(entry),
+            Some(EntryKind::Export) if !door => {
+                n.exported = true;
+                n.entry = Some(entry);
+            }
+            Some(EntryKind::Export) => {}
+            Some(_) => n.exported |= door,
         }
     }
 
