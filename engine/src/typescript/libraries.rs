@@ -459,11 +459,14 @@ pub(super) fn read(repo: &Repo, reach: &Reach, modules: &mut IndexMap<String, Mo
     let mut round: Vec<String> = modules.keys().cloned().collect();
     let mut used: Option<HashSet<PathBuf>> = None;
     let mut entries: Vec<(PathBuf, PathBuf)> = vec![];
+    // a package is known by where it really lies, as Node finds it (`library_code`), whatever spelling
+    // of its directory the graph carries; what is reached of it, by the module that holds it
     for (dir, reached) in reach {
-        let package_dir = PathBuf::from(dir);
-        if lib.package(&package_dir).is_some() {
-            entries.extend(reached.iter().map(|e| (package_dir.clone(), PathBuf::from(&e.file))));
-        }
+        let Some(package_dir) = lib.env.real(Path::new(dir)) else { continue };
+        let Some(pkg) = lib.package(&package_dir) else { continue };
+        let module = |m: &str| if m.is_empty() { pkg.root.clone() } else { format!("{}.{m}", pkg.root) };
+        let files: Vec<PathBuf> = reached.iter().filter_map(|e| pkg.by_id.get(&module(&e.module)).cloned()).collect();
+        entries.extend(files.into_iter().map(|f| (package_dir.clone(), f)));
     }
     for _ in 0..depth {
         let (mut fresh, mut reached) = (vec![], HashSet::new());
