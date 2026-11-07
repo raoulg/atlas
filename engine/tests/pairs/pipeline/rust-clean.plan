@@ -3,8 +3,6 @@
 # fields name the places, makes its `Settings` from the defaults and `--months`, and fills the raw file only where it
 # is missing, so the file stands between the download and the reading.
 
-known #438 kinds all export routes: sunspots.plot.Plot draws
-
 # An error a call into a family hands on (`self.draw(..)?` in `Plot::save`) is made inside the step, at the moment of the
 # choice it is, and its border hands on a value of its own (#138).
 

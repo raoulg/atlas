@@ -24,3 +24,5 @@ home Notice·notice Board()
 
 side entry left
 side Disk(Board.path) between                                   # posts reads and hands on what pin left
+home _@Board()/Board.posts Board()
+line Board()/Board.posts > _@Board()/Board.posts value                   # what it gives its caller, of no type of the code's
