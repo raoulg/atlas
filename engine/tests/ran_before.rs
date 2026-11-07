@@ -127,9 +127,12 @@ fn written_out(g: &Graph, route: &str) -> Graph {
     while let Some((at, f, on)) = todo.pop() {
         let n = g.node(&f).unwrap_or_else(|| panic!("{at}: runs {f}, a function of the graph"));
         let places = &reading[&at];
-        // the touches the body runs there, by their places: in the subjects a body's touches at one place are made whole
-        // alike, so the place says which run
-        let all: Vec<&Touch> = n.touches.iter().chain(&n.instead).collect();
+        // the touches the body runs there, by their places. A call as it was read (`instead`) at the place of a touch of
+        // that call is that touch there, whichever of the two a route runs (`Node::touches_in` shows one): a door whose
+        // users hand the path in full (`write(path)`) is made whole by them at the place it was read at. Of the others, in
+        // the subjects a body's touches at one place are made whole alike, so the place says which run
+        let same = |a: &Touch, b: &Touch| (a.line, &a.op, a.kind, a.place().id) == (b.line, &b.op, b.kind, b.place().id);
+        let all: Vec<&Touch> = n.touches.iter().chain(n.instead.iter().filter(|t| !n.touches.iter().any(|o| same(o, t)))).collect();
         for t in &all {
             let p = t.place().id;
             assert!(all.iter().filter(|u| u.place().id == p).all(|u| u.by == t.by), "{f}: its touches at {p} are made whole alike");
