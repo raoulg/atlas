@@ -353,8 +353,12 @@ impl<'a> Eval<'a> {
     }
 
     /// The `const` or `static` a path names: its module, its name there and the value it is
-    /// declared with.
+    /// declared with. A module that re-exports it (`pub use series::RAW`) names the one it leads to.
     fn constant_value(&self, m: &'a Module, parts: &[String]) -> Option<(&'a Module, String, TsNode<'a>)> {
+        self.constant_led(m, parts, 0)
+    }
+
+    fn constant_led(&self, m: &'a Module, parts: &[String], depth: u32) -> Option<(&'a Module, String, TsNode<'a>)> {
         let (home, name): (&'a Module, &str) = match parts {
             [name] => match m.bindings.get(name).filter(|b| !ext::is(b)).and_then(|b| b.rsplit_once('.')) {
                 Some((mid, n)) => (self.modules.get(mid)?, n),
@@ -366,14 +370,20 @@ impl<'a> Eval<'a> {
             }
             [] => return None,
         };
-        let value = self
+        let declared = self
             .constants
             .borrow_mut()
             .entry(home.id.clone())
             .or_insert_with(|| constants(home.tree.root_node(), &home.src))
             .get(name)
-            .and_then(|i| i.child_by_field_name("value"));
-        Some((home, name.to_string(), value?))
+            .copied();
+        match declared {
+            Some(i) => Some((home, name.to_string(), i.child_by_field_name("value")?)),
+            None if !std::ptr::eq(home, m) && depth < DEPTH && home.bindings.contains_key(name) => {
+                self.constant_led(home, &[name.to_string()], depth + 1)
+            }
+            None => None,
+        }
     }
 
     /// `d[k]`, `d.get(k)`: `d` a collection the code writes out where it stands or where `d` is

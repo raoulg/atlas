@@ -1045,6 +1045,41 @@ fn an_input_is_its_default_where_no_caller_overrides_it() {
     assert!(facts.windows(2).all(|w| w[0] == w[1]), "{facts:?}");
 }
 
+/// A file its caller names is the term the code names it by, whatever format the operation that touches it reads or
+/// writes (`docs/reference/mathematics.md`, "Paths as terms"; #449). The formats pair (`formats/{python,rust,typescript}`)
+/// is a table kept as CSV behind two doors: `save` writes its text with an operation that says no format, `load` reads it
+/// with one that does where the language's reader knows it (pandas' `read_csv` says CSV). On the shortcut each door takes
+/// its file from its caller and names it by nothing else, so each is the place its parameter names, `Disk(save.to)` and
+/// `Disk(load.path)`: two forms of one construct, drawn alike, never the format (`File(*.csv)`), and two places, since
+/// nothing in the code says they are one. On the clean side both default to one constant, `TABLE`, so the two doors meet
+/// at the one file it names. The facts are the same in every reading.
+#[test]
+fn a_file_the_caller_names_is_its_term_whatever_its_format() {
+    // the places on the disk a door touches as its own route sees it: each touch, and each read where no caller runs
+    let places = |g: &Graph, door: &str| -> BTreeSet<String> {
+        g.nodes
+            .iter()
+            .filter(|n| !n.library && n.id.rsplit('.').next() == Some(door))
+            .flat_map(|n| n.touches.iter().chain(&n.instead))
+            .filter(|t| t.kind == World::Disk && !t.shape())
+            .map(|t| t.place().label)
+            .collect()
+    };
+    let mut facts = vec![];
+    for language in ["python", "rust", "typescript"] {
+        let shortcut = pair(&format!("formats/{language}/shortcut"));
+        let (saved, loaded) = (places(&shortcut, "save"), places(&shortcut, "load"));
+        assert_eq!(saved, BTreeSet::from(["Disk(save.to)".to_string()]), "{language}: the file the caller names, by its parameter");
+        assert_eq!(loaded, BTreeSet::from(["Disk(load.path)".to_string()]), "{language}: the file the caller names, by its parameter");
+        let clean = pair(&format!("formats/{language}/clean"));
+        let (kept, read) = (places(&clean, "save"), places(&clean, "load"));
+        assert_eq!(kept, read, "{language}: the doors meet at the file their one default names");
+        assert!(kept.iter().all(|p| p.starts_with("File(") && !p.contains('*')), "{language}: {kept:?}");
+        facts.push((saved, loaded, kept));
+    }
+    assert!(facts.windows(2).all(|w| w[0] == w[1]), "{facts:?}");
+}
+
 /// The calls to `write` from the functions `inplace` and `bound` of a program written as `files` (path, text) under a
 /// fresh directory.
 fn calls_to_write(name: &str, files: &[(&str, String)]) -> BTreeSet<(String, String)> {

@@ -389,7 +389,12 @@ pointer. Words are a label, never an identity: two places are one when their ter
 graph names a touched file by (`Touch.what`) is that term too, never a literal or an expression of
 the call that touches it: a term written out in full is the place itself, however the code spells
 it (`./.made/log.txt` is `.made/log.txt`), and a term with a hole keeps the names the code gives its
-holes (`~/data/{name}`). So a library's function that writes a path another way without moving it is the
+holes (`~/data/{name}`). The format an operation reads or writes (`read_csv` reads CSV, `savefig` writes PNG) is a
+fact of the content, no part of the term: a file the term names is that term whatever the operation, so the file a
+door's caller names is the hole of its parameter, `Disk(load.path)` for `pd.read_csv(path)` as `Disk(download.to)` for
+`to.write_bytes(..)`, one construct drawn alike. Only a file no term of the code names (a stream handed in, a value
+Atlas does not follow) is known by its format, `File(*.json)`, since nothing else is known of it; a pattern the term
+does not write is never made of the format, which would claim every such file below it. So a library's function that writes a path another way without moving it is the
 identity on terms: made absolute (`std::path::absolute`, `pathlib`'s `absolute` and `resolve`) or with its `.` and
 `..` taken out (`path_clean::clean`), it is the place it was handed (`knowledge::RUST_PATH_FUNCTIONS`, the pair
 `spelled`). A loop of the program's own over a path's parts is code Atlas does not evaluate, and what it gives is not
@@ -411,10 +416,10 @@ is one in the same way, by what it serves: a set of methods at a path. `methods=
 **Where.** `paths.rs` (`Seg`, `join`, `place`, `folders`, `bound`, `each`, `chosen`, `substitute`, `with_suffix`,
 `environment_named`, `looked_up`, `or_else`, `defaulted`, `Defaults`, `within`, `Seg::Within`, `Callers`, `Cycles`, `wildcards`, `served`, `serving`),
 `model.rs` (`Route`, `Methods`, `Request`), the readers' `paths.rs` (`Eval::of`; Rust's `Eval::changed`), `flow.rs`
-(`Touch::place`, `lies_in`, `Flow::lies_in`), `plan.js` (`pathWords`, `meetsOf` and `meet`; held by `orderings` in
+(`Touch::place`, `Touch::by_format`, `lies_in`, `Flow::lies_in`), `plan.js` (`pathWords`, `meetsOf` and `meet`; held by `orderings` in
 `engine/tests/plans.mjs`), `knowledge.rs` (`PathFn`, `PathMethod::Within`, `ELEMENT_NAMES`,
 `LISTING_ENTRIES`); the pairs `python/paths`, `places`, `kept`, `workbench`, `unset`, `opened`, `twice` (#324), `trees`
-(#325, #345), `keys` (#352), `meets` (#381) and `defaults` (#428, #427, #383, #350).
+(#325, #345), `keys` (#352), `meets` (#381), `defaults` (#428, #427, #383, #350) and `formats` (#449).
 
 ### A function's return is its summary
 **What.** What a function gives back is a term of its parameters, the same for every caller: its summary, the union of
