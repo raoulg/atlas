@@ -110,7 +110,6 @@ impl Language for Python {
         }
         let (mut b, root) = python::parse(repo, &packages, project_root.as_deref(), opts)?;
         let _finish = crate::clock::stage("finish");
-        entries::mark_scripts(repo, &mut b, project_root.as_deref());
         entries::mark_tests(&mut b, &knowledge::PYTEST, &[python::types_root(&packages, project_root.as_deref())]);
         Ok(b.finish(root, project_root.as_deref(), self.lang()))
     }

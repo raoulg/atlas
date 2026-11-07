@@ -39,7 +39,7 @@ use std::path::PathBuf;
 use std::sync::OnceLock;
 
 use atlas_engine::principles::check;
-use atlas_engine::{analyze, Both, EdgeKind, EntryKind, Graph, Held, Node, NodeKind, Options, Site, Touch, World};
+use atlas_engine::{analyze, Atom, Both, EdgeKind, EntryKind, Graph, Held, Node, NodeKind, Options, Site, Touch, World};
 
 /// Callers each of whom makes a path whole alone, the disjunction `a ∨ b` as `Touch::by` holds it.
 fn by<const N: usize>(callers: [&str; N]) -> BTreeSet<Both> {
@@ -408,8 +408,11 @@ fn python_clean_the_places_are_made_whole_at_the_entry() {
     at_the_entry("sunspots.download.download", "net", "www.sidc.be");
     at_the_entry("sunspots.download.download", "disk_write", "data/raw/sunspots.csv");
     at_the_entry("sunspots.plot.Plot.save", "disk_write", "figures/sunspots.png");
-    // the read is made whole at the entry too, though Atlas has only its format
-    assert!(touches(c, "sunspots.series.load", "disk_read").iter().all(|t| !t.fixed && t.by == by(["sunspots.cli.run"])));
+    // the read is made whole by `cli.run`, and by the users of `load`, which the package exports
+    let reads = touches(c, "sunspots.series.load", "disk_read");
+    let by_users = |t: &Touch| t.by.iter().all(|c| c.0.iter().all(|a| matches!(a, Atom::Starts(f) if f == "sunspots.series.load")));
+    assert!(reads.iter().all(|t| !t.fixed && (t.by == by(["sunspots.cli.run"]) || by_users(t))), "{reads:#?}");
+    assert!(reads.iter().any(|t| t.by == by(["sunspots.cli.run"])) && reads.iter().any(|t| by_users(t)), "{reads:#?}");
 }
 
 // ---------- Python, sloppy ----------

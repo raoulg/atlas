@@ -40,3 +40,5 @@ def linger(conn: socket.socket) -> None:
                 break
         except OSError:
             break
+
+__all__ = ["main"]

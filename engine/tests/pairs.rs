@@ -1080,6 +1080,53 @@ fn a_file_the_caller_names_is_its_term_whatever_its_format() {
     assert!(facts.windows(2).all(|w| w[0] == w[1]), "{facts:?}");
 }
 
+/// A door is an entry, and a path built from an entry's parameters is whole where its users hand them as well as where
+/// the program's own callers do (`docs/reference/mathematics.md`, "Who makes a path whole": a route that starts at an
+/// entry whose users hand it; #435). In every language the defaults pair (`defaults/{python,rust,typescript}`) exports
+/// `keep`, a note kept where its caller says, else in the workbench of the home it is handed, and its command hands it
+/// `work`. So `keep` keeps the note where `jot` keeps it straight, and at the workbench of the home its users hand, a
+/// place made whole by the users of `keep` alone. Which form the root names its doors with (`__all__` over the names
+/// `__init__.py` imports, `pub fn` and `pub use` in `lib.rs`, `export { … } from` in the module `package.json` points
+/// to) says nothing of what a door is: its places are the same set in every language and on both sides.
+#[test]
+fn an_exported_function_keeps_its_users_places_in_every_language() {
+    // the Disk places a function of the program writes, by its name with the language's spelling taken away, each with
+    // whether the users of an entry make it whole
+    let places = |g: &Graph, function: &str| -> BTreeSet<(String, bool)> {
+        g.nodes
+            .iter()
+            .filter(|n| !n.library && n.id.rsplit('.').next().map(|s| s.replace('_', "").to_lowercase()).as_deref() == Some(function))
+            .flat_map(|n| &n.touches)
+            .filter(|t| t.kind == World::Disk)
+            .map(|t| (t.artifact.clone(), t.by.iter().any(|c| c.0.iter().any(|a| matches!(a, Atom::Starts(_))))))
+            .collect()
+    };
+    let mut facts = vec![];
+    for language in ["rust", "typescript", "python"] {
+        for side in ["clean", "shortcut"] {
+            let g = pair(&format!("defaults/{language}/{side}"));
+            let doors: BTreeSet<String> = g
+                .nodes
+                .iter()
+                .filter(|n| !n.library && n.entry.as_ref().is_some_and(|e| e.kind == atlas_engine::EntryKind::Export))
+                .map(|n| n.name.replace('_', "").to_lowercase())
+                .collect();
+            assert!(doors.contains("keep"), "{language} {side}: `keep` is a door, {doors:?}");
+            let jotted: BTreeSet<(String, bool)> = places(&g, "jot");
+            let kept = places(&g, "keep");
+            let users: BTreeSet<&(String, bool)> = kept.difference(&jotted).collect();
+            assert!(jotted.is_subset(&kept), "{language} {side}: {kept:?} holds {jotted:?}");
+            assert!(
+                users.len() == 1 && users.iter().all(|(p, by_users)| *by_users && p.starts_with('{')),
+                "{language} {side}: `keep` keeps one place more, the users' home, a value no code decides: {kept:?}"
+            );
+            facts.push(((language, side), kept));
+        }
+    }
+    let first = &facts[0].1;
+    assert!(facts.iter().all(|(_, kept)| kept == first), "the places of `keep` in every reading: {facts:#?}");
+}
+
 /// The calls to `write` from the functions `inplace` and `bound` of a program written as `files` (path, text) under a
 /// fresh directory.
 fn calls_to_write(name: &str, files: &[(&str, String)]) -> BTreeSet<(String, String)> {
@@ -1658,5 +1705,62 @@ fn a_declared_method_reads_alike_in_every_language() {
                 only(&theirs, &python)
             );
         }
+    }
+}
+
+/// A type written through the module that holds it is that type, and the module is no type (`docs/reference/mathematics.md`,
+/// "Pushout: forms that say the same thing" and "Types are objects"). The clean shop imports each type by its name (`Order`,
+/// `Module`); the other side imports the module and writes the type through it: Python's `model.Order` and, of a library,
+/// `nn.Module` and `torch.nn.Module`, Rust's `model::Order` and `crate::model::Label`, TypeScript's `model.Order` of
+/// `import * as model`. Isomorphic is the same: in every language the two sides have the same nodes and the same edges but
+/// their imports, which say how the code reaches a name, and draw the same flow and findings. So a parameter written with a
+/// qualifier takes exactly the type it names, and no node, and no edge but an import or a module's own `contains`, names a
+/// module it is written through.
+#[test]
+fn a_type_written_through_its_module_is_that_type_in_every_language() {
+    let read = |g: &Graph| -> BTreeSet<String> {
+        let mut out: BTreeSet<String> = g.nodes.iter().map(|n| n.id.clone()).collect();
+        out.extend(g.edges.iter().filter(|e| e.kind != EdgeKind::Imports).map(|e| format!("{} {:?} {}", e.src, e.kind, e.dst)));
+        out
+    };
+    let through = ["shop.model", "ext:torch", "ext:torch.nn"];
+    let named_as_types = |g: &Graph| -> Vec<String> {
+        let mut out: Vec<String> =
+            g.nodes.iter().filter(|n| n.id.starts_with("ext:") && through.contains(&n.id.as_str())).map(|n| n.id.clone()).collect();
+        let module = |id: &str| through.contains(&id) || g.node(id).is_some_and(|n| n.kind == atlas_engine::NodeKind::Module);
+        out.extend(
+            g.edges
+                .iter()
+                .filter(|e| !matches!(e.kind, EdgeKind::Imports | EdgeKind::Contains) && (module(&e.src) || module(&e.dst)))
+                .map(|e| format!("{} {:?} {}", e.src, e.kind, e.dst)),
+        );
+        out
+    };
+    let arrows = |g: &Graph, f: &str, kind: EdgeKind| -> Vec<String> {
+        g.edges.iter().filter(|e| e.src == f && e.kind == kind).map(|e| e.dst.clone()).collect()
+    };
+    for language in ["python", "rust", "typescript"] {
+        let (clean, qualified) = (pair(&format!("qualified/{language}/clean")), pair(&format!("qualified/{language}/shortcut")));
+        assert_eq!(arrows(&qualified, "shop.post.ship", EdgeKind::Takes), ["shop.model.Order"], "{language}");
+        assert_eq!(arrows(&qualified, "shop.post.ship", EdgeKind::Returns), ["shop.model.Label"], "{language}");
+        if language == "python" {
+            for f in ["shop.net.frozen", "shop.net.scored"] {
+                for kind in [EdgeKind::Takes, EdgeKind::Returns] {
+                    assert_eq!(arrows(&qualified, f, kind), ["ext:torch.nn.Module"], "{language}: {f} {kind:?}");
+                }
+            }
+        }
+        assert_eq!(named_as_types(&qualified), Vec::<String>::new(), "{language}: a module is named as a type");
+        let (c, q) = (read(&clean), read(&qualified));
+        assert!(
+            c == q,
+            "{language}: the two spellings read apart\nonly clean: {:?}\nonly qualified: {:?}",
+            c.difference(&q).collect::<Vec<_>>(),
+            q.difference(&c).collect::<Vec<_>>()
+        );
+        let drawn = |g: &Graph| serde_json::to_value(atlas_engine::flow::of(g)).unwrap();
+        assert_eq!(drawn(&qualified), drawn(&clean), "{language}: the flow is the same");
+        let asked = |g: &Graph| atlas_engine::principles::check(g).into_iter().map(|f| (f.principle, f.node)).collect::<Vec<_>>();
+        assert_eq!(asked(&qualified), asked(&clean), "{language}: and so are the findings");
     }
 }
