@@ -210,8 +210,17 @@ fn npm_install(dir: &Path) {
     std::fs::create_dir_all(link.parent().unwrap()).unwrap();
     #[cfg(unix)]
     std::os::unix::fs::symlink(&source, &link).unwrap();
+    // cmd reads a `/` inside a path as a switch: the paths go to mklink as Windows lays them out
     #[cfg(windows)]
-    assert!(std::process::Command::new("cmd").arg("/C").arg("mklink").arg("/J").arg(&link).arg(&source).status().unwrap().success());
+    assert!(std::process::Command::new("cmd")
+        .arg("/C")
+        .arg("mklink")
+        .arg("/J")
+        .arg(link.components().collect::<std::path::PathBuf>())
+        .arg(source.components().collect::<std::path::PathBuf>())
+        .status()
+        .unwrap()
+        .success());
 }
 
 /// Isomorphic is the same (`CLAUDE.md`): one program draws one set of places in every language.
