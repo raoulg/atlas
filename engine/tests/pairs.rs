@@ -101,10 +101,24 @@ fn read_over_both_parts(language: &str, shop: &Path) {
     // what a graph reads `save` as: its steps and touches, and the lines out of it
     let reading = |g: &Graph| {
         let save = function(g, "save").unwrap_or_else(|| {
-            let libs: Vec<String> = g.libraries.iter().map(|(r, d)| format!("{r} dir={:?} as path={:?}", d.dir, Path::new(&d.dir).components().collect::<Vec<_>>())).collect();
-            let nodes: Vec<String> = g.nodes.iter().filter(|n| n.library).map(|n| format!("{} {:?} file={:?}", n.id, n.kind, n.file)).collect();
-            let own: Vec<String> = g.nodes.iter().filter(|n| !n.library).map(|n| format!("{} sites={:?}", n.id, n.sites.iter().map(|s| s.to.clone()).collect::<Vec<_>>())).collect();
-            panic!("{language}: no save in part {:?}\nlibraries: {libs:#?}\nlibrary nodes: {nodes:#?}\nown: {own:#?}\nreal shop: {:?}", g.parts.iter().map(|p| p.id.clone()).collect::<Vec<_>>(), std::fs::canonicalize(shop))
+            let libs: Vec<String> = g
+                .libraries
+                .iter()
+                .map(|(r, d)| format!("{r} dir={:?} as path={:?}", d.dir, Path::new(&d.dir).components().collect::<Vec<_>>()))
+                .collect();
+            let nodes: Vec<String> =
+                g.nodes.iter().filter(|n| n.library).map(|n| format!("{} {:?} file={:?}", n.id, n.kind, n.file)).collect();
+            let own: Vec<String> = g
+                .nodes
+                .iter()
+                .filter(|n| !n.library)
+                .map(|n| format!("{} sites={:?}", n.id, n.sites.iter().map(|s| s.to.clone()).collect::<Vec<_>>()))
+                .collect();
+            panic!(
+                "{language}: no save in part {:?}\nlibraries: {libs:#?}\nlibrary nodes: {nodes:#?}\nown: {own:#?}\nreal shop: {:?}",
+                g.parts.iter().map(|p| p.id.clone()).collect::<Vec<_>>(),
+                std::fs::canonicalize(shop)
+            )
         });
         let n = g.node(&save).unwrap();
         let mut out: Vec<String> = g.edges.iter().filter(|e| e.src == save).map(|e| format!("{:?} {}", e.kind, e.dst)).collect();
@@ -1777,4 +1791,31 @@ fn a_type_written_through_its_module_is_that_type_in_every_language() {
         let asked = |g: &Graph| atlas_engine::principles::check(g).into_iter().map(|f| (f.principle, f.node)).collect::<Vec<_>>();
         assert_eq!(asked(&qualified), asked(&clean), "{language}: and so are the findings");
     }
+}
+
+#[test]
+#[cfg(windows)]
+fn diagnostics_shared_typescript_spelling() {
+    let to = installed("shared/typescript", &["shop/orders", "shop/billing"], npm_install);
+    let shop = to.join("shop");
+    let g = analyze_repo(&[shop.join("orders")], &Options::default()).unwrap();
+    let libs: Vec<String> = g
+        .libraries
+        .iter()
+        .map(|(r, d)| {
+            format!(
+                "{r} dir={:?} as path={:?} real={:?}",
+                d.dir,
+                Path::new(&d.dir).components().collect::<Vec<_>>(),
+                std::fs::canonicalize(&d.dir)
+            )
+        })
+        .collect();
+    let nodes: Vec<String> = g.nodes.iter().filter(|n| n.library).map(|n| format!("{} file={:?}", n.id, n.file)).collect();
+    let link = std::fs::canonicalize(shop.join("orders/node_modules/notekit"));
+    panic!(
+        "temp={:?}\nshop real={:?}\nlink real={link:?}\nlibraries: {libs:#?}\nlibrary nodes: {nodes:#?}",
+        std::env::temp_dir(),
+        std::fs::canonicalize(&shop)
+    );
 }
