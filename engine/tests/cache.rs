@@ -368,8 +368,17 @@ fn link(source: &Path, link: &Path) {
     std::fs::create_dir_all(link.parent().unwrap()).unwrap();
     #[cfg(unix)]
     std::os::unix::fs::symlink(source, link).unwrap();
+    // cmd reads a `/` inside a path as a switch: the paths go to mklink as Windows lays them out
     #[cfg(windows)]
-    assert!(Command::new("cmd").arg("/C").arg("mklink").arg("/J").arg(link).arg(source).status().unwrap().success());
+    assert!(Command::new("cmd")
+        .arg("/C")
+        .arg("mklink")
+        .arg("/J")
+        .arg(link.components().collect::<std::path::PathBuf>())
+        .arg(source.components().collect::<std::path::PathBuf>())
+        .status()
+        .unwrap()
+        .success());
 }
 
 /// A reading is cached under a check of everything it read, and a library read through a link is
