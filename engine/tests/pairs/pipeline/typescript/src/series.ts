@@ -2,10 +2,13 @@
 //
 // SILSO's file has no header; each line holds seven numbers separated by semicolons and padded
 // with spaces (year, month, decimal date, mean, standard deviation, observations, definitive),
-// and a month without an observation has `-1` for its mean.
+// and a month without an observation has `-1` for its mean. It is kept at `RAW` unless the caller
+// names another file.
 
 import { readFile } from "node:fs/promises";
 
+/** Where SILSO's file is kept. */
+export const RAW = "data/raw/sunspots.csv";
 const FIELDS = 7;
 const MISSING = -1;
 
@@ -26,7 +29,7 @@ export interface Smoothed {
 }
 
 /** The months in SILSO's file at `path` that have a mean, in order. */
-export async function load(path: string): Promise<Month[]> {
+export async function load(path: string = RAW): Promise<Month[]> {
   return parse(await readFile(path, "utf8"));
 }
 

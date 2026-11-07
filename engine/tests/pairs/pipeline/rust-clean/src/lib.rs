@@ -9,5 +9,5 @@ mod settings;
 pub use download::download;
 pub use error::Error;
 pub use plot::{Plot, Trend};
-pub use series::{load, smooth, Month, Smoothed};
+pub use series::{load, smooth, Month, Smoothed, RAW};
 pub use settings::Settings;

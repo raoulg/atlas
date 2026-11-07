@@ -1,18 +1,19 @@
 """The monthly mean sunspot number as a frame indexed by month.
 
 SILSO's file has no header; its columns are separated by semicolons, and a month without an
-observation has `-1` for its mean.
+observation has `-1` for its mean. It is kept at `RAW` unless the caller names another file.
 """
 
 from pathlib import Path
 
 import pandas as pd
 
+RAW = Path("data/raw/sunspots.csv")
 COLUMNS = ["year", "month", "decimal_date", "mean", "std", "observations", "definitive"]
 MISSING = -1
 
 
-def load(path: Path) -> pd.DataFrame:
+def load(path: Path = RAW) -> pd.DataFrame:
     """The months in SILSO's file at `path` that have a mean, indexed by their first day."""
     table = pd.read_csv(path, sep=";", header=None, names=COLUMNS, skipinitialspace=True, na_values=[MISSING])
     first_days = pd.to_datetime(table[["year", "month"]].assign(day=1))

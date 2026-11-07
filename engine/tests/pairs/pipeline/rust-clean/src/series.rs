@@ -2,7 +2,8 @@
 //!
 //! SILSO's file has no header; each line holds seven numbers separated by semicolons and padded
 //! with spaces (year, month, decimal date, mean, standard deviation, observations, definitive),
-//! and a month without an observation has `-1` for its mean.
+//! and a month without an observation has `-1` for its mean. It is kept at `RAW` unless the caller
+//! names another file.
 
 use std::num::NonZeroUsize;
 use std::path::Path;
@@ -12,6 +13,9 @@ use csv::{ReaderBuilder, Trim};
 use serde::Deserialize;
 
 use crate::error::Error;
+
+/// Where SILSO's file is kept.
+pub const RAW: &str = "data/raw/sunspots.csv";
 
 /// The mean of a month without an observation.
 const MISSING: f64 = -1.0;
@@ -53,8 +57,9 @@ impl Record {
     }
 }
 
-/// The months in SILSO's file at `path` that have a mean, in order.
-pub fn load(path: &Path) -> Result<Vec<Month>, Error> {
+/// The months in SILSO's file at `path`, else at `RAW`, that have a mean, in order.
+pub fn load(path: Option<&Path>) -> Result<Vec<Month>, Error> {
+    let path = path.unwrap_or(Path::new(RAW));
     let mut reader = ReaderBuilder::new().delimiter(b';').has_headers(false).trim(Trim::All).from_path(path)?;
     let mut series = Vec::new();
     for record in reader.deserialize() {

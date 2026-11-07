@@ -445,6 +445,11 @@ fn place(id: String, label: String, short: String, glyph: &'static str) -> Place
     Place { id, label, short, glyph, file: String::new(), coarse: None, group: String::new() }
 }
 
+/// A pattern that says a file's format only (`*.json`): a kind of file, not which.
+fn format(artifact: &str) -> bool {
+    artifact.strip_prefix("*.").map_or(false, |ext| !ext.is_empty() && !ext.contains(['/', '*']))
+}
+
 /// A text as a label: its first three words, at most 48 characters. A place is named by all of
 /// its text and labelled by this.
 pub fn shown(text: &str) -> String {
@@ -491,9 +496,10 @@ impl Touch {
     /// into it or out of it, its removal; one file is one place. What a directory lists is that
     /// directory, a place of its own (`assets/regelingen/`), and so is a pattern below it; a listing
     /// the code names no directory or pattern for is the disk. A file only a variable names is the
-    /// disk read or written, split by that name. A database is one place, split by its tables; a
-    /// host on the web and a model's checkpoint are named where the code names them; a program by
-    /// its command.
+    /// disk read or written, split by that name, whatever format its operation reads or writes: the
+    /// format (`*.csv` of `read_csv`) names a file only where no term of the code does
+    /// (`by_format`). A database is one place, split by its tables; a host on the web and a model's
+    /// checkpoint are named where the code names them; a program by its command.
     pub fn place(&self) -> Place {
         let (w, name) = (self.kind, self.kind.name());
         let base = format!("w:{name}");
@@ -510,7 +516,8 @@ impl Touch {
                     place(format!("w:Type:{}", self.holder), short.clone(), short, "file")
                 });
                 let lists = crate::effects::fs_op(&self.op) == crate::effects::FsOp::Lists;
-                if !self.artifact.is_empty() && (!lists || self.artifact.ends_with('/') || self.artifact.contains('*')) {
+                let named = !self.artifact.is_empty() && (!format(&self.artifact) || self.by_format());
+                if named && (!lists || self.artifact.ends_with('/') || self.artifact.contains('*')) {
                     let a = &self.artifact;
                     let file = Place { file: a.clone(), ..place(format!("w:File:{a}"), format!("File({a})"), a.clone(), "file") };
                     return match held {
@@ -551,6 +558,14 @@ impl Touch {
             }
             _ => world(),
         }
+    }
+
+    /// Whether the file is known only by the format its operation reads or writes (`*.json` of
+    /// `json.dump(.., f)`): the code names it by no term of its own. A file a term names (`load.path`,
+    /// `{root}/out.csv`) is that term, the format no part of it, so two doors that each take the file
+    /// their caller names are drawn alike, whatever each does with its content.
+    pub fn by_format(&self) -> bool {
+        format(&self.artifact) && (self.what.is_empty() || self.what == self.artifact)
     }
 
     /// What the touch does at its place, as a verb: the operation when it says more than the kind
