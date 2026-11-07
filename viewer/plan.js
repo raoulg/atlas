@@ -660,6 +660,50 @@ function meetsOf(drawn) {
   }
   return {to, parent, open};
 }
+// How a picture `C` (a plan: its places, steps, roles and finest plan) uses the places of the world: `used`, the places its
+// steps take or give; `uses`, the ways each is used; `side`, where each stands, decided on the finest plan in a route
+function worldUse(C) {
+  const used = new Set([...C.pills.values()].flatMap(P => [...P.D.keys(), ...P.C.keys()])), uses = new Map();
+  for (const P of C.pills.values()) for (const [way, m] of [["in", P.D], ["out", P.C]]) for (const k of m.keys()) {
+    if (!uses.has(k)) uses.set(k, new Set());
+    uses.get(k).add(way);
+  }
+  const side = k => sideOfRoles([C.roles.get(k)].filter(Boolean), () => { const w = C.fine ? C.fine.ways.get(k) : uses.get(k); return w?.size === 1 ? [...w][0] : "mid"; });
+  return {used, uses, side};
+}
+// a quotient of the places keeps the side: places that stand on different sides are different classes, each standing
+// where its places stand (`from X` on the left, `into X` on the right)
+const WAY = {in: "from", out: "into"};
+// The groups of the storage quotient of a picture `C` (mathematics.md, "Places by the type that holds them"), with how it
+// uses the world (`worldUse`): a group's id to its label, the group of the plan it is of and the places it holds. In a route
+// the groups are those of the finest plan, whatever is open: which places a group holds, and which way each is used, do not
+// depend on which of them a zoom draws. A place used both ways that no type holds is one place, rather than a member of two
+// directional quotients. The disk's order of the places (`meetsOf`) is a quotient of them as well, and the two draw one
+// picture only where each block of the order lies in one group or in none: a group holds a place that lies in another place
+// of the plan only where it holds the outermost of them too, so that opening a folder refines that folder alone
+function storageGroups(C, {uses, side}) {
+  const places = C.fine ? [...C.fine.places.values()] : [...C.places.values()], ways = C.fine ? C.fine.ways : uses;
+  const files = new Set(places.map(p => p.id).filter(k => filePath(k) && ways.has(k)));
+  const top = k => (LIES_IN.get(k) || []).find(q => q !== k && files.has(q)) ?? k;
+  const storage = new Map();
+  for (const p of places) if (p.coarse && ways.has(p.id)) {
+    const disk = p.group === "w:Disk", w = ways.get(p.id);
+    if (disk && w.size > 1) continue;
+    const way = [...w][0], c = disk ? {...p.coarse, id: "w:Disk:" + way, label: way === "in" ? "from disk" : "into disk"} : p.coarse;
+    if (!storage.has(c.id)) storage.set(c.id, {id: c.id, label: c.label, group: p.group, kids: new Set()});
+    storage.get(c.id).kids.add(p.id);
+  }
+  for (const F of [...storage.values()]) {
+    if (ways.has(F.id)) F.kids.add(F.id);
+    for (const k of [...F.kids]) if (!F.kids.has(top(k))) F.kids.delete(k);
+    const bySide = new Map();
+    for (const k of F.kids) { const s = side(k); if (!bySide.has(s)) bySide.set(s, new Set()); bySide.get(s).add(k); }
+    if (bySide.size < 2) continue;
+    storage.delete(F.id);
+    for (const [s, kids] of bySide) storage.set(`${F.id}~${s}`, {...F, id: `${F.id}~${s}`, kids, ...(WAY[s] ? {way: WAY[s]} : {})});
+  }
+  return storage;
+}
 // a path with a pattern in it said in words, from the file up: `{root}/*/*/OW-bestanden/*.xml` is "every *.xml in
 // OW-bestanden/ in each folder two levels into {root}/". A wildcard the code writes is "each" or "every", a hole the
 // code gives no name (`{}`) "an unnamed folder"; a path without either, or a bare pattern (a file known by its

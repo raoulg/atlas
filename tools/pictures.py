@@ -27,7 +27,8 @@ was: opening a box refines the quotient, so it takes no line away (every line of
 open one, seen through the quotient map, which sends a file to the folded folder that holds it), draws no line the
 closed picture did not (a line the open box draws across its frame is one the closed box should have drawn: rule 1),
 moves no box from outside a frame into it, and closing the box (by its frame, a folder by its chip) draws the closed
-picture again. It fails when a box does otherwise.
+picture again. A view the page cannot draw keeps the picture before it, so a box whose opening throws is reported as such,
+never compared. It fails when a box does otherwise.
 
 A sample is as good as its draw, and no number of routes proves the law: with `ATLAS_TOPOLOGY_SECONDS=s` topology takes
 the routes in an order drawn from a seed (`ATLAS_SEED`, else a fresh one, printed first) and stops when s seconds have
@@ -151,6 +152,9 @@ TOPOLOGY = """async (spec) => {
   let n0 = window.atlasPicture.n;
   g.dispatchEvent(new MouseEvent("click", {bubbles: true}));
   await settle(n0);
+  // a view the page cannot draw keeps the picture before it: what it says is the fault, not the picture
+  const thrown = (f => f && !f.hidden ? (f.querySelector("pre")?.textContent || "a fault").split("\\n")[0] : null)(document.getElementById("fault"));
+  if (thrown) return {opened: spec.id, thrown};
   const fine = snap(), phi = phiFor(coarse, fine), image = new Set();
   for (const l of fine.lines) { const [a, b] = l.split(" ⟶ "); const A = phi(a), B = phi(b); if (A !== B) image.add(A + " ⟶ " + B); }
   const base = new Set(coarse.lines), lost = [...base].filter(l => !image.has(l));
@@ -186,6 +190,8 @@ ORDER = """async (specs) => {
     const n0 = window.atlasPicture.n;
     g.dispatchEvent(new MouseEvent("click", {bubbles: true}));
     await settle(n0);
+    const thrown = (f => f && !f.hidden ? (f.querySelector("pre")?.textContent || "a fault").split("\\n")[0] : null)(document.getElementById("fault"));
+    if (thrown) return {thrown: spec.id + ": " + thrown};
   }
   const P = window.atlasPicture;
   return {boxes: P.boxes.map(b => b[0] + " in " + b[1]).sort(), lines: P.lines.map(l => l.join(" ⟶ ")).sort()};
@@ -304,6 +310,10 @@ def topology(atlas: str, repo: str, out: pathlib.Path, routes: int, opens: int) 
                 checked += 1
                 if r.get("gone"):
                     continue
+                if r.get("thrown"):
+                    bad += 1
+                    print(route, "· opens", spec["kind"], spec["id"], "and the page cannot draw it:", r["thrown"])
+                    continue
                 faults = [f"{what} {x}" for what in ("lost", "moved", "resided") for x in r[what][:3]] + (["does not close to the picture it was"] if r["reversible"] is False else [])
                 more = [f"more {x}" for x in r["gained"][:3]]
                 if faults or more:
@@ -322,6 +332,11 @@ def topology(atlas: str, repo: str, out: pathlib.Path, routes: int, opens: int) 
                             break
                         shots.append(tab.evaluate(ORDER, order))
                     checked += 1
+                    thrown = [x["thrown"] for x in shots if x.get("thrown")]
+                    if thrown:
+                        bad += 1
+                        print(route, "· opens", A["id"], "and", B["id"], "and the page cannot draw it:", thrown[0])
+                        continue
                     if len(shots) == 2 and not any(x.get("gone") for x in shots) and shots[0] != shots[1]:
                         bad += 1
                         print(route, "· opens", A["id"], "and", B["id"], "and the order changes the picture")

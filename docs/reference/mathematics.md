@@ -470,11 +470,16 @@ opened, it splits into them, and they fold further into their directories. A pla
 is in no such group. The group is a quotient of the picture, never a fact of its own: the places
 and their terms are the same with it closed or open, and two programs that keep the same files,
 one through a type and one through bare paths, keep the same places (isomorphic is the same);
-only the first draws the group, since only its code says the files belong together.
+only the first draws the group, since only its code says the files belong together. The disk's order of the places
+(Paths as terms) is a quotient of them as well, and two quotients draw one picture only where each block of the one lies
+in one block of the other: a group holds a place that lies in another place of the program only where it holds the
+outermost of them too. A type that reads the files below a folder the code lists by a bare path keeps those files out of
+its group, and they stand in the folder's box: closed, the box stands for them; opened, they stand in its frame, and no
+group's box stands for them as well.
 **Where.** `paths.rs` (`place_calls`, the holder of a touch), `model.rs` (`Touch::holder`),
-`flow.rs` (`Touch::place`, its coarse place), `index.html` (the storage quotient), `plan.js` (`foldGroups`: an opened
-group's places as the disk folds them); the pair
-`workbench`.
+`flow.rs` (`Touch::place`, its coarse place), `plan.js` (`storageGroups`, the storage quotient, which `index.html` draws;
+`foldGroups`: an opened group's places as the disk folds them); `orderings` in `engine/tests/plans.mjs` (the program
+`plans/held-in-a-folder`); the pair `workbench`.
 
 ### A door keeps its place
 **What.** The term algebra of places (Paths as terms) has operations that open a door at a term,
