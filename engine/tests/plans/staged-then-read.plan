@@ -1,8 +1,9 @@
 # A helper writes the path its caller hands: under `publish`, `stage` writes the metadata into the folder `publish`
 # makes (`{publish.tmp}/meta.json`), not the JSON file `json.dump` writes as read alone (`*.json`, mathematics.md rule 5). The card
-# `card` loads comes from a file no code names, so it is read from the world: no step of `publish` wrote it, and it is
-# no read back (rule 4), whether `publish` is closed, open or cut. The file `publish` opens is the one the variable `CARD`
-# names, `{$CARD}`: `CARD` is the variable's name, no part of the path, so the code names no file there.
+# `card` loads is the file `publish` opens and hands it, the one the variable `CARD` names, `{$CARD}` (`CARD` is the
+# variable's name, no part of the path): the term names it, so the format `json.load` reads is no place of its own
+# (mathematics.md, "Paths as terms"). It is read from the world: no step of `publish` wrote it, and it is no read back
+# (rule 4), whether `publish` is closed, open or cut.
 
 route publish.run
 step run/publish
@@ -23,7 +24,7 @@ line Disk({$CARD}) > run/publish own                                            
 line run/publish/open > TextIOWrapper·f@run/publish/open value
 line TextIOWrapper·f@run/publish/open > run/publish value
 line TextIOWrapper·f@run/publish/open > run/publish/card value
-line File(*.json) > run/publish/card own                                                  # read from the world
+line Disk({$CARD}) > run/publish/card own                                                 # read from the world, through `f`
 line run/publish/card > run/publish back
 line run/publish > run back
 line run > Screen own
@@ -34,6 +35,5 @@ home TextIOWrapper·f@run/publish/open run/publish
 
 side entry left
 side Disk({$CARD}) left
-side File(*.json) left
 side File({publish.tmp}/meta.json) right
 side Screen right

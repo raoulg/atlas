@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 340" role="img" aria-label="Two shelves of one class: drafts = Shelf(&quot;drafts&quot;) and out = Shelf(&quot;out&quot;). drafts.read() reads drafts/report.txt only; 0.72 also drew it reading out/report.txt, the file of the other shelf.">
+<defs><marker id="m-g" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" style="fill:var(--ink-3)"/></marker><marker id="m-add" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" style="fill:var(--add)"/></marker><marker id="m-del" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" style="fill:var(--del)"/></marker></defs>
+<rect x="73.0" y="62" width="154.0" height="36" rx="18" style="fill:var(--panel);stroke:var(--ink-3);stroke-width:1.6"/>
+<text x="150" y="85" style="font-family:var(--mono);font-size:14px;fill:var(--ink);text-anchor:middle">Shelf(&quot;drafts&quot;)</text>
+<rect x="85.6" y="182" width="128.8" height="36" rx="18" style="fill:var(--panel);stroke:var(--ink-3);stroke-width:1.6"/>
+<text x="150" y="205" style="font-family:var(--mono);font-size:14px;fill:var(--ink);text-anchor:middle">Shelf(&quot;out&quot;)</text>
+<rect x="317.2" y="62" width="145.6" height="36" rx="3" style="fill:var(--panel);stroke:var(--ink-3);stroke-width:1.4"/>
+<rect x="317.2" y="62" width="4" height="36" style="fill:var(--ink-3)"/>
+<text x="390" y="85" style="font-family:var(--mono);font-size:14px;fill:var(--ink);text-anchor:middle">Shelf · drafts</text>
+<rect x="329.8" y="182" width="120.4" height="36" rx="3" style="fill:var(--panel);stroke:var(--ink-3);stroke-width:1.4"/>
+<rect x="329.8" y="182" width="4" height="36" style="fill:var(--ink-3)"/>
+<text x="390" y="205" style="font-family:var(--mono);font-size:14px;fill:var(--ink);text-anchor:middle">Shelf · out</text>
+<path d="M232,80 L318,80" style="fill:none;stroke:var(--ink-3);stroke-width:2" marker-end="url(#m-g)"/>
+<path d="M220,200 L330,200" style="fill:none;stroke:var(--ink-3);stroke-width:2" marker-end="url(#m-g)"/>
+<rect x="521.4" y="62" width="137.2" height="36" rx="18" style="fill:var(--panel);stroke:var(--ink-3);stroke-width:1.6"/>
+<text x="590" y="85" style="font-family:var(--mono);font-size:14px;fill:var(--ink);text-anchor:middle">drafts.read()</text>
+<path d="M462,80 L524,80" style="fill:none;stroke:var(--ink-3);stroke-width:2" marker-end="url(#m-g)"/>
+<rect x="719.4" y="62" width="221.2" height="36" rx="3" style="fill:var(--panel);stroke:var(--add);stroke-width:3"/>
+<text x="830" y="85" style="font-family:var(--mono);font-size:14px;fill:var(--ink);text-anchor:middle">File(drafts/report.txt)</text>
+<path d="M656,80 L722,80" style="fill:none;stroke:var(--add);stroke-width:2" marker-end="url(#m-add)"/>
+<rect x="732.0" y="182" width="196.0" height="36" rx="3" style="fill:var(--panel);stroke:var(--ink-3);stroke-width:1.4"/>
+<text x="830" y="205" style="font-family:var(--mono);font-size:14px;fill:var(--ink);text-anchor:middle">File(out/report.txt)</text>
+<path d="M640,98 C700,150 700,180 734,190" style="fill:none;stroke:var(--del);stroke-width:2;stroke-dasharray:6 5" marker-end="url(#m-del)"/>
+<text x="640" y="160" style="font-family:var(--sans);font-size:14px;fill:var(--del);text-anchor:end">0.72 also drew</text>
+<text x="30" y="270" style="font-family:var(--sans);font-size:14px;fill:var(--ink-2);text-anchor:start">a field is what the constructor that built the value set; a step reads where its own object was set up</text>
+<text x="30" y="326" style="font-family:var(--sans);font-size:13px;fill:var(--ink-3)">pill: a call · box: a value or a place · green: drawn by 0.73 only · red: drawn by 0.72 only</text>
+</svg>

@@ -1938,17 +1938,10 @@ fn held(t: &Touch) -> Option<(String, String)> {
     match t.kind {
         _ if t.shape() => None,
         World::Db(_) if !t.artifact.is_empty() => at(t),
-        World::Disk if format_only(&t.artifact) => {
-            (!t.what.is_empty()).then(|| at(&Touch { artifact: String::new(), ..t.clone() })).flatten()
-        }
+        World::Disk if t.by_format() && t.what.is_empty() => None,
         World::Disk if !t.what.is_empty() || !t.artifact.is_empty() => at(t),
         _ => None,
     }
-}
-
-/// A file named only by its format (`*.json`): the code says what kind of file, not which.
-fn format_only(artifact: &str) -> bool {
-    artifact.strip_prefix("*.").map_or(false, |ext| !ext.is_empty() && !ext.contains(['/', '*']))
 }
 
 /// Whether a touch may write what its call is handed into its place: a statement whose values
