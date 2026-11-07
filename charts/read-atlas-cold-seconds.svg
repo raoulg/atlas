@@ -2,10 +2,11 @@
 <text x="48" y="14" text-anchor="end" fill="#888">64.03 s</text>
 <text x="48" y="86" text-anchor="end" fill="#888">0.00 s</text>
 <line x1="54" y1="10" x2="54" y2="86" stroke="#888" stroke-width="0.5"/>
-<line x1="54" y1="63.5" x2="350" y2="63.5" stroke="#888" stroke-dasharray="3 3"/>
-<polyline points="54.0,15.6 152.7,63.8 251.3,63.5 350.0,61.1" fill="none" stroke="#1b8a9a" stroke-width="1.5"/>
+<line x1="54" y1="62.3" x2="350" y2="62.3" stroke="#888" stroke-dasharray="3 3"/>
+<polyline points="54.0,15.6 128.0,63.8 202.0,63.5 276.0,61.1 350.0,69.6" fill="none" stroke="#1b8a9a" stroke-width="1.5"/>
 <circle cx="54.0" cy="15.6" r="1.5" fill="#1b8a9a"><title>1c02314: 59.29 s</title></circle>
-<circle cx="152.7" cy="63.8" r="1.5" fill="#1b8a9a"><title>f5bb2b2: 18.69 s</title></circle>
-<circle cx="251.3" cy="63.5" r="1.5" fill="#1b8a9a"><title>842b999: 18.99 s</title></circle>
-<circle cx="350.0" cy="61.1" r="3" fill="#1b8a9a"><title>d90c452: 20.94 s</title></circle>
+<circle cx="128.0" cy="63.8" r="1.5" fill="#1b8a9a"><title>f5bb2b2: 18.69 s</title></circle>
+<circle cx="202.0" cy="63.5" r="1.5" fill="#1b8a9a"><title>842b999: 18.99 s</title></circle>
+<circle cx="276.0" cy="61.1" r="1.5" fill="#1b8a9a"><title>d90c452: 20.94 s</title></circle>
+<circle cx="350.0" cy="69.6" r="3" fill="#1b8a9a"><title>1f0225e: 13.83 s</title></circle>
 </svg>
