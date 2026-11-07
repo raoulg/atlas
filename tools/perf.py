@@ -4,20 +4,24 @@
 """How fast Atlas builds, reads and tests, kept as a series per measure, and a signal when one gets slower.
 
     uv run tools/perf.py corpus (fetch | paths) --into DIR --for (perf | laws)
+    uv run tools/perf.py download --repo DIR (--commit REF | --newest-nightly [--data DIR]) --out FILE
     uv run tools/perf.py time NAME --out RUN -- COMMAND...
-    uv run tools/perf.py read --atlas ATLAS [--subject NAME=PATH ...] [--programs DIR] [--rounds N] [--timings FILE] --out RUN
+    uv run tools/perf.py read --atlas ATLAS [--subject NAME=PATH ...] [--programs DIR] [--kinds KIND ...] [--rounds N] [--timings FILE] --out RUN
     uv run tools/perf.py tests --workspace DIR --out RUN [-- CARGO_TEST_ARGS...]
     uv run tools/perf.py record --data DIR --run RUN --commit SHA [--url URL] [--summary FILE] [--suspects FILE]
-    uv run tools/perf.py reproduce --repo DIR --a SHA --b SHA (--suspects FILE | --measure M ... | --table) [--subject NAME=PATH ...] [--programs DIR] [--timings FILE] --out FILE
+    uv run tools/perf.py reproduce --repo DIR --a SHA --b SHA (--suspects FILE | --measure M ... | --table) [--subject NAME=PATH ...] [--programs DIR] [--rounds N] [--prebuilt] [--timings FILE] --out FILE
     uv run tools/perf.py stages --timings FILE [--reproduced FILE]
     uv run tools/perf.py conclude --data DIR --reproduced FILE [--summary FILE] [--alert FILE] [--standing FILE]
     uv run tools/perf.py bisect --repo DIR --from SHA --to SHA --measure M [--subject NAME=PATH ...] --out FILE
     uv run tools/perf.py release-bars [--data DIR] [--reproduced FILE] --repo DIR --before TAG --after REF [--version V] [--out FILE]
 
-`corpus` reads the corpus, `tools/corpus.txt`: the programs Atlas is measured on (`perf`) and its laws are sampled on
-(`laws`), each at a fixed revision. `fetch` checks those of one reader out in DIR, one folder per name, a private one
-with the secrets CORPUS_PRIVATE and CORPUS_TOKEN, and installs what its lock files name (`install_dependencies`); `paths` names the folders. `--programs DIR` gives `read`,
-`reproduce` and `bisect` the programs `perf` reads as subjects. Nothing printed or written of a private program
+`corpus` reads the corpus, `tools/corpus.txt`: the programs Atlas is measured on (`perf`: every night, and in the weekly
+run that gives a release its table) and its laws are sampled on (`laws`), each at a fixed revision. `fetch` checks those
+of one reader out in DIR, one folder per name, a private one with the secrets CORPUS_PRIVATE and CORPUS_TOKEN, and
+installs what its lock files name (`install_dependencies`); `paths` names the folders. `--programs DIR` gives `read`,
+`reproduce` and `bisect` the programs `perf` reads as subjects. `download` writes the build a release on GitHub holds
+of a commit (`downloaded`), or that of the newest nightly, to FILE, and says on the step's output whether there was one
+and which commit it is. Nothing printed or written of a private program
 names its code: a reading that fails says so without Atlas's words, and its stages name only its libraries.
 
 `time`, `read` and `tests` measure and add their measures to the run file RUN (JSON):
@@ -25,7 +29,8 @@ names its code: a reading that fails says so without Atlas's words, and its stag
 - `time` runs a command once: its wall time and the peak resident memory of its largest process.
 - `read` draws each subject with `atlas-code view --timings`, cold (an empty cache and no index), warm (the
   same again) and unasked (again, with a file no reader asks about added), and serves it with `atlas-code serve`
-  from a cold start, once a night (`--rounds` more for a median): the wall time, peak memory and the phases Atlas
+  from a cold start, or the kinds `--kinds` names, once (`--rounds` more for a median; the night takes cold and warm,
+  three rounds): the wall time, peak memory and the phases Atlas
   reports (read, check, flow, page), with how many bodies the reading linked, the program's and the libraries';
   of serve, the time to its first drawing, to its complete one, and what it spends drawing again after the same
   file. Each subject gets its card, from the graph `atlas-code analyze` reads of it: languages, files, lines,
@@ -40,14 +45,15 @@ of its last runs (those on the same CPU where there are enough), by more than th
 the baseline, three spreads of the window and a floor. A suspect measure says nothing yet: `--suspects`
 names each with the last commit that measured it within its baseline, for `reproduce`.
 
-`reproduce` builds two commits and measures them interleaved (A B A B ...) on this machine, so that what
+`reproduce` builds two commits (with `--prebuilt`, takes the build a release on GitHub holds of each, a stable release
+`vX.Y.Z` or a nightly, and builds only a commit none holds) and measures them interleaved (A B A B ...) on this machine, so that what
 the machine does to one it does to the other: a measure is reproduced when every round of B is slower
 than every round of A by more than the floor. Its size grades it: small below LARGE times A, large from
 there; a large one is bisected on the spot, so that it names its commit. `conclude` writes the grades
 into the history's last run, the summary and the text of the tracking issue (`--alert`, only for what was
 reproduced), or the standing of `next` against a release (`--standing`). `bisect` finds the landing in a
 range that made a measure slower, or gives each landing's share where no single one did. `reproduce --table`
-measures the release's table: of each program of the corpus TABLE, of Atlas OF_ATLAS, with the cards of B's
+measures the release's table: TABLE of each program of the corpus that `perf` reads, with the cards of B's
 readings. `release-bars` writes a release's speed (`docs/releases/<version>/bench.json`, the `Bench:` line of its
 notes): each measure of the release before beside this one, from the interleaved run of the two where it measured
 it, else from each release's night in the series; their geometric mean ratio, with whether each changed beyond
@@ -79,6 +85,7 @@ import socket
 import statistics
 import subprocess
 import sys
+import tarfile
 import tempfile
 import tomllib
 import time
@@ -93,7 +100,11 @@ SHARE = 0.20  # a measure is suspect past its baseline by more than this share o
 SPREADS = 3.0  # ...and more than this many spreads (MAD scaled to a standard deviation) of the window...
 FLOOR = {"s": 0.5, "MB": 50.0}  # ...and more than this
 CHARTED = 90  # runs a chart shows
-ROUNDS = 5  # interleaved rounds of a reproduction: all five of B past all five of A is 1 in 252 by chance
+# interleaved rounds of a reproduction: all five of B past all five of A is 1 in 252 by chance, which a suspect night of
+# the series needs before it opens an issue; the weekly run takes three (`--rounds 3`), all three past all three 1 in 20,
+# enough for a difference a user notices
+ROUNDS = 5
+NIGHT_ROUNDS = 3  # rounds of a night's readings, its measure their median
 BUILD_ROUNDS = 2  # a clean build is long: two rounds each
 LARGE = 1.5  # a reproduced measure this many times A is large: bisected on the spot, marked urgent
 PER_LANDING = 12  # a range of at most this many landings is measured landing by landing; a longer one is halved
@@ -122,7 +133,7 @@ class Program:
 
 def corpus(file: Path = CORPUS) -> list[Program]:
     """The programs of the corpus list `file`, each checked: a full commit, readers it knows, a private program
-    read by `perf` alone, and a name for one program only."""
+    never read by `laws`, and a name for one program only."""
     programs: list[Program] = []
     for number, line in enumerate(file.read_text().splitlines(), 1):
         line = line.split(" #", 1)[0].strip()
@@ -571,9 +582,10 @@ def command_read(args: argparse.Namespace) -> None:
         scratch = Path(scratch)
         for name, path in given:
             subject = path.resolve(strict=True)
-            samples: dict[str, dict[str, list[float]]] = {kind: {} for kind in KINDS}
+            kinds = tuple(k for k in KINDS if k in (args.kinds or KINDS))
+            samples: dict[str, dict[str, list[float]]] = {kind: {} for kind in kinds}
             for round_ in range(args.rounds):
-                got_round = read_round(atlas, name, subject, args.libraries, scratch, scratch / f"cache-{name}", KINDS, reports.setdefault(name, {}))
+                got_round = read_round(atlas, name, subject, args.libraries, scratch, scratch / f"cache-{name}", kinds, reports.setdefault(name, {}))
                 for kind, got in got_round.items():
                     for measure, value in got.items():
                         samples[kind].setdefault(measure, []).append(value)
@@ -871,6 +883,10 @@ def command_record(args: argparse.Namespace) -> None:
     past = history(args.data)
     one_revision(run.get("cards", {}), past)
     verdicts = judged(run, past)
+    # what a night is judged by is the table's measures; the phases, the bodies linked and the warm peak are kept and
+    # shown beside them, and a reading is only slower where its seconds or its cold peak are
+    for v in verdicts:
+        v.suspect = v.suspect and in_table(v.measure)
     suspect = [v.measure for v in verdicts if v.suspect]
     # a measure reproduced slower on the run before is known: it stays marked, and is neither measured again
     # nor reported again, until its baseline has taken it in
@@ -919,11 +935,12 @@ def git(repo: Path, *args: str) -> str:
 
 @dataclass
 class Side:
-    """A commit made ready to measure: its worktree and its `atlas`."""
+    """A commit made ready to measure: its worktree, its `atlas`, and where that build comes from."""
 
     commit: str
     tree: Path
     atlas: Path
+    build: str
 
 
 def named(tree: Path) -> tuple[str, str]:
@@ -937,14 +954,122 @@ def named(tree: Path) -> tuple[str, str]:
     return package, next((b["name"] for b in data.get("bin", [])), package)
 
 
+# the build a release publishes for this machine, by `platform.system()` and `platform.machine()`
+TARGETS = {
+    ("Linux", "x86_64"): "x86_64-unknown-linux-gnu",
+    ("Linux", "aarch64"): "aarch64-unknown-linux-gnu",
+    ("Darwin", "arm64"): "aarch64-apple-darwin",
+    ("Darwin", "x86_64"): "x86_64-apple-darwin",
+}
+
+
+def github_repository(repo: Path) -> str | None:
+    """`owner/name` of the repository on GitHub: the workflow's, else that of the remote `origin`."""
+    if slug := os.environ.get("GITHUB_REPOSITORY"):
+        return slug
+    done = subprocess.run(["git", "-C", str(repo), "remote", "get-url", "origin"], capture_output=True, text=True, check=False)
+    m = re.search(r"github\.com[:/]([^/]+/[^/]+?)(?:\.git)?$", done.stdout.strip())
+    return m.group(1) if m else None
+
+
+def published(repo: Path, commit: str) -> list[str]:
+    """The releases on GitHub that hold a build of `commit`, best first: the stable release `vX.Y.Z` tagged at it, then
+    each nightly pre-release built from it (`nightly-<stamp>`, which `nightly.yml` makes with the commit as its target),
+    newest first. The moving pointer `nightly` is never one of them: its target is where its tag stood when it was made."""
+    tags = [t for t in git(repo, "tag", "--points-at", commit).split() if version_of(t)]
+    slug = github_repository(repo)
+    if not slug or not shutil.which("gh"):
+        return tags
+    query = f'.[] | select((.tag_name | startswith("nightly-")) and .target_commitish == "{commit}") | .tag_name'
+    command = ["gh", "api", f"repos/{slug}/releases?per_page=100", "--paginate", "-q", query]
+    done = subprocess.run(command, capture_output=True, text=True, check=False)
+    return tags + sorted(done.stdout.split(), reverse=True)
+
+
+def newest_nightly(repo: Path) -> tuple[str, str] | None:
+    """The newest nightly pre-release on GitHub and the commit it was built from: `(tag, commit)`. Its stamp
+    (`nightly-<yyyymmddHHMM>`) orders the builds; the moving pointer `nightly` is none of them."""
+    slug = github_repository(repo)
+    if not slug or not shutil.which("gh"):
+        return None
+    query = '.[] | select(.tag_name | startswith("nightly-")) | "\\(.tag_name) \\(.target_commitish)"'
+    command = ["gh", "api", f"repos/{slug}/releases?per_page=100", "--paginate", "-q", query]
+    done = subprocess.run(command, capture_output=True, text=True, check=False)
+    builds = sorted(tuple(line.split()) for line in done.stdout.splitlines() if len(line.split()) == 2)
+    return builds[-1] if builds else None
+
+
+def asset_of(repo: Path, tag: str, to: Path, scratch: Path) -> bool:
+    """The build for this machine that the release `tag` holds, written to `to`; whether there was one."""
+    target = TARGETS.get((platform.system(), platform.machine()))
+    slug = github_repository(repo)
+    if not target or not slug or not shutil.which("gh"):
+        return False
+    asset = f"atlas-code-{target}.tar.gz"
+    into = scratch / f"download-{tag}"
+    shutil.rmtree(into, ignore_errors=True)
+    command = ["gh", "release", "download", tag, "-R", slug, "-p", asset, "-D", str(into)]
+    done = subprocess.run(command, capture_output=True, text=True, check=False)
+    if done.returncode:
+        print(f"{tag} gave no {asset}: {done.stderr.strip()}")
+        return False
+    with tarfile.open(into / asset) as archive:
+        files = [m for m in archive.getmembers() if m.isfile()]
+        if len(files) != 1:
+            print(f"{tag}'s {asset} holds {len(files)} files, not one binary")
+            return False
+        with archive.extractfile(files[0]) as source, open(to, "wb") as out:
+            shutil.copyfileobj(source, out)
+    to.chmod(0o755)
+    shutil.rmtree(into, ignore_errors=True)
+    return True
+
+
+def downloaded(repo: Path, commit: str, to: Path, scratch: Path) -> str | None:
+    """The build of `commit` that a release on GitHub holds for this machine (`published`), written to `to`: the
+    release it came from, or None where no release holds one that could be downloaded."""
+    for tag in published(repo, commit):
+        if asset_of(repo, tag, to, scratch):
+            return f"the release {tag}" if version_of(tag) else f"the nightly {tag}"
+    return None
+
+
+def command_download(args: argparse.Namespace) -> None:
+    """The build of `--commit`, or that of the newest nightly (`--newest-nightly`): what the nightly channel built last,
+    the open release branch while one is open and `next` otherwise. With `--data`, a build of the commit the series
+    recorded last is not downloaded: a night with nothing new built has nothing new to measure."""
+    repo = args.repo.resolve(strict=True)
+    args.out.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix="atlas-perf-download-") as scratch:
+        if args.newest_nightly:
+            newest = newest_nightly(repo)
+            if newest is None:
+                said, commit, build = "no nightly pre-release on GitHub", "", None
+            else:
+                tag, commit = newest
+                runs = history(args.data) if args.data else []
+                if runs and runs[-1]["commit"] == commit:
+                    said, build = f"{tag}, of {commit[:7]}, is the build the series measured last: nothing new to measure", None
+                else:
+                    build = f"the nightly {tag}" if asset_of(repo, tag, args.out.resolve(), Path(scratch)) else None
+                    said = f"{commit[:7]}: {build or f'{tag} holds no build for this machine'}"
+        else:
+            commit = git(repo, "rev-parse", f"{args.commit}^{{commit}}")
+            build = downloaded(repo, commit, args.out.resolve(), Path(scratch))
+            said = f"{commit[:7]}: {build or 'no release on GitHub holds a build of it'}"
+    print(said)
+    output(found="true" if build else "false", commit=commit, build=build or "", said=said)
+
+
 class Bench:
     """Commits of `repo` checked out and built in a scratch directory. One target directory serves every
     commit, so that a commit's build is incremental on the one before; a clean build, when it is the
     measure, gets a target directory of its own. `build` names how a commit is built, `{tree}` and
-    `{target}` filled in, and `atlas` where its binary is then."""
+    `{target}` filled in, and `atlas` where its binary is then. With `prebuilt`, a commit's `atlas` is the build a
+    release on GitHub holds of it (`downloaded`), and a commit no release holds is built: each side says which."""
 
-    def __init__(self, repo: Path, scratch: Path, build: str, subjects: list[tuple[str, Path]], libraries: int):
-        self.repo, self.scratch, self.build, self.libraries = repo, scratch, build, libraries
+    def __init__(self, repo: Path, scratch: Path, build: str, subjects: list[tuple[str, Path]], libraries: int, prebuilt: bool = False):
+        self.repo, self.scratch, self.build, self.libraries, self.prebuilt = repo, scratch, build, libraries, prebuilt
         self.subjects = dict(subjects)
         self.sides: dict[str, Side] = {}
         self.tests: dict[str, dict[str, tuple[Path, Path]]] = {}
@@ -952,16 +1077,20 @@ class Bench:
         self.reports: dict[str, dict[str, list[dict]]] = {}
 
     def side(self, commit: str) -> Side:
-        commit = git(self.repo, "rev-parse", commit)
+        commit = git(self.repo, "rev-parse", f"{commit}^{{commit}}")
         if commit not in self.sides:
+            # the tree, also beside a downloaded build: a subject in it, a clean build and the test binaries read it
             tree = self.scratch / f"tree-{commit[:12]}"
             git(self.repo, "worktree", "add", "--detach", "--force", str(tree), commit)
-            target = self.scratch / "target"
-            self.built(tree, target, self.scratch / f"build-{commit[:12]}.log")
             atlas = self.scratch / f"atlas-{commit[:12]}"
-            shutil.copy2(target / "release" / named(tree)[1], atlas)
-            self.sides[commit] = Side(commit, tree, atlas)
-            print(f"ready: {commit[:7]}")
+            build = downloaded(self.repo, commit, atlas, self.scratch) if self.prebuilt else None
+            if build is None:
+                target = self.scratch / "target"
+                self.built(tree, target, self.scratch / f"build-{commit[:12]}.log")
+                shutil.copy2(target / "release" / named(tree)[1], atlas)
+                build = "built on this machine" + (": no release on GitHub holds a build of it" if self.prebuilt else "")
+            self.sides[commit] = Side(commit, tree, atlas, build)
+            print(f"ready: {commit[:7]}, {build}")
         return self.sides[commit]
 
     def built(self, tree: Path, target: Path, log: Path) -> tuple[float, float]:
@@ -1138,25 +1267,27 @@ def bisected(bench: Bench, frm: str, to: str, measure: str, rounds: int) -> dict
 
 def bench_of(args: argparse.Namespace, scratch: Path) -> Bench:
     given = subjects(args.subject or []) + programs_in(args.programs)
-    return Bench(args.repo.resolve(strict=True), scratch, args.build, given, args.libraries)
+    return Bench(args.repo.resolve(strict=True), scratch, args.build, given, args.libraries, args.prebuilt)
 
 
-# the release's table: per program of the corpus, these readings; of Atlas, its build and its tests
+# the release's table, and what a night is judged by: per program of the corpus that `perf` reads, these readings,
+# all from one round of readings
 TABLE = (
     ("cold/seconds", "cold read"),
     ("warm/seconds", "warm read"),
-    ("unasked/seconds", "read again after a file no reader asks about"),
-    ("serve/first/seconds", "served from a cold start, to the first picture"),
-    ("serve/seconds", "served from a cold start, to the complete picture"),
-    ("serve/redraw/seconds", "served, drawing again after that file"),
     ("cold/peak_rss", "peak memory"),
 )
-OF_ATLAS = (("build/release/seconds", "release build, clean"), ("tests/total/seconds", "test suite"))
 
 
 def table_measures(programs: list[str]) -> list[str]:
     """The measures of the release's table, of `programs`."""
-    return [f"read/{p}/{m}" for p in programs for m, _ in TABLE] + [m for m, _ in OF_ATLAS]
+    return [f"read/{p}/{m}" for p in programs for m, _ in TABLE]
+
+
+def in_table(measure: str) -> bool:
+    """Whether `measure` is a measure of the table, of any subject."""
+    parts = measure.split("/")
+    return parts[0] == "read" and "/".join(parts[2:]) in {m for m, _ in TABLE}
 
 
 def command_reproduce(args: argparse.Namespace) -> None:
@@ -1168,11 +1299,15 @@ def command_reproduce(args: argparse.Namespace) -> None:
     if not (a and b and measures):
         raise SystemExit("reproduce: give --a, --b and the measures (--measure, --table or --suspects)")
     repo = args.repo.resolve(strict=True)
-    a, b = git(repo, "rev-parse", a), git(repo, "rev-parse", b)
+    a, b = git(repo, "rev-parse", f"{a}^{{commit}}"), git(repo, "rev-parse", f"{b}^{{commit}}")
     result: dict = {"a": a, "b": b, "measures": {}}
     with tempfile.TemporaryDirectory(prefix="atlas-perf-ab-") as scratch:
         bench = bench_of(args, Path(scratch))
         try:
+            result["builds"] = {"a": bench.side(a).build, "b": bench.side(b).build}
+            print(f"A {a[:7]}: {result['builds']['a']}; B {b[:7]}: {result['builds']['b']}")
+            if args.prebuilt and len({how.startswith("built") for how in result["builds"].values()}) > 1:
+                print("one side was downloaded and the other built on this machine: the two builds were not made alike")
             # the readings of one subject are taken from one round of readings, as the night takes them
             together: dict[str, list[str]] = {}
             for measure in measures:
@@ -1282,6 +1417,8 @@ def command_conclude(args: argparse.Namespace) -> None:
             *ab_table(measures),
             "",
         ]
+        if builds := result.get("builds"):
+            lines += [f"The builds: A {builds['a']}; B {builds['b']}.", ""]
         if not reproduced:
             lines.append("Nothing is slower than in the release.")
         args.standing.write_text("\n".join(lines) + "\n")
@@ -1487,10 +1624,9 @@ def summary_of(cells: list[dict]) -> dict | None:
 def bench_data(
     programs: list[Program], runs: list[dict], nights: dict[str, dict | None], before: str, after: str, result: dict | None
 ) -> dict:
-    """The release's speed, as `tools/release_page.py` draws it: a row per program of the corpus that `perf` reads, named
-    by its card (a private one by its card alone), each measure of TABLE the release before beside this one, a row of
-    Atlas's build and tests (OF_ATLAS); and each of those measures on the night of every release since the series began.
-    `nights` maps each release, oldest first, to its night."""
+    """The release's speed, as `tools/release_page.py` draws it: a row per program of `programs`, named by its card (a
+    private one by its card alone), each measure of TABLE the release before beside this one; and each of those measures
+    on the night of every release since the series began. `nights` maps each release, oldest first, to its night."""
     cards = {**last_cards(runs), **(result or {}).get("cards", {})}
     rows = []
     for p in programs:
@@ -1506,8 +1642,6 @@ def bench_data(
                 "cells": [cell(f"read/{p.name}/{m}", label, result, nights.get(before), nights.get(after)) for m, label in TABLE],
             }
         )
-    whole = [cell(m, label, result, nights.get(before), nights.get(after)) for m, label in OF_ATLAS]
-    rows.append({"name": None, "title": "Atlas, built and tested", "short": "Atlas", "card": None, "said": None, "cells": whole})
     series = []
     for row in rows:
         for c in row["cells"]:
@@ -1559,7 +1693,7 @@ def command_release_bars(args: argparse.Namespace) -> None:
         rounds = sorted({len(g["a"]) for g in result["measures"].values()})
         run = f" ([the run]({args.run}))" if args.run else ""
         said.append(
-            f"Each pair: `{result['a'][:7]}` ({before}) and `{result['b'][:7]}` ({version}) built and measured interleaved on one runner, "
+            f"Each pair: `{result['a'][:7]}` ({before}) and `{result['b'][:7]}` ({version}) measured interleaved on one runner, "
             f"the median of {' or '.join(map(str, rounds))} rounds each{run}"
         )
     if "nights" in sources:
@@ -1585,11 +1719,21 @@ def main() -> None:
     p.add_argument("--atlas", type=Path, required=True)
     p.add_argument("--subject", action="append", help="NAME=PATH")
     p.add_argument("--programs", type=Path, help="the corpus's programs perf reads, as `corpus fetch` laid them out here")
-    p.add_argument("--rounds", type=int, default=1)
+    p.add_argument("--kinds", nargs="+", choices=KINDS, help=f"the readings to take (default all: {' '.join(KINDS)})")
+    p.add_argument("--rounds", type=int, default=1, help=f"rounds of readings, each measure their median (the night takes {NIGHT_ROUNDS})")
     p.add_argument("--libraries", type=int, default=1)
     p.add_argument("--timings", type=Path, help="keep what Atlas reported of each reading here, its stages among it")
     p.add_argument("--out", type=Path, required=True)
     p.set_defaults(func=command_read)
+
+    p = commands.add_parser("download", help="the build a release on GitHub holds of a commit: vX.Y.Z, else a nightly")
+    p.add_argument("--repo", type=Path, default=Path("."))
+    which = p.add_mutually_exclusive_group(required=True)
+    which.add_argument("--commit", help="a commit, a tag or a branch")
+    which.add_argument("--newest-nightly", action="store_true", help="the commit the newest nightly pre-release was built from")
+    p.add_argument("--data", type=Path, help="the series: with --newest-nightly, nothing is downloaded for the commit it measured last")
+    p.add_argument("--out", type=Path, required=True)
+    p.set_defaults(func=command_download)
 
     p = commands.add_parser("tests", help="time each test binary")
     p.add_argument("--workspace", type=Path, default=Path("."))
@@ -1615,12 +1759,17 @@ def main() -> None:
         p.add_argument("--repo", type=Path, default=Path("."))
         p.add_argument("--subject", action="append", help="NAME=PATH: relative, in each commit's tree; absolute, one for both")
         p.add_argument("--programs", type=Path, help="the corpus's programs perf reads, as `corpus fetch` laid them out here")
-        p.add_argument("--rounds", type=int, default=ROUNDS)
+        p.add_argument("--rounds", type=int, default=ROUNDS, help=f"interleaved rounds of each commit (default {ROUNDS})")
         p.add_argument("--libraries", type=int, default=1)
         p.add_argument(
             "--build",
             default=build,
             help="how a commit is built, with {tree}, {target} and {package}; its binary is then in {target}/release",
+        )
+        p.add_argument(
+            "--prebuilt",
+            action="store_true",
+            help="read with the build a release on GitHub holds of each commit (vX.Y.Z, else a nightly), and build only a commit none holds",
         )
         p.add_argument("--timings", type=Path, help="keep what Atlas reported of each reading measured here, its stages among it")
         p.add_argument("--out", type=Path, required=True)
