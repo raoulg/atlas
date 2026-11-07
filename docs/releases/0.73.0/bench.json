@@ -1,0 +1,280 @@
+{
+ "before": "0.72.2",
+ "after": "0.73.0",
+ "summary": {
+  "ratio": 0.9084,
+  "measures": 9,
+  "zero": 0,
+  "changed": 5
+ },
+ "releases": [
+  "0.70.0",
+  "0.71.0",
+  "0.73.0"
+ ],
+ "rows": [
+  {
+   "name": "atlas-0.70.0",
+   "title": null,
+   "short": "atlas-0.70.0",
+   "card": {
+    "languages": [
+     "rust"
+    ],
+    "files": 117,
+    "lines": 60291,
+    "modules": 117,
+    "functions": 2986,
+    "nodes": 3785,
+    "edges": 15736,
+    "library_bodies": 4143,
+    "revision": "4ebbbae0a877ef3609de15befe577897c3bec69b",
+    "pinned": true
+   },
+   "said": "Rust \u00b7 117 files \u00b7 60,291 lines \u00b7 117 modules \u00b7 2,986 functions \u00b7 3,785 nodes \u00b7 15,736 edges \u00b7 4,143 library bodies",
+   "cells": [
+    {
+     "measure": "read/atlas-0.70.0/cold/seconds",
+     "label": "cold read",
+     "unit": "s",
+     "before": 19.0681,
+     "after": 18.022,
+     "source": "interleaved",
+     "changed": true
+    },
+    {
+     "measure": "read/atlas-0.70.0/warm/seconds",
+     "label": "warm read",
+     "unit": "s",
+     "before": 0.6411,
+     "after": 0.9746,
+     "source": "interleaved",
+     "changed": false
+    },
+    {
+     "measure": "read/atlas-0.70.0/cold/peak_rss",
+     "label": "peak memory",
+     "unit": "MB",
+     "before": 392.2383,
+     "after": 404.4648,
+     "source": "interleaved",
+     "changed": false
+    }
+   ]
+  },
+  {
+   "name": "vectormesh-locked",
+   "title": null,
+   "short": "vectormesh-locked",
+   "card": {
+    "languages": [
+     "python"
+    ],
+    "files": 48,
+    "lines": 13124,
+    "modules": 48,
+    "functions": 437,
+    "nodes": 796,
+    "edges": 1761,
+    "library_bodies": 11,
+    "revision": "201a85048dc872bfc3115d09542529302b45a3ec",
+    "pinned": true
+   },
+   "said": "Python \u00b7 48 files \u00b7 13,124 lines \u00b7 48 modules \u00b7 437 functions \u00b7 796 nodes \u00b7 1,761 edges \u00b7 11 library bodies",
+   "cells": [
+    {
+     "measure": "read/vectormesh-locked/cold/seconds",
+     "label": "cold read",
+     "unit": "s",
+     "before": 7.045,
+     "after": 6.2386,
+     "source": "interleaved",
+     "changed": true
+    },
+    {
+     "measure": "read/vectormesh-locked/warm/seconds",
+     "label": "warm read",
+     "unit": "s",
+     "before": 0.0483,
+     "after": 0.0706,
+     "source": "interleaved",
+     "changed": false
+    },
+    {
+     "measure": "read/vectormesh-locked/cold/peak_rss",
+     "label": "peak memory",
+     "unit": "MB",
+     "before": 617.7383,
+     "after": 675.7617,
+     "source": "interleaved",
+     "changed": true
+    }
+   ]
+  },
+  {
+   "name": null,
+   "title": "A private Python + TypeScript program",
+   "short": "Python + TypeScript, 49,494 lines",
+   "card": {
+    "languages": [
+     "python",
+     "typescript"
+    ],
+    "files": 327,
+    "lines": 49494,
+    "modules": 345,
+    "functions": 2078,
+    "nodes": 3338,
+    "edges": 8472,
+    "library_bodies": 750,
+    "pinned": true
+   },
+   "said": "Python + TypeScript \u00b7 327 files \u00b7 49,494 lines \u00b7 345 modules \u00b7 2,078 functions \u00b7 3,338 nodes \u00b7 8,472 edges \u00b7 750 library bodies",
+   "cells": [
+    {
+     "label": "cold read",
+     "unit": "s",
+     "before": 165.7082,
+     "after": 24.6614,
+     "source": "interleaved",
+     "changed": true
+    },
+    {
+     "label": "warm read",
+     "unit": "s",
+     "before": 0.4264,
+     "after": 0.4997,
+     "source": "interleaved",
+     "changed": false
+    },
+    {
+     "label": "peak memory",
+     "unit": "MB",
+     "before": 642.4375,
+     "after": 739.4414,
+     "source": "interleaved",
+     "changed": true
+    }
+   ]
+  }
+ ],
+ "series": [
+  {
+   "row": 0,
+   "label": "cold read",
+   "unit": "s",
+   "points": [
+    [
+     "0.73.0",
+     11.2415,
+     "1f0225e",
+     "AMD EPYC 9V45 96-Core Processor"
+    ]
+   ]
+  },
+  {
+   "row": 0,
+   "label": "warm read",
+   "unit": "s",
+   "points": [
+    [
+     "0.73.0",
+     0.7283,
+     "1f0225e",
+     "AMD EPYC 9V45 96-Core Processor"
+    ]
+   ]
+  },
+  {
+   "row": 0,
+   "label": "peak memory",
+   "unit": "MB",
+   "points": [
+    [
+     "0.73.0",
+     404.25,
+     "1f0225e",
+     "AMD EPYC 9V45 96-Core Processor"
+    ]
+   ]
+  },
+  {
+   "row": 1,
+   "label": "cold read",
+   "unit": "s",
+   "points": [
+    [
+     "0.73.0",
+     4.1676,
+     "1f0225e",
+     "AMD EPYC 9V45 96-Core Processor"
+    ]
+   ]
+  },
+  {
+   "row": 1,
+   "label": "warm read",
+   "unit": "s",
+   "points": [
+    [
+     "0.73.0",
+     0.0583,
+     "1f0225e",
+     "AMD EPYC 9V45 96-Core Processor"
+    ]
+   ]
+  },
+  {
+   "row": 1,
+   "label": "peak memory",
+   "unit": "MB",
+   "points": [
+    [
+     "0.73.0",
+     675.9336,
+     "1f0225e",
+     "AMD EPYC 9V45 96-Core Processor"
+    ]
+   ]
+  },
+  {
+   "row": 2,
+   "label": "cold read",
+   "unit": "s",
+   "points": [
+    [
+     "0.73.0",
+     15.4535,
+     "1f0225e",
+     "AMD EPYC 9V45 96-Core Processor"
+    ]
+   ]
+  },
+  {
+   "row": 2,
+   "label": "warm read",
+   "unit": "s",
+   "points": [
+    [
+     "0.73.0",
+     0.4805,
+     "1f0225e",
+     "AMD EPYC 9V45 96-Core Processor"
+    ]
+   ]
+  },
+  {
+   "row": 2,
+   "label": "peak memory",
+   "unit": "MB",
+   "points": [
+    [
+     "0.73.0",
+     739.1953,
+     "1f0225e",
+     "AMD EPYC 9V45 96-Core Processor"
+    ]
+   ]
+  }
+ ]
+}
