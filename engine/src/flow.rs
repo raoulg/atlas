@@ -2175,6 +2175,11 @@ fn body_of(ix: &Ix, n: &Node, on: &str) -> Body {
     let callees: Vec<String> = if n.kind == NodeKind::Class && n.entry.is_some() {
         let ctor = ix.runs(&n.id);
         let mut out: Vec<String> = ctor.iter().cloned().collect();
+        // a class with no methods is built from its fields: its constructor, the class itself, is the door that builds it
+        // (`Order(id=..)`, `Order { id }`, a literal of its shape), as an initializer is
+        if ctor.is_none() && n.methods.is_empty() {
+            out.push(n.id.clone());
+        }
         // the initializer building it runs, its own or a base's, and its public methods, the initializer once
         out.extend(
             ix.out(&n.id, EdgeKind::Contains)

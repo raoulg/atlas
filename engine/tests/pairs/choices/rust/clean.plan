@@ -115,3 +115,5 @@ home Plan@run/Mode.plan run
 
 side entry left
 side Screen right
+home _@run run
+line run > _@run value                                                   # what it gives its caller, of no type of the code's
