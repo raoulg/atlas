@@ -67,9 +67,22 @@ verb: a `GET` takes what the place holds, a `POST`, `PUT`, `PATCH` or `DELETE` l
 there, and what such a request answers is what the place gives back of what it left, read back.
 Where the code does not say which way a call goes (a file's mode or a request's method that is a
 value), the place is in neither.
+
+What a route gives back is in its codomain whatever its type. A value of no type of the code's rests in Memory of the
+type its signature gives (`f64`, `Option<String>`, `list[bytes]`, out of the `Result` or `Promise` around it), and that
+type is its *what*. Inside a route such a value goes back to the step that called it, or is a wire from its maker to its
+taker: a vertex between two arrows, contracted, which keeps both ends. At the route's border the taker is the caller
+beyond the plan, so the vertex is an end, between no two arrows of the picture: contracting it would drop the end, so it
+stays a place, the box of its type on the right, as a type of the code's does. So does what a door of a class route gives
+back, since the caller of each door is beyond the plan too. A constructor is a door like an initializer: a class with no
+methods is built from its fields (`Order(id=..)`, `Order { id }`, a literal of its shape), and its route ends at the class
+it builds; an initializer that is a route of its own builds its class.
 **Where.** A function's `reads_back` and `updates` (`flow.rs`); a read's `checks` (`Steps::mark`,
 `body.rs`, with each language's `UseSyntax`); a request's way, `knowledge::REQUEST_WAYS`, and
-`Touch::side` (`flow.rs`); `sideOfRoles` in `viewer/plan.js`.
+`Touch::side` (`flow.rs`); `sideOfRoles` in `viewer/plan.js`. What a route gives its caller beyond the plan,
+`resultPlace` and `givesBeyond` in `viewer/plan.js`; a class's constructor as a door, `body_of` (`flow.rs`). Held by
+`plans.rs` (`every_route_ends_at_a_place`) and the pair `ends` (`common::a_route_ends_at_what_it_gives_back`, held in
+`pairs_python`, `pairs_rust` and `pairs_typescript`).
 
 ### The effect functor
 **What.** A functor maps objects to objects and arrows to arrows, keeping composition.
@@ -93,8 +106,12 @@ it tells its caller nothing. Either it is dead, or it changes something the code
 The graph cannot tell that arrow from one whose effect Atlas does not model: where a body runs a
 call no table describes (a library's call, a callback in a field, a method nothing implements),
 the finding names that call as what Atlas cannot see, and asks whether it is dead only where it
-sees everything the function runs.
-**Where.** Principle `nothing`; `Node::unseen`, `Node::declared` (`body.rs`, `Steps::dropped`).
+sees everything the function runs. A route is such an arrow where its code, as the graph holds it, gives nothing back,
+changes nothing, writes, sends or runs nothing and raises nothing: it ends at 1, which is no place, and that is a finding
+of the program, never a fault of the picture. A sketch's body that only says it is unbuilt (`...`, `todo!()`) raises no
+error of the code's.
+**Where.** Principle `nothing`; `Node::unseen`, `Node::declared` (`body.rs`, `Steps::dropped`); for a route, `codeGives`
+in `engine/tests/plans.mjs`, read from the graph and never from a plan.
 
 ### Coproducts
 **What.** A coproduct A + B: a value is one of the alternatives, and a function out of it is a
@@ -247,8 +264,11 @@ beneath it. An environment variable with a fallback (`os.environ.get("X", "d")`,
 nothing in the program hands, with a fallback: one input, one place, drawn as its default and
 decided by no code, since a run reads or writes one file whatever the input says. A type written
 through an alias (`Order as Parcel`, `use tree_sitter::Node as TsNode`) is the type it stands for: a
-parameter holds it by that type's name, as the type it takes is named (#216).
-**Where.** `CLAUDE.md`, "Isomorphic is the same"; `Entry::options`; `paths::or_else`; `model::resolve_held`.
+parameter holds it by that type's name, as the type it takes is named (#216). A type written through the module that
+holds it (`nn.Module`, `torch.nn.Module`, `model::Order`, `model.Order` of `import * as model`) is that type, and the
+module it is written through is how the name is reached, no type of its own (Types are objects; #445).
+**Where.** `CLAUDE.md`, "Isomorphic is the same"; `Entry::options`; `paths::or_else`; `model::resolve_held`; each
+reader's `type_names`, held by `a_type_written_through_its_module_is_that_type_in_every_language` (`engine/tests/pairs.rs`).
 
 ### Paths as terms, directories as fibers
 **What.** A path is a term in a small algebra over a root: a root (a literal, a parameter, an
@@ -1053,7 +1073,19 @@ parse the command line to the entry. The closed picture is `F/q`:
   on is what it hands on open: an error as an error, a result of no type back to its caller, a value
   of no type by its name; and the types its body holds are the route's fiber, as they are open. The cut
   changes how much of `F` is held, never its picture, and opening a cut step refines as opening any step
-  does: the picture it opens to, planned anew, maps onto the one it was cut in.
+  does: the picture it opens to, planned anew, maps onto the one it was cut in. A route closed at its
+  cut is therefore its finest plan closed, line for line, and this holds by construction only where
+  the body planned by itself differs from the body in place by nothing but what its call hands it:
+  each value the call hands is one value from beyond, bound by the caller as the opened step's border
+  binds it. The instance a method runs on is one such value, whichever class the method that takes it
+  is written in (a base the method resolution order or `super()` reaches, `Base.f(self)`), so one
+  function (`runsOn`) says which instance a box runs on, for an opened step, a step beyond the cut and a
+  leaf alike, as what a step before it made of that instance anew. A parameter its call fills with no
+  value holds none in each override the call into a family runs, whatever the override's signature
+  names it (behavioural subtyping: an override takes what its call hands). The fold of the command
+  line is a quotient of the entry, and the cut commutes with it: a cut step whose body parses the
+  command line counts, under the fold, the fine lines of what the parse made, as the route's own image
+  does (`cutArrow`).
 
 The overview, a view with no route, is the image of a fine plan `F₀` of its own, built by the same
 `imageOf`. It has no route, so no order between its arrows and no moments: a value's identity is its
@@ -1170,7 +1202,7 @@ and not walked by the law is a fault of the law.
 On the image the model merges the siblings (above, `siblings`) and takes the order of the places on the disk
 (`meet`, "Paths as terms"), and the page then does only what is a quotient of `F` or a way of drawing it: the storage quotient and the fold (above); a value with no name and no type of the code's
 drawn as a wire from its maker to its takers, a vertex between two arrows contracted (a homotopy, as
-in rule 6); a type no line touches left out, since it lies on no border; and a place the route
+in rule 6), never one at the route's border, whose taker is beyond the plan ("A route's domain and codomain"); a type no line touches left out, since it lies on no border; and a place the route
 finds and changes drawn twice, `from X ⇄` on the left and `into X ⇄` on the right, one place with
 the side `both`.
 
@@ -1187,8 +1219,8 @@ Each law is then a theorem of the construction, or it is not yet, and says which
 | Across the cut | a cut step's arrow is the image of its body, made by the same construction (`cutArrow`) | `plans.rs` at the budgets 1, 2 and 3 (`ATLAS_FINE_BUDGET`), which cut the small programs as a large one is cut: each line of a cut step counts the fine lines its body draws there, and each cut step of the closed picture, opened and planned anew, refines the picture it was cut in (`cutOpenings` in `plans.mjs`); at the same budgets a route whose body, unfolded, has 2^40 occurrences, which only an arrow made without unfolding the body can plan (`a_step_beyond_the_cut_is_made_without_unfolding_its_body`); `topology` with a small budget |
 | The overview | `F₀/q` maps onto `F₀/q′` along the blocks, as a route's pictures do, the calls a channel among them | the oracle; `plans.rs` (`every_package_view_is_the_image_of_its_plan`), for every set of open packages and parts of every program: each line counts the fine lines it stands for and none is reached, a type internal to a closed package draws none, each call goes between the blocks of its ends, and the picture is a function of the set of open boxes; all of it again without the test code, whose plan is the fiber of the plan with it |
 | A focus | `F_U` is a fiber of `F₀` closed under kinds, its homes `F₀`'s, and `q_U` a map on it | `plans.rs` (`every_focus_is_the_image_of_a_fiber_of_the_overviews_plan`), for every set of packages in focus and every set of open packages: each closed package has the border it has in the overview opened alike, each type the home `F₀` gives it, the plan is the star of the focus restated on its own (`starOf`), the oracle with `q_U`, the lines count the fine ones, every line has its ends, and closing in turn draws each picture it was; the program `plans/focus-shapes` |
-| All routes of a kind | `F_K` is the union of the routes' closed pictures, each route's box the image of its plan cut at its first level | `plans.rs` (`every_kind_view_is_the_union_of_its_routes_closed`): each route's box against the image of its finest plan with no box open, line by line with the fine lines each counts and those it reaches; where the cut draws otherwise, a fault marked with #438; the routes' entries one box closed, with each route's count, and opened the union of the routes' entries |
-| A route ends at a place | the codomain of a route closed is what crosses its border: what it gives back, writes, sends or runs | `plans.rs` (`every_route_ends_at_a_place`, ignored: a value of no type of the code's that a route gives back, and a class built from its fields, end at no place, #439): every route closed, alone and among its kind, gives a value, changes a place or makes a call |
+| All routes of a kind | `F_K` is the union of the routes' closed pictures, each route's box the image of its plan cut at its first level | `plans.rs` (`every_kind_view_is_the_union_of_its_routes_closed`): each route's box against the image of its finest plan with no box open, line by line with the fine lines each counts and those it reaches; the routes' entries one box closed, with each route's count, and opened the union of the routes' entries |
+| A route ends at a place | the codomain of a route closed is what crosses its border: what it gives back, whatever its type, writes, sends or runs; a value at the border is never contracted | `plans.rs` (`every_route_ends_at_a_place`): every route closed, alone and among its kind, whose code gives something as the graph says gives a value, changes a place or makes a call; a route whose code gives nothing ends at 1, a finding of the program the law names (The terminal object); where the plan draws otherwise, a fault marked with #446, #447 or #448 |
 | Every view | `picture(V) = image(F(V), q(V))` by one `plan()` | `plans.rs` (`every_view_state_draws_the_image_of_its_plan`), on a walk of the view state of every program: endpoints, the oracle, the counts, each box at its plan's home (a type at its home in `F₀`), a coordinate the view does not read changes nothing, and each picture drawn again is the one it was; the coordinates of `V` read from the page |
 | A library's frame | a library is a block of `F₀`'s types, its home the block's, and closing it is a coarser `q` | the walk of the view state (`libraryFaults`): in the overview and a focus each box of a type of an open library stands in its frame, which holds no other and stands at the library's home; closed, the library is one box that counts its types; closing an open frame draws the image of the open picture (`refines`) and moves no other box; a route and a kind draw no library; the programs `plans/library-frame` and `plans/library-frame-rust` |
 

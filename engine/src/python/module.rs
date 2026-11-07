@@ -235,7 +235,8 @@ fn type_names_outside(t: Option<TsNode>, src: &[u8], skip: &[TsNode]) -> Vec<Vec
         if inside(n) {
             continue;
         }
-        if n.kind() == "identifier" && n.parent().map_or(false, |p| p.kind() == "attribute") {
+        // a name within a dotted name is read with the whole: `torch.nn.Module` names one type, and `torch.nn` is no type
+        if n.parent().map_or(false, |p| p.kind() == "attribute") {
             continue;
         }
         if n.kind() == "string" {

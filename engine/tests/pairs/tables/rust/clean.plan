@@ -12,3 +12,5 @@ home Plan·plans timeout
 home Mode·mode timeout
 
 side entry left
+home _@timeout timeout
+line timeout > _@timeout value                                           # what it gives its caller, of no type of the code's

@@ -82,3 +82,7 @@ side entry left
 side Disk(ReadingStore.readings) both
 side Disk(ReadingStore.outages) both
 side Disk(ReadingStore.summaries) both
+home _@ReadingStore()/ReadingStore.outages ReadingStore()
+home _@ReadingStore()/ReadingStore.summary ReadingStore()
+line ReadingStore()/ReadingStore.outages > _@ReadingStore()/ReadingStore.outages value # what it gives its caller, of no type of the code's
+line ReadingStore()/ReadingStore.summary > _@ReadingStore()/ReadingStore.summary value # what it gives its caller, of no type of the code's

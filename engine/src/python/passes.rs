@@ -831,11 +831,11 @@ fn mark_registered(
                     .any(|(t, name)| seen.package(t).map_or(false, |p| knowledge::TOOL_SERVERS.contains(&(p.as_str(), name.as_str()))))
             })
         };
-        for n in store
-            .nodes
-            .values()
-            .filter(|n| n.module == m.id && matches!(n.kind, NodeKind::Function | NodeKind::Method) && n.entry.is_none())
-        {
+        for n in store.nodes.values().filter(|n| {
+            n.module == m.id
+                && matches!(n.kind, NodeKind::Function | NodeKind::Method)
+                && n.entry.as_ref().map_or(true, |e| e.kind == EntryKind::Export)
+        }) {
             let Some(decorated) = def_node(m, n).and_then(|d| d.parent()).filter(|p| p.kind() == "decorated_definition") else { continue };
             let registered = named_children(decorated)
                 .into_iter()
@@ -874,9 +874,7 @@ fn mark_registered(
         }
     }
     for (id, entry) in found {
-        if let Some(n) = store.nodes.get_mut(&id) {
-            n.entry = Some(entry);
-        }
+        store.enter(&id, entry);
     }
 }
 

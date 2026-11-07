@@ -87,3 +87,5 @@ side Disk(Store.path) both
 # #74: the doors run on what the constructor door built, not on the caller's instance `Store` from beyond (#121,
 #    decision 2): the constructor's Store goes back to the caller and is joined to no door
 # #74
+home _@Store()/Store.get Store()
+line Store()/Store.get > _@Store()/Store.get value                       # what it gives its caller, of no type of the code's

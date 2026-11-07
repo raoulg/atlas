@@ -1,9 +1,6 @@
 # Morphisms are functions: what a value is, is what the arrow that makes it gives. The file's JSON comes in as the
 # world has it, and `parseConfig(raw: unknown): Config` turns it into the program's own type, once.
 
-known #438 kinds all export routes: expenses.ledger.Ledger draws
-known #438 kinds all export routes: expenses.exporters.exporter.ReportExporter draws
-
 # An error a call into a family hands on (`this.rates.latest(..)`, which runs `HttpRates.latest` or `FileRates.latest`) is
 # made inside the step, at the moment of the choice it is, and its border hands on a value of its own (#138).
 

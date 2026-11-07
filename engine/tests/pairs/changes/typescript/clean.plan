@@ -76,3 +76,5 @@ home _·out@main/counted/Map() main/counted
 line _·out@main/counted/set > main/counted value
 
 # a result the caller drops goes back to it: the reader does not say the call is a statement of its own
+home _@main main
+line main > _@main value                                                 # what it gives its caller, of no type of the code's
