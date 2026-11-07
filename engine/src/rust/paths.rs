@@ -629,9 +629,22 @@ impl<'a> Eval<'a> {
             };
             return Some(named(ctor) && theirs);
         }
-        let (ty, _) = ctor.rsplit_once('.')?;
+        // a variant's constructor stands below its type's id (`Check.Tree`), as a method does (`Store.new`), which is
+        // no constructor: its callers are its own, and the type's users run it only where it is an entry itself
+        let (ty, variant) = ctor.rsplit_once('.')?;
         class(ty)?;
-        Some(named(ty))
+        self.declares(ty, variant).then(|| named(ty))
+    }
+
+    /// Whether the program's type `ty` declares a variant by the name `variant`.
+    fn declares(&self, ty: &str, variant: &str) -> bool {
+        let declared = || {
+            let n = self.nodes.get(ty)?;
+            let home = self.modules.get(&n.module)?;
+            let variants = walk(def_node(home, n)?, &["enum_variant"]);
+            Some(variants.into_iter().any(|v| v.child_by_field_name("name").is_some_and(|x| text(x, &home.src) == variant)))
+        };
+        declared().unwrap_or(false)
     }
 
     /// The type a path builds a value of where it names a constructor, a struct's (`Self`, `Shelf`) or a
@@ -652,12 +665,8 @@ impl<'a> Eval<'a> {
         }
         let (variant, owner) = parts.split_last()?;
         let ty = class(owner)?;
-        let n = self.nodes.get(&ty)?;
-        let home = self.modules.get(&n.module)?;
-        let declared = walk(def_node(home, n)?, &["enum_variant"])
-            .into_iter()
-            .any(|v| v.child_by_field_name("name").is_some_and(|x| text(x, &home.src) == variant));
-        declared.then(|| (ty.clone(), format!("{ty}.{variant}")))
+        let ctor = format!("{ty}.{variant}");
+        self.declares(&ty, variant).then_some((ty, ctor))
     }
 
     /// The type of the value `e` is and the calls that built it, where the code says which: a construction
