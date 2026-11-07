@@ -1,0 +1,13 @@
+[project]
+name = "table"
+version = "0.1.0"
+requires-python = ">=3.12"
+dependencies = ["pandas"]
+
+[build-system]
+requires = ["uv_build"]
+build-backend = "uv_build"
+
+# pandas as its stubs, in place of an installed environment
+[tool.ty.environment]
+extra-paths = ["../../../pipeline/typings"]

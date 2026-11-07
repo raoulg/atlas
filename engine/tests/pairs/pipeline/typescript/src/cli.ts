@@ -4,13 +4,12 @@
 import { existsSync } from "node:fs";
 import { parseArgs } from "node:util";
 
-import { download } from "./download.js";
+import { download, RAW } from "./download.js";
 import { saveSvg, trend } from "./plot.js";
 import { load, smooth } from "./series.js";
 import { DEFAULT_SETTINGS, type Settings } from "./settings.js";
 
 const SILSO = "https://www.sidc.be/SILSO/DATA/SN_m_tot_V2.0.csv";
-const RAW = "data/raw/sunspots.csv";
 const FIGURE = "figures/sunspots.svg";
 
 /** Downloads SILSO's monthly sunspot numbers where none are kept, smooths them and saves their trend. */
