@@ -913,8 +913,9 @@ open:
   and the value stands in the step's frame. A value no line takes says that the body drops it; the
   map draws fewer facts by zoom, never by leaving one out. Of what the
   body's steps make, what it gives back is what no step of the code among them takes and is of a type
-  its signature gives as its language reads the type (its result, or the error of `T + E`; for a shaped array, any shape of
-  the same array, since the shape refines the language's type: Shapes and their rank): a value built only to be handed into another
+  its signature gives as its language reads the type (its result, or the error of `T + E`; what the body returns as a call
+  gives it is of a shaped array's type in any shape of that array type, since dtype and shape refine the language's type:
+  Shapes and their rank): a value built only to be handed into another
   step (`Row(Reading(line))`) is that step's, and a body that gives back a number gives back none of the
   values its steps make, which it uses, if at all, by its own code, nor does one that gives back a collection of pairs
   (`Vec<(String, Vec<Where>)>` gives back pairs, no `Where`). A value handed into a
@@ -1383,10 +1384,11 @@ on a wire as well as of a signature, though the type checker reads it as its arr
 and a call of the code's own function gives the shape that function returns, or, unpacked, the part of the tuple it
 returns. The declared shape refines the checker's type and stands for it only where that type is its array type.
 Where a body's codomain is decided (what an opened step's own arrow gives back: One fine plan, every picture its image),
-a shape is compared as its language reads its type: two shapes of one array type and dtype are one type there, whatever
-their ranks, so a body that returns a call's `Float[Tensor, "*lead {self.out}"]` under a written
-`Float[Tensor, "batch 16"]`, or the other way round, gives back what the call made. Whether the written shape claims more than the call proves is a question of the
-shapes, not of what the body gives back.
+the value the body returns as a call gives it is compared as its language reads its type: two shapes of one library's
+array type are one type there, whatever their dtype and ranks, so a body that returns a call's
+`Float[Tensor, "*lead {self.out}"]` under a written `Float[Tensor, "batch 16"]`, or the other way round, gives back what
+the call made. Every other value the body's steps make is compared by its shape. Whether the written dtype or shape
+claims more than the call proves, or contradicts it, is a question of the shapes, not of what the body gives back.
 **Where.** `shapes.rs` (`Array`, `Axis`, `Rank`, `family_id`, `name`, `one_array`), `families.rs` (the rank as a kind),
 principle `overrides` (`Array::fits`); on wires `python/body.rs` (`Seen::declared_shape`) and `python/passes.rs`
 (`shaped_returns`); what a body gives back `flow.rs` (`made_from`); the pairs `shapes/python` and `modules/python`.
