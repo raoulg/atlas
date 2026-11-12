@@ -1427,13 +1427,15 @@ pub fn initializers(g: &Graph) -> HashMap<String, String> {
 }
 
 /// What a body's steps make that it may give back: the class a step builds, else what the function it runs gives back,
-/// where that is of a type the function itself gives as its language reads the type (`n`'s `returns`, a kind or a variant
-/// of one, a shape of the same array as one, narrower or wider: `Float[Tensor, *lead 128]` where `n` gives
-/// `Float[Tensor, batch 128]`, or a type its written return holds as a value: the error of a `Result<T, E>`, `T + E`), or an
-/// error its own calls raise or hand on. A value of another type its steps make is no part of what it gives back: a function that gives back a
-/// number is made of none of them, and one that gives back a collection of pairs (`Vec<(String, Vec<Where>)>`) gives back
-/// pairs of a type the code does not name, none of what they pair. A signature that says nothing of what it gives back,
-/// whose callers use what it gives (`Arrow::returns_value`), rules out no type.
+/// where that is of a type the function itself gives (`n`'s `returns`, a kind or a variant of one, or a type its written
+/// return holds as a value as its language reads it: the error of a `Result<T, E>`, `T + E`), or an error its own calls
+/// raise or hand on. What the call the body returns as it is gives (`Site::returned`) is compared as its language reads
+/// the type: a shape of the same array as one `n` gives, narrower or wider, is of it (`return self.proj(x)` giving
+/// `Float[Tensor, *lead 128]` where `n` gives `Float[Tensor, batch 128]`). A value of another type its steps make is no part
+/// of what it gives back: a function that gives back a number is made of none of them, and one that gives back a collection
+/// of pairs (`Vec<(String, Vec<Where>)>`) gives back pairs of a type the code does not name, none of what they pair. A
+/// signature that says nothing of what it gives back, whose callers use what it gives (`Arrow::returns_value`), rules out
+/// no type.
 fn made_from(ix: &Ix, n: &Node, body: &Body) -> Vec<String> {
     let mut gives = ix.targets(&n.id, EdgeKind::Returns);
     for s in &n.sites {
@@ -1451,13 +1453,16 @@ fn made_from(ix: &Ix, n: &Node, body: &Body) -> Vec<String> {
     let of = |t: &str| {
         unsaid
             || names(t)
-            || gives.iter().any(|g| {
-                t == g
-                    || ix.mro(t).contains(&g.as_str())
-                    || ix.out(g, EdgeKind::Variant).any(|e| e.dst == t)
-                    || crate::shapes::one_array(t, g)
-            })
+            || gives.iter().any(|g| t == g || ix.mro(t).contains(&g.as_str()) || ix.out(g, EdgeKind::Variant).any(|e| e.dst == t))
     };
+    // the functions a call the body returns as it is may run: the one it reaches and those it may run in its place
+    let returned: HashSet<String> = body
+        .steps()
+        .into_iter()
+        .filter(|s| s.site.and_then(|i| n.sites.get(i)).is_some_and(|x| x.returned))
+        .flat_map(|s| std::iter::once(s.to.clone()).chain(s.instead.iter().map(|k| split(k).0.to_string())))
+        .collect();
+    let same_array = |t: &str| gives.iter().any(|g| crate::shapes::one_array(t, g));
     let mut callees: Vec<&str> = vec![];
     for t in body.steps().into_iter().map(|s| s.to.as_str()).chain(body.alts.iter().map(|k| split(k).0)) {
         if ix.nodes.contains_key(t) && !callees.contains(&t) {
@@ -1467,7 +1472,7 @@ fn made_from(ix: &Ix, n: &Node, body: &Body) -> Vec<String> {
     let mut out = vec![];
     for c in callees {
         let made = if ix.nodes[c].kind == NodeKind::Class { vec![c.to_string()] } else { ix.targets(c, EdgeKind::Returns) };
-        out.extend(made.into_iter().filter(|t| of(t)));
+        out.extend(made.into_iter().filter(|t| of(t) || returned.contains(c) && same_array(t)));
     }
     out
 }
