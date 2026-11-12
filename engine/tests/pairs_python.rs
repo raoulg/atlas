@@ -3353,6 +3353,31 @@ fn every_wire_of_a_typed_forward_pass_carries_its_shape() {
     assert!(wires >= 12, "{wires} wires");
 }
 
+/// The modules pair (#456): `branch` returns what its call gives, `Projection.forward`'s `Float[Tensor, "*lead {self.out}"]`,
+/// under the written `Float[Tensor, "batch 16"]`, a shape of another rank family. What a body gives back is of a type its
+/// signature gives as its language reads the type (`docs/reference/mathematics.md`, "One fine plan, every picture its
+/// image"): ty reads both shapes as `Tensor`, and a shape refines that type, so the body is made of its call's result. The
+/// two forms of the call, `projection(image)` and `projection.forward(image)`, give back the same (the `.plan` files beside
+/// the pair draw the line from the call's result to `branch`'s own arrow).
+#[test]
+fn a_body_gives_back_its_calls_result_under_another_shape_of_the_same_array() {
+    use atlas_engine::shapes::Array;
+    let side = |s: &str| {
+        analyze(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/pairs/modules/python").join(s), &Options::default()).unwrap()
+    };
+    let returns = |g: &Graph, f: &str| -> Vec<String> {
+        g.edges.iter().filter(|e| e.src == f && e.kind == EdgeKind::Returns).map(|e| e.dst.clone()).collect()
+    };
+    for s in ["clean", "shortcut"] {
+        let g = side(s);
+        let (call, written) = (returns(&g, "encoders.model.Projection.forward"), returns(&g, "encoders.model.branch"));
+        let rank = |t: &[String]| t.iter().filter_map(|t| Array::of_id(t)).map(|a| a.rank()).collect::<Vec<_>>();
+        assert_ne!(rank(&call), rank(&written), "{s}: the call's shape and the written one are of two rank families");
+        let made = flow::of(&g).bodies["encoders.model.branch"].made_from.clone();
+        assert_eq!(made, call, "{s}: branch gives back what its call made");
+    }
+}
+
 /// Only a torch module's call runs its forward (#422): a class that is no module is called through its own `__call__`,
 /// whatever else it names `forward`, and so is a module that defines `__call__` itself, and a class below one. The rule
 /// is torch's alone; no other class's call is given a `forward`.
