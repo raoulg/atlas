@@ -50,3 +50,10 @@ def cast(ids: Int[Tensor, "batch seq"]) -> Float[Tensor, "batch ndim"]:
 
 def narrowed(ids: Int[Tensor, "batch seq"]) -> Float[Tensor, "batch 16"]:
     return Projection().forward(MeanPool().forward(Lookup().forward(ids)))
+
+
+def hooked(ids: Int[Tensor, "batch seq"]) -> Float[Tensor, "batch 16"]:
+    def hook(y: Float[Tensor, "batch dim"]) -> Float[Tensor, "batch 16"]:
+        return Projection().forward(y)
+
+    return MeanPool().forward(Lookup().forward(ids))

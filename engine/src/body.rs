@@ -637,7 +637,7 @@ impl<'t, 's> Steps<'t, 's> {
         let in_function = self.in_function(c);
         Site {
             dropped: self.drops(c),
-            returned: !raises && self.gives_back(c),
+            returned: !raises && self.gives_back(c) && !self.in_nested(c),
             raises,
             handed_on: handed_on && !explicit,
             fails,
@@ -763,6 +763,19 @@ impl<'t, 's> Steps<'t, 's> {
         for _ in 0..2 {
             let Some(p) = self.up(at) else { return false };
             if (self.syntax.part)(p, at, self.src) == Part::Decides {
+                return true;
+            }
+            at = p;
+        }
+        false
+    }
+
+    /// Whether `n` stands in a body of its own that the body defines (`UseSyntax::nested`: a `def` in a `def`, a function
+    /// item in a block): what it returns leaves that body, not this one.
+    fn in_nested(&self, n: TsNode<'t>) -> bool {
+        let mut at = n;
+        while let Some(p) = self.up(at).filter(|_| at.id() != self.body.id()) {
+            if p.id() != self.body.id() && self.uses.nested.contains(&p.kind()) {
                 return true;
             }
             at = p;

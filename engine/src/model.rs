@@ -851,8 +851,13 @@ pub struct Site {
     /// (`other.take_from(board)`, `void remove(..)`, `store.add(x);`).
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub dropped: bool,
-    /// What the call gives is what the body gives back, as it is: the body returns it or ends with it (`return
-    /// self.head(x)`, a block's last expression), through what hands it on unchanged.
+    /// What the call gives is what the body gives back as it is: the body's own `return`, `yield` or last expression
+    /// carries it (`return self.head(x)`, a block's last expression without `;`), through what hands it on unchanged
+    /// (`await`, `?`, an arm's or a block's last part). False for a call in a function written in place (a lambda, a
+    /// closure, an arrow function) or in a body of its own the body defines (a nested `def`), whose `return` leaves that
+    /// function, and for a call that builds the error the body raises. A function a TypeScript `const` binds
+    /// (`export const load = (p) => parse(p)`) is read as one written in place, so the calls its own body returns are
+    /// false too. A `yield` counts as a `return`: the syntax tables do not tell the two apart.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub returned: bool,
     /// What the call gives leaves the body as an error: it builds the error a `raise`, a `throw`

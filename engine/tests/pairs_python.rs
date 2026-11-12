@@ -3408,6 +3408,25 @@ fn only_the_returned_call_is_compared_as_its_language_reads_the_type() {
     }
 }
 
+/// A `return` in a function the body defines leaves that function, not the body (#456): in `plans/returned-shape`,
+/// `hooked` defines `hook`, whose `return Projection().forward(y)` is `hook`'s, and itself returns
+/// `MeanPool().forward(..)`. Only the body's own return is what it gives back as a call gives it, so `hooked` is made of
+/// `MeanPool.forward`'s result alone, though `Projection.forward`'s is a shape of the same array.
+#[test]
+fn a_return_in_a_function_the_body_defines_is_not_the_bodys() {
+    let g = analyze(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/plans/returned-shape"), &Options::default()).unwrap();
+    let returned: Vec<&str> =
+        g.node("mesh.components.hooked").unwrap().sites.iter().filter(|s| s.returned).map(|s| s.to.as_str()).collect();
+    assert_eq!(returned, ["mesh.components.MeanPool.forward"]);
+    let pool: Vec<String> = g
+        .edges
+        .iter()
+        .filter(|e| e.src == "mesh.components.MeanPool.forward" && e.kind == EdgeKind::Returns)
+        .map(|e| e.dst.clone())
+        .collect();
+    assert_eq!(flow::of(&g).bodies["mesh.components.hooked"].made_from, pool);
+}
+
 /// Only a torch module's call runs its forward (#422): a class that is no module is called through its own `__call__`,
 /// whatever else it names `forward`, and so is a module that defines `__call__` itself, and a class below one. The rule
 /// is torch's alone; no other class's call is given a `forward`.
