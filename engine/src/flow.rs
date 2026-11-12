@@ -1427,9 +1427,10 @@ pub fn initializers(g: &Graph) -> HashMap<String, String> {
 }
 
 /// What a body's steps make that it may give back: the class a step builds, else what the function it runs gives back,
-/// where that is of a type the function itself gives (`n`'s `returns`, a kind or a variant of one, or a type its written
-/// return holds as a value as its language reads it: the error of a `Result<T, E>`, `T + E`), or an error its own calls
-/// raise or hand on. A value of another type its steps make is no part of what it gives back: a function that gives back a
+/// where that is of a type the function itself gives as its language reads the type (`n`'s `returns`, a kind or a variant
+/// of one, a shape of the same array as one, narrower or wider: `Float[Tensor, *lead 128]` where `n` gives
+/// `Float[Tensor, batch 128]`, or a type its written return holds as a value: the error of a `Result<T, E>`, `T + E`), or an
+/// error its own calls raise or hand on. A value of another type its steps make is no part of what it gives back: a function that gives back a
 /// number is made of none of them, and one that gives back a collection of pairs (`Vec<(String, Vec<Where>)>`) gives back
 /// pairs of a type the code does not name, none of what they pair. A signature that says nothing of what it gives back,
 /// whose callers use what it gives (`Arrow::returns_value`), rules out no type.
@@ -1450,7 +1451,12 @@ fn made_from(ix: &Ix, n: &Node, body: &Body) -> Vec<String> {
     let of = |t: &str| {
         unsaid
             || names(t)
-            || gives.iter().any(|g| t == g || ix.mro(t).contains(&g.as_str()) || ix.out(g, EdgeKind::Variant).any(|e| e.dst == t))
+            || gives.iter().any(|g| {
+                t == g
+                    || ix.mro(t).contains(&g.as_str())
+                    || ix.out(g, EdgeKind::Variant).any(|e| e.dst == t)
+                    || crate::shapes::one_array(t, g)
+            })
     };
     let mut callees: Vec<&str> = vec![];
     for t in body.steps().into_iter().map(|s| s.to.as_str()).chain(body.alts.iter().map(|k| split(k).0)) {

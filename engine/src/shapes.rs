@@ -174,6 +174,16 @@ pub fn family_id(id: &str) -> Option<String> {
     Some(format!("{}{}", &id[..id.len() - name.len()], a.family_name()))
 }
 
+/// Whether the shaped arrays `a` and `b` are shapes of one array: one library's array type of one dtype, whatever their
+/// axes. A type checker reads both as that array (`Float[Tensor, batch 128]` and `Float[Tensor, *lead {self.out}]` as
+/// `Tensor`); the shape refines it.
+pub fn one_array(a: &str, b: &str) -> bool {
+    fn lib(id: &str) -> Option<&str> {
+        crate::knowledge::shaped(id).map(|n| &id[..id.len() - n.len()])
+    }
+    matches!((Array::of_id(a), Array::of_id(b)), (Some(x), Some(y)) if x.dtype == y.dtype && x.array == y.array && lib(a) == lib(b))
+}
+
 /// The name a shaped array goes by where it is not its shape: a shape of one open run alone (`Float[Tensor, ...]`)
 /// promises no axis, so it is named as what it says, `Float Tensor · any rank`. Every other shape is named by itself.
 pub fn name(id: &str) -> Option<String> {
@@ -245,6 +255,18 @@ mod tests {
             assert_eq!(name(&id(s)), None, "{s}");
         }
         assert_eq!(family_id(&id("Float[Tensor, ...]")), Some(id("Float Tensor · any rank")));
+    }
+
+    /// Two shapes are one array where their library, array type and dtype agree, whatever their ranks; a dtype or an
+    /// array type of its own is another array, and a type that is no shape is none.
+    #[test]
+    fn shapes_of_one_array_agree_in_array_and_dtype_alone() {
+        let id = |s: &str| crate::model::ext::of(&format!("jaxtyping.{s}"));
+        assert!(one_array(&id("Float[Tensor, batch 128]"), &id("Float[Tensor, *lead {self.out}]")));
+        assert!(one_array(&id("Float[Tensor, ...]"), &id("Float[Tensor, batch]")));
+        assert!(!one_array(&id("Float[Tensor, batch]"), &id("Int[Tensor, batch]")));
+        assert!(!one_array(&id("Float[Tensor, batch]"), &id("Float[ndarray, batch]")));
+        assert!(!one_array(&id("Float[Tensor, batch]"), &crate::model::ext::of("torch.Tensor")));
     }
 
     fn axis() -> impl Strategy<Value = String> {
