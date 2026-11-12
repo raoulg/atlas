@@ -851,6 +851,10 @@ pub struct Site {
     /// (`other.take_from(board)`, `void remove(..)`, `store.add(x);`).
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub dropped: bool,
+    /// What the call gives is what the body gives back, as it is: the body returns it or ends with it (`return
+    /// self.head(x)`, a block's last expression), through what hands it on unchanged.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub returned: bool,
     /// What the call gives leaves the body as an error: it builds the error a `raise`, a `throw`
     /// or a `return Err(..)` ends the body with.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]

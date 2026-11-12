@@ -637,6 +637,7 @@ impl<'t, 's> Steps<'t, 's> {
         let in_function = self.in_function(c);
         Site {
             dropped: self.drops(c),
+            returned: !raises && self.gives_back(c),
             raises,
             handed_on: handed_on && !explicit,
             fails,
@@ -1556,7 +1557,7 @@ impl<'t, 's> Steps<'t, 's> {
         let arms = self.arms(a);
         // what it raises, the call it is handed to hands on, as that call stands
         let site = self.site(c, Site { line: line(c), to: to.to_string(), arms: arms.clone(), ..Default::default() });
-        self.sites.push(Site { dropped: false, raises: false, ..site });
+        self.sites.push(Site { dropped: false, returned: false, raises: false, ..site });
         self.edges.push((to.to_string(), kind, None, arms));
     }
 
