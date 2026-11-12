@@ -75,3 +75,13 @@ def project() -> None:
     image, _ = batch()
     z = branch(Projection(384, 16), image)
     print(z)
+
+
+def widened(projection: Projection, image: Float[Tensor, "batch 384"]) -> Float[Tensor, "*lead 16"]:
+    return branch(projection, image)
+
+
+def headed(projection: Projection, head: Head, image: Float[Tensor, "batch 384"]) -> Float[Tensor, "batch 4"]:
+    projection.forward(image)
+    hidden = projection.forward(image)
+    return head.forward(hidden)
