@@ -1426,18 +1426,14 @@ pub fn initializers(g: &Graph) -> HashMap<String, String> {
     g.nodes.iter().filter(|n| n.kind == NodeKind::Class).filter_map(|n| ix.runs(&n.id).map(|i| (n.id.clone(), i))).collect()
 }
 
-/// What a body's steps make that it may give back: what no later step of the body takes, of a type the function itself
-/// gives as its language reads the type. A step makes the class it builds, else what the function it runs gives back. A
-/// value a later step of the body is handed is that step's (`MeanPool().forward(Lookup().forward(ids))` gives back nothing
-/// `Lookup.forward` makes), unless a call between gives its name anew; a library's operation the graph does not read is
-/// no step, and what it is handed goes on in what it gives (`out.push(Drawn { .. })`). Where the body's calls say nothing
-/// of a value a step makes, it stays. The type is `n`'s `returns`, a kind or a variant of one, a shape of the same
-/// array as one, narrower or wider (`Float[Tensor, *lead 128]` where `n` gives `Float[Tensor, batch 128]`), or a type its
-/// written return holds as a value (the error of a `Result<T, E>`, `T + E`), or an error its own calls raise or hand on. A
-/// value of another type its steps make is no part of what it gives back: a function that gives back a number is made of
-/// none of them, and one that gives back a collection of pairs (`Vec<(String, Vec<Where>)>`) gives back pairs of a type
-/// the code does not name, none of what they pair. A signature that says nothing of what it gives back, whose callers use
-/// what it gives (`Arrow::returns_value`), rules out no type.
+/// What a body's steps make that it may give back: the class a step builds, else what the function it runs gives back,
+/// where that is of a type the function itself gives as its language reads the type (`n`'s `returns`, a kind or a variant
+/// of one, a shape of the same array as one, narrower or wider: `Float[Tensor, *lead 128]` where `n` gives
+/// `Float[Tensor, batch 128]`, or a type its written return holds as a value: the error of a `Result<T, E>`, `T + E`), or an
+/// error its own calls raise or hand on. A value of another type its steps make is no part of what it gives back: a function that gives back a
+/// number is made of none of them, and one that gives back a collection of pairs (`Vec<(String, Vec<Where>)>`) gives back
+/// pairs of a type the code does not name, none of what they pair. A signature that says nothing of what it gives back,
+/// whose callers use what it gives (`Arrow::returns_value`), rules out no type.
 fn made_from(ix: &Ix, n: &Node, body: &Body) -> Vec<String> {
     let mut gives = ix.targets(&n.id, EdgeKind::Returns);
     for s in &n.sites {
@@ -1462,33 +1458,6 @@ fn made_from(ix: &Ix, n: &Node, body: &Body) -> Vec<String> {
                     || crate::shapes::one_array(t, g)
             })
     };
-    // the value the call at `i` gives as `g` is handed to a later step before a later call gives that name anew; a value no
-    // name holds (what is returned straight away) is handed to none, a library's operation the graph does not read is no
-    // step (what it is handed goes on in what it gives: `out.push(Drawn { .. })`), and a call in another arm of a choice the
-    // call at `i` stands in neither takes the value nor names another
-    let apart = |a: &Site, b: &Site| a.arms.iter().any(|(c, x)| b.arms.iter().any(|(d, y)| c == d && x != y));
-    let handed = |i: usize, g: &Held| {
-        !g.name.is_empty()
-            && n.sites[i + 1..]
-                .iter()
-                .filter(|l| !apart(&n.sites[i], l))
-                .find_map(|l| {
-                    let takes = !l.to.is_empty() && l.hands.iter().any(|h| h.name == g.name);
-                    takes.then_some(true).or(l.gives.iter().any(|h| h.name == g.name).then_some(false))
-                })
-                .unwrap_or(false)
-    };
-    // every value of type `t` the calls of `c` give is handed to a later call; where the calls say nothing of `t`, nothing is
-    let taken = |c: &str, t: &str| {
-        let mut made = n
-            .sites
-            .iter()
-            .enumerate()
-            .filter(|(_, s)| s.to == c)
-            .flat_map(|(i, s)| s.gives.iter().filter(|g| g.ty == t).map(move |g| (i, g)));
-        let first = made.next();
-        first.is_some_and(|(i, g)| handed(i, g)) && made.all(|(i, g)| handed(i, g))
-    };
     let mut callees: Vec<&str> = vec![];
     for t in body.steps().into_iter().map(|s| s.to.as_str()).chain(body.alts.iter().map(|k| split(k).0)) {
         if ix.nodes.contains_key(t) && !callees.contains(&t) {
@@ -1498,7 +1467,7 @@ fn made_from(ix: &Ix, n: &Node, body: &Body) -> Vec<String> {
     let mut out = vec![];
     for c in callees {
         let made = if ix.nodes[c].kind == NodeKind::Class { vec![c.to_string()] } else { ix.targets(c, EdgeKind::Returns) };
-        out.extend(made.into_iter().filter(|t| of(t) && !taken(c, t)));
+        out.extend(made.into_iter().filter(|t| of(t)));
     }
     out
 }
