@@ -3469,3 +3469,54 @@ fn an_instance_handed_on_is_no_call_of_it() {
 fn a_route_ends_at_what_it_gives_back() {
     common::a_route_ends_at_what_it_gives_back("python", "float");
 }
+
+// ---------- guards: what a function is defined under is part of its definition ----------
+
+/// The guards pair (`tests/pairs/guards/python`): `run` tidies, scales and averages some readings, and each of the three
+/// steps refuses a call that hands it nothing, by a check written once. The clean side defines each function under the
+/// check, by its name (`@guarded`) or by a call that gives it (`@strict(least=1)`); the shortcut puts the check around
+/// each by hand after it is defined (`tidy = guarded(_tidy)`), so the name the program calls holds a value.
+fn guards() -> &'static Pair {
+    static PAIR: OnceLock<Pair> = OnceLock::new();
+    PAIR.get_or_init(|| common::pair("guards/python"))
+}
+
+/// What a function is defined under is part of its definition, and a definition is no step of the body it stands in
+/// (`mathematics.md`, "A decorator is part of the definition", #463): written as a name or as a call that gives it, in a
+/// module or in a class, the forms say the same. On each side the test asks both of the module's body: whether it runs
+/// one of the checks as a step, and whether a function names a check as what it is defined under. Exactly one holds:
+/// the clean side names and never steps, in each of the three forms; the shortcut steps, and no function names a check.
+#[test]
+fn guards_what_a_function_is_defined_under_is_no_step_in_any_form() {
+    let checks = ["scores.guarded", "scores.strict"];
+    for (side, g) in [("clean", &guards().clean), ("shortcut", &guards().shortcut)] {
+        let stepped = g.node("scores").unwrap().sites.iter().any(|s| checks.contains(&s.to.as_str()));
+        let named = g.nodes.iter().any(|n| n.guards.iter().any(|x| checks.contains(&x.as_str())));
+        assert_ne!(stepped, named, "{side}: a check is a step or a part of a definition, never both");
+        assert_eq!(named, side == "clean", "{side}");
+    }
+    for (function, check) in [("scores.tidy", "scores.guarded"), ("scores.Scale.apply", "scores.guarded"), ("scores.mean", "scores.strict")]
+    {
+        assert_eq!(guards().clean.node(function).unwrap().guards, [check], "{function}");
+    }
+}
+
+/// A function runs inside what it is defined under, so a call of it ends with what that ends with (`mathematics.md`,
+/// "A decorator is part of the definition"; `builder::settle_fails`). For each step of `run`, on each side, the test
+/// computes both: whether the function the step runs is defined under a check that ends with `Refused`, and whether the
+/// call hands `Refused` on. They agree at every step. On the clean side every one of the three does; on the shortcut the
+/// calls go to names that hold a value, which the code does not say the function of, and none hands an error on.
+#[test]
+fn guards_a_call_ends_with_what_its_function_is_defined_under_ends_with() {
+    let refused = "scores.Refused";
+    for (side, g) in [("clean", &guards().clean), ("shortcut", &guards().shortcut)] {
+        let ends = |f: &str| g.node(f).is_some_and(|n| n.sites.iter().any(|s| s.raises && s.gives.iter().any(|x| x.ty == refused)));
+        let mut any = false;
+        for s in &g.node("scores.run").unwrap().sites {
+            let under = g.node(&s.to).is_some_and(|n| n.guards.iter().any(|x| ends(x)));
+            assert_eq!(s.fails.iter().any(|e| e == refused), under, "{side}: line {}", s.line);
+            any |= under;
+        }
+        assert_eq!(any, side == "clean", "{side}");
+    }
+}

@@ -232,6 +232,20 @@ names it as Atlas says it everywhere, by its own name (`model::said`).
 nodes and the edges between them.
 **Where.** `design.md` §1, "Fibers".
 
+### Errors counted on the arrow
+**What.** A function that may fail has the codomain `B + E`: what it gives, or an error. In a composite
+`g ∘ f` the object between the two is what `g` takes; a summand nothing takes is carried to the end of the
+composite unchanged, by the copairing `[g, id_E]`.
+**In Atlas.** An error a later step takes (a handler that uses what it caught) is an object between two
+arrows and is drawn as one. An error that only leaves, handed on from border to border up to the route's,
+is the summand `E` of every step that hands it on. Drawing each such error as a box is one level of zoom;
+counting it on the arrow is the coarser one, and it is the one a route opens at: a step that hands errors on
+carries their number (`+2 errors`), as the frame of an opened step does, and the view says how many the picture
+counts. `errors` in the view draws them as boxes. The counted picture is the drawn one less those errors:
+the same steps and frames, every other box, every other line.
+**Where.** `plan.js`: `foldErrors`, the last arrow of `plan`; the view's `errors` (`sight.rs`). Held by
+`engine/tests/plans.mjs`, `errorFaults`, which draws every view state both ways and compares them.
+
 ### A filter: the program without its test code
 **What.** The predicate *test code* on the functions of the graph: a function is test code when it
 is a test (an entry of kind `test`), when a reader marks it as test code (`Node::test`), or when it
@@ -1408,6 +1422,22 @@ one and is read as it (`RefCell::new(x)`, `Box::new(x)`, `Rc::new(x)`) hands on 
 one, as a copy makes (`copy.copy(x)`), so it is no step. A cast also names a type, and where the
 question is the class a method runs on (`(x as Store).f()`), that type answers it.
 **Where.** `tree.rs`: `Wrappers`, `wraps`, `beneath`, `outermost`; each reader's `WRAPPERS`.
+
+### A decorator is part of the definition
+**What.** `f′ = d(f)`: a function made from another by a function on functions. Where `d` gives back a
+function of the same domain, `f′` is `f` run inside a wrapper, and the codomain of `f′` is that of `f`
+plus what the wrapper may end with.
+**In Atlas.** A definition is no step of the body it stands in, and what a function is defined under is
+part of its definition: written as a name (`@checked`) or as a call that gives it (`@strict(least=1)`), in a
+module or in a class, the forms say the same and none is a step. The functions a definition stands under
+are its guards (`Node::guards`), a mark on its arrow (`guarded`), each resolved to the function it names where
+the graph holds it; the types a caller sees are the type checker's, which applies the decorator. A call of
+the function ends with what its guards end with. A body's nested functions are read as part of it, so a
+guard's errors are those of the decorator's own body and of the wrapper it gives back together. A library's
+decorator is reached with the function under it. Wrapping a function by hand after it is defined
+(`tidy = guarded(_tidy)`) is a step, and the name holds a value whose function the code does not say.
+**Where.** `python/passes.rs` (`link`), `python/body.rs` (`holds`), `pytypes.rs`; `builder::settle_fails`;
+`view.rs` (`reach`). The pair `engine/tests/pairs/guards`, held by `pairs_python.rs`.
 
 ### Behavioural subtyping
 **What.** A subtype can stand wherever its base stands (Liskov).

@@ -258,6 +258,8 @@ svg.glyph{vertical-align:-2px}
 .tstep rect.bg{fill:var(--panel-2);stroke:var(--ink-3)}
 .tstep circle.border-point{fill:var(--ink-3);stroke:var(--panel);stroke-width:2}
 .tstep .title{font-family:var(--mono);font-size:11px;font-weight:500;fill:var(--ink)}
+.tstep .title .guard{fill:var(--ink-3);font-weight:400;font-size:10px}
+.tstep .title .errs,.frame .ftitle .errs{fill:var(--alert);font-weight:500;font-size:10px;cursor:pointer}
 .tstep:hover rect.bg,.tstep.selected rect.bg{stroke:var(--focus);stroke-width:1.6}
 .tnode.entry .title{font-family:var(--mono);font-weight:500}
 #zoomctl button{border:1px solid var(--line);background:var(--panel);color:var(--ink-2);font:inherit;font-size:12px;border-radius:0;padding:3px 9px;cursor:pointer;min-width:30px}
@@ -553,6 +555,7 @@ let defs = el("defs", {}, svg.node());
   }, true); }
 // the peek: with the panel closed, space over a block shows its details and code over the picture;
 // space again, Esc or a click on the picture puts it away, and the pin keeps the panel open
+let pictureErrors = [];  // the errors of the picture drawn, by their labels
 let hoverTarget = null;  // shows what is under the pointer in the inspector
 { const app = document.getElementById("app");
   const peek = open => app.classList.toggle("peek", open);
@@ -747,6 +750,7 @@ const viewData = () => {
   if (V.part) o.part = V.part;
   if (V.focus.size) o.focus = [...V.focus];
   if (V.tests) o.tests = true;
+  if (V.errors) o.errors = true;
   const open = {};
   for (const [k, set] of Object.entries(V.open)) if (set.size) open[k] = [...set];
   if (Object.keys(open).length) o.open = open;
@@ -761,6 +765,7 @@ function setView(o) {
   V.part = o.part || null;
   V.focus = new Set(o.focus || []);
   V.tests = !!o.tests;
+  V.errors = !!o.errors;
   for (const k of Object.keys(V.open)) V.open[k] = new Set((o.open || {})[k] || []);
   for (const k of Object.keys(V.closed)) V.closed[k] = new Set((o.closed || {})[k] || []);
   entrySel.value = V.route || (V.kind ? "kind:" + V.kind : V.part ? "part:" + V.part : "");
@@ -962,7 +967,9 @@ async function renderPlaat(mine) {
     return {places, pills, frames, roles, home, fine, oracle, calling: A.calling || B.calling};
   };
   // the union's siblings that draw alike are one pill and its places are ordered on the disk, as each plan's are (`quotients`)
-  const {places, pills, frames, roles, home, fine, oracle, calling: planCalls, meets} = DIFF ? quotients(unite()) : plan();
+  const {places, pills, frames, roles, home, fine, oracle, calling: planCalls, meets, errors: counted} = DIFF ? quotients(unite()) : plan();
+  // the errors of this picture, counted on its steps or drawn as boxes
+  pictureErrors = DIFF ? [] : V.errors ? [...new Set([...places.values()].filter(p => p.err).map(p => p.label))].sort() : counted || [];
   // Storage quotients are computed on the visible fiber. A singleton keeps its concrete
   // expression; an opened quotient retains a frame around the same members.
   const worldFrames = new Map(), worldParent = new Map();
@@ -1243,7 +1250,14 @@ async function renderPlaat(mine) {
   // steps: frames hold their own steps, in call order
   const holder = pid => pid ? nodeOf.get(pid) : root;
   // a frame is at least as wide as its title, a choice's with what decides its branches
-  const titled = (n, F) => Object.assign(n.layoutOptions, {"elk.nodeSize.constraints": "MINIMUM_SIZE", "elk.nodeSize.minimum": `(${textW((F.synthetic ? "" : "▾ ") + F.title + (F.whens || []).map(([, w]) => `  ● ${w}`).join(""), 7.2) + 34},60)`});
+  const titled = (n, F) => Object.assign(n.layoutOptions, {"elk.nodeSize.constraints": "MINIMUM_SIZE", "elk.nodeSize.minimum": `(${textW((F.synthetic ? "" : "▾ ") + F.title + (F.errors?.length ? countedText(F.errors) : "") + (F.whens || []).map(([, w]) => `  ● ${w}`).join(""), 7.2) + 34},60)`});
+  // the errors a step hands on, counted on it: a click draws the errors of the picture as boxes
+  const countedText = errors => `  +${errors.length} ${errors.length === 1 ? "error" : "errors"}`;
+  const countedMark = (text, errors) => {
+    const t = el("tspan", {class: "errs"}, text); t.textContent = countedText(errors);
+    el("title", {}, t).textContent = `hands on ${errors.length === 1 ? "an error" : errors.length + " errors"}: ${errors.join(", ")} · click to draw the errors as boxes`;
+    t.addEventListener("click", ev => { ev.stopPropagation(); V.errors = true; render(); });
+  };
   for (const F of frames.values()) {
     const n = frameNode(F.id, 34);
     titled(n, F);
@@ -1269,9 +1283,12 @@ async function renderPlaat(mine) {
       Object.assign(P, {labels: {a: la, b: lb}, label: (/^[▸↻] /.test(P.label) ? P.label.slice(0, 2) : "") + u.label});
     }
     P.interior = !P.own && ([...P.D.values(), ...P.C.values()].some(Boolean));
+    // what the step's function is defined under (`@checked`), and the errors it hands on, counted (`foldErrors`)
+    P.guards = DIFF || P.own ? [] : [...new Set(P.steps.flatMap(s => byId.get(stepOf(s))?.guards || []))];
+    P.marks = (P.guards.length ? "  guarded" : "") + (P.errors?.length ? countedText(P.errors) : "");
     // the own arrow of an opened step is its border: a point on the frame's right edge, where what the body gives back leaves it
     if (P.border) { holder(P.parent).children.push(leaf(P.id, 12, 12, {"elk.layered.layering.layerConstraint": "LAST"})); continue; }
-    holder(P.parent).children.push(leaf(P.id, Math.max((P.interior ? 48 : 24) + textW(P.label, 6.9), tagsWidth(P.inside) + 2 * 13), P.interior ? 34 : 26));
+    holder(P.parent).children.push(leaf(P.id, Math.max((P.interior ? 48 : 24) + textW(P.label + P.marks, 6.9), tagsWidth(P.inside) + 2 * 13), P.interior ? 34 : 26));
   }
   // memory lives in the smallest open step that holds every step using it
   const chain = fid => { const c = []; for (let f = fid; f; f = frames.get(f)?.parent) c.unshift(f); return c; };
@@ -1547,6 +1564,7 @@ async function renderPlaat(mine) {
     if (F.hue) r.setAttribute("style", `stroke:${hueVar(F.hue)}`);
     if (isFam) el("rect", {x: 0, y: 0, width: 5, height: P.h, fill: F.hue || hueOf(null)}, grp);
     const title = el("text", {class: "ftitle", x: 14, y: 20}, grp); title.textContent = (F.synthetic ? "" : "▾ ") + F.title;
+    if (F.errors?.length) countedMark(title, F.errors);
     for (const [h, w] of F.whens || []) { const t = el("tspan", {}, title); t.textContent = `  ● ${w}`; t.style.fill = hueVar(h); }
     if (DIFF && !isFam) {
       const st = wholeRoute ? null : standing(F.sides, !!F.step && (isBlock(F.step) ? borderOf(id) : stepChanged([F.step])));
@@ -1652,6 +1670,11 @@ async function renderPlaat(mine) {
     if (P.hue) r.setAttribute("style", `stroke:${hueVar(P.hue)};stroke-width:1.6`);
     const label = el("text", {class: "title", x: P.interior ? 24 : 11, y: Q.h / 2 + 4}, grp);
     label.textContent = P.label;
+    if (P.guards.length) {
+      const t = el("tspan", {class: "guard"}, label); t.textContent = "  guarded";
+      el("title", {}, t).textContent = `defined under ${P.guards.map(g => byId.get(g)?.name || g.split(".").pop()).join(", ")}: every call of it runs inside that`;
+    }
+    if (P.errors?.length) countedMark(label, P.errors);
     if (DIFF) {
       const st = wholeRoute && reusedBox(P.id) ? null : standing(P.sides, quotient(P) ? differs.has(P.id) : stepChanged(P.steps));
       marked(grp, st, Q.w + 3, wasOf(st, P.id, P.steps.map(s => DIFF.was[stepOf(s)]).find(Boolean)));
@@ -1810,6 +1833,14 @@ function crumbs() {
     const b = html("button", V.tests ? "add" : null, V.tests ? "+ without test code" : "without test code ✕");
     b.title = V.tests ? "leave the test code out: the program alone" : "draw the test code too: tests, test modules and what they touch";
     b.onclick = () => { V.tests = !V.tests; plaatFit = true; render(); };
+    C.appendChild(b);
+  }
+  // a route's errors are counted on the steps that hand them on, a fold the reader can let go of; shown where there are errors
+  if ((V.route || V.kind) && !DIFF && pictureErrors.length) {
+    lbl("errors");
+    const b = html("button", V.errors ? "add" : null, V.errors ? "+ counted on the step" : `${pictureErrors.length} counted on the step ✕`);
+    b.title = V.errors ? "count the errors a step hands on, on the step: " + pictureErrors.join(", ") : "draw each error a step hands on as a box: " + pictureErrors.join(", ");
+    b.onclick = () => { V.errors = !V.errors; render(); };
     C.appendChild(b);
   }
   if (view === "plaat" && pinned.size) { lbl("pinned"); chip(`${pinned.size} ${pinned.size === 1 ? "box" : "boxes"}`, () => pinned.clear()); }

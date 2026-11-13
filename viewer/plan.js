@@ -199,7 +199,7 @@ const partRank = n => Math.max(0, PARTS.findIndex(p => p.id === partOf(n)));
 // (one call by its path through the route, or every call of a function), families into their
 // members, coarse places into their parts, directories into their files. What stands open until the reader closes it is
 // closed by name: a library's frame, around the types it makes
-const V = {route: null, kind: null, part: null, focus: new Set(), tests: false, open: {parts: new Set(), units: new Set(), steps: new Set(), functions: new Set(), families: new Set(), places: new Set(), dirs: new Set(), classes: new Set(), bases: new Set(), flat: new Set(), libraries: new Set()}, closed: {libraries: new Set()}};
+const V = {route: null, kind: null, part: null, focus: new Set(), tests: false, errors: false, open: {parts: new Set(), units: new Set(), steps: new Set(), functions: new Set(), families: new Set(), places: new Set(), dirs: new Set(), classes: new Set(), bases: new Set(), flat: new Set(), libraries: new Set()}, closed: {libraries: new Set()}};
 const short = id => id.startsWith(ROOT) ? id.slice(ROOT.length) : id.replace(/^ext:/, "");
 const KG = {imports:"imports", calls:"calls", requests:"calls", instantiates:"calls", takes:"types", returns:"types", has:"types", mutates:"types", variant:"types", inherits:"inherits"};
 
@@ -2264,7 +2264,7 @@ const imageOf = (F, opened, folded, {fineKeys = false} = {}) => {
     else if (F.entries?.has(id)) places.set(id, F.entries.get(id));
     else if (pl?.type && k.startsWith("t:")) {
       const pid = placeOfType(pl.type), b = typePlace(pid);
-      places.set(id, {...b, id, label: b.label + (pl.held ? ` · ${pl.held}` : named(pl) ? ` · ${pl.name}` : ""), at: pl.at, name: named(pl) ? pl.name : undefined, held: pl.held, ...(pl.door ? {door: pl.door} : {})});
+      places.set(id, {...b, id, label: b.label + (pl.held ? ` · ${pl.held}` : named(pl) ? ` · ${pl.name}` : ""), at: pl.at, name: named(pl) ? pl.name : undefined, held: pl.held, ...(pl.door ? {door: pl.door} : {}), ...(pl.err ? {err: true} : {})});
     } else places.set(id, fp.get(k));
     return id;
   };
@@ -3135,6 +3135,34 @@ const libraryFrames = places => {
   }
   return frames;
 };
+// The picture with its errors counted (`mathematics.md`, "Errors counted on the arrow", #462). A step's codomain is `B + E`.
+// An error a later step takes is an object between two arrows and stays; one that only leaves, handed on from border to
+// border up to the route's, is the summand `E` of each step that hands it on. Each such error is taken out of the picture
+// and counted where it was given: `errors` on a step and on the frame of an opened one, the labels of the types it handed
+// on, and `errors` of the picture, all of them. Nothing else of the picture changes.
+const foldErrors = C => {
+  const pills = [...C.pills.values()], isErr = k => !!C.places.get(k)?.err;
+  // an error is taken where a step uses it, and where a border that takes it hands it on to one that is
+  const kept = new Set(pills.filter(P => !P.own).flatMap(P => [...P.D.keys()].filter(isErr)));
+  for (let grew = true; grew;) {
+    grew = false;
+    for (const P of pills) if (P.own && [...P.C.keys()].some(k => kept.has(k))) for (const k of P.D.keys()) if (isErr(k) && !kept.has(k)) { kept.add(k); grew = true; }
+  }
+  const gone = k => isErr(k) && !kept.has(k), label = k => C.places.get(k).label;
+  if (!pills.some(P => [...P.C.keys(), ...P.D.keys()].some(gone))) return C;
+  const less = m => new Map([...m].filter(([k]) => !gone(k)));
+  const out = new Map(), given = new Map();
+  for (const P of pills) {
+    const errors = [...new Set([...P.C.keys()].filter(gone).map(label))].sort();
+    const Q = {...P};
+    for (const [f, m] of Object.entries(P)) if (m instanceof Map && f !== "goes") Q[f] = less(m);
+    if (errors.length) { if (P.own) given.set(P.parent, errors); else Q.errors = errors; }
+    out.set(P.id, Q);
+  }
+  const frames = new Map([...C.frames].map(([id, f]) => [id, given.has(id) ? {...f, errors: given.get(id)} : f]));
+  const all = [...new Set([...C.places.keys()].filter(gone).map(label))].sort();
+  return {...C, pills: out, frames, places: new Map([...C.places].filter(([k]) => !gone(k))), errors: all};
+};
 const plan = () => {
   const view = VIEWS[viewOf()];
   FIBER = null;
@@ -3147,7 +3175,7 @@ const plan = () => {
   }
   alike(C);
   window.atlasPlan = {fine: F, coarse: C, opened: view.opened};
-  const drawn = view.drawn ? view.drawn(C) : C;
+  const whole = view.drawn ? view.drawn(C) : C, drawn = V.errors || SIDE || !["route", "kind"].includes(viewOf()) ? whole : foldErrors(whole);
   return {...drawn, libraries: libraryFrames(drawn.places), calling: !!F.calls, fiber: F.fiber || null};
 };
 

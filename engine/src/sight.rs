@@ -7,7 +7,7 @@
 //! picture is a link; `atlas-code view --view`, `atlas-code mcp`'s `view` and `look` hand a page the sight an
 //! agent wrote.
 //!
-//! Its serde form is the page's: `{route, kind, part, focus, tests, open: {parts, units, steps,
+//! Its serde form is the page's: `{route, kind, part, focus, tests, errors, open: {parts, units, steps,
 //! functions, families, places, dirs, classes, bases, flat}}`, every member optional, an empty one left out. A member the
 //! page does not know is refused, so that a sight misspelt is said, not drawn as no sight at all.
 
@@ -38,6 +38,10 @@ pub struct Sight {
     /// test code: no test, no code a reader marks as test code, no code in a test module.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub tests: bool,
+    /// A route's errors are drawn as boxes. Without it, an error that only leaves is counted on each step that hands it
+    /// on (`mathematics.md`, "Errors counted on the arrow").
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub errors: bool,
     #[serde(default, skip_serializing_if = "Opened::is_empty")]
     pub open: Opened,
 }

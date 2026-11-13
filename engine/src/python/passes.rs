@@ -504,6 +504,32 @@ pub(super) fn link(modules: &IndexMap<String, Module>, store: &mut GraphBuilder,
             n.breaks = breaks;
         }
     }
+    // the functions a definition is defined under, by the name each decorator is written with or calls
+    for id in &ids {
+        let n = &store.nodes[id];
+        if !matches!(n.kind, NodeKind::Function | NodeKind::Method) || n.decorators.is_empty() {
+            continue;
+        }
+        let m = &modules[&n.module];
+        let facts = types.of(&n.file);
+        let Some(decorated) = def_node(m, n).and_then(|d| d.parent()).filter(|p| p.kind() == "decorated_definition") else { continue };
+        let mut guards: Vec<String> = vec![];
+        for d in named_children(decorated).into_iter().filter(|d| d.kind() == "decorator") {
+            let Some(written) = d.named_child(0) else { continue };
+            let name = if written.kind() == "call" { written.child_by_field_name("function").unwrap_or(written) } else { written };
+            let by_ty = facts.map_or(&[][..], |f| f.callees((name.start_byte(), name.end_byte()))).iter().find_map(|c| match &c.target {
+                Target::Here { file, at } => sites.get(&(file.clone(), *at)).cloned(),
+                Target::Lib(_) => None,
+            });
+            let guard = by_ty.or_else(|| resolve(m, &dotted(Some(name), &m.src), modules, &store.nodes, own).map(Resolved::id));
+            if let Some(g) = guard.filter(|g| store.nodes.get(g).is_some_and(|x| matches!(x.kind, NodeKind::Function | NodeKind::Method))) {
+                if !guards.contains(&g) {
+                    guards.push(g);
+                }
+            }
+        }
+        store.nodes.get_mut(id).expect("a node of the graph").guards = guards;
+    }
     // what a framework registers, and what the attributes hold, as ty types them
     mark_registered(modules, store, types, &sites, own);
     attributes(modules, store, types, &sites, own);

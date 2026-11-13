@@ -199,6 +199,8 @@ impl<'g> Library<'g> {
                 self.calls.get(n.id.as_str()).into_iter().flatten().filter(|(d, _)| library.contains(*d)).map(|(d, _)| (d.to_string(), 1)),
             );
             named.extend(self.types.get(n.id.as_str()).into_iter().flatten().filter(|d| library.contains(**d)).map(|d| d.to_string()));
+            // a function runs inside what it is defined under (`Node::guards`)
+            todo.extend(n.guards.iter().filter(|d| library.contains(d.as_str())).map(|d| (d.clone(), 1)));
         }
         // what the other parts' code reaches, as the program's own code does
         todo.extend(self.outside.called.iter().filter(|d| library.contains(d.as_str())).map(|d| (d.clone(), 1)));
@@ -220,6 +222,7 @@ impl<'g> Library<'g> {
                         .extend(self.types.get(id.as_str()).into_iter().flatten().filter(|t| library.contains(**t)).map(|t| t.to_string()));
                     named.extend(n.cls.clone());
                 }
+                todo.extend(n.guards.iter().filter(|c| library.contains(c.as_str())).map(|c| (c.clone(), d + 1)));
                 todo.extend(
                     self.calls
                         .get(id.as_str())
@@ -276,7 +279,7 @@ impl<'g> Library<'g> {
 /// What the program reaches: its own code, and of a library read as code only what the program
 /// reaches of it, `rounds` calls deep. A library's function or class is reached by the calls that
 /// lead to it from the program's own code: the program's calls go into the first, their calls
-/// into the second, up to `rounds`. A class built runs its initializer, and a class reached
+/// into the second, up to `rounds`. A function runs inside what it is defined under, which is reached with it. A class built runs its initializer, and a class reached
 /// answers the calls into its bases with its own methods, as far as those calls reach. With them
 /// the types the program names and those functions take, give and run on. The rest of a
 /// library's module is no part of the picture, nor is a name outside the code that only the rest

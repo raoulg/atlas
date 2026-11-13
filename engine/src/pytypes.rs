@@ -1665,6 +1665,15 @@ impl<'e> Visitor<'e> for Reader<'_, '_> {
         if let Some(v) = value.filter(|v| !matches!(v, ast::Expr::Name(_))) {
             self.value(v);
         }
+        // what a function is defined under is called with it, by its name (`@checked`) as by a call that gives it
+        if let ast::Stmt::FunctionDef(f) = stmt {
+            for d in f.decorator_list.iter().map(|d| &d.expression).filter(|d| matches!(d, ast::Expr::Name(_) | ast::Expr::Attribute(_))) {
+                let reached = self.reached(d);
+                if reached.places().next().is_some() {
+                    self.said.calls.push((span(d), reached, None));
+                }
+            }
+        }
         visitor::walk_stmt(self, stmt);
     }
 
