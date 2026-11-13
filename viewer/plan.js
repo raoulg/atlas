@@ -199,7 +199,7 @@ const partRank = n => Math.max(0, PARTS.findIndex(p => p.id === partOf(n)));
 // (one call by its path through the route, or every call of a function), families into their
 // members, coarse places into their parts, directories into their files. What stands open until the reader closes it is
 // closed by name: a library's frame, around the types it makes
-const V = {route: null, kind: null, part: null, focus: new Set(), tests: false, open: {parts: new Set(), units: new Set(), steps: new Set(), functions: new Set(), families: new Set(), places: new Set(), dirs: new Set(), classes: new Set(), bases: new Set(), flat: new Set()}, closed: {libraries: new Set()}};
+const V = {route: null, kind: null, part: null, focus: new Set(), tests: false, open: {parts: new Set(), units: new Set(), steps: new Set(), functions: new Set(), families: new Set(), places: new Set(), dirs: new Set(), classes: new Set(), bases: new Set(), flat: new Set(), libraries: new Set()}, closed: {libraries: new Set()}};
 const short = id => id.startsWith(ROOT) ? id.slice(ROOT.length) : id.replace(/^ext:/, "");
 const KG = {imports:"imports", calls:"calls", requests:"calls", instantiates:"calls", takes:"types", returns:"types", has:"types", mutates:"types", variant:"types", inherits:"inherits"};
 
@@ -466,7 +466,11 @@ const libraryOf = t => LIBRARY.get(kindOf(t)) || LIBRARY.get(t) || null;
 let LIBRARIES = null;
 const libFolds = L => (LIBRARIES?.get(L)?.size || 0) > 1;
 // the library whose closed box a type stands in: its library, where that is a box of its own and the reader has closed it
-const libClosed = t => { const L = LIBRARIES && t !== V.route && libraryOf(t); return L && libFolds(L) && V.closed.libraries.has(L) ? L : null; };
+// a library is one box until the reader opens it (`V.open.libraries`), as a picture opens at its coarsest; in a focus, whose
+// types are the signature of what the reader asked for, it is a frame until the reader closes it (`V.closed.libraries`)
+const libShut = L => (V.focus.size ? V.closed.libraries.has(L) : !V.open.libraries.has(L));
+const libOpen = (L, open) => { const [set, add] = V.focus.size ? [V.closed.libraries, !open] : [V.open.libraries, open]; if (add) set.add(L); else set.delete(L); };
+const libClosed = t => { const L = LIBRARIES && t !== V.route && libraryOf(t); return L && libFolds(L) && libShut(L) ? L : null; };
 // a library's box has the id of a type, `lib:` and the library's name: closed, it is the box; open, the frame around its types
 const libBox = L => "lib:" + L;
 const libOfBox = t => (t?.startsWith("lib:") ? t.slice(4) : null);
@@ -703,6 +707,27 @@ function storageGroups(C, {uses, side}) {
     for (const [s, kids] of bySide) storage.set(`${F.id}~${s}`, {...F, id: `${F.id}~${s}`, kids, ...(WAY[s] ? {way: WAY[s]} : {})});
   }
   return storage;
+}
+// The kind of the world a place is of, the constructor sentence 1 gives it: a file, a folder and what a type keeps on the disk
+// are the disk's, a command a process's, and every other place names its kind first
+const WORLD_KIND = {File: "Disk", Type: "Disk", open: "Process"};
+const worldKindOf = id => { const m = /^w:([^:~]+)/.exec(id); return m ? WORLD_KIND[m[1]] || m[1] : null; };
+// The kinds of a picture `C` of generators, with how it uses the world (`worldUse`): the quotient of its places by their kind,
+// the coarsest the world has (mathematics.md, "Places by their kind"). A quotient of the places keeps the side, so a kind
+// read and a kind written are two classes; a kind of one place is that place; and a kind whose places one place already
+// stands for (a database, split by its tables) is that group. A kind's id to its label, its side and the places it holds
+function kindGroups(C, {used, side}) {
+  const by = new Map(), grouped = new Set([...C.places.values()].map(p => p.group).filter(Boolean));
+  for (const p of C.places.values()) {
+    const kind = p.kind === "world" && used.has(p.id) ? worldKindOf(p.id) : null;
+    if (!kind || (kind !== "Disk" && grouped.has("w:" + kind))) continue;
+    const s = side(p.id), id = `w:~${kind}~${s}`;
+    if (!by.has(id)) by.set(id, {id, label: kind, kind, side: s, group: id, kids: new Set()});
+    by.get(id).kids.add(p.id);
+  }
+  const sides = new Map();
+  for (const G of by.values()) sides.set(G.kind, (sides.get(G.kind) || 0) + 1);
+  return new Map([...by].filter(([, G]) => G.kids.size > 1).map(([id, G]) => [id, {...G, ...(sides.get(G.kind) > 1 && WAY[G.side] ? {way: WAY[G.side]} : {})}]));
 }
 // a path with a pattern in it said in words, from the file up: `{root}/*/*/OW-bestanden/*.xml` is "every *.xml in
 // OW-bestanden/ in each folder two levels into {root}/". A wildcard the code writes is "each" or "every", a hole the
@@ -2525,10 +2550,11 @@ const openBlock = step => {
 };
 const checkOpenings = (F, view, folded, opened = isOpenKey) => {
   const faults = [], open = V.open, was = Object.fromEntries(["steps", "families", "units", "parts", "classes", "bases"].map(k => [k, new Set(open[k])])), shut = new Set(V.closed.libraries);
+  was.libraries = new Set(open.libraries);
   const tries = [
     ...[...view.blocks.values()].filter(B => B.frame && !B.frame.synthetic).map(B => openBlock(B.frame.step)),
     ...[...new Set([...view.places.values()].filter(p => p.type && opens(p.type) && !open.families.has(p.type)).map(p => familyOf(p.type)))].map(f => ["family", f, () => open.families.add(f)]),
-    ...[...view.places.values()].filter(p => libOfBox(p.type)).map(p => ["library", libOfBox(p.type), () => V.closed.libraries.delete(libOfBox(p.type))]),
+    ...[...view.places.values()].filter(p => libOfBox(p.type)).map(p => ["library", libOfBox(p.type), () => libOpen(libOfBox(p.type), true)]),
   ];
   for (const [kind, what, apply] of tries) {
     try { apply(); const B = imageOf(F, opened, folded); for (const f of refines(view, B)) faults.push(`opening ${kind} ${what}: ${f}`); }
@@ -3056,7 +3082,7 @@ const routeBase = () => {
 // ---- every picture is the image of one fine plan under the map that what is open defines ----
 // The view state `V` holds what the reader looks at (a route, the routes of a kind, the packages in focus, one part, the
 // test code or not), which decides the fine plan `F`, and what the reader has open (`V.open`) or closed (`V.closed`: the
-// libraries whose frame the overview and a focus draw as one box), which decides the map `q`.
+// libraries a focus draws as one box, where the overview's are closed until opened), which decides the map `q`.
 // Each view is its plan, its map, and the map of its coarsest picture, on which the side of a place is decided; the picture is
 // `F/q`, made by the same `coarsen` for every view. What follows the image is a quotient of it or a way of drawing it: a closed
 // box of the code's hierarchy that can be opened stands even where nothing crosses its edge, siblings that draw alike are one

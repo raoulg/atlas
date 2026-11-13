@@ -969,8 +969,19 @@ async function renderPlaat(mine) {
   const worldUsed = worldUse({places, pills, roles, fine}), usedWorld = worldUsed.used, fineSide = worldUsed.side;
   const storage = storageGroups({places, pills, roles, fine}, worldUsed);
   worldShown = new Map();
+  // the overview and a focus open with each kind of the world closed (`kindGroups`): one box that says how many places it
+  // stands for, whatever folds lie below it
+  const kinds = V.route || V.kind || DIFF ? new Map() : kindGroups({places, pills, roles, fine}, worldUsed);
+  for (const G of kinds.values()) {
+    if (V.open.places.has(G.group)) continue;
+    const glyph = placeGlyph.get([...G.kids][0]), label = `${G.label} · ${G.kids.size}`;
+    const p = {id: G.id, label, short: label, glyph, kind: "world", toggleGroup: G.group, members: [...G.kids], ...(G.way ? {way: G.way} : {})};
+    placeGlyph.set(p.id, glyph);
+    for (const k of G.kids) { worldShown.set(k, p); places.delete(k); }
+    places.set(p.id, p);
+  }
   for (const F of storage.values()) {
-    if (F.kids.size < 2) continue;
+    if (F.kids.size < 2 || [...F.kids].some(k => worldShown.has(k))) continue;
     // a group stands where a place it holds is drawn
     const shown = [...F.kids].filter(k => usedWorld.has(k));
     if (!shown.length) continue;
@@ -1164,7 +1175,28 @@ async function renderPlaat(mine) {
   const root = {id: "root", children: [], edges: []};
   // a place that stands twice is `from X` on the left and `into X` on the right
   const TWIN = " ⇄", sideLabel = p => p.way ? `${p.way} ${p.label}` : p.label;
-  const sideOf = id => { const us = worldFrames.has(id) ? [...worldFrames.get(id).kids].map(k => used.get(k) || {}) : [used.get(id) || {}]; const i = us.some(u => u.in), o = us.some(u => u.out); return i && !o ? "in" : o && !i ? "out" : "both"; };
+  const finesOf = id => {
+    const p = places.get(id);
+    if (p?.members) return p.members;
+    if (worldFrames.get(id)?.members) return worldFrames.get(id).members;
+    if (p?.folded) return [...dirFold.to].filter(([, d]) => d === p.folded).map(([f]) => "w:File:" + f);
+    return [id];
+  };
+  // a kind the reader opened is a frame around the boxes that stood for its places, each as the folds below it draw it
+  for (const G of kinds.values()) {
+    // a kind read and written stands twice, each of its places on its own
+    if (!V.open.places.has(G.group) || !WAY[G.side]) continue;
+    const tops = [...places.values()].filter(p => p.kind === "world" && keep.has(p.id) && !worldParent.has(p.id)).map(p => p.id).concat([...worldFrames.keys()].filter(id => !worldParent.has(id)));
+    const held = new Set([...G.kids].flatMap(k => [k, ...(places.get(k)?.members || [])]));
+    const kids = tops.filter(id => held.has(id) || finesOf(id).some(k => held.has(k.replace(/~own$/, ""))));
+    if (!kids.length) continue;
+    const fid = "group:" + G.id;
+    placeGlyph.set(fid, placeKind(G.kids.values().next().value));
+    worldFrames.set(fid, {id: fid, label: G.label, group: G.group, kids: new Set(kids), members: [...G.kids], ...(G.way ? {way: G.way} : {})});
+    for (const k of kids) worldParent.set(k, fid);
+  }
+  const leavesIn = id => (worldFrames.has(id) ? [...worldFrames.get(id).kids].flatMap(leavesIn) : [id]);
+  const sideOf = id => { const us = leavesIn(id).map(k => used.get(k) || {}); const i = us.some(u => u.in), o = us.some(u => u.out); return i && !o ? "in" : o && !i ? "out" : "both"; };
   const worldIds = [...places.values()].filter(p => p.kind === "world" && keep.has(p.id) && !worldParent.has(p.id)).map(p => p.id).concat([...worldFrames.keys()].filter(id => !worldParent.has(id)));
   const sortWorld = ids => ids.sort((a, b) => (a.startsWith("e:") ? -1 : 0) - (b.startsWith("e:") ? -1 : 0) || (placeKind(a) || "").localeCompare(placeKind(b) || "") || a.localeCompare(b));
   const worldNode = (id, constraint) => {
@@ -1177,13 +1209,6 @@ async function renderPlaat(mine) {
   };
   // where each drawn place stands is the side of the places of the finest plan it stands for (`sideOfRoles`). A place it
   // uses and changes stands twice, `from X ⇄` on the left and `into X ⇄` on the right
-  const finesOf = id => {
-    const p = places.get(id);
-    if (p?.members) return p.members;
-    if (worldFrames.get(id)?.members) return worldFrames.get(id).members;
-    if (p?.folded) return [...dirFold.to].filter(([, d]) => d === p.folded).map(([f]) => "w:File:" + f);
-    return [id];
-  };
   const roleOf = id => sideOfRoles((worldFrames.has(id) ? [...worldFrames.get(id).kids] : [id]).flatMap(finesOf).map(k => roles.get(k)).filter(Boolean), () => ({in: "in", out: "out"})[sideOf(id)] || "mid");
   const roleAt = new Map(worldIds.map(id => [id, id.startsWith("e:") ? "in" : roleOf(id)])), twinOf = new Map();
   for (const [id, r] of roleAt) {
@@ -1467,7 +1492,7 @@ async function renderPlaat(mine) {
   };
   // frames: open steps (choices dashed) and open families
   for (const F of [...worldFrames.values()].sort((a, b) => pos.get(a.id).depth - pos.get(b.id).depth)) {
-    const P = pos.get(F.id), kind = placeKind(F.dir ? F.id : [...F.kids][0]);
+    const P = pos.get(F.id), kind = placeKind(F.dir || placeGlyph.has(F.id) ? F.id : [...F.kids][0]);
     const grp = el("g", {class: "frame storage", "data-id": F.id, "data-group": F.group}, fg);
     el("rect", {class: "bg", width: P.w, height: P.h, style: `stroke:var(--k-${kind});fill:var(--panel)`}, grp);
     const title = el("text", {class: "ftitle", x: 14, y: 22}, grp); title.textContent = "▾ " + sideLabel(F);
@@ -1482,7 +1507,7 @@ async function renderPlaat(mine) {
       const P = pos.get(id), L = libFrames.get(id), grp = el("g", {class: "frame fam library", "data-id": id}, fg);
       const r = el("rect", {class: "bg", width: P.w, height: P.h}, grp);
       const title = el("text", {class: "ftitle", x: 14, y: 20}, grp); title.textContent = "▾ " + L.title;
-      title.addEventListener("click", ev => { ev.stopPropagation(); plaatAnchor = id; V.closed.libraries.add(L.library); render(); });
+      title.addEventListener("click", ev => { ev.stopPropagation(); plaatAnchor = id; libOpen(L.library, false); render(); });
       place(grp, id, (from, to) => { if (!from.fresh) d3.select(r).attr("width", from.w).attr("height", from.h).transition().duration(DUR).attr("width", to.w).attr("height", to.h); });
       continue;
     }
@@ -1663,7 +1688,7 @@ async function renderPlaat(mine) {
       if (kind) { if (p.toggleGroup) { V.open.places.add(p.toggleGroup); render(); } return; }
       const tid = p.type;
       // a library closed opens into its frame, around the types it makes
-      if (libOfBox(tid)) { V.closed.libraries.delete(libOfBox(tid)); render(); return; }
+      if (libOfBox(tid)) { libOpen(libOfBox(tid), true); render(); return; }
       if (opens(tid) && !V.open.families.has(tid)) { V.open.families.add(tid); render(); }
       else if (byId.has(tid)) select(tid);
     }, () => pin(p.id));
@@ -1783,9 +1808,9 @@ function crumbs() {
     for (const f of V.open.functions) chip(`every ${byId.get(f)?.name || short(f)}`, () => V.open.functions.delete(f));
   }
   if (V.open.families.size) { lbl("opened types"); for (const f of V.open.families) chip(typeLabel(f), () => V.open.families.delete(f)); }
-  if (split.length) { lbl("split"); for (const r of split) chip(r.slice(2), () => V.open.places.delete(r)); }
+  if (split.length) { lbl("split"); for (const r of split) chip(r.startsWith("w:~") ? r.slice(3).replace(/~(in|out|mid|both)$/, (_, s) => ({in: " read", out: " written"})[s] || "") : r.slice(2), () => V.open.places.delete(r)); }
   if (V.open.dirs.size) { lbl("folders"); for (const d of V.open.dirs) chip(d, () => V.open.dirs.delete(d)); }
-  if (V.closed.libraries.size && !V.route && !V.kind) { lbl("closed libraries"); for (const L of V.closed.libraries) chip(L, () => V.closed.libraries.delete(L)); }
+  if (V.closed.libraries.size && V.focus.size && !V.route && !V.kind) { lbl("closed libraries"); for (const L of V.closed.libraries) chip(L, () => V.closed.libraries.delete(L)); }
   if (V.focus.size && view === "plaat") {
     lbl("focus"); for (const u of V.focus) chip(unitLabel(u), () => V.focus.delete(u));
     // around the focus: the packages it exchanges the most data with, to add with a click

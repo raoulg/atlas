@@ -506,6 +506,21 @@ group's box stands for them as well.
 `foldGroups`: an opened group's places as the disk folds them); `orderings` in `engine/tests/plans.mjs` (the program
 `plans/held-in-a-folder`); the pair `workbench`.
 
+### Places by their kind
+**What.** A quotient of the places of the world by the constructor each is made with (sentence 1): `File(path)` and what a
+type keeps on the disk are the disk's, `Web(url)` the web's, `Global(name)` the globals'. The map is total on the places of
+the world, so its quotient is the coarsest the world has: every other fold of places (the type that holds them, a folder,
+the disk read where no file is named) lies in one of its classes.
+**In Atlas.** The overview and a focus open at their coarsest, so a kind is one box that says how many places it stands
+for, `Disk · 10`, until the reader opens it; opened, it is a frame around the boxes that stood for its places, each as the
+folds below it draw it. A quotient of the places keeps the side: a kind the program reads and the same kind written are
+two classes, `from Disk · 10` on the left and `into Disk · 4` on the right. A kind of one place is that place, as a library
+of one type is that type, and a kind one place already stands for (a database, split by its tables) is that group and no
+second box. A route ends at a place and both its ends are visible (sentence 3), so a route and the routes of a kind draw
+their places as they are and fold no kind.
+**Where.** `plan.js` (`worldKindOf`, `kindGroups`), drawn by `index.html`; opened in `V.open.places`; `worldKindFaults`
+in `engine/tests/plans.mjs`, asked of every overview and focus the walk of the view state draws.
+
 ### A door keeps its place
 **What.** The term algebra of places (Paths as terms) has operations that open a door at a term,
 a value through which data reaches the place the term names (`TcpStream::connect(a)`,
@@ -1224,8 +1239,8 @@ holds. Its coordinates are of two sorts. What the reader looks at decides the fi
 and whether the test code is drawn (`V.tests`). What the reader has open decides the map `q`: the
 parts, packages, steps and functions opened (`V.open.parts`, `units`, `steps`, `functions`), the
 families opened into their members (`families`), the groups of places and the directories on the disk
-opened (`places`, `dirs`), and of what stands open until the reader closes it, the libraries closed
-(`V.closed.libraries`). So a picture is
+opened (`places`, `dirs`), the libraries of the overview opened (`libraries`), and of what stands open until
+the reader closes it, the libraries of a focus closed (`V.closed.libraries`). So a picture is
 
     picture(V) = image(F(V), q(V))
 
@@ -1440,8 +1455,9 @@ box it stands in while its family is closed. Forms that say the same are one con
 Rust's `ndarray::Array2<f32>` and `ArrayView<_, Ix3>`, burn's `Tensor<B, 3>` and a TypeScript shape type each name a
 library, a dtype and a rank, whether or not a runtime enforces them, and each reader supplies only how its language spells
 them. The overview and a focus draw the library: one of two types or more of the plan is a frame around the boxes of its
-types, open until the reader closes it (`V.closed.libraries`); closed, it is one box that says how many types of the plan
-it stands for, `torch · 6 types`, as a folded directory says its files. A library of one type is that type, since a frame
+types; closed, it is one box that says how many types of the plan it stands for, `torch · 6 types`, as a folded directory
+says its files. The overview opens at its coarsest, each library closed until the reader opens it (`V.open.libraries`); a
+focus draws the types of its own signature, each library open until the reader closes it (`V.closed.libraries`). A library of one type is that type, since a frame
 would only name it again. The overview stands one fold above the finest level the code writes: a shape stands in its rank
 family until the family is opened, and the family in its library's frame. A level the code does not write is no step of
 its own: a bare `torch.Tensor` stands as `Tensor` in the frame, and the dtype and array type stand in the label of a rank

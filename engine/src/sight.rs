@@ -77,6 +77,9 @@ pub struct Opened {
     /// Packages opened by base class: each holds its functions itself, whatever module they are written in.
     #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
     pub flat: BTreeSet<String>,
+    /// Libraries of the overview, opened into the types the program uses of them.
+    #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
+    pub libraries: BTreeSet<String>,
 }
 
 impl Opened {
@@ -93,6 +96,7 @@ impl Opened {
             &self.classes,
             &self.bases,
             &self.flat,
+            &self.libraries,
         ]
         .iter()
         .all(|s| s.is_empty())
