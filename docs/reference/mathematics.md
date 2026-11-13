@@ -112,7 +112,11 @@ constructor, the methods and the instance between them. The classes of a package
 (Behavioural subtyping) are one block above their own, named by the base and counting them (`BaseAggregator · 5`): the
 quotient by base class (sentence 4), taken on the functions as a family takes it on the types. A base of one class is
 that class, a base whose only child is a base is that one, and a base that holds every function of its package is the
-package. A package of modules can be opened by base class instead of by module (`V.open.flat`): its functions stand in
+package. The quotient sends a class to the base it names, so two more classes of it are blocks where they hold two boxes
+or more: under a base that has bases below it, the classes that name the base itself (`only BaseComponent · 5`), beside
+the blocks of the bases below; and beside the blocks of a package's bases, the code that names no base at all, its
+functions and its other classes (`no base class · 9`). Where no base has a block, nothing is set apart from one. A
+package of modules can be opened by base class instead of by module (`V.open.flat`): its functions stand in
 it directly, in their classes and bases, whatever file they are written in; both are quotients of the same functions,
 and the reader picks which.
 **Where.** `classBlocks`, `blockHolds` and `overviewOpen` in `viewer/plan.js`; `Opened::classes`, `bases` and `flat` in
@@ -1531,5 +1535,8 @@ gives and holds. A test is a way in from outside, not a layer.
 
 ### Layered drawing
 **What.** A graph without cycles can be drawn in layers, every edge pointing one way.
-**In Atlas.** A route is drawn in layers from its entry to the places it reaches.
-**Where.** `design.md` §2, the viewer's layout (elkjs).
+**In Atlas.** A route is drawn in layers from its entry to the places it reaches. A focus is three layers: what it takes,
+its functions, what it gives (One fine plan, every picture its image). Its plan has no order between its functions, so a
+call between two of them puts neither before the other: it is a channel of its own, drawn as an arc beside the boxes once
+they are placed, and no line of the layering; the boxes are placed by their lines to the types alone.
+**Where.** `design.md` §2, the viewer's layout (elkjs); `besides` in `viewer/index.html`.

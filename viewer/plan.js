@@ -2655,11 +2655,16 @@ const overviewOpen = key => (key.startsWith("part:") ? V.open.parts.has(key.slic
 // innermost block that holds it
 // whether a class is a base or keeps the promise of it, along the first base of the code's each names
 const descends = (c, b) => { for (let x = c, i = 0; x && i < 64; x = (BASES.get(x) || []).find(y => byId.get(y) && !byId.get(y).library), i++) if (x === b) return true; return false; };
+// the base of the code that has no base, and the mark of the block of a base's own classes, in a block's step
+const NO_BASE = "~none", OWN_CLASSES = "~own";
 // the code a class's block or a base's holds: the class with its functions; the classes of the base in the block's package
 const blockHolds = step => {
   if (step.startsWith("cls:")) { const c = step.slice(4); return n => n.id === c || n.cls === c; }
-  const [b, u] = step.slice(4).split("@");
-  return n => inUnit(n.id, u) && descends(n.kind === "class" ? n.id : n.cls, b);
+  const [b, at] = step.slice(4).split("@"), own = at.endsWith(OWN_CLASSES), u = own ? at.slice(0, -OWN_CLASSES.length) : at;
+  const classOf = n => (n.kind === "class" ? n.id : n.cls), codeBase = c => (BASES.get(c) || []).find(y => byId.get(y) && !byId.get(y).library);
+  if (b === NO_BASE) return n => inUnit(n.id, u) && !codeBase(classOf(n));
+  if (own) return n => inUnit(n.id, u) && (classOf(n) === b || codeBase(classOf(n)) === b);
+  return n => inUnit(n.id, u) && descends(classOf(n), b);
 };
 // the blocks below a package that hold a symbol, opened: its class's, and each base's of the plan last made
 const openBlocksOf = n => {
@@ -2670,16 +2675,16 @@ const openBlocksOf = n => {
 };
 const classBlocks = (frames, leafOf, unitOfLeaf, kept) => {
   for (const k of [...BLOCK_TITLE.keys()]) if (/^(cls|fam):/.test(k)) BLOCK_TITLE.delete(k);
-  const byLeaf = new Map(), declared = [];
+  const byLeaf = new Map(), declared = [], restOf = new Map();
   for (const [id, leaf] of leafOf) {
     const n = byId.get(id);
     // a method its base only declares runs no body and has no arrow: no function a block counts
     if (!["function", "method"].includes(n.kind)) continue;
     if (n.declared) { declared.push([id, leaf, n.cls]); continue; }
-    if (!byLeaf.has(leaf)) byLeaf.set(leaf, {all: 0, classes: new Map()});
+    if (!byLeaf.has(leaf)) byLeaf.set(leaf, {all: 0, classes: new Map(), loose: []});
     const L = byLeaf.get(leaf);
     L.all++;
-    if (!n.cls || !byId.has(n.cls)) continue;
+    if (!n.cls || !byId.has(n.cls)) { L.loose.push(id); continue; }
     if (!L.classes.has(n.cls)) L.classes.set(n.cls, []);
     L.classes.get(n.cls).push(id);
   }
@@ -2718,16 +2723,38 @@ const classBlocks = (frames, leafOf, unitOfLeaf, kept) => {
         BLOCK_TITLE.set(step, title);
         frames.set(at, {id: at, step, parent, hue: null, title, base: b});
       }
-      if (L.classes.has(b)) place(b, at);
-      for (const k of below) emit(k, at);
+      // the quotient by base class sends a class to the base it names: the classes that name `b` itself are one block
+      // beside the blocks of the bases below it, where there are both
+      const own = [...(L.classes.has(b) ? [b] : []), ...below.filter(k => !kids.has(k))], deeper = below.filter(k => kids.has(k));
+      let mine = at;
+      if (!through && deeper.length && own.length > 1) {
+        const step = `fam:${b}@${unit}${OWN_CLASSES}`, title = `only ${typeLabel(b)} · ${own.length}`;
+        mine = "n:" + step;
+        BLOCK_TITLE.set(step, title);
+        frames.set(mine, {id: mine, step, parent: at, hue: null, title, base: b});
+      }
+      for (const c of own) place(c, mine);
+      for (const k of deeper) emit(k, at);
     };
     const placed = new Set();
     for (const r of roots) { emit(r, leaf); const mark = b => { placed.add(b); (kids.get(b) || []).forEach(mark); }; mark(r); }
-    for (const c of L.classes.keys()) if (!placed.has(c)) place(c, leaf);
+    // and what names no base is the class of the quotient that is left: one block beside the bases', where the package has
+    // a base's block and two boxes or more outside it
+    const bare = [...L.classes.keys()].filter(c => !placed.has(c)), based = [...frames.values()].some(f => f.parent === leaf && f.step.startsWith("fam:"));
+    let rest = leaf;
+    if (based && bare.length + L.loose.length > 1) {
+      const step = `fam:${NO_BASE}@${unit}`, title = `no base class · ${bare.length + L.loose.length}`;
+      rest = "n:" + step;
+      BLOCK_TITLE.set(step, title);
+      frames.set(rest, {id: rest, step, parent: leaf, hue: null, title});
+      for (const id of L.loose) leafOf.set(id, rest);
+    }
+    for (const c of bare) place(c, rest);
+    restOf.set(leaf, rest);
   }
   // a method a base declares stands where a call into the family runs one of its overrides: in the base's block, where
-  // the base has one
-  for (const [id, leaf, c] of declared) { const at = `n:fam:${c}@${unitOfLeaf.get(leaf)}`; if (frames.has(at)) leafOf.set(id, at); }
+  // the base has one, else with what names no base
+  for (const [id, leaf, c] of declared) { const at = `n:fam:${c}@${unitOfLeaf.get(leaf)}`; leafOf.set(id, frames.has(at) ? at : restOf.get(leaf) || leaf); }
 };
 // the place a part's routes are served at over HTTP: what requests them goes out to it, its routes come in from it
 const httpAt = p => ({id: "w:Web:http:" + p, label: `HTTP(${p})`, short: `HTTP(${p})`, kind: "world"});

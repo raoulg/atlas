@@ -1,5 +1,5 @@
 from pools.model import Batch, Summary
-from pools.pooling import LastPool, MeanPool, Pool, nothing
+from pools.pooling import LastPool, MeanPool, Pool, nothing, widths
 
 
 def choose(name: str) -> Pool:
@@ -7,6 +7,6 @@ def choose(name: str) -> Pool:
 
 
 def summarize(rows: list[list[float]], name: str) -> Summary:
-    if not rows:
+    if not rows or min(widths(Batch(rows))) == 0:
         return nothing()
     return choose(name).reduce(Batch(rows))

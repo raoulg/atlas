@@ -29,3 +29,8 @@ class LastPool(Pool):
 def nothing() -> Summary:
     """The summary of a batch without rows."""
     return Summary([])
+
+
+def widths(batch: Batch) -> list[int]:
+    """How many values each row of a batch holds."""
+    return [len(row) for row in batch.rows]
