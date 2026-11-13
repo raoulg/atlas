@@ -685,6 +685,14 @@ function testFaults() {
       out.push(`without the test code, ${at}: the picture is not the image of the fiber`);
     for (const [id, B] of without.pills) if (withTests.pills.has(id) && /^n:(unit|part):/.test(id) && lines(B) !== lines(withTests.pills.get(id))) facts.add(`cut ${id.slice(2)}`);
   }
+  // the blocks below a package the plan with the test code holds, each with the functions it holds: `block STEP N`
+  V.tests = true; M.plan();
+  const whole = window.atlasPlan.fine;
+  for (const f of whole.frames.values()) {
+    if (!/^(cls|fam):/.test(f.step)) continue;
+    const n = [...whole.pills.values()].filter(P => { for (let g = P.parent; g; g = whole.frames.get(g)?.parent) if (g === f.id) return true; return false; }).length;
+    facts.add(`block ${f.step} ${n}`);
+  }
   for (const k of Object.keys(V.open)) V.open[k] = new Set();
   return {facts: [...facts].sort(), faults: out};
 }
@@ -730,26 +738,20 @@ function focusSets(F0) {
     ? [...Array(1 << units.length).keys()].slice(1).map(m => units.filter((_, i) => m & (1 << i)))
     : [...units.map(u => [u]), ...units.flatMap((a, i) => units.slice(i + 1).map(b => [a, b]))];
 }
-// a focus as what it draws, its arrows to and from the rest with it; a picture that cannot be read so says why
+// a focus as what it draws; a picture that cannot be read so says why
 function focusDrawn(C) {
   try {
-    return drawnOf(C) + JSON.stringify((C.restArrows || []).map(([r, at, side, ts]) => [r, at, side, [...ts.keys()].sort()]).sort());
+    return drawnOf(C);
   } catch (e) {
     return `a picture without what a plan's image carries: ${e.message}`;
   }
 }
 // The boxes at the border of a package drawn closed, by the way the lines cross it: a type box it is joined to, by its type
-// (the focus draws a type it gives on the right, the overview draws it once), and a type a counted arrow to or from the rest
-// stands for, as the box it is drawn as
+// (the focus draws a type it gives on the right, the overview draws it once)
 function borderOf(C, id) {
   const P = C.pills.get(id), ways = {D: new Set(), C: new Set()};
   if (!P) return null;
   for (const way of ["D", "C"]) for (const k of P[way].keys()) if (k.startsWith("t:")) ways[way].add(k.split("@" + M.OUT)[0]);
-  for (const [r, at, side, ts] of C.restArrows || []) {
-    const ks = ts instanceof Map ? [...ts.keys()] : [...ts].map(t => "t:" + M.placeOfType(t));
-    if (at === id) ks.forEach(k => ways[side === "~in" ? "D" : "C"].add(k));
-    if (r === id) ks.forEach(k => ways[side === "~in" ? "C" : "D"].add(k));
-  }
   return JSON.stringify([[...ways.D].sort(), [...ways.C].sort()]);
 }
 // For every set of packages in focus `U` and every set of open boxes (its packages and the rest): the focus's fine plan is the

@@ -75,8 +75,8 @@ Read it from left to right:
 - **Files fold into their folders** once a picture holds more than a column's worth:
   `File(artefacts/) · 8` opens into what is in it with a click.
 - **Shift-click a package** in the overview to focus on it: the picture keeps the packages
-  in focus, the types that cross between them and the places they touch, and joins the
-  rest of the code by counted arrows on either side. Click the rest to open it into the
+  in focus with what they take on the left and what they give on the right, and the
+  rest of the code as one box on either side. Click the rest to open it into the
   packages that hand the focus data or take data from it, and click one of those to add
   it to the focus. The state bar names the packages around the focus, the most exchanged
   first, to add with one click.

@@ -99,6 +99,27 @@ different quantities and are never merged (the sixth sentence). Whatever compare
 compares generators.
 **Where.** `CLAUDE.md`, sentence 6; `design.md` §0.
 
+### Currying: a class is the arrow it carries
+**What.** In a category with exponentials, an arrow of two arguments is an arrow of one that gives an arrow:
+`Self × A → B ≅ Self → (A → B)`. The two say the same, and the second names what the first leaves implicit: the arrow
+`A → B` that is left once the first argument is fixed.
+**In Atlas.** A class with a constructor and a method says the right-hand side: the constructor fixes `Self` from the
+configuration, and the method is the arrow `A → B` that the instance then is. So a class is a block of the code's
+hierarchy below its module, holding its constructor and its methods; closed, it is one arrow, from what its methods take
+to what they give, and the instance between constructor and method is internal to it and on no border. A class of one
+function is that function, as a package with one child is passed through. Opening the block is zooming in: the
+constructor, the methods and the instance between them. The classes of a package that keep the promise of one base
+(Behavioural subtyping) are one block above their own, named by the base and counting them (`BaseAggregator · 5`): the
+quotient by base class (sentence 4), taken on the functions as a family takes it on the types. A base of one class is
+that class, a base whose only child is a base is that one, and a base that holds every function of its package is the
+package. A package of modules can be opened by base class instead of by module (`V.open.flat`): its functions stand in
+it directly, in their classes and bases, whatever file they are written in; both are quotients of the same functions,
+and the reader picks which.
+**Where.** `classBlocks`, `blockHolds` and `overviewOpen` in `viewer/plan.js`; `Opened::classes`, `bases` and `flat` in
+`engine/src/sight.rs`; held for every set of open blocks by `overviewFaults` and `focusFaults` in
+`engine/tests/plans.mjs`, and told apart on the pair `pairs/blocks` (`plans.rs`,
+`the_classes_of_one_base_are_one_block_and_a_class_is_the_block_of_its_functions`).
+
 ### The terminal object
 **What.** A terminal object 1 has exactly one arrow into it from every object.
 **In Atlas.** A function that gives nothing back and has no effect is that unique arrow `A → 1`:
@@ -1128,20 +1149,25 @@ lines it stands for, all of them its own. A call goes from the caller's block to
 internal to a block that holds both. So a package that makes a type another package takes, and takes
 it itself, draws both lines: the line into it is the image of its own taking, and a picture without
 it would gain the line when the package is opened. A closed package with no line still stands, so
-that it can be opened. Without the test code, `F₀` is built on the fiber of the code where it is no
+that it can be opened. Below a module the hierarchy goes on, by class and by base class (Currying: a
+class is the arrow it carries): it is taken of the functions that stand in the plan, and a type's home
+is the smallest block, package, base or class, that holds every function that makes or takes a type of
+its family. Without the test code, `F₀` is built on the fiber of the code where it is no
 test code (A filter: the program without its test code), and is the fiber of the `F₀` with it: each
 line of a touch carries the formula of who makes its path whole, so the fiber can be taken on the
-plan too, and both ways give one plan.
+plan too, the hierarchy below a module taken of the fiber after it, and both ways give one plan.
 
 A focus, the overview with a set `U` of packages singled out (shift-click), is a fiber of `F₀`, not a
 construction of its own. Its plan `F_U` is the star of `U` in `F₀`:
 
 - the functions of the packages in `U`, with every place they make, take or touch. A type stands in its
-  kind (`kindOf`), and its kind in its library where that is a box of its own, so the box the overview
-  draws for it is one block of `F₀`'s places, and `F_U` holds the block whole: a box of the focus is the
-  box of the overview, never a part of it;
+  kind (`kindOf`), the box it has while its family is closed, and `F_U` holds that box whole: a box of
+  the focus is the box of the overview, never a part of it. A library is a quotient of the fiber, taken
+  after it: its frame holds the types of the library that the focus makes or takes, and a type of the
+  library that only the rest uses is no box of the focus, since a fiber that held the whole library
+  would draw every tensor of the program beside one module that takes one shape;
 - the rest of the code, every other function, each in the coarsest package of `F₀` that holds no code in
-  `U`, and those packages in one frame, *the rest*. A function of the rest keeps of its lines only those
+  `U`, whatever class or base holds it there, and those packages in one frame, *the rest*. A function of the rest keeps of its lines only those
   to a place of the star and its calls with an end in `U`; what the rest does among itself is no line of
   the focus, and a function of the rest with no such line is not in `F_U`;
 - a type's home is `F₀`'s, the smallest package that holds every function of the program that makes or
@@ -1157,9 +1183,14 @@ the overview opened to the same packages: the same type boxes on the same sides.
 on both sides, as a place that is read and written is (`from X ⇄`, `into X ⇄`): the page draws it as
 `~in` on the left, with what it hands the focus and its calls into it, and as `~out` on the right, with
 what it takes and the calls the focus makes into it; opened, each of its packages stands so in a frame
-on each side, one block drawn twice. A type only the rest makes and only the focus takes (or the
-reverse) is a vertex between two arrows: it is contracted to the arrow from each maker to each taker,
-which counts the boxes it stands for, as a wire is (above).
+on each side, one block drawn twice. A type crosses the focus one way or both, and is drawn on the side
+it crosses: on the left where a function of the focus takes it, on the right where one gives it, and
+one the focus takes and gives twice, as a place of the world that is read and written is. So a focus
+reads as its arrow, `what it takes → the focus → what it gives`, and a library whose types stand on
+both sides is a frame on each. The rest draws of its lines those that meet the focus: it hands the
+focus what the focus takes and takes what the focus gives; a line of the rest to a type the focus only
+gives, or from one it only takes, is what the rest does among itself. A type no line of the focus
+reaches is no box (`restSides`).
 
 All routes of a kind (every command, every test) are one picture: the union of each route's coarsest
 picture, the image of the route's finest plan with no step open, a route one box. Nothing opens in it;
@@ -1411,8 +1442,9 @@ would only name it again. The overview stands one fold above the finest level th
 family until the family is opened, and the family in its library's frame. A level the code does not write is no step of
 its own: a bare `torch.Tensor` stands as `Tensor` in the frame, and the dtype and array type stand in the label of a rank
 family's box (`Float Tensor · 2D`). A library closed is one box, so its types share one home, as a family's do: the
-smallest package that holds every function that makes or takes a type of it, and the frame stands there. A route draws its
-values at their moments and draws no library.
+smallest package that holds every function that makes or takes a type of it, and the frame stands there. A focus counts
+the types of its own fiber (One fine plan, every picture its image), and draws a library whose types it takes and gives
+as a frame on each side. A route draws its values at their moments and draws no library.
 **Where.** `families::library_of` (`flow.types.library`), `Node::array` (`python/passes.rs`, `array_types`); `libraryOf`,
 `LIBRARIES`, `libClosed`, `libFrameOf`, `libraryFrames` and `placeOfType` in `viewer/plan.js`, the overview's home by
 block in `overviewBase`, the focus's star in `focusBase`; held by `libraryFaults` in `engine/tests/plans.mjs`, on the

@@ -437,7 +437,8 @@ fn facts(root: &Path, graph: &atlas_engine::model::Graph) -> Facts {
     let mut facts = Facts::new();
     for n in graph.nodes.iter().filter(|n| n.kind != atlas_engine::model::NodeKind::External) {
         let Ok(rel) = Path::new(&n.file).strip_prefix(root) else { continue };
-        let fact = json!({"id": n.id, "name": n.name, "kind": n.kind, "line": n.span.map(|s| s.0), "entry": n.entry.is_some()});
+        let fact =
+            json!({"id": n.id, "name": n.name, "kind": n.kind, "line": n.span.map(|s| s.0), "entry": n.entry.as_ref().map(|e| &e.kind)});
         facts.entry(slashed(rel)).or_default().push(fact);
     }
     facts

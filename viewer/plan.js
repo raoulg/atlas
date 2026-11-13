@@ -2552,7 +2552,7 @@ const coarsen = (F, opened = isOpenKey, coarsest = key => key === V.route) => {
   // the storage quotient and the fold of the disk are taken on the places of the finest plan, whatever is open
   const ways = new Map();
   for (const P of F.pills.values()) for (const [way, m] of [["in", P.D], ["out", P.C]]) for (const k of m.keys()) { if (!ways.has(k)) ways.set(k, new Set()); ways.get(k).add(way); }
-  return {places: view.places, pills: view.pills, frames: view.frames, restArrows: [], folded: view.folded, roles, home: view.homeOf, fine: {places: F.places, pills: F.pills, ways}, oracle: window.ATLAS_ORACLE ? checkOpenings(F, view, folded, opened) : null};
+  return {places: view.places, pills: view.pills, frames: view.frames, folded: view.folded, roles, home: view.homeOf, fine: {places: F.places, pills: F.pills, ways}, oracle: window.ATLAS_ORACLE ? checkOpenings(F, view, folded, opened) : null};
 };
 // whether a step of a union runs a function whose own arrow B changed
 const stepChanged = steps => !!DIFF && steps.some(s => byId.get(stepOf(s))?.ds === "changed");
@@ -2958,7 +2958,7 @@ const restSides = C => {
   }
   // a package of the rest that no line and no call joins to the focus stands nowhere
   for (const [id, P] of pills) if (side.has(P.id) && P.parent && !P.D.size && !P.C.size && !P.calls?.size && ![...pills.values()].some(Q => Q.calls?.has(id))) pills.delete(id);
-  return {...C, places, pills, frames, restArrows: []};
+  return {...C, places, pills, frames};
 };
 // ---- all routes of a kind are the union of the routes' closed pictures ----
 // A route closed is one box, the block of all its occurrences: its lines are the image of its plan with no box open, what

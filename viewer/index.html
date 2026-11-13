@@ -948,12 +948,6 @@ async function renderPlaat(mine) {
     }
     // a step open in one reading and closed in the other is one box, the open one: its lines end at its frame, as the closed box's did
     for (const id of frames.keys()) pills.delete(id);
-    const rest = new Map();
-    for (const [s, p] of [["a", A], ["b", B]]) for (const [r, at, way, ts] of p.restArrows) {
-      const k = `${r}>${at}`;
-      if (!rest.has(k)) rest.set(k, [r, at, way, new Map(), new Set()]);
-      ts.forEach((label, t) => rest.get(k)[3].set(t, label)); rest.get(k)[4].add(s);
-    }
     const roles = new Map(A.roles);
     for (const [k, r] of B.roles) { const q = roles.get(k); roles.set(k, q ? Object.fromEntries(Object.keys(r).map(f => [f, q[f] || r[f]])) : r); }
     // where a box stands and what the storage quotient holds, from the readings that have them
@@ -965,10 +959,10 @@ async function renderPlaat(mine) {
       for (const f of [A.fine, B.fine]) for (const [k, w] of f.ways) ways.set(k, new Set([...(ways.get(k) || []), ...w]));
       fine = {places: fp, pills: new Map([...A.fine.pills, ...B.fine.pills]), ways};
     }
-    return {places, pills, frames, restArrows: [...rest.values()], roles, home, fine, oracle, calling: A.calling || B.calling};
+    return {places, pills, frames, roles, home, fine, oracle, calling: A.calling || B.calling};
   };
   // the union's siblings that draw alike are one pill and its places are ordered on the disk, as each plan's are (`quotients`)
-  const {places, pills, frames, restArrows, roles, home, fine, oracle, calling: planCalls, meets} = DIFF ? quotients(unite()) : plan();
+  const {places, pills, frames, roles, home, fine, oracle, calling: planCalls, meets} = DIFF ? quotients(unite()) : plan();
   // Storage quotients are computed on the visible fiber. A singleton keeps its concrete
   // expression; an opened quotient retains a frame around the same members.
   const worldFrames = new Map(), worldParent = new Map();
@@ -1308,12 +1302,6 @@ async function renderPlaat(mine) {
       for (const [reach, n, sides, was] of channels(P, "C", r, k)) addEdge(P.id, twinOf.get(k) || k, {reach, hue: P.hue, sides, n, was, ...(open ? {label: "?", title: "the code does not say which way the data goes"} : {})});
     });
     if (P.backTo) addEdge(P.id, P.backTo, {back: true, hue: P.hue, sides: P.sides, ...(P.said ? {label: P.said} : {})});
-  }
-  // a focus and the rest of the code: a type only one side makes and only the other takes is an arrow from maker to
-  // taker, counting the boxes of the types it stands for (`restSides`)
-  for (const [rest, at, r, ts, sides] of restArrows) {
-    const info = {label: `${ts.size} ${ts.size === 1 ? "type" : "types"}`, title: [...ts.values()].sort().join(", "), sides};
-    if (r === "~in") addEdge(rest, at, info); else addEdge(at, rest, info);
   }
   // code that calls other code: a dotted line, from the caller. The calls are a channel of their own,
   // drawn whatever data also joins the two: a quotient keeps the image of a relation, and "calls while
@@ -1748,6 +1736,21 @@ function crumbs() {
   if (V.open.parts.size && !V.route) { lbl("parts"); for (const p of V.open.parts) chip(p, () => V.open.parts.delete(p)); }
   const opened = u => u === REST ? "the rest" : unitLabel(u);
   if (V.open.units.size && !V.route && !V.kind) { lbl("packages"); for (const u of V.open.units) chip(opened(u), () => V.open.units.delete(u)); }
+  // a package of modules is opened by module or by base class: two quotients of the same functions, the reader's to pick
+  if (!V.route && !V.kind && view === "plaat") {
+    const nested = u => !isRest(u) && [...byId.values()].some(n => n.kind === "module" && !n.library && n.id.startsWith(u + "."));
+    const us = [...new Set([...V.focus, ...V.open.units, ...V.open.flat])].filter(u => V.open.flat.has(u) || nested(u));
+    if (us.length) lbl("grouped");
+    for (const u of us) {
+      const flat = V.open.flat.has(u), b = html("button", flat ? null : "add", flat ? `${unitLabel(u)} by base class ✕` : `+ ${unitLabel(u)} by base class`);
+      b.title = flat ? "group this package by module again" : "group this package's functions by the base class they keep the promise of, whatever file they are written in";
+      b.onclick = () => { if (flat) V.open.flat.delete(u); else V.open.flat.add(u); plaatFit = true; render(); };
+      C.appendChild(b);
+    }
+    const blocks = [...[...V.open.bases].map(k => ["fam:" + k, V.open.bases, k]), ...[...V.open.classes].map(k => ["cls:" + k, V.open.classes, k])].filter(([step]) => BLOCK_TITLE.has(step));
+    if (blocks.length) lbl("classes");
+    for (const [step, set, k] of blocks) chip(BLOCK_TITLE.get(step), () => set.delete(k));
+  }
   // an opened entry shows how its command line is parsed; any other opened place is split
   const openEntries = [...V.open.places].filter(r => r.startsWith("e:") && byId.get(r.slice(2))?.entry), split = [...V.open.places].filter(r => !r.startsWith("e:"));
   const entryFamilies = V.kind && !V.route ? [...V.open.places].filter(r => r === "e:~" + V.kind) : [];
