@@ -199,7 +199,7 @@ const partRank = n => Math.max(0, PARTS.findIndex(p => p.id === partOf(n)));
 // (one call by its path through the route, or every call of a function), families into their
 // members, coarse places into their parts, directories into their files. What stands open until the reader closes it is
 // closed by name: a library's frame, around the types it makes
-const V = {route: null, kind: null, part: null, focus: new Set(), tests: false, open: {parts: new Set(), units: new Set(), steps: new Set(), functions: new Set(), families: new Set(), places: new Set(), dirs: new Set()}, closed: {libraries: new Set()}};
+const V = {route: null, kind: null, part: null, focus: new Set(), tests: false, open: {parts: new Set(), units: new Set(), steps: new Set(), functions: new Set(), families: new Set(), places: new Set(), dirs: new Set(), classes: new Set(), bases: new Set(), flat: new Set()}, closed: {libraries: new Set()}};
 const short = id => id.startsWith(ROOT) ? id.slice(ROOT.length) : id.replace(/^ext:/, "");
 const KG = {imports:"imports", calls:"calls", requests:"calls", instantiates:"calls", takes:"types", returns:"types", has:"types", mutates:"types", variant:"types", inherits:"inherits"};
 
@@ -1049,7 +1049,11 @@ const typePlace = t => {
   // a family no type of the code's is (a rank of shaped arrays, `Float Tensor · 2D`) is of the library its members are
   return {id: "t:" + t, label: typeLabel(t) + (closedFam ? ` (${opensInto(t)})` : ""), kind: (n ? n.kind === "external" : t.startsWith("ext:")) ? "ext" : "type", hue: hueOf(n), type: t};
 };
-const stepName = id => { if (id.startsWith("part:")) { const p = PARTS.find(x => x.id === id.slice(5)) || {}; return `${p.id} · ${p.language}`; } if (id.startsWith("unit:")) return unitLabel(id.slice(5)); const n = byId.get(id); if (!V.route && n.entry) return entryLabel(n); if (n.kind === "class") return typeLabel(n.id) + "()"; if (n.make) return n.name; if (isCtor(n) && !n.on_class) return typeLabel(n.cls) + "()"; return n.cls ? `${typeLabel(n.cls)}.${nameOf(n)}` : nameOf(n); };
+// a block of the code's hierarchy: a part, a package, a class with its constructor and methods, the classes of one base
+const isBlock = step => /^(part|unit|cls|fam):/.test(step);
+// the name of a class's block and of a base's, as the plan that holds them says it (`classBlocks`)
+const BLOCK_TITLE = new Map();
+const stepName = id => { if (BLOCK_TITLE.has(id)) return BLOCK_TITLE.get(id); if (id.startsWith("part:")) { const p = PARTS.find(x => x.id === id.slice(5)) || {}; return `${p.id} · ${p.language}`; } if (id.startsWith("unit:")) return unitLabel(id.slice(5)); const n = byId.get(id); if (!V.route && n.entry) return entryLabel(n); if (n.kind === "class") return typeLabel(n.id) + "()"; if (n.make) return n.name; if (isCtor(n) && !n.on_class) return typeLabel(n.cls) + "()"; return n.cls ? `${typeLabel(n.cls)}.${nameOf(n)}` : nameOf(n); };
 // the call names the method it runs, through a class (`Section.show(s, h)`) or through `super()`: the call's own site,
 // or for what a call may run instead, the site of that call
 const namesItsMethod = key => {
@@ -2368,7 +2372,8 @@ const imageOf = (F, opened, folded, {fineKeys = false} = {}) => {
       homeAt = new Map();
       for (const [k, pl] of fp) if ("home" in pl) for (const b of new Set([q(k), famId(pl), libFrameOf(pl.type)])) if (b) { if (!homeAt.has(b)) homeAt.set(b, []); homeAt.get(b).push(pl.home); }
     }
-    return ids.flatMap(id => homeAt.get(id) || []);
+    // the box a focus draws where it gives a type has the home of the type
+    return ids.flatMap(id => homeAt.get(id) || homeAt.get(id.split("@" + OUT)[0]) || []);
   };
   const homeOf = (ids, world) => {
     const hs = F.generators && !world ? homesOf(ids) : [];
@@ -2514,10 +2519,12 @@ const refines = (A, B) => {
 const openBlock = step => {
   if (step.startsWith("part:")) return ["part", step.slice(5), () => V.open.parts.add(step.slice(5))];
   if (step.startsWith("unit:")) return ["package", step.slice(5), () => V.open.units.add(step.slice(5))];
+  if (step.startsWith("cls:")) return ["class", step.slice(4), () => V.open.classes.add(step.slice(4))];
+  if (step.startsWith("fam:")) return ["base", step.slice(4), () => V.open.bases.add(step.slice(4))];
   return ["step", step, () => V.open.steps.add(step)];
 };
 const checkOpenings = (F, view, folded, opened = isOpenKey) => {
-  const faults = [], open = V.open, was = Object.fromEntries(["steps", "families", "units", "parts"].map(k => [k, new Set(open[k])])), shut = new Set(V.closed.libraries);
+  const faults = [], open = V.open, was = Object.fromEntries(["steps", "families", "units", "parts", "classes", "bases"].map(k => [k, new Set(open[k])])), shut = new Set(V.closed.libraries);
   const tries = [
     ...[...view.blocks.values()].filter(B => B.frame && !B.frame.synthetic).map(B => openBlock(B.frame.step)),
     ...[...new Set([...view.places.values()].filter(p => p.type && opens(p.type) && !open.families.has(p.type)).map(p => familyOf(p.type)))].map(f => ["family", f, () => open.families.add(f)]),
@@ -2545,7 +2552,7 @@ const coarsen = (F, opened = isOpenKey, coarsest = key => key === V.route) => {
   // the storage quotient and the fold of the disk are taken on the places of the finest plan, whatever is open
   const ways = new Map();
   for (const P of F.pills.values()) for (const [way, m] of [["in", P.D], ["out", P.C]]) for (const k of m.keys()) { if (!ways.has(k)) ways.set(k, new Set()); ways.get(k).add(way); }
-  return {places: view.places, pills: view.pills, frames: view.frames, restArrows: [], folded: view.folded, roles, home: view.homeOf, fine: {places: F.places, pills: F.pills, ways}, oracle: window.ATLAS_ORACLE ? checkOpenings(F, view, folded, opened) : null};
+  return {places: view.places, pills: view.pills, frames: view.frames, folded: view.folded, roles, home: view.homeOf, fine: {places: F.places, pills: F.pills, ways}, oracle: window.ATLAS_ORACLE ? checkOpenings(F, view, folded, opened) : null};
 };
 // whether a step of a union runs a function whose own arrow B changed
 const stepChanged = steps => !!DIFF && steps.some(s => byId.get(stepOf(s))?.ds === "changed");
@@ -2560,7 +2567,7 @@ const siblings = C => {
   for (const P of pills.values()) for (const b of P.calls || []) { if (!callers.has(b)) callers.set(b, []); callers.get(b).push(P.id); }
   const counts = (P, n) => P[n] || new Map([...(n[0] === "D" ? P.D : P.C)].filter(([, r]) => n[1] === "n" || r).map(([k]) => [k, 1]));
   for (const P of [...pills.values()]) {
-    if (P.own || P.hue || P.steps[0].startsWith("part:") || P.steps[0].startsWith("unit:") || P.steps.some(st => V.open.steps.has(st))) continue;
+    if (P.own || P.hue || isBlock(P.steps[0]) || P.steps.some(st => V.open.steps.has(st))) continue;
     const lines = (P.fine ?? [...P.D.keys()].sort() + ">" + [...P.C.keys()].sort()) + "|" + [...(P.calls || [])].sort() + "<" + (callers.get(P.id) || []).sort();
     const key = (P.parent || "") + "|" + lines + "|" + (P.backTo || "") + "|" + [...(P.sides || [])].sort() + "|" + stepChanged(P.steps);
     const Q = merged.get(key);
@@ -2636,7 +2643,92 @@ const alike = C => (SIDE ? C : quotients(C));
 // functions, packages and parts of the program alone, and of the types and places what they make, take and touch. A
 // package holds test code and ordinary code side by side, so the predicate is not saturated by the package quotient: the
 // fiber is taken first, and what is open is the quotient of what is left
-const overviewOpen = key => (key.startsWith("part:") ? V.open.parts.has(key.slice(5)) : key.startsWith("unit:") ? V.open.units.has(key.slice(5)) : true);
+const overviewOpen = key => (key.startsWith("part:") ? V.open.parts.has(key.slice(5)) : key.startsWith("unit:") ? V.open.units.has(key.slice(5)) || V.open.flat.has(key.slice(5)) : key.startsWith("cls:") ? V.open.classes.has(key.slice(4)) : key.startsWith("fam:") ? V.open.bases.has(key.slice(4)) : true);
+// The code's hierarchy goes on below a module, by composition and by base class (sentence 4). A class holds its constructor
+// and its methods: `Self × A → B ≅ Self → (A → B)`, so the constructor gives an arrow and the class closed is one block,
+// the value between its constructor and its methods internal to it (mathematics.md, "Currying: a class is the arrow it
+// carries"). The classes of a package that keep the promise of one base are one block above them, named by the base and
+// counting them (`BaseAggregator · 5`): the quotient by base class, taken on functions. A level with a single child is
+// passed through, as a package's is: a class of one function is that function, a base of one class that class, a base
+// whose only child is a base that one, and a base that holds every function of its package is the package.
+// `leafOf` holds each function's package (a frame of `frames`, with its unit in `unitOfLeaf`); each function is moved to the
+// innermost block that holds it
+// whether a class is a base or keeps the promise of it, along the first base of the code's each names
+const descends = (c, b) => { for (let x = c, i = 0; x && i < 64; x = (BASES.get(x) || []).find(y => byId.get(y) && !byId.get(y).library), i++) if (x === b) return true; return false; };
+// the code a class's block or a base's holds: the class with its functions; the classes of the base in the block's package
+const blockHolds = step => {
+  if (step.startsWith("cls:")) { const c = step.slice(4); return n => n.id === c || n.cls === c; }
+  const [b, u] = step.slice(4).split("@");
+  return n => inUnit(n.id, u) && descends(n.kind === "class" ? n.id : n.cls, b);
+};
+// the blocks below a package that hold a symbol, opened: its class's, and each base's of the plan last made
+const openBlocksOf = n => {
+  const c = n.kind === "class" ? n.id : n.cls;
+  if (!c) return;
+  V.open.classes.add(c);
+  for (const k of BLOCK_TITLE.keys()) if (k.startsWith("fam:") && blockHolds(k)(n)) V.open.bases.add(k.slice(4));
+};
+const classBlocks = (frames, leafOf, unitOfLeaf, kept) => {
+  for (const k of [...BLOCK_TITLE.keys()]) if (/^(cls|fam):/.test(k)) BLOCK_TITLE.delete(k);
+  const byLeaf = new Map(), declared = [];
+  for (const [id, leaf] of leafOf) {
+    const n = byId.get(id);
+    // a method its base only declares runs no body and has no arrow: no function a block counts
+    if (!["function", "method"].includes(n.kind)) continue;
+    if (n.declared) { declared.push([id, leaf, n.cls]); continue; }
+    if (!byLeaf.has(leaf)) byLeaf.set(leaf, {all: 0, classes: new Map()});
+    const L = byLeaf.get(leaf);
+    L.all++;
+    if (!n.cls || !byId.has(n.cls)) continue;
+    if (!L.classes.has(n.cls)) L.classes.set(n.cls, []);
+    L.classes.get(n.cls).push(id);
+  }
+  // the base of the code's a class keeps the promise of: the first it names, in the reading drawn and of the code drawn
+  const baseOf = c => (BASES.get(c) || []).find(b => { const n = byId.get(b); return n && !n.library && n.kind === "class" && has(n) && kept(n) && edgeOn(c, b, "inherits"); }) || null;
+  for (const [leaf, L] of byLeaf) {
+    const unit = unitOfLeaf.get(leaf), kids = new Map(), roots = new Set(), count = new Map();
+    for (const c of L.classes.keys()) {
+      const seen = new Set([c]);
+      let x = c;
+      for (let b = baseOf(x); b && !seen.has(b); x = b, b = baseOf(x)) { seen.add(b); if (!kids.has(b)) kids.set(b, new Set()); kids.get(b).add(x); }
+      if (x !== c) roots.add(x);
+      for (const b of seen) count.set(b, (count.get(b) || 0) + (b === c ? 0 : 1));
+    }
+    // a class's block where it holds two functions or more, else its one function stands for it
+    const place = (c, parent) => {
+      const fns = L.classes.get(c) || [];
+      let at = parent;
+      if (fns.length > 1) {
+        at = "n:cls:" + c;
+        BLOCK_TITLE.set("cls:" + c, typeLabel(c));
+        frames.set(at, {id: at, step: "cls:" + c, parent, hue: null, title: typeLabel(c)});
+      }
+      for (const id of fns) leafOf.set(id, at);
+    };
+    const size = b => (count.get(b) || 0) + (L.classes.has(b) ? 1 : 0);
+    const functionsIn = b => (L.classes.get(b)?.length || 0) + [...(kids.get(b) || [])].reduce((n, k) => n + functionsIn(k), 0);
+    const emit = (b, parent) => {
+      const below = [...(kids.get(b) || [])];
+      if (!below.length) { place(b, parent); return; }
+      const through = size(b) < 2 || (below.length === 1 && !L.classes.has(b) && kids.has(below[0])) || functionsIn(b) === L.all;
+      let at = parent;
+      if (!through) {
+        const step = `fam:${b}@${unit}`, title = `${typeLabel(b)} · ${size(b)}`;
+        at = "n:" + step;
+        BLOCK_TITLE.set(step, title);
+        frames.set(at, {id: at, step, parent, hue: null, title, base: b});
+      }
+      if (L.classes.has(b)) place(b, at);
+      for (const k of below) emit(k, at);
+    };
+    const placed = new Set();
+    for (const r of roots) { emit(r, leaf); const mark = b => { placed.add(b); (kids.get(b) || []).forEach(mark); }; mark(r); }
+    for (const c of L.classes.keys()) if (!placed.has(c)) place(c, leaf);
+  }
+  // a method a base declares stands where a call into the family runs one of its overrides: in the base's block, where
+  // the base has one
+  for (const [id, leaf, c] of declared) { const at = `n:fam:${c}@${unitOfLeaf.get(leaf)}`; if (frames.has(at)) leafOf.set(id, at); }
+};
 // the place a part's routes are served at over HTTP: what requests them goes out to it, its routes come in from it
 const httpAt = p => ({id: "w:Web:http:" + p, label: `HTTP(${p})`, short: `HTTP(${p})`, kind: "world"});
 const overviewBase = () => {
@@ -2650,7 +2742,8 @@ const overviewBase = () => {
     for (const u of us.filter(shown)) {
       const fid = "n:unit:" + u, below = u.endsWith("$") || MAKEFILES.has(u) ? [] : unitsBelow(u);
       frames.set(fid, {id: fid, step: "unit:" + u, parent, hue: null, title: stepName("unit:" + u)});
-      if (below.length > 1) units(below, part, fid);
+      // a package opened by base class holds its functions itself, whatever module each is written in
+      if (below.length > 1 && !V.open.flat.has(u)) units(below, part, fid);
       else leaves.push([u, part, fid]);
     }
   };
@@ -2717,10 +2810,11 @@ const overviewBase = () => {
   LIBRARIES = new Map();
   for (const t of used.keys()) { const L = libraryOf(t); if (!L) continue; if (!LIBRARIES.has(L)) LIBRARIES.set(L, new Set()); LIBRARIES.get(L).add(t); }
   const block = t => libFrameOf(t) || familyOf(t);
-  const kin = new Map();
+  const kin = new Map(), homes = new Map();
   for (const [t, [mk, tk]] of used) { const f = block(t); if (!kin.has(f)) kin.set(f, []); kin.get(f).push(...mk, ...tk); }
   for (const [t, [mk, tk]] of used) {
-    const k = addPlace({...typePlace(t), home: homeOf(kin.get(block(t)).map(x => leafOf.get(x)))});
+    const k = addPlace({...typePlace(t), home: undefined});
+    homes.set(k, kin.get(block(t)));
     for (const x of mk) pillOf(x).C.set(k, false);
     for (const x of tk) pillOf(x).D.set(k, false);
   }
@@ -2743,12 +2837,19 @@ const overviewBase = () => {
     pillOf(e.src); pillOf(to);
     calls.set(`${e.src}>${to}`, [e.src, to]);
   }
+  // the hierarchy below a package is taken of the functions that stand in the plan, each then in its class or base, and a
+  // type's home is the smallest block that holds every function that makes or takes a type of its family
+  const stand = new Map([...leafOf].filter(([id]) => pills.has("n:" + id)));
+  classBlocks(frames, stand, new Map(leaves.map(([u, , fid]) => [fid, u])), kept);
+  for (const P of pills.values()) P.parent = stand.get(P.steps[0]);
+  for (const [k, users] of homes) places.get(k).home = homeOf(users.map(x => stand.get(x)));
   return {places, pills, frames, found, updated, calls: [...calls.values()], generators: true, split: new Set(), splitBy: [], heldOf: () => [], originOf: new Map()};
 };
 // ---- a focus is the fiber of F₀ over the packages in it, with the rest of the code around it ----
 // The packages in focus are packages of `F₀`. The fiber over them is their functions with every place those make, take
-// or touch; a type stands in its kind, and its kind in its library, so the box the overview draws for it is one block of
-// `F₀`'s places, and the fiber holds the block whole. The rest of the code is every other function, each in the coarsest package of `F₀` that holds
+// or touch; a type stands in its kind, the box it has while its family is closed, so the fiber holds each kind it touches
+// whole. A library is a quotient of what the fiber holds, taken after it (fiber first, then the quotient, as a route takes
+// its families on its own fiber): a box of its own where the fiber holds two of its types or more. The rest of the code is every other function, each in the coarsest package of `F₀` that holds
 // no code in focus, and those packages in one frame, the rest. The focus's plan `F_U` is the fiber with the rest joined
 // to it by the lines `F₀` draws between them: a line of the rest to a place of the fiber, a call between the rest and the
 // fiber. What the rest does among itself is no line of the focus. A type's home is `F₀`'s, the smallest package that
@@ -2771,16 +2872,22 @@ const focusBase = () => {
   // a package of the rest: one that holds no code in focus and lies in none that holds no code in focus
   const restTop = fid => !!unitAt(fid) && !holding.has(fid) && !(unitAt(fr.get(fid).parent) && !holding.has(fr.get(fid).parent));
   const restOf = fid => { let f = fid; while (f && !restTop(f)) f = fr.get(f).parent; return f; };
-  // the block of `F₀`'s places a type's box is: its kind, or its library where that is a box of its own
-  const rest = "n:unit:" + REST, kindIn = k => { const t = F0.places.get(k)?.type; return t ? libFrameOf(t) || "t:" + kindOf(t) : k; };
+  // the block of `F₀`'s places a type's box is while its family is closed: its kind
+  const rest = "n:unit:" + REST, kindIn = k => { const t = F0.places.get(k)?.type; return t ? "t:" + kindOf(t) : k; };
   const mine = [...F0.pills.values()].filter(P => isFocused(P.parent));
   const kinds = new Set(mine.flatMap(P => [...P.D.keys(), ...P.C.keys()]).map(kindIn));
   const star = new Set([...F0.places.keys()].filter(k => kinds.has(kindIn(k))));
+  // the libraries of the fiber: each with the types of it the fiber holds
+  LIBRARIES = new Map();
+  for (const k of star) { const t = F0.places.get(k)?.type, L = t && libraryOf(t); if (!L) continue; if (!LIBRARIES.has(L)) LIBRARIES.set(L, new Set()); LIBRARIES.get(L).add(t); }
   const pills = new Map();
   for (const P of F0.pills.values()) {
     if (isFocused(P.parent)) { pills.set(P.id, P); continue; }
     const only = m => new Map([...m].filter(([k]) => star.has(k)));
-    pills.set(P.id, {...P, D: only(P.D), C: only(P.C), goes: only(P.goes), whole: only(P.whole)});
+    // a package of the rest never opens, so a function of it stands in its package, whatever class or base holds it there
+    let parent = P.parent;
+    while (parent && !unitAt(parent)) parent = fr.get(parent).parent;
+    pills.set(P.id, {...P, parent, D: only(P.D), C: only(P.C), goes: only(P.goes), whole: only(P.whole)});
   }
   const calls = F0.calls.filter(c => c.some(f => isFocused(F0.pills.get("n:" + f)?.parent)));
   // a function of the rest stands where it draws a line to the fiber or a call into it
@@ -2810,13 +2917,13 @@ const focusBase = () => {
 };
 // the map `q_U`: a package of the focus is open as the reader has it, the rest while the reader has it open, and a package
 // of the rest never
-const focusOpen = key => (key === "unit:" + REST ? V.open.units.has(REST) : FOCUS.steps.has(key) && V.open.units.has(key.slice(5)));
+const focusOpen = key => (key === "unit:" + REST ? V.open.units.has(REST) : FOCUS.steps.has(key) && overviewOpen(key));
 // The rest is one block, and the page draws it on both sides of the focus, as it draws a place of the world that is read
 // and written: what it hands the focus on the left (`~in`), what it takes from it on the right (`~out`), its calls into
 // the focus from the left and the focus's calls into it to the right. Opened, its packages stand so, in a frame on each
-// side. A type that only the rest makes and only the focus takes, or only the focus makes and only the rest takes, is a
-// vertex between two arrows: it is drawn as the arrow from each maker to each taker, counting the boxes it stands for
-// (`· 4 types`), as a wire is
+// side.
+// the moment of the box a type has where the focus gives it, beside the one where the focus takes it
+const OUT = "»out";
 const restSides = C => {
   const rest = "n:unit:" + REST, open = C.frames.has(rest), twins = new Map(), side = new Map();
   const twinOf = (P, s) => (P.id === rest ? "n:unit:" + s : `n:unit:${s}:${P.steps[0].slice(5)}`);
@@ -2833,23 +2940,34 @@ const restSides = C => {
   if (open) for (const s of ["~in", "~out"]) frames.set("n:unit:" + s, {...C.frames.get(rest), id: "n:unit:" + s, step: "unit:" + s, title: stepName("unit:" + s)});
   // a call into the rest goes to the side that takes
   for (const P of pills.values()) if (P.calls) P.calls = new Set([...P.calls].map(b => twins.get(b) || b).filter(b => pills.has(b)));
-  const makers = new Map(), takers = new Map(), at = (m, k) => { if (!m.has(k)) m.set(k, []); return m.get(k); };
-  for (const P of pills.values()) { for (const k of P.C.keys()) at(makers, k).push(P); for (const k of P.D.keys()) at(takers, k).push(P); }
-  const arrows = new Map(), places = new Map(C.places);
+  // A type crosses the focus one way or both. The rest hands the focus what a function of the focus takes, and takes from
+  // it what one gives: a line of the rest to a type the focus only gives, or from one it only takes, is what the rest does
+  // among itself, no line of the focus. A type stands on the left where the focus takes it and on the right (`OUT`) where
+  // the focus gives it, each box with the rest's lines of its side; one the focus takes and gives is drawn twice, as a
+  // place of the world that is read and written is. A type no line of the focus reaches stands nowhere
+  const places = new Map(C.places), taken = new Set(), given = new Set();
+  for (const P of pills.values()) if (!side.has(P.id)) { for (const k of P.D.keys()) taken.add(k); for (const k of P.C.keys()) given.add(k); }
+  const lines = (P, way) => [way, way + "n", way + "r"].map(n => P[n]).filter(Boolean);
   for (const [k, pl] of C.places) {
     if (!k.startsWith("t:") || !pl.type) continue;
-    const mk = makers.get(k) || [], tk = takers.get(k) || [], ofRest = Ps => Ps.every(P => side.has(P.id)), noRest = Ps => !Ps.some(P => side.has(P.id));
-    const handed = ofRest(mk) && noRest(tk), taken = noRest(mk) && ofRest(tk);
-    if (!mk.length || !tk.length || !(handed || taken)) continue;
-    for (const m of mk) for (const t of tk) {
-      const [r, u] = handed ? [m.id, t.id] : [t.id, m.id], key = `${r}>${u}`;
-      if (!arrows.has(key)) arrows.set(key, [r, u, handed ? "~in" : "~out", new Map()]);
-      arrows.get(key)[3].set(k, pl.label);
+    const out = given.has(k) ? valueBox(k.slice(2), {at: OUT}) : k;
+    if (out !== k) places.set(out, {...pl, id: out, at: OUT});
+    for (const P of pills.values()) {
+      const s = side.get(P.id);
+      if (s === "~in" && !taken.has(k)) lines(P, "C").forEach(m => m.delete(k));
+      if (s === "~out" && !given.has(k)) lines(P, "D").forEach(m => m.delete(k));
+      if (out !== k) for (const m of lines(P, s ? (s === "~out" ? "D" : "") : "C")) if (m.has(k)) { m.set(out, m.get(k)); m.delete(k); }
     }
-    for (const P of [...mk, ...tk]) for (const n of ["D", "C", "Dn", "Cn", "Dr", "Cr"]) P[n]?.delete(k);
-    places.delete(k);
+    if (!taken.has(k)) places.delete(k);
   }
-  return {...C, places, pills, frames, restArrows: [...arrows.values()]};
+  // a package of the rest that no line and no call joins to the focus stands nowhere, and the rest closed stands on a side
+  // where a line or a call joins it: on the left alone where none does, so that it can be opened
+  const joined = P => P.D.size || P.C.size || P.calls?.size || [...pills.values()].some(Q => Q.calls?.has(P.id));
+  for (const [id, P] of pills) if (side.has(id) && P.parent && !joined(P)) pills.delete(id);
+  const [left, right] = ["n:unit:~in", "n:unit:~out"].map(id => pills.get(id));
+  if (right && !right.parent && !joined(right)) pills.delete(right.id);
+  else if (left && right && !left.parent && !joined(left)) pills.delete(left.id);
+  return {...C, places, pills, frames};
 };
 // ---- all routes of a kind are the union of the routes' closed pictures ----
 // A route closed is one box, the block of all its occurrences: its lines are the image of its plan with no box open, what
@@ -2925,12 +3043,15 @@ const VIEWS = {
 const viewOf = () => (V.route ? "route" : V.kind ? "kind" : V.focus.size ? "focus" : "overview");
 // The frames of the open libraries, each with the id of its library's closed box: every box of a type of a library that is
 // a box of its own stands in the frame, a family's opened members with it, and the frame stands where its types' home is
+const libFrameAt = (frame, box) => frame + (box.includes("@" + OUT) ? "@" + OUT : "");
 const libraryFrames = places => {
   const frames = new Map();
   for (const p of places.values()) {
-    const id = p.type && !libOfBox(p.type) && !libClosed(p.type) && libFrameOf(p.type);
-    if (!id) continue;
-    if (!frames.has(id)) frames.set(id, {id, library: libOfBox(id.slice(2)), title: libOfBox(id.slice(2)), kids: new Set()});
+    const of = p.type && !libOfBox(p.type) && !libClosed(p.type) && libFrameOf(p.type);
+    if (!of) continue;
+    // a library whose types the focus takes and gives is a frame on each side
+    const id = libFrameAt(of, p.id);
+    if (!frames.has(id)) frames.set(id, {id, library: libOfBox(of.slice(2)), title: libOfBox(of.slice(2)), kids: new Set()});
     frames.get(id).kids.add(p.id);
   }
   return frames;
@@ -2942,7 +3063,7 @@ const plan = () => {
   cutArrows.clear();
   const F = view.fine(), C = coarsen(F, view.opened, view.coarsest);
   for (const [fid, f] of F.frames) {
-    if (!/^(unit|part):/.test(f.step) || !view.opens(f.step) || C.frames.has(fid) || C.pills.has(fid) || (f.parent && !C.frames.has(f.parent))) continue;
+    if (!isBlock(f.step) || !view.opens(f.step) || C.frames.has(fid) || C.pills.has(fid) || (f.parent && !C.frames.has(f.parent))) continue;
     C.pills.set(fid, {id: fid, steps: [f.step], D: new Map(), C: new Map(), Dn: new Map(), Cn: new Map(), Dr: new Map(), Cr: new Map(), goes: new Map(), parent: f.parent, hue: null});
   }
   alike(C);

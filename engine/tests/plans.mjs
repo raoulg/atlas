@@ -25,7 +25,7 @@ const D = JSON.parse(fs.readFileSync(dataJson, "utf8"));
 // `ATLAS_FINE_BUDGET=n` cuts the plan as a large program's is cut (`plan.js`, `FINE_BUDGET`)
 const window = process.env.ATLAS_FINE_BUDGET ? {ATLAS_FINE_BUDGET: Number(process.env.ATLAS_FINE_BUDGET)} : {};
 const M = new Function("D", "window", fs.readFileSync(planJs, "utf8") + `
-return {V, plan, imageOf, coarsen, checkOpenings, refines, overviewOpen, inUnit, partOf, MAKEFILES, treeInfo, stepLabel, oneOf, typeLabel, sideOfRoles, familyOf, kindOf, byId, ordersOn, stepOf, opens, frameOf, valueBox, foldDirs, filePath, valuesOf, closedFamily, typesIn, lightOf, cutBy, familyFrames, here, kindsOf, isData, worldPlaceOf, placeOfType, focusOpen: typeof focusOpen === "function" ? focusOpen : null, overviewEntries, planBase, VIEWS, viewOf, dirsOf, worldUse, storageGroups};`)(D, window);
+return {V, plan, imageOf, coarsen, checkOpenings, refines, overviewOpen, OUT, classBlocks, inUnit, partOf, MAKEFILES, treeInfo, stepLabel, oneOf, typeLabel, sideOfRoles, familyOf, kindOf, byId, ordersOn, stepOf, opens, frameOf, valueBox, foldDirs, filePath, valuesOf, closedFamily, typesIn, lightOf, cutBy, familyFrames, here, kindsOf, isData, worldPlaceOf, placeOfType, focusOpen: typeof focusOpen === "function" ? focusOpen : null, overviewEntries, planBase, VIEWS, viewOf, dirsOf, worldUse, storageGroups};`)(D, window);
 const {V} = M;
 
 const SIDES = {in: "left", out: "right", mid: "between", both: "both"};
@@ -588,6 +588,8 @@ function openings(F) {
 function openAs(set) {
   V.open.units = new Set(set.filter(s => s.startsWith("unit:")).map(s => s.slice(5)));
   V.open.parts = new Set(set.filter(s => s.startsWith("part:")).map(s => s.slice(5)));
+  V.open.classes = new Set(set.filter(s => s.startsWith("cls:")).map(s => s.slice(4)));
+  V.open.bases = new Set(set.filter(s => s.startsWith("fam:")).map(s => s.slice(4)));
 }
 
 // Test code, as mathematics.md names the predicate ("A filter: the program without its test code"), restated here from the
@@ -596,7 +598,7 @@ const testCode = n => !!n && (!!n.test || n.entry?.kind === "test" || !!M.byId.g
 // The fiber of the overview's fine plan `F₀` where the code is no test code, taken on the plan: the occurrences of functions
 // that are no test code, of their lines those whose formula (`whole`: who makes the touch's path whole) holds with the test
 // code false, the calls between two of them, the packages and parts that hold a module of the program, and of the places
-// those that a line kept touches, a type's home the smallest package that holds every occurrence kept that makes or takes
+// those that a line kept touches, a type's home the smallest block that holds every occurrence kept that makes or takes
 // a type of its family, as `F₀` defines it
 function fiberOf(F) {
   const lineKept = (P, k) => { const w = P.whole?.get(k); return w == null || w.some(c => c.every(g => !testCode(M.byId.get(g)))); };
@@ -610,7 +612,17 @@ function fiberOf(F) {
   const program = [...M.byId.values()].filter(n => n.kind === "module" && !n.library && !testCode(n));
   const holds = step =>
     step.startsWith("part:") ? program.some(m => M.partOf(m) === step.slice(5)) : M.MAKEFILES.has(step.slice(5)) || program.some(m => M.inUnit(m.id, step.slice(5)));
-  const frames = new Map([...F.frames].filter(([, f]) => holds(f.step)));
+  const frames = new Map([...F.frames].filter(([, f]) => !/^(cls|fam):/.test(f.step) && holds(f.step)));
+  const calls = F.calls.filter(([a, b]) => pills.has("n:" + a) && pills.has("n:" + b));
+  // an occurrence stands where it draws a line or a call
+  const called = new Set(calls.flat().map(f => "n:" + f));
+  for (const [id, P] of pills) if (!P.D.size && !P.C.size && !called.has(id)) pills.delete(id);
+  // The hierarchy below a package is taken of the fiber (`classBlocks`, the one function every overview takes it with): each
+  // function kept in its package, then in the class or base that holds it among the functions kept
+  const packageOf = fid => { let f = fid; while (f && /^(cls|fam):/.test(F.frames.get(f).step)) f = F.frames.get(f).parent; return f; };
+  const stand = new Map([...pills.values()].map(P => [P.steps[0], packageOf(P.parent)]));
+  M.classBlocks(frames, stand, new Map([...frames.values()].filter(f => f.step.startsWith("unit:")).map(f => [f.id, f.step.slice(5)])), n => !testCode(n));
+  for (const [id, P] of pills) pills.set(id, {...P, parent: stand.get(P.steps[0])});
   const chainOf = fid => { const c = []; for (let f = fid; f; f = frames.get(f)?.parent) c.unshift(f); return c; };
   const places = new Map();
   // a type's home holds every occurrence kept that makes or takes a type of its block: its library where the kept places hold
@@ -633,10 +645,6 @@ function fiberOf(F) {
     }
     places.set(k, {...pl, home: common?.length ? common[common.length - 1] : undefined});
   }
-  const calls = F.calls.filter(([a, b]) => pills.has("n:" + a) && pills.has("n:" + b));
-  // an occurrence stands where it draws a line or a call
-  const called = new Set(calls.flat().map(f => "n:" + f));
-  for (const [id, P] of pills) if (!P.D.size && !P.C.size && !called.has(id)) pills.delete(id);
   return {...F, places, pills, frames, calls};
 }
 // a fine plan of the overview as data that does not depend on the order it was built in
@@ -677,15 +685,23 @@ function testFaults() {
       out.push(`without the test code, ${at}: the picture is not the image of the fiber`);
     for (const [id, B] of without.pills) if (withTests.pills.has(id) && /^n:(unit|part):/.test(id) && lines(B) !== lines(withTests.pills.get(id))) facts.add(`cut ${id.slice(2)}`);
   }
+  // the blocks below a package the plan with the test code holds, each with the functions it holds: `block STEP N`
+  V.tests = true; M.plan();
+  const whole = window.atlasPlan.fine;
+  for (const f of whole.frames.values()) {
+    if (!/^(cls|fam):/.test(f.step)) continue;
+    const n = [...whole.pills.values()].filter(P => { for (let g = P.parent; g; g = whole.frames.get(g)?.parent) if (g === f.id) return true; return false; }).length;
+    facts.add(`block ${f.step} ${n}`);
+  }
   for (const k of Object.keys(V.open)) V.open[k] = new Set();
   return {facts: [...facts].sort(), faults: out};
 }
 
 // A focus is the fiber of `F₀` over the packages in it, with the rest of the code around it (mathematics.md, "One fine plan,
 // every picture its image", the focus). Restated here from `F₀` and the packages in focus `U`: the functions of the packages in
-// focus with every place they make, take or touch, a type with every type of its block, its library where `F₀` holds
-// two types of it or more, else its kind (the box the overview draws is one block of `F₀`'s places); every other function with its lines to those places and its calls into the focus, and where it
-// draws neither it stands nowhere; the frames of the focus as in `F₀`, those in focus that lie in no package in focus at the
+// focus with every place they make, take or touch, a type with every type of its kind (the box it has while its family is
+// closed; a library is a quotient of the fiber, taken after it); every other function with its lines to those places and its
+// calls into the focus, in its package whatever class or base holds it there, and where it draws neither it stands nowhere; the frames of the focus as in `F₀`, those in focus that lie in no package in focus at the
 // top, and the rest's: each package that holds no code in focus and lies in none that holds none, in the rest's frame; a
 // type's home `F₀`'s where it is a package of the focus, else outside every package; the calls with an end in the focus
 const REST_FRAME = "n:unit:~rest";
@@ -693,8 +709,8 @@ function starOf(F0, U) {
   const unitAt = fid => (F0.frames.get(fid)?.step.startsWith("unit:") ? F0.frames.get(fid).step.slice(5) : null);
   const inFocus = fid => { for (let f = fid; f; f = F0.frames.get(f).parent) if (U.includes(unitAt(f))) return true; return false; };
   const holds = fid => [...F0.frames.keys()].some(g => inFocus(g) && (() => { for (let f = g; f; f = F0.frames.get(f).parent) if (f === fid) return true; return false; })());
-  const folds = librariesOf(F0);
-  const kind = k => { const t = F0.places.get(k)?.type; return t ? (folds.has(libraryOf(t)) ? "lib:" + libraryOf(t) : M.kindOf(t)) : k; };
+  const kind = k => { const t = F0.places.get(k)?.type; return t ? M.kindOf(t) : k; };
+  const inPackage = fid => { let f = fid; while (f && !unitAt(f)) f = F0.frames.get(f).parent; return f; };
   const mine = [...F0.pills.values()].filter(P => inFocus(P.parent));
   const kinds = new Set(mine.flatMap(P => [...P.D.keys(), ...P.C.keys()]).map(kind));
   const star = k => kinds.has(kind(k));
@@ -704,7 +720,7 @@ function starOf(F0, U) {
   for (const P of F0.pills.values()) {
     if (inFocus(P.parent)) { pills.set(P.id, P); continue; }
     const D = new Map([...P.D].filter(([k]) => star(k))), C = new Map([...P.C].filter(([k]) => star(k)));
-    if (D.size || C.size || called.has(P.id)) pills.set(P.id, {...P, D, C});
+    if (D.size || C.size || called.has(P.id)) pills.set(P.id, {...P, parent: inPackage(P.parent), D, C});
   }
   const frames = new Map();
   for (const [fid, f] of F0.frames) {
@@ -722,25 +738,20 @@ function focusSets(F0) {
     ? [...Array(1 << units.length).keys()].slice(1).map(m => units.filter((_, i) => m & (1 << i)))
     : [...units.map(u => [u]), ...units.flatMap((a, i) => units.slice(i + 1).map(b => [a, b]))];
 }
-// a focus as what it draws, its arrows to and from the rest with it; a picture that cannot be read so says why
+// a focus as what it draws; a picture that cannot be read so says why
 function focusDrawn(C) {
   try {
-    return drawnOf(C) + JSON.stringify((C.restArrows || []).map(([r, at, side, ts]) => [r, at, side, [...ts.keys()].sort()]).sort());
+    return drawnOf(C);
   } catch (e) {
     return `a picture without what a plan's image carries: ${e.message}`;
   }
 }
-// The boxes at the border of a package drawn closed, by the way the lines cross it: a type box it is joined to, and a type a
-// counted arrow to or from the rest stands for, as the box it is drawn as
+// The boxes at the border of a package drawn closed, by the way the lines cross it: a type box it is joined to, by its type
+// (the focus draws a type it gives on the right, the overview draws it once)
 function borderOf(C, id) {
   const P = C.pills.get(id), ways = {D: new Set(), C: new Set()};
   if (!P) return null;
-  for (const way of ["D", "C"]) for (const k of P[way].keys()) if (k.startsWith("t:")) ways[way].add(k);
-  for (const [r, at, side, ts] of C.restArrows || []) {
-    const ks = ts instanceof Map ? [...ts.keys()] : [...ts].map(t => "t:" + M.placeOfType(t));
-    if (at === id) ks.forEach(k => ways[side === "~in" ? "D" : "C"].add(k));
-    if (r === id) ks.forEach(k => ways[side === "~in" ? "C" : "D"].add(k));
-  }
+  for (const way of ["D", "C"]) for (const k of P[way].keys()) if (k.startsWith("t:")) ways[way].add(k.split("@" + M.OUT)[0]);
   return JSON.stringify([[...ways.D].sort(), [...ways.C].sort()]);
 }
 // For every set of packages in focus `U` and every set of open boxes (its packages and the rest): the focus's fine plan is the
@@ -774,7 +785,6 @@ function focusFaults(tests) {
       const C = M.plan(), F = window.atlasPlan?.fine;
       first.set(set, focusDrawn(C));
       // the overview, opened as the focus is and at every package above one in focus
-      const own = [...V.open.units];
       V.focus = new Set(); clear(); openAs([...set.filter(s => s !== "unit:~rest"), ...above]);
       const O = M.plan();
       for (const [fid, f] of (F || star).frames) {
@@ -787,7 +797,7 @@ function focusFaults(tests) {
         const h = O.home?.([c], false), want = h && C.frames.has(h) ? h : null, got = C.home([c], false) || null;
         if (want !== got) out.push(`${at}: ${c} stands in ${got || "the picture"}, and F₀ puts it in ${want || "the picture"}`);
       }
-      V.focus = new Set(U); clear(); V.open.units = new Set(own);
+      V.focus = new Set(U); clear(); openAs(set);
       if (!F || F === F0) { out.push(`${at}: the focus is drawn by a construction of its own, not from F₀`); continue; }
       if (!set.length && planOf(F) !== planOf(star)) out.push(`${name}: the fine plan is not the fiber of F₀ over the focus: ${planOf(F)} against ${planOf(star)}`);
       const view = M.imageOf(F, M.focusOpen, false);
@@ -896,15 +906,15 @@ function entryFaults(kind, K, rs) {
 // picture is a function of the view state (drawn again after every other, it is the same) and of the coordinates its view
 // reads alone (a coordinate it does not read leaves it as it is). What a view has open until the reader closes it is a
 // coordinate of what is closed: a library's frame (`closed.libraries`)
-const COORDINATES = {route: null, kind: null, part: null, focus: "set", tests: "flag", open: {parts: "set", units: "set", steps: "set", functions: "set", families: "set", places: "set", dirs: "set"}, closed: {libraries: "set"}};
+const COORDINATES = {route: null, kind: null, part: null, focus: "set", tests: "flag", open: {parts: "set", units: "set", steps: "set", functions: "set", families: "set", places: "set", dirs: "set", classes: "set", bases: "set", flat: "set"}, closed: {libraries: "set"}};
 // the coordinates that are sets of boxes: what the reader opens, and what it closes
 const BOXES = ["open", "closed"];
 // the coordinates each view reads; the others leave its picture as it is
 const READS = {
   route: ["route", "open.steps", "open.functions", "open.families", "open.places", "open.dirs"],
   kind: ["kind", "part", "open.families", "open.places", "open.dirs"],
-  focus: ["focus", "part", "tests", "open.units", "open.families", "open.places", "open.dirs", "closed.libraries"],
-  overview: ["part", "tests", "open.parts", "open.units", "open.families", "open.places", "open.dirs", "closed.libraries"],
+  focus: ["focus", "part", "tests", "open.units", "open.classes", "open.bases", "open.flat", "open.families", "open.places", "open.dirs", "closed.libraries"],
+  overview: ["part", "tests", "open.parts", "open.units", "open.classes", "open.bases", "open.flat", "open.families", "open.places", "open.dirs", "closed.libraries"],
 };
 const VIEW_SEED = Number(process.env.ATLAS_VIEWS_SEED || 437) >>> 0;
 // how many sets of boxes of all coordinates together each view is asked at, and how many boxes it opens alone at most
@@ -956,6 +966,7 @@ function librariesOf(F) {
   return new Map([...by].filter(([, ts]) => ts.size > 1));
 }
 // The boxes each coordinate of `V.open` and `V.closed` can hold in a view, read off its plan: the boxes of the code's hierarchy
+// (parts, packages, classes, the classes of a base, and the packages that hold packages, which open by base class too)
 // and the steps of a route that its plan frames, the functions those run, the families of the types it holds, the groups of its
 // places, the entry of a route that parses its command line and the entries of a kind's routes, the directories of its files
 // and the places on the disk that hold others; and the libraries whose frames it can close
@@ -967,6 +978,9 @@ function boxesOf(F, view) {
   return {
     parts: steps.filter(s => s.startsWith("part:")).map(s => s.slice(5)),
     units: steps.filter(s => s.startsWith("unit:")).map(s => s.slice(5)),
+    classes: steps.filter(s => s.startsWith("cls:")).map(s => s.slice(4)),
+    bases: steps.filter(s => s.startsWith("fam:")).map(s => s.slice(4)),
+    flat: view === "route" || view === "kind" ? [] : steps.filter(s => s.startsWith("unit:") && (D.flow?.units?.kids?.[s.slice(5)] || []).length > 1).map(s => s.slice(5)),
     steps: view === "route" ? steps : [],
     functions: view === "route" ? [...new Set(steps.map(M.stepOf))].filter(s => M.byId.has(s)) : [],
     families: [...new Set(types)].filter(t => M.opens(t)).sort(),
@@ -976,7 +990,7 @@ function boxesOf(F, view) {
   };
 }
 // the coordinate of the view state each kind of box is set in
-const COORDINATE_OF = {parts: "open.parts", units: "open.units", steps: "open.steps", functions: "open.functions", families: "open.families", places: "open.places", dirs: "open.dirs", libraries: "closed.libraries"};
+const COORDINATE_OF = {classes: "open.classes", bases: "open.bases", flat: "open.flat", parts: "open.parts", units: "open.units", steps: "open.steps", functions: "open.functions", families: "open.families", places: "open.places", dirs: "open.dirs", libraries: "closed.libraries"};
 // A library's types stand in their library (mathematics.md, "Shapes and their rank", the library; #431). In a view that reads
 // `closed.libraries` (the overview, a focus), a library the plan holds two types of or more is a frame while it is open: each
 // box of a type of it stands in the frame, the frame holds no other, and the frame stands where the plan puts the library's
@@ -995,7 +1009,7 @@ function libraryFaults(F, C, opened, reads) {
   }
   const typed = [...C.places.values()].filter(p => p.type && !p.type.startsWith("lib:"));
   for (const [L, ts] of libs) {
-    const mine = typed.filter(p => libraryOf(p.type) === L), f = frames.get(box(L));
+    const mine = typed.filter(p => libraryOf(p.type) === L), f = frames.get(box(L)) || frames.get(box(L) + "@" + M.OUT);
     if (V.closed?.libraries.has(L)) {
       if (mine.length) out.push(`the library ${L} is closed, and ${mine.map(p => p.id).join(", ")} stand beside its box`);
       const b = C.places.get(box(L));
@@ -1004,14 +1018,18 @@ function libraryFaults(F, C, opened, reads) {
       continue;
     }
     if (C.places.has(box(L))) out.push(`the library ${L} is open, and drawn as a closed box`);
-    if (!mine.length) continue;
-    if (!f) { out.push(`the library ${L} is open and holds ${mine.map(p => p.id).join(", ")}, and no frame of it is drawn`); continue; }
-    for (const p of mine) if (!f.kids.has(p.id)) out.push(`${p.id} is ${L}'s, and stands outside its frame`);
-    for (const k of f.kids) if (libraryOf(C.places.get(k)?.type || "") !== L) out.push(`the frame of ${L} holds ${k}, which is not ${L}'s`);
     const hs = new Set([...F.places.values()].filter(p => p.type && libraryOf(p.type) === L && "home" in p).map(p => p.home || null));
-    if (hs.size > 1) out.push(`the types of ${L} have the homes ${[...hs].join(", ")}, and its frame stands in one`);
-    const h = [...hs][0], want = h && C.frames.has(h) ? h : null, got = C.home?.([box(L)], false) || null;
-    if (hs.size === 1 && want !== got) out.push(`the frame of ${L} stands in ${got || "the picture"}, and its plan puts its types in ${want || "the picture"}`);
+    if (mine.length && hs.size > 1) out.push(`the types of ${L} have the homes ${[...hs].join(", ")}, and its frame stands in one`);
+    // a focus draws a type where it takes it and where it gives it: the library is a frame on each side that holds a type of it
+    for (const side of ["", "@" + M.OUT]) {
+      const here = mine.filter(p => p.id.endsWith("@" + M.OUT) === !!side), id = box(L) + side, g = frames.get(id);
+      if (!here.length) { if (g) out.push(`the frame ${id} holds no type of ${L}`); continue; }
+      if (!g) { out.push(`the library ${L} is open and holds ${here.map(p => p.id).join(", ")}, and no frame of it is drawn`); continue; }
+      for (const p of here) if (!g.kids.has(p.id)) out.push(`${p.id} is ${L}'s, and stands outside its frame`);
+      for (const k of g.kids) if (libraryOf(C.places.get(k)?.type || "") !== L) out.push(`the frame of ${L} holds ${k}, which is not ${L}'s`);
+      const h = [...hs][0], want = h && C.frames.has(h) ? h : null, got = C.home?.([id], false) || null;
+      if (hs.size === 1 && want !== got) out.push(`the frame ${id} stands in ${got || "the picture"}, and its plan puts its types in ${want || "the picture"}`);
+    }
   }
   // closing each open frame draws the quotient of the open picture, and keeps what it does not refine
   for (const L of libs.keys()) {

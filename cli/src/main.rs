@@ -245,7 +245,7 @@ enum Cmd {
         /// Open the page in this view, as JSON: `{"route": <entry id>}`
         ///
         /// Also `"open": {"functions": [<id>, ..]}`, and `kind`, `part`, `focus`, and the opened
-        /// `parts`, `units`, `steps`, `families`, `places`, `dirs`, as the page's address writes them.
+        /// `parts`, `units`, `steps`, `families`, `places`, `dirs`, `classes`, `bases`, `flat`, as the page's address writes them.
         #[arg(long, value_name = "JSON")]
         view: Option<Sight>,
         /// Write how long each phase took (read, check, flow, page), in seconds, how many bodies the

@@ -19,6 +19,15 @@ assert.equal(factOf('n:spots.count/0'), 'spots.count');
 assert.equal(relative('docs/guide/index.md', 'img/a.png'), 'docs/guide/img/a.png');
 assert.equal(relative('docs/guide/index.md', '../README.md#top'), 'docs/README.md');
 assert.equal(relative('README.md', './docs/x.md'), 'docs/x.md');
+
+// a file that is run opens its route; a module of a library, which nobody runs, opens as the focus on itself
+const { reading } = require('../ui/files.js');
+const module_ = { id: 'spots.pool', name: 'pool', kind: 'module', line: 1 };
+const pooled = { id: 'spots.pool.Mean.forward', name: 'forward', kind: 'method', line: 4 };
+assert.deepEqual(reading([module_, { ...pooled, entry: 'export' }]), { view: { focus: ['spots.pool'] } });
+assert.deepEqual(reading([module_, pooled]), { view: { focus: ['spots.pool'] } });
+assert.deepEqual(reading([module_, { id: 'spots.cli.main', kind: 'function', entry: 'cli' }, { ...pooled, entry: 'export' }]), { view: { route: 'spots.cli.main' } });
+assert.deepEqual(reading([module_]), { at: 'spots.pool' });
 console.log('file tree ok');
 
 const fs = require('node:fs');

@@ -948,12 +948,6 @@ async function renderPlaat(mine) {
     }
     // a step open in one reading and closed in the other is one box, the open one: its lines end at its frame, as the closed box's did
     for (const id of frames.keys()) pills.delete(id);
-    const rest = new Map();
-    for (const [s, p] of [["a", A], ["b", B]]) for (const [r, at, way, ts] of p.restArrows) {
-      const k = `${r}>${at}`;
-      if (!rest.has(k)) rest.set(k, [r, at, way, new Map(), new Set()]);
-      ts.forEach((label, t) => rest.get(k)[3].set(t, label)); rest.get(k)[4].add(s);
-    }
     const roles = new Map(A.roles);
     for (const [k, r] of B.roles) { const q = roles.get(k); roles.set(k, q ? Object.fromEntries(Object.keys(r).map(f => [f, q[f] || r[f]])) : r); }
     // where a box stands and what the storage quotient holds, from the readings that have them
@@ -965,10 +959,10 @@ async function renderPlaat(mine) {
       for (const f of [A.fine, B.fine]) for (const [k, w] of f.ways) ways.set(k, new Set([...(ways.get(k) || []), ...w]));
       fine = {places: fp, pills: new Map([...A.fine.pills, ...B.fine.pills]), ways};
     }
-    return {places, pills, frames, restArrows: [...rest.values()], roles, home, fine, oracle, calling: A.calling || B.calling};
+    return {places, pills, frames, roles, home, fine, oracle, calling: A.calling || B.calling};
   };
   // the union's siblings that draw alike are one pill and its places are ordered on the disk, as each plan's are (`quotients`)
-  const {places, pills, frames, restArrows, roles, home, fine, oracle, calling: planCalls, meets} = DIFF ? quotients(unite()) : plan();
+  const {places, pills, frames, roles, home, fine, oracle, calling: planCalls, meets} = DIFF ? quotients(unite()) : plan();
   // Storage quotients are computed on the visible fiber. A singleton keeps its concrete
   // expression; an opened quotient retains a frame around the same members.
   const worldFrames = new Map(), worldParent = new Map();
@@ -1078,7 +1072,7 @@ async function renderPlaat(mine) {
   // subpackages), a part, the function a call runs. An open step's own pill stands for its
   // function, so its frame is marked where that pill is not drawn; an open part's own pill is only
   // the code in it that names other parts' routes
-  const askedOf = s => s.startsWith("unit:") ? (isRest(s.slice(5)) || s.endsWith("$") ? null : s.slice(5)) : s.startsWith("part:") ? s.slice(5) : stepOf(s);
+  const askedOf = s => s.startsWith("unit:") ? (isRest(s.slice(5)) || s.endsWith("$") ? null : s.slice(5)) : s.startsWith("part:") ? s.slice(5) : s.startsWith("cls:") ? s.slice(4) : s.startsWith("fam:") ? null : stepOf(s);
   // ---- what a closed box holds inside: the things in it that do not touch its border ----
   // Each thing the diff marks counts once, at the deepest level the picture draws it: a node of the
   // code, a step of a body, a place. A type the picture draws as a box of its own, or inside a closed
@@ -1143,11 +1137,11 @@ async function renderPlaat(mine) {
     return I;
   };
   // the boxes that close: a part, a package or a module, a step, a family, a place standing for others
-  const quotient = P => /^(part|unit):/.test(P.steps[0]);
+  const quotient = P => isBlock(P.steps[0]);
   for (const P of pills.values()) {
     if (P.own) continue;
     const s = P.steps[0];
-    P.inside = s.startsWith("part:") ? insideCode(n => partOf(n) === s.slice(5)) : s.startsWith("unit:") ? insideUnit(s.slice(5)) : insideSteps(P.steps);
+    P.inside = s.startsWith("part:") ? insideCode(n => partOf(n) === s.slice(5)) : s.startsWith("unit:") ? insideUnit(s.slice(5)) : /^(cls|fam):/.test(s) ? insideCode(blockHolds(s)) : insideSteps(P.steps);
   }
   for (const p of places.values()) {
     if (!keep.has(p.id)) continue;
@@ -1271,7 +1265,7 @@ async function renderPlaat(mine) {
     return common.length ? nodeOf.get(common[common.length - 1]) : root;
   };
   for (const L of libFrames.values()) { const n = frameNode(L.id, 30); titled(n, L); homeOf(L.id).children.push(n); }
-  const inLibrary = (t, id) => { const f = libFrameOf(t); return f && libFrames.has(f) ? nodeOf.get(f) : homeOf(id); };
+  const inLibrary = (t, id) => { const f = libFrameOf(t) && libFrameAt(libFrameOf(t), id); return f && libFrames.has(f) ? nodeOf.get(f) : homeOf(id); };
   for (const p of [...places.values()].filter(p => (p.kind === "type" || p.kind === "ext") && keep.has(p.id) && !p.inFrame).sort((a, b) => a.label.localeCompare(b.label))) inLibrary(p.type, p.id).children.push(leaf(p.id, placeW(p, 30), 36));
   for (const F of famFrames.values()) { const n = frameNode(F.id, 30); titled(n, F); inLibrary(F.fam, F.id).children.push(n); for (const k of F.kids) n.children.push(leaf(k.id, 26 + textW(k.label, 6.9), 28)); }
   // a place one step leaves for a later one, or one the code does not say which way it goes, lives
@@ -1308,12 +1302,6 @@ async function renderPlaat(mine) {
       for (const [reach, n, sides, was] of channels(P, "C", r, k)) addEdge(P.id, twinOf.get(k) || k, {reach, hue: P.hue, sides, n, was, ...(open ? {label: "?", title: "the code does not say which way the data goes"} : {})});
     });
     if (P.backTo) addEdge(P.id, P.backTo, {back: true, hue: P.hue, sides: P.sides, ...(P.said ? {label: P.said} : {})});
-  }
-  // a focus and the rest of the code: a type only one side makes and only the other takes is an arrow from maker to
-  // taker, counting the boxes of the types it stands for (`restSides`)
-  for (const [rest, at, r, ts, sides] of restArrows) {
-    const info = {label: `${ts.size} ${ts.size === 1 ? "type" : "types"}`, title: [...ts.values()].sort().join(", "), sides};
-    if (r === "~in") addEdge(rest, at, info); else addEdge(at, rest, info);
   }
   // code that calls other code: a dotted line, from the caller. The calls are a channel of their own,
   // drawn whatever data also joins the two: a quotient keeps the image of a relation, and "calls while
@@ -1498,7 +1486,7 @@ async function renderPlaat(mine) {
     const title = el("text", {class: "ftitle", x: 14, y: 20}, grp); title.textContent = (F.synthetic ? "" : "▾ ") + F.title;
     for (const [h, w] of F.whens || []) { const t = el("tspan", {}, title); t.textContent = `  ● ${w}`; t.style.fill = hueVar(h); }
     if (DIFF && !isFam) {
-      const st = wholeRoute ? null : standing(F.sides, !!F.step && (/^(part|unit):/.test(F.step) ? borderOf(id) : stepChanged([F.step])));
+      const st = wholeRoute ? null : standing(F.sides, !!F.step && (isBlock(F.step) ? borderOf(id) : stepChanged([F.step])));
       marked(grp, st, P.w + 3, wasOf(st, id, F.step && DIFF.was[stepOf(F.step)]));
       sided(title, F.labels && {a: "▾ " + F.labels.a, b: "▾ " + F.labels.b});
     }
@@ -1506,7 +1494,7 @@ async function renderPlaat(mine) {
     if (asked) markAsks(grp, [asked], P.w - 8, 8);
     title.addEventListener("click", ev => {
       ev.stopPropagation(); if (F.synthetic) return; plaatAnchor = id;
-      if (isFam) V.open.families.delete(F.fam); else if (F.step && F.step.startsWith("part:")) V.open.parts.delete(F.step.slice(5)); else if (F.step && F.step.startsWith("unit:")) { const u = F.step.slice(5); for (const x of [...V.open.units]) if (x === u || x.startsWith(u + ".")) V.open.units.delete(x); } else if (F.anchor) { V.route = null; entrySel.value = ""; V.open.steps.clear(); V.open.functions.clear(); plaatAnchor = "n:" + F.step; } else { V.open.steps.delete(F.step); V.open.functions.delete(stepOf(F.step)); }
+      if (isFam) V.open.families.delete(F.fam); else if (F.step && F.step.startsWith("part:")) V.open.parts.delete(F.step.slice(5)); else if (F.step && F.step.startsWith("unit:")) { const u = F.step.slice(5); for (const x of [...V.open.units]) if (x === u || x.startsWith(u + ".")) V.open.units.delete(x); V.open.flat.delete(u); } else if (F.step && F.step.startsWith("cls:")) V.open.classes.delete(F.step.slice(4)); else if (F.step && F.step.startsWith("fam:")) V.open.bases.delete(F.step.slice(4)); else if (F.anchor) { V.route = null; entrySel.value = ""; V.open.steps.clear(); V.open.functions.clear(); plaatAnchor = "n:" + F.step; } else { V.open.steps.delete(F.step); V.open.functions.delete(stepOf(F.step)); }
       render();
     });
     place(grp, id, (from, to) => { if (!from.fresh) d3.select(r).attr("width", from.w).attr("height", from.h).transition().duration(DUR).attr("width", to.w).attr("height", to.h); });
@@ -1566,6 +1554,8 @@ async function renderPlaat(mine) {
     const shows = () => {
       const s = P.steps[0];
       if (s.startsWith("unit:")) { const u = s.slice(5); if (isRest(u)) focusPanel(); else if (byId.has(u.replace(/\$$/, ""))) select(u.replace(/\$$/, "")); return; }
+      if (s.startsWith("cls:")) { select(s.slice(4)); return; }
+      if (s.startsWith("fam:")) { select(s.slice(4).split("@")[0]); return; }
       if (s.startsWith("part:") || stepOf(s).startsWith("op:")) return;
       if (P.steps.length === 1) select(stepOf(s)); else selectArrows({fns: P.steps.map(stepOf), kind: "steps"});
     };
@@ -1598,6 +1588,8 @@ async function renderPlaat(mine) {
       }
       if (P.steps[0].startsWith("part:")) { if (!P.own) { V.open.parts.add(P.steps[0].slice(5)); plaatAnchor = P.id; render(); } return; }
       if (P.steps[0].startsWith("unit:")) { V.open.units.add(P.steps[0].slice(5)); plaatAnchor = P.id; render(); return; }
+      if (P.steps[0].startsWith("cls:")) { V.open.classes.add(P.steps[0].slice(4)); plaatAnchor = P.id; render(); return; }
+      if (P.steps[0].startsWith("fam:")) { V.open.bases.add(P.steps[0].slice(4)); plaatAnchor = P.id; render(); return; }
       if (stepOf(P.steps[0]).startsWith("op:")) return;
       if (P.steps.length === 1) select(stepOf(P.steps[0])); else selectArrows({fns: P.steps.map(stepOf), kind: "steps"});
       if (P.own) return;
@@ -1744,6 +1736,21 @@ function crumbs() {
   if (V.open.parts.size && !V.route) { lbl("parts"); for (const p of V.open.parts) chip(p, () => V.open.parts.delete(p)); }
   const opened = u => u === REST ? "the rest" : unitLabel(u);
   if (V.open.units.size && !V.route && !V.kind) { lbl("packages"); for (const u of V.open.units) chip(opened(u), () => V.open.units.delete(u)); }
+  // a package of modules is opened by module or by base class: two quotients of the same functions, the reader's to pick
+  if (!V.route && !V.kind && view === "plaat") {
+    const nested = u => !isRest(u) && [...byId.values()].some(n => n.kind === "module" && !n.library && n.id.startsWith(u + "."));
+    const us = [...new Set([...V.focus, ...V.open.units, ...V.open.flat])].filter(u => V.open.flat.has(u) || nested(u));
+    if (us.length) lbl("grouped");
+    for (const u of us) {
+      const flat = V.open.flat.has(u), b = html("button", flat ? null : "add", flat ? `${unitLabel(u)} by base class ✕` : `+ ${unitLabel(u)} by base class`);
+      b.title = flat ? "group this package by module again" : "group this package's functions by the base class they keep the promise of, whatever file they are written in";
+      b.onclick = () => { if (flat) V.open.flat.delete(u); else V.open.flat.add(u); plaatFit = true; render(); };
+      C.appendChild(b);
+    }
+    const blocks = [...[...V.open.bases].map(k => ["fam:" + k, V.open.bases, k]), ...[...V.open.classes].map(k => ["cls:" + k, V.open.classes, k])].filter(([step]) => BLOCK_TITLE.has(step));
+    if (blocks.length) lbl("classes");
+    for (const [step, set, k] of blocks) chip(BLOCK_TITLE.get(step), () => set.delete(k));
+  }
   // an opened entry shows how its command line is parsed; any other opened place is split
   const openEntries = [...V.open.places].filter(r => r.startsWith("e:") && byId.get(r.slice(2))?.entry), split = [...V.open.places].filter(r => !r.startsWith("e:"));
   const entryFamilies = V.kind && !V.route ? [...V.open.places].filter(r => r === "e:~" + V.kind) : [];
@@ -2042,7 +2049,7 @@ function openTo(n) {
   for (let level = 0; level < 64; level++) {
     const real = treeNodes().filter(w => !w.t.synthetic);
     const here = real.find(w => is(w.t));
-    if (here) return boxesOf(here);
+    if (here) { if (!V.route) openBlocksOf(n); return boxesOf(here); }
     const way = real.find(w => !w.t.open && (V.route ? !stepOf(w.t.id).startsWith("op:") && reaches(w.t) : holds(w.t)));
     if (!way) {
       const holder = !V.route && n.kind === "module" && real.filter(w => holds(w.t)).at(-1);

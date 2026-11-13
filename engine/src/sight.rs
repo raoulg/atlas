@@ -8,7 +8,7 @@
 //! agent wrote.
 //!
 //! Its serde form is the page's: `{route, kind, part, focus, tests, open: {parts, units, steps,
-//! functions, families, places, dirs}}`, every member optional, an empty one left out. A member the
+//! functions, families, places, dirs, classes, bases, flat}}`, every member optional, an empty one left out. A member the
 //! page does not know is refused, so that a sight misspelt is said, not drawn as no sight at all.
 
 use std::collections::BTreeSet;
@@ -68,12 +68,34 @@ pub struct Opened {
     /// Directories, opened into their files.
     #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
     pub dirs: BTreeSet<String>,
+    /// Classes, opened into their constructor and methods.
+    #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
+    pub classes: BTreeSet<String>,
+    /// The classes of one base in one package (`pkg.Base@pkg.sub`), opened into the classes.
+    #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
+    pub bases: BTreeSet<String>,
+    /// Packages opened by base class: each holds its functions itself, whatever module they are written in.
+    #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
+    pub flat: BTreeSet<String>,
 }
 
 impl Opened {
     /// Nothing opened: the coarsest picture of the fibers kept.
     pub fn is_empty(&self) -> bool {
-        [&self.parts, &self.units, &self.steps, &self.functions, &self.families, &self.places, &self.dirs].iter().all(|s| s.is_empty())
+        [
+            &self.parts,
+            &self.units,
+            &self.steps,
+            &self.functions,
+            &self.families,
+            &self.places,
+            &self.dirs,
+            &self.classes,
+            &self.bases,
+            &self.flat,
+        ]
+        .iter()
+        .all(|s| s.is_empty())
     }
 }
 
