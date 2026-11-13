@@ -246,6 +246,28 @@ the same steps and frames, every other box, every other line.
 **Where.** `plan.js`: `foldErrors`, the last arrow of `plan`; the view's `errors` (`sight.rs`). Held by
 `engine/tests/plans.mjs`, `errorFaults`, which draws every view state both ways and compares them.
 
+### The receiver is a channel of its own
+**What.** A method is an arrow `m : S × A → B`, and a value `s : S` gives the arrow `m(s, −) : A → B`, its
+partial application. A class whose constructor takes settings is the family of those arrows: `Scale(2.0)`
+picks one, and `scale.apply(readings)` applies it. The instance is which arrow runs; the data is what it
+runs on. A constructor with the methods run on what it made is one object of the zoom by class, a block
+(sentence 4), where those steps are convex in the route. Where another step stands between them the block
+is no quotient, and the name of the value carries the same fact.
+**In Atlas.** A call hands a value for what it runs on (`Slot::Receiver`) or for a parameter, and the two are
+different channels. A line of a route that stands only for a step running on a value a constructor made
+there, and the code names, is said on the step (`scale.apply`; on the frame of an opened step) and not
+drawn. Every line a closed step's body draws from the value it runs on is that one line: inside a method
+the receiver is the one way to it, through its fields and its parts (`self.conv(x)` runs on a part,
+`model.conv.forward`). A step that is handed the same value for a parameter too takes it as an input and
+keeps the line, as a function handed the instance does, or a caller that takes a field out of it. A value
+no constructor made in the route (a tensor, a path) is the data its method works on and keeps its line.
+`receivers` in the view draws the lines. The named picture is the drawn one less those lines: the same
+steps, frames and boxes.
+**Where.** `plan.js`: `foldReceivers`, after `foldErrors` in `plan`; `onlyRuns`, `ranOn` and `built` say
+which lines; the view's `receivers` (`sight.rs`). Held by `engine/tests/plans.mjs`, `receiverFaults`, which
+draws every view state both ways and compares them, and by the pair `engine/tests/pairs/applied`
+(`pairs_python.rs`).
+
 ### A filter: the program without its test code
 **What.** The predicate *test code* on the functions of the graph: a function is test code when it
 is a test (an entry of kind `test`), when a reader marks it as test code (`Node::test`), or when it
