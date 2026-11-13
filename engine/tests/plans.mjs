@@ -910,13 +910,13 @@ function entryFaults(kind, K, rs) {
 // reads alone (a coordinate it does not read leaves it as it is). A picture opens at its coarsest, so the overview's libraries
 // are a coordinate of what is open (`open.libraries`); a focus draws the types of its own signature, and has its libraries
 // open until the reader closes one, a coordinate of what is closed (`closed.libraries`)
-const COORDINATES = {route: null, kind: null, part: null, focus: "set", tests: "flag", open: {parts: "set", units: "set", steps: "set", functions: "set", families: "set", places: "set", dirs: "set", classes: "set", bases: "set", flat: "set", libraries: "set"}, closed: {libraries: "set"}};
+const COORDINATES = {route: null, kind: null, part: null, focus: "set", tests: "flag", errors: "flag", open: {parts: "set", units: "set", steps: "set", functions: "set", families: "set", places: "set", dirs: "set", classes: "set", bases: "set", flat: "set", libraries: "set"}, closed: {libraries: "set"}};
 // the coordinates that are sets of boxes: what the reader opens, and what it closes
 const BOXES = ["open", "closed"];
 // the coordinates each view reads; the others leave its picture as it is
 const READS = {
-  route: ["route", "open.steps", "open.functions", "open.families", "open.places", "open.dirs"],
-  kind: ["kind", "part", "open.families", "open.places", "open.dirs"],
+  route: ["route", "errors", "open.steps", "open.functions", "open.families", "open.places", "open.dirs"],
+  kind: ["kind", "part", "errors", "open.families", "open.places", "open.dirs"],
   focus: ["focus", "part", "tests", "open.units", "open.classes", "open.bases", "open.flat", "open.families", "open.places", "open.dirs", "closed.libraries"],
   overview: ["part", "tests", "open.parts", "open.units", "open.classes", "open.bases", "open.flat", "open.families", "open.places", "open.dirs", "open.libraries"],
 };
@@ -934,9 +934,9 @@ function coordinateFaults() {
   for (const r of Object.values(READS)) for (const c of r) if (!(c.includes(".") ? sets.includes(c) : drawn.includes(c))) out.push(`a view reads ${c}, no coordinate of the law`);
   return out;
 }
-const blank = () => ({route: null, kind: null, part: null, focus: new Set(), tests: false, ...Object.fromEntries(BOXES.map(g => [g, Object.fromEntries(Object.keys(COORDINATES[g]).map(k => [k, new Set()]))]))});
+const blank = () => ({route: null, kind: null, part: null, focus: new Set(), tests: false, errors: false, ...Object.fromEntries(BOXES.map(g => [g, Object.fromEntries(Object.keys(COORDINATES[g]).map(k => [k, new Set()]))]))});
 const setState = S => {
-  V.route = S.route; V.kind = S.kind; V.part = S.part; V.focus = new Set(S.focus); V.tests = S.tests;
+  V.route = S.route; V.kind = S.kind; V.part = S.part; V.focus = new Set(S.focus); V.tests = S.tests; V.errors = !!S.errors;
   for (const g of BOXES) for (const k of Object.keys(V[g] || {})) V[g][k] = new Set(S[g]?.[k] || []);
 };
 const nameState = S => {
@@ -944,6 +944,7 @@ const nameState = S => {
   for (const k of ["route", "kind", "part"]) if (S[k]) o[k] = S[k];
   if (S.focus.size) o.focus = [...S.focus].sort();
   if (S.tests) o.tests = true;
+  if (S.errors) o.errors = true;
   for (const g of BOXES) for (const [k, v] of Object.entries(S[g] || {})) if (v.size) (o[g] ||= {})[k] = [...v].sort();
   return JSON.stringify(o);
 };
@@ -1249,7 +1250,38 @@ function stateFaults(name, S) {
   setState(S);
   if (view === "overview" || view === "focus") for (const f of homeFaults(F, M.plan(), view)) at(f);
   setState(S);
+  if (READS[view].includes("errors")) for (const f of errorFaults(S)) at(f);
+  setState(S);
   return {out, C: M.plan()};
+}
+// Errors counted on the arrow (`mathematics.md`, #462): the picture of a view state is drawn twice, with its errors as
+// boxes (`errors`) and with them counted, and the two are compared. The counted picture is the drawn one less errors:
+// the same steps and frames, every box that is no error, and of each step's lines those that end at a box it keeps. An
+// error a step takes is kept. A step's count names the errors that left its codomain, a frame's those its border handed
+// on, and the picture's count is all of theirs.
+function errorFaults(S) {
+  setState({...S, errors: true});
+  const W = M.plan();
+  setState({...S, errors: false});
+  const C = M.plan(), out = [], isErr = k => !!W.places.get(k)?.err, labels = ks => [...new Set(ks.map(k => W.places.get(k).label))].sort().join(" + ");
+  for (const [k, p] of W.places) if (!p.err && !C.places.has(k)) out.push(`counting the errors takes ${k} away, which is no error`);
+  for (const k of C.places.keys()) if (!W.places.has(k)) out.push(`counting the errors draws ${k}, which the picture with its errors lacks`);
+  for (const id of new Set([...W.pills.keys(), ...C.pills.keys()])) if (W.pills.has(id) !== C.pills.has(id)) out.push(`the step ${id} is in one of the two pictures alone`);
+  for (const id of new Set([...W.frames.keys(), ...C.frames.keys()])) if (W.frames.has(id) !== C.frames.has(id)) out.push(`the frame ${id} is in one of the two pictures alone`);
+  for (const [id, P] of W.pills) {
+    const Q = C.pills.get(id);
+    if (!Q) continue;
+    for (const side of ["D", "C"]) {
+      for (const k of Q[side].keys()) if (!P[side].has(k)) out.push(`${id}: counting the errors gives it a line to ${k}`);
+      for (const k of P[side].keys()) if (C.places.has(k) !== Q[side].has(k)) out.push(`${id}: its line to ${k} and the box ${k} do not go together`);
+    }
+    if (!P.own) for (const k of P.D.keys()) if (isErr(k) && !C.places.has(k)) out.push(`${id} takes the error ${k}, which is counted away`);
+    const left = labels([...P.C.keys()].filter(k => !C.places.has(k))), counted = ((P.own ? C.frames.get(P.parent)?.errors : Q.errors) || []).join(" + ");
+    if (left !== counted) out.push(`${id} hands on ${left || "no error"} and counts ${counted || "none"}`);
+  }
+  const all = [...new Set([...C.pills.values(), ...C.frames.values()].flatMap(B => B.errors || []))].sort().join(" + ");
+  if ((C.errors || []).join(" + ") !== all) out.push(`the picture counts ${(C.errors || []).join(" + ") || "none"}, its steps and frames ${all || "none"}`);
+  return out;
 }
 // a set of each coordinate's boxes, drawn: each box with a chance the set draws first
 const drawSet = (draw, xs) => { const p = draw(); return xs.filter(() => draw() < p); };
@@ -1290,6 +1322,7 @@ function viewFaults() {
       if ((view === "route" || view === "kind") && units.length) other.focus = new Set([units[0]]);
       if (!reads.has("part") && parts.length) other.part = parts[0];
       if (!reads.has("tests")) other.tests = !S.tests;
+      if (!reads.has("errors")) other.errors = !S.errors;
       for (const g of BOXES) for (const k of Object.keys(COORDINATES[g])) if (!reads.has(`${g}.${k}`)) other = withBoxes(other, `${g}.${k}`, ["unread"]);
       setState(other);
       const again = pictureOf(M.plan());

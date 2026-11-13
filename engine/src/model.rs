@@ -332,6 +332,12 @@ pub struct Node {
     pub holds: BTreeMap<String, String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub decorators: Vec<String>,
+    /// The functions it is defined under, where the graph holds them (`@checked`, `@strict(least=1)`, Python's
+    /// decorators): each gives back the function a call of this one runs, so a call ends with what they end with too
+    /// (`builder::settle_fails`). A decorator is part of the definition, by a name or by a call, and no step of the body
+    /// the definition stands in.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub guards: Vec<String>,
     /// Sketch code kept in the tree, not built yet: what its marker says. Read by the language's reader.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub prophecy: Option<Prophecy>,
@@ -1986,7 +1992,7 @@ impl Graph {
             m(&mut n.id);
             m(&mut n.module);
             m(&mut n.part);
-            n.cls.iter_mut().chain(n.breaks.iter_mut()).chain(n.holds.values_mut()).for_each(&m);
+            n.cls.iter_mut().chain(n.breaks.iter_mut()).chain(n.holds.values_mut()).chain(n.guards.iter_mut()).for_each(&m);
             if let Some(p) = n.prophecy.as_mut() {
                 p.supersedes.iter_mut().chain(p.replaces.iter_mut()).chain(p.candidates.iter_mut()).for_each(&m);
             }

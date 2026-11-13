@@ -727,7 +727,8 @@ fn caught_by(class: &str) -> &str {
 /// does: what the callee's body ends with uncaught, as a `raise` propagates. A body ends with what it
 /// raises, by the class of the error it builds, and with what its calls hand on, each where no handler
 /// around it catches it. A handler catches the classes it names and those below them, and one that
-/// names none catches whatever is raised. A call that `?` hands on fails as its reader said (`Steps`).
+/// names none catches whatever is raised. A function defined under others (`Node::guards`) ends with what they end
+/// with too. A call that `?` hands on fails as its reader said (`Steps`).
 fn settle_fails(nodes: &mut IndexMap<String, Node>, edges: &[Edge]) {
     let mut bases: HashMap<&str, Vec<&str>> = HashMap::new();
     for e in edges.iter().filter(|e| e.kind == EdgeKind::Inherits) {
@@ -767,6 +768,12 @@ fn settle_fails(nodes: &mut IndexMap<String, Node>, edges: &[Edge]) {
         for n in nodes.values() {
             let mut out: Vec<String> = ends.get(&n.id).cloned().unwrap_or_default();
             let before = out.len();
+            // a function runs inside what it is defined under, and ends with what that ends with
+            for e in n.guards.iter().flat_map(|g| ends.get(g).into_iter().flatten()) {
+                if !out.contains(e) {
+                    out.push(e.clone());
+                }
+            }
             for s in &n.sites {
                 let raised = s.gives.iter().filter(|g| s.raises && !caught(&s.caught, &g.ty)).map(|g| g.ty.clone());
                 for e in raised.chain(handed(s, &ends)) {

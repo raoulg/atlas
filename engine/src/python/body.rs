@@ -1493,10 +1493,13 @@ impl<'a, 't> Body<'a, 't> {
     }
 
     /// Whether `n` is the body's own: in a module's own code, not inside a definition, which
-    /// belongs to that definition.
+    /// belongs to that definition, as what the definition is defined under does (`@strict(least=1)`).
     fn holds(&self, n: TsNode) -> bool {
         let mut p = parent(n);
         while let Some(pp) = p.filter(|pp| pp.id() != self.body.id()) {
+            if pp.kind() == "decorator" {
+                return false;
+            }
             if self.in_module && matches!(pp.kind(), "function_definition" | "class_definition") {
                 return false;
             }
