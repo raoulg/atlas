@@ -145,7 +145,10 @@ fn modelled(program: &Path, data: &str, budget: Option<usize>) -> BTreeMap<Strin
 /// its overview.
 fn asked(program: &Path, data: &str, budget: Option<usize>, args: &[&str]) -> BTreeMap<String, (BTreeSet<String>, Vec<String>)> {
     let name = program.to_string_lossy().replace(['/', '\\', ':'], "_");
-    let file = std::env::temp_dir().join(format!("atlas-plans-{}-{name}-{budget:?}-{}.json", std::process::id(), args.join("")));
+    // each asking has a file of its own: two tests ask one program the same question at once
+    static ASKED: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+    let nth = ASKED.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let file = std::env::temp_dir().join(format!("atlas-plans-{}-{nth}-{name}-{budget:?}-{}.json", std::process::id(), args.join("")));
     std::fs::write(&file, data).expect("writes the data");
     let here = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let mut node = Command::new("node");
@@ -469,7 +472,9 @@ fn test_code_cuts_a_package_in_two() {
 /// the promise the code states makes the block above them: the clean side has the base's block, holding the functions of
 /// both classes and the method the base declares, which a call into the family runs as one of theirs, beside the module's
 /// one other function (a base that held every function of its module would be the module),
-/// and the shortcut has none, since Atlas draws no family the code does not name. That each block closes to
+/// and the shortcut has none, since Atlas draws no family the code does not name. The quotient by base class has one more
+/// class, the code that names no base: beside a base's block it is a block of its own (the module's two other functions on
+/// the clean side), and where no base has a block there is nothing to set it apart from. That each block closes to
 /// the image of what it holds is asked of every pair by `every_package_view_is_the_image_of_its_plan`.
 #[test]
 fn the_classes_of_one_base_are_one_block_and_a_class_is_the_block_of_its_functions() {
@@ -492,7 +497,11 @@ fn the_classes_of_one_base_are_one_block_and_a_class_is_the_block_of_its_functio
         clean.contains("block fam:pools.pooling.Pool@pools.pooling 5"),
         "the classes that keep Pool's promise are one block, with the method Pool declares for them: {clean:?}"
     );
-    assert!(!shortcut.iter().any(|f| f.starts_with("block fam:")), "classes that share no base are no family: {shortcut:?}");
+    assert!(clean.contains("block fam:~none@pools.pooling 2"), "beside a base's block, what names no base is one block: {clean:?}");
+    assert!(
+        !shortcut.iter().any(|f| f.starts_with("block fam:")),
+        "classes that share no base are no family, and nothing is set apart from one: {shortcut:?}"
+    );
 }
 
 /// How many levels the route of `a_step_beyond_the_cut_is_made_without_unfolding_its_body` calls down, each twice.

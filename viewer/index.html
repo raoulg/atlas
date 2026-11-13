@@ -1276,13 +1276,17 @@ async function renderPlaat(mine) {
   // edges: data into a step and out of it, and results handed back to the caller
   // the channels between two boxes stay different lines: data a step moves itself, data it reaches through a step it
   // calls (the sixth sentence), a call, a result handed back
-  const edgeInfo = new Map(), dropped = [], addEdge = (a, b, info) => {
+  const edgeInfo = new Map(), dropped = [], besides = [], addEdge = (a, b, info) => {
     if (a === b) return;
     if (!nodeOf.has(a) || !nodeOf.has(b)) { dropped.push(`${a}>${b}`); return; }
     const id = `${a}>${b}` + (info.uses ? "~calls" : info.back ? "~back" : info.reach ? "~reach" : "");
     // in a union, a line is in the readings that draw it
     if (edgeInfo.has(id)) { const e = edgeInfo.get(id); e.n = (e.n || 1) + (info.n || 1); if (info.was != null) e.was = (e.was || 0) + info.was; if (e.sides && info.sides) info.sides.forEach(s => e.sides.add(s)); return; }
     edgeInfo.set(id, {...info, a, b, sides: info.sides && new Set(info.sides)});
+    // A focus has no order between its functions: what it takes stands left of them and what it gives right, and a call
+    // between two of them is a channel of its own that puts neither before the other. It is drawn beside them once they
+    // are placed, and is no line of the layout
+    if (info.uses && V.focus.size && !DIFF && ![a, b].some(x => x.startsWith("n:unit:~"))) { besides.push(id); return; }
     root.edges.push({id, sources: [a], targets: [b], ...(info.label ? {labels: [{text: info.label, width: textW(info.label, 6.2), height: 12}]} : {})});
   };
   for (const [a, b, hue, sides] of wires) addEdge(a, b, {hue, sides});
@@ -1384,6 +1388,10 @@ async function renderPlaat(mine) {
   // boxes are placed by Brandes–Köpf, which grows about linearly with the lines, so a picture of a few
   // hundred lines opens at once; network simplex straightens long lines a little at ten times the cost
   Object.assign(root, {layoutOptions: {"elk.algorithm": "layered", "elk.direction": "RIGHT", "elk.hierarchyHandling": "INCLUDE_CHILDREN", "elk.edgeRouting": "ORTHOGONAL", "elk.layered.spacing.nodeNodeBetweenLayers": "56", "elk.spacing.nodeNode": "16", "elk.layered.nodePlacement.strategy": "BRANDES_KOEPF", "elk.spacing.edgeNode": "14", "elk.layered.spacing.edgeNodeBetweenLayers": "16", "elk.layered.considerModelOrder.strategy": root.edges.length <= ORDERED_LINES ? "NODES_AND_EDGES" : "NONE"}});
+  // A focus is three columns: what it takes, its functions, what it gives. The code's order says nothing between functions
+  // that no line orders, so the boxes are placed by their lines alone, straight where they can be (network simplex, while
+  // the lines are few enough to afford it), and the lines of one box leave it as one and part where they must
+  if (V.focus.size && !DIFF) Object.assign(root.layoutOptions, {"elk.layered.considerModelOrder.strategy": "NONE", "elk.layered.mergeEdges": "true", "elk.layered.spacing.edgeEdgeBetweenLayers": "5", "elk.layered.spacing.edgeNodeBetweenLayers": "10", "elk.layered.spacing.nodeNodeBetweenLayers": "36", ...(root.edges.length <= ORDERED_LINES ? {"elk.layered.nodePlacement.strategy": "NETWORK_SIMPLEX"} : {})});
   let layout;
   laying(root, () => mine === undefined || mine === renderSeq);
   try { layout = await laidOut(root); } catch (err) { if (err === SUPERSEDED) return; throw err; }
@@ -1545,6 +1553,19 @@ async function renderPlaat(mine) {
       if (DUR) for (const x of [p, head]) d3.select(x).attr("opacity", 0).transition().delay(DUR * .7).duration(DUR * .6).attr("opacity", 1);
     }
   }
+  // the calls beside the boxes of a focus: an arc on their right where one stands above the other, else from one to the next
+  for (const id of besides) {
+    const info = edgeInfo.get(id), A = pos.get(info.a), B = pos.get(info.b);
+    if (!A || !B) continue;
+    const apart = A.x + A.w < B.x || B.x + B.w < A.x, back = B.x + B.w < A.x;
+    const from = {x: apart && back ? A.x : A.x + A.w, y: A.y + A.h / 2}, to = {x: apart && !back ? B.x : B.x + B.w, y: B.y + B.h / 2};
+    const k = apart ? (to.x - from.x) / 2 : 18 + Math.min(60, Math.abs(to.y - from.y) / 6), c1 = {x: from.x + k, y: from.y}, c2 = {x: apart ? to.x - k : to.x + k, y: to.y};
+    const p = el("path", {class: "sedge fn uses", d: `M${from.x},${from.y} C${c1.x},${c1.y} ${c2.x},${c2.y} ${to.x},${to.y}`, "stroke-width": 1, "data-a": info.a, "data-b": info.b}, eg);
+    const ang = Math.atan2(to.y - c2.y, to.x - c2.x), L = 8, Wd = 4;
+    const head = el("polygon", {points: [[to.x, to.y], [to.x - L * Math.cos(ang) + Wd * Math.sin(ang), to.y - L * Math.sin(ang) - Wd * Math.cos(ang)], [to.x - L * Math.cos(ang) - Wd * Math.sin(ang), to.y - L * Math.sin(ang) + Wd * Math.cos(ang)]].map(q => q.join(",")).join(" "), class: "sedge-head"}, eg);
+    edgeEls.push({a: info.a, b: info.b, els: [p, head], kind: "calls"});
+    if (DUR) for (const x of [p, head]) d3.select(x).attr("opacity", 0).transition().delay(DUR * .7).duration(DUR * .6).attr("opacity", 1);
+  }
   // pills
   for (const P of pills.values()) {
     if (!pos.has(P.id)) continue;
@@ -1555,7 +1576,7 @@ async function renderPlaat(mine) {
       const s = P.steps[0];
       if (s.startsWith("unit:")) { const u = s.slice(5); if (isRest(u)) focusPanel(); else if (byId.has(u.replace(/\$$/, ""))) select(u.replace(/\$$/, "")); return; }
       if (s.startsWith("cls:")) { select(s.slice(4)); return; }
-      if (s.startsWith("fam:")) { select(s.slice(4).split("@")[0]); return; }
+      if (s.startsWith("fam:")) { if (byId.has(s.slice(4).split("@")[0])) select(s.slice(4).split("@")[0]); return; }
       if (s.startsWith("part:") || stepOf(s).startsWith("op:")) return;
       if (P.steps.length === 1) select(stepOf(s)); else selectArrows({fns: P.steps.map(stepOf), kind: "steps"});
     };
