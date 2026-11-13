@@ -3520,3 +3520,35 @@ fn guards_a_call_ends_with_what_its_function_is_defined_under_ends_with() {
         assert_eq!(any, side == "clean", "{side}");
     }
 }
+
+/// The applied pair (`tests/pairs/applied/python`): `run` scales and shifts some readings and takes their mean, each of
+/// the two steps with a setting. The clean side builds each step with its setting and runs it (`scale.apply(readings)`);
+/// the shortcut builds the settings as objects and writes the steps as functions beside them, so the caller hands a step
+/// the object (`shift_with(scaled, shift)`) or takes the setting out of it (`scale_by(readings, scale.by)`).
+fn applied() -> &'static Pair {
+    static PAIR: OnceLock<Pair> = OnceLock::new();
+    PAIR.get_or_init(|| common::pair("applied/python"))
+}
+
+/// The receiver is a channel of its own (`mathematics.md`, #461): a call runs on a value or takes it as an input, and the
+/// two are different facts of the call. For each call of `run` that is handed a setting, on each side, the test computes
+/// both: whether the call hands the setting for the value it runs on and for nothing else, and whether the function it
+/// runs is a method of the setting's class. They agree at every call. On the clean side every such call runs on its
+/// setting; on the shortcut none does, and each is handed its setting as a parameter.
+#[test]
+fn applied_a_call_runs_on_a_value_or_takes_it_never_both() {
+    let settings = ["levels.Scale", "levels.Shift"];
+    for (side, g) in [("clean", &applied().clean), ("shortcut", &applied().shortcut)] {
+        let mut handed = 0;
+        for s in &g.node("levels.run").unwrap().sites {
+            for h in s.hands.iter().filter(|h| settings.contains(&h.ty.as_str())) {
+                let runs_on = !h.fills.is_empty() && h.fills.iter().all(|slot| matches!(slot, atlas_engine::Slot::Receiver));
+                let method = g.node(&s.to).is_some_and(|n| n.cls.as_deref() == Some(h.ty.as_str()) && !n.name.starts_with("__"));
+                assert_eq!(runs_on, method, "{side}: line {}", s.line);
+                assert_eq!(runs_on, side == "clean", "{side}: line {}", s.line);
+                handed += 1;
+            }
+        }
+        assert_eq!(handed, 2, "{side}: each of the two settings is handed to one step");
+    }
+}

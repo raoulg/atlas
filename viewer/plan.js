@@ -199,7 +199,7 @@ const partRank = n => Math.max(0, PARTS.findIndex(p => p.id === partOf(n)));
 // (one call by its path through the route, or every call of a function), families into their
 // members, coarse places into their parts, directories into their files. What stands open until the reader closes it is
 // closed by name: a library's frame, around the types it makes
-const V = {route: null, kind: null, part: null, focus: new Set(), tests: false, errors: false, open: {parts: new Set(), units: new Set(), steps: new Set(), functions: new Set(), families: new Set(), places: new Set(), dirs: new Set(), classes: new Set(), bases: new Set(), flat: new Set(), libraries: new Set()}, closed: {libraries: new Set()}};
+const V = {route: null, kind: null, part: null, focus: new Set(), tests: false, errors: false, receivers: false, open: {parts: new Set(), units: new Set(), steps: new Set(), functions: new Set(), families: new Set(), places: new Set(), dirs: new Set(), classes: new Set(), bases: new Set(), flat: new Set(), libraries: new Set()}, closed: {libraries: new Set()}};
 const short = id => id.startsWith(ROOT) ? id.slice(ROOT.length) : id.replace(/^ext:/, "");
 const KG = {imports:"imports", calls:"calls", requests:"calls", instantiates:"calls", takes:"types", returns:"types", has:"types", mutates:"types", variant:"types", inherits:"inherits"};
 
@@ -438,6 +438,8 @@ const routeMark = e => {
 const TYPES = (D.flow || {}).types || {};
 const familyOf = id => (TYPES.family || {})[id] || id;
 const kindOf = id => (TYPES.kind || {})[id] || id;
+// a call hands the value it runs on for that alone: the same value filling a parameter too is an input of the step
+const onlyRuns = site => !(site?.hands || []).some(h => (h.fills || []).includes("receiver") && h.fills.some(f => f !== "receiver"));
 const members = new Map(Object.entries(TYPES.members || {}));
 const sharedOf = f => ((TYPES.shared || {})[f] || []).map(s => ({via: s.via, dst: s.to}));
 // a route draws its types on its own fiber, the types its finest plan holds: the kinds of a type are those of them the fiber
@@ -2042,9 +2044,14 @@ for (const P of pills.values()) {
   // the value its call runs on, and a subclass's value is its base's
   const Dv = new Map(), Cv = new Map(), name = (m, k) => (m && m.get(k)) || "", mult = P.mult && {D: new Map(), C: new Map()}, resolved = new Map(), madeOfKey = new Map();
   P.D.forEach((r, k) => {
-    const via = viaDispatch(P, k), v = receiverOf(P, k) || (via === false ? false : via || bound(P, k, name(P.dn, k), !!P.made?.has(k)));
+    const via = viaDispatch(P, k), on = receiverOf(P, k), v = on || (via === false ? false : via || bound(P, k, name(P.dn, k), !!P.made?.has(k)));
     if (v === false) return;
     Dv.set(v || k, r);
+    // the value the step runs on, or runs on a part of (`self.conv(x)`): which arrow is applied, a channel of its own
+    // (`foldReceivers`)
+    const site = treeInfo.get(P.own ? frames.get(P.parent)?.step : P.steps[0])?.site;
+    const ran = onlyRuns(site) && (on || (!P.own && v && (site?.hands || []).some(h => h.type && (h.fills || []).includes("receiver") && kindKey(k) === "t:" + kindOf(h.type))));
+    if (ran) (P.recv ||= new Set()).add(v || k);
     resolved.set(k, v || k);
     // a parameter more than one value fills hands them all, and a sum of a value and an error both
     for (const w of [...alsoOf(P, k, name(P.dn, k), !!P.made?.has(k), v), ...errorsWith(scopeOf(P), v)]) if (!Dv.has(w)) Dv.set(w, r);
@@ -2212,7 +2219,9 @@ if (!alone) {
 // planned by itself, the instance the step runs on: its caller binds it to the instance the call runs on there (`runsOn`)
 if (alone) enter("n:" + tree[0].id);
 const receiver = alone ? receiverAt.get("n:" + tree[0].id) : undefined;
-return {places, pills, frames, found, updated, split, splitBy, heldOf, originOf, receiver};
+// the value each step with a body runs on, and the part of it the call reads
+const ranOn = new Map([...receiverAt].map(([fid, v]) => [fid, {v, part: receiverPart.get(fid) || ""}]));
+return {places, pills, frames, found, updated, split, splitBy, heldOf, originOf, receiver, ranOn};
 };
 // ---- a route is one finest plan, and every picture of it is its image under the quotient the reader has chosen ----
 // Occurrences (the steps of the route, each a call), values (a type, the name that holds it, the moment it was made) and the
@@ -2256,6 +2265,8 @@ const imageOf = (F, opened, folded, {fineKeys = false} = {}) => {
     return id;
   };
   const places = new Map();
+  // a value a constructor made, whatever a method made of it anew since
+  const builtAt = k => { const at = fp.get(F.originOf?.get(k) || k)?.at; return !!at && !!treeInfo.get(at.slice(2))?.built; };
   const placeOf = (k, id) => {
     if (places.has(id)) return id;
     if (fineKeys) { places.set(id, fp.get(k)); return id; }
@@ -2264,7 +2275,7 @@ const imageOf = (F, opened, folded, {fineKeys = false} = {}) => {
     else if (F.entries?.has(id)) places.set(id, F.entries.get(id));
     else if (pl?.type && k.startsWith("t:")) {
       const pid = placeOfType(pl.type), b = typePlace(pid);
-      places.set(id, {...b, id, label: b.label + (pl.held ? ` · ${pl.held}` : named(pl) ? ` · ${pl.name}` : ""), at: pl.at, name: named(pl) ? pl.name : undefined, held: pl.held, ...(pl.door ? {door: pl.door} : {}), ...(pl.err ? {err: true} : {})});
+      places.set(id, {...b, id, label: b.label + (pl.held ? ` · ${pl.held}` : named(pl) ? ` · ${pl.name}` : ""), at: pl.at, name: named(pl) ? pl.name : undefined, held: pl.held, ...(pl.door ? {door: pl.door} : {}), ...(pl.err ? {err: true} : {}), ...(builtAt(k) ? {built: true} : {})});
     } else places.set(id, fp.get(k));
     return id;
   };
@@ -2314,10 +2325,12 @@ const imageOf = (F, opened, folded, {fineKeys = false} = {}) => {
   }
   const called = new Set([...calls.values()].flatMap(s => [...s]));
   for (const B of blocks.values()) {
-    const D = new Map(), C = new Map(), Dn = new Map(), Cn = new Map(), Dr = new Map(), Cr = new Map(), goes = new Map(), S = B.frame, back = S ? new Set(ordersOn(stepOf(S.step), treeInfo.get(S.step)?.on).reads_back || []) : null;
+    const D = new Map(), C = new Map(), Dn = new Map(), Cn = new Map(), Dr = new Map(), Cr = new Map(), on = new Map(), goes = new Map(), S = B.frame, back = S ? new Set(ordersOn(stepOf(S.step), treeInfo.get(S.step)?.on).reads_back || []) : null;
     const incidence = [];
     const hands = S ? treeInfo.get(S.step)?.site?.hands || [] : [];
     const handed = pl => !!pl && hands.some(h => (h.name && !h.name.startsWith("#") ? h.name === pl.name : !!h.type && h.type === pl.type));
+    // the value a closed step runs on: every line its body draws from it is that one
+    const ran = S && onlyRuns(treeInfo.get(S.step)?.site) ? F.ranOn?.get(S.id) : null, same = (a, b) => (F.originOf.get(a) || a) === (F.originOf.get(b) || b);
     // a class has no arrow of its own: its border is its doors', so what a door gives back and no step of the class takes
     // leaves the class (its initializer's instance, a method's return)
     const doors = S && !F.generators && byId.get(S.step)?.kind === "class" && !fPills.has("o:" + S.step);
@@ -2346,6 +2359,8 @@ const imageOf = (F, opened, folded, {fineKeys = false} = {}) => {
       // of what its parse made (`cutArrow`)
       const n = way === "D" ? Dn : Cn, far = way === "D" ? Dr : Cr, [c, cr] = (folded && P.fold && way === "D" && k === entryId ? P.fold : P.mult?.[way]?.get(k)) || [1, r ? 1 : 0];
       n.set(id, (n.get(id) || 0) + c);
+      // of the fine lines a line stands for, those on which a step runs on the value
+      if (way === "D" && (S ? ran && same(k, ran.v) : P.recv?.has(k))) on.set(id, (on.get(id) || 0) + c);
       const reached = mine ? cr : r ? c : 0;
       if (reached) far.set(id, (far.get(id) || 0) + reached);
       inc.set(`${P.id}|${way}|${k}`, {way, P: P.id, k, p: B.id, c: id});
@@ -2359,11 +2374,11 @@ const imageOf = (F, opened, folded, {fineKeys = false} = {}) => {
     if (!S) {
       const P = B.members[0];
       if (!D.size && !C.size && !back_ && !P.own && !K.calls) continue;
-      pills.set(P.id, {...P, D, C, Dn, Cn, Dr, Cr, fine: fineOf(incidence), goes, ...K, ...(back_ ? {backTo: back_, backFrom: out.id, said: out.said} : {backTo: undefined})});
+      pills.set(P.id, {...P, D, C, Dn, Cn, Dr, Cr, on, fine: fineOf(incidence), goes, ...K, ...(back_ ? {backTo: back_, backFrom: out.id, said: out.said} : {backTo: undefined})});
       continue;
     }
     if (!D.size && !C.size && !back_ && !K.calls) continue;
-    pills.set(S.id, {id: S.id, steps: [S.step], D, C, Dn, Cn, Dr, Cr, fine: fineOf(incidence), dn: new Map(), cn: new Map(), goes, parent: S.parent, hue: S.hue, ...K, ...(back_ ? {backTo: back_, backFrom: out.id, said: out.said} : {})});
+    pills.set(S.id, {id: S.id, steps: [S.step], D, C, Dn, Cn, Dr, Cr, on, ...(ran?.part ? {onPart: ran.part} : {}), fine: fineOf(incidence), dn: new Map(), cn: new Map(), goes, parent: S.parent, hue: S.hue, ...K, ...(back_ ? {backTo: back_, backFrom: out.id, said: out.said} : {})});
   }
   for (const P of [...pills.values()]) if (P.backTo && !pills.has(P.backTo)) delete P.backTo;
   for (const P of pills.values()) if (P.backTo) inc.set(`${P.backFrom}|back`, {way: "B", P: P.backFrom, k: P.backTo, p: P.id, c: P.backTo});
@@ -2607,7 +2622,7 @@ const siblings = C => {
     const Q = merged.get(key);
     if (!Q) { merged.set(key, P); continue; }
     for (const n of ["Dn", "Cn", "Dr", "Cr"]) { const q = counts(Q, n); counts(P, n).forEach((c, k) => q.set(k, (q.get(k) || 0) + c)); Q[n] = q; }
-    for (const n of ["aDn", "aCn", "aDr", "aCr"]) if (Q[n] && P[n]) P[n].forEach((c, k) => Q[n].set(k, (Q[n].get(k) || 0) + c));
+    for (const n of ["aDn", "aCn", "aDr", "aCr", "on"]) if (Q[n] && P[n]) P[n].forEach((c, k) => Q[n].set(k, (Q[n].get(k) || 0) + c));
     Q.steps = [...Q.steps, ...P.steps]; P.D.forEach((r, k) => Q.D.set(k, Q.D.get(k) && r)); P.C.forEach((r, k) => Q.C.set(k, Q.C.get(k) && r)); joinGoes(Q.goes, P.goes);
     for (const [qs, ps] of [[Q.Ds, P.Ds], [Q.Cs, P.Cs]]) ps?.forEach((s, k) => qs.set(k, new Set([...(qs.get(k) || []), ...s])));
     joinedTo.set(P.id, Q);
@@ -2639,7 +2654,7 @@ const meet = C => {
   const union = (m, f) => { if (!m) return m; const out = new Map(); m.forEach((s, k) => out.set(f(k), new Set([...(out.get(f(k)) || []), ...s]))); return out; };
   for (const P of C.pills.values()) {
     P.D = and(P.D, img); P.C = and(P.C, img);
-    for (const n of ["Dn", "Cn", "Dr", "Cr", "aDn", "aCn", "aDr", "aCr"]) P[n] = sum(P[n], img);
+    for (const n of ["Dn", "Cn", "Dr", "Cr", "aDn", "aCn", "aDr", "aCr", "on"]) P[n] = sum(P[n], img);
     for (const n of ["Ds", "Cs"]) P[n] = union(P[n], img);
   }
   const members = new Map();
@@ -3163,6 +3178,32 @@ const foldErrors = C => {
   const all = [...new Set([...C.places.keys()].filter(gone).map(label))].sort();
   return {...C, pills: out, frames, places: new Map([...C.places].filter(([k]) => !gone(k))), errors: all};
 };
+// The picture with what its steps run on said by name (`mathematics.md`, "The receiver is a channel of its own", #461). A
+// method call `model.forward(series)` applies the arrow the instance carries: the instance is which arrow runs, no input of
+// the data it works on. A line of the picture that stands only for a step running on a value the code names is taken out
+// and said on the step, `runsOn` (on the frame of an opened step, its own), the names of the values. The value stays a box
+// for what takes it as data; where running on it is all that is done with it and nothing makes it, its lines stay. Nothing
+// else of the picture changes.
+const foldReceivers = C => {
+  const pills = [...C.pills.values()], named = k => C.places.get(k)?.built && C.places.get(k).name;
+  const runs = (P, k) => !!named(k) && !!P.on?.get(k) && P.on.get(k) === P.Dn?.get(k);
+  const lines = new Map(), ran = new Map();
+  for (const P of pills) {
+    for (const k of [...P.D.keys(), ...P.C.keys()]) lines.set(k, (lines.get(k) || 0) + 1);
+    for (const k of P.D.keys()) if (runs(P, k)) ran.set(k, (ran.get(k) || 0) + 1);
+  }
+  const gone = (P, k) => runs(P, k) && lines.get(k) > ran.get(k);
+  if (!pills.some(P => [...P.D.keys()].some(k => gone(P, k)))) return C;
+  const out = new Map(), given = new Map();
+  for (const P of pills) {
+    const ks = [...P.D.keys()].filter(k => gone(P, k)), runsOn = [...new Set(ks.map(k => named(k) + (P.onPart ? "." + P.onPart : "")))].sort();
+    const Q = {...P};
+    if (ks.length) for (const [f, m] of Object.entries(P)) if (m instanceof Map && /^a?D/.test(f)) Q[f] = new Map([...m].filter(([k]) => !ks.includes(k)));
+    if (runsOn.length) { if (P.own) given.set(P.parent, runsOn); else Q.runsOn = runsOn; }
+    out.set(P.id, Q);
+  }
+  return {...C, pills: out, frames: new Map([...C.frames].map(([id, f]) => [id, given.has(id) ? {...f, runsOn: given.get(id)} : f]))};
+};
 const plan = () => {
   const view = VIEWS[viewOf()];
   FIBER = null;
@@ -3175,7 +3216,8 @@ const plan = () => {
   }
   alike(C);
   window.atlasPlan = {fine: F, coarse: C, opened: view.opened};
-  const whole = view.drawn ? view.drawn(C) : C, drawn = V.errors || SIDE || !["route", "kind"].includes(viewOf()) ? whole : foldErrors(whole);
+  const whole = view.drawn ? view.drawn(C) : C, folds = !SIDE && ["route", "kind"].includes(viewOf());
+  const counted = V.errors || !folds ? whole : foldErrors(whole), drawn = V.receivers || !folds ? counted : foldReceivers(counted);
   return {...drawn, libraries: libraryFrames(drawn.places), calling: !!F.calls, fiber: F.fiber || null};
 };
 
