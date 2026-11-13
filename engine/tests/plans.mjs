@@ -784,10 +784,12 @@ function focusFaults(tests) {
       window.atlasPlan = null;
       const C = M.plan(), F = window.atlasPlan?.fine;
       first.set(set, focusDrawn(C));
-      // the overview, opened as the focus is (its libraries, which a focus has open, with it) and at every package above one in focus
+      // the overview, opened as the focus is (its libraries and the types of each home, which a focus has open, with it) and at
+      // every package above one in focus
       V.focus = new Set(); clear(); openAs([...set.filter(s => s !== "unit:~rest"), ...above]);
       V.open.libraries = new Set(Object.values(LIBRARY));
-      const O = M.plan();
+      let O = M.plan();
+      for (let shut; (shut = [...O.places.keys()].filter(k => k.startsWith("t:lib:")).map(k => k.slice(6))).length; O = M.plan()) for (const L of shut) V.open.libraries.add(L);
       for (const [fid, f] of (F || star).frames) {
         if (!f.step || f.step === "unit:~rest" || f.parent === REST_FRAME || !C.pills.has(fid) || !O.pills.has(fid)) continue;
         const a = borderOf(C, fid), b = borderOf(O, fid);
@@ -1165,31 +1167,61 @@ function routeEnds() {
   return {faults: out, findings: [...findings].sort()};
 }
 // The places of the world by their kind (mathematics.md, "Places by their kind"): the quotient of a picture's places by the
-// constructor each is made with, which keeps the side. A class is drawn as one box where it holds two places or more, and then
-// it holds every place of its kind on its side; no place stands in two; and it is the coarsest of the world's quotients, so a
-// group of the storage quotient lies in one kind or in none. A kind one place of the plan already stands for (a database,
-// split by its tables) is that group and no second box
+// constructor each is made with, which keeps the side. A place the code reads and writes is drawn on both sides, and is of its
+// kind on each. A class is drawn as one box where it holds two places or more, and then it holds every place of its kind used
+// on its side; no place stands in two classes of one side; and it is the coarsest of the world's quotients, so the places of a
+// group of the storage quotient that are used on one side lie in one kind or in none. A kind one place of the plan already
+// stands for (a database, split by its tables) is that group and no second box
 function worldKindFaults(C) {
-  const out = [], use = M.worldUse(C), groups = M.kindGroups(C, use), of = new Map();
+  const out = [], use = M.worldUse(C), groups = M.kindGroups(C, use), of = {in: new Map(), out: new Map()};
+  const ways = k => use.uses.get(k) || new Set();
   for (const G of groups.values()) {
     if (G.kids.size < 2) out.push(`the kind ${G.id} holds one place, which is that place`);
+    if (!of[G.side]) { out.push(`the kind ${G.id} stands on no side`); continue; }
     for (const k of G.kids) {
-      if (of.has(k)) out.push(`${k} stands in the kinds ${of.get(k)} and ${G.id}`);
-      of.set(k, G.id);
+      if (of[G.side].has(k)) out.push(`${k} stands in the kinds ${of[G.side].get(k)} and ${G.id}`);
+      of[G.side].set(k, G.id);
       if (M.worldKindOf(k) !== G.kind) out.push(`${k} stands in the kind ${G.id}, and is a place of ${M.worldKindOf(k)}`);
-      if (use.side(k) !== G.side) out.push(`${k} stands ${use.side(k)}, and its kind ${G.id} stands ${G.side}`);
+      if (!ways(k).has(G.side)) out.push(`${k} is not used ${G.side}, and stands in the kind ${G.id}`);
     }
   }
   const stored = new Set([...C.places.values()].map(p => p.group).filter(Boolean));
   const world = [...C.places.values()].filter(p => p.kind === "world" && use.used.has(p.id) && M.worldKindOf(p.id));
-  for (const p of world) for (const q of world) {
-    const kind = M.worldKindOf(p.id);
-    if (p.id >= q.id || kind !== M.worldKindOf(q.id) || use.side(p.id) !== use.side(q.id) || (kind !== "Disk" && stored.has("w:" + kind))) continue;
-    if (!of.has(p.id) || of.get(p.id) !== of.get(q.id)) out.push(`${p.id} and ${q.id} are of one kind on one side, and stand in ${of.get(p.id) || "no kind"} and ${of.get(q.id) || "no kind"}`);
+  for (const s of ["in", "out"]) {
+    for (const p of world) for (const q of world) {
+      const kind = M.worldKindOf(p.id);
+      if (p.id >= q.id || kind !== M.worldKindOf(q.id) || !ways(p.id).has(s) || !ways(q.id).has(s) || (kind !== "Disk" && stored.has("w:" + kind))) continue;
+      if (!of[s].has(p.id) || of[s].get(p.id) !== of[s].get(q.id)) out.push(`${p.id} and ${q.id} are of one kind and both used ${s}, and stand in ${of[s].get(p.id) || "no kind"} and ${of[s].get(q.id) || "no kind"}`);
+    }
+    for (const S of M.storageGroups(C, use).values()) {
+      const ks = new Set([...S.kids].filter(k => ways(k).has(s)).map(k => of[s].get(k) || null));
+      if (ks.size > 1) out.push(`the places of the group ${S.id} used ${s} lie in the kinds ${[...ks].join(", ")}`);
+    }
   }
-  for (const S of M.storageGroups(C, use).values()) {
-    const ks = new Set([...S.kids].filter(k => use.used.has(k)).map(k => of.get(k) || null));
-    if (S.kids.size > 1 && ks.size > 1) out.push(`the group ${S.id} lies in the kinds ${[...ks].join(", ")}`);
+  return out;
+}
+// The program's own types by their home (mathematics.md, "The types of one home"): the families of the overview's plan that
+// stand at one frame are one box where they are two or more, `t:lib:~` and the frame, which says how many types it stands
+// for; while it is closed no type of that home is a box of its own, and opened it is no box. One family at a home is that
+// family, and a focus, which draws the types of its own signature, folds no home
+function homeFaults(F, C, view) {
+  const out = [], boxes = [...C.places.keys()].filter(k => k.startsWith("t:lib:~"));
+  if (view !== "overview") { for (const k of boxes) out.push(`${k} is drawn in a view that folds no home`); return out; }
+  const homes = new Map();
+  for (const p of F.places.values()) {
+    if (!p.type || !("home" in p) || libraryOf(p.type)) continue;
+    const h = p.home || "";
+    if (!homes.has(h)) homes.set(h, new Map());
+    homes.get(h).set(p.type, M.familyOf(p.type));
+  }
+  for (const k of boxes) if ((new Set(homes.get(k.slice(7))?.values() || [])).size < 2) out.push(`${k} is drawn, and fewer than two families stand at that home`);
+  for (const [h, ts] of homes) {
+    const families = new Set(ts.values()), box = C.places.get("t:lib:~" + h);
+    if (families.size < 2) continue;
+    const alone = [...C.places.values()].filter(p => p.type && !p.type.startsWith("lib:") && !libraryOf(p.type) && families.has(M.familyOf(p.type))).map(p => p.id);
+    if (!M.libShut("~" + h)) { if (box) out.push(`the types at ${h || "the picture"} are opened, and drawn as one box`); continue; }
+    if (alone.length) out.push(`the types at ${h || "the picture"} are closed, and ${alone.join(", ")} stand beside their box`);
+    if (box && !box.label.endsWith(` · ${ts.size} types`)) out.push(`the box of the types at ${h || "the picture"} is labelled ${box.label}, and stands for ${ts.size} types`);
   }
   return out;
 }
@@ -1214,6 +1246,8 @@ function stateFaults(name, S) {
   for (const f of libraryFaults(F, M.plan(), opened, READS[view].some(c => c.endsWith(".libraries")))) at(f);
   setState(S);
   if (view === "overview" || view === "focus") for (const f of worldKindFaults(M.plan())) at(f);
+  setState(S);
+  if (view === "overview" || view === "focus") for (const f of homeFaults(F, M.plan(), view)) at(f);
   setState(S);
   return {out, C: M.plan()};
 }
