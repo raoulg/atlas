@@ -1078,7 +1078,7 @@ async function renderPlaat(mine) {
   // subpackages), a part, the function a call runs. An open step's own pill stands for its
   // function, so its frame is marked where that pill is not drawn; an open part's own pill is only
   // the code in it that names other parts' routes
-  const askedOf = s => s.startsWith("unit:") ? (isRest(s.slice(5)) || s.endsWith("$") ? null : s.slice(5)) : s.startsWith("part:") ? s.slice(5) : stepOf(s);
+  const askedOf = s => s.startsWith("unit:") ? (isRest(s.slice(5)) || s.endsWith("$") ? null : s.slice(5)) : s.startsWith("part:") ? s.slice(5) : s.startsWith("cls:") ? s.slice(4) : s.startsWith("fam:") ? null : stepOf(s);
   // ---- what a closed box holds inside: the things in it that do not touch its border ----
   // Each thing the diff marks counts once, at the deepest level the picture draws it: a node of the
   // code, a step of a body, a place. A type the picture draws as a box of its own, or inside a closed
@@ -1143,11 +1143,11 @@ async function renderPlaat(mine) {
     return I;
   };
   // the boxes that close: a part, a package or a module, a step, a family, a place standing for others
-  const quotient = P => /^(part|unit):/.test(P.steps[0]);
+  const quotient = P => isBlock(P.steps[0]);
   for (const P of pills.values()) {
     if (P.own) continue;
     const s = P.steps[0];
-    P.inside = s.startsWith("part:") ? insideCode(n => partOf(n) === s.slice(5)) : s.startsWith("unit:") ? insideUnit(s.slice(5)) : insideSteps(P.steps);
+    P.inside = s.startsWith("part:") ? insideCode(n => partOf(n) === s.slice(5)) : s.startsWith("unit:") ? insideUnit(s.slice(5)) : /^(cls|fam):/.test(s) ? insideCode(blockHolds(s)) : insideSteps(P.steps);
   }
   for (const p of places.values()) {
     if (!keep.has(p.id)) continue;
@@ -1271,7 +1271,7 @@ async function renderPlaat(mine) {
     return common.length ? nodeOf.get(common[common.length - 1]) : root;
   };
   for (const L of libFrames.values()) { const n = frameNode(L.id, 30); titled(n, L); homeOf(L.id).children.push(n); }
-  const inLibrary = (t, id) => { const f = libFrameOf(t); return f && libFrames.has(f) ? nodeOf.get(f) : homeOf(id); };
+  const inLibrary = (t, id) => { const f = libFrameOf(t) && libFrameAt(libFrameOf(t), id); return f && libFrames.has(f) ? nodeOf.get(f) : homeOf(id); };
   for (const p of [...places.values()].filter(p => (p.kind === "type" || p.kind === "ext") && keep.has(p.id) && !p.inFrame).sort((a, b) => a.label.localeCompare(b.label))) inLibrary(p.type, p.id).children.push(leaf(p.id, placeW(p, 30), 36));
   for (const F of famFrames.values()) { const n = frameNode(F.id, 30); titled(n, F); inLibrary(F.fam, F.id).children.push(n); for (const k of F.kids) n.children.push(leaf(k.id, 26 + textW(k.label, 6.9), 28)); }
   // a place one step leaves for a later one, or one the code does not say which way it goes, lives
@@ -1498,7 +1498,7 @@ async function renderPlaat(mine) {
     const title = el("text", {class: "ftitle", x: 14, y: 20}, grp); title.textContent = (F.synthetic ? "" : "▾ ") + F.title;
     for (const [h, w] of F.whens || []) { const t = el("tspan", {}, title); t.textContent = `  ● ${w}`; t.style.fill = hueVar(h); }
     if (DIFF && !isFam) {
-      const st = wholeRoute ? null : standing(F.sides, !!F.step && (/^(part|unit):/.test(F.step) ? borderOf(id) : stepChanged([F.step])));
+      const st = wholeRoute ? null : standing(F.sides, !!F.step && (isBlock(F.step) ? borderOf(id) : stepChanged([F.step])));
       marked(grp, st, P.w + 3, wasOf(st, id, F.step && DIFF.was[stepOf(F.step)]));
       sided(title, F.labels && {a: "▾ " + F.labels.a, b: "▾ " + F.labels.b});
     }
@@ -1506,7 +1506,7 @@ async function renderPlaat(mine) {
     if (asked) markAsks(grp, [asked], P.w - 8, 8);
     title.addEventListener("click", ev => {
       ev.stopPropagation(); if (F.synthetic) return; plaatAnchor = id;
-      if (isFam) V.open.families.delete(F.fam); else if (F.step && F.step.startsWith("part:")) V.open.parts.delete(F.step.slice(5)); else if (F.step && F.step.startsWith("unit:")) { const u = F.step.slice(5); for (const x of [...V.open.units]) if (x === u || x.startsWith(u + ".")) V.open.units.delete(x); } else if (F.anchor) { V.route = null; entrySel.value = ""; V.open.steps.clear(); V.open.functions.clear(); plaatAnchor = "n:" + F.step; } else { V.open.steps.delete(F.step); V.open.functions.delete(stepOf(F.step)); }
+      if (isFam) V.open.families.delete(F.fam); else if (F.step && F.step.startsWith("part:")) V.open.parts.delete(F.step.slice(5)); else if (F.step && F.step.startsWith("unit:")) { const u = F.step.slice(5); for (const x of [...V.open.units]) if (x === u || x.startsWith(u + ".")) V.open.units.delete(x); V.open.flat.delete(u); } else if (F.step && F.step.startsWith("cls:")) V.open.classes.delete(F.step.slice(4)); else if (F.step && F.step.startsWith("fam:")) V.open.bases.delete(F.step.slice(4)); else if (F.anchor) { V.route = null; entrySel.value = ""; V.open.steps.clear(); V.open.functions.clear(); plaatAnchor = "n:" + F.step; } else { V.open.steps.delete(F.step); V.open.functions.delete(stepOf(F.step)); }
       render();
     });
     place(grp, id, (from, to) => { if (!from.fresh) d3.select(r).attr("width", from.w).attr("height", from.h).transition().duration(DUR).attr("width", to.w).attr("height", to.h); });
@@ -1566,6 +1566,8 @@ async function renderPlaat(mine) {
     const shows = () => {
       const s = P.steps[0];
       if (s.startsWith("unit:")) { const u = s.slice(5); if (isRest(u)) focusPanel(); else if (byId.has(u.replace(/\$$/, ""))) select(u.replace(/\$$/, "")); return; }
+      if (s.startsWith("cls:")) { select(s.slice(4)); return; }
+      if (s.startsWith("fam:")) { select(s.slice(4).split("@")[0]); return; }
       if (s.startsWith("part:") || stepOf(s).startsWith("op:")) return;
       if (P.steps.length === 1) select(stepOf(s)); else selectArrows({fns: P.steps.map(stepOf), kind: "steps"});
     };
@@ -1598,6 +1600,8 @@ async function renderPlaat(mine) {
       }
       if (P.steps[0].startsWith("part:")) { if (!P.own) { V.open.parts.add(P.steps[0].slice(5)); plaatAnchor = P.id; render(); } return; }
       if (P.steps[0].startsWith("unit:")) { V.open.units.add(P.steps[0].slice(5)); plaatAnchor = P.id; render(); return; }
+      if (P.steps[0].startsWith("cls:")) { V.open.classes.add(P.steps[0].slice(4)); plaatAnchor = P.id; render(); return; }
+      if (P.steps[0].startsWith("fam:")) { V.open.bases.add(P.steps[0].slice(4)); plaatAnchor = P.id; render(); return; }
       if (stepOf(P.steps[0]).startsWith("op:")) return;
       if (P.steps.length === 1) select(stepOf(P.steps[0])); else selectArrows({fns: P.steps.map(stepOf), kind: "steps"});
       if (P.own) return;
@@ -2042,7 +2046,7 @@ function openTo(n) {
   for (let level = 0; level < 64; level++) {
     const real = treeNodes().filter(w => !w.t.synthetic);
     const here = real.find(w => is(w.t));
-    if (here) return boxesOf(here);
+    if (here) { if (!V.route) openBlocksOf(n); return boxesOf(here); }
     const way = real.find(w => !w.t.open && (V.route ? !stepOf(w.t.id).startsWith("op:") && reaches(w.t) : holds(w.t)));
     if (!way) {
       const holder = !V.route && n.kind === "module" && real.filter(w => holds(w.t)).at(-1);
