@@ -1569,11 +1569,15 @@ gives and holds. A test is a way in from outside, not a layer.
 **In Atlas.** A route is drawn in layers from its entry to the places it reaches. A focus is three layers: what it takes,
 its functions, what it gives (One fine plan, every picture its image). Its plan has no order between its functions, so a
 call between two of them puts neither before the other: it is a channel of its own, drawn as an arc beside the boxes once
-they are placed, and no line of the layering; the boxes are placed by their lines to the types alone. The overview is four
+they are placed, and no line of the layering; the boxes are placed by their lines to the types alone. A focus is the
+detail the reader asked for, so each of its boxes stands on its own, named: siblings that draw alike are one box where a
+picture has an order to keep short, never in a focus. The overview is four
 layers, the same reading of sentence 2 one level up: what the packages read of the world, the packages, the types that
 cross between them, what they write. A type there is one box that one package gives and another takes, so no layering
 puts it after the one and before the other; the layout puts every type after every package, and the arrowhead says the
-way a line runs. A line's width and its tooltip say how many lines it stands for, since a label would stand as a layer of
+way a line runs. What a package takes of a type and what it gives of it are two lines between the same two boxes, drawn on
+one path with an arrowhead at each end the data runs to; a line a package reaches through another stays a line of its own
+(sentence 6). A line's width and its tooltip say how many lines it stands for, since a label would stand as a layer of
 its own between two columns. The layers are where a box is looked for, not a fact of the plan: the picture is the same
 plan under any placing.
 **Where.** `design.md` §2, the viewer's layout (elkjs); `besides`, `columns` and `flipped` in `viewer/index.html`.

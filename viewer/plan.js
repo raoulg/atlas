@@ -2665,7 +2665,9 @@ const meet = C => {
 // The picture the page draws is the coarse plan with its siblings that draw alike merged (`siblings`) and its places ordered
 // on the disk (`meet`). One reading of a union is not taken alone: the page takes the union of the two
 const quotients = C => meet(siblings(C));
-const alike = C => (SIDE ? C : quotients(C));
+// A focus is the detail the reader asked for of its packages, so each of its boxes stands on its own, named: siblings that
+// draw alike are merged where a picture has an order to keep short, never in a focus
+const alike = C => (SIDE ? C : V.focus.size && !V.route && !V.kind ? meet(C) : quotients(C));
 // ---- the overview is the image of one fine plan of generators ----
 // A view with no route has no order between its arrows, so its fine plan `F₀` has no moments: the functions of the code,
 // each with its own arrow (sentence 6: a package shows what its own code does, not what it reaches through another), a type
