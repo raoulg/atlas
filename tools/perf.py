@@ -1036,7 +1036,7 @@ def downloaded(repo: Path, commit: str, to: Path, scratch: Path) -> str | None:
 
 def command_download(args: argparse.Namespace) -> None:
     """The build of `--commit`, or that of the newest nightly (`--newest-nightly`): what the nightly channel built last,
-    the open release branch while one is open and `next` otherwise. With `--data`, a build of the commit the series
+    a build of `next`. With `--data`, a build of the commit the series
     recorded last is not downloaded: a night with nothing new built has nothing new to measure."""
     repo = args.repo.resolve(strict=True)
     args.out.parent.mkdir(parents=True, exist_ok=True)

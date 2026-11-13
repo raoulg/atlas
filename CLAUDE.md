@@ -123,13 +123,11 @@ The rigorous half and the visual half are the same structure. Read `docs/referen
 
 ## Branches, versions and releases
 
-Two long-lived branches, one release train, and while a release is finished its release branch. Everything
-else is a short-lived topic branch.
+Two long-lived branches and one release train. Everything else is a short-lived topic branch.
 
 | Branch | Holds | Version | Built as | Who moves it |
 | --- | --- | --- | --- | --- |
-| `next` | integration: everything finished | the next minor, `X.Y.0` | nightly, `X.Y.0-nightly.<timestamp>`, while no release branch is open | the integrating agent, by merging the topic branches of a round and testing what they touched |
-| `release-X.Y` | the release being finished, cut from `next` | `X.Y.0` | nightly: the candidate Raoul tests before he promotes it | the agent that prepares the promotion |
+| `next` | integration: everything finished | the next minor, `X.Y.0` | nightly, `X.Y.0-nightly.<timestamp>`: the candidate Raoul tests before he promotes it | the integrating agent, by merging the topic branches of a round and testing what they touched |
 | `main` | what is released | the released `X.Y.Z` | stable, tag `vX.Y.Z` | Raoul only |
 | `<topic>` | one piece of work | none | nothing | its owner |
 
@@ -159,16 +157,13 @@ else is a short-lived topic branch.
    morning, found by testing the branches it landed, not by running the suite again for each. When `next`
    moves before the push, merge it again and run again only the test files its new commits touch:
    documentation and CI touch none.
-3. **Cut, then promote**: once what a release carries is on `next`, the agent that prepares it cuts
-   `release-X.Y` from `next` (`git push origin <commit>:refs/heads/release-X.Y`). From the cut until Raoul has
-   promoted it, the nightly builds `release-X.Y`: it is the candidate he tests for stable, and new work waits on its
-   topic branches, landing on `next` once the release is promoted. Only the release's own finishing lands on `release-X.Y`: its notes and pictures, and
-   a fix of something it carries, landed as on `next` (from a detached `origin/release-X.Y`) and merged
-   into `next` in the same turn, so `next` never lacks what the release has. When Raoul says so,
-   `release-X.Y` is merged into `main` (a merge commit), `main` is tagged `vX.Y.0` and pushed, and the
-   release branch is removed; the tag builds the stable release and, with the secret `TAP_TOKEN`, updates
-   the tap. `main` then holds nothing `next` lacks. An agent prepares the promotion (conflicts
-   resolved, docs pictures drawn, `cargo test`, `walk` and `topology` run once on the release branch and
+3. **Promote a nightly**: a release is the commit of a nightly Raoul has tested. Every nightly is its own
+   pre-release, named with the commit it built, so the candidate stays fixed while work goes on landing on
+   `next`. The release's finishing (its notes and pictures, which change no code) is a topic branch from that
+   commit. When Raoul says so, that branch is merged into `main` (a merge commit), `main` is tagged `vX.Y.0`
+   and pushed, and `main` is merged into `next`; the tag builds the stable release and, with the secret
+   `TAP_TOKEN`, updates the tap. `main` then holds nothing `next` lacks. An agent prepares the promotion
+   (docs pictures drawn, `cargo test`, `walk` and `topology` run once on the candidate's commit and
    green, the release's notes `docs/releases/<version>.md`
    gathered from `docs/changes/` and made a page by `uv run tools/release_page.py`, which names a
    point whose `Draw:` is still open) and stops before the push. The notes are read for what a user gains: each point is
@@ -179,7 +174,7 @@ else is a short-lived topic branch.
    list, and forms that are now drawn alike share one grid of equivalences. One point says how fast the
    release is against the one before: `uv run tools/perf.py release-bars` gives its `Bench:`, the fixed
    corpus measured on both releases with its one number, from the weekly run of `perf.yml` (the latest scheduled
-   one, or one dispatched with `to=origin/release-X.Y`) and the nightly series (`docs/reference/performance.md`);
+   one, or one dispatched with `to=<the candidate's commit>`) and the nightly series (`docs/reference/performance.md`);
    a release does not wait on a run of its own.
    The release machinery (`release.yml`, `install.sh`, `install.ps1`, the tap job, `tools/tap_formula.py`, `tools/tap_cask.py`)
    runs only on a `v*` tag, so a change to it on `next` is not exercised until the first tag after a
@@ -189,13 +184,12 @@ else is a short-lived topic branch.
    their checksums, and that `brew install raoulg/tap/atlas-code`, `brew install --cask raoulg/tap/atlas-studio`
    and `install.sh` install it.
 4. **Stable fix**: a bug in released behaviour is fixed on a branch from `main`, merged into `main`
-   when Raoul says so, patch number raised, tagged `vX.Y.Z`; then `main` is merged into `next`, and into a release branch if one is open, at once.
+   when Raoul says so, patch number raised, tagged `vX.Y.Z`; then `main` is merged into `next` at once.
    A fix to code that is not released yet is ordinary work on `next`.
-5. **Versions are SemVer and are raised in one place each**: the first change on `next` that alters
-   what Atlas reads, draws or checks raises the minor, once; later commits leave it alone. After a cut,
-   `next` says the release branch's version until that change raises it past it. A stable fix
+5. **Versions are SemVer and are raised in one place each**: the first change on `next` after a release that
+   alters what Atlas reads, draws or checks raises the minor, once; later commits leave it alone. A stable fix
    raises the patch. Documentation, CI and the tap raise nothing.
-6. **History is never rewritten.** No force-push to `main`, `next` or a release branch, no deleted or moved `v*` tag. A
+6. **History is never rewritten.** No force-push to `main` or `next`, no deleted or moved `v*` tag. A
    mistake is a revert commit.
 7. **Before any push or tag, read the branch** (`git branch --show-current`). A push to `main`, a `v*`
    tag, a force-push or a change of the repository's settings needs Raoul's yes in this session,
@@ -204,7 +198,7 @@ else is a short-lived topic branch.
 | Channel | Source | Install |
 | --- | --- | --- |
 | stable | tags `v*` on `main` | `brew install raoulg/tap/atlas-code`, `install.sh` |
-| nightly | the open release branch, else `next`, built at 03:30 when it changed and its tests pass on three platforms, or by hand | `brew install raoulg/tap/atlas-code-nightly`, `ATLAS_CHANNEL=nightly install.sh` |
+| nightly | `next`, built at 03:30 when it changed and its tests pass on three platforms, or by hand | `brew install raoulg/tap/atlas-code-nightly`, `ATLAS_CHANNEL=nightly install.sh` |
 
 ## Practical
 
@@ -276,7 +270,7 @@ else is a short-lived topic branch.
   and the dark theme, as `docs_pictures.py` does, and the tour shows the one of its theme. No hook runs them; run them
   with a version raise that changes what those pages draw, and reread the text beside a picture they name.
   `docs/img/interaction/drawn.json` keeps what the history draws.
-- `walk` is the viewer's gate before a promotion, run once on the release branch: `uv run tools/pictures.py
+- `walk` is the viewer's gate before a promotion, run once on the candidate's commit: `uv run tools/pictures.py
   walk <atlas> <repo> <dir>` opens every package, every route and every family in a route, and
   must report no view that throws, draws nothing, or opens a family into other moments.
 - `topology` is the same gate for the topology of zoom: `uv run tools/pictures.py topology <atlas> <repo> <dir>` opens one

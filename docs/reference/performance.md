@@ -16,7 +16,7 @@ for it. `tools/perf.py` measures and judges; the series is kept on the branch
 
 The night compiles nothing. It reads with the build of the newest nightly pre-release (`nightly-<stamp>`, which
 `nightly.yml` makes an hour before, with the commit it built as its target; `perf.py download --newest-nightly`): what
-the nightly channel ships, the open release branch while one is open and `next` otherwise. The series records the
+the nightly channel ships, a build of `next`. The series records the
 commit measured, whichever branch it came from. A night whose newest build is of the commit the series recorded last
 (`next` did not move, or its tests were red and no new build was made) has nothing new to measure: it is skipped, the
 summary says so in one line, and the series gets no run. The subjects are the programs `perf` reads
@@ -150,7 +150,7 @@ program of the corpus that `perf` reads (`atlas-0.70.0`, Rust; `private-1`, Pyth
 reading, all from one round of readings, and with the cards of `next`'s readings: the programs of the night, three rounds each. The standing goes, one line per
 measure, to the issue *Atlas's performance against the last release*. Run by hand (`mode: weekly`) from a branch,
 the job takes that branch's `tools/perf.py` and `tools/corpus.txt` and measures `next`, or the ref `to` names
-(`origin/release-0.73`, or `release-0.73`, which the job reads as that): a new measure is measured on the runner
+(a commit, `origin/next`, or `next`, which the job reads as that): a new measure is measured on the runner
 before it lands, and a release is measured against the one before.
 
 Nothing is compiled for it. `reproduce --prebuilt` reads each side with the build a release on GitHub holds of its
@@ -211,7 +211,7 @@ drawn as bars throughout.
   program changed beyond noise draws no line: those are named in one sentence.
 - **The table**, folded: a row per program of the corpus that `perf` reads, named by its card, with its cold read,
   warm read and peak memory (that of the cold read). Each measure is a pair of bars, the release before and this
-  one, from the weekly run (the latest scheduled one, or one dispatched with `to=origin/release-X.Y`), both on one
+  one, from the weekly run (the latest scheduled one, or one dispatched with `to=<the candidate's commit>`), both on one
   runner, and else from each release's night. A release does not wait on a run of its own. Two nights ran on two runners, often of other CPUs, and say less than one interleaved run.
   A program that joined the corpus after both releases were measured has no row yet.
 - **Every release**, folded: each of those measures on the night of every release since the series began, a bar per
@@ -220,7 +220,7 @@ drawn as bars throughout.
 
 ```sh
 uv run tools/perf.py release-bars --data <a checkout of perf-data> --reproduced weekly.json --run <its url> \
-  --repo . --before v0.70.0 --after origin/release-0.71 --version 0.71.0
+  --repo . --before v0.70.0 --after <the candidate's commit> --version 0.71.0
 ```
 
 writes `docs/releases/0.71.0/bench.json`, prints the notes' line, `Bench: releases/0.71.0/bench.json | caption`, whose
