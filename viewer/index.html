@@ -971,14 +971,21 @@ async function renderPlaat(mine) {
   worldShown = new Map();
   // the overview and a focus open with each kind of the world closed (`kindGroups`): one box that says how many places it
   // stands for, whatever folds lie below it
+  const shownAt = {in: new Map(), out: new Map()};
   const kinds = V.route || V.kind || DIFF ? new Map() : kindGroups({places, pills, roles, fine}, worldUsed);
   for (const G of kinds.values()) {
     if (V.open.places.has(G.group)) continue;
     const glyph = placeGlyph.get([...G.kids][0]), label = `${G.label} · ${G.kids.size}`;
-    const p = {id: G.id, label, short: label, glyph, kind: "world", toggleGroup: G.group, members: [...G.kids], ...(G.way ? {way: G.way} : {})};
+    const p = {id: G.id, label, short: label, glyph, kind: "world", toggleGroup: G.group, members: [...G.kids], role: G.side, ...(G.way ? {way: G.way} : {})};
     placeGlyph.set(p.id, glyph);
-    for (const k of G.kids) { worldShown.set(k, p); places.delete(k); }
+    for (const k of G.kids) shownAt[G.side].set(k, p);
     places.set(p.id, p);
+  }
+  // a place stands in its kind on each side the kind is closed; one whose every use a kind stands for is no box of its own
+  for (const k of new Set([...shownAt.in.keys(), ...shownAt.out.keys()])) {
+    const left = [...worldUsed.uses.get(k)].filter(s => !shownAt[s].has(k));
+    if (!left.length) { worldShown.set(k, shownAt.in.get(k) || shownAt.out.get(k)); places.delete(k); }
+    else places.set(k, {...places.get(k), role: left[0]});
   }
   for (const F of storage.values()) {
     if (F.kids.size < 2 || [...F.kids].some(k => worldShown.has(k))) continue;
@@ -1002,16 +1009,16 @@ async function renderPlaat(mine) {
       places.set(p.id, p);
     }
   }
-  const shownWorld = k => worldShown.get(k)?.id || k;
-  const remapWorld = (m, sides = false) => {
+  const shownWorld = (k, s) => shownAt[s]?.get(k)?.id || worldShown.get(k)?.id || k;
+  const remapWorld = (m, s, sides = false) => {
     const r = new Map();
-    m.forEach((v, k) => { const id = shownWorld(k); r.set(id, sides ? new Set([...(r.get(id) || []), ...v]) : r.has(id) ? r.get(id) && v : v); });
+    m.forEach((v, k) => { const id = shownWorld(k, s); r.set(id, sides ? new Set([...(r.get(id) || []), ...v]) : r.has(id) ? r.get(id) && v : v); });
     return r;
   };
   const countsTo = (m, f) => { if (!m) return m; const out = new Map(); m.forEach((n, k) => out.set(f(k), (out.get(f(k)) || 0) + n)); return out; };
   const COUNTS = ["Dn", "Cn", "Dr", "Cr", "aDn", "aCn", "aDr", "aCr"];
-  for (const P of pills.values()) for (const n of COUNTS) P[n] = countsTo(P[n], shownWorld);
-  for (const P of pills.values()) { P.D = remapWorld(P.D); P.C = remapWorld(P.C); if (P.Ds) { P.Ds = remapWorld(P.Ds, true); P.Cs = remapWorld(P.Cs, true); } }
+  for (const P of pills.values()) for (const n of COUNTS) P[n] = countsTo(P[n], k => shownWorld(k, n.includes("D") ? "in" : "out"));
+  for (const P of pills.values()) { P.D = remapWorld(P.D, "in"); P.C = remapWorld(P.C, "out"); if (P.Ds) { P.Ds = remapWorld(P.Ds, "in", true); P.Cs = remapWorld(P.Cs, "out", true); } }
   // the disk is a tree: past a column's worth, files fold into their directories, and a click opens one
   const visibleFiles = new Set([...places.keys()].map(filePath).filter(Boolean));
   // a place the order of the disk took stands where that order puts it (`meet`), whatever the crowd
@@ -1184,15 +1191,15 @@ async function renderPlaat(mine) {
   };
   // a kind the reader opened is a frame around the boxes that stood for its places, each as the folds below it draw it
   for (const G of kinds.values()) {
-    // a kind read and written stands twice, each of its places on its own
-    if (!V.open.places.has(G.group) || !WAY[G.side]) continue;
+    if (!V.open.places.has(G.group)) continue;
     const tops = [...places.values()].filter(p => p.kind === "world" && keep.has(p.id) && !worldParent.has(p.id)).map(p => p.id).concat([...worldFrames.keys()].filter(id => !worldParent.has(id)));
-    const held = new Set([...G.kids].flatMap(k => [k, ...(places.get(k)?.members || [])]));
+    // a place read and written stands twice, and in neither frame
+    const held = new Set([...G.kids].filter(k => worldUsed.uses.get(k)?.size === 1).flatMap(k => [k, ...(places.get(k)?.members || [])]));
     const kids = tops.filter(id => held.has(id) || finesOf(id).some(k => held.has(k.replace(/~own$/, ""))));
     if (!kids.length) continue;
     const fid = "group:" + G.id;
     placeGlyph.set(fid, placeKind(G.kids.values().next().value));
-    worldFrames.set(fid, {id: fid, label: G.label, group: G.group, kids: new Set(kids), members: [...G.kids], ...(G.way ? {way: G.way} : {})});
+    worldFrames.set(fid, {id: fid, label: G.label, group: G.group, role: G.side, kids: new Set(kids), members: [...G.kids], ...(G.way ? {way: G.way} : {})});
     for (const k of kids) worldParent.set(k, fid);
   }
   const leavesIn = id => (worldFrames.has(id) ? [...worldFrames.get(id).kids].flatMap(leavesIn) : [id]);
@@ -1210,7 +1217,7 @@ async function renderPlaat(mine) {
   // where each drawn place stands is the side of the places of the finest plan it stands for (`sideOfRoles`). A place it
   // uses and changes stands twice, `from X ⇄` on the left and `into X ⇄` on the right
   const roleOf = id => sideOfRoles((worldFrames.has(id) ? [...worldFrames.get(id).kids] : [id]).flatMap(finesOf).map(k => roles.get(k)).filter(Boolean), () => ({in: "in", out: "out"})[sideOf(id)] || "mid");
-  const roleAt = new Map(worldIds.map(id => [id, id.startsWith("e:") ? "in" : roleOf(id)])), twinOf = new Map();
+  const roleAt = new Map(worldIds.map(id => [id, id.startsWith("e:") ? "in" : places.get(id)?.role || worldFrames.get(id)?.role || roleOf(id)])), twinOf = new Map();
   for (const [id, r] of roleAt) {
     if (r !== "both") continue;
     const tw = id + TWIN, F = worldFrames.get(id);
@@ -1301,6 +1308,12 @@ async function renderPlaat(mine) {
   // edges: data into a step and out of it, and results handed back to the caller
   // the channels between two boxes stay different lines: data a step moves itself, data it reaches through a step it
   // calls (the sixth sentence), a call, a result handed back
+  // The overview stands in columns (mathematics.md, "Layered drawing"): what the packages read of the world, the packages,
+  // the types that cross between them, what they write. A type is one box that a package takes and another gives, so the
+  // layout puts every type after every package and the arrowhead says the way: a line into a package is laid out from it
+  // (`flipped`) and drawn as it runs. A call between two packages orders neither and is an arc beside them, as in a focus
+  const columns = !V.route && !V.kind && !V.focus.size && !DIFF, flipped = new Set();
+  const isType = id => { const p = places.get(id); return p ? p.kind === "type" || p.kind === "ext" : famFrames.has(id) || libFrames.has(id); };
   const edgeInfo = new Map(), dropped = [], besides = [], addEdge = (a, b, info) => {
     if (a === b) return;
     if (!nodeOf.has(a) || !nodeOf.has(b)) { dropped.push(`${a}>${b}`); return; }
@@ -1311,8 +1324,10 @@ async function renderPlaat(mine) {
     // A focus has no order between its functions: what it takes stands left of them and what it gives right, and a call
     // between two of them is a channel of its own that puts neither before the other. It is drawn beside them once they
     // are placed, and is no line of the layout
-    if (info.uses && V.focus.size && !DIFF && ![a, b].some(x => x.startsWith("n:unit:~"))) { besides.push(id); return; }
-    root.edges.push({id, sources: [a], targets: [b], ...(info.label ? {labels: [{text: info.label, width: textW(info.label, 6.2), height: 12}]} : {})});
+    if (info.uses && (columns || V.focus.size) && !DIFF && ![a, b].some(x => x.startsWith("n:unit:~"))) { besides.push(id); return; }
+    const flip = columns && isType(a) && !isType(b);
+    if (flip) flipped.add(id);
+    root.edges.push({id, sources: [flip ? b : a], targets: [flip ? a : b], ...(info.label ? {labels: [{text: info.label, width: textW(info.label, 6.2), height: 12}]} : {})});
   };
   for (const [a, b, hue, sides] of wires) addEdge(a, b, {hue, sides});
   // a line the step draws itself and reaches as well is two: the one it draws, and the one it reaches. In a union each reading
@@ -1409,14 +1424,21 @@ async function renderPlaat(mine) {
   const sided = (text, labels) => { if (labels) { text.dataset.a = labels.a; text.dataset.b = labels.b; text.dataset.u = text.textContent; } };
   // a bundle says how many lines it stands for, and in a union what it was; the layout keeps room for the words
   const bundleOf = info => (recounted(info) ? `×${info.was} → ×${info.n ?? 1}` : info.n > 1 ? "×" + info.n : null);
-  for (const e of root.edges) { const t = bundleOf(edgeInfo.get(e.id)); if (t) (e.labels ||= []).push({text: t, width: textW(t, 6.2), height: 12}); }
+  // in columns a line's width and its tooltip say how many it stands for: a label would stand as a layer between two columns
+  if (!columns) for (const e of root.edges) { const t = bundleOf(edgeInfo.get(e.id)); if (t) (e.labels ||= []).push({text: t, width: textW(t, 6.2), height: 12}); }
   // boxes are placed by Brandes–Köpf, which grows about linearly with the lines, so a picture of a few
   // hundred lines opens at once; network simplex straightens long lines a little at ten times the cost
   Object.assign(root, {layoutOptions: {"elk.algorithm": "layered", "elk.direction": "RIGHT", "elk.hierarchyHandling": "INCLUDE_CHILDREN", "elk.edgeRouting": "ORTHOGONAL", "elk.layered.spacing.nodeNodeBetweenLayers": "56", "elk.spacing.nodeNode": "16", "elk.layered.nodePlacement.strategy": "BRANDES_KOEPF", "elk.spacing.edgeNode": "14", "elk.layered.spacing.edgeNodeBetweenLayers": "16", "elk.layered.considerModelOrder.strategy": root.edges.length <= ORDERED_LINES ? "NODES_AND_EDGES" : "NONE"}});
   // A focus is three columns: what it takes, its functions, what it gives. The code's order says nothing between functions
   // that no line orders, so the boxes are placed by their lines alone, straight where they can be (network simplex, while
   // the lines are few enough to afford it); each line stays a line of its own, so that it can be followed from box to box
-  if (V.focus.size && !DIFF) Object.assign(root.layoutOptions, {"elk.layered.considerModelOrder.strategy": "NONE", "elk.layered.spacing.edgeEdgeBetweenLayers": "5", "elk.layered.spacing.edgeNodeBetweenLayers": "10", "elk.layered.spacing.nodeNodeBetweenLayers": "36", ...(root.edges.length <= ORDERED_LINES ? {"elk.layered.nodePlacement.strategy": "NETWORK_SIMPLEX"} : {})});
+  if ((columns || V.focus.size) && !DIFF) Object.assign(root.layoutOptions, {"elk.layered.considerModelOrder.strategy": "NONE", "elk.layered.spacing.edgeEdgeBetweenLayers": "5", "elk.layered.spacing.edgeNodeBetweenLayers": "10", "elk.layered.spacing.nodeNodeBetweenLayers": "36", ...(root.edges.length <= ORDERED_LINES ? {"elk.layered.nodePlacement.strategy": "NETWORK_SIMPLEX"} : {})});
+  // the columns are partitions of the layers: the code after what it reads, the types after the code. Every line of the
+  // overview runs through the gaps between them, so the gaps are wide enough to keep each line apart from the next
+  if (columns) {
+    Object.assign(root.layoutOptions, {"elk.partitioning.activate": "true", "elk.layered.spacing.edgeEdgeBetweenLayers": "9", "elk.layered.spacing.nodeNodeBetweenLayers": "64"});
+    for (const c of root.children) if (!c.layoutOptions?.["elk.layered.layering.layerConstraint"]) (c.layoutOptions ||= {})["elk.partitioning.partition"] = isType(c.id) ? "2" : "1";
+  }
   let layout;
   laying(root, () => mine === undefined || mine === renderSeq);
   try { layout = await laidOut(root); } catch (err) { if (err === SUPERSEDED) return; throw err; }
@@ -1538,6 +1560,8 @@ async function renderPlaat(mine) {
     const info = edgeInfo.get(e.id) || {}, c = e.container && e.container !== "root" ? pos.get(e.container) : {x: OX, y: OY};
     for (const sct of e.sections || []) {
       const pts = [sct.startPoint, ...(sct.bendPoints || []), sct.endPoint].map(q => ({x: q.x + c.x, y: q.y + c.y}));
+      if (flipped.has(e.id)) pts.reverse();
+      const [ea, eb] = flipped.has(e.id) ? [e.targets[0], e.sources[0]] : [e.sources[0], e.targets[0]];
       // Reached effects cross a closed step's border and meet its interior port. Own
       // effects stop at the border. The layout endpoints and graph identities stay intact.
       const ports = [];
@@ -1551,7 +1575,7 @@ async function renderPlaat(mine) {
       }
       const d = pts.map((q, i) => (i ? "L" : "M") + q.x + "," + q.y).join(" ");
       const layer = ports.length ? ig : eg;
-      const p = el("path", {class: "sedge fn" + (info.reach ? " reach" : "") + (info.back ? " back" : "") + (info.uses ? " uses" : ""), d, "stroke-width": (info.uses ? 1 : 1.3) + (info.n > 1 ? Math.min(3, Math.log2(info.n)) : 0), "data-a": e.sources[0], "data-b": e.targets[0]}, layer);
+      const p = el("path", {class: "sedge fn" + (info.reach ? " reach" : "") + (info.back ? " back" : "") + (info.uses ? " uses" : ""), d, "stroke-width": (info.uses ? 1 : 1.3) + (info.n > 1 ? Math.min(3, Math.log2(info.n)) : 0), "data-a": ea, "data-b": eb}, layer);
       const last = pts[pts.length - 1], prev = pts[pts.length - 2], ang = Math.atan2(last.y - prev.y, last.x - prev.x), L = 8, Wd = 4;
       const head = el("polygon", {points: [[last.x, last.y], [last.x - L * Math.cos(ang) + Wd * Math.sin(ang), last.y - L * Math.sin(ang) - Wd * Math.cos(ang)], [last.x - L * Math.cos(ang) - Wd * Math.sin(ang), last.y - L * Math.sin(ang) + Wd * Math.cos(ang)]].map(q => q.join(",")).join(" "), class: "sedge-head"}, layer);
       if (info.hue) { p.style.stroke = hueVar(info.hue); head.style.fill = hueVar(info.hue); }
@@ -1572,9 +1596,9 @@ async function renderPlaat(mine) {
         if (l.text === bundle) sided(tx, again && {a: "×" + info.was, b: "×" + (info.n ?? 1)});
         els.push(tx);
       }
-      const st = reusedBox(e.sources[0]) && reusedBox(e.targets[0]) ? null : standing(info.sides, again);
+      const st = reusedBox(ea) && reusedBox(eb) ? null : standing(info.sides, again);
       if (st) for (const x of els) x.classList.add("d-" + st);
-      edgeEls.push({a: e.sources[0], b: e.targets[0], els, kind: info.uses ? "calls" : info.back ? "hands back" : info.reach ? "reaches" : "data"});
+      edgeEls.push({a: ea, b: eb, els, kind: info.uses ? "calls" : info.back ? "hands back" : info.reach ? "reaches" : "data"});
       if (DUR) for (const x of [p, head]) d3.select(x).attr("opacity", 0).transition().delay(DUR * .7).duration(DUR * .6).attr("opacity", 1);
     }
   }

@@ -460,7 +460,12 @@ const opensInto = t => kindsOf(t).length + partsOf(t).length + sharedOf(t).lengt
 // The library a type is of is the engine's (`flow.types.library`): what a type past the code or a library's class comes
 // from, a shaped array's array type's; a type is of its kind's library, the box it stands in while its family is closed
 const LIBRARY = new Map(Object.entries(TYPES.library || {}));
-const libraryOf = t => LIBRARY.get(kindOf(t)) || LIBRARY.get(t) || null;
+// The program's own types fold as a library's do, by where they stand (mathematics.md, "The types of one home"): the families
+// of the overview whose home is one frame are one box, named by that frame (`HOMED`: a type to the box of its home, `~` and the
+// frame's id; `HOME_TITLE`: its name)
+let HOMED = new Map(), HOME_TITLE = new Map();
+const libraryOf = t => LIBRARY.get(kindOf(t)) || LIBRARY.get(t) || HOMED.get(t) || null;
+const libTitle = L => HOME_TITLE.get(L) || L;
 // the types of each library a plan of generators holds (`overviewBase`): a library is a box of its own where it holds two of
 // them or more, since a frame around one type would only name it again. A route and the routes of a kind draw no library
 let LIBRARIES = null;
@@ -714,16 +719,19 @@ const WORLD_KIND = {File: "Disk", Type: "Disk", open: "Process"};
 const worldKindOf = id => { const m = /^w:([^:~]+)/.exec(id); return m ? WORLD_KIND[m[1]] || m[1] : null; };
 // The kinds of a picture `C` of generators, with how it uses the world (`worldUse`): the quotient of its places by their kind,
 // the coarsest the world has (mathematics.md, "Places by their kind"). A quotient of the places keeps the side, so a kind
-// read and a kind written are two classes; a kind of one place is that place; and a kind whose places one place already
-// stands for (a database, split by its tables) is that group. A kind's id to its label, its side and the places it holds
-function kindGroups(C, {used, side}) {
+// read and a kind written are two classes, and a place the code reads and writes, which such a picture draws on both sides,
+// is of both; a kind of one place is that place; and a kind whose places one place already stands for (a database, split
+// by its tables) is that group. A kind's id to its label, its side and the places it holds
+function kindGroups(C, {used, uses}) {
   const by = new Map(), grouped = new Set([...C.places.values()].map(p => p.group).filter(Boolean));
   for (const p of C.places.values()) {
     const kind = p.kind === "world" && used.has(p.id) ? worldKindOf(p.id) : null;
     if (!kind || (kind !== "Disk" && grouped.has("w:" + kind))) continue;
-    const s = side(p.id), id = `w:~${kind}~${s}`;
-    if (!by.has(id)) by.set(id, {id, label: kind, kind, side: s, group: id, kids: new Set()});
-    by.get(id).kids.add(p.id);
+    for (const s of uses.get(p.id) || []) {
+      const id = `w:~${kind}~${s}`;
+      if (!by.has(id)) by.set(id, {id, label: kind, kind, side: s, group: id, kids: new Set()});
+      by.get(id).kids.add(p.id);
+    }
   }
   const sides = new Map();
   for (const G of by.values()) sides.set(G.kind, (sides.get(G.kind) || 0) + 1);
@@ -1070,7 +1078,7 @@ const cutBy = (S, places) => [...places].filter(p => closedFamily(p) && typesIn(
 const typePlace = t => {
   // a library closed is one box that says how many of the plan's types it stands for, as a folded directory says its files
   const L = libOfBox(t), n = byId.get(t), closedFam = !L && t !== V.route && opens(t) && !V.open.families.has(t);
-  if (L) { const k = LIBRARIES?.get(L)?.size || 0; return {id: "t:" + t, label: `${L} · ${k} ${k === 1 ? "type" : "types"}`, kind: "ext", hue: null, type: t, library: L}; }
+  if (L) { const k = LIBRARIES?.get(L)?.size || 0; return {id: "t:" + t, label: `${libTitle(L)} · ${k} ${k === 1 ? "type" : "types"}`, kind: L.startsWith("~") ? "type" : "ext", hue: null, type: t, library: L}; }
   // a family no type of the code's is (a rank of shaped arrays, `Float Tensor · 2D`) is of the library its members are
   return {id: "t:" + t, label: typeLabel(t) + (closedFam ? ` (${opensInto(t)})` : ""), kind: (n ? n.kind === "external" : t.startsWith("ext:")) ? "ext" : "type", hue: hueOf(n), type: t};
 };
@@ -2861,6 +2869,7 @@ const overviewBase = () => {
   // the library each type is of, where it holds two of the plan's types or more, is a box of its own: closed, all its types are
   // one box, so they share one home, as a family's do
   LIBRARIES = new Map();
+  HOMED = new Map(); HOME_TITLE = new Map();
   for (const t of used.keys()) { const L = libraryOf(t); if (!L) continue; if (!LIBRARIES.has(L)) LIBRARIES.set(L, new Set()); LIBRARIES.get(L).add(t); }
   const block = t => libFrameOf(t) || familyOf(t);
   const kin = new Map(), homes = new Map();
@@ -2896,6 +2905,21 @@ const overviewBase = () => {
   classBlocks(frames, stand, new Map(leaves.map(([u, , fid]) => [fid, u])), kept);
   for (const P of pills.values()) P.parent = stand.get(P.steps[0]);
   for (const [k, users] of homes) places.get(k).home = homeOf(users.map(x => stand.get(x)));
+  // the program's own types by their home: the families that stand at one frame are one box, where there are two or more
+  const byHome = new Map();
+  for (const t of used.keys()) {
+    if (libraryOf(t)) continue;
+    const h = places.get("t:" + t)?.home || "";
+    if (!byHome.has(h)) byHome.set(h, new Map());
+    byHome.get(h).set(t, familyOf(t));
+  }
+  for (const [h, ts] of byHome) {
+    if (new Set(ts.values()).size < 2) continue;
+    const L = "~" + h;
+    HOME_TITLE.set(L, h ? frames.get(h)?.title || h : D.root);
+    LIBRARIES.set(L, new Set(ts.keys()));
+    for (const [t, f] of ts) for (const x of [t, f, kindOf(t)]) HOMED.set(x, L);
+  }
   return {places, pills, frames, found, updated, calls: [...calls.values()], generators: true, split: new Set(), splitBy: [], heldOf: () => [], originOf: new Map()};
 };
 // ---- a focus is the fiber of F₀ over the packages in it, with the rest of the code around it ----
@@ -2932,7 +2956,7 @@ const focusBase = () => {
   const star = new Set([...F0.places.keys()].filter(k => kinds.has(kindIn(k))));
   // the libraries of the fiber: each with the types of it the fiber holds
   LIBRARIES = new Map();
-  for (const k of star) { const t = F0.places.get(k)?.type, L = t && libraryOf(t); if (!L) continue; if (!LIBRARIES.has(L)) LIBRARIES.set(L, new Set()); LIBRARIES.get(L).add(t); }
+  for (const k of star) { const t = F0.places.get(k)?.type, L = t && libraryOf(t); if (!L || L.startsWith("~")) continue; if (!LIBRARIES.has(L)) LIBRARIES.set(L, new Set()); LIBRARIES.get(L).add(t); }
   const pills = new Map();
   for (const P of F0.pills.values()) {
     if (isFocused(P.parent)) { pills.set(P.id, P); continue; }
@@ -3104,7 +3128,7 @@ const libraryFrames = places => {
     if (!of) continue;
     // a library whose types the focus takes and gives is a frame on each side
     const id = libFrameAt(of, p.id);
-    if (!frames.has(id)) frames.set(id, {id, library: libOfBox(of.slice(2)), title: libOfBox(of.slice(2)), kids: new Set()});
+    if (!frames.has(id)) frames.set(id, {id, library: libOfBox(of.slice(2)), title: libTitle(libOfBox(of.slice(2))), kids: new Set()});
     frames.get(id).kids.add(p.id);
   }
   return frames;

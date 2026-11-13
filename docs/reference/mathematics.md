@@ -506,6 +506,19 @@ group's box stands for them as well.
 `foldGroups`: an opened group's places as the disk folds them); `orderings` in `engine/tests/plans.mjs` (the program
 `plans/held-in-a-folder`); the pair `workbench`.
 
+### The types of one home
+**What.** A type's home is the smallest frame that holds every function that makes or takes a type of its family (One
+fine plan, every picture its image). Home is a map from the program's own types to the frames of the code's hierarchy,
+and its fibers are a quotient of them: the types that stand at one frame.
+**In Atlas.** A library's types are one box because they are of one library; the program's own types are of the program,
+and where each stands is its home. So the families at one home are one box where they are two or more, named by the frame
+and counting its types: `vectormesh · 12 types` at the top of the overview, `components · 5 types` in an opened package.
+It folds and opens as a library's box does (`V.open.libraries`, the box's name `~` and its frame), and one family at a home
+is that family. A type no other package uses stays inside the package that uses it, as it did: the fold moves no type to
+another frame. A focus draws the types of its own signature and folds no home.
+**Where.** `plan.js` (`HOMED`, at the end of `overviewBase`); `homeFaults` in `engine/tests/plans.mjs`, asked of every
+overview and focus the walk of the view state draws.
+
 ### Places by their kind
 **What.** A quotient of the places of the world by the constructor each is made with (sentence 1): `File(path)` and what a
 type keeps on the disk are the disk's, `Web(url)` the web's, `Global(name)` the globals'. The map is total on the places of
@@ -514,7 +527,9 @@ the disk read where no file is named) lies in one of its classes.
 **In Atlas.** The overview and a focus open at their coarsest, so a kind is one box that says how many places it stands
 for, `Disk · 10`, until the reader opens it; opened, it is a frame around the boxes that stood for its places, each as the
 folds below it draw it. A quotient of the places keeps the side: a kind the program reads and the same kind written are
-two classes, `from Disk · 10` on the left and `into Disk · 4` on the right. A kind of one place is that place, as a library
+two classes, `from Disk · 10` on the left and `into Disk · 4` on the right. Such a picture has no order between its
+functions, so a place the code reads and writes stands on both sides, and is of its kind on each: what is read of it counts
+in the one, what is written in the other. A kind of one place is that place, as a library
 of one type is that type, and a kind one place already stands for (a database, split by its tables) is that group and no
 second box. A route ends at a place and both its ends are visible (sentence 3), so a route and the routes of a kind draw
 their places as they are and fold no kind.
@@ -1554,5 +1569,11 @@ gives and holds. A test is a way in from outside, not a layer.
 **In Atlas.** A route is drawn in layers from its entry to the places it reaches. A focus is three layers: what it takes,
 its functions, what it gives (One fine plan, every picture its image). Its plan has no order between its functions, so a
 call between two of them puts neither before the other: it is a channel of its own, drawn as an arc beside the boxes once
-they are placed, and no line of the layering; the boxes are placed by their lines to the types alone.
-**Where.** `design.md` §2, the viewer's layout (elkjs); `besides` in `viewer/index.html`.
+they are placed, and no line of the layering; the boxes are placed by their lines to the types alone. The overview is four
+layers, the same reading of sentence 2 one level up: what the packages read of the world, the packages, the types that
+cross between them, what they write. A type there is one box that one package gives and another takes, so no layering
+puts it after the one and before the other; the layout puts every type after every package, and the arrowhead says the
+way a line runs. A line's width and its tooltip say how many lines it stands for, since a label would stand as a layer of
+its own between two columns. The layers are where a box is looked for, not a fact of the plan: the picture is the same
+plan under any placing.
+**Where.** `design.md` §2, the viewer's layout (elkjs); `besides`, `columns` and `flipped` in `viewer/index.html`.
