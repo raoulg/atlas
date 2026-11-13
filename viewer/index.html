@@ -1390,8 +1390,8 @@ async function renderPlaat(mine) {
   Object.assign(root, {layoutOptions: {"elk.algorithm": "layered", "elk.direction": "RIGHT", "elk.hierarchyHandling": "INCLUDE_CHILDREN", "elk.edgeRouting": "ORTHOGONAL", "elk.layered.spacing.nodeNodeBetweenLayers": "56", "elk.spacing.nodeNode": "16", "elk.layered.nodePlacement.strategy": "BRANDES_KOEPF", "elk.spacing.edgeNode": "14", "elk.layered.spacing.edgeNodeBetweenLayers": "16", "elk.layered.considerModelOrder.strategy": root.edges.length <= ORDERED_LINES ? "NODES_AND_EDGES" : "NONE"}});
   // A focus is three columns: what it takes, its functions, what it gives. The code's order says nothing between functions
   // that no line orders, so the boxes are placed by their lines alone, straight where they can be (network simplex, while
-  // the lines are few enough to afford it), and the lines of one box leave it as one and part where they must
-  if (V.focus.size && !DIFF) Object.assign(root.layoutOptions, {"elk.layered.considerModelOrder.strategy": "NONE", "elk.layered.mergeEdges": "true", "elk.layered.spacing.edgeEdgeBetweenLayers": "5", "elk.layered.spacing.edgeNodeBetweenLayers": "10", "elk.layered.spacing.nodeNodeBetweenLayers": "36", ...(root.edges.length <= ORDERED_LINES ? {"elk.layered.nodePlacement.strategy": "NETWORK_SIMPLEX"} : {})});
+  // the lines are few enough to afford it); each line stays a line of its own, so that it can be followed from box to box
+  if (V.focus.size && !DIFF) Object.assign(root.layoutOptions, {"elk.layered.considerModelOrder.strategy": "NONE", "elk.layered.spacing.edgeEdgeBetweenLayers": "5", "elk.layered.spacing.edgeNodeBetweenLayers": "10", "elk.layered.spacing.nodeNodeBetweenLayers": "36", ...(root.edges.length <= ORDERED_LINES ? {"elk.layered.nodePlacement.strategy": "NETWORK_SIMPLEX"} : {})});
   let layout;
   laying(root, () => mine === undefined || mine === renderSeq);
   try { layout = await laidOut(root); } catch (err) { if (err === SUPERSEDED) return; throw err; }
