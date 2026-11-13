@@ -2670,11 +2670,12 @@ const openBlocksOf = n => {
 };
 const classBlocks = (frames, leafOf, unitOfLeaf, kept) => {
   for (const k of [...BLOCK_TITLE.keys()]) if (/^(cls|fam):/.test(k)) BLOCK_TITLE.delete(k);
-  const byLeaf = new Map();
+  const byLeaf = new Map(), declared = [];
   for (const [id, leaf] of leafOf) {
     const n = byId.get(id);
-    // a method its base only declares runs no body and has no arrow: no function of the plan
-    if (!["function", "method"].includes(n.kind) || n.declared) continue;
+    // a method its base only declares runs no body and has no arrow: no function a block counts
+    if (!["function", "method"].includes(n.kind)) continue;
+    if (n.declared) { declared.push([id, leaf, n.cls]); continue; }
     if (!byLeaf.has(leaf)) byLeaf.set(leaf, {all: 0, classes: new Map()});
     const L = byLeaf.get(leaf);
     L.all++;
@@ -2724,6 +2725,9 @@ const classBlocks = (frames, leafOf, unitOfLeaf, kept) => {
     for (const r of roots) { emit(r, leaf); const mark = b => { placed.add(b); (kids.get(b) || []).forEach(mark); }; mark(r); }
     for (const c of L.classes.keys()) if (!placed.has(c)) place(c, leaf);
   }
+  // a method a base declares stands where a call into the family runs one of its overrides: in the base's block, where
+  // the base has one
+  for (const [id, leaf, c] of declared) { const at = `n:fam:${c}@${unitOfLeaf.get(leaf)}`; if (frames.has(at)) leafOf.set(id, at); }
 };
 // the place a part's routes are served at over HTTP: what requests them goes out to it, its routes come in from it
 const httpAt = p => ({id: "w:Web:http:" + p, label: `HTTP(${p})`, short: `HTTP(${p})`, kind: "world"});
@@ -2956,8 +2960,13 @@ const restSides = C => {
     }
     if (!taken.has(k)) places.delete(k);
   }
-  // a package of the rest that no line and no call joins to the focus stands nowhere
-  for (const [id, P] of pills) if (side.has(P.id) && P.parent && !P.D.size && !P.C.size && !P.calls?.size && ![...pills.values()].some(Q => Q.calls?.has(id))) pills.delete(id);
+  // a package of the rest that no line and no call joins to the focus stands nowhere, and the rest closed stands on a side
+  // where a line or a call joins it: on the left alone where none does, so that it can be opened
+  const joined = P => P.D.size || P.C.size || P.calls?.size || [...pills.values()].some(Q => Q.calls?.has(P.id));
+  for (const [id, P] of pills) if (side.has(id) && P.parent && !joined(P)) pills.delete(id);
+  const [left, right] = ["n:unit:~in", "n:unit:~out"].map(id => pills.get(id));
+  if (right && !right.parent && !joined(right)) pills.delete(right.id);
+  else if (left && right && !left.parent && !joined(left)) pills.delete(left.id);
   return {...C, places, pills, frames};
 };
 // ---- all routes of a kind are the union of the routes' closed pictures ----

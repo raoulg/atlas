@@ -467,7 +467,8 @@ fn test_code_cuts_a_package_in_two() {
 /// base, and once with the shortcut, two classes that share no base and name their method each its own way. A class that
 /// holds a constructor and a method is a block of both in either program: the instance between them is internal to it. Only
 /// the promise the code states makes the block above them: the clean side has the base's block, holding the functions of
-/// both classes beside the module's one other function (a base that held every function of its module would be the module),
+/// both classes and the method the base declares, which a call into the family runs as one of theirs, beside the module's
+/// one other function (a base that held every function of its module would be the module),
 /// and the shortcut has none, since Atlas draws no family the code does not name. That each block closes to
 /// the image of what it holds is asked of every pair by `every_package_view_is_the_image_of_its_plan`.
 #[test]
@@ -488,8 +489,8 @@ fn the_classes_of_one_base_are_one_block_and_a_class_is_the_block_of_its_functio
         }
     }
     assert!(
-        clean.contains("block fam:pools.pooling.Pool@pools.pooling 4"),
-        "the classes that keep Pool's promise are one block: {clean:?}"
+        clean.contains("block fam:pools.pooling.Pool@pools.pooling 5"),
+        "the classes that keep Pool's promise are one block, with the method Pool declares for them: {clean:?}"
     );
     assert!(!shortcut.iter().any(|f| f.starts_with("block fam:")), "classes that share no base are no family: {shortcut:?}");
 }
