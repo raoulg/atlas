@@ -25,7 +25,7 @@ const D = JSON.parse(fs.readFileSync(dataJson, "utf8"));
 // `ATLAS_FINE_BUDGET=n` cuts the plan as a large program's is cut (`plan.js`, `FINE_BUDGET`)
 const window = process.env.ATLAS_FINE_BUDGET ? {ATLAS_FINE_BUDGET: Number(process.env.ATLAS_FINE_BUDGET)} : {};
 const M = new Function("D", "window", fs.readFileSync(planJs, "utf8") + `
-return {V, plan, imageOf, coarsen, checkOpenings, refines, overviewOpen, OUT, classBlocks, inUnit, partOf, MAKEFILES, treeInfo, stepLabel, oneOf, typeLabel, sideOfRoles, familyOf, kindOf, byId, ordersOn, stepOf, opens, frameOf, valueBox, foldDirs, filePath, valuesOf, closedFamily, typesIn, lightOf, cutBy, familyFrames, here, kindsOf, isData, worldPlaceOf, placeOfType, focusOpen: typeof focusOpen === "function" ? focusOpen : null, overviewEntries, planBase, VIEWS, viewOf, dirsOf, worldUse, storageGroups};`)(D, window);
+return {V, plan, imageOf, coarsen, checkOpenings, libShut, libOpen, kindGroups, worldKindOf, refines, overviewOpen, OUT, classBlocks, inUnit, partOf, MAKEFILES, treeInfo, stepLabel, oneOf, typeLabel, sideOfRoles, familyOf, kindOf, byId, ordersOn, stepOf, opens, frameOf, valueBox, foldDirs, filePath, valuesOf, closedFamily, typesIn, lightOf, cutBy, familyFrames, here, kindsOf, isData, worldPlaceOf, placeOfType, focusOpen: typeof focusOpen === "function" ? focusOpen : null, overviewEntries, planBase, VIEWS, viewOf, dirsOf, worldUse, storageGroups};`)(D, window);
 const {V} = M;
 
 const SIDES = {in: "left", out: "right", mid: "between", both: "both"};
@@ -784,8 +784,9 @@ function focusFaults(tests) {
       window.atlasPlan = null;
       const C = M.plan(), F = window.atlasPlan?.fine;
       first.set(set, focusDrawn(C));
-      // the overview, opened as the focus is and at every package above one in focus
+      // the overview, opened as the focus is (its libraries, which a focus has open, with it) and at every package above one in focus
       V.focus = new Set(); clear(); openAs([...set.filter(s => s !== "unit:~rest"), ...above]);
+      V.open.libraries = new Set(Object.values(LIBRARY));
       const O = M.plan();
       for (const [fid, f] of (F || star).frames) {
         if (!f.step || f.step === "unit:~rest" || f.parent === REST_FRAME || !C.pills.has(fid) || !O.pills.has(fid)) continue;
@@ -904,9 +905,10 @@ function entryFaults(kind, K, rs) {
 // plan: every line ends at a box it draws (`ends`), each line counts the fine lines it stands for and a box stands where the
 // plan puts it (`quotient`, or for a plan of generators `generated`), opening one more box refines it (`checkOpenings`), the
 // picture is a function of the view state (drawn again after every other, it is the same) and of the coordinates its view
-// reads alone (a coordinate it does not read leaves it as it is). What a view has open until the reader closes it is a
-// coordinate of what is closed: a library's frame (`closed.libraries`)
-const COORDINATES = {route: null, kind: null, part: null, focus: "set", tests: "flag", open: {parts: "set", units: "set", steps: "set", functions: "set", families: "set", places: "set", dirs: "set", classes: "set", bases: "set", flat: "set"}, closed: {libraries: "set"}};
+// reads alone (a coordinate it does not read leaves it as it is). A picture opens at its coarsest, so the overview's libraries
+// are a coordinate of what is open (`open.libraries`); a focus draws the types of its own signature, and has its libraries
+// open until the reader closes one, a coordinate of what is closed (`closed.libraries`)
+const COORDINATES = {route: null, kind: null, part: null, focus: "set", tests: "flag", open: {parts: "set", units: "set", steps: "set", functions: "set", families: "set", places: "set", dirs: "set", classes: "set", bases: "set", flat: "set", libraries: "set"}, closed: {libraries: "set"}};
 // the coordinates that are sets of boxes: what the reader opens, and what it closes
 const BOXES = ["open", "closed"];
 // the coordinates each view reads; the others leave its picture as it is
@@ -914,7 +916,7 @@ const READS = {
   route: ["route", "open.steps", "open.functions", "open.families", "open.places", "open.dirs"],
   kind: ["kind", "part", "open.families", "open.places", "open.dirs"],
   focus: ["focus", "part", "tests", "open.units", "open.classes", "open.bases", "open.flat", "open.families", "open.places", "open.dirs", "closed.libraries"],
-  overview: ["part", "tests", "open.parts", "open.units", "open.classes", "open.bases", "open.flat", "open.families", "open.places", "open.dirs", "closed.libraries"],
+  overview: ["part", "tests", "open.parts", "open.units", "open.classes", "open.bases", "open.flat", "open.families", "open.places", "open.dirs", "open.libraries"],
 };
 const VIEW_SEED = Number(process.env.ATLAS_VIEWS_SEED || 437) >>> 0;
 // how many sets of boxes of all coordinates together each view is asked at, and how many boxes it opens alone at most
@@ -986,13 +988,14 @@ function boxesOf(F, view) {
     families: [...new Set(types)].filter(t => M.opens(t)).sort(),
     places: [...new Set([...entry, ...[...F.places.values()].map(p => p.group).filter(Boolean)])].sort(),
     dirs: [...new Set([...files.flatMap(M.dirsOf), ...Object.values(D.flow?.lies_in || {}).flat().map(q => q.slice(7))])].sort(),
-    libraries: [...librariesOf(F).keys()].sort(),
+    libraries: view === "focus" ? [...librariesOf(F).keys()].sort() : [],
+    opened: view === "overview" ? [...librariesOf(F).keys()].sort() : [],
   };
 }
 // the coordinate of the view state each kind of box is set in
-const COORDINATE_OF = {classes: "open.classes", bases: "open.bases", flat: "open.flat", parts: "open.parts", units: "open.units", steps: "open.steps", functions: "open.functions", families: "open.families", places: "open.places", dirs: "open.dirs", libraries: "closed.libraries"};
+const COORDINATE_OF = {classes: "open.classes", bases: "open.bases", flat: "open.flat", parts: "open.parts", units: "open.units", steps: "open.steps", functions: "open.functions", families: "open.families", places: "open.places", dirs: "open.dirs", libraries: "closed.libraries", opened: "open.libraries"};
 // A library's types stand in their library (mathematics.md, "Shapes and their rank", the library; #431). In a view that reads
-// `closed.libraries` (the overview, a focus), a library the plan holds two types of or more is a frame while it is open: each
+// its libraries (the overview, `open.libraries`; a focus, `closed.libraries`), a library the plan holds two types of or more is a frame while it is open: each
 // box of a type of it stands in the frame, the frame holds no other, and the frame stands where the plan puts the library's
 // types, which share one home. Closed, the library is one box, `L · N types`, N the types of the plan it stands for, and no
 // other box of its types is drawn. Closing an open frame draws the image of the open picture under the quotient that sends
@@ -1010,7 +1013,7 @@ function libraryFaults(F, C, opened, reads) {
   const typed = [...C.places.values()].filter(p => p.type && !p.type.startsWith("lib:"));
   for (const [L, ts] of libs) {
     const mine = typed.filter(p => libraryOf(p.type) === L), f = frames.get(box(L)) || frames.get(box(L) + "@" + M.OUT);
-    if (V.closed?.libraries.has(L)) {
+    if (M.libShut(L)) {
       if (mine.length) out.push(`the library ${L} is closed, and ${mine.map(p => p.id).join(", ")} stand beside its box`);
       const b = C.places.get(box(L));
       if (b && b.label !== `${L} · ${ts.size} types`) out.push(`the closed library ${L} is labelled ${b.label}, and stands for ${ts.size} types`);
@@ -1033,9 +1036,9 @@ function libraryFaults(F, C, opened, reads) {
   }
   // closing each open frame draws the quotient of the open picture, and keeps what it does not refine
   for (const L of libs.keys()) {
-    if (!V.closed || V.closed.libraries.has(L)) continue;
+    if (M.libShut(L)) continue;
     const B = M.imageOf(F, opened, false);
-    V.closed.libraries.add(L);
+    M.libOpen(L, false);
     try {
       const A = M.imageOf(F, opened, false);
       for (const f of M.refines(A, B)) out.push(`closing the library ${L}: ${f}`);
@@ -1044,7 +1047,7 @@ function libraryFaults(F, C, opened, reads) {
         const a = A.homeOf([k], false) || null, b = B.homeOf([k], false) || null;
         if (a !== b) out.push(`closing the library ${L} moves ${k} from ${b || "the picture"} to ${a || "the picture"}`);
       }
-    } finally { V.closed.libraries.delete(L); }
+    } finally { M.libOpen(L, true); }
   }
   return out;
 }
@@ -1161,6 +1164,35 @@ function routeEnds() {
   setState(blank());
   return {faults: out, findings: [...findings].sort()};
 }
+// The places of the world by their kind (mathematics.md, "Places by their kind"): the quotient of a picture's places by the
+// constructor each is made with, which keeps the side. A class is drawn as one box where it holds two places or more, and then
+// it holds every place of its kind on its side; no place stands in two; and it is the coarsest of the world's quotients, so a
+// group of the storage quotient lies in one kind or in none. A kind one place of the plan already stands for (a database,
+// split by its tables) is that group and no second box
+function worldKindFaults(C) {
+  const out = [], use = M.worldUse(C), groups = M.kindGroups(C, use), of = new Map();
+  for (const G of groups.values()) {
+    if (G.kids.size < 2) out.push(`the kind ${G.id} holds one place, which is that place`);
+    for (const k of G.kids) {
+      if (of.has(k)) out.push(`${k} stands in the kinds ${of.get(k)} and ${G.id}`);
+      of.set(k, G.id);
+      if (M.worldKindOf(k) !== G.kind) out.push(`${k} stands in the kind ${G.id}, and is a place of ${M.worldKindOf(k)}`);
+      if (use.side(k) !== G.side) out.push(`${k} stands ${use.side(k)}, and its kind ${G.id} stands ${G.side}`);
+    }
+  }
+  const stored = new Set([...C.places.values()].map(p => p.group).filter(Boolean));
+  const world = [...C.places.values()].filter(p => p.kind === "world" && use.used.has(p.id) && M.worldKindOf(p.id));
+  for (const p of world) for (const q of world) {
+    const kind = M.worldKindOf(p.id);
+    if (p.id >= q.id || kind !== M.worldKindOf(q.id) || use.side(p.id) !== use.side(q.id) || (kind !== "Disk" && stored.has("w:" + kind))) continue;
+    if (!of.has(p.id) || of.get(p.id) !== of.get(q.id)) out.push(`${p.id} and ${q.id} are of one kind on one side, and stand in ${of.get(p.id) || "no kind"} and ${of.get(q.id) || "no kind"}`);
+  }
+  for (const S of M.storageGroups(C, use).values()) {
+    const ks = new Set([...S.kids].filter(k => use.used.has(k)).map(k => of.get(k) || null));
+    if (S.kids.size > 1 && ks.size > 1) out.push(`the group ${S.id} lies in the kinds ${[...ks].join(", ")}`);
+  }
+  return out;
+}
 // the faults of one picture, held to its plan
 function stateFaults(name, S) {
   setState(S);
@@ -1179,7 +1211,9 @@ function stateFaults(name, S) {
     for (const f of quotient(F, image, set, homes, occ, valueName, folded)) at(f);
   } else for (const f of generated(F, image, opened)) at(f);
   setState(S);
-  for (const f of libraryFaults(F, M.plan(), opened, READS[view].includes("closed.libraries"))) at(f);
+  for (const f of libraryFaults(F, M.plan(), opened, READS[view].some(c => c.endsWith(".libraries")))) at(f);
+  setState(S);
+  if (view === "overview" || view === "focus") for (const f of worldKindFaults(M.plan())) at(f);
   setState(S);
   return {out, C: M.plan()};
 }

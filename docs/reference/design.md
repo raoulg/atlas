@@ -139,7 +139,7 @@ its kind (an override runs on the value its call runs on); two values with names
 are two values, also when they have one type (`Serial([a, b])` takes both).
 
 A view is its fibers and its ideals: `{route, kind, part, focus, tests, open: {parts, units, steps,
-functions, families, places, dirs, classes, bases, flat}}`. The page writes it to its address after every drawing, so
+functions, families, places, dirs, classes, bases, flat, libraries}}`. The page writes it to its address after every drawing, so
 a picture is a link, and `atlas-code view --view` and the MCP tool `view` draw a page in a view an
 agent wrote. A step opens by its path through the route (`pkg.cli.build/2`, the third call of
 `build`) or, for whoever names functions rather than calls, every step of a function at once
