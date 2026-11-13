@@ -2,7 +2,7 @@ name: perf
 
 # How fast Atlas reads, measured on one runner type and kept as a series per measure on the branch `perf-data`
 # (`history.jsonl` and a README of charts). Nothing here compiles Atlas where a release on GitHub holds its build: every
-# night, the newest nightly pre-release (the open release branch while one is open, else `next`) reads the programs
+# night, the newest nightly pre-release (of `next`) reads the programs
 # `perf` reads of the corpus (`tools/corpus.txt`) cold and warm, three rounds; a night whose newest build the series has
 # measured already is skipped, said in the summary. A
 # measure past its baseline is suspect, and says nothing yet: the same run measures it again against the last commit that
@@ -75,7 +75,7 @@ jobs:
             git worktree add --orphan -b perf-data "$GITHUB_WORKSPACE/data"
           fi
       - uses: astral-sh/setup-uv@v10.3.0
-      # the build of the newest nightly pre-release: the open release branch while one is open, else next. A night whose
+      # the build of the newest nightly pre-release, of next. A night whose
       # newest build is the one the series measured last, or that has none, is skipped, never built
       - name: the newest nightly build
         id: build
@@ -233,7 +233,7 @@ jobs:
         run: |
           release=$(git tag -l 'v*' --sort=-v:refname | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | head -1)
           echo "RELEASE=$release" >> "$GITHUB_ENV"
-          # a branch is named as the checkout has it, origin/<branch>; `release-0.73` is taken as that too
+          # a branch is named as the checkout has it, origin/<branch>; `next` is taken as that too
           to=${TO:-origin/next}
           git rev-parse --verify -q "$to^{commit}" >/dev/null || to="origin/$to"
           uv run tools/perf.py reproduce --repo . --a "$release" --b "$to" --programs "$GITHUB_WORKSPACE/programs" \
