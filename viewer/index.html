@@ -506,14 +506,16 @@ function frameLesson(at) {
   svg.call(zoom.transform, d3.zoomIdentity.translate(W / 2 - scale * cx, H / 2 - scale * cy).scale(scale));
   document.getElementById("app").classList.add("lesson-framed");
 }
+// the legend lies over the bottom of the canvas: a fitted picture ends above it
+const footHeight = () => { const L = document.getElementById("legend"); return L && L.offsetHeight ? L.offsetHeight + 14 : 0; };
 function fit(animate = false, pad = 40, tries = 0) {
   const W = svg.node().clientWidth, H = svg.node().clientHeight;
   if ((W < 200 || H < 200) && tries < 30) { setTimeout(() => fit(animate, pad, tries + 1), 100); return; }
   const bb = document.getElementById("scene").getBBox();
   if (!bb.width || !bb.height) return;
-  const top = barHeight();  // keep the state bar clear
-  let s = Math.max(zoom.scaleExtent()[0], Math.min((W - pad*2) / bb.width, (H - top - pad*2) / bb.height, 1.4));
-  let t = d3.zoomIdentity.translate(W/2 - s*(bb.x + bb.width/2), top + (H - top)/2 - s*(bb.y + bb.height/2)).scale(s);
+  const top = barHeight(), foot = footHeight();  // keep the state bar and the legend clear
+  let s = Math.max(zoom.scaleExtent()[0], Math.min((W - pad*2) / bb.width, (H - top - foot - pad*2) / bb.height, 1.4));
+  let t = d3.zoomIdentity.translate(W/2 - s*(bb.x + bb.width/2), top + (H - top - foot)/2 - s*(bb.y + bb.height/2)).scale(s);
   if (animate) svg.transition().duration(300).call(zoom.transform, t); else svg.call(zoom.transform, t);
 }
 document.getElementById("fit").onclick = () => fit(true);
@@ -1794,8 +1796,8 @@ async function renderPlaat(mine) {
   let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
   for (const q of pos.values()) { x0 = Math.min(x0, q.x); y0 = Math.min(y0, q.y); x1 = Math.max(x1, q.x + q.w); y1 = Math.max(y1, q.y + q.h); }
   x0 = Math.min(x0, 20); y0 = Math.min(y0, 10);
-  const W = svg.node().clientWidth, H = svg.node().clientHeight, top = document.getElementById("crumbs").offsetHeight + 14, pad = 30;
-  const fitK = Math.max(zoom.scaleExtent()[0], Math.min((W - 2 * pad) / (x1 - x0), (H - top - 2 * pad) / (y1 - y0), 1.4));
+  const W = svg.node().clientWidth, H = svg.node().clientHeight, top = document.getElementById("crumbs").offsetHeight + 14, foot = footHeight(), pad = 30;
+  const fitK = Math.max(zoom.scaleExtent()[0], Math.min((W - 2 * pad) / (x1 - x0), (H - top - foot - 2 * pad) / (y1 - y0), 1.4));
   const t0 = d3.zoomTransform(svg.node());
   const alt = id => [id, "group:" + id, "n:" + id, id.replace(/^o:/, "n:"), id.replace(/^(n|o|group):/, "")];
   const anchorIn = m => { for (const id of alt(plaatAnchor)) if (m.has(id)) return m.get(id); return null; };
@@ -1809,7 +1811,7 @@ async function renderPlaat(mine) {
     ty = Math.min(Math.max(ty, top + pad - k * a1.y), H - pad - k * (a1.y + a1.h));
     t1 = d3.zoomIdentity.translate(tx, ty).scale(k);
   } else if (plaatFit || !pos.size) {
-    t1 = d3.zoomIdentity.translate(W / 2 - fitK * (x0 + x1) / 2, top + (H - top) / 2 - fitK * (y0 + y1) / 2).scale(fitK);
+    t1 = d3.zoomIdentity.translate(W / 2 - fitK * (x0 + x1) / 2, top + (H - top - foot) / 2 - fitK * (y0 + y1) / 2).scale(fitK);
   }
   if (t1) { if (plaatFit || !DUR) svg.call(zoom.transform, t1); else svg.transition().duration(DUR).call(zoom.transform, t1); }
   prevPos = pos; prevParent = parentOf; plaatAnchor = null; plaatFit = false;
@@ -2280,6 +2282,9 @@ async function render() {
   entrySel.style.display = view === "plaat" ? "" : "none";
   crumbs();
   writeView();
+  // the legend first: the picture is fitted above it, and once more where the picture gave the legend another height
+  legend();
+  const fitted = view === "plaat" && (plaatFit || !prevPos.size), foot = footHeight();
   try {
     if (view === "plaat") { await renderPlaat(mine); } else if (view === "types") { renderTypes(); fit(); } else { await renderSig(); }
   } catch (err) { scene.node().classList.remove("busy"); fault(err); return; }
@@ -2287,6 +2292,7 @@ async function render() {
   // the packages around a focus are a fact of its plan (`focusBase`)
   if (view === "plaat" && V.focus.size) crumbs();
   legend();
+  if (fitted && !userZoomed && footHeight() !== foot) fit();
   relabel();
   if (selected) scene.node().querySelectorAll(`[data-id="${CSS.escape(selected)}"]`).forEach(x => x.classList.add("selected"));
   if (D.served) { markNotes(); report(); }
