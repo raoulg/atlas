@@ -3353,6 +3353,80 @@ fn every_wire_of_a_typed_forward_pass_carries_its_shape() {
     assert!(wires >= 12, "{wires} wires");
 }
 
+/// The modules pair (#456): `branch` returns what its call gives, `Projection.forward`'s `Float[Tensor, "*lead {self.out}"]`,
+/// under the written `Float[Tensor, "batch 16"]`, a shape of another rank family. What a body gives back is of a type its
+/// signature gives as its language reads the type (`docs/reference/mathematics.md`, "One fine plan, every picture its
+/// image"): ty reads both shapes as `Tensor`, and a shape refines that type, so the body is made of its call's result. The
+/// two forms of the call, `projection(image)` and `projection.forward(image)`, give back the same (the `.plan` files beside
+/// the pair draw the line from the call's result to `branch`'s own arrow).
+#[test]
+fn a_body_gives_back_its_calls_result_under_another_shape_of_the_same_array() {
+    use atlas_engine::shapes::Array;
+    let side = |s: &str| {
+        analyze(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/pairs/modules/python").join(s), &Options::default()).unwrap()
+    };
+    let returns = |g: &Graph, f: &str| -> Vec<String> {
+        g.edges.iter().filter(|e| e.src == f && e.kind == EdgeKind::Returns).map(|e| e.dst.clone()).collect()
+    };
+    for s in ["clean", "shortcut"] {
+        let g = side(s);
+        let (call, written) = (returns(&g, "encoders.model.Projection.forward"), returns(&g, "encoders.model.branch"));
+        let rank = |t: &[String]| t.iter().filter_map(|t| Array::of_id(t)).map(|a| a.rank()).collect::<Vec<_>>();
+        assert_ne!(rank(&call), rank(&written), "{s}: the call's shape and the written one are of two rank families");
+        let made = flow::of(&g).bodies["encoders.model.branch"].made_from.clone();
+        assert_eq!(made, call, "{s}: branch gives back what its call made");
+    }
+}
+
+/// The modules pair (#456): only what a body returns as a call gives it is compared as its language reads the type, in
+/// both directions. `widened(..) -> Float[Tensor, "*lead 16"]` returns `branch(..)`, which gives `Float[Tensor, "batch 16"]`:
+/// a written return wider than the call's, and the body gives back what the call made. `headed` drops one result of
+/// `Projection.forward` and hands another to `Head.forward`, whose result it returns: a shaped array of the same array type
+/// that the body names or drops is no part of what it gives back, so `headed` is made of `Head.forward`'s result alone.
+#[test]
+fn only_the_returned_call_is_compared_as_its_language_reads_the_type() {
+    let side = |s: &str| {
+        analyze(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/pairs/modules/python").join(s), &Options::default()).unwrap()
+    };
+    let returns = |g: &Graph, f: &str| -> Vec<String> {
+        g.edges.iter().filter(|e| e.src == f && e.kind == EdgeKind::Returns).map(|e| e.dst.clone()).collect()
+    };
+    for s in ["clean", "shortcut"] {
+        let g = side(s);
+        let flow = flow::of(&g);
+        let returned: Vec<&str> =
+            g.node("encoders.model.headed").unwrap().sites.iter().filter(|x| x.returned).map(|x| x.to.as_str()).collect();
+        assert_eq!(returned, ["encoders.model.Head.forward"], "{s}: headed returns Head.forward's result as it is");
+        let (call, written) = (returns(&g, "encoders.model.branch"), returns(&g, "encoders.model.widened"));
+        assert_ne!(call, written, "{s}: the written return is another shape than the call's");
+        assert_eq!(flow.bodies["encoders.model.widened"].made_from, call, "{s}: widened gives back what branch made");
+        assert_eq!(
+            flow.bodies["encoders.model.headed"].made_from,
+            returns(&g, "encoders.model.Head.forward"),
+            "{s}: headed gives back no result of Projection.forward"
+        );
+    }
+}
+
+/// A `return` in a function the body defines leaves that function, not the body (#456): in `plans/returned-shape`,
+/// `hooked` defines `hook`, whose `return Projection().forward(y)` is `hook`'s, and itself returns
+/// `MeanPool().forward(..)`. Only the body's own return is what it gives back as a call gives it, so `hooked` is made of
+/// `MeanPool.forward`'s result alone, though `Projection.forward`'s is a shape of the same array.
+#[test]
+fn a_return_in_a_function_the_body_defines_is_not_the_bodys() {
+    let g = analyze(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/plans/returned-shape"), &Options::default()).unwrap();
+    let returned: Vec<&str> =
+        g.node("mesh.components.hooked").unwrap().sites.iter().filter(|s| s.returned).map(|s| s.to.as_str()).collect();
+    assert_eq!(returned, ["mesh.components.MeanPool.forward"]);
+    let pool: Vec<String> = g
+        .edges
+        .iter()
+        .filter(|e| e.src == "mesh.components.MeanPool.forward" && e.kind == EdgeKind::Returns)
+        .map(|e| e.dst.clone())
+        .collect();
+    assert_eq!(flow::of(&g).bodies["mesh.components.hooked"].made_from, pool);
+}
+
 /// Only a torch module's call runs its forward (#422): a class that is no module is called through its own `__call__`,
 /// whatever else it names `forward`, and so is a module that defines `__call__` itself, and a class below one. The rule
 /// is torch's alone; no other class's call is given a `forward`.
