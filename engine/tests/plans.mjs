@@ -923,8 +923,8 @@ const BOXES = ["open", "closed"];
 const READS = {
   route: ["route", "errors", "receivers", "open.steps", "open.functions", "open.families", "open.places", "open.dirs"],
   kind: ["kind", "part", "errors", "receivers", "open.families", "open.places", "open.dirs"],
-  focus: ["focus", "part", "tests", "open.units", "open.classes", "open.bases", "open.flat", "open.families", "open.places", "open.dirs", "closed.libraries"],
-  overview: ["part", "tests", "open.parts", "open.units", "open.classes", "open.bases", "open.flat", "open.families", "open.places", "open.dirs", "open.libraries"],
+  focus: ["focus", "part", "tests", "errors", "open.units", "open.classes", "open.bases", "open.flat", "open.families", "open.places", "open.dirs", "closed.libraries"],
+  overview: ["part", "tests", "errors", "open.parts", "open.units", "open.classes", "open.bases", "open.flat", "open.families", "open.places", "open.dirs", "open.libraries"],
 };
 const VIEW_SEED = Number(process.env.ATLAS_VIEWS_SEED || 437) >>> 0;
 // how many sets of boxes of all coordinates together each view is asked at, and how many boxes it opens alone at most

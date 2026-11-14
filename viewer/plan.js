@@ -2901,7 +2901,9 @@ const overviewBase = () => {
   const kin = new Map(), homes = new Map();
   for (const [t, [mk, tk]] of used) { const f = block(t); if (!kin.has(f)) kin.set(f, []); kin.get(f).push(...mk, ...tk); }
   for (const [t, [mk, tk]] of used) {
-    const k = addPlace({...typePlace(t), home: undefined});
+    // a type every function that makes it hands on as an error is an error of the program: counted on those functions
+    // where none takes it (`foldErrors`)
+    const k = addPlace({...typePlace(t), home: undefined, ...(mk.length && mk.every(x => errorsOf(x).has(t)) ? {err: true} : {})});
     homes.set(k, kin.get(block(t)));
     for (const x of mk) pillOf(x).C.set(k, false);
     for (const x of tk) pillOf(x).D.set(k, false);
@@ -3228,8 +3230,8 @@ const plan = () => {
   }
   alike(C);
   window.atlasPlan = {fine: F, coarse: C, opened: view.opened};
-  const whole = view.drawn ? view.drawn(C) : C, folds = !SIDE && ["route", "kind"].includes(viewOf());
-  const counted = V.errors || !folds ? whole : foldErrors(whole), drawn = V.receivers || !folds ? counted : foldReceivers(counted);
+  const whole = view.drawn ? view.drawn(C) : C, folds = !SIDE, names = folds && ["route", "kind"].includes(viewOf());
+  const counted = V.errors || !folds ? whole : foldErrors(whole), drawn = V.receivers || !names ? counted : foldReceivers(counted);
   return {...drawn, libraries: libraryFrames(drawn.places), calling: !!F.calls, fiber: F.fiber || null};
 };
 

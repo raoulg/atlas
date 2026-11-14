@@ -242,8 +242,10 @@ is the summand `E` of every step that hands it on. Drawing each such error as a 
 counting it on the arrow is the coarser one, and it is the one a route opens at: a step that hands errors on
 carries their number (`+2 errors`), as the frame of an opened step does, and the view says how many the picture
 counts. `errors` in the view draws them as boxes. The counted picture is the drawn one less those errors:
-the same steps and frames, every other box, every other line.
-**Where.** `plan.js`: `foldErrors`, the last arrow of `plan`; the view's `errors` (`sight.rs`). Held by
+the same steps and frames, every other box, every other line. The overview and a focus count by the same
+rule on their own boxes, the types: a type that every function that makes it hands on as an error is an error
+of the program, and where no function takes it, it is counted on the packages and classes that hand it on.
+**Where.** `plan.js`: `foldErrors`, the last arrow of `plan`, and `overviewBase`, which marks such a type; the view's `errors` (`sight.rs`). Held by
 `engine/tests/plans.mjs`, `errorFaults`, which draws every view state both ways and compares them.
 
 ### The receiver is a channel of its own
