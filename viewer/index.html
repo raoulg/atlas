@@ -133,7 +133,7 @@ svg#canvas:active{cursor:grabbing}
 #crumbs button.fold{border-radius:11px;color:var(--ink-3);background:none}
 #crumbs button.fold::before{content:"○ ";font-size:9px}
 #crumbs button.fold.on{background:var(--panel);color:var(--ink)}
-#crumbs button.fold.on::before{content:"● ";color:var(--accent,var(--ink))}
+#crumbs button.fold.on::before{content:"● ";color:var(--ink-2)}
 #crumbs button.count{border-style:dashed}
 #crumbs .lbl{letter-spacing:.06em;text-transform:uppercase;font-size:10px;margin-left:8px}
 #crumbs .lbl:first-child{margin-left:0}
@@ -1291,10 +1291,10 @@ async function renderPlaat(mine) {
   // a frame is at least as wide as its title, a choice's with what decides its branches
   const titled = (n, F) => Object.assign(n.layoutOptions, {"elk.nodeSize.constraints": "MINIMUM_SIZE", "elk.nodeSize.minimum": `(${textW((F.synthetic ? "" : "▾ ") + F.title + (F.errors?.length ? countedText(F.errors) : "") + (F.whens || []).map(([, w]) => `  ● ${w}`).join(""), 7.2) + 34},60)`});
   // the errors a step hands on, counted on it: a click draws the errors of the picture as boxes
-  const countedText = errors => `  +${errors.length} ${errors.length === 1 ? "error" : "errors"}`;
+  const countedText = errors => `  +${errors.length} error ${errors.length === 1 ? "type" : "types"}`;
   const countedMark = (text, errors) => {
     const t = el("tspan", {class: "errs"}, text); t.textContent = countedText(errors);
-    el("title", {}, t).textContent = `hands on ${errors.length === 1 ? "an error" : errors.length + " errors"}: ${errors.join(", ")} · click to draw the errors as boxes`;
+    el("title", {}, t).textContent = `can hand on ${errors.length === 1 ? "an error of the type" : "errors of the types"} ${errors.join(", ")}: no fault, the code names what can go wrong · click to draw the error types as boxes`;
     t.addEventListener("click", ev => { ev.stopPropagation(); V.errors = true; render(); });
   };
   for (const F of frames.values()) {
@@ -1894,7 +1894,7 @@ function crumbs() {
     fold("tests", !V.tests, V.tests ? "leave the test code out: the program alone" : "draw the test code too: tests, test modules and what they touch", () => { V.tests = !V.tests; });
   // errors that are only handed on are counted on the box that hands them on; shown where there are errors
   if (!DIFF && pictureErrors.length)
-    fold(`errors · ${pictureErrors.length}`, !V.errors, V.errors ? "count the errors a box hands on, on the box: " + pictureErrors.join(", ") : "draw each error a box hands on as a box: " + pictureErrors.join(", "), () => { V.errors = !V.errors; });
+    fold(`error types · ${pictureErrors.length}`, !V.errors, V.errors ? "count the errors a box hands on, on the box: " + pictureErrors.join(", ") : "draw each error a box hands on as a box: " + pictureErrors.join(", "), () => { V.errors = !V.errors; });
   // what a step runs on is said by its name; shown where the picture has such a step
   if (V.route && !DIFF && (V.receivers || pictureRuns))
     fold("runs on, by name", !V.receivers, V.receivers ? "name a step by the value it runs on (model.forward), without a line from that value" : "draw a line from each value to the steps that run on it", () => { V.receivers = !V.receivers; });

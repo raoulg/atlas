@@ -240,7 +240,7 @@ composite unchanged, by the copairing `[g, id_E]`.
 arrows and is drawn as one. An error that only leaves, handed on from border to border up to the route's,
 is the summand `E` of every step that hands it on. Drawing each such error as a box is one level of zoom;
 counting it on the arrow is the coarser one, and it is the one a route opens at: a step that hands errors on
-carries their number (`+2 errors`), as the frame of an opened step does, and the view says how many the picture
+carries their number (`+2 error types`), as the frame of an opened step does, and the view says how many the picture
 counts. `errors` in the view draws them as boxes. The counted picture is the drawn one less those errors:
 the same steps and frames, every other box, every other line. The overview and a focus count by the same
 rule on their own boxes, the types: a type that every function that makes it hands on as an error is an error
