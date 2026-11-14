@@ -516,16 +516,25 @@ const inUnit = (id, u) => { const m = byId.get(id)?.module ?? ""; return u.endsW
 const UNITS = (D.flow || {}).units || {tops: [], kids: {}};
 const unitsBelow = u => UNITS.kids[u] || [];
 const topUnits = part => (UNITS.tops.find(([p]) => p === part) || [null, []])[1];
-const unitLabel = u => { if (u === "~in" || u === "~out" || u === REST) { const n = FOCUS.rest.length; return `the rest · ${n} ${n === 1 ? "package" : "packages"}`; } if (u.startsWith("~")) return unitLabel(u.slice(4)); const base = u.replace(/\$$/, ""), last = base === "_root" ? "scripts at the root" : base.split(".").pop(); return u.endsWith("$") ? `${last} itself` : last; };
+const unitLabel = u => { if (u === "~in" || u === "~out" || u === REST) { const n = FOCUS.rest.length; return `the rest · ${n} ${n === 1 ? "package" : "packages"}`; } if (u.startsWith("~")) return unitLabel(u.slice(4)); if (/^(cls|fam):/.test(u)) return BLOCK_TITLE.get(u) || u.slice(4).split("@")[0].split(".").pop(); const base = u.replace(/\$$/, ""), last = base === "_root" ? "scripts at the root" : base.split(".").pop(); return u.endsWith("$") ? `${last} itself` : last; };
 const partOfUnit = u => { const m = [...byId.values()].find(n => n.kind === "module" && inUnit(n.id, u)); return m ? partOf(m) : partOf({}); };
 // the rest of the code around a focus is one block (`~rest`), drawn on both sides of the focus: as `~in` it hands data to
 // the focus, as `~out` it takes data from it; opened, each side holds the packages of the rest (`~in:app.serve`)
 // (`focusBase`, `restSides`)
 const REST = "~rest";
+// what the reader puts in focus: a package by its name, a class or a base class by its block (`cls:`, `fam:`)
+const focusKey = step => (step.startsWith("unit:") ? step.slice(5) : step);
 const isRest = u => u.startsWith("~");
 // the focus last planned: the packages of its rest, those of them that share a type with it (the most first), and the
 // packages in it (`focusBase`)
-let FOCUS = {rest: [], around: [], steps: new Set()};
+let FOCUS = {rest: [], around: [], steps: new Set(), above: new Map()};
+// a block put in focus or let go of. A block inside the focus is already in it, so naming it narrows the focus to it: the
+// blocks around it leave the focus, as do the blocks inside one that is named
+const putInFocus = key => {
+  if (V.focus.delete(key)) return;
+  for (const k of [...V.focus]) if (FOCUS.above.get(key)?.includes(k) || FOCUS.above.get(k)?.includes(key)) V.focus.delete(k);
+  V.focus.add(key);
+};
 const neighbours = () => FOCUS.around;
 // a unit's routes: its entries, then its doors, what other units call in it
 function unitRoutes(u) {
@@ -909,7 +918,7 @@ function routeTree() {
     // a focus: the packages chosen, each opened as before, and the rest of the code on either side
     if (V.focus.size) {
       const rest = r => ({id: "unit:" + r, open: false, kids: [], hue: null, choice: false});
-      return [...[...V.focus].sort().flatMap(u => unitNodes([u], partOfUnit(u))), rest("~in"), rest("~out")];
+      return [...[...V.focus].filter(u => !/^(cls|fam):/.test(u)).sort().flatMap(u => unitNodes([u], partOfUnit(u))), rest("~in"), rest("~out")];
     }
     if (multi && !V.part) return PARTS.filter(p => !SIDE || held("p:" + p.id, n => partOf(n) === p.id)).map(p => { const open = V.open.parts.has(p.id); return {id: "part:" + p.id, open, kids: open ? unitNodes(topUnits(p.id), p.id) : [], hue: null, choice: false}; });
     const part = V.part || partOf({});
@@ -2957,14 +2966,16 @@ const focusBase = () => {
   const focused = new Map();
   const isFocused = fid => {
     if (!fid) return false;
-    if (!focused.has(fid)) focused.set(fid, V.focus.has(unitAt(fid)) || isFocused(fr.get(fid).parent));
+    if (!focused.has(fid)) focused.set(fid, V.focus.has(focusKey(fr.get(fid).step)) || isFocused(fr.get(fid).parent));
     return focused.get(fid);
   };
   // a frame holds the focus when a package of the focus lies in it or is it
   const holding = new Set();
   for (const fid of fr.keys()) if (isFocused(fid)) for (let f = fid; f; f = fr.get(f).parent) holding.add(f);
-  // a package of the rest: one that holds no code in focus and lies in none that holds no code in focus
-  const restTop = fid => !!unitAt(fid) && !holding.has(fid) && !(unitAt(fr.get(fid).parent) && !holding.has(fr.get(fid).parent));
+  // a block of the rest: a package that holds no code in focus, or beside a class or base in focus a block of its package
+  // that holds none; the rest's own are those that lie in no such block
+  const apart = fid => !!fid && !holding.has(fid) && (!!unitAt(fid) || holding.has(fr.get(fid).parent));
+  const restTop = fid => apart(fid) && !apart(fr.get(fid).parent);
   const restOf = fid => { let f = fid; while (f && !restTop(f)) f = fr.get(f).parent; return f; };
   // the block of `F₀`'s places a type's box is while its family is closed: its kind
   const rest = "n:unit:" + REST, kindIn = k => { const t = F0.places.get(k)?.type; return t ? "t:" + kindOf(t) : k; };
@@ -2980,7 +2991,7 @@ const focusBase = () => {
     const only = m => new Map([...m].filter(([k]) => star.has(k)));
     // a package of the rest never opens, so a function of it stands in its package, whatever class or base holds it there
     let parent = P.parent;
-    while (parent && !unitAt(parent)) parent = fr.get(parent).parent;
+    while (parent && !apart(parent)) parent = fr.get(parent).parent;
     pills.set(P.id, {...P, parent, D: only(P.D), C: only(P.C), goes: only(P.goes), whole: only(P.whole)});
   }
   const calls = F0.calls.filter(c => c.some(f => isFocused(F0.pills.get("n:" + f)?.parent)));
@@ -2990,14 +3001,14 @@ const focusBase = () => {
   const frames = new Map(), tops = [];
   for (const [fid, f] of fr) {
     if (isFocused(fid)) frames.set(fid, isFocused(f.parent) ? f : {...f, parent: null});
-    else if (unitAt(fid) && !holding.has(fid)) { const top = restTop(fid); frames.set(fid, top ? {...f, parent: rest} : f); if (top) tops.push(unitAt(fid)); }
+    else if (apart(fid)) { const top = restTop(fid); frames.set(fid, top ? {...f, parent: rest} : f); if (top) tops.push(focusKey(f.step)); }
   }
   const places = new Map([...star].map(k => { const pl = F0.places.get(k); return [k, "home" in pl ? {...pl, home: isFocused(pl.home) ? pl.home : undefined} : pl]; }));
   // the packages of the rest that share a type with the focus, each with the boxes of the types it shares
   const shares = new Map();
   for (const P of pills.values()) {
     if (isFocused(P.parent)) continue;
-    const u = unitAt(restOf(P.parent)), ts = [...P.D.keys(), ...P.C.keys()].filter(k => places.get(k)?.type).map(k => "t:" + placeOfType(places.get(k).type));
+    const u = focusKey(fr.get(restOf(P.parent))?.step || ""), ts = [...P.D.keys(), ...P.C.keys()].filter(k => places.get(k)?.type).map(k => "t:" + placeOfType(places.get(k).type));
     if (!shares.has(u)) shares.set(u, new Set());
     ts.forEach(t => shares.get(u).add(t));
   }
@@ -3005,6 +3016,7 @@ const focusBase = () => {
     rest: tops,
     around: [...shares].filter(([, s]) => s.size).map(([u, s]) => ({u, n: s.size})).sort((a, b) => b.n - a.n || a.u.localeCompare(b.u)),
     steps: new Set([...frames.values()].filter(f => isFocused(f.id)).map(f => f.step)),
+    above: new Map([...fr].map(([fid, f]) => { const up = []; for (let a = f.parent; a; a = fr.get(a).parent) up.push(focusKey(fr.get(a).step)); return [focusKey(f.step), up]; })),
   };
   if (tops.length) frames.set(rest, {id: rest, step: "unit:" + REST, parent: null, hue: null, title: stepName("unit:" + REST)});
   return {...F0, places, pills, frames, calls};
@@ -3020,7 +3032,7 @@ const focusOpen = key => (key === "unit:" + REST ? V.open.units.has(REST) : FOCU
 const OUT = "»out";
 const restSides = C => {
   const rest = "n:unit:" + REST, open = C.frames.has(rest), twins = new Map(), side = new Map();
-  const twinOf = (P, s) => (P.id === rest ? "n:unit:" + s : `n:unit:${s}:${P.steps[0].slice(5)}`);
+  const twinOf = (P, s) => (P.id === rest ? "n:unit:" + s : `n:unit:${s}:${focusKey(P.steps[0])}`);
   const pills = new Map(), frames = new Map([...C.frames].filter(([id]) => id !== rest));
   const none = () => new Map();
   for (const P of C.pills.values()) {

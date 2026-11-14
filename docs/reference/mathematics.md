@@ -1227,8 +1227,12 @@ test code (A filter: the program without its test code), and is the fiber of the
 line of a touch carries the formula of who makes its path whole, so the fiber can be taken on the
 plan too, the hierarchy below a module taken of the fiber after it, and both ways give one plan.
 
-A focus, the overview with a set `U` of packages singled out (shift-click), is a fiber of `F₀`, not a
-construction of its own. Its plan `F_U` is the star of `U` in `F₀`:
+A focus, the overview with a set `U` of its blocks singled out (shift-click), is a fiber of `F₀`, not a
+construction of its own. A block of `F₀` is a package, a class or a base class with the classes that keep
+its promise: whatever `F₀` draws as one box can be in focus, and the rule below reads the same for each
+("package" stands for the block). A block inside one in focus is in focus already, so naming it can only
+mean it alone: the focus narrows to it (`putInFocus`). Beside a class in focus, the other blocks of its
+package are blocks of the rest. Its plan `F_U` is the star of `U` in `F₀`:
 
 - the functions of the packages in `U`, with every place they make, take or touch. A type stands in its
   kind (`kindOf`), the box it has while its family is closed, and `F_U` holds that box whole: a box of

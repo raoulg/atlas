@@ -31,7 +31,7 @@ pub struct Sight {
     /// One part, by its id.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub part: Option<String>,
-    /// The packages in focus, by their ids.
+    /// What is in focus: a package by its id, a class or a base class by its block (`cls:…`, `fam:…`).
     #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
     pub focus: BTreeSet<String>,
     /// The overview keeps the test code. Without it, the overview is the fiber of the code that is no

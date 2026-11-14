@@ -701,16 +701,20 @@ function testFaults() {
 // every picture its image", the focus). Restated here from `F₀` and the packages in focus `U`: the functions of the packages in
 // focus with every place they make, take or touch, a type with every type of its kind (the box it has while its family is
 // closed; a library is a quotient of the fiber, taken after it); every other function with its lines to those places and its
-// calls into the focus, in its package whatever class or base holds it there, and where it draws neither it stands nowhere; the frames of the focus as in `F₀`, those in focus that lie in no package in focus at the
-// top, and the rest's: each package that holds no code in focus and lies in none that holds none, in the rest's frame; a
-// type's home `F₀`'s where it is a package of the focus, else outside every package; the calls with an end in the focus
+// calls into the focus, in its block of the rest, and where it draws neither it stands nowhere; the frames of the focus as in
+// `F₀`, those in focus that lie in no block in focus at the top, and the rest's: each package that holds no code in focus and,
+// beside a class or a base class in focus, each block of its package that holds none, the outermost of them in the rest's
+// frame; a type's home `F₀`'s where it is a block of the focus, else outside every package; the calls with an end in the
+// focus. What is in focus is a block of `F₀`: a package by its name, a class or a base class by its step
 const REST_FRAME = "n:unit:~rest";
+const focusKey = step => (step.startsWith("unit:") ? step.slice(5) : step);
 function starOf(F0, U) {
   const unitAt = fid => (F0.frames.get(fid)?.step.startsWith("unit:") ? F0.frames.get(fid).step.slice(5) : null);
-  const inFocus = fid => { for (let f = fid; f; f = F0.frames.get(f).parent) if (U.includes(unitAt(f))) return true; return false; };
+  const inFocus = fid => { for (let f = fid; f; f = F0.frames.get(f).parent) if (U.includes(focusKey(F0.frames.get(f).step))) return true; return false; };
   const holds = fid => [...F0.frames.keys()].some(g => inFocus(g) && (() => { for (let f = g; f; f = F0.frames.get(f).parent) if (f === fid) return true; return false; })());
   const kind = k => { const t = F0.places.get(k)?.type; return t ? M.kindOf(t) : k; };
-  const inPackage = fid => { let f = fid; while (f && !unitAt(f)) f = F0.frames.get(f).parent; return f; };
+  const apart = fid => !!fid && !holds(fid) && (!!unitAt(fid) || holds(F0.frames.get(fid).parent));
+  const inPackage = fid => { let f = fid; while (f && !apart(f)) f = F0.frames.get(f).parent; return f; };
   const mine = [...F0.pills.values()].filter(P => inFocus(P.parent));
   const kinds = new Set(mine.flatMap(P => [...P.D.keys(), ...P.C.keys()]).map(kind));
   const star = k => kinds.has(kind(k));
@@ -725,18 +729,20 @@ function starOf(F0, U) {
   const frames = new Map();
   for (const [fid, f] of F0.frames) {
     if (inFocus(fid)) frames.set(fid, {...f, parent: inFocus(f.parent) ? f.parent : null});
-    else if (unitAt(fid) && !holds(fid)) frames.set(fid, {...f, parent: unitAt(f.parent) && !holds(f.parent) ? f.parent : REST_FRAME});
+    else if (apart(fid)) frames.set(fid, {...f, parent: apart(f.parent) ? f.parent : REST_FRAME});
   }
   if ([...frames.values()].some(f => f.parent === REST_FRAME)) frames.set(REST_FRAME, {id: REST_FRAME, parent: null});
   const places = new Map([...F0.places].filter(([k]) => star(k)).map(([k, pl]) => [k, "home" in pl ? {...pl, home: inFocus(pl.home) ? pl.home : undefined} : pl]));
   return {...F0, places, pills, frames, calls};
 }
-// The sets of packages put in focus: each subset while there are few, else each alone and each pair
+// The sets of blocks put in focus: of the packages each subset while there are few, else each alone and each pair; each
+// class and each base class alone
 function focusSets(F0) {
   const units = [...F0.frames.values()].filter(f => f.step.startsWith("unit:")).map(f => f.step.slice(5));
-  return units.length <= 4
+  const blocks = [...F0.frames.values()].filter(f => /^(cls|fam):/.test(f.step)).map(f => [f.step]);
+  return (units.length <= 4
     ? [...Array(1 << units.length).keys()].slice(1).map(m => units.filter((_, i) => m & (1 << i)))
-    : [...units.map(u => [u]), ...units.flatMap((a, i) => units.slice(i + 1).map(b => [a, b]))];
+    : [...units.map(u => [u]), ...units.flatMap((a, i) => units.slice(i + 1).map(b => [a, b]))]).concat(blocks);
 }
 // a focus as what it draws; a picture that cannot be read so says why
 function focusDrawn(C) {
@@ -772,7 +778,7 @@ function focusFaults(tests) {
   for (const U of focusSets(F0)) {
     const name = `${pre}the focus on ${U.join(", ")}`, star = starOf(F0, U);
     const above = new Set();
-    for (const [fid, f] of F0.frames) if (U.includes(f.step.slice(5))) for (let g = f.parent; g; g = F0.frames.get(g).parent) above.add(F0.frames.get(g).step);
+    for (const [fid, f] of F0.frames) if (U.includes(focusKey(f.step))) for (let g = f.parent; g; g = F0.frames.get(g).parent) above.add(F0.frames.get(g).step);
     const boxes = [...star.frames.values()].map(f => f.step || "unit:~rest");
     const sets = boxes.length <= ALL_SUBSETS
       ? [...Array(1 << boxes.length).keys()].map(m => boxes.filter((_, i) => m & (1 << i)))

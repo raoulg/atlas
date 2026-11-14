@@ -1508,7 +1508,7 @@ async function renderPlaat(mine) {
   const focused = V.focus.size && !V.route && !V.kind;
   el("text", {class: "route-title", x: 20, y: 24}, g).textContent = V.route ? `Route · ${entryTitle(V.route)}` : V.kind ? `All ${KIND_LABEL[V.kind]} routes` : focused ? `Focus · ${[...V.focus].sort().map(unitLabel).join(", ")}` : V.part ? `${V.part} by package` : multi ? `${PARTS.length} parts` : `${D.root} by package`;
   el("text", {class: "route-sub", x: 20, y: 41}, g).textContent = V.route ? `${short(V.route)} · what it finds on the left, what it leaves on the right · click a pill to open it, a frame's title to close it, double-click a box to pin its lines`
-    : focused ? "the packages in focus, the types that cross between them and the places they touch; the rest of the code on either side · shift-click a package to add or drop it"
+    : focused ? "what is in focus, the types it takes and gives and the places it touches; the rest of the code on either side · shift-click a package or a class inside it to narrow the focus to it, one of the rest to add it"
     : multi && !V.part && !V.kind ? "each part from what it finds to what it leaves; one part's requests are another's HTTP · click a part to open it"
     : !V.kind ? "each package from what its own code finds to what it leaves, joined by the types that cross between packages; a dotted line where one calls another · click a package to open it, shift-click to focus on it, double-click a box to pin its lines"
     : "each route from what it finds to what it leaves · click a route to open it";
@@ -1604,6 +1604,7 @@ async function renderPlaat(mine) {
     if (asked) markAsks(grp, [asked], P.w - 8, 8);
     title.addEventListener("click", ev => {
       ev.stopPropagation(); if (F.synthetic) return; plaatAnchor = id;
+      if (ev.shiftKey && !isFam && F.step && /^(unit|cls|fam):/.test(F.step) && !isRest(F.step.slice(5)) && !V.route && !V.kind) { putInFocus(focusKey(F.step)); plaatFit = true; render(); focusPanel(); return; }
       if (isFam) V.open.families.delete(F.fam); else if (F.step && F.step.startsWith("part:")) V.open.parts.delete(F.step.slice(5)); else if (F.step && F.step.startsWith("unit:")) { const u = F.step.slice(5); for (const x of [...V.open.units]) if (x === u || x.startsWith(u + ".")) V.open.units.delete(x); V.open.flat.delete(u); } else if (F.step && F.step.startsWith("cls:")) V.open.classes.delete(F.step.slice(4)); else if (F.step && F.step.startsWith("fam:")) V.open.bases.delete(F.step.slice(4)); else if (F.anchor) { V.route = null; entrySel.value = ""; V.open.steps.clear(); V.open.functions.clear(); plaatAnchor = "n:" + F.step; } else { V.open.steps.delete(F.step); V.open.functions.delete(stepOf(F.step)); }
       render();
     });
@@ -1717,8 +1718,9 @@ async function renderPlaat(mine) {
         // the rest, on either side, opens into its packages; a package of it joins the focus
         if (u === "~in" || u === "~out") { V.open.units.add(REST); plaatAnchor = P.id; render(); focusPanel(); return; }
         if (isRest(u)) { V.focus.add(u.slice(4)); plaatFit = true; render(); focusPanel(); return; }
-        if (ev.shiftKey) { if (V.focus.has(u)) V.focus.delete(u); else V.focus.add(u); plaatFit = true; render(); focusPanel(); return; }
       }
+      // shift-click puts a package, a class or a base class in focus, or lets go of it
+      if (ev.shiftKey && /^(unit|cls|fam):/.test(P.steps[0]) && !V.route && !V.kind) { putInFocus(focusKey(P.steps[0])); plaatFit = true; render(); focusPanel(); return; }
       if (P.steps[0].startsWith("part:")) { if (!P.own) { V.open.parts.add(P.steps[0].slice(5)); plaatAnchor = P.id; render(); } return; }
       if (P.steps[0].startsWith("unit:")) { V.open.units.add(P.steps[0].slice(5)); plaatAnchor = P.id; render(); return; }
       if (P.steps[0].startsWith("cls:")) { V.open.classes.add(P.steps[0].slice(4)); plaatAnchor = P.id; render(); return; }
@@ -1960,7 +1962,7 @@ function focusPanel() {
   insp.innerHTML = "";
   insp.appendChild(html("div", "eyebrow", "focus"));
   insp.appendChild(html("h1", "name", V.focus.size ? [...V.focus].sort().map(unitLabel).join(", ") : "nothing in focus"));
-  insp.appendChild(html("div", "path", "shift-click a package in the picture to add or drop it"));
+  insp.appendChild(html("div", "path", "shift-click a package or a class in the picture: inside the focus it narrows to it, outside it adds it"));
   const redraw = () => { plaatFit = true; render(); focusPanel(); };
   const inside = html("div", "links");
   for (const u of [...V.focus].sort()) { const b = html("button", "fn", `− ${unitLabel(u)}`); b.title = u; b.onclick = () => { V.focus.delete(u); redraw(); }; inside.appendChild(b); }
