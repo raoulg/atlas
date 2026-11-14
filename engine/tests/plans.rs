@@ -409,15 +409,14 @@ fn every_focus_is_the_image_of_a_fiber_of_the_overviews_plan() {
     assert!(fails.is_empty(), "{} faults of the focus:\n{}", fails.len(), fails.join("\n"));
 }
 
-/// All routes of a kind are the union of the routes' coarsest pictures, each route closed, its values as their types
-/// (mathematics.md, "One fine plan, every picture its image", all routes of a kind; #434): the kind view's fine plan has a
-/// box for each route, which takes and gives what crosses the border of its route closed. Each route's box is held to the
-/// image of the route's finest plan with no box open, line by line, with the fine lines each stands for and those it
-/// reaches; a route the page plans cut at its first level (`cutArrow`) and that draws otherwise is a fault of the cut.
+/// The routes of a kind are a fiber of the program (mathematics.md, "One fine plan, every picture its image", the routes
+/// of a kind): with a kind picked, the overview's fine plan is `F₀` over the code the kind's routes reach. It is a part of
+/// `F₀`, each function in the frame it has there with no line to a type it lacks there, and its functions are those the
+/// routes of the kind run, each route planned on its own as its page plans it.
 #[test]
-fn every_kind_view_is_the_union_of_its_routes_closed() {
+fn the_routes_of_a_kind_are_a_fiber_of_the_overview() {
     let fails = views_hold("kinds");
-    assert!(fails.is_empty(), "{} routes the kind view draws otherwise than closed:\n{}", fails.len(), fails.join("\n"));
+    assert!(fails.is_empty(), "{} faults of the routes of a kind:\n{}", fails.len(), fails.join("\n"));
 }
 
 /// Every view the page draws is the image of its fine plan through one function, `plan()`, on one view state `V`
@@ -434,8 +433,8 @@ fn every_view_state_draws_the_image_of_its_plan() {
     assert!(fails.is_empty(), "{} faults of the view states:\n{}", fails.len(), fails.join("\n"));
 }
 
-/// A route starts at an entry point and ends at a place, and both are visible (sentence 3): every route closed, alone and
-/// among the routes of its kind, whose code gives something (a value back, whatever its type, a change, a write, a request,
+/// A route starts at an entry point and ends at a place, and both are visible (sentence 3): every route closed whose
+/// code gives something (a value back, whatever its type, a change, a write, a request,
 /// an error), as the graph says and no plan, gives a value, a place it changes or a call it makes. A route whose code gives
 /// nothing and changes nothing ends at the terminal object, no place: a finding of the program, which the law says and does
 /// not fail on (mathematics.md, "The terminal object").

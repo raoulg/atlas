@@ -1018,7 +1018,7 @@ async function renderPlaat(mine) {
   // the overview and a focus open with each kind of the world closed (`kindGroups`): one box that says how many places it
   // stands for, whatever folds lie below it
   const shownAt = {in: new Map(), out: new Map()};
-  const kinds = V.route || V.kind || DIFF ? new Map() : kindGroups({places, pills, roles, fine}, worldUsed);
+  const kinds = V.route || DIFF ? new Map() : kindGroups({places, pills, roles, fine}, worldUsed);
   for (const G of kinds.values()) {
     if (V.open.places.has(G.group)) continue;
     const glyph = placeGlyph.get([...G.kids][0]), label = `${G.label} · ${G.kids.size}`;
@@ -1373,7 +1373,7 @@ async function renderPlaat(mine) {
   // What a package takes of a type and what it gives of it are two lines between the same two boxes: the overview draws them
   // on one path with an arrowhead at each end the data runs to (`paired`: a pair of boxes to the line laid out for it, which
   // carries the other as `also`). A line a package reaches through another stays a line of its own (sentence 6)
-  const columns = !V.route && !V.kind && !V.focus.size && !DIFF, flipped = new Set(), paired = new Map();
+  const columns = !V.route && !V.focus.size && !DIFF, flipped = new Set(), paired = new Map();
   const isType = id => { const p = places.get(id); return p ? p.kind === "type" || p.kind === "ext" : famFrames.has(id) || libFrames.has(id); };
   const edgeInfo = new Map(), dropped = [], besides = [], addEdge = (a, b, info) => {
     if (a === b) return;
@@ -1517,13 +1517,12 @@ async function renderPlaat(mine) {
   const walkPos = (n, ox, oy, depth) => { for (const c of n.children || []) { pos.set(c.id, {x: c.x + ox, y: c.y + oy, w: c.width, h: c.height, depth}); walkPos(c, c.x + ox, c.y + oy, depth + 1); } };
   walkPos(layout, OX, OY, 0);
   const parentOf = new Map(); const walkPar = n => { for (const c of n.children || []) { parentOf.set(c.id, n.id); walkPar(c); } }; walkPar(layout);
-  const focused = V.focus.size && !V.route && !V.kind;
-  el("text", {class: "route-title", x: 20, y: 24}, g).textContent = V.route ? `Route · ${entryTitle(V.route)}` : V.kind ? `All ${KIND_LABEL[V.kind]} routes` : focused ? `Focus · ${[...V.focus].sort().map(unitLabel).join(", ")}` : V.part ? `${V.part} by package` : multi ? `${PARTS.length} parts` : `${D.root} by package`;
+  const focused = V.focus.size && !V.route;
+  el("text", {class: "route-title", x: 20, y: 24}, g).textContent = V.route ? `Route · ${entryTitle(V.route)}` : focused ? `Focus · ${[...V.focus].sort().map(unitLabel).join(", ")}` : (V.part ? `${V.part} by package` : multi ? `${PARTS.length} parts` : `${D.root} by package`) + (V.kind ? ` · the code of its ${KIND_LABEL[V.kind]} routes` : "");
   el("text", {class: "route-sub", x: 20, y: 41}, g).textContent = V.route ? `${short(V.route)} · what it finds on the left, what it leaves on the right · click a pill to open it, a frame's title to close it, double-click a box to pin its lines`
     : focused ? "what is in focus, the types it takes and gives and the places it touches; the rest of the code on either side · shift-click a package or a class inside it to narrow the focus to it, one of the rest to add it"
-    : multi && !V.part && !V.kind ? "each part from what it finds to what it leaves; one part's requests are another's HTTP · click a part to open it"
-    : !V.kind ? "each package from what its own code finds to what it leaves, joined by the types that cross between packages; a dotted line where one calls another · click a package to open it, shift-click to focus on it, double-click a box to pin its lines"
-    : "each route from what it finds to what it leaves · click a route to open it";
+    : multi && !V.part ? "each part from what it finds to what it leaves; one part's requests are another's HTTP · click a part to open it"
+    : "each package from what its own code finds to what it leaves, joined by the types that cross between packages; a dotted line where one calls another · click a package to open it, shift-click to focus on it, double-click a box to pin its lines";
   if (!pos.size) el("text", {class: "route-sub", x: 20, y: 70}, g).textContent = "No step on this route takes or hands on a place: it calls nothing that does. Pick another route.";
   const fg = el("g", {}, g), eg = el("g", {}, g), ng = el("g", {}, g), ig = el("g", {class: "interior-ports"}, g);
   // pointing at a box or a pill lights up its lines and what is at their other ends; the versions of
@@ -1616,7 +1615,7 @@ async function renderPlaat(mine) {
     if (asked) markAsks(grp, [asked], P.w - 8, 8);
     title.addEventListener("click", ev => {
       ev.stopPropagation(); if (F.synthetic) return; plaatAnchor = id;
-      if (ev.shiftKey && !isFam && F.step && /^(unit|cls|fam):/.test(F.step) && !isRest(F.step.slice(5)) && !V.route && !V.kind) { putInFocus(focusKey(F.step)); plaatFit = true; render(); focusPanel(); return; }
+      if (ev.shiftKey && !isFam && F.step && /^(unit|cls|fam):/.test(F.step) && !isRest(F.step.slice(5)) && !V.route) { putInFocus(focusKey(F.step)); plaatFit = true; render(); focusPanel(); return; }
       if (isFam) V.open.families.delete(F.fam); else if (F.step && F.step.startsWith("part:")) V.open.parts.delete(F.step.slice(5)); else if (F.step && F.step.startsWith("unit:")) { const u = F.step.slice(5); for (const x of [...V.open.units]) if (x === u || x.startsWith(u + ".")) V.open.units.delete(x); V.open.flat.delete(u); } else if (F.step && F.step.startsWith("cls:")) V.open.classes.delete(F.step.slice(4)); else if (F.step && F.step.startsWith("fam:")) V.open.bases.delete(F.step.slice(4)); else if (F.anchor) { V.route = null; entrySel.value = ""; V.open.steps.clear(); V.open.functions.clear(); plaatAnchor = "n:" + F.step; } else { V.open.steps.delete(F.step); V.open.functions.delete(stepOf(F.step)); }
       render();
     });
@@ -1732,7 +1731,7 @@ async function renderPlaat(mine) {
         if (isRest(u)) { V.focus.add(u.slice(4)); plaatFit = true; render(); focusPanel(); return; }
       }
       // shift-click puts a package, a class or a base class in focus, or lets go of it
-      if (ev.shiftKey && /^(unit|cls|fam):/.test(P.steps[0]) && !V.route && !V.kind) { putInFocus(focusKey(P.steps[0])); plaatFit = true; render(); focusPanel(); return; }
+      if (ev.shiftKey && /^(unit|cls|fam):/.test(P.steps[0]) && !V.route) { putInFocus(focusKey(P.steps[0])); plaatFit = true; render(); focusPanel(); return; }
       if (P.steps[0].startsWith("part:")) { if (!P.own) { V.open.parts.add(P.steps[0].slice(5)); plaatAnchor = P.id; render(); } return; }
       if (P.steps[0].startsWith("unit:")) { V.open.units.add(P.steps[0].slice(5)); plaatAnchor = P.id; render(); return; }
       if (P.steps[0].startsWith("cls:")) { V.open.classes.add(P.steps[0].slice(4)); plaatAnchor = P.id; render(); return; }
@@ -1753,7 +1752,7 @@ async function renderPlaat(mine) {
     const Q = pos.get(p.id), kind = placeKind(p.id);
     const grp = el("g", {class: "tnode" + (p.kind === "ext" ? " ghost" : "") + (p.kind === "ref" ? " ref" : "") + (kind ? " world" : "") + (kind ? "" : prophecyClass(byId.get(p.type))), "data-id": p.id}, ng);
     pointable(grp, p.id);
-    grp.addEventListener("mouseenter", () => { hoverTarget = () => { if (p.entryFamily) return; if (p.id.startsWith("e:")) select(p.id.slice(2)); else if (kind) selectPlace(p.id, p.label); else if (p.type) selectType(p.type); }; });
+    grp.addEventListener("mouseenter", () => { hoverTarget = () => { if (p.id.startsWith("e:")) select(p.id.slice(2)); else if (kind) selectPlace(p.id, p.label); else if (p.type) selectType(p.type); }; });
     grp.addEventListener("mouseleave", () => { hoverTarget = null; });
     if (kind) grp.style.setProperty("--k", `var(--k-${kind})`);
     el("rect", {class: "bg", width: Q.w, height: Q.h}, grp);
@@ -1775,8 +1774,6 @@ async function renderPlaat(mine) {
     clicks(grp, () => {
       plaatAnchor = p.id;
       if (p.folded) { selectPlace(p.id, p.label); V.open.dirs.add(p.folded); render(); return; }
-      // the entries of the routes of a kind are one box, which opens into each route's entry
-      if (p.entryFamily) { V.open.places.add(p.id); render(); return; }
       // the entry of a route opens to show how the command line is parsed, and closes again
       if (p.id.startsWith("e:")) {
         const id = p.id.slice(2);
@@ -1872,7 +1869,7 @@ function crumbs() {
   if (V.part) steps.push([`only ${V.part}`, "this part alone", () => { V.route = null; V.kind = null; V.focus.clear(); entrySel.value = "part:" + V.part; }]);
   if (V.kind) steps.push([`all ${KIND_LABEL[V.kind]} routes`, "every route of this kind", () => { V.route = null; V.open.steps.clear(); entrySel.value = "kind:" + V.kind; }]);
   if (V.route) steps.push([entryTitle(V.route), "this route", () => {}]);
-  const focus = !V.route && !V.kind ? [...V.focus].sort() : [];
+  const focus = !V.route ? [...V.focus].sort() : [];
   if (focus.length === 1) {
     for (const u of [...(FOCUS.above.get(focus[0]) || [])].reverse()) steps.push([unitLabel(u), `focus on ${unitLabel(u)}`, () => { V.focus = new Set([u]); }]);
     steps.push([unitLabel(focus[0]), "in focus", () => {}]);
@@ -1893,17 +1890,17 @@ function crumbs() {
   const fold = (text, on, title, flip) => { const b = folds.appendChild(html("button", "fold" + (on ? " on" : ""), text)); b.title = title; b.setAttribute("aria-pressed", on); b.onclick = again(flip); };
   lbl("folded");
   // the overview, and the focus that is its fiber, is the program without its test code; shown where there is test code
-  if (!V.route && !V.kind && OWN.some(n => has(n) && testCode(n)))
+  if (!V.route && OWN.some(n => has(n) && testCode(n)))
     fold("tests", !V.tests, V.tests ? "leave the test code out: the program alone" : "draw the test code too: tests, test modules and what they touch", () => { V.tests = !V.tests; });
   // errors that are only handed on are counted on the box that hands them on; shown where there are errors
   if (!DIFF && pictureErrors.length)
     fold(`errors · ${pictureErrors.length}`, !V.errors, V.errors ? "count the errors a box hands on, on the box: " + pictureErrors.join(", ") : "draw each error a box hands on as a box: " + pictureErrors.join(", "), () => { V.errors = !V.errors; });
   // what a step runs on is said by its name; shown where the picture has such a step
-  if ((V.route || V.kind) && !DIFF && (V.receivers || pictureRuns))
+  if (V.route && !DIFF && (V.receivers || pictureRuns))
     fold("runs on, by name", !V.receivers, V.receivers ? "name a step by the value it runs on (model.forward), without a line from that value" : "draw a line from each value to the steps that run on it", () => { V.receivers = !V.receivers; });
-  if (V.focus.size && !V.route && !V.kind) for (const L of V.closed.libraries) fold(L, true, "open this library into its types", () => V.closed.libraries.delete(L));
+  if (V.focus.size && !V.route) for (const L of V.closed.libraries) fold(L, true, "open this library into its types", () => V.closed.libraries.delete(L));
   // a package of modules is opened by module or by base class: two quotients of the same functions, the reader's to pick
-  if (!V.route && !V.kind) {
+  if (!V.route) {
     const nested = u => !isRest(u) && !/^(cls|fam):/.test(u) && [...byId.values()].some(n => n.kind === "module" && !n.library && n.id.startsWith(u + "."));
     for (const u of [...new Set([...V.focus, ...V.open.units, ...V.open.flat])].filter(u => V.open.flat.has(u) || nested(u))) {
       const flat = V.open.flat.has(u);
@@ -1917,13 +1914,12 @@ function crumbs() {
   const opened = [], open = (set, k, text) => opened.push([text, () => set.delete(k)]);
   const unit = u => (u === REST ? "the rest" : unitLabel(u));
   if (!V.route) for (const p of V.open.parts) open(V.open.parts, p, p);
-  if (!V.route && !V.kind) {
+  if (!V.route) {
     for (const u of V.open.units) open(V.open.units, u, unit(u));
     for (const [step, set, k] of [...[...V.open.bases].map(k => ["fam:" + k, V.open.bases, k]), ...[...V.open.classes].map(k => ["cls:" + k, V.open.classes, k])]) if (BLOCK_TITLE.has(step)) open(set, k, BLOCK_TITLE.get(step));
   }
   for (const r of V.open.places) {
-    if (r.startsWith("e:~")) { if (V.kind && !V.route && r === "e:~" + V.kind) open(V.open.places, r, `each ${KIND_LABEL[V.kind] || V.kind} route's entry`); }
-    else if (r.startsWith("e:")) { if (byId.get(r.slice(2))?.entry) open(V.open.places, r, `${entryTitle(r.slice(2))} · its parse`); }
+    if (r.startsWith("e:")) { if (byId.get(r.slice(2))?.entry) open(V.open.places, r, `${entryTitle(r.slice(2))} · its parse`); }
     else open(V.open.places, r, r.startsWith("w:~") ? r.slice(3).replace(/~(in|out|mid|both)$/, (_, side) => ({in: " read", out: " written"})[side] || "") : r.slice(2));
   }
   for (const id of V.open.steps) { const info = treeInfo.get(id), n = byId.get(stepOf(id)), name = n?.name || short(stepOf(id)); open(V.open.steps, id, info?.on && n?.cls ? `${typeLabel(info.on)}.${name}` : name); }
@@ -2247,7 +2243,7 @@ async function jumpTo(n) {
   if (view !== "plaat") return centre(n.id);
   const kept = Object.fromEntries(Object.entries(V.open).map(([k, s]) => [k, new Set(s)]));
   const restore = () => { for (const k of Object.keys(V.open)) V.open[k] = kept[k]; };
-  if (n.kind === "module" && (V.route || V.kind)) {
+  if (n.kind === "module" && V.route) {
     V.route = null; V.kind = null; V.open.steps.clear(); V.open.functions.clear();
     entrySel.value = V.part ? "part:" + V.part : "";
     plaatFit = true;

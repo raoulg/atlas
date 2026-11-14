@@ -25,7 +25,7 @@ pub struct Sight {
     /// One route, by its entry's id.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub route: Option<String>,
-    /// Every route of one kind.
+    /// The code the routes of one kind reach: a fiber of the overview and of a focus.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub kind: Option<EntryKind>,
     /// One part, by its id.

@@ -469,7 +469,7 @@ let HOMED = new Map(), HOME_TITLE = new Map();
 const libraryOf = t => LIBRARY.get(kindOf(t)) || LIBRARY.get(t) || HOMED.get(t) || null;
 const libTitle = L => HOME_TITLE.get(L) || L;
 // the types of each library a plan of generators holds (`overviewBase`): a library is a box of its own where it holds two of
-// them or more, since a frame around one type would only name it again. A route and the routes of a kind draw no library
+// them or more, since a frame around one type would only name it again. A route draws no library
 let LIBRARIES = null;
 const libFolds = L => (LIBRARIES?.get(L)?.size || 0) > 1;
 // the library whose closed box a type stands in: its library, where that is a box of its own and the reader has closed it
@@ -577,18 +577,6 @@ const ENTRY_PLACE = {cli: l => `$ ${l}`, make: l => `$ make ${l}`, script: l => 
 // in A, an entry whose usage line B changed reads as A had it
 const entryLabel = n => { const e = SIDE === "a" && DIFF?.entries[n.id] || n.entry; return ENTRY_PLACE[e.kind](e.label, n) + (e.options || []).map(o => " " + o).join(""); };
 const entryPlace = id => ({id: "e:" + id, label: entryLabel(byId.get(id)), kind: "world"});
-// The entries of the routes of one kind are one family: what an importer hands, the command line, the request. Among the
-// routes of a kind it is one box, named by what its members' names share (`$ sunspots`, `sunspots`) or else by what the kind
-// is entered from, which opens into each route's entry
-const ENTRY_FROM = {cli: "$ command line", make: "$ make", script: "$ script", notebook: "notebook", route: "request", mcp: "MCP client", export: "importer", prophecy: "prophecy", test: "test runner"};
-const entryFamily = (kind, ids) => {
-  const labels = ids.map(id => entryLabel(byId.get(id)));
-  let common = labels.reduce((a, b) => { let i = 0; while (i < a.length && a[i] === b[i]) i++; return a.slice(0, i); });
-  if (common.length < Math.min(...labels.map(l => l.length))) common = common.slice(0, Math.max(0, ...[".", " ", "/", ":"].map(c => common.lastIndexOf(c))));
-  common = common.replace(/[.\s/:]+$/, "");
-  const label = `${common && common !== "$" ? common : ENTRY_FROM[kind] || kind} · ${ids.length}`;
-  return {id: "e:~" + kind, label, short: label, kind: "world", entryFamily: kind, members: ids.map(id => "e:" + id)};
-};
 // the steps of a body that belong to its entry: the parses of the command line (`Cli::parse()`,
 // `parseArgs(..)`) and the steps whose values only those parses take (the parser argparse is
 // handed); and the names of what the parses give, which come from the entry
@@ -808,8 +796,6 @@ let FINE = false;
 // a test sets a small budget (`window.ATLAS_FINE_BUDGET`) to cut the plan of a small program
 const FINE_BUDGET = window.ATLAS_FINE_BUDGET || 5000;
 let FINE_DEPTH = Infinity, fineCount = 0, fineCut = false;
-// a plan unfolded to this depth whatever the budget: a closed route is the image of its body one level deep, each call cut
-let ROUTE_DEPTH = null;
 // a step beyond the cut, unfolded by itself: its body one level deep, its own calls cut in turn (`cutArrow`)
 let unfoldStep = null;
 const NONE = new Set();
@@ -912,7 +898,7 @@ function routeTree() {
   if (V.route && !has(byId.get(V.route))) return [];
   // with no route, the boxes of the code's hierarchy, as the page looks for a symbol in them (`openTo`); the pictures of
   // the overview and the focus are the images of their fine plans (`overview`, `focus`)
-  if (!V.route && !V.kind) {
+  if (!V.route) {
     const unitNodes = (us, part) => us.filter(u => !SIDE || MAKEFILES.has(u) || held("u:" + u, n => inUnit(n.id, u))).map(u => { const open = V.open.units.has(u); return {id: "unit:" + u, open, kids: open ? unitKids(u, part) : [], hue: null, choice: false}; });
     const unitKids = (u, part) => { const below = u.endsWith("$") || MAKEFILES.has(u) ? [] : unitsBelow(u, part); return below.length > 1 ? unitNodes(below, part) : closedRoutes(unitRoutes(u)); };
     // a focus: the packages chosen, each opened as before, and the rest of the code on either side
@@ -1017,7 +1003,6 @@ function routeTree() {
   };
   let tree;
   const unfold = depth => { FINE_DEPTH = depth; fineCount = 0; fineCut = false; treeInfo.clear(); routeParses = false; tree = [visit(V.route, V.route, null, null, null, new Set())]; };
-  if (ROUTE_DEPTH) { unfold(ROUTE_DEPTH); return tree; }
   let depth = 1;
   for (unfold(depth); fineCut; unfold(++depth)) if (fineCount > FINE_BUDGET) { unfold(Math.max(1, depth - 1)); break; }
   return tree;
@@ -2269,7 +2254,6 @@ const imageOf = (F, opened, folded, {fineKeys = false} = {}) => {
     const pl = fp.get(k);
     let id = k;
     if (pl && /^[tv]:/.test(k)) id = pl.at && hidden.has(pl.at) ? entryId : pl.type && k.startsWith("t:") ? boxIn(placeOfType(pl.type), pl) : k;
-    else if (k.startsWith("e:")) for (const [fid, fam] of F.entries || []) if (fam.members.includes(k) && !V.open.places.has(fid)) id = fid;
     qId.set(k, id);
     return id;
   };
@@ -2281,7 +2265,6 @@ const imageOf = (F, opened, folded, {fineKeys = false} = {}) => {
     if (fineKeys) { places.set(id, fp.get(k)); return id; }
     const pl = fp.get(k);
     if (id === entryId) places.set(id, entryPlace(V.route));
-    else if (F.entries?.has(id)) places.set(id, F.entries.get(id));
     else if (pl?.type && k.startsWith("t:")) {
       const pid = placeOfType(pl.type), b = typePlace(pid);
       places.set(id, {...b, id, label: b.label + (pl.held ? ` · ${pl.held}` : named(pl) ? ` · ${pl.name}` : ""), at: pl.at, name: named(pl) ? pl.name : undefined, held: pl.held, ...(pl.door ? {door: pl.door} : {}), ...(pl.err ? {err: true} : {}), ...(builtAt(k) ? {built: true} : {})});
@@ -2691,7 +2674,7 @@ const meet = C => {
 const quotients = C => meet(siblings(C));
 // A focus is the detail the reader asked for of its packages, so each of its boxes stands on its own, named: siblings that
 // draw alike are merged where a picture has an order to keep short, never in a focus
-const alike = C => (SIDE ? C : V.focus.size && !V.route && !V.kind ? meet(C) : quotients(C));
+const alike = C => (SIDE ? C : V.focus.size && !V.route ? meet(C) : quotients(C));
 // ---- the overview is the image of one fine plan of generators ----
 // A view with no route has no order between its arrows, so its fine plan `F₀` has no moments: the functions of the code,
 // each with its own arrow (sentence 6: a package shows what its own code does, not what it reaches through another), a type
@@ -2818,13 +2801,29 @@ const classBlocks = (frames, leafOf, unitOfLeaf, kept) => {
 };
 // the place a part's routes are served at over HTTP: what requests them goes out to it, its routes come in from it
 const httpAt = p => ({id: "w:Web:http:" + p, label: `HTTP(${p})`, short: `HTTP(${p})`, kind: "world"});
+// The code of the routes of the kind the reader picked (`V.kind`): every function a route of the kind reaches (`runs`),
+// and with them the class, the module and the packages each lies in (`around`); all the code where no kind is picked
+const kindCodes = new Map();
+const kindCode = () => {
+  if (!V.kind) return null;
+  const key = `${SIDE}|${V.kind}|${V.part}`;
+  if (!kindCodes.has(key)) {
+    const runs = new Set(), around = new Set();
+    for (const e of overviewEntries()) for (const id of [e.id, ...reach(e.id, null, e.id).nodes]) { runs.add(id); for (let i = id; i; i = i.includes(".") ? i.slice(0, i.lastIndexOf(".")) : "") around.add(i); }
+    kindCodes.set(key, {runs, around});
+  }
+  return kindCodes.get(key);
+};
 const overviewBase = () => {
   const places = new Map(), pills = new Map(), frames = new Map(), leaves = [];
   const addPlace = p => { if (!places.has(p.id)) places.set(p.id, p); return p.id; };
   // in one reading of a union, a package is there while code of it is, and without the test code while code of the program
   // is; a level with a single child is passed through
-  const kept = n => V.tests || !testCode(n);
-  const shown = u => MAKEFILES.has(u) || (!SIDE || held("u:" + u, n => inUnit(n.id, u))) && (V.tests || held("u:" + u + "~program", n => inUnit(n.id, u) && kept(n)));
+  // the routes of a kind are a fiber of the program: the code a route of the kind reaches, and no other (`kindCode`), each
+  // function with the lines the program's picture draws of it, so a path a caller outside the kind makes whole stays whole
+  const tests = V.tests || V.kind === "test", mine = kindCode();
+  const inProgram = n => tests || !testCode(n), kept = n => inProgram(n) && (!mine || !n || mine.around.has(n.id));
+  const shown = u => (MAKEFILES.has(u) && (!V.kind || V.kind === "make")) || (!SIDE || held("u:" + u, n => inUnit(n.id, u))) && ((tests && !mine) || held(`u:${u}~program|${V.kind}|${tests}`, n => inUnit(n.id, u) && kept(n)));
   const units = (us, part, parent) => {
     for (const u of us.filter(shown)) {
       const fid = "n:unit:" + u, below = u.endsWith("$") || MAKEFILES.has(u) ? [] : unitsBelow(u);
@@ -2836,7 +2835,7 @@ const overviewBase = () => {
   };
   const parts = multi && !V.part;
   if (parts) {
-    for (const p of PARTS.filter(p => (!SIDE || held("p:" + p.id, n => partOf(n) === p.id)) && (V.tests || held("p:" + p.id + "~program", n => partOf(n) === p.id && kept(n))))) {
+    for (const p of PARTS.filter(p => (!SIDE || held("p:" + p.id, n => partOf(n) === p.id)) && ((tests && !mine) || held(`p:${p.id}~program|${V.kind}|${tests}`, n => partOf(n) === p.id && kept(n))))) {
       const fid = "n:part:" + p.id;
       frames.set(fid, {id: fid, step: "part:" + p.id, parent: null, hue: null, title: stepName("part:" + p.id)});
       units(topUnits(p.id), p.id, fid);
@@ -2845,7 +2844,7 @@ const overviewBase = () => {
   // each function of the code in the package that holds it, the smallest the overview opens to
   const leafOf = new Map();
   for (const n of OWN) {
-    if (!has(n) || !kept(n)) continue;
+    if (!has(n) || !kept(n) || (mine && !mine.runs.has(n.id))) continue;
     const l = leaves.find(([u, p]) => partOf(n) === p && inUnit(n.id, u));
     if (l) leafOf.set(n.id, l[2]);
   }
@@ -2857,7 +2856,7 @@ const overviewBase = () => {
   // touch whose path its callers make whole is there where one conjunction of them is (`Touch::by`, a monotone formula):
   // each line keeps its formula (`whole`, none where the touch's own code makes the path whole), and without the test code
   // the formula is read with the test code false
-  const {found, updated, served} = contentOf(overviewEntries().filter(kept).map(e => e.id), `${SIDE}|null|null|false|${V.tests}`);
+  const {found, updated, served} = contentOf(entries.filter(e => has(e) && e.entry.kind !== "test" && (!V.part || partOf(e) === V.part) && inProgram(e)).map(e => e.id), `${SIDE}|null|${V.part}|false|${tests}`);
   const conditionsOf = t => (t.by || []).length || (t.users_of || []).length
     ? [...(t.users_of || []).map(e => [e]), ...(t.by || []).map(f => f.split("&").map(g => (g.startsWith(USERS) ? g.slice(USERS.length) : g)))]
     : null;
@@ -2866,7 +2865,7 @@ const overviewBase = () => {
     for (const tc of (byId.get(id).touches || []).filter(has)) {
       if (served(tc) || (isIn(tc) && !tc.shape && back.has(tc.place.id))) continue;
       const cs = conditionsOf(tc);
-      if (cs && !cs.some(c => c.every(g => kept(byId.get(g))))) continue;
+      if (cs && !cs.some(c => c.every(g => inProgram(byId.get(g))))) continue;
       const P = pillOf(id), k = addPlace(worldPlaceOf(tc, true)), w = P.whole.get(k);
       go(P.goes, tc);
       (isIn(tc) ? P.D : P.C).set(k, false);
@@ -2923,7 +2922,9 @@ const overviewBase = () => {
   const calls = new Map();
   for (const e of D.edges) {
     const to = e.kind === "instantiates" ? runsOf(e.dst) : e.kind === "calls" ? e.dst : null;
-    if (!to || !has(e) || e.src === to || !leafOf.has(e.src) || !leafOf.has(to)) continue;
+    if (!to || !has(e) || e.src === to || !leafOf.has(to)) continue;
+    // a function the program calls from outside the kind's code stands in the fiber, the call does not
+    if (!leafOf.has(e.src)) { const n = mine && byId.get(e.src); if (n && !n.library && inProgram(n)) pillOf(to); continue; }
     pillOf(e.src); pillOf(to);
     calls.set(`${e.src}>${to}`, [e.src, to]);
   }
@@ -3077,58 +3078,6 @@ const restSides = C => {
   else if (left && right && !left.parent && !joined(left)) pills.delete(left.id);
   return {...C, places, pills, frames};
 };
-// ---- all routes of a kind are the union of the routes' closed pictures ----
-// A route closed is one box, the block of all its occurrences: its lines are the image of its plan with no box open, what
-// crosses the border of the route (the command line it starts from, the values from beyond it, the errors it hands on, the
-// figures it draws on, the places it touches). The image does not depend on how deep the plan is unfolded (closing is a
-// composite of closings), so the route is planned one level deep, each of its calls a step beyond the cut, and the arrows of
-// those steps are made once for all the routes that call them alike (`routeContext`)
-const closedRoute = r => {
-  const was = [V.route, V.kind, FINE, ROUTE_DEPTH];
-  [V.route, V.kind, FINE, ROUTE_DEPTH] = [r, null, true, 1];
-  try {
-    const F = planBase(), A = imageOf(F, () => false, ["cli", "script"].includes(byId.get(r)?.entry?.kind), {fineKeys: true});
-    return {F, B: A.pills.get("n:" + r), hidden: A.hidden};
-  } finally { [V.route, V.kind, FINE, ROUTE_DEPTH] = was; }
-};
-// The plan of all routes of a kind: each route is an occurrence whose arrow is its route closed, with no order between the
-// routes and so no moments: a value is its type, or its name where it has no type of the code's, and what the command line's
-// parse makes is the entry's. A line counts the fine lines of its route it stands for. The fiber on which the families are
-// taken is the union of the routes' fibers. Nothing opens in it; a route opens on its own page
-const kindBase = () => {
-  const pills = new Map(), found = new Set(), updated = new Set(), fiber = new Set(), seen = new Map();
-  for (const e of overviewEntries()) {
-    const r = e.id, {F, B, hidden} = closedRoute(r), entry = "e:" + r;
-    typesOf(F).forEach(t => fiber.add(t));
-    F.found.forEach(k => found.add(k));
-    F.updated.forEach(k => updated.add(k));
-    const asKind = k => {
-      const pl = F.places.get(k);
-      if (!/^[tv]:/.test(k)) return k;
-      if (pl?.at && hidden.has(pl.at)) return entry;
-      return pl?.type ? "t:" + pl.type : k.replace(/@.*$/, "");
-    };
-    const P = {id: "n:" + r, steps: [r], D: new Map(), C: new Map(), goes: new Map(B?.goes || []), mult: {D: new Map(), C: new Map()}, parent: undefined, hue: null};
-    for (const [way, m, n, far] of [["D", B?.D, B?.Dn, B?.Dr], ["C", B?.C, B?.Cn, B?.Cr]]) for (const [k, reached] of m || []) {
-      const id = asKind(k), [c, cr] = P.mult[way].get(id) || [0, 0];
-      P[way].set(id, P[way].has(id) ? P[way].get(id) && reached : reached);
-      P.mult[way].set(id, [c + (n?.get(k) || 1), cr + (far?.get(k) || 0)]);
-      if (!seen.has(id)) seen.set(id, id === entry ? entryPlace(r) : {...F.places.get(k), id, at: undefined});
-    }
-    pills.set(P.id, P);
-  }
-  // what the page reads of a route's tree is a route's: the routes of a kind leave none
-  treeInfo.clear();
-  routeParses = false;
-  FIBER = fiber;
-  const places = new Map([...seen].map(([id, pl]) => [id, id.startsWith("t:") ? typePlace(id.slice(2)) : pl]));
-  const routes = overviewEntries().map(e => e.id), entries = new Map();
-  if (routes.length > 1) {
-    const fam = entryFamily(V.kind, routes);
-    entries.set(fam.id, fam);
-  }
-  return {places, pills, frames: new Map(), found, updated, generators: true, fiber, split: new Set(), splitBy: [], heldOf: () => [], originOf: new Map(), entries};
-};
 // a route: its finest plan, built once from the code and independent of what is open
 const routeBase = () => {
   FINE = true;
@@ -3144,11 +3093,10 @@ const routeBase = () => {
 // box and the places are ordered on the disk (`alike`), and the rest of a focus is drawn on both sides of it (`restSides`)
 const VIEWS = {
   route: {fine: routeBase, opened: isOpenKey, coarsest: key => key === V.route, opens: () => false},
-  kind: {fine: kindBase, opened: () => false, coarsest: () => false, opens: () => false},
   focus: {fine: focusBase, opened: focusOpen, coarsest: () => false, opens: key => key === "unit:" + REST || FOCUS.steps.has(key), drawn: restSides},
   overview: {fine: overviewBase, opened: overviewOpen, coarsest: () => false, opens: () => true},
 };
-const viewOf = () => (V.route ? "route" : V.kind ? "kind" : V.focus.size ? "focus" : "overview");
+const viewOf = () => (V.route ? "route" : V.focus.size ? "focus" : "overview");
 // The frames of the open libraries, each with the id of its library's closed box: every box of a type of a library that is
 // a box of its own stands in the frame, a family's opened members with it, and the frame stands where its types' home is
 const libFrameAt = (frame, box) => frame + (box.includes("@" + OUT) ? "@" + OUT : "");
@@ -3230,7 +3178,7 @@ const plan = () => {
   }
   alike(C);
   window.atlasPlan = {fine: F, coarse: C, opened: view.opened};
-  const whole = view.drawn ? view.drawn(C) : C, folds = !SIDE, names = folds && ["route", "kind"].includes(viewOf());
+  const whole = view.drawn ? view.drawn(C) : C, folds = !SIDE, names = folds && viewOf() === "route";
   const counted = V.errors || !folds ? whole : foldErrors(whole), drawn = V.receivers || !names ? counted : foldReceivers(counted);
   return {...drawn, libraries: libraryFrames(drawn.places), calling: !!F.calls, fiber: F.fiber || null};
 };
