@@ -264,6 +264,9 @@ svg.glyph{vertical-align:-2px}
 .tnode.entry .title{font-family:var(--mono);font-weight:500}
 #zoomctl button{border:1px solid var(--line);background:var(--panel);color:var(--ink-2);font:inherit;font-size:12px;border-radius:0;padding:3px 9px;cursor:pointer;min-width:30px}
 #zoomctl button:hover{color:var(--ink);border-color:var(--ink-3)}
+#linetoggle{display:flex;margin:0 6px;border:1.5px solid var(--ink-2)}
+#zoomctl #linetoggle button{border:0;min-width:0;padding:3px 7px;display:flex;align-items:center}
+#zoomctl #linetoggle button[aria-pressed="true"]{background:var(--ink);color:var(--bg)}
 aside{border-left:1px solid var(--line);background:var(--panel);overflow:auto;padding:18px 20px 40px}
 aside .empty{color:var(--ink-3);padding-top:40px;text-align:center;line-height:1.6}
 aside .empty b{color:var(--ink-2);display:block;margin-bottom:6px;font-weight:500}
@@ -341,7 +344,7 @@ pre.code .l::before{counter-increment:ln;content:counter(ln);display:inline-bloc
     <div id="fault" role="alert" hidden></div>
     <div id="readstate" role="status" hidden></div>
     <div id="laying" role="status" hidden></div>
-    <div id="zoomctl"><button id="zout" type="button" title="zoom out">−</button><button id="fit" type="button">fit</button><button id="zone" type="button" title="actual size">1:1</button><button id="zin" type="button" title="zoom in">+</button><button id="linetoggle" type="button" title="draw the lines with corners or with arcs; the route of a line stays the same">round lines</button><button id="codetoggle" type="button" title="show or hide the code panel">hide code</button></div>
+    <div id="zoomctl"><button id="zout" type="button" title="zoom out">−</button><button id="fit" type="button">fit</button><button id="zone" type="button" title="actual size">1:1</button><button id="zin" type="button" title="zoom in">+</button><span id="linetoggle" role="group" aria-label="the shape of the lines"><button id="linesquare" type="button" title="lines with corners"><svg viewBox="0 0 22 14" width="22" height="14" aria-hidden="true"><path d="M2,11 H11 V3 H20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="miter"/></svg></button><button id="lineround" type="button" title="lines with arcs; the route of a line stays the same"><svg viewBox="0 0 22 14" width="22" height="14" aria-hidden="true"><path d="M2,11 H6 C11,11 11,3 16,3 H20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="miter"/></svg></button></span><button id="codetoggle" type="button" title="show or hide the code panel">hide code</button></div>
     <div id="resizer" title="drag to resize the inspector"></div>
     <div id="legend"></div>
     <div id="hint"><kbd>shift</kbd>-click a package: focus · double-click: pin · <kbd>space</kbd>: code · <button id="keyshelp" type="button">? more</button></div>
@@ -533,9 +536,10 @@ function fit(animate = false, pad = 40, tries = 0) {
   if (animate) svg.transition().duration(300).call(zoom.transform, t); else svg.call(zoom.transform, t);
 }
 document.getElementById("fit").onclick = () => fit(true);
-{ const btn = document.getElementById("linetoggle"), say = () => { btn.textContent = roundLines ? "square lines" : "round lines"; };
-  btn.onclick = () => { roundLines = !roundLines; try { localStorage.setItem("atlas.lines", roundLines ? "round" : "square"); } catch {} say(); render(); };
-  say(); }
+{ const sq = document.getElementById("linesquare"), rd = document.getElementById("lineround");
+  const say = () => { sq.setAttribute("aria-pressed", !roundLines); rd.setAttribute("aria-pressed", roundLines); };
+  const pick = round => () => { if (roundLines === round) return; roundLines = round; try { localStorage.setItem("atlas.lines", round ? "round" : "square"); } catch {} say(); render(); };
+  sq.onclick = pick(false); rd.onclick = pick(true); say(); }
 document.getElementById("zin").onclick = () => svg.transition().duration(150).call(zoom.scaleBy, 1.25);
 document.getElementById("zout").onclick = () => svg.transition().duration(150).call(zoom.scaleBy, 0.8);
 document.getElementById("zone").onclick = () => { const t = d3.zoomTransform(svg.node()); svg.transition().duration(200).call(zoom.transform, d3.zoomIdentity.translate(t.x, t.y).scale(1)); };
