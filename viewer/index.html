@@ -122,7 +122,19 @@ svg#canvas:active{cursor:grabbing}
 #fault b{display:block;color:var(--ink);font-weight:600;margin-bottom:2px}
 #fault pre{font-family:var(--mono);font-size:11px;color:var(--ink);white-space:pre-wrap;word-break:break-word;margin:8px 0;max-height:180px;overflow:auto}
 #fault button{font:inherit;font-size:11px;color:var(--ink-2);background:var(--panel-2);border:1px solid var(--line);border-radius:3px;padding:2px 8px;cursor:pointer}
-#crumbs{position:absolute;left:14px;top:14px;right:200px;display:flex;flex-wrap:wrap;gap:5px 6px;align-items:center;font-size:11px;color:var(--ink-3)}
+#crumbs{position:absolute;left:14px;top:12px;right:340px;display:flex;flex-direction:column;gap:6px;font-size:11px;color:var(--ink-3)}
+#crumbs .path,#crumbs .folds{display:flex;flex-wrap:wrap;gap:5px 6px;align-items:center}
+#crumbs .path{font-family:var(--mono);font-size:13px}
+#crumbs .path .sep{color:var(--ink-3)}
+#crumbs .path button.step{border:0;border-bottom:1px solid var(--line);background:none;padding:1px 0;font-size:13px;color:var(--ink-2)}
+#crumbs .path button.step:hover{color:var(--ink);border-color:var(--ink)}
+#crumbs .path .here{background:var(--ink);color:var(--bg);border:0;padding:2px 9px;font-size:13px;font-family:var(--mono)}
+#crumbs .path button.up{border:0;background:none;color:var(--ink-3);padding:1px 4px}
+#crumbs button.fold{border-radius:11px;color:var(--ink-3);background:none}
+#crumbs button.fold::before{content:"○ ";font-size:9px}
+#crumbs button.fold.on{background:var(--panel);color:var(--ink)}
+#crumbs button.fold.on::before{content:"● ";color:var(--accent,var(--ink))}
+#crumbs button.count{border-style:dashed}
 #crumbs .lbl{letter-spacing:.06em;text-transform:uppercase;font-size:10px;margin-left:8px}
 #crumbs .lbl:first-child{margin-left:0}
 #crumbs .none{font-family:var(--mono);color:var(--ink-2)}
@@ -1844,95 +1856,89 @@ async function renderPlaat(mine) {
   window.atlasBoxes = nodeEls;
   window.atlasPicture = {n: (window.atlasPicture?.n || 0) + 1, planned: root, dropped, oracle: oracle || [], sides: [...roleAt], boxes: [...nodeEls.keys()].map(id => [id, parentOf.get(id) || "root"]), lines: edgeEls.map(e => [e.a, e.b]), folders: [...places.values()].filter(p => p.folded && nodeEls.has(p.id)).map(p => [p.id, p.folded])};
 }
-// what the picture is a function of, each part undoable: the route, the opened steps, the open families, the split world boxes
+// What the picture is a function of, in the order it is made in. The first line is the fiber, where the reader is: the
+// program, then the part, the routes of a kind, the route or the focus, each step of the path a way back to it. The second
+// is the quotient: what is folded, each fold a switch, and how much is opened, with the list of it on request.
+let crumbsOpened = false;
 function crumbs() {
   const C = document.getElementById("crumbs"); C.innerHTML = "";
   const show = view === "plaat";
   C.style.display = show ? "" : "none";
   if (!show) return;
-  const lbl = t => C.appendChild(html("span", "lbl", t));
-  const chip = (text, undo) => { const b = html("button", null, text + " ✕"); b.title = "undo"; b.onclick = () => { undo(); render(); }; C.appendChild(b); };
-  lbl("route");
-  if (V.part) chip(`Only ${V.part}`, () => { V.part = null; if (!V.route) entrySel.value = ""; });
-  if (V.kind) chip(`All ${KIND_LABEL[V.kind]}`, () => { V.kind = null; if (!V.route) entrySel.value = ""; });
-  if (V.route) chip(entryTitle(V.route), () => { V.route = null; entrySel.value = V.kind ? "kind:" + V.kind : ""; V.open.steps.clear(); });
-  if (!V.kind && !V.route && !V.part) C.appendChild(html("span", "none", entries.length ? "all" : "none"));
-  // the overview, and the focus that is its fiber, is the program without its test code, a fiber the reader can let go of;
-  // shown where there is test code
-  if (!V.route && !V.kind && OWN.some(n => has(n) && testCode(n))) {
-    lbl("code");
-    const b = html("button", V.tests ? "add" : null, V.tests ? "+ without test code" : "without test code ✕");
-    b.title = V.tests ? "leave the test code out: the program alone" : "draw the test code too: tests, test modules and what they touch";
-    b.onclick = () => { V.tests = !V.tests; plaatFit = true; render(); };
-    C.appendChild(b);
+  const path = C.appendChild(html("div", "path")), folds = C.appendChild(html("div", "folds"));
+  const again = act => () => { act(); plaatFit = true; render(); };
+  const home = () => { V.route = null; V.kind = null; V.part = null; V.focus.clear(); V.open.steps.clear(); entrySel.value = ""; };
+  const steps = [[D.root, "the whole program by package", home]];
+  if (V.part) steps.push([`only ${V.part}`, "this part alone", () => { V.route = null; V.kind = null; V.focus.clear(); entrySel.value = "part:" + V.part; }]);
+  if (V.kind) steps.push([`all ${KIND_LABEL[V.kind]} routes`, "every route of this kind", () => { V.route = null; V.open.steps.clear(); entrySel.value = "kind:" + V.kind; }]);
+  if (V.route) steps.push([entryTitle(V.route), "this route", () => {}]);
+  const focus = !V.route && !V.kind ? [...V.focus].sort() : [];
+  if (focus.length === 1) {
+    for (const u of [...(FOCUS.above.get(focus[0]) || [])].reverse()) steps.push([unitLabel(u), `focus on ${unitLabel(u)}`, () => { V.focus = new Set([u]); }]);
+    steps.push([unitLabel(focus[0]), "in focus", () => {}]);
   }
-  // a route's errors are counted on the steps that hand them on, a fold the reader can let go of; shown where there are errors
-  if ((V.route || V.kind) && !DIFF && pictureErrors.length) {
-    lbl("errors");
-    const b = html("button", V.errors ? "add" : null, V.errors ? "+ counted on the step" : `${pictureErrors.length} counted on the step ✕`);
-    b.title = V.errors ? "count the errors a step hands on, on the step: " + pictureErrors.join(", ") : "draw each error a step hands on as a box: " + pictureErrors.join(", ");
-    b.onclick = () => { V.errors = !V.errors; render(); };
-    C.appendChild(b);
+  steps.forEach(([text, title, act], i) => {
+    if (i) path.appendChild(html("span", "sep", "›"));
+    const last = i === steps.length - 1 && focus.length < 2, b = path.appendChild(html(last ? "span" : "button", last ? "here" : "step", text));
+    b.title = title; if (!last) b.onclick = again(act);
+  });
+  if (focus.length > 1) {
+    path.appendChild(html("span", "sep", "›"));
+    focus.forEach((u, i) => { if (i) path.appendChild(html("span", "sep", "+")); const b = path.appendChild(html("button", "here", unitLabel(u) + " ✕")); b.title = "let go of it: the focus on the others"; b.onclick = again(() => V.focus.delete(u)); });
   }
-  // what a step runs on is said by its name, a fold the reader can let go of; shown where the picture has such a step
-  if ((V.route || V.kind) && !DIFF && (V.receivers || pictureRuns)) {
-    lbl("runs on");
-    const b = html("button", V.receivers ? "add" : null, V.receivers ? "+ said by name" : "said by name ✕");
-    b.title = V.receivers ? "name a step by the value it runs on (model.forward), without a line from that value" : "draw a line from each value to the steps that run on it";
-    b.onclick = () => { V.receivers = !V.receivers; render(); };
-    C.appendChild(b);
-  }
-  if (view === "plaat" && pinned.size) { lbl("pinned"); chip(`${pinned.size} ${pinned.size === 1 ? "box" : "boxes"}`, () => pinned.clear()); }
-  if (lit) { lbl("lit"); chip(`values of ${typeLabel(lit.pick)}${lit.drawn === 0 ? " · none here" : ""}`, () => { lit = null; }); }
-  if (V.open.parts.size && !V.route) { lbl("parts"); for (const p of V.open.parts) chip(p, () => V.open.parts.delete(p)); }
-  const opened = u => u === REST ? "the rest" : unitLabel(u);
-  if (V.open.units.size && !V.route && !V.kind) { lbl("packages"); for (const u of V.open.units) chip(opened(u), () => V.open.units.delete(u)); }
+  if (steps.length > 1 || focus.length > 1) { const b = path.appendChild(html("button", "up", "✕")); b.title = "back to the whole program"; b.onclick = again(home); }
+  const lbl = t => folds.appendChild(html("span", "lbl", t));
+  const chip = (text, undo) => { const b = html("button", null, text + " ✕"); b.title = "undo"; b.onclick = () => { undo(); render(); }; folds.appendChild(b); };
+  // a fold: on, the picture is drawn without it or with it counted; off, it is drawn
+  const fold = (text, on, title, flip) => { const b = folds.appendChild(html("button", "fold" + (on ? " on" : ""), text)); b.title = title; b.setAttribute("aria-pressed", on); b.onclick = again(flip); };
+  lbl("folded");
+  // the overview, and the focus that is its fiber, is the program without its test code; shown where there is test code
+  if (!V.route && !V.kind && OWN.some(n => has(n) && testCode(n)))
+    fold("tests", !V.tests, V.tests ? "leave the test code out: the program alone" : "draw the test code too: tests, test modules and what they touch", () => { V.tests = !V.tests; });
+  // errors that are only handed on are counted on the box that hands them on; shown where there are errors
+  if (!DIFF && pictureErrors.length)
+    fold(`errors · ${pictureErrors.length}`, !V.errors, V.errors ? "count the errors a box hands on, on the box: " + pictureErrors.join(", ") : "draw each error a box hands on as a box: " + pictureErrors.join(", "), () => { V.errors = !V.errors; });
+  // what a step runs on is said by its name; shown where the picture has such a step
+  if ((V.route || V.kind) && !DIFF && (V.receivers || pictureRuns))
+    fold("runs on, by name", !V.receivers, V.receivers ? "name a step by the value it runs on (model.forward), without a line from that value" : "draw a line from each value to the steps that run on it", () => { V.receivers = !V.receivers; });
+  if (V.focus.size && !V.route && !V.kind) for (const L of V.closed.libraries) fold(L, true, "open this library into its types", () => V.closed.libraries.delete(L));
   // a package of modules is opened by module or by base class: two quotients of the same functions, the reader's to pick
-  if (!V.route && !V.kind && view === "plaat") {
-    const nested = u => !isRest(u) && [...byId.values()].some(n => n.kind === "module" && !n.library && n.id.startsWith(u + "."));
-    const us = [...new Set([...V.focus, ...V.open.units, ...V.open.flat])].filter(u => V.open.flat.has(u) || nested(u));
-    if (us.length) lbl("grouped");
-    for (const u of us) {
-      const flat = V.open.flat.has(u), b = html("button", flat ? null : "add", flat ? `${unitLabel(u)} by base class ✕` : `+ ${unitLabel(u)} by base class`);
-      b.title = flat ? "group this package by module again" : "group this package's functions by the base class they keep the promise of, whatever file they are written in";
-      b.onclick = () => { if (flat) V.open.flat.delete(u); else V.open.flat.add(u); plaatFit = true; render(); };
-      C.appendChild(b);
+  if (!V.route && !V.kind) {
+    const nested = u => !isRest(u) && !/^(cls|fam):/.test(u) && [...byId.values()].some(n => n.kind === "module" && !n.library && n.id.startsWith(u + "."));
+    for (const u of [...new Set([...V.focus, ...V.open.units, ...V.open.flat])].filter(u => V.open.flat.has(u) || nested(u))) {
+      const flat = V.open.flat.has(u);
+      fold(`${unitLabel(u)} by base class`, flat, flat ? "group this package by module again" : "group this package's functions by the base class they keep the promise of, whatever file they are written in", () => { if (flat) V.open.flat.delete(u); else V.open.flat.add(u); });
     }
-    const blocks = [...[...V.open.bases].map(k => ["fam:" + k, V.open.bases, k]), ...[...V.open.classes].map(k => ["cls:" + k, V.open.classes, k])].filter(([step]) => BLOCK_TITLE.has(step));
-    if (blocks.length) lbl("classes");
-    for (const [step, set, k] of blocks) chip(BLOCK_TITLE.get(step), () => set.delete(k));
   }
-  // an opened entry shows how its command line is parsed; any other opened place is split
-  const openEntries = [...V.open.places].filter(r => r.startsWith("e:") && byId.get(r.slice(2))?.entry), split = [...V.open.places].filter(r => !r.startsWith("e:"));
-  const entryFamilies = V.kind && !V.route ? [...V.open.places].filter(r => r === "e:~" + V.kind) : [];
-  if (V.open.steps.size || V.open.functions.size || openEntries.length || entryFamilies.length) {
+  if (folds.children.length === 1) folds.lastChild.remove();
+  if (pinned.size) { lbl("pinned"); chip(`${pinned.size} ${pinned.size === 1 ? "box" : "boxes"}`, () => pinned.clear()); }
+  if (lit) { lbl("lit"); chip(`values of ${typeLabel(lit.pick)}${lit.drawn === 0 ? " · none here" : ""}`, () => { lit = null; }); }
+  // what is opened stands in the picture, each box with its own way to close; here it is counted, and listed on request
+  const opened = [], open = (set, k, text) => opened.push([text, () => set.delete(k)]);
+  const unit = u => (u === REST ? "the rest" : unitLabel(u));
+  if (!V.route) for (const p of V.open.parts) open(V.open.parts, p, p);
+  if (!V.route && !V.kind) {
+    for (const u of V.open.units) open(V.open.units, u, unit(u));
+    for (const [step, set, k] of [...[...V.open.bases].map(k => ["fam:" + k, V.open.bases, k]), ...[...V.open.classes].map(k => ["cls:" + k, V.open.classes, k])]) if (BLOCK_TITLE.has(step)) open(set, k, BLOCK_TITLE.get(step));
+  }
+  for (const r of V.open.places) {
+    if (r.startsWith("e:~")) { if (V.kind && !V.route && r === "e:~" + V.kind) open(V.open.places, r, `each ${KIND_LABEL[V.kind] || V.kind} route's entry`); }
+    else if (r.startsWith("e:")) { if (byId.get(r.slice(2))?.entry) open(V.open.places, r, `${entryTitle(r.slice(2))} · its parse`); }
+    else open(V.open.places, r, r.startsWith("w:~") ? r.slice(3).replace(/~(in|out|mid|both)$/, (_, side) => ({in: " read", out: " written"})[side] || "") : r.slice(2));
+  }
+  for (const id of V.open.steps) { const info = treeInfo.get(id), n = byId.get(stepOf(id)), name = n?.name || short(stepOf(id)); open(V.open.steps, id, info?.on && n?.cls ? `${typeLabel(info.on)}.${name}` : name); }
+  for (const f of V.open.functions) open(V.open.functions, f, `every ${byId.get(f)?.name || short(f)}`);
+  for (const f of V.open.families) open(V.open.families, f, typeLabel(f));
+  for (const d of V.open.dirs) open(V.open.dirs, d, d);
+  if (opened.length) {
     lbl("opened");
-    for (const r of entryFamilies) chip(`each ${KIND_LABEL[V.kind] || V.kind} route's entry`, () => V.open.places.delete(r));
-    for (const r of openEntries) chip(`${entryTitle(r.slice(2))} · its parse`, () => V.open.places.delete(r));
-    for (const id of V.open.steps) { const info = treeInfo.get(id), n = byId.get(stepOf(id)), name = n?.name || short(stepOf(id)); chip(info?.on && n?.cls ? `${typeLabel(info.on)}.${name}` : name, () => V.open.steps.delete(id)); }
-    for (const f of V.open.functions) chip(`every ${byId.get(f)?.name || short(f)}`, () => V.open.functions.delete(f));
-  }
-  if (V.open.families.size) { lbl("opened types"); for (const f of V.open.families) chip(typeLabel(f), () => V.open.families.delete(f)); }
-  if (split.length) { lbl("split"); for (const r of split) chip(r.startsWith("w:~") ? r.slice(3).replace(/~(in|out|mid|both)$/, (_, s) => ({in: " read", out: " written"})[s] || "") : r.slice(2), () => V.open.places.delete(r)); }
-  if (V.open.dirs.size) { lbl("folders"); for (const d of V.open.dirs) chip(d, () => V.open.dirs.delete(d)); }
-  if (V.closed.libraries.size && V.focus.size && !V.route && !V.kind) { lbl("closed libraries"); for (const L of V.closed.libraries) chip(L, () => V.closed.libraries.delete(L)); }
-  if (V.focus.size && view === "plaat") {
-    lbl("focus"); for (const u of V.focus) chip(unitLabel(u), () => V.focus.delete(u));
-    // around the focus: the packages it exchanges the most data with, to add with a click
-    const add = (text, title, act) => { const b = html("button", "add", text); b.title = title; b.onclick = () => { act(); plaatFit = true; render(); }; C.appendChild(b); };
-    const ns = neighbours();
-    if (ns.length) lbl("around");
-    for (const {u, n} of ns.slice(0, 5)) add(`+ ${unitLabel(u)} · ${n}`, `add ${u} to the focus: ${n} ${n === 1 ? "type" : "types"} across`, () => V.focus.add(u));
-    if (ns.length > 5) add(`+${ns.length - 5} more`, "open the rest beside the focus", () => V.open.units.add(REST));
-  }
-  // one ✕ for every opened box and every pinned one: back to the coarsest zoom. The route, the
-  // filters and the focus stay: they chose what is drawn, and closing the quotient does not undo them
-  const count = Object.values(V.open).reduce((k, s) => k + s.size, 0) + pinned.size;
-  if (count > 1) {
-    const b = html("button", "all", "close all ✕");
-    b.title = "close every opened box and let go of the pinned ones; the route and the filters stay";
-    b.onclick = () => { for (const s of Object.values(V.open)) s.clear(); pinned.clear(); plaatFit = true; render(); };
-    C.appendChild(b);
+    const more = folds.appendChild(html("button", "count", `${opened.length} ${opened.length === 1 ? "box" : "boxes"} ${crumbsOpened ? "▾" : "▸"}`));
+    more.title = "list what is opened, each to close"; more.onclick = () => { crumbsOpened = !crumbsOpened; crumbs(); };
+    if (crumbsOpened) for (const [text, undo] of opened) chip(text, undo);
+    // one ✕ for every opened box and every pinned one: back to the coarsest zoom. The path and the folds stay
+    const b = folds.appendChild(html("button", "all", "close all ✕"));
+    b.title = "close every opened box and let go of the pinned ones; the path and the folds stay";
+    b.onclick = () => { for (const set of Object.values(V.open)) set.clear(); pinned.clear(); plaatFit = true; render(); };
   }
 }
 
@@ -2312,8 +2318,8 @@ async function render() {
     if (view === "plaat") { await renderPlaat(mine); } else if (view === "types") { renderTypes(); fit(); } else { await renderSig(); }
   } catch (err) { scene.node().classList.remove("busy"); fault(err); return; }
   if (mine !== renderSeq) return;
-  // the packages around a focus are a fact of its plan (`focusBase`)
-  if (view === "plaat" && V.focus.size) crumbs();
+  // the path of a focus and the folds of a picture are facts of its plan (`focusBase`, `foldErrors`)
+  if (view === "plaat") crumbs();
   legend();
   if (fitted && !userZoomed && footHeight() !== foot) fit();
   relabel();
