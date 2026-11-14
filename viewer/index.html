@@ -341,7 +341,7 @@ pre.code .l::before{counter-increment:ln;content:counter(ln);display:inline-bloc
     <div id="fault" role="alert" hidden></div>
     <div id="readstate" role="status" hidden></div>
     <div id="laying" role="status" hidden></div>
-    <div id="zoomctl"><button id="zout" type="button" title="zoom out">−</button><button id="fit" type="button">fit</button><button id="zone" type="button" title="actual size">1:1</button><button id="zin" type="button" title="zoom in">+</button><button id="codetoggle" type="button" title="show or hide the code panel">hide code</button></div>
+    <div id="zoomctl"><button id="zout" type="button" title="zoom out">−</button><button id="fit" type="button">fit</button><button id="zone" type="button" title="actual size">1:1</button><button id="zin" type="button" title="zoom in">+</button><button id="linetoggle" type="button" title="draw the lines with corners or with arcs; the route of a line stays the same">round lines</button><button id="codetoggle" type="button" title="show or hide the code panel">hide code</button></div>
     <div id="resizer" title="drag to resize the inspector"></div>
     <div id="legend"></div>
     <div id="hint"><kbd>shift</kbd>-click a package: focus · double-click: pin · <kbd>space</kbd>: code · <button id="keyshelp" type="button">? more</button></div>
@@ -395,6 +395,20 @@ const D = ALL[current];
 { const ps = document.getElementById("project"); for (const n of names) { const o = document.createElement("option"); o.value = n; o.textContent = n; o.selected = n === current; ps.appendChild(o); }
   ps.addEventListener("change", () => { location.hash = "#p=" + ps.value; location.reload(); }); }
 const NS = "http://www.w3.org/2000/svg";
+// a line through its bend points, in the shape the reader chose: square, with corners, or round, each corner an arc that
+// takes up to half of the two stretches it joins. The route is the layout's either way, and the ends stay straight.
+let roundLines = false; try { roundLines = localStorage.getItem("atlas.lines") === "round"; } catch {}
+const linePath = pts => {
+  if (!roundLines || pts.length < 3) return pts.map((q, i) => (i ? "L" : "M") + q.x + "," + q.y).join(" ");
+  const toward = (a, b, r) => { const L = Math.hypot(b.x - a.x, b.y - a.y) || 1; return {x: a.x + (b.x - a.x) * r / L, y: a.y + (b.y - a.y) * r / L}; };
+  const half = (a, b) => Math.hypot(b.x - a.x, b.y - a.y) / 2;
+  let d = "M" + pts[0].x + "," + pts[0].y;
+  for (let i = 1; i < pts.length - 1; i++) {
+    const r = Math.min(half(pts[i - 1], pts[i]), half(pts[i], pts[i + 1])), a = toward(pts[i], pts[i - 1], r), b = toward(pts[i], pts[i + 1], r);
+    d += ` L${a.x},${a.y} Q${pts[i].x},${pts[i].y} ${b.x},${b.y}`;
+  }
+  return d + ` L${pts[pts.length - 1].x},${pts[pts.length - 1].y}`;
+};
 const el = (tag, attrs={}, parent) => { const e = document.createElementNS(NS, tag); for (const k in attrs) e.setAttribute(k, attrs[k]); if (parent) parent.appendChild(e); return e; };
 const html = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
 const chipW = name => 14 + name.length * 6.4;
@@ -519,6 +533,9 @@ function fit(animate = false, pad = 40, tries = 0) {
   if (animate) svg.transition().duration(300).call(zoom.transform, t); else svg.call(zoom.transform, t);
 }
 document.getElementById("fit").onclick = () => fit(true);
+{ const btn = document.getElementById("linetoggle"), say = () => { btn.textContent = roundLines ? "square lines" : "round lines"; };
+  btn.onclick = () => { roundLines = !roundLines; try { localStorage.setItem("atlas.lines", roundLines ? "round" : "square"); } catch {} say(); render(); };
+  say(); }
 document.getElementById("zin").onclick = () => svg.transition().duration(150).call(zoom.scaleBy, 1.25);
 document.getElementById("zout").onclick = () => svg.transition().duration(150).call(zoom.scaleBy, 0.8);
 document.getElementById("zone").onclick = () => { const t = d3.zoomTransform(svg.node()); svg.transition().duration(200).call(zoom.transform, d3.zoomIdentity.translate(t.x, t.y).scale(1)); };
@@ -698,7 +715,7 @@ async function renderSig() {
   const eg = el("g", {}, g), ng = el("g", {}, g);
   for (const e of layout.edges || []) {
     const s = e.sections[0]; const pts = [s.startPoint, ...(s.bendPoints || []), s.endPoint];
-    const d = pts.map((q, i) => (i ? "L" : "M") + q.x + "," + q.y).join(" ");
+    const d = linePath(pts);
     const cnt = e.p.fns.length, sw = 1 + Math.log2(cnt) * 0.8;
     const path = el("path", {class: "sedge " + e.p.kind, d, "stroke-width": sw.toFixed(2)}, eg);
     const last = pts[pts.length-1], prev = pts[pts.length-2], ang = Math.atan2(last.y - prev.y, last.x - prev.x), L = 8, Wd = 4;
@@ -1607,7 +1624,7 @@ async function renderPlaat(mine) {
         pts[i] = {x: q.x + 12 * dx, y: q.y + 12 * dy};
         ports.push({id, ...pts[i], dx, dy});
       }
-      const d = pts.map((q, i) => (i ? "L" : "M") + q.x + "," + q.y).join(" ");
+      const d = linePath(pts);
       const layer = ports.length ? ig : eg;
       const other = info.also && edgeInfo.get(info.also), lines = (info.n || 1) + (other ? other.n || 1 : 0);
       const p = el("path", {class: "sedge fn" + (info.reach ? " reach" : "") + (info.back ? " back" : "") + (info.uses ? " uses" : ""), d, "stroke-width": (info.uses ? 1 : 1.3) + (lines > 1 ? Math.min(3, Math.log2(lines)) : 0), "data-a": ea, "data-b": eb}, layer);
