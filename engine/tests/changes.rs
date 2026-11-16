@@ -215,3 +215,82 @@ fn a_changed_node_a_route_reaches_in_one_reading_only_is_said_with_what_it_was()
     }
     assert!(witnessed, "the program has a changed node a route reaches in one reading only: {report}");
 }
+
+const SOUP_PYPROJECT: &str = "[project]\nname = \"soup\"\nversion = \"0.1.0\"\nrequires-python = \">=3.12\"\n\n\
+                              [project.scripts]\none = \"soup.cli:one\"\ntwo = \"soup.cli:two\"\nthree = \"soup.cli:three\"\n\
+                              four = \"soup.cli:four\"\nfive = \"soup.cli:five\"\n";
+const SOUP_CLEAN: &str = r#"class Cleaner:
+    def clean(self, html: str) -> str:
+        text = self._strip(html)
+        return text.lower()
+
+    def _strip(self, html: str) -> str:
+        return html.strip()
+"#;
+/// The cleaner with one more step inside `clean`.
+const SOUP_PREPARED: &str = r#"class Cleaner:
+    def clean(self, html: str) -> str:
+        soup = self._prepare(html)
+        text = self._strip(soup)
+        return text.lower()
+
+    def _strip(self, html: str) -> str:
+        return html.strip()
+
+    def _prepare(self, html: str) -> str:
+        return html.replace("<", "")
+"#;
+
+/// Law: a change stands once in the report, however many routes pass through it, and under it stand the routes it is on,
+/// named or counted, as many as the changes say. Five commands pass through one method; the second commit puts a step
+/// into it, so every command gains the step and the method's composition changes.
+#[test]
+fn a_change_stands_once_however_many_routes_pass_through_it() {
+    let repo = std::env::temp_dir().join(format!("atlas-test-soup-{}", std::process::id())).join("soup");
+    let _ = std::fs::remove_dir_all(&repo);
+    let commands: String = ["one", "two", "three", "four", "five"]
+        .iter()
+        .map(|c| format!("\n\ndef {c}() -> None:\n    print(Cleaner().clean(\"<{c}>\"))\n"))
+        .collect();
+    for (file, text) in [
+        ("pyproject.toml", SOUP_PYPROJECT.to_string()),
+        ("src/soup/__init__.py", String::new()),
+        ("src/soup/clean.py", SOUP_CLEAN.to_string()),
+        ("src/soup/cli.py", format!("from soup.clean import Cleaner{commands}")),
+    ] {
+        std::fs::create_dir_all(repo.join(file).parent().unwrap()).unwrap();
+        std::fs::write(repo.join(file), text).unwrap();
+    }
+    git(&repo, &["init", "-q"]);
+    git(&repo, &["add", "."]);
+    git(&repo, &["commit", "-q", "-m", "clean"]);
+    std::fs::write(repo.join("src/soup/clean.py"), SOUP_PREPARED).unwrap();
+    git(&repo, &["commit", "-q", "-am", "prepare"]);
+    let c = changes::compare(&repo, "HEAD~1", Some("HEAD"), &atlas_engine::Options::default()).expect("the two commits read");
+    let _ = std::fs::remove_dir_all(repo.parent().unwrap());
+    let report = changes::report(&c);
+    // the report's groups, up to what changed on no route: how many routes, named or counted, and the changes under them
+    let mut groups: Vec<(usize, Vec<&str>)> = vec![];
+    for line in report.lines().skip(1).take_while(|l| !l.starts_with("~ on no route")) {
+        if line.is_empty() {
+            groups.push((0, vec![]));
+        } else if let Some(change) = line.strip_prefix("    ") {
+            groups.last_mut().expect("a change stands under routes").1.push(change);
+        } else if let Some(more) = line.strip_prefix("  and ").and_then(|l| l.strip_suffix(" more routes")) {
+            groups.last_mut().unwrap().0 += more.parse::<usize>().expect("a count");
+        } else {
+            groups.last_mut().expect("a route stands in a group").0 += 1;
+        }
+    }
+    let lines: Vec<&str> = groups.iter().flat_map(|g| g.1.iter().copied()).collect();
+    let distinct: std::collections::BTreeSet<&str> = lines.iter().copied().collect();
+    assert_eq!(lines.len(), distinct.len(), "every change stands once: {report}");
+    let prepare = "soup.clean.Cleaner._prepare";
+    let on = c.routes.iter().filter(|r| r.steps_added.iter().any(|s| s == prepare)).count();
+    assert!(on > 1, "the step is on several routes: {report}");
+    let composed = c.routes.iter().filter(|r| r.compositions_changed.iter().any(|b| b.function.ends_with("Cleaner.clean"))).count();
+    for (what, routes) in [("+ step clean.Cleaner._prepare", on), ("~ composition clean.Cleaner.clean", composed)] {
+        let under: Vec<usize> = groups.iter().filter(|g| g.1.iter().any(|l| l.starts_with(what))).map(|g| g.0).collect();
+        assert_eq!(under, [routes], "{what} stands once, under the {routes} routes it is on: {report}");
+    }
+}

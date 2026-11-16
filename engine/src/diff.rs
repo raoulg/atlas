@@ -85,6 +85,26 @@ pub struct Diff {
     /// and the places its own calls touch, for a type the arrows into and out of it, for a place
     /// the functions that touch it and how.
     pub was: BTreeMap<String, String>,
+    /// For each changed place, the arrows into it that one reading has and the other does not.
+    #[serde(skip)]
+    pub touched: BTreeMap<String, Touched>,
+}
+
+/// The arrows into a changed place that only one reading draws: a function and how it touches the
+/// place (`main prints`).
+#[derive(Serialize, Clone, Debug, Default, PartialEq)]
+pub struct Touched {
+    /// The arrows A has and B does not.
+    pub lost: Vec<Arrow>,
+    /// The arrows B has and A does not.
+    pub gained: Vec<Arrow>,
+}
+
+/// A function touching a place, in words, and whether that function is test code (`model::test_code`).
+#[derive(Serialize, Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub struct Arrow {
+    pub arrow: String,
+    pub test: bool,
 }
 
 /// The union of the parts read at A (`before`) and at B (`after`), as one graph named `name`, and
@@ -220,9 +240,11 @@ pub fn union(name: &str, before: Vec<Graph>, after: Vec<Graph>) -> (Graph, Diff)
             None => {
                 diff.places.insert(id.clone(), Status::Added);
             }
-            Some(before) if before != touched => {
+            Some(before) if before.iter().map(|a| &a.arrow).ne(touched.iter().map(|a| &a.arrow)) => {
                 diff.places.insert(id.clone(), Status::Changed);
-                diff.was.insert(id.clone(), before.join(" · "));
+                diff.was.insert(id.clone(), before.iter().map(|a| a.arrow.as_str()).collect::<Vec<_>>().join(" · "));
+                let only = |x: &[Arrow], y: &[Arrow]| x.iter().filter(|a| !y.iter().any(|b| b.arrow == a.arrow)).cloned().collect();
+                diff.touched.insert(id.clone(), Touched { lost: only(before, touched), gained: only(touched, before) });
             }
             Some(_) => {}
         }
@@ -500,12 +522,13 @@ fn renamed(text: &str, types: &[(String, String)]) -> String {
 
 /// The arrows into and out of each place of a graph (`ix` its index): each function whose calls touch
 /// it, and what they do there (`plot writes`), by the place's id and by the coarser place it is drawn in.
-fn places(g: &Graph, ix: &Index) -> BTreeMap<String, Vec<String>> {
-    let mut out: BTreeMap<String, Vec<String>> = BTreeMap::new();
+fn places(g: &Graph, ix: &Index) -> BTreeMap<String, Vec<Arrow>> {
+    let mut out: BTreeMap<String, Vec<Arrow>> = BTreeMap::new();
     for n in &g.nodes {
         for t in n.touches.iter().chain(&n.instead) {
             let w = t.drawn();
-            let arrow = format!("{} {}", ix.function(n), w.verb);
+            let test = crate::model::test_code(n, |id| ix.nodes.get(id).copied());
+            let arrow = Arrow { arrow: format!("{} {}", ix.function(n), w.verb), test };
             for id in std::iter::once(w.place.id.clone()).chain(w.place.coarse.map(|c| c.id)) {
                 out.entry(id).or_default().push(arrow.clone());
             }

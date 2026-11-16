@@ -696,6 +696,12 @@ fn label<'n>(id: &str, node: &dyn Fn(&str) -> Option<&'n Node>, shared: &Shared)
     }
 }
 
+/// Whether a node is test code, by where it stands: a test, code the reader marks as test code (`Node::test`), or code in
+/// a test module. A test is a way in from outside the program. `node` gives the nodes of its reading by id.
+pub fn test_code<'n>(n: &Node, node: impl Fn(&str) -> Option<&'n Node>) -> bool {
+    n.test || n.entry.as_ref().is_some_and(|e| e.kind == EntryKind::Test) || node(&n.module).is_some_and(|m| m.test)
+}
+
 /// A function as Atlas says it, in the view (`stepName` in `viewer/plan.js`, a step of a route) and in words: a method by
 /// its class (`type_label`) and its own name (`Block.scaled`); an initializer, which fills in the value a call to its
 /// class makes, as that call (`Block()`: Python's `__init__` and TypeScript's `constructor` are one construct); any other
