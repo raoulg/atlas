@@ -892,11 +892,6 @@ const ELK_WORKER = /*__ELK_WORKER__*/null, KEPT = 48;
 const SUPERSEDED = new Error("laid out for a picture no longer asked for");
 const LAYOUTS = new Map();      // input → the promise of its layout, the least recently used first
 const rate = {ms: 0, size: 0};  // how long this page's layouts took, by their boxes and lines
-// A layer keeps the order the code gives its boxes and lines in (ELK's model order) in a picture of up to this many
-// lines. ELK sorts each layer against every line that passes through it, which grows with the square of the layer:
-// free in the pictures of a route or a package (at most about 200 lines), twenty seconds in one of 750 (#320), where
-// the boxes are too many to read an order in. Beyond it ELK orders a layer by its crossings alone.
-const ORDERED_LINES = 400;
 let elkUrl = null, layWorker = null;
 const sizeOf = n => 1 + (n.edges || []).length + (n.children || []).reduce((s, c) => s + sizeOf(c), 0);
 const startWorker = () => {
@@ -1492,19 +1487,11 @@ async function renderPlaat(mine) {
   const bundleOf = info => (recounted(info) ? `×${info.was} → ×${info.n ?? 1}` : info.n > 1 ? "×" + info.n : null);
   // in columns a line's width and its tooltip say how many it stands for: a label would stand as a layer between two columns
   if (!columns) for (const e of root.edges) { const t = bundleOf(edgeInfo.get(e.id)); if (t) (e.labels ||= []).push({text: t, width: textW(t, 6.2), height: 12}); }
-  // boxes are placed by Brandes–Köpf, which grows about linearly with the lines, so a picture of a few
-  // hundred lines opens at once; network simplex straightens long lines a little at ten times the cost
-  Object.assign(root, {layoutOptions: {"elk.algorithm": "layered", "elk.direction": "RIGHT", "elk.hierarchyHandling": "INCLUDE_CHILDREN", "elk.edgeRouting": "ORTHOGONAL", "elk.layered.spacing.nodeNodeBetweenLayers": "56", "elk.spacing.nodeNode": "16", "elk.layered.nodePlacement.strategy": "BRANDES_KOEPF", "elk.spacing.edgeNode": "14", "elk.layered.spacing.edgeNodeBetweenLayers": "16", "elk.layered.considerModelOrder.strategy": root.edges.length <= ORDERED_LINES ? "NODES_AND_EDGES" : "NONE"}});
   // A focus is three columns: what it takes, its functions, what it gives. The code's order says nothing between functions
-  // that no line orders, so the boxes are placed by their lines alone, straight where they can be (network simplex, while
-  // the lines are few enough to afford it); each line stays a line of its own, so that it can be followed from box to box
-  if ((columns || V.focus.size) && !DIFF) Object.assign(root.layoutOptions, {"elk.layered.considerModelOrder.strategy": "NONE", "elk.layered.spacing.edgeEdgeBetweenLayers": "5", "elk.layered.spacing.edgeNodeBetweenLayers": "10", "elk.layered.spacing.nodeNodeBetweenLayers": "36", ...(root.edges.length <= ORDERED_LINES ? {"elk.layered.nodePlacement.strategy": "NETWORK_SIMPLEX"} : {})});
-  // the columns are partitions of the layers: the code after what it reads, the types after the code. Every line of the
-  // overview runs through the gaps between them, so the gaps are wide enough to keep each line apart from the next
-  if (columns) {
-    Object.assign(root.layoutOptions, {"elk.partitioning.activate": "true", "elk.layered.spacing.edgeEdgeBetweenLayers": "9", "elk.layered.spacing.nodeNodeBetweenLayers": "64"});
-    for (const c of root.children) if (!c.layoutOptions?.["elk.layered.layering.layerConstraint"]) (c.layoutOptions ||= {})["elk.partitioning.partition"] = isType(c.id) ? "2" : "1";
-  }
+  // that no line orders. The overview is four columns (`COLUMNS`): what the packages read, the packages, the types, what
+  // they write; a place they read and write stands in the first, its twin in the last
+  const columnOf = c => (["in", "both"].includes(roleAt.get(c.id)) ? "in" : roleAt.get(c.id) === "out" ? "out" : isType(c.id) ? "type" : "code");
+  layOut(root, {loose: (columns || !!V.focus.size) && !DIFF, columnOf: columns ? columnOf : null});
   let layout;
   laying(root, () => mine === undefined || mine === renderSeq);
   try { layout = await laidOut(root); } catch (err) { if (err === SUPERSEDED) return; throw err; }

@@ -1627,5 +1627,8 @@ way a line runs. What a package takes of a type and what it gives of it are two 
 one path with an arrowhead at each end the data runs to; a line a package reaches through another stays a line of its own
 (sentence 6). A line's width and its tooltip say how many lines it stands for, since a label would stand as a layer of
 its own between two columns. The layers are where a box is looked for, not a fact of the plan: the picture is the same
-plan under any placing.
-**Where.** `design.md` §2, the viewer's layout (elkjs); `besides`, `columns` and `flipped` in `viewer/index.html`.
+plan under any placing. The columns are partitions of the layers and the only order the layout is given: a box at the
+top of the overview keeps no layer constraint beside its column, so every overview the plan gives is one the layout can
+lay out (`engine/tests/layout.rs`).
+**Where.** `design.md` §2, the viewer's layout (elkjs); `layOut` and `COLUMNS` in `viewer/plan.js`; `besides`, `columns`
+and `flipped` in `viewer/index.html`.
