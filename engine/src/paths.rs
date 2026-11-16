@@ -1833,6 +1833,89 @@ pub type Completed = (String, crate::model::Touch, Vec<Built>, Vec<Completion>);
 
 /// The way a request goes by the method it is built with (`knowledge::REQUEST_WAYS`), where every
 /// alternative says the same; none where one does not say its method.
+/// The functions a route that starts at each function can run, read backwards: for a function, every function whose
+/// route reaches it, itself among them, through the calls, the classes built with their methods and their bases', the
+/// requests and a base's method a call of which runs its overrides (`Graph::reach`). A route starts at a function and goes on in call
+/// order (composition), so a conjunction of conditions holds on some route only where one function's route meets them all
+/// (`mathematics.md`, "Who makes a path whole"): it reaches every caller it names and is the entry whose users it names.
+struct Reached {
+    /// The functions that reach each one by one step.
+    from: HashMap<String, Vec<String>>,
+    /// The functions that reach each one, by any number of steps, as asked.
+    memo: RefCell<HashMap<String, std::rc::Rc<HashSet<String>>>>,
+    /// The program's nodes, and of them the classes.
+    nodes: HashSet<String>,
+    classes: HashSet<String>,
+}
+
+impl Reached {
+    fn of(store: &crate::builder::GraphBuilder) -> Reached {
+        use crate::model::{EdgeKind, NodeKind};
+        let class = |id: &str| store.nodes.get(id).is_some_and(|n| n.kind == NodeKind::Class);
+        let mut from: HashMap<String, Vec<String>> = HashMap::new();
+        for e in &store.edges {
+            if matches!(e.kind, EdgeKind::Calls | EdgeKind::Instantiates | EdgeKind::Requests)
+                || (e.kind == EdgeKind::Contains && class(&e.src))
+            {
+                from.entry(e.dst.clone()).or_default().push(e.src.clone());
+            }
+            // a class built is its bases too: it runs the initializer and the methods it inherits
+            if e.kind == EdgeKind::Inherits {
+                from.entry(e.dst.clone()).or_default().push(e.src.clone());
+            }
+        }
+        for (f, bases) in store.family().overrides {
+            from.entry(f).or_default().extend(bases.into_iter().map(|(base, _)| base));
+        }
+        let nodes = store.nodes.keys().cloned().collect();
+        let classes = store.nodes.values().filter(|n| n.kind == NodeKind::Class).map(|n| n.id.clone()).collect();
+        Reached { from, memo: RefCell::new(HashMap::new()), nodes, classes }
+    }
+
+    /// The functions whose route reaches `f`, `f` among them. A function of a class the graph holds no node of (the
+    /// initializer a class is given, `Exporter.__init__` of a class that writes none) runs where its class is built.
+    fn into(&self, f: &str) -> std::rc::Rc<HashSet<String>> {
+        if let Some(found) = self.memo.borrow().get(f) {
+            return found.clone();
+        }
+        let mut seen = HashSet::from([f.to_string()]);
+        let mut todo = vec![f.to_string()];
+        if let Some((class, _)) = f.rsplit_once('.').filter(|(c, _)| !self.nodes.contains(f) && self.classes.contains(*c)) {
+            seen.insert(class.to_string());
+            todo.push(class.to_string());
+        }
+        while let Some(g) = todo.pop() {
+            for h in self.from.get(&g).into_iter().flatten() {
+                if seen.insert(h.clone()) {
+                    todo.push(h.clone());
+                }
+            }
+        }
+        let found = std::rc::Rc::new(seen);
+        self.memo.borrow_mut().insert(f.to_string(), found.clone());
+        found
+    }
+
+    /// Whether some route meets every condition of `both`: one function reaches each caller it names, and is each entry
+    /// whose users it names.
+    fn together(&self, both: &Both) -> bool {
+        if both.0.len() < 2 {
+            return true;
+        }
+        let mut starts: Vec<std::rc::Rc<HashSet<String>>> = both
+            .0
+            .iter()
+            .map(|a| match a {
+                Atom::Reaches(g) => self.into(g),
+                Atom::Starts(e) => std::rc::Rc::new(HashSet::from([e.clone()])),
+            })
+            .collect();
+        starts.sort_by_key(|s| s.len());
+        let (fewest, rest) = starts.split_first().expect("two conditions or more");
+        fewest.iter().any(|s| rest.iter().all(|r| r.contains(s)))
+    }
+}
+
 fn way_of_request<'b>(mut built: impl Iterator<Item = &'b Built>) -> Option<crate::model::Dir> {
     let way = |b: &Built| crate::knowledge::request_way(method_and_path(&render(b)).0);
     let first = way(built.next()?)?;
@@ -1964,6 +2047,7 @@ pub fn place_calls(store: &mut crate::builder::GraphBuilder, completed: Vec<Comp
         store.nodes.values().filter(|n| n.kind == crate::model::NodeKind::Class && !n.library).map(|n| n.id.clone()).collect();
     let class = |id: &str| classes.get(id).cloned();
     let builds = |g: &str| class_of.get(g).cloned().or_else(|| class(g)).or_else(|| class(g.rsplit_once('.')?.0));
+    let reached = Reached::of(store);
     for (f, t, built, found) in completed {
         // the type whose code gives the path its root: one whose value holds it (`self.root`), or
         // whose constructor takes it, as a constructor's parameter is its class's (`Store.path`)
@@ -1974,16 +2058,9 @@ pub fn place_calls(store: &mut crate::builder::GraphBuilder, completed: Vec<Comp
         // else the one whose constructor takes the path, as a constructor's parameter is its class's
         // (`Store.path`), or one of whose methods touches it: the type whose code goes to the disk there
         let own = store.nodes.get(&f).filter(|n| n.ctor && !n.library).and_then(|n| n.cls.clone()).or_else(|| class_of.get(&f).cloned());
-        // what each place of completion makes of it: the alternatives one caller hands are one
-        let mut wholes: Vec<&Whole> = vec![];
-        for c in &found {
-            if !wholes.contains(&&c.whole) {
-                wholes.push(&c.whole);
-            }
-        }
         // a route that reaches none of the callers that make it whole sees the call as it was read,
         // a file named by the value its function holds as it is where nothing calls the function
-        if wholes.iter().any(|w| !w.both(&f).0.is_empty()) {
+        if found.iter().any(|c| !c.whole.both(&f).0.is_empty()) {
             let what = if t.kind == World::Disk { by_value(store, &[f.as_str()], built.iter()) } else { None };
             let dir = if t.kind == World::Net { way_of_request(built.iter()).or(t.dir) } else { t.dir };
             store.instead(
@@ -1995,6 +2072,16 @@ pub fn place_calls(store: &mut crate::builder::GraphBuilder, completed: Vec<Comp
                     ..t.clone()
                 },
             );
+        }
+        // a completion is a fact of the routes that meet its conditions: one whose callers no route reaches together (the
+        // object one caller set up, the rest another hands that never runs on it) is a place of no route
+        let found: Vec<Completion> = found.into_iter().filter(|c| reached.together(&c.whole.both(&f))).collect();
+        // what each place of completion makes of it: the alternatives one caller hands are one
+        let mut wholes: Vec<&Whole> = vec![];
+        for c in &found {
+            if !wholes.contains(&&c.whole) {
+                wholes.push(&c.whole);
+            }
         }
         for whole in wholes {
             let both = whole.both(&f);

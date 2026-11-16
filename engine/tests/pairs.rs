@@ -1773,3 +1773,73 @@ fn a_type_written_through_its_module_is_that_type_in_every_language() {
         assert_eq!(asked(&qualified), asked(&clean), "{language}: and so are the findings");
     }
 }
+
+/// A place is a fact of the routes that reach it (`docs/reference/mathematics.md`, "Who makes a path whole"; #473). A
+/// route starts at a function and goes on in call order, so a completion whose conditions no route meets together is a
+/// place of no route: the folder the program sets its ledger up on, joined with the stamp only a test hands to a ledger of
+/// its own, is a file nothing writes. The apart pair (`apart/{python,rust,typescript}`): the command sets a ledger up on
+/// `data/blocked` and flushes it as the latest; the test flushes a ledger with the stamp `20260823`. The clean test keeps
+/// its ledger in a folder it is handed, the shortcut's in the program's own data folder. In every language and on both
+/// sides: every condition set of every touch holds on some route (one function's route reaches each caller it names and
+/// is each entry whose users it names); the command's route writes no file with the test's stamp, and no `places` finding
+/// names one; the test's route does. They differ in where the test writes: the clean test in its own folder, the shortcut
+/// in `data/blocked`, beside the program's data.
+#[test]
+fn a_literal_a_caller_hands_is_a_place_of_the_routes_through_that_caller() {
+    let stamped = |p: &str| p.contains("blocked_20260823");
+    for language in ["python", "rust", "typescript"] {
+        for side in ["clean", "shortcut"] {
+            let g = pair(&format!("apart/{language}/{side}"));
+            let at = format!("{language} {side}");
+            let named = |name: &str| {
+                g.nodes
+                    .iter()
+                    .find(|n| !n.library && n.kind == atlas_engine::NodeKind::Function && n.name == name)
+                    .map(|n| n.id.clone())
+                    .unwrap_or_else(|| panic!("{at}: {name}"))
+            };
+            let reach: BTreeMap<String, std::collections::HashSet<String>> =
+                g.nodes.iter().map(|n| (n.id.clone(), g.reach(&n.id))).collect();
+            for n in &g.nodes {
+                for t in &n.touches {
+                    for both in &t.by {
+                        let met = reach.iter().any(|(s, r)| {
+                            both.0.iter().all(|a| match a {
+                                Atom::Reaches(f) => r.contains(f),
+                                Atom::Starts(e) => e == s,
+                            })
+                        });
+                        assert!(met, "{at}: {} {} holds on no route: {:?}", n.id, t.what, both.0);
+                    }
+                }
+            }
+            // what the route from `start` writes
+            let written = |start: &str| -> BTreeSet<String> {
+                let r = &reach[start];
+                g.nodes
+                    .iter()
+                    .filter(|n| r.contains(&n.id))
+                    .flat_map(|n| n.touches_in(start, &|f| r.contains(f)))
+                    .filter(|t| t.kind == World::Disk && !t.artifact.is_empty())
+                    .map(|t| t.artifact.clone())
+                    .collect()
+            };
+            let (command, test) = (named("main"), named("test_flush"));
+            let run = written(&command);
+            assert!(run.contains("data/blocked/blocked_latest.jsonl"), "{at}: the command writes its own file: {run:?}");
+            assert!(!run.iter().any(|p| stamped(p)), "{at}: the command writes no file the test stamps: {run:?}");
+            let decided: Vec<String> = atlas_engine::principles::check(&g)
+                .into_iter()
+                .filter(|f| f.principle == "places")
+                .flat_map(|f| f.about)
+                .filter(|a| a.role == "place")
+                .map(|a| a.id)
+                .collect();
+            assert!(!decided.iter().any(|p| stamped(p)), "{at}: a finding names a file only the test stamps: {decided:?}");
+            let tested: Vec<String> = written(&test).into_iter().filter(|p| stamped(p)).collect();
+            assert_eq!(tested.len(), 1, "{at}: the test writes the file it stamps: {tested:?}");
+            let in_data = tested[0].starts_with("data/blocked/");
+            assert_eq!(in_data, side == "shortcut", "{at}: the test writes {}", tested[0]);
+        }
+    }
+}
