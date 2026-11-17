@@ -9,7 +9,7 @@ use tree_sitter::Node as TsNode;
 
 use crate::builder::GraphBuilder;
 use crate::effects::{self, Facts};
-use crate::model::{ext, Crossing, Dir, EdgeKind, Held, NodeKind, Set, Site, Slot, Test, Touch, Use, World};
+use crate::model::{ext, Crossing, Dir, EdgeKind, FieldRead, Held, NodeKind, Set, Site, Slot, Test, Touch, Use, World};
 use crate::tree::{
     beneath, guarded_by, guards, named_children, number_choices, parent, payload_of, starts_at_literal, text, walk, walk_all, what_of,
     wrapped, wraps, ChoiceSyntax, Part, Wrappers,
@@ -423,6 +423,11 @@ pub struct Steps<'t, 's> {
     binders: RefCell<HashMap<usize, Vec<TsNode<'t>>>>,
     /// Of each node asked, the guards among the named nodes it holds, each by its place among them (`Steps::guarded`).
     guards: RefCell<HashMap<usize, Vec<(usize, (u32, u32))>>>,
+    /// The choices between the entries of a table a call looks up by a value (`Steps::table`): each by its number, the value
+    /// as written, and each entry's key as written, by arm.
+    tables: Vec<(u32, String, Vec<String>)>,
+    /// The arm of a table's choice the steps read now stand in (`Steps::entry`).
+    entry: Option<(u32, u32)>,
 }
 
 /// A body read once: the node each of its nodes stands in, the named nodes each holds, and the names written in it in
@@ -527,6 +532,8 @@ impl<'t, 's> Steps<'t, 's> {
             climbs: RefCell::new(HashMap::new()),
             binders: RefCell::new(HashMap::new()),
             guards: RefCell::new(HashMap::new()),
+            tables: vec![],
+            entry: None,
         }
     }
 
@@ -966,8 +973,56 @@ impl<'t, 's> Steps<'t, 's> {
                     of,
                     lines: Some((line(b), b.end_position().row as u32 + 1)),
                     arms: self.arms(b),
+                    reads: self.fields_read(value, held, 0),
                     value: (value.start_byte() as u32, value.end_byte() as u32),
                 });
+            }
+        }
+        out
+    }
+
+    /// The fields of the values names hold that `value` reads (`Set::reads`): each projection of a name written in it,
+    /// outermost, and through each name it reads whole, the fields the value bound to that name before reads.
+    fn fields_read(&self, value: TsNode<'t>, held: &dyn Fn(TsNode<'t>) -> Vec<Held>, depth: usize) -> Vec<FieldRead> {
+        let u = self.uses;
+        let kinds: Vec<&str> = u.names.iter().chain(u.reads).copied().collect();
+        let mut out: Vec<FieldRead> = vec![];
+        let mut push = |r: FieldRead| {
+            if !out.contains(&r) {
+                out.push(r);
+            }
+        };
+        // a method called on a value is no field of it (`self.items.iter()` reads `items`, never `items.iter`)
+        let callee = |q: TsNode<'t>| self.up(q).and_then(|c| c.child_by_field_name("function")).is_some_and(|f| f.id() == q.id());
+        let mut roots: HashSet<usize> = HashSet::new();
+        for x in walk_all(value) {
+            let Some((root, field)) = self.projection(x) else { continue };
+            roots.insert(root.id());
+            let outer = self
+                .up(x)
+                .filter(|p| p.end_byte() <= value.end_byte() && !callee(*p))
+                .and_then(|p| self.projection(p))
+                .is_some_and(|(r, _)| r.id() == root.id());
+            if callee(x) || outer || (u.label)(root, self.src) {
+                continue;
+            }
+            for h in held(root) {
+                push(FieldRead { on: Held { at: 0, fills: vec![], through: vec![], ..h }, field: field.clone() });
+            }
+        }
+        if depth >= 4 {
+            return out;
+        }
+        // a name read whole reads what the value bound to it before reads
+        for n in walk(value, &kinds).into_iter().filter(|n| !roots.contains(&n.id()) && !(u.label)(*n, self.src)) {
+            let name = text(n, self.src);
+            for b in walk_all(self.body).into_iter().filter(|b| b.end_byte() <= value.start_byte()) {
+                let Some((targets, bound)) = (u.binds)(b) else { continue };
+                if walk(targets, &kinds).iter().any(|t| text(*t, self.src) == name) {
+                    for r in self.fields_read(bound, held, depth + 1) {
+                        push(r);
+                    }
+                }
             }
         }
         out
@@ -1516,7 +1571,23 @@ impl<'t, 's> Steps<'t, 's> {
             child = p;
         }
         out.reverse();
+        out.extend(self.entry);
         out
+    }
+
+    /// A call through a table looked up by a value (`ACTIVATIONS[config.activation]()`): a choice between the table's entries,
+    /// `by` that value, as a `match` on it with a case for each key is. Its number; the reader reads each entry as a call of
+    /// its own in the arm `Steps::entry` names, the entry's key deciding it.
+    pub fn table(&mut self, by: &str, keys: Vec<String>) -> u32 {
+        let k = self.choices.values().chain(self.tables.iter().map(|t| &t.0)).max().map_or(0, |m| m + 1);
+        self.tables.push((k, worded(by), keys.iter().map(|key| worded(key)).collect()));
+        k
+    }
+
+    /// The arm of a table's choice the steps read from now on stand in, the entry by its place among the keys; none once the
+    /// entries are read.
+    pub fn entry(&mut self, arm: Option<(u32, u32)>) {
+        self.entry = arm;
     }
 
     /// Keep the names a call's value is held by.
@@ -1769,6 +1840,7 @@ impl<'t, 's> Steps<'t, 's> {
     pub fn finish(mut self, store: &mut GraphBuilder, id: &str) {
         self.glued_fails();
         let (arm_lines, loop_lines, whens, binds) = (self.arm_lines(), self.loop_lines(), self.whens(), self.binds());
+        let by = self.tables.iter().map(|(k, by, _)| (*k, by.clone())).collect();
         for (t, kind, via, arms) in self.edges {
             store.add_call(id, &t, kind, via, arms);
         }
@@ -1809,6 +1881,7 @@ impl<'t, 's> Steps<'t, 's> {
             (n.arm_lines, n.arm_choices) = arm_lines.into_iter().unzip();
             n.loop_lines = loop_lines;
             n.whens = whens;
+            n.by = by;
             n.unseen = self.unseen;
             n.uses = own;
             n.binds = binds;
@@ -1967,6 +2040,10 @@ impl<'t, 's> Steps<'t, 's> {
         for (k, a, _, _) in guards(self.body, self.src, &self.choices, self.syntax) {
             out.push((k, a, "otherwise".to_string()));
         }
+        // an entry of a table runs under its key, as a case of a `match` does
+        for (k, _, keys) in &self.tables {
+            out.extend(keys.iter().enumerate().map(|(a, key)| (*k, a as u32, key.clone())));
+        }
         out
     }
 
@@ -1995,6 +2072,32 @@ impl<'t, 's> Steps<'t, 's> {
         }
         out
     }
+}
+
+/// A loop's label: `for {binds} {keyword} {over}` as the code writes it. Over a literal written in place, of `members` values,
+/// by what it binds and how many: `for layer in 4 layers`, a name that takes no plural `s` by the count of members (`for _ in
+/// 2 members`), a pattern by the count of what it binds (`for (a, b) in 2 × (a, b)`). A literal of constants short enough
+/// to read says more than a count (`for split in ("train", "valid", "test")`): the reader hands it as no literal
+/// (`constants_shown`).
+pub fn loop_label(binds: &str, keyword: &str, over: &str, members: Option<usize>) -> String {
+    let Some(n) = members else { return format!("for {binds} {keyword} {over}") };
+    let bare = binds.strip_prefix('(').and_then(|b| b.strip_suffix(')')).unwrap_or(binds);
+    let name = !bare.is_empty() && bare.chars().all(|c| c.is_alphanumeric() || c == '_');
+    let plural = name
+        && bare.chars().next().is_some_and(|c| c.is_ascii_lowercase())
+        && bare.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_')
+        && !bare.ends_with(['_', 's', 'x', 'z', 'y', 'h'])
+        && bare.chars().last().is_some_and(|c| c.is_ascii_alphabetic());
+    match () {
+        _ if plural => format!("for {binds} {keyword} {n} {bare}s"),
+        _ if name => format!("for {binds} {keyword} {n} members"),
+        _ => format!("for {binds} {keyword} {n} × ({bare})"),
+    }
+}
+
+/// Whether a literal a loop goes over is shown as written: all its members constants, and short enough to read.
+pub fn constants_shown(over: &str, constants: bool) -> bool {
+    constants && over.chars().count() <= 40
 }
 
 /// The error type a written result names apart from its value, where it names one: the second
@@ -2316,6 +2419,31 @@ mod tests {
     use super::*;
 
     proptest::proptest! {
+        /// Law: a loop over a literal written in place is named by what it binds and how many members the literal holds,
+        /// never by how the members are written: two literals of as many members label their loops alike, each label says
+        /// the count, a pattern's parentheses are written once, and a loop over anything else keeps what it goes over as
+        /// written.
+        #[test]
+        fn a_literal_loop_is_named_by_what_it_binds_and_how_many(
+            binds in "[a-z_][a-z0-9_]{0,8}|[a-z]{1,4}, [a-z]{1,4}|\\([a-z]{1,4}, [a-z]{1,4}\\)",
+            first in "[A-Za-z(), ]{0,30}",
+            second in "[A-Za-z(), ]{0,30}",
+            n in 0usize..12,
+        ) {
+            let label = loop_label(&binds, "in", &first, Some(n));
+            proptest::prop_assert_eq!(&label, &loop_label(&binds, "in", &second, Some(n)));
+            let head = format!("for {binds} in {n} ");
+            proptest::prop_assert!(label.starts_with(&head), "{}", label);
+            proptest::prop_assert!(!label.contains("(("), "{}", label);
+            proptest::prop_assert_eq!(loop_label(&binds, "of", &first, None), format!("for {binds} of {first}"));
+        }
+
+        /// Law: a plural is made only of a name that takes an `s`; any other name is counted in members.
+        #[test]
+        fn a_literal_loop_makes_no_plural_a_name_does_not_take(binds in "_|_[a-z]{1,4}|[a-z]{0,4}[sxzyh]|[A-Z][a-z]{0,4}", n in 0usize..12) {
+            proptest::prop_assert_eq!(loop_label(&binds, "in", "", Some(n)), format!("for {binds} in {n} members"));
+        }
+
         /// Law: whether one of a body's spans covers a range is a question of the spans as a set: `Spans` answers as a scan
         /// of every span does, whatever order the spans come in and however they nest or overlap.
         #[test]

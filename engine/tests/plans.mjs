@@ -25,7 +25,7 @@ const D = JSON.parse(fs.readFileSync(dataJson, "utf8"));
 // `ATLAS_FINE_BUDGET=n` cuts the plan as a large program's is cut (`plan.js`, `FINE_BUDGET`)
 const window = process.env.ATLAS_FINE_BUDGET ? {ATLAS_FINE_BUDGET: Number(process.env.ATLAS_FINE_BUDGET)} : {};
 const M = new Function("D", "window", fs.readFileSync(planJs, "utf8") + `
-return {V, plan, imageOf, coarsen, checkOpenings, libShut, libOpen, kindGroups, worldKindOf, refines, overviewOpen, OUT, classBlocks, inUnit, partOf, MAKEFILES, treeInfo, stepLabel, oneOf, typeLabel, sideOfRoles, familyOf, kindOf, byId, ordersOn, stepOf, opens, frameOf, valueBox, foldDirs, filePath, valuesOf, closedFamily, typesIn, lightOf, cutBy, familyFrames, here, kindsOf, isData, worldPlaceOf, placeOfType, focusOpen: typeof focusOpen === "function" ? focusOpen : null, overviewEntries, planBase, VIEWS, viewOf, dirsOf, worldUse, storageGroups};`)(D, window);
+return {V, plan, imageOf, coarsen, checkOpenings, libShut, libOpen, kindGroups, worldKindOf, refines, overviewOpen, OUT, classBlocks, inUnit, partOf, MAKEFILES, treeInfo, stepLabel, oneOf, typeLabel, sideOfRoles, familyOf, kindOf, byId, ordersOn, stepOf, opens, frameOf, valueBox, foldDirs, filePath, valuesOf, closedFamily, typesIn, lightOf, cutBy, familyFrames, here, kindsOf, receiverReads, ranksIn, shapesOpen, shapesFold, isData, worldPlaceOf, placeOfType, focusOpen: typeof focusOpen === "function" ? focusOpen : null, overviewEntries, planBase, VIEWS, viewOf, dirsOf, worldUse, storageGroups};`)(D, window);
 const {V} = M;
 
 const SIDES = {in: "left", out: "right", mid: "between", both: "both"};
@@ -1427,10 +1427,31 @@ function ownArrows() {
 // with no route named, every route of the program but its tests; `--own` the own arrows of the overview's fine plan;
 // `--overview` asks the overview, with the test code and without;
 // `--focus` every focus, with the test code and without; `--kinds` the routes of each kind; `--views` every view state; `--ends`
-// whether every route ends at a place, and which end at 1; `--gives ROUTE...` what each route closed gives its caller
+// whether every route ends at a place, and which end at 1; `--gives ROUTE...` what each route closed gives its caller;
+// `--drawn ROUTE...` what the page draws of each route beside its plan (`drawnBeside`)
 // the answer is written whole before the process ends: a pipe takes some 64 KB at a time
 const said = answer => process.stdout.write(JSON.stringify(answer), () => process.exit(0));
-if (routes[0] === "--own") said({"@own": {facts: ownArrows(), faults: []}});
+// what the page draws of a route beside its plan, closed and with its shapes open: the titles of its choices, the labels
+// of its boxes, the configuration its receiver reads and whether the shapes button shows
+function drawnBeside(route) {
+  setState({...blank(), route});
+  const look = () => {
+    const C = M.plan();
+    const fam = M.familyFrames(C.places);
+    return {
+      titles: [...C.frames.values()].filter(f => f.synthetic).map(f => f.title),
+      labels: [...[...C.places.values()].map(p => p.label), ...[...fam.values()].flatMap(F => (F.kids || []).map(k => k.label))],
+      ranks: M.ranksIn(C.places),
+    };
+  };
+  const closed = look();
+  M.shapesOpen(closed.ranks, true);
+  const open = look();
+  M.shapesOpen(closed.ranks, false);
+  return {closed, open, button: M.shapesFold(closed.ranks), config: M.receiverReads(route)};
+}
+if (routes[0] === "--drawn") said(Object.fromEntries(routes.slice(1).map(r => [r, drawnBeside(r)])));
+else if (routes[0] === "--own") said({"@own": {facts: ownArrows(), faults: []}});
 else if (routes[0] === "--views") said({"@views": {facts: [], faults: viewFaults()}});
 else if (routes[0] === "--ends") { const {faults, findings} = routeEnds(); said({"@ends": {facts: findings, faults}}); }
 else if (routes[0] === "--gives") said(Object.fromEntries(routes.slice(1).map(r => [r, {facts: givesOf(r), faults: []}])));

@@ -12,7 +12,9 @@ use super::module::{
     written, Module, Own, WRAPPERS,
 };
 use super::paths::{self, At, Built, Eval};
-use crate::body::{changed_binding, changed_through, BindSyntax, Crosses, Kept, Lookups, Range, Step, Steps, UseSyntax};
+use crate::body::{
+    changed_binding, changed_through, constants_shown, loop_label, BindSyntax, Crosses, Kept, Lookups, Range, Step, Steps, UseSyntax,
+};
 use crate::builder::{foreign_type, GraphBuilder};
 use crate::effects::{self, Crossing};
 use crate::knowledge::{self, OwnTypes};
@@ -229,6 +231,88 @@ fn projections_through<'t>(v: TsNode<'t>, looked: Lookups<'_, 't>) -> Vec<Option
         }
         _ => vec![None],
     }
+}
+
+/// The members of a literal a loop goes over as written (`(a, b)`, `[a, b]`, `{a, b}`), where none is unpacked into it.
+fn literal_members(n: TsNode) -> Option<Vec<TsNode>> {
+    if !matches!(n.kind(), "tuple" | "list" | "set") {
+        return None;
+    }
+    let members: Vec<TsNode> = named_children(n).into_iter().filter(|m| m.kind() != "comment").collect();
+    (!members.iter().any(|m| matches!(m.kind(), "list_splat" | "parenthesized_list_splat"))).then_some(members)
+}
+
+/// Whether the function or lambda `at` stands in binds `name` itself: a parameter, an assignment, a loop, a `with .. as`, a
+/// walrus, or a `global` that hands the binding to the function. At the top of a module, nothing.
+fn bound_in_scope(at: TsNode, name: &str, src: &[u8]) -> bool {
+    let mut scope = at;
+    while let Some(p) = parent(scope) {
+        scope = p;
+        if matches!(p.kind(), "function_definition" | "lambda") {
+            break;
+        }
+    }
+    if !matches!(scope.kind(), "function_definition" | "lambda") {
+        return false;
+    }
+    let names = |n: Option<TsNode>| {
+        n.is_some_and(|n| {
+            n.kind() == "identifier" && text(n, src) == name || walk(n, &["identifier"]).iter().any(|i| text(*i, src) == name)
+        })
+    };
+    let binders =
+        ["assignment", "augmented_assignment", "for_statement", "for_in_clause", "named_expression", "as_pattern", "global_statement"];
+    names(scope.child_by_field_name("parameters"))
+        || walk(scope, &binders).into_iter().any(|b| match b.kind() {
+            "named_expression" => names(b.child_by_field_name("name")),
+            "as_pattern" => names(b.child_by_field_name("alias")),
+            "global_statement" => names(Some(b)),
+            _ => names(b.child_by_field_name("left")),
+        })
+}
+
+/// The dict literal a module binds `name` to at its top, where that is all the module does to it: bound once, no item of
+/// it assigned or deleted, no method that changes it called on it (`knowledge::MUTATORS`), not handed to a call, which
+/// may change it, and no function declaring it `global`.
+fn table_as_written<'t>(root: TsNode<'t>, name: &str, src: &[u8]) -> Option<TsNode<'t>> {
+    let is = |n: Option<TsNode>| n.is_some_and(|n| n.kind() == "identifier" && text(n, src) == name);
+    let tops: Vec<TsNode> = named_children(root)
+        .into_iter()
+        .filter(|s| s.kind() == "expression_statement")
+        .flat_map(named_children)
+        .filter(|a| matches!(a.kind(), "assignment" | "augmented_assignment") && is(a.child_by_field_name("left")))
+        .collect();
+    let [top] = tops.as_slice() else { return None };
+    let dict = top.child_by_field_name("right").filter(|r| r.kind() == "dictionary")?;
+    let mutators = |m: &str| knowledge::MUTATORS.iter().any(|(r, _, ms)| *r == knowledge::Registry::PyPi && ms.contains(&m));
+    let changed = walk(root, &["subscript", "call", "global_statement", "assignment", "augmented_assignment"]).into_iter().any(|n| match n
+        .kind()
+    {
+        // `T[k] = v`, `T[k] += v`, `del T[k]`
+        "subscript" => {
+            is(n.child_by_field_name("value"))
+                && parent(n).is_some_and(|p| {
+                    matches!(p.kind(), "assignment" | "augmented_assignment")
+                        && p.child_by_field_name("left").is_some_and(|l| l.id() == n.id())
+                        || p.kind() == "delete_statement"
+                        || p.kind() == "expression_list" && parent(p).is_some_and(|q| q.kind() == "delete_statement")
+                })
+        }
+        "call" => {
+            let f = n.child_by_field_name("function");
+            let method = f.filter(|f| f.kind() == "attribute").is_some_and(|f| {
+                is(f.child_by_field_name("object")) && f.child_by_field_name("attribute").is_some_and(|a| mutators(text(a, src)))
+            });
+            let handed = n.child_by_field_name("arguments").is_some_and(|a| {
+                named_children(a).into_iter().any(|x| is(Some(x)) || x.kind() == "keyword_argument" && is(x.child_by_field_name("value")))
+            });
+            method || handed
+        }
+        "global_statement" => walk(n, &["identifier"]).iter().any(|i| text(*i, src) == name),
+        // bound again inside a function under `global`, or anywhere but its one top binding
+        _ => n.id() != top.id() && is(n.child_by_field_name("left")) && parent(n).and_then(parent).is_some_and(|m| m.kind() == "module"),
+    });
+    (!changed).then_some(dict)
 }
 
 /// What the loop around `at` that binds `name` goes over (`for s, t in rows`): its element is a part of
@@ -1597,7 +1681,9 @@ impl<'a, 't> Body<'a, 't> {
         let (hands, mut gives) = self.seen.each(l, self.ext, &steps.kept);
         self.read.new_ext.extend(hands.iter().chain(&gives).map(|h| h.ty.clone()).filter(|t| ext::is(t)));
         // the step stands where what it goes over is written: a call there hands it what it gives, the loop's body does not
-        let label = format!("for {} in {}", text(left, self.src), text(right, self.src));
+        let constant = |m: &TsNode| matches!(m.kind(), "string" | "concatenated_string" | "integer" | "float" | "true" | "false" | "none");
+        let members = literal_members(right).filter(|m| !constants_shown(text(right, self.src), m.iter().all(constant)));
+        let label = loop_label(text(left, self.src), "in", text(right, self.src), members.map(|m| m.len()));
         // a loop over the command line keeps each word under the name it binds: it parses the command line
         if self.words_read().iter().any(|w| w.id() == right.id()) {
             let names = if left.kind() == "identifier" { vec![left] } else { walk(left, &["identifier"]) };
@@ -1706,6 +1792,9 @@ impl<'a, 't> Body<'a, 't> {
         };
         let hands = self.hands(c, receiver, &steps.kept);
         let assigned = kept_as(c, self.src).unwrap_or_default();
+        if self.through_table(steps, c, &hands, &assigned) {
+            return;
+        }
         // a lookup is the projection of its collection a subscript is, and gives the body no value of a step's
         let looked = self.seen.lookup(c);
         if let Some(l) = &looked {
@@ -1819,6 +1908,79 @@ impl<'a, 't> Body<'a, 't> {
                 self.library(steps, c, fnode, None);
             }
         }
+    }
+
+    /// A call through a table of the module's own looked up by a value (`ACTIVATIONS[config.activation]()`, with
+    /// `ACTIVATIONS = {"gelu": nn.GELU, ..}` at the top of the module): a choice between the table's entries, the value
+    /// deciding which, as a `match` on it with a case for each key is. Each entry is called in an arm of its own, as a call
+    /// written by its name is. It is a choice only where the table is what the module wrote: two entries or more, each a
+    /// name, bound once at the top and changed nowhere (`table_as_written`), the name not bound again where the call
+    /// stands, and the key no constant: a key written in place or bound at the top (`ACTIVATIONS["gelu"]()`,
+    /// `ACTIVATIONS[DEFAULT]()`) picks one entry.
+    fn through_table(&mut self, steps: &mut Steps<'t, '_>, c: TsNode<'t>, hands: &[Held], assigned: &str) -> bool {
+        let src = self.src;
+        let Some(f) = c.child_by_field_name("function").filter(|f| f.kind() == "subscript") else { return false };
+        let keys = field_children(f, "subscript");
+        let (Some(table), [key]) = (f.child_by_field_name("value"), keys.as_slice()) else { return false };
+        let written = matches!(key.kind(), "string" | "concatenated_string" | "integer" | "float" | "true" | "false" | "none" | "slice");
+        if table.kind() != "identifier" || written {
+            return false;
+        }
+        let name = text(table, src);
+        let root = self.m.tree.root_node();
+        let at_top = |n: &str| top_assignments(self.m).iter().any(|a| a.child_by_field_name("left").is_some_and(|l| text(l, src) == n));
+        // the key a constant of the module's, bound at its top and nowhere where the call stands
+        if key.kind() == "identifier" && at_top(text(*key, src)) && !bound_in_scope(*key, text(*key, src), src) {
+            return false;
+        }
+        if self.m.bindings.contains_key(name) || bound_in_scope(table, name, src) {
+            return false;
+        }
+        let Some(dict) = table_as_written(root, name, src) else { return false };
+        let written: Vec<TsNode> = named_children(dict).into_iter().filter(|p| p.kind() != "comment").collect();
+        let pairs: Vec<(TsNode, TsNode)> = written
+            .iter()
+            .filter_map(|p| p.child_by_field_name("key").zip(p.child_by_field_name("value")).filter(|_| p.kind() == "pair"))
+            .collect();
+        if pairs.len() < 2 || pairs.len() != written.len() || !pairs.iter().all(|(_, v)| matches!(v.kind(), "identifier" | "attribute")) {
+            return false;
+        }
+        let choice = steps.table(text(*key, src), pairs.iter().map(|(k, _)| text(*k, src).to_string()).collect());
+        for (i, (_, v)) in pairs.iter().enumerate() {
+            steps.entry(Some((choice, i as u32)));
+            let named = || if assigned.is_empty() { vec![] } else { vec![Held::new(String::new(), assigned)] };
+            match self.seen.callee(*v) {
+                Some(Callee::Def(t)) => {
+                    let (kind, gives) = match self.seen.is_class(&t) {
+                        true => (EdgeKind::Instantiates, vec![Held::new(t.clone(), assigned)]),
+                        false => (EdgeKind::Calls, named()),
+                    };
+                    steps.call(c, &t, kind, None, Step { hands: hands.to_vec(), gives, ..Default::default() });
+                }
+                _ => {
+                    // what the entry builds: the class of its name among those ty finds the call to give
+                    let op = dotted(Some(*v), src).last().cloned().unwrap_or_default();
+                    let built: Vec<String> = self
+                        .seen
+                        .value(c)
+                        .filter(|x| !x.is_class && !x.is_code)
+                        .map(|x| {
+                            let of = x.classes.iter().zip(&x.names).filter(|(_, n)| **n == op);
+                            let (classes, names) = of.map(|(t, n)| (t.clone(), n.clone())).unzip();
+                            self.seen.drawn(&Value { shown: String::new(), classes, names, is_class: false, is_code: false }, self.ext)
+                        })
+                        .unwrap_or_default();
+                    let gives: Vec<Held> = match built.is_empty() {
+                        true => named(),
+                        false => built.into_iter().map(|ty| Held::new(ty, assigned)).collect(),
+                    };
+                    self.read.new_ext.extend(gives.iter().map(|h| h.ty.clone()).filter(|t| ext::is(t)));
+                    steps.op(c, &op, hands.to_vec(), gives);
+                }
+            }
+        }
+        steps.entry(None);
+        true
     }
 
     /// A call of the program's own function or class; a method called on a subclass's value is
