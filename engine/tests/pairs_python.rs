@@ -3552,3 +3552,290 @@ fn applied_a_call_runs_on_a_value_or_takes_it_never_both() {
         assert_eq!(handed, 2, "{side}: each of the two settings is handed to one step");
     }
 }
+
+/// The designs pair (#478): one head, a torch module whose stages are methods, read three times: with a script that builds
+/// and runs it (`clean`), the same with the stage the search may leave out under a bare condition (`shortcut`), and the
+/// module alone (`alone`).
+fn design(name: &str) -> Graph {
+    analyze(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/pairs/designs/python").join(name), &Options::default()).unwrap()
+}
+
+/// A class is the arrow it carries (mathematics.md, "Currying: a class is the arrow it carries"): a class whose call runs
+/// a method a library says it runs (`knowledge::PYTHON_CALL_RUNS`) is a route of its own, that method, and what the
+/// constructor does is no step of it. The route is the module's own: the same with a script around the module as without.
+#[test]
+fn a_module_is_a_route_its_forward_pass_whatever_runs_it() {
+    let (scripted, alone) = (design("clean"), design("alone"));
+    for g in [&scripted, &alone] {
+        let forward = g.node("heads.design.Head.forward").unwrap();
+        assert_eq!(forward.entry.as_ref().map(|e| e.kind), Some(EntryKind::Class), "{}: the module is a route", g.root);
+        let steps = atlas_engine::story::told_steps(g, "heads.design.Head.forward", 3).unwrap();
+        assert!(steps.iter().all(|s| !s.runs.ends_with("__init__")), "{}: the constructor is no step of the arrow", g.root);
+    }
+    assert_eq!(
+        atlas_engine::story::route(&scripted, "heads.design.Head.forward", 3),
+        atlas_engine::story::route(&alone, "heads.design.Head.forward", 3),
+        "a script around the module leaves its route as it is"
+    );
+}
+
+/// A folder opens on its one module where the folder's scripts run it (`story::folder_route`), and as it always did where
+/// nothing of the folder runs a module.
+#[test]
+fn a_folder_opens_on_the_module_its_script_runs() {
+    let opens = |name: &str| {
+        let g = design(name);
+        let dir = std::fs::canonicalize(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/pairs/designs/python").join(name)).unwrap();
+        let inside = |f: &str| std::fs::canonicalize(f).is_ok_and(|f| f.starts_with(&dir));
+        atlas_engine::story::folder_route(&g, &inside)
+    };
+    assert_eq!(opens("clean").as_deref(), Some("heads.design.Head.forward"));
+    assert_eq!(opens("alone"), None, "a module nothing of the folder runs opens nothing");
+}
+
+/// A library decorator that gives its function back names the choice the function runs under (`knowledge::PYTHON_CHOICE_NAMES`,
+/// mathematics.md "A decorator is part of the definition"): the choice is read from the code alike on both sides, and only
+/// the side that says `@option("skip")` names it.
+#[test]
+fn an_option_names_the_choice_a_bare_condition_leaves_unnamed() {
+    let (named, bare) = (design("clean"), design("shortcut"));
+    let choices = |g: &Graph| {
+        let f = g.node("heads.design.Head.forward").unwrap();
+        // the lines differ by the two the decorator and its import take
+        (f.whens.clone(), f.tests.clone(), f.sites.iter().map(|s| (s.to.clone(), s.arms.clone())).collect::<Vec<_>>())
+    };
+    assert_eq!(choices(&named), choices(&bare), "the choice is read from the code, whatever names it");
+    assert_eq!(named.node("heads.design.Head.skip").unwrap().names_choice.as_deref(), Some("option skip"));
+    assert_eq!(bare.node("heads.design.Head.skip").unwrap().names_choice, None);
+    // the table names the argument by its place and by its keyword: `option(axis="gate")` is `option("gate")`
+    assert_eq!(named.node("heads.design.Head.gate").unwrap().names_choice.as_deref(), Some("option gate"));
+    assert_eq!(bare.node("heads.design.Head.gate").unwrap().names_choice, None);
+}
+
+/// A module that runs a submodule of its own is the one a folder opens on: among the classes the folder's scripts reach,
+/// the one no other of them runs (`story::folder_route`), and none where two stand outermost.
+#[test]
+fn a_folder_opens_on_the_outer_module() {
+    let g = design("clean");
+    assert_eq!(
+        g.node("heads.design.Block.forward").and_then(|n| n.entry.as_ref()).map(|e| e.kind),
+        Some(EntryKind::Class),
+        "the inner module is a route too"
+    );
+    let dir = std::fs::canonicalize(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/pairs/designs/python/clean")).unwrap();
+    let inside = |f: &str| std::fs::canonicalize(f).is_ok_and(|f| f.starts_with(&dir));
+    assert_eq!(
+        atlas_engine::story::folder_route(&g, &inside).as_deref(),
+        Some("heads.design.Head.forward"),
+        "the module that runs the block"
+    );
+}
+
+/// What the constructor sets a field of the instance to reads fields of what it was handed (`Set::reads`), through the
+/// names the constructor bound before (`widths = [width, config.hidden]`): the lens from the configuration into the
+/// instance, the same however the stage is chosen.
+#[test]
+fn a_field_the_constructor_sets_reads_the_configuration_it_was_built_from() {
+    for g in [design("clean"), design("shortcut")] {
+        let init = g.node("heads.design.Head.__init__").unwrap();
+        let reads = |field: &str| -> Vec<String> {
+            init.sets
+                .iter()
+                .filter(|s| s.field == field)
+                .flat_map(|s| s.reads.iter().map(|r| format!("{}.{}", r.on.name, r.field)))
+                .collect()
+        };
+        assert_eq!(reads("block"), ["config.hidden"], "{}: through a name bound before", g.root);
+        assert_eq!(reads("projection"), ["config.hidden"], "{}: in a step written in the expression", g.root);
+        assert!(reads("config").is_empty(), "{}: a value set whole reads no field of it", g.root);
+    }
+}
+
+/// Two modules of one name are two routes the reader tells apart: a class route's label carries the fewest last parts of
+/// its module that no other route of that name shares (`a.designs.Kernels` beside `b.designs.Kernels`), and a name no
+/// other route bears stands alone.
+#[test]
+fn modules_of_one_name_are_told_apart_by_their_module() {
+    let root = std::env::temp_dir().join(format!("atlas-python-same-names-{}", std::process::id()));
+    let module =
+        "from torch import Tensor, nn\n\n\nclass Kernels(nn.Module):\n    def forward(self, x: Tensor) -> Tensor:\n        return x\n";
+    for (dir, code) in [
+        ("a", module.to_string()),
+        ("b", format!("{module}\n\nclass Head(nn.Module):\n    def forward(self, x: Tensor) -> Tensor:\n        return x\n")),
+    ] {
+        std::fs::create_dir_all(root.join("src/demo").join(dir)).expect("makes the package");
+        std::fs::write(root.join("src/demo").join(dir).join("__init__.py"), "").expect("writes the package");
+        std::fs::write(root.join("src/demo").join(dir).join("designs.py"), code).expect("writes the module");
+    }
+    std::fs::write(root.join("pyproject.toml"), "[project]\nname = \"demo\"\nversion = \"0\"\n").expect("writes the manifest");
+    std::fs::write(root.join("src/demo/__init__.py"), "").expect("writes the package");
+    let g = analyze(&root, &Options::default()).expect("reads");
+    let _ = std::fs::remove_dir_all(&root);
+    let label = |id: &str| g.node(id).and_then(|n| n.entry.as_ref()).filter(|e| e.kind == EntryKind::Class).map(|e| e.label.clone());
+    assert_eq!(label("demo.a.designs.Kernels.forward").as_deref(), Some("a.designs.Kernels"));
+    assert_eq!(label("demo.b.designs.Kernels.forward").as_deref(), Some("b.designs.Kernels"));
+    assert_eq!(label("demo.b.designs.Head.forward").as_deref(), Some("Head"));
+}
+
+/// The turns pair, `turns/python` (#480): a stack of layers built from its config. The clean side writes what one turn
+/// builds where the turn runs (`for layer in (Linear(..), ACTIVATIONS[config.activation](), Dropout(..), ..)`) and keeps the
+/// activations in a table looked up by the config; the shortcut finds the layers by their names at run time
+/// (`getattr(layers, name)(..)`), and keeps tables that are no choice: one the module changes, one looked up by a
+/// constant, one bound again where it is read, one of a single entry.
+fn turns() -> &'static Pair {
+    static PAIR: OnceLock<Pair> = OnceLock::new();
+    PAIR.get_or_init(|| common::pair("turns/python"))
+}
+
+/// The steps of `id` that reach a class of `classes`, each by the class and the arms of the choices it runs in.
+fn reaching<'g>(g: &'g Graph, id: &str, classes: &[&str]) -> Vec<(&'g str, &'g [(u32, u32)])> {
+    g.node(id)
+        .unwrap_or_else(|| panic!("{id} is in the graph"))
+        .sites
+        .iter()
+        .filter(|s| classes.iter().any(|c| s.to.ends_with(&format!(".{c}"))))
+        .map(|s| (s.to.as_str(), s.arms.as_slice()))
+        .collect()
+}
+
+/// The loop's step of a body: the one site whose operation is a loop's head.
+fn loop_step<'g>(n: &'g atlas_engine::Node) -> &'g atlas_engine::Site {
+    let loops: Vec<&atlas_engine::Site> = n.sites.iter().filter(|s| s.op.starts_with("for ")).collect();
+    let [one] = loops.as_slice() else { panic!("{}: one loop is a step: {:?}", n.id, n.sites) };
+    one
+}
+
+/// A loop over a literal written in place runs its members: each member is a step, before the loop binds it, and the loop
+/// is named by what it binds and how many members the literal holds (`body::loop_label`), as the reader computes it from
+/// the code. The shortcut's loop goes over names; what each turn builds is no step Atlas follows.
+#[test]
+fn turns_a_loop_over_a_literal_runs_its_members() {
+    let members = ["Readout", "Calibrate"];
+    let g = &turns().clean;
+    let head = g.node("turns.stack.head").unwrap();
+    let loop_ = head.sites.iter().position(|s| s.op.starts_with("for ")).expect("clean: the loop is a step");
+    assert_eq!(head.sites[loop_].op, atlas_engine::body::loop_label("layer", "in", "", Some(members.len())));
+    assert_eq!(head.sites[..loop_].iter().filter(|s| members.iter().any(|m| s.to.ends_with(m))).count(), members.len());
+    assert!(reaching(&turns().shortcut, "turns.stack.head", &members).is_empty(), "shortcut: the layers are found by name");
+    assert!(turns().shortcut.node("turns.stack.head").unwrap().sites.iter().any(|s| s.not_followed));
+}
+
+/// Every member of a literal a comprehension's loop goes over reaches the call the comprehension is written in: what each
+/// member's step gives, and what a member no step stands for is made of (`SimpleNamespace(scale=config.dropout)`, a
+/// library's class), is handed to the loop's step, and what the loop gives is handed to the call around it (`Stack`).
+#[test]
+fn turns_every_member_of_a_literal_reaches_the_call_around_the_comprehension() {
+    let g = &turns().clean;
+    let build = g.node("turns.stack.build").unwrap();
+    let loop_ = loop_step(build);
+    let stack = build.sites.iter().find(|s| s.to == "turns.stack.Stack").unwrap();
+    for (to, _) in reaching(g, "turns.stack.build", &["Linear", "GELU", "ReLU", "Tanh", "Dropout"]) {
+        let s = build.sites.iter().find(|s| s.to == to).unwrap();
+        for h in &s.gives {
+            assert!(loop_.hands.contains(h), "clean: what {to} gives is handed to the loop: {:?}", loop_.hands);
+        }
+    }
+    assert!(loop_.hands.iter().any(|h| h.name == "config"), "clean: the library's member is made of the config: {:?}", loop_.hands);
+    for h in &loop_.gives {
+        assert!(stack.hands.iter().any(|x| x.name == h.name), "clean: what the loop gives reaches Stack: {:?}", stack.hands);
+    }
+}
+
+/// The names the loop before a literal binds (`for width_in, width_out in pairwise(..)`) are handed to the members written
+/// with them and to no call they do not reach: the list the comprehension makes holds the members, not the widths.
+#[test]
+fn turns_the_names_of_the_loop_before_a_literal_reach_only_where_they_are_written() {
+    let g = &turns().clean;
+    let build = g.node("turns.stack.build").unwrap();
+    let stack = build.sites.iter().find(|s| s.to == "turns.stack.Stack").unwrap();
+    let widths = ["width_in", "width_out"];
+    assert!(!stack.hands.iter().any(|h| widths.contains(&h.name.as_str())), "clean: Stack is handed no width: {:?}", stack.hands);
+    assert!(!build.sites.iter().any(|s| s.gives.iter().any(|h| widths.contains(&h.name.as_str()))), "clean: no step makes a width");
+}
+
+/// A comprehension whose loop goes over values Atlas does not draw (`for width in config.widths`, a `list[int]`) and over no
+/// literal has no loop step: its element is no value the body makes.
+#[test]
+fn turns_a_loop_over_values_atlas_does_not_draw_is_no_step() {
+    let square = turns().clean.node("turns.stack.square").unwrap();
+    assert!(!square.sites.iter().any(|s| s.op.starts_with("for ")), "clean: {:?}", square.sites);
+    assert!(square.sites.iter().any(|s| s.to.ends_with(".Linear")), "clean: the element's call is a step");
+}
+
+/// A call through a table looked up by a value is a choice between the table's entries: each entry's class is built in an
+/// arm of its own of one choice, the value that picks it names the choice (`Node::by`), and each arm is worded by its key.
+/// The shortcut finds the class by its name, a call Atlas cannot follow, and reaches none of them.
+#[test]
+fn turns_a_call_through_a_table_is_a_choice_between_its_entries() {
+    let activations = ["GELU", "ReLU", "Tanh"];
+    let g = &turns().clean;
+    let build = g.node("turns.stack.build").unwrap();
+    let arms: Vec<(u32, u32)> = reaching(g, "turns.stack.build", &activations).into_iter().map(|(_, a)| *a.last().unwrap()).collect();
+    assert_eq!(arms.len(), activations.len(), "clean: each entry is a step: {:?}", build.sites);
+    let choice = arms[0].0;
+    assert!(arms.iter().all(|(c, _)| *c == choice), "clean: one choice holds every entry: {arms:?}");
+    assert_eq!(arms.iter().map(|(_, a)| *a).collect::<BTreeSet<_>>().len(), activations.len(), "clean: each entry in its own arm");
+    assert_eq!(build.by, vec![(choice, "config.activation".to_string())], "clean: the value looked up by picks the arm");
+    let keys: BTreeSet<&str> = build.whens.iter().filter(|w| w.0 == choice).map(|w| w.2.as_str()).collect();
+    assert_eq!(keys, BTreeSet::from(["\"gelu\"", "\"relu\"", "\"tanh\""]), "clean: each arm under its key");
+    assert!(reaching(&turns().shortcut, "turns.stack.build", &activations).is_empty(), "shortcut: the class is found by name");
+    assert!(turns().shortcut.node("turns.stack.build").unwrap().sites.iter().any(|s| s.not_followed));
+}
+
+/// What the page and the route read of a table's choice: the body's choice item carries the value that picks its branch
+/// (`Item::Choice::by`, which the page titles `one of · <value>`), the one `Node::by` holds for that choice, and the route
+/// words each entry's arm by the value and the key (`story::picked`), on the line of the entry it builds.
+#[test]
+fn turns_the_page_and_the_route_name_the_value_a_table_is_looked_up_by() {
+    let g = &turns().clean;
+    let node = g.node("turns.stack.by_table").unwrap();
+    let bodies = flow::bodies(g);
+    let body = bodies.get("turns.stack.by_table").expect("by_table has a body");
+    let picked: Vec<(u32, &str)> = body
+        .items
+        .iter()
+        .filter_map(|it| match it {
+            flow::Item::Choice { choice, by, .. } => Some((*choice, by.as_str())),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(picked, node.by.iter().map(|(k, v)| (*k, v.as_str())).collect::<Vec<_>>());
+    assert_eq!(picked.len(), 1, "by_table: one choice, picked by the config: {:?}", body.items);
+    let text = route(g, "turns.stack.by_table");
+    for (class, key) in [("GELU", "\"gelu\""), ("ReLU", "\"relu\""), ("Tanh", "\"tanh\"")] {
+        let line = text.lines().find(|l| l.contains(&format!("{class}("))).unwrap_or_else(|| panic!("{class} in:\n{text}"));
+        assert!(line.contains("config.activation") && line.contains(key), "the arm of {class} names the value and its key: {line}");
+    }
+}
+
+/// A table is a choice only where it is what the module wrote: a table the module changes (`register` assigns into it), a
+/// key that is a constant of the module's (`FIXED[DEFAULT]()`), a name bound again where it is read (`for FIXED in
+/// tables`) and a table of one entry are each no choice: no step of theirs stands in an arm, and no value picks one.
+#[test]
+fn turns_a_table_the_module_does_not_keep_as_written_is_no_choice() {
+    let g = &turns().shortcut;
+    for id in ["turns.stack.registered", "turns.stack.by_default", "turns.stack.each_table", "turns.stack.only"] {
+        let n = g.node(id).unwrap_or_else(|| panic!("{id} is in the graph"));
+        assert!(n.by.is_empty() && n.sites.iter().all(|s| s.arms.is_empty()), "{id}: no choice: {:?}", n.sites);
+    }
+}
+
+/// A call through a table (`by_table`) and a `match` on the table's key with a case per entry (`by_cases`) build the same
+/// classes, each in an arm of its own decided by the same key. The route words the table's arms with the value it is
+/// looked up by besides (`config.activation is "gelu"`), where the `match` says the key alone.
+#[test]
+fn turns_a_table_and_a_match_on_its_key_build_the_same_classes_under_the_same_keys() {
+    let g = &turns().clean;
+    let arms = |id: &str| -> BTreeSet<(String, String)> {
+        let n = g.node(id).unwrap();
+        reaching(g, id, &["GELU", "ReLU", "Tanh"])
+            .into_iter()
+            .map(|(to, a)| {
+                let (c, arm) = *a.last().unwrap();
+                (to.to_string(), n.whens.iter().find(|w| w.0 == c && w.1 == arm).map(|w| w.2.clone()).unwrap_or_default())
+            })
+            .collect()
+    };
+    assert_eq!(arms("turns.stack.by_table"), arms("turns.stack.by_cases"));
+    assert_eq!(arms("turns.stack.by_table").len(), 3);
+}

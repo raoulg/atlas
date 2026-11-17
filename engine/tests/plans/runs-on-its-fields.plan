@@ -1,0 +1,23 @@
+# A method reaches the instance it runs on only through `self`: `save` reads the encoder's fields in its own code and in a
+# call on one of them (`self.index.items()`), and is handed nothing else of it. Every line its body draws from the encoder
+# is its running on it, so the picture says `encoder.save` on the step, closed, and on its frame, opened, and draws the
+# encoder's line only from the step that built it (#461, #482).
+
+route encoder.run
+step run/Encoder()
+step run/Encoder.save
+step run/Encoder.save/list
+
+line entry > run call
+line run/Encoder() > Encoder·encoder@run/Encoder() value
+line Encoder·encoder@run/Encoder() > run/Encoder.save value          # its own code reads `self.codes`
+line Encoder·encoder@run/Encoder() > run/Encoder.save/list value     # `list(self.index.items())`
+line run/Encoder.save/list > _·pairs@run/Encoder.save/list value
+line _·pairs@run/Encoder.save/list > run/Encoder.save value
+line run/Encoder.save > Disk(run.path) own                            # `path.write_text(..)`
+
+home Encoder·encoder@run/Encoder() run
+home _·pairs@run/Encoder.save/list run/Encoder.save
+
+side entry left
+side Disk(run.path) right

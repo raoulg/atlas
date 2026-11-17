@@ -1559,6 +1559,9 @@ pub enum Item {
         members: Vec<Member>,
         #[serde(skip_serializing_if = "Vec::is_empty")]
         when: Vec<String>,
+        /// The value that picks the branch, where one value picks it (`Node::by`): a choice between a table's entries.
+        #[serde(skip_serializing_if = "String::is_empty")]
+        by: String,
         /// The arms each branch runs in, by branch, as `Site::arms` names them: from the body's
         /// outermost choice in, through this choice to the branch's last arm.
         arms: Vec<Vec<(u32, u32)>>,
@@ -2139,6 +2142,7 @@ fn grouped(steps: Vec<(Step, Vec<(u32, u32)>)>, whens: &[(u32, u32, String)]) ->
             choice: k,
             members: g.members.clone(),
             when: if when.iter().all(String::is_empty) { vec![] } else { when },
+            by: String::new(),
             arms: g.branches.clone(),
             within,
         }
@@ -2196,7 +2200,7 @@ fn body_of(ix: &Ix, n: &Node, on: &str) -> Body {
                 Some((Step { site: Some(i), ..step }, s.arms.clone()))
             })
             .collect();
-        return Body { alts, items: grouped(steps, &n.whens), made_from: vec![] };
+        return Body { alts, items: decided(grouped(steps, &n.whens), &n.by), made_from: vec![] };
     }
     let callees: Vec<String> = if n.kind == NodeKind::Class && n.entry.is_some() {
         let ctor = ix.runs(&n.id);
@@ -2236,7 +2240,19 @@ fn body_of(ix: &Ix, n: &Node, on: &str) -> Body {
         arms.entry(e.dst.as_str()).or_insert_with(|| e.arms.clone());
     }
     let steps = callees.iter().map(|c| (Step::of(c), arms.get(c.as_str()).cloned().unwrap_or_default())).collect();
-    Body { alts, items: grouped(steps, &n.whens), made_from: vec![] }
+    Body { alts, items: decided(grouped(steps, &n.whens), &n.by), made_from: vec![] }
+}
+
+/// The items of a body, each choice one value picks the branch of named by that value (`Node::by`).
+fn decided(mut items: Vec<Item>, picked: &[(u32, String)]) -> Vec<Item> {
+    for it in items.iter_mut() {
+        if let Item::Choice { choice, by, .. } = it {
+            if let Some((_, v)) = picked.iter().find(|(k, _)| k == choice) {
+                by.clone_from(v);
+            }
+        }
+    }
+    items
 }
 
 /// The body of every function, and of every function on each class a step or what it may run
