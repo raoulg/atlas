@@ -1341,3 +1341,23 @@ fn a_read_handed_to_a_call_is_used_whatever_becomes_of_the_calls_value() {
     assert_eq!(checks("unread"), checks("plain"), "a name nothing reads is a drop");
     assert_eq!(checks("decided"), [true], "a name read only in a condition decides a choice");
 }
+
+/// A loop over an array written in place is named by what it binds and how many members the array holds
+/// (`body::loop_label`), as the reader reads it from the code.
+#[test]
+fn a_loop_over_an_array_written_in_place_is_named_by_what_it_binds() {
+    let g = written(
+        "literal-loop",
+        &[
+            ("package.json", r#"{ "name": "stations" }"#),
+            ("tsconfig.json", "{}"),
+            (
+                "src/stations.ts",
+                "export class Station {\n  constructor(public name: string) {}\n}\n\nexport function station(name: string): Station {\n  return new Station(name);\n}\n\nexport function report(s: Station): number {\n  return s.name.length;\n}\n\nexport function all(first: Station, second: Station): number {\n  let n = 0;\n  for (const one of [first, second]) {\n    n += report(one);\n  }\n  return n;\n}\n",
+            ),
+        ],
+    );
+    let all = &g.nodes.iter().find(|n| n.name == "all").expect("all is read").sites;
+    let loop_ = all.iter().position(|s| s.op.starts_with("for ")).unwrap_or_else(|| panic!("the loop is a step: {all:#?}"));
+    assert_eq!(all[loop_].op, atlas_engine::body::loop_label("one", "of", "", Some(2)));
+}

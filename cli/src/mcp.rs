@@ -184,7 +184,7 @@ fn tools() -> Value {
         },
         {
             "name": "choices",
-            "description": "The choices a route makes, each where it is made, in call order: what decides each branch as the code writes it (`when not raw.exists()`, a `match` pattern, `otherwise`), and the steps each branch runs with the places they touch; a choice of one branch runs nothing otherwise. Atlas does not say what a condition means: read the conditions and say it, e.g. \"only on the first run\", or \"never true here\". The page draws each choice as a frame titled with its conditions.",
+            "description": "The choices a route makes, each where it is made, in call order: what decides each branch as the code writes it (`when not raw.exists()`, a `match` pattern, `otherwise`; a call through a table looked up by a value, `TABLE[key]()`, is a choice between the table's entries, each branch worded by the value and its key, `when config.activation is \"gelu\"`), and the steps each branch runs with the places they touch; a choice of one branch runs nothing otherwise. Atlas does not say what a condition means: read the conditions and say it, e.g. \"only on the first run\", or \"never true here\". The page draws each choice as a frame titled with its conditions, a table's as `one of · <value>`.",
             "inputSchema": { "type": "object", "properties": {
                 "path": path,
                 "entry": { "type": "string", "description": "The route, by an entry's id or label as `routes` lists them." },

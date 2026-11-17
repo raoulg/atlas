@@ -40,7 +40,10 @@ Read it from left to right:
 - **A dashed frame is a choice.** Its title says what decides each branch, as the code writes it,
   each in the branch's colour: `one of ● mode == "train" ● otherwise`. A step that runs only when
   a condition holds stands in a frame of its own, `only when not raw.exists()`: the route follows
-  it in principle and skips it when the condition does not hold.
+  it in principle and skips it when the condition does not hold. A call through a table the module
+  keeps, looked up by a value (`ACTIVATIONS[config.activation]()`), is a choice between the table's
+  entries: `one of · config.activation`, each branch under its key, and the route says `when
+  config.activation is "gelu"`.
 - **Read it as a sentence:** *read* the repository into a `Repo`, and make its `graph_of`
   with the `Options` of the reading. That is Atlas's whole job, and the code says it in two
   calls.
@@ -425,7 +428,7 @@ same either way. `--no-cache` reads everything anew and keeps nothing.
 `atlas-code mcp` serves Atlas over the [Model Context Protocol](https://modelcontextprotocol.io).
 The tools are `principles`, `check`, `explain`, `routes`, `route`, `choices` and `changes`;
 `route` returns what one entry point does, step by step, `choices` the choices it makes with what
-decides each branch, and `changes` what the working tree did
+decides each branch (a table's entry `when <value> is <key>`), and `changes` what the working tree did
 since a commit (or, with `until`, what one commit did against another), so an agent can check its
 edit against what it was meant to do. Register it once, for every project, in
 [Claude Code](https://claude.com/claude-code) and in [Codex](https://openai.com/codex):
