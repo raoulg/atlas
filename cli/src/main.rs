@@ -4,6 +4,7 @@ mod http;
 mod log;
 mod mcp;
 mod page;
+mod prefs;
 mod serve;
 mod shared;
 mod update;
