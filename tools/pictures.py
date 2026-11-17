@@ -133,7 +133,12 @@ TOPOLOGY = """async (spec) => {
       if (coarse.boxes.has(id)) return id;
       if (coarse.folded.has(id)) return coarse.folded.get(id);
       if (/^w:File:/.test(id) && inFolder(id)) return inFolder(id);
-      for (let p = fine.boxes.get(id); p && p !== "root"; p = fine.boxes.get(p)) if (coarse.boxes.has(p)) return p;
+      // a frame is no box of its own: a box in a frame lies where the frame's step lies (a value read back in a choice of a
+      // step, `v:back:..~in~STEP`, has no moment in its id to go by)
+      for (let p = fine.boxes.get(id); p && p !== "root"; p = fine.boxes.get(p)) {
+        if (coarse.boxes.has(p)) return p;
+        if (!fine.boxes.has(p) && /^n:/.test(p)) { const u = under(keyOf(p)); if (u) return u; }
+      }
       const m = id.match(/^(.*?)@(.*)$/);
       if (m) {
         const k = keyOf(m[2]), u = under(k);
