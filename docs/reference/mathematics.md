@@ -698,7 +698,11 @@ Where two callers meet a path, the conjunction is the union of theirs (`Whole::a
 keeps every condition of both, however many levels of callers hand the path up. Its unit is the
 function the touch is in: every route that runs the touch reaches it, so `In(f)` there is the empty
 conjunction, and only there; one level up, the caller that hands the path is a condition like any
-other. The graph's JSON writes each conjunction `a&b`, its conditions in order, an entry's users as
+other. A conjunction holds on a route only where one route meets every condition of it: a route starts at a function
+and goes on in call order, so some function's route reaches each caller the conjunction names and is the entry whose users
+it names. A completion whose conditions no route meets together (the folder a command sets an object up on, joined with
+the rest only a test hands, to an object of its own) is a place of no route, and no touch: a literal a caller hands is a
+place of the routes through that caller alone (#473). The graph's JSON writes each conjunction `a&b`, its conditions in order, an entry's users as
 `users_of:e`, and the alternatives in order; a conjunction of one entry's users alone is written in
 `users_of`. It reads them back once.
 **Where.** `model.rs` (`Atom`, `Both`, `absorb`, `Touch::by`, `Touch::in_route`), `paths.rs` (`Whole`,
