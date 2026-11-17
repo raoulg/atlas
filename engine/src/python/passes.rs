@@ -514,6 +514,7 @@ pub(super) fn link(modules: &IndexMap<String, Module>, store: &mut GraphBuilder,
         let facts = types.of(&n.file);
         let Some(decorated) = def_node(m, n).and_then(|d| d.parent()).filter(|p| p.kind() == "decorated_definition") else { continue };
         let mut guards: Vec<String> = vec![];
+        let mut names_choice: Option<String> = None;
         for d in named_children(decorated).into_iter().filter(|d| d.kind() == "decorator") {
             let Some(written) = d.named_child(0) else { continue };
             let name = if written.kind() == "call" { written.child_by_field_name("function").unwrap_or(written) } else { written };
@@ -522,13 +523,31 @@ pub(super) fn link(modules: &IndexMap<String, Module>, store: &mut GraphBuilder,
                 Target::Lib(_) => None,
             });
             let guard = by_ty.or_else(|| resolve(m, &dotted(Some(name), &m.src), modules, &store.nodes, own).map(Resolved::id));
+            // a decorator a library names the choice by, read or known only by its stubs: its name and the string it is
+            // handed there
+            let library = guard.as_deref().map(|g| ext::path(g).unwrap_or(g));
+            let named = library
+                .and_then(|g| g.rsplit_once('.'))
+                .and_then(|(module, decorator)| Some((decorator, knowledge::python_choice_name(module, decorator)?)));
+            if let Some((decorator, at)) = named.filter(|_| written.kind() == "call") {
+                let handed = written.child_by_field_name("arguments").map(named_children).unwrap_or_default();
+                let handed: Vec<TsNode> = handed
+                    .into_iter()
+                    .filter(|a| !matches!(a.kind(), "keyword_argument" | "comment" | "list_splat" | "dictionary_splat"))
+                    .collect();
+                if let Some(a) = handed.get(at).filter(|a| a.kind() == "string") {
+                    names_choice = Some(format!("{decorator} {}", unquote(text(*a, &m.src))));
+                }
+            }
             if let Some(g) = guard.filter(|g| store.nodes.get(g).is_some_and(|x| matches!(x.kind, NodeKind::Function | NodeKind::Method))) {
                 if !guards.contains(&g) {
                     guards.push(g);
                 }
             }
         }
-        store.nodes.get_mut(id).expect("a node of the graph").guards = guards;
+        let n = store.nodes.get_mut(id).expect("a node of the graph");
+        n.guards = guards;
+        n.names_choice = names_choice;
     }
     // what a framework registers, and what the attributes hold, as ty types them
     mark_registered(modules, store, types, &sites, own);
@@ -1039,6 +1058,51 @@ pub(super) fn mark_exports(modules: &IndexMap<String, Module>, store: &mut Graph
             let Some(t) = m.symbols.get(&name).or_else(|| m.bindings.get(&name)).filter(|t| own.holds(t)) else { continue };
             let Some(t) = defined(t, modules, &store.nodes) else { continue };
             store.export(&t, if path.is_empty() { name.clone() } else { format!("{path}.{name}") });
+        }
+    }
+}
+
+/// A class of the project whose instance, called, runs a method a library class says it runs
+/// (`knowledge::PYTHON_CALL_RUNS`: torch's `Module` runs `forward`) is a route of its own: the class is the
+/// arrow its instance is (mathematics.md, "Currying: a class is the arrow it carries"), and that arrow is the
+/// method. The route starts at the method, labelled by the class; the constructor, which fixes the instance,
+/// is no step of it. Along the class's bases in Python's order the first definition of the method before the
+/// library's class is the one that runs; a class on the way that defines `__call__` is called as any class is.
+pub(super) fn mark_called_classes(store: &mut GraphBuilder) {
+    let mut bases: HashMap<String, Vec<String>> = HashMap::new();
+    for e in store.edges.iter().filter(|e| e.kind == EdgeKind::Inherits) {
+        bases.entry(e.src.clone()).or_default().push(e.dst.clone());
+    }
+    let classes: Vec<(String, String)> =
+        store.nodes.values().filter(|n| n.kind == NodeKind::Class && !n.library).map(|n| (n.id.clone(), n.name.clone())).collect();
+    let runs = |c: &str| {
+        let path = ext::path(c).unwrap_or(c);
+        let (module, class) = path.rsplit_once('.')?;
+        knowledge::python_call_runs(module, class)
+    };
+    let defines = |c: &str, m: &str| store.nodes.get(&format!("{c}.{m}")).is_some_and(|n| n.kind == NodeKind::Method);
+    let mut found: Vec<(String, Entry)> = vec![];
+    for (id, name) in classes {
+        let of = |c: &str| -> Vec<&str> { bases.get(c).map(|b| b.iter().map(String::as_str).collect()).unwrap_or_default() };
+        let order = crate::model::linearization(id.as_str(), &of, &mut HashMap::new());
+        let Some(method) = order.iter().find_map(|c| runs(c)) else { continue };
+        let mut runner = None;
+        for c in &order {
+            if runs(c).is_some() || defines(c, "__call__") {
+                break;
+            }
+            if defines(c, method) {
+                runner = Some(format!("{c}.{method}"));
+                break;
+            }
+        }
+        if let Some(runner) = runner {
+            found.push((runner, Entry::new(EntryKind::Class, name)));
+        }
+    }
+    for (id, entry) in found {
+        if store.nodes.get(&id).is_some_and(|n| n.entry.is_none()) {
+            store.enter(&id, entry);
         }
     }
 }

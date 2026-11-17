@@ -268,6 +268,11 @@ svg.glyph{vertical-align:-2px}
 .scene.focus .tstep:not(.on),.scene.focus .tnode:not(.on){opacity:.28}
 .sedge.on{opacity:1;stroke-width:2.2}
 .tstep rect.bg{fill:var(--panel-2);stroke:var(--ink-3)}
+.cfg-head{font-family:var(--sans);font-size:11px;fill:var(--ink-2)}
+.cfg-field rect{fill:var(--panel);stroke:var(--frame)}
+.cfg-field text{font-family:var(--mono);font-size:10.5px;fill:var(--ink)}
+.cfg-field.option rect{stroke:var(--focus);stroke-width:1.5}
+.cfg-field.option text{fill:var(--focus)}
 .tstep circle.border-point{fill:var(--ink-3);stroke:var(--panel);stroke-width:2}
 .tstep .title{font-family:var(--mono);font-size:11px;font-weight:500;fill:var(--ink)}
 .tstep .title .guard{fill:var(--ink-3);font-weight:400;font-size:10px}
@@ -602,6 +607,7 @@ let defs = el("defs", {}, svg.node());
   }, true); }
 // the peek: with the panel closed, space over a block shows its details and code over the picture;
 // space again, Esc or a click on the picture puts it away, and the pin keeps the panel open
+let pictureRanks = [];  // the rank families of the picture drawn, closed or open
 let pictureRuns = false;  // whether a step of the picture drawn is named by the value it runs on
 let pictureErrors = [];  // the errors of the picture drawn, by their labels
 let hoverTarget = null;  // shows what is under the pointer in the inspector
@@ -1015,6 +1021,7 @@ async function renderPlaat(mine) {
   const {places, pills, frames, roles, home, fine, oracle, calling: planCalls, meets, errors: counted} = DIFF ? quotients(unite()) : plan();
   // the errors of this picture, counted on its steps or drawn as boxes
   pictureRuns = !DIFF && [...pills.values(), ...frames.values()].some(B => B.runsOn?.length);
+  pictureRanks = DIFF ? [] : ranksIn(places);
   pictureErrors = DIFF ? [] : V.errors ? [...new Set([...places.values()].filter(p => p.err).map(p => p.label))].sort() : counted || [];
   // Storage quotients are computed on the visible fiber. A singleton keeps its concrete
   // expression; an opened quotient retains a frame around the same members.
@@ -1822,10 +1829,39 @@ async function renderPlaat(mine) {
   }
   repaintPins();
   if ([...pinned].join() !== before) crumbs();
+  // the values the route's instance was built from, once under the route, each under the step that reads it
+  // (`receiverReads`); a value that decides a named choice is boxed in the colour of the focus
+  let cfgBottom = -Infinity;
+  const routeBox = V.route && !DIFF && pos.get("n:" + V.route);
+  if (routeBox) {
+    const xs = new Map();
+    for (const P of pills.values()) { const q = pos.get(P.id), f = stepOf(P.steps[0]); if (q && !xs.has(f)) xs.set(f, q.x); }
+    let y = routeBox.y + routeBox.h + 22;
+    for (const row of receiverReads(V.route)) {
+      const steps = row.steps.filter(s => xs.has(s.step));
+      if (!steps.length) continue;
+      const cg = el("g", {class: "cfg"}, ng), head = el("text", {class: "cfg-head", x: routeBox.x + 14, y}, cg);
+      head.textContent = `${typeLabel(row.type)} · the values it was built from, under the step that reads them; boxed: one that decides an option`;
+      let cursor = -Infinity;
+      for (const s of steps) {
+        let x = Math.max(xs.get(s.step), cursor);
+        for (const f of s.fields) {
+          const w = f.name.length * 6.6 + 14, g2 = el("g", {class: "cfg-field" + (f.option ? " option" : ""), transform: `translate(${x},${y + 12})`}, cg);
+          el("rect", {width: w, height: 18}, g2);
+          const t = el("text", {x: 7, y: 12.5}, g2); t.textContent = f.name;
+          x += w + 6;
+        }
+        cursor = x + 10;
+      }
+      y += 48;
+      cfgBottom = y;
+    }
+  }
   // keep the clicked thing where it was on the screen, at the zoom the reader chose; the zoom only
   // gives way when the box it opened into is bigger than the screen
   let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
   for (const q of pos.values()) { x0 = Math.min(x0, q.x); y0 = Math.min(y0, q.y); x1 = Math.max(x1, q.x + q.w); y1 = Math.max(y1, q.y + q.h); }
+  y1 = Math.max(y1, cfgBottom);
   x0 = Math.min(x0, 20); y0 = Math.min(y0, 10);
   const W = svg.node().clientWidth, H = svg.node().clientHeight, top = document.getElementById("crumbs").offsetHeight + 14, foot = footHeight(), pad = 30;
   const fitK = Math.max(zoom.scaleExtent()[0], Math.min((W - 2 * pad) / (x1 - x0), (H - top - foot - 2 * pad) / (y1 - y0), 1.4));
@@ -1894,6 +1930,12 @@ function crumbs() {
   // errors that are only handed on are counted on the box that hands them on; shown where there are errors
   if (!DIFF && pictureErrors.length)
     fold(`error types · ${pictureErrors.length}`, !V.errors, V.errors ? "count the errors a box hands on, on the box: " + pictureErrors.join(", ") : "draw each error a box hands on as a box: " + pictureErrors.join(", "), () => { V.errors = !V.errors; });
+  // shaped arrays stand in their rank families (`Float Tensor · 2D`); one button opens every one into its shapes
+  // (`batch × dim`) and closes them again; shown where the picture has a rank family
+  if (pictureRanks.length) {
+    const shut = pictureRanks.some(k => !V.open.families.has(k));
+    fold(`shapes · ${pictureRanks.length}`, shut, shut ? "open every rank family into its shapes, each axis by the name its signature gives it (batch × dim)" : "close the shapes into their rank families (Float Tensor · 2D)", () => shapesOpen(pictureRanks, shut));
+  }
   // what a step runs on is said by its name; shown where the picture has such a step
   if (V.route && !DIFF && (V.receivers || pictureRuns))
     fold("runs on, by name", !V.receivers, V.receivers ? "name a step by the value it runs on (model.forward), without a line from that value" : "draw a line from each value to the steps that run on it", () => { V.receivers = !V.receivers; });

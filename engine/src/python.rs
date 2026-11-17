@@ -446,6 +446,7 @@ pub fn parse(repo: &Repo, packages: &[PathBuf], project_root: Option<&Path>, opt
     let _items = crate::clock::stage("items");
     route_prefixes(&modules, &mut store, &types, &own);
     store.mark_library();
+    passes::mark_called_classes(&mut store);
     Ok((store, root))
 }
 

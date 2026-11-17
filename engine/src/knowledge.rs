@@ -868,7 +868,8 @@ pub fn shaped(id: &str) -> Option<&str> {
 /// runs `forward`, so `self.head(x)` is `self.head.forward(x)`. A call of an instance of a subclass
 /// reaches the first such method along the subclass's bases, in their order, that comes before the
 /// library's class; a class on the way that defines `__call__` itself is called as any class is.
-/// An empty table follows no such call.
+/// A class of the project whose instance runs such a method is a route of its own (`EntryKind::Class`),
+/// that method. An empty table follows no such call.
 pub const PYTHON_CALL_RUNS: &[(&str, &str, &str)] = &[("torch.nn", "Module", "forward")];
 
 /// The method a call of an instance of the library class `class`, which ty finds in the module
@@ -876,6 +877,19 @@ pub const PYTHON_CALL_RUNS: &[(&str, &str, &str)] = &[("torch.nn", "Module", "fo
 pub fn python_call_runs(module: &str, class: &str) -> Option<&'static str> {
     let within = |lib: &str| module == lib || module.strip_prefix(lib).is_some_and(|r| r.starts_with('.'));
     PYTHON_CALL_RUNS.iter().find(|(lib, c, _)| *c == class && within(lib)).map(|(_, _, m)| *m)
+}
+
+/// Library decorators that name the choice the function they decorate runs under, by the library module that
+/// defines the decorator, its name, and the place of the argument that holds the name: vectormesh's
+/// `option("skip")` says that the choice that runs the stage is the axis `skip` of a search. The decorator gives
+/// the function back unchanged (an identity, mathematics.md "A decorator is part of the definition"); the choice
+/// is read from the code as every choice is, and the decorator gives its injection a name.
+pub const PYTHON_CHOICE_NAMES: &[(&str, &str, usize)] = &[("vectormesh.design", "option", 0)];
+
+/// The place of the argument that names a choice, for the decorator `name` the library module `module` defines
+/// (`PYTHON_CHOICE_NAMES`).
+pub fn python_choice_name(module: &str, name: &str) -> Option<usize> {
+    PYTHON_CHOICE_NAMES.iter().find(|(m, d, _)| *m == module && *d == name).map(|(_, _, at)| *at)
 }
 
 /// Functions that wrap a callback-taking function into one that returns a promise: what they

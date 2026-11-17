@@ -249,7 +249,7 @@ const go = (goes, t) => {
 };
 const joinGoes = (into, from) => from?.forEach((s, k) => { if (!into.has(k)) into.set(k, new Set()); s.forEach(x => into.get(k).add(x)); });
 const verbOf = t => t.verb;
-const KIND_LABEL = {make: "Make", cli: "CLI", script: "Script", route: "API", mcp: "MCP", notebook: "Notebook", export: "Library", prophecy: "Prophecy", test: "Test"}, KIND_ORDER = ["make", "cli", "export", "script", "notebook", "route", "mcp", "prophecy", "test"];
+const KIND_LABEL = {make: "Make", cli: "CLI", script: "Script", route: "API", mcp: "MCP", notebook: "Notebook", export: "Library", prophecy: "Prophecy", test: "Test", class: "Class"}, KIND_ORDER = ["make", "cli", "export", "class", "script", "notebook", "route", "mcp", "prophecy", "test"];
 const entries = [...byId.values()].filter(n => n.entry).sort((a, b) => (partRank(a) - partRank(b)) || (KIND_ORDER.indexOf(a.entry.kind) - KIND_ORDER.indexOf(b.entry.kind)) || a.entry.label.localeCompare(b.entry.label));
 // what running a function means, from the engine's reading: its body on a value of class `on` (the
 // calls in the order they run, a method called on a known class that class's), or on any value
@@ -571,7 +571,7 @@ const usesOf = () => {
   return usesIn.get(SIDE);
 };
 // where a route comes from: the command typed, the request made, the tool called
-const ENTRY_PLACE = {cli: l => `$ ${l}`, make: l => `$ make ${l}`, script: l => `$ python ${l}`, notebook: l => `notebook ${l}`, route: l => l, mcp: l => `MCP ${l}`, export: (l, n) => `${n ? partOf(n) : D.root}.${l}`, prophecy: l => `prophecy ${l}`, test: l => `test ${l}`};
+const ENTRY_PLACE = {cli: l => `$ ${l}`, make: l => `$ make ${l}`, script: l => `$ python ${l}`, notebook: l => `notebook ${l}`, route: l => l, mcp: l => `MCP ${l}`, export: (l, n) => `${n ? partOf(n) : D.root}.${l}`, prophecy: l => `prophecy ${l}`, test: l => `test ${l}`, class: (l, n) => `${n ? partOf(n) : D.root}.${l}`};
 // an entry's domain is what the human hands it on the command line: it reads as its usage line,
 // `$ sunspots --raw --figure --months`
 // in A, an entry whose usage line B changed reads as A had it
@@ -985,7 +985,9 @@ function routeTree() {
       // what decides each branch, in the branch's colour; a choice of one branch runs it only when that holds
       const branches = [...new Set(kids.map(k => k.branch))].sort((a, b) => a - b);
       const when = branches.map(b => [b % 8 + 1, (it.when || [])[b] || ""]);
-      return {id: `${key}~c${it.choice}`, open: true, synthetic: true, choice: true, kids, hue: h, when, paths: it.arms || [], branch, arms};
+      // a library decorator on what a branch runs may name the choice (`Node::names_choice`: `option skip`)
+      const named = it.members.map(m => byId.get(m.to)?.names_choice).find(Boolean);
+      return {id: `${key}~c${it.choice}`, open: true, synthetic: true, choice: true, kids, hue: h, when, paths: it.arms || [], branch, arms, ...(named ? {named} : {})};
     };
     for (const it of body.items) {
       if (!it.members) { const k = call(it, hue, ranBefore(n, body, before, it)); if (k) node.kids.push(Object.assign(k, {arms: []})); continue; }
@@ -1041,7 +1043,7 @@ function familyFrames(places) {
     // a frame holds the kinds its values can be: a value of one kind is that kind and what derives from it, in the fiber
     const below = (m, t) => { let cur = m; for (let i = 0; i < 10 && cur; i++) { if (cur === t) return true; cur = (out.get(cur) || []).find(e => e.kind === "inherits")?.dst; } return false; };
     const can = m => !isSub(m) || (here(m) && [...F.types].some(t => t === f || below(m, t)));
-    F.kids = (members.get(f) || []).filter(m => m !== V.route && can(m)).map(m => ({id: isSub(m) ? "t:" + m + at : `t:${f}${at}/${m}`, label: isSub(m) ? typeLabel(m) : `${viaOf(m) || "·"}: ${typeLabel(m)}`, kind: "type", hue: hueOf(byId.get(m)), type: m, name: F.name, at: F.when, ...(isSub(m) ? {} : {part: true})}));
+    F.kids = (members.get(f) || []).filter(m => m !== V.route && can(m)).map(m => ({id: isSub(m) ? "t:" + m + at : `t:${f}${at}/${m}`, label: isSub(m) ? (axesOf(m) ? axesOf(m) + (F.name && !F.name.startsWith("#") ? ` · ${F.name}` : "") : typeLabel(m)) : `${viaOf(m) || "·"}: ${typeLabel(m)}`, kind: "type", hue: hueOf(byId.get(m)), type: m, name: F.name, at: F.when, ...(isSub(m) ? {} : {part: true})}));
     F.kids.push(...sharedOf(f).map(e => ({id: `r:${f}:${e.via}${at}`, label: `${e.via}: ${typeLabel(e.dst)}`, kind: "ref", type: e.dst, part: true})));
     F.title = (F.label || typeLabel(f)) + (F.kids.some(k => k.kind === "type" && !k.label.includes(": ")) ? " ⊇" : "");
     F.hue = hueOf(byId.get(f));
@@ -1071,12 +1073,73 @@ const lightOf = (S, p) => {
   return ts.length && ts.every(t => S.has(t)) ? "lit" : [...ts, ...partsIn(p)].some(t => S.has(t)) ? "litpart" : null;
 };
 const cutBy = (S, places) => [...places].filter(p => closedFamily(p) && typesIn(p).some(t => S.has(t)) && !typesIn(p).every(t => S.has(t))).map(p => p.type);
+// a shape inside its opened rank family reads as its axes, in the names its signature gives them: `batch × dim` of
+// `Float[Tensor, batch {self.dim}]`, the family's frame saying the array and its rank
+const axesOf = t => {
+  const k = [kindOf(t), familyOf(t)].find(f => f !== t && RANKS.has(f)), m = t.match(/\[[^,\]]*,\s*(.*)\]$/);
+  if (!m || !k || !V.open.families.has(k)) return null;
+  const axes = m[1].trim().split(/\s+/).filter(Boolean).map(a => a.replace(/^\{(?:self\.)?(.*)\}$/, "$1"));
+  return axes.length ? axes.join(" × ") : null;
+};
+// the rank families a picture's places stand in, closed or open: one button opens every one of them into its shapes and
+// closes them again (`shapesOpen`), a quotient of the same plan in both states
+const ranksIn = places => [...new Set([...places.values()].map(p => p.type && [p.type, kindOf(p.type), familyOf(p.type)].find(k => RANKS.has(k) && folds(k))).filter(Boolean))];
+const shapesOpen = (ranks, open) => { for (const k of ranks) if (open) V.open.families.add(k); else V.open.families.delete(k); };
+// The values a route's receiver was built from, listed once under the route (mathematics.md, "The receiver is a channel of
+// its own"): a method reads fields of its instance (`self.noise`), the constructor set each from the fields of what it was
+// handed (`Set::reads`: `sigma` of `config`), and a field a choice of the route reads (`self.config.skip`) is read where
+// the choice runs. Each field stands under the first step of the route that reads it; one that decides a choice a library
+// decorator names (`Node::names_choice`) is marked. By the type of the value read, each with its fields:
+// `[{type, steps: [{step, fields: [{name, option}]}]}]`; none where the route runs on no instance.
+const receiverReads = route => {
+  const n = byId.get(route), cls = n?.cls && byId.get(n.cls);
+  if (!cls) return [];
+  const ctor = (cls.methods || []).map(m => byId.get(`${cls.id}.${m}`)).find(m => m && isCtor(m));
+  const sets = new Map((ctor?.sets || []).filter(s => s.field && s.on?.type === cls.id).map(s => [s.field, s]));
+  // the values a path of fields of the instance reads: what the constructor set its first field from, and, where it set
+  // the field to a value whole, that value's fields along the rest of the path
+  const through = path => {
+    const [first, ...rest] = path.split("."), s = sets.get(first);
+    if (!s) return [];
+    if (rest.length && !s.of && (s.from || []).length === 1 && byId.get(s.from[0].type)?.kind === "class") return [{on: s.from[0], field: rest.join(".")}];
+    return s.reads || [];
+  };
+  const own = f => byId.get(f)?.cls === cls.id;
+  const readOf = f => {
+    const fn = byId.get(f);
+    const paths = (fn?.sites || []).flatMap(s => (s.hands || []).flatMap(h => (h.through || []).filter(t => t[0] === "receiver").map(t => t[1])));
+    return paths.flatMap(through);
+  };
+  const sites = (n.sites || []).map((s, i) => ({...s, i})).filter(s => own(s.to));
+  const named = new Set();
+  for (const t of n.tests || []) {
+    if (t.on?.type !== cls.id) continue;
+    const inChoice = sites.filter(s => (s.arms || []).some(([c]) => c === t.choice));
+    const option = inChoice.some(s => byId.get(s.to)?.names_choice);
+    for (const r of through(t.field)) { if (option) named.add(`${r.on.type}|${r.field}`); }
+    for (const s of inChoice) s.decides = [...(s.decides || []), ...through(t.field)];
+  }
+  const rows = new Map();
+  const seen = new Set();
+  for (const s of sites) {
+    for (const r of [...readOf(s.to), ...(s.decides || [])]) {
+      const key = `${r.on.type}|${r.field}`;
+      if (!r.on.type || byId.get(r.on.type)?.kind !== "class" || seen.has(key)) continue;
+      seen.add(key);
+      if (!rows.has(r.on.type)) rows.set(r.on.type, new Map());
+      const steps = rows.get(r.on.type);
+      if (!steps.has(s.to)) steps.set(s.to, []);
+      steps.get(s.to).push({name: r.field, option: named.has(key)});
+    }
+  }
+  return [...rows].map(([type, steps]) => ({type, steps: [...steps].map(([step, fields]) => ({step, fields}))}));
+};
 const typePlace = t => {
   // a library closed is one box that says how many of the plan's types it stands for, as a folded directory says its files
   const L = libOfBox(t), n = byId.get(t), closedFam = !L && t !== V.route && opens(t) && !V.open.families.has(t);
   if (L) { const k = LIBRARIES?.get(L)?.size || 0; return {id: "t:" + t, label: `${libTitle(L)} · ${k} ${k === 1 ? "type" : "types"}`, kind: L.startsWith("~") ? "type" : "ext", hue: null, type: t, library: L}; }
   // a family no type of the code's is (a rank of shaped arrays, `Float Tensor · 2D`) is of the library its members are
-  return {id: "t:" + t, label: typeLabel(t) + (closedFam ? ` (${opensInto(t)})` : ""), kind: (n ? n.kind === "external" : t.startsWith("ext:")) ? "ext" : "type", hue: hueOf(n), type: t};
+  return {id: "t:" + t, label: (axesOf(t) || typeLabel(t)) + (closedFam ? ` (${opensInto(t)})` : ""), kind: (n ? n.kind === "external" : t.startsWith("ext:")) ? "ext" : "type", hue: hueOf(n), type: t};
 };
 // a block of the code's hierarchy: a part, a package, a class with its constructor and methods, the classes of one base
 const isBlock = step => /^(part|unit|cls|fam):/.test(step);
@@ -1374,7 +1437,7 @@ const rawOf = (parent, arms) => {
 const build = (node, parent, caller) => {
   if (node.synthetic) {
     const fid = "n:" + node.id, one = node.when.length === 1;
-    const w = one ? node.when[0][1] : "", title = !one ? "one of" : !w ? "only sometimes" : w === "otherwise" ? "only otherwise" : `only when ${w}`;
+    const w = one ? node.when[0][1] : "", title = !one ? "one of" : !w ? "only sometimes" : w === "otherwise" ? "only otherwise" : node.named ? `${node.named} · if ${w}` : `only when ${w}`;
     frames.set(fid, {id: fid, step: null, parent, hue: node.hue, branch: node.branch, paths: node.paths, raw: rawOf(parent, node.arms), choice: true, synthetic: true, title, whens: one ? [] : node.when.filter(w => w[1]), ...(one ? {one: true} : {})});
     return node.kids.flatMap(k => build(k, fid, caller));
   }
