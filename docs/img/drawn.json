@@ -381,11 +381,11 @@
    ],
    [
     "n:sunspots.main.main",
-    "\u25be CLI sunspots"
+    "\u25be CLI sunspots  +1 error typecan hand on an error of the type Error: no fault, the code names what can go wrong \u00b7 click to draw the error types as boxes"
    ],
    [
     "n:sunspots.main.main/7",
-    "\u25be Trend.save"
+    "\u25be Trend.save  +1 error typecan hand on an error of the type Error: no fault, the code names what can go wrong \u00b7 click to draw the error types as boxes"
    ],
    [
     "n:sunspots.main.main~c0",
@@ -401,7 +401,7 @@
    ],
    [
     "sunspots.download.download",
-    "\u25b8 download"
+    "\u25b8 download  +1 error typecan hand on an error of the type Error: no fault, the code names what can go wrong \u00b7 click to draw the error types as boxes"
    ],
    [
     "sunspots.main.main",
@@ -413,7 +413,7 @@
    ],
    [
     "sunspots.plot.Trend.draw",
-    "\u25b8 Trend.draw"
+    "\u25b8 Trend.draw  +1 error typecan hand on an error of the type Error: no fault, the code names what can go wrong \u00b7 click to draw the error types as boxes"
    ],
    [
     "sunspots.plot.Trend.new",
@@ -425,7 +425,7 @@
    ],
    [
     "sunspots.series.load",
-    "\u25b8 load"
+    "\u25b8 load  +1 error typecan hand on an error of the type Error: no fault, the code names what can go wrong \u00b7 click to draw the error types as boxes"
    ],
    [
     "sunspots.series.smooth",
@@ -442,26 +442,6 @@
    [
     "t:ext:plotters.prelude.DrawingArea~area@n:sunspots.main.main/7/2",
     "DrawingArea \u00b7 area"
-   ],
-   [
-    "t:sunspots.error.Error@n:sunspots.main.main",
-    "Error"
-   ],
-   [
-    "t:sunspots.error.Error@n:sunspots.main.main/4",
-    "Error"
-   ],
-   [
-    "t:sunspots.error.Error@n:sunspots.main.main/7",
-    "Error"
-   ],
-   [
-    "t:sunspots.error.Error@n:sunspots.main.main/7/3",
-    "Error"
-   ],
-   [
-    "t:sunspots.error.Error@n:sunspots.main.main~c0",
-    "Error"
    ],
    [
     "t:sunspots.plot.Trend@n:sunspots.main.main/6",
@@ -539,15 +519,7 @@
    ],
    [
     "n:sunspots.main.main/3",
-    "t:sunspots.error.Error@n:sunspots.main.main~c0"
-   ],
-   [
-    "n:sunspots.main.main/3",
     "w:File:data/raw/sunspots.csv"
-   ],
-   [
-    "n:sunspots.main.main/4",
-    "t:sunspots.error.Error@n:sunspots.main.main/4"
    ],
    [
     "n:sunspots.main.main/4",
@@ -574,18 +546,6 @@
     "t:ext:plotters.prelude.DrawingArea~area@n:sunspots.main.main/7/2"
    ],
    [
-    "n:sunspots.main.main/7/3",
-    "t:sunspots.error.Error@n:sunspots.main.main/7/3"
-   ],
-   [
-    "o:sunspots.main.main",
-    "t:sunspots.error.Error@n:sunspots.main.main"
-   ],
-   [
-    "o:sunspots.main.main/7",
-    "t:sunspots.error.Error@n:sunspots.main.main/7"
-   ],
-   [
     "o:sunspots.main.main/7",
     "w:File:figures/sunspots.png"
    ],
@@ -596,22 +556,6 @@
    [
     "t:ext:plotters.prelude.DrawingArea~area@n:sunspots.main.main/7/2",
     "o:sunspots.main.main/7"
-   ],
-   [
-    "t:sunspots.error.Error@n:sunspots.main.main/4",
-    "o:sunspots.main.main"
-   ],
-   [
-    "t:sunspots.error.Error@n:sunspots.main.main/7",
-    "o:sunspots.main.main"
-   ],
-   [
-    "t:sunspots.error.Error@n:sunspots.main.main/7/3",
-    "o:sunspots.main.main/7"
-   ],
-   [
-    "t:sunspots.error.Error@n:sunspots.main.main~c0",
-    "o:sunspots.main.main"
    ],
    [
     "t:sunspots.plot.Trend@n:sunspots.main.main/6",
@@ -671,7 +615,7 @@
   "nodes": [
    [
     "n:sunspots.cli.main",
-    "\u25be cli.main"
+    "\u25be cli.main  +1 error typecan hand on an error of the type Error: no fault, the code names what can go wrong \u00b7 click to draw the error types as boxes"
    ],
    [
     "n:sunspots.cli.main~c0",
@@ -687,11 +631,11 @@
    ],
    [
     "sunspots.cli.monthsOf",
-    "\u25b8 monthsOf"
+    "\u25b8 monthsOf  +1 error typecan hand on an error of the type Error: no fault, the code names what can go wrong \u00b7 click to draw the error types as boxes"
    ],
    [
     "sunspots.download.download",
-    "\u25b8 download"
+    "\u25b8 download  +1 error typecan hand on an error of the type Error: no fault, the code names what can go wrong \u00b7 click to draw the error types as boxes"
    ],
    [
     "sunspots.plot.saveSvg",
@@ -699,11 +643,11 @@
    ],
    [
     "sunspots.plot.trend",
-    "\u25b8 trend"
+    "\u25b8 trend  +1 error typecan hand on an error of the type Error: no fault, the code names what can go wrong \u00b7 click to draw the error types as boxes"
    ],
    [
     "sunspots.series.load",
-    "\u25b8 load"
+    "\u25b8 load  +1 error typecan hand on an error of the type Error: no fault, the code names what can go wrong \u00b7 click to draw the error types as boxes"
    ],
    [
     "sunspots.series.smooth",
@@ -712,26 +656,6 @@
    [
     "sunspots.settings.Settings",
     "Settings()"
-   ],
-   [
-    "t:ext:javascript.Error@n:sunspots.cli.main",
-    "Error"
-   ],
-   [
-    "t:ext:javascript.Error@n:sunspots.cli.main/1",
-    "Error"
-   ],
-   [
-    "t:ext:javascript.Error@n:sunspots.cli.main/4",
-    "Error"
-   ],
-   [
-    "t:ext:javascript.Error@n:sunspots.cli.main/6",
-    "Error"
-   ],
-   [
-    "t:ext:javascript.Error@n:sunspots.cli.main~c0",
-    "Error"
    ],
    [
     "t:sunspots.series.Month~series@n:sunspots.cli.main/4",
@@ -776,24 +700,12 @@
     "n:sunspots.cli.main/2"
    ],
    [
-    "n:sunspots.cli.main/1",
-    "t:ext:javascript.Error@n:sunspots.cli.main/1"
-   ],
-   [
     "n:sunspots.cli.main/2",
     "t:sunspots.settings.Settings~settings@n:sunspots.cli.main/2"
    ],
    [
     "n:sunspots.cli.main/3",
-    "t:ext:javascript.Error@n:sunspots.cli.main~c0"
-   ],
-   [
-    "n:sunspots.cli.main/3",
     "w:File:data/raw/sunspots.csv"
-   ],
-   [
-    "n:sunspots.cli.main/4",
-    "t:ext:javascript.Error@n:sunspots.cli.main/4"
    ],
    [
     "n:sunspots.cli.main/4",
@@ -808,32 +720,8 @@
     "n:sunspots.cli.main/7"
    ],
    [
-    "n:sunspots.cli.main/6",
-    "t:ext:javascript.Error@n:sunspots.cli.main/6"
-   ],
-   [
     "n:sunspots.cli.main/7",
     "w:File:figures/sunspots.svg"
-   ],
-   [
-    "o:sunspots.cli.main",
-    "t:ext:javascript.Error@n:sunspots.cli.main"
-   ],
-   [
-    "t:ext:javascript.Error@n:sunspots.cli.main/1",
-    "o:sunspots.cli.main"
-   ],
-   [
-    "t:ext:javascript.Error@n:sunspots.cli.main/4",
-    "o:sunspots.cli.main"
-   ],
-   [
-    "t:ext:javascript.Error@n:sunspots.cli.main/6",
-    "o:sunspots.cli.main"
-   ],
-   [
-    "t:ext:javascript.Error@n:sunspots.cli.main~c0",
-    "o:sunspots.cli.main"
    ],
    [
     "t:sunspots.series.Month~series@n:sunspots.cli.main/4",
@@ -1031,7 +919,7 @@
    ],
    [
     "n:sunspots.main.main",
-    "\u25be CLI sunspots"
+    "\u25be CLI sunspots  +1 error typecan hand on an error of the type Error: no fault, the code names what can go wrong \u00b7 click to draw the error types as boxes"
    ],
    [
     "n:sunspots.main.main~c0",
@@ -1039,7 +927,7 @@
    ],
    [
     "sunspots.download.download",
-    "\u25b8 download"
+    "\u25b8 download  +1 error typecan hand on an error of the type Error: no fault, the code names what can go wrong \u00b7 click to draw the error types as boxes"
    ],
    [
     "sunspots.main.main",
@@ -1047,7 +935,7 @@
    ],
    [
     "sunspots.plot.Plot.save",
-    "\u25b8 Trend.save"
+    "\u25b8 Trend.save  +1 error typecan hand on an error of the type Error: no fault, the code names what can go wrong \u00b7 click to draw the error types as boxes"
    ],
    [
     "sunspots.plot.Trend.new",
@@ -1055,7 +943,7 @@
    ],
    [
     "sunspots.series.load",
-    "\u25b8 load"
+    "\u25b8 load  +1 error typecan hand on an error of the type Error: no fault, the code names what can go wrong \u00b7 click to draw the error types as boxes"
    ],
    [
     "sunspots.series.smooth",
@@ -1068,22 +956,6 @@
    [
     "sunspots.settings.Settings.default",
     "\u25b8 Settings.default"
-   ],
-   [
-    "t:sunspots.error.Error@n:sunspots.main.main",
-    "Error"
-   ],
-   [
-    "t:sunspots.error.Error@n:sunspots.main.main/4",
-    "Error"
-   ],
-   [
-    "t:sunspots.error.Error@n:sunspots.main.main/7",
-    "Error"
-   ],
-   [
-    "t:sunspots.error.Error@n:sunspots.main.main~c0",
-    "Error"
    ],
    [
     "t:sunspots.plot.Trend@n:sunspots.main.main/6",
@@ -1149,15 +1021,7 @@
    ],
    [
     "n:sunspots.main.main/3",
-    "t:sunspots.error.Error@n:sunspots.main.main~c0"
-   ],
-   [
-    "n:sunspots.main.main/3",
     "w:File:data/raw/sunspots.csv"
-   ],
-   [
-    "n:sunspots.main.main/4",
-    "t:sunspots.error.Error@n:sunspots.main.main/4"
    ],
    [
     "n:sunspots.main.main/4",
@@ -1173,27 +1037,7 @@
    ],
    [
     "n:sunspots.main.main/7",
-    "t:sunspots.error.Error@n:sunspots.main.main/7"
-   ],
-   [
-    "n:sunspots.main.main/7",
     "w:File:figures/sunspots.png"
-   ],
-   [
-    "o:sunspots.main.main",
-    "t:sunspots.error.Error@n:sunspots.main.main"
-   ],
-   [
-    "t:sunspots.error.Error@n:sunspots.main.main/4",
-    "o:sunspots.main.main"
-   ],
-   [
-    "t:sunspots.error.Error@n:sunspots.main.main/7",
-    "o:sunspots.main.main"
-   ],
-   [
-    "t:sunspots.error.Error@n:sunspots.main.main~c0",
-    "o:sunspots.main.main"
    ],
    [
     "t:sunspots.plot.Trend@n:sunspots.main.main/6",
@@ -1237,7 +1081,7 @@
   "nodes": [
    [
     "n:sunspots.cli.main",
-    "\u25be cli.main"
+    "\u25be cli.main  +1 error typecan hand on an error of the type Error: no fault, the code names what can go wrong \u00b7 click to draw the error types as boxes"
    ],
    [
     "n:sunspots.cli.main~c0",
@@ -1253,11 +1097,11 @@
    ],
    [
     "sunspots.cli.monthsOf",
-    "\u25b8 monthsOf"
+    "\u25b8 monthsOf  +1 error typecan hand on an error of the type Error: no fault, the code names what can go wrong \u00b7 click to draw the error types as boxes"
    ],
    [
     "sunspots.download.download",
-    "\u25b8 download"
+    "\u25b8 download  +1 error typecan hand on an error of the type Error: no fault, the code names what can go wrong \u00b7 click to draw the error types as boxes"
    ],
    [
     "sunspots.plot.saveSvg",
@@ -1265,11 +1109,11 @@
    ],
    [
     "sunspots.plot.trend",
-    "\u25b8 trend"
+    "\u25b8 trend  +1 error typecan hand on an error of the type Error: no fault, the code names what can go wrong \u00b7 click to draw the error types as boxes"
    ],
    [
     "sunspots.series.load",
-    "\u25b8 load"
+    "\u25b8 load  +1 error typecan hand on an error of the type Error: no fault, the code names what can go wrong \u00b7 click to draw the error types as boxes"
    ],
    [
     "sunspots.series.smooth",
@@ -1278,26 +1122,6 @@
    [
     "sunspots.settings.Settings",
     "Settings()"
-   ],
-   [
-    "t:ext:javascript.Error@n:sunspots.cli.main",
-    "Error"
-   ],
-   [
-    "t:ext:javascript.Error@n:sunspots.cli.main/1",
-    "Error"
-   ],
-   [
-    "t:ext:javascript.Error@n:sunspots.cli.main/4",
-    "Error"
-   ],
-   [
-    "t:ext:javascript.Error@n:sunspots.cli.main/6",
-    "Error"
-   ],
-   [
-    "t:ext:javascript.Error@n:sunspots.cli.main~c0",
-    "Error"
    ],
    [
     "t:sunspots.series.Month~series@n:sunspots.cli.main/4",
@@ -1342,24 +1166,12 @@
     "n:sunspots.cli.main/2"
    ],
    [
-    "n:sunspots.cli.main/1",
-    "t:ext:javascript.Error@n:sunspots.cli.main/1"
-   ],
-   [
     "n:sunspots.cli.main/2",
     "t:sunspots.settings.Settings~settings@n:sunspots.cli.main/2"
    ],
    [
     "n:sunspots.cli.main/3",
-    "t:ext:javascript.Error@n:sunspots.cli.main~c0"
-   ],
-   [
-    "n:sunspots.cli.main/3",
     "w:File:data/raw/sunspots.csv"
-   ],
-   [
-    "n:sunspots.cli.main/4",
-    "t:ext:javascript.Error@n:sunspots.cli.main/4"
    ],
    [
     "n:sunspots.cli.main/4",
@@ -1374,32 +1186,8 @@
     "n:sunspots.cli.main/7"
    ],
    [
-    "n:sunspots.cli.main/6",
-    "t:ext:javascript.Error@n:sunspots.cli.main/6"
-   ],
-   [
     "n:sunspots.cli.main/7",
     "w:File:figures/sunspots.svg"
-   ],
-   [
-    "o:sunspots.cli.main",
-    "t:ext:javascript.Error@n:sunspots.cli.main"
-   ],
-   [
-    "t:ext:javascript.Error@n:sunspots.cli.main/1",
-    "o:sunspots.cli.main"
-   ],
-   [
-    "t:ext:javascript.Error@n:sunspots.cli.main/4",
-    "o:sunspots.cli.main"
-   ],
-   [
-    "t:ext:javascript.Error@n:sunspots.cli.main/6",
-    "o:sunspots.cli.main"
-   ],
-   [
-    "t:ext:javascript.Error@n:sunspots.cli.main~c0",
-    "o:sunspots.cli.main"
    ],
    [
     "t:sunspots.series.Month~series@n:sunspots.cli.main/4",
@@ -1467,11 +1255,11 @@
    ],
    [
     "atlas-engine.language.read",
-    "\u25b8 read"
+    "\u25b8 read  +1 error typecan hand on an error of the type \u00b7: no fault, the code names what can go wrong \u00b7 click to draw the error types as boxes"
    ],
    [
     "atlas-engine.parts.graph_of",
-    "\u25b8 graph_of \u00b7 +32 types15"
+    "\u25b8 graph_of \u00b7 +32 types  +1 error typecan hand on an error of the type \u00b7: no fault, the code names what can go wrong \u00b7 click to draw the error types as boxes15"
    ],
    [
     "e:atlas-engine.analyze",
@@ -1479,7 +1267,7 @@
    ],
    [
     "n:atlas-engine.analyze",
-    "\u25be Library analyze"
+    "\u25be Library analyze  +1 error typecan hand on an error of the type \u00b7: no fault, the code names what can go wrong \u00b7 click to draw the error types as boxes"
    ],
    [
     "t:atlas-engine.knowledge.CliFramework",
@@ -1577,15 +1365,7 @@
    ],
    [
     "n:atlas-engine.analyze/0",
-    "o:atlas-engine.analyze"
-   ],
-   [
-    "n:atlas-engine.analyze/0",
     "t:atlas-engine.repo.Repo~repo@n:atlas-engine.analyze/0"
-   ],
-   [
-    "n:atlas-engine.analyze/1",
-    "o:atlas-engine.analyze"
    ],
    [
     "n:atlas-engine.analyze/1",
