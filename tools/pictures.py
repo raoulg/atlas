@@ -26,9 +26,9 @@ default 8: its folded folders, its steps, then its closed families) and holds th
 was: opening a box refines the quotient, so it takes no line away (every line of the closed picture is a line of the
 open one, seen through the quotient map, which sends a file to the folded folder that holds it), draws no line the
 closed picture did not (a line the open box draws across its frame is one the closed box should have drawn: rule 1),
-moves no box from outside a frame into it, and closing the box (by its frame, a folder by its chip) draws the closed
-picture again. A view the page cannot draw keeps the picture before it, so a box whose opening throws is reported as such,
-never compared. It fails when a box does otherwise.
+moves no box from outside a frame into it, and closing the box (by the title of its frame, a folder without one by its
+chip in the list of what is opened) draws the closed picture again. A view the page cannot draw keeps the picture before
+it, so a box whose opening throws is reported as such, never compared. It fails when a box does otherwise.
 
 A sample is as good as its draw, and no number of routes proves the law: with `ATLAS_TOPOLOGY_SECONDS=s` topology takes
 the routes in an order drawn from a seed (`ATLAS_SEED`, else a fresh one, printed first) and stops when s seconds have
@@ -163,11 +163,14 @@ TOPOLOGY = """async (spec) => {
   const moved = [...fine.boxes].filter(([b, par]) => coarse.boxes.has(b) && coarse.boxes.get(b) !== par).map(([b, par]) => `${b}: ${coarse.boxes.get(b)} -> ${par}`);
   // a place of the world stands on the side it stood: opening a box does not make what it does there another's
   const resided = [...fine.sides].filter(([id, side]) => coarse.sides.has(id) && coarse.sides.get(id) !== side).map(([id, side]) => `${id}: ${coarse.sides.get(id)} -> ${side}`);
-  // close it again by its frame, or a folder by its chip
-  const frame = [...fine.boxes].find(([b, par]) => !coarse.boxes.has(b) && coarse.boxes.has(par) && /^(n|t):/.test(par))?.[1];
+  // close it again as a reader does: by the title of the frame it opened into, else (a folder whose files only spread out)
+  // by its chip in the list of what is opened, which the bar shows on request
+  const frame = spec.kind === "folder" ? spec.id : [...fine.boxes].find(([b, par]) => !coarse.boxes.has(b) && coarse.boxes.has(par) && /^(n|t):/.test(par))?.[1];
   let back = null;
   const fr = frame && [...document.querySelectorAll("#scene g.frame[data-id]")].find(x => x.dataset.id === frame);
-  const closer = spec.kind === "folder" ? [...document.querySelectorAll("button")].find(b => b.textContent === coarse.dirs.get(spec.id) + " ✕") : fr?.querySelector(".ftitle");
+  const chip = () => [...document.querySelectorAll("#crumbs button")].find(b => b.textContent === coarse.dirs.get(spec.id) + " ✕");
+  const listed = () => { const more = document.querySelector("#crumbs button.count"); if (!chip() && more && /▸$/.test(more.textContent)) more.click(); return chip(); };
+  const closer = fr?.querySelector(".ftitle") || (spec.kind === "folder" ? listed() : null);
   if (closer) {
     n0 = window.atlasPicture.n;
     closer.dispatchEvent(new MouseEvent("click", {bubbles: true}));
