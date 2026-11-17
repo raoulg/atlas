@@ -245,3 +245,12 @@ body.dragging-x{cursor:col-resize}
 .settings .secondary-button{align-self:flex-start;margin-top:8px}
 .settings kbd{margin-left:12px;font:10px ui-monospace,monospace;opacity:.7}
 .settings-buttons{display:flex;gap:8px;flex-wrap:wrap}
+.side-head{display:flex;align-items:flex-start;justify-content:space-between}
+.sidebar-toggle{flex:none;width:22px;height:22px;margin:-4px 0 0;padding:0;border:0;background:transparent;color:var(--s5);font-size:16px;line-height:1;display:grid;place-items:center}
+.sidebar-toggle:hover{background:var(--s7);color:var(--s2)}
+.workbench[data-sidebar="rail"]{grid-template-columns:52px minmax(0,1fr)}
+.workbench[data-sidebar="rail"] .sidebar{padding:12px 5px 0}
+.workbench[data-sidebar="rail"] .side-head{flex-direction:column;align-items:center;gap:6px;padding-bottom:8px}
+.workbench[data-sidebar="rail"] .side-head .side-label,.workbench[data-sidebar="rail"] .files-label,.workbench[data-sidebar="rail"] .file-tree-host,.workbench[data-sidebar="rail"] .lessons-label,.workbench[data-sidebar="rail"] .lesson-list,.workbench[data-sidebar="rail"] .side-path{display:none}
+.workbench[data-sidebar="rail"] .side-tab{font-size:0;gap:0;justify-content:center;padding:9px 0}
+.workbench[data-sidebar="rail"] .side-tab span{font-size:17px}

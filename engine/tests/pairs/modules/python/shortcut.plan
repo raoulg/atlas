@@ -1,0 +1,29 @@
+# A step that gives back what its call gives hands that value on through its own arrow, also where its written return is
+# another shape of the same array: `branch` returns `projection.forward(image)` as `Float[Tensor, "batch 16"]`, and `Projection.forward`
+# gives `Float[Tensor, "*lead {self.out}"]`. The language reads both as `Tensor`; the shape refines that type, so what
+# the call gives is of a type `branch` gives (mathematics.md, "Shapes and their rank").
+
+route encoders.model.project
+step project/batch
+step project/Projection()
+step project/branch
+step project/branch/Projection.forward
+
+line entry > project call
+line project/batch > Float[Tensor, batch 384]·image@project/batch value
+line project/Projection() > Projection@project/Projection() value
+line Projection@project/Projection() > project/branch/Projection.forward value              # the projection the call runs on
+line Float[Tensor, batch 384]·image@project/batch > project/branch/Projection.forward value
+line project/branch/Projection.forward > Float[Tensor, *lead {self.out}]@project/branch/Projection.forward value
+line Float[Tensor, *lead {self.out}]@project/branch/Projection.forward > project/branch value  # body hands back what it made
+line project/branch > Float[Tensor, batch 16]·z@project/branch value
+line Float[Tensor, batch 16]·z@project/branch > project value                                # print(z)
+line project > Screen own
+
+home Float[Tensor, batch 384]·image@project/batch project
+home Projection@project/Projection() project
+home Float[Tensor, *lead {self.out}]@project/branch/Projection.forward project/branch
+home Float[Tensor, batch 16]·z@project/branch project
+
+side entry left
+side Screen right

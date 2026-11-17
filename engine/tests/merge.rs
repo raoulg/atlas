@@ -105,6 +105,7 @@ fn read_in(language: Lang, parts: usize) -> Graph {
         language,
         dir: String::new(),
         leaves: atlas_engine::language::leaves(language),
+        library: false,
         structural: atlas_engine::language::structural(language),
     };
     Graph { language: language.into(), parts: (0..parts).map(part).collect(), ..Default::default() }

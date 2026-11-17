@@ -18,6 +18,53 @@ pub fn entries(g: &Graph) -> Vec<(EntryKind, &str, &str)> {
     out
 }
 
+/// The route a folder opens on, by the id it starts at: the outer class of the folder whose instance runs a method
+/// (`EntryKind::Class`) among those a script, command or notebook of the folder runs, by calling or building it: the one
+/// no other of them runs or builds in its own code (a module that runs its submodules is the one it runs them in); none
+/// where no such class stands outermost, or two do. `inside` says whether a file lies in the folder.
+pub fn folder_route(g: &Graph, inside: &dyn Fn(&str) -> bool) -> Option<String> {
+    let mut next: HashMap<&str, Vec<&str>> = HashMap::new();
+    for e in g.edges.iter().filter(|e| matches!(e.kind, EdgeKind::Calls | EdgeKind::Instantiates)) {
+        next.entry(e.src.as_str()).or_default().push(e.dst.as_str());
+    }
+    let starts: Vec<&str> = g
+        .nodes
+        .iter()
+        .filter(|n| inside(&n.file))
+        .filter(|n| n.entry.as_ref().is_some_and(|e| matches!(e.kind, EntryKind::Script | EntryKind::Cli | EntryKind::Notebook)))
+        .map(|n| n.id.as_str())
+        .collect();
+    let mut reached: HashSet<&str> = starts.iter().copied().collect();
+    let mut open = starts;
+    while let Some(id) = open.pop() {
+        for &d in next.get(id).into_iter().flatten() {
+            if reached.insert(d) {
+                open.push(d);
+            }
+        }
+    }
+    let run: Vec<&Node> = g
+        .nodes
+        .iter()
+        .filter(|n| inside(&n.file) && n.entry.as_ref().is_some_and(|e| e.kind == EntryKind::Class))
+        .filter(|n| reached.contains(n.id.as_str()) || n.cls.as_deref().is_some_and(|c| reached.contains(c)))
+        .collect();
+    // a class another of them runs or builds in a method of its own is inside that one
+    let class_of: HashMap<&str, &str> = g.nodes.iter().filter_map(|n| Some((n.id.as_str(), n.cls.as_deref()?))).collect();
+    let runs = |outer: &Node, inner: &Node| {
+        let Some(class) = outer.cls.as_deref() else { return false };
+        g.edges
+            .iter()
+            .filter(|e| matches!(e.kind, EdgeKind::Calls | EdgeKind::Instantiates))
+            .any(|e| class_of.get(e.src.as_str()) == Some(&class) && (e.dst == inner.id || inner.cls.as_deref() == Some(e.dst.as_str())))
+    };
+    let run: Vec<&Node> = run.iter().copied().filter(|inner| !run.iter().any(|outer| outer.id != inner.id && runs(outer, inner))).collect();
+    match run.as_slice() {
+        [one] => Some(one.id.clone()),
+        _ => None,
+    }
+}
+
 /// The route that starts at `entry` (an id, or an entry's label), its steps opened `depth`
 /// levels deep: the same steps, from the same bodies, as the page draws, each touching the places
 /// the route reads it to touch where it runs (`flow::Along`), under the calls that lead there and
@@ -95,6 +142,8 @@ pub fn choices(g: &Graph, entry: &str) -> Option<String> {
         let Some(b) = s.bodies.get(&k).filter(|_| calls.insert((k.clone(), call.named))) else { continue };
         // a body's choices once, however many calls run it; what each call may run instead
         let items = if seen.insert(k) { b.items.as_slice() } else { &[] };
+        // the line of each choice of this body told so far, for the choices that stand in one of its arms
+        let mut lines: HashMap<u32, u32> = HashMap::new();
         let sites = s.nodes.get(call.to.as_str()).map(|n| n.sites.as_slice()).unwrap_or(&[]);
         let named = |st: &Step| {
             if s.nodes.contains_key(st.to.as_str()) {
@@ -111,10 +160,15 @@ pub fn choices(g: &Graph, entry: &str) -> Option<String> {
         for item in items {
             let steps: Vec<&Step> = match item {
                 Item::Step(st) => vec![st],
-                Item::Choice { members, when, .. } => {
+                Item::Choice { choice, members, when, by, within, .. } => {
                     found += 1;
                     let line = members.iter().filter_map(|m| m.step.site.and_then(|i| sites.get(i))).map(|s| s.line).min().unwrap_or(0);
+                    lines.insert(*choice, line);
                     out.push_str(&format!("\n{} · line {line}\n", s.step_name(&call)));
+                    if let Some((outer, br)) = within {
+                        let at = lines.get(outer).map_or_else(String::new, |l| format!(" at line {l}"));
+                        out.push_str(&format!("  stands in arm {} of the choice{at}\n", letter(*br)));
+                    }
                     let mut branches: Vec<usize> = members.iter().map(|m| m.branch).collect();
                     branches.sort_unstable();
                     branches.dedup();
@@ -123,7 +177,7 @@ pub fn choices(g: &Graph, entry: &str) -> Option<String> {
                         let words = match when.get(*br).map(String::as_str) {
                             None | Some("") => String::new(),
                             Some("otherwise") => "  otherwise:".to_string(),
-                            Some(w) => format!("  when {w}:"),
+                            Some(w) => format!("  when {}:", picked(by, w)),
                         };
                         let effects: Vec<String> = runs.iter().map(|st| touched(st)).filter(|e| !e.is_empty()).collect();
                         out.push_str(&format!(
@@ -180,6 +234,7 @@ pub fn kind_label(k: EntryKind) -> &'static str {
         EntryKind::Export => "Library",
         EntryKind::Prophecy => "Prophecy",
         EntryKind::Test => "Test",
+        EntryKind::Class => "Class",
     }
 }
 
@@ -188,6 +243,7 @@ fn kind_order(k: EntryKind) -> usize {
         EntryKind::Make,
         EntryKind::Cli,
         EntryKind::Export,
+        EntryKind::Class,
         EntryKind::Script,
         EntryKind::Notebook,
         EntryKind::Route,
@@ -308,6 +364,8 @@ impl<'g> Story<'g> {
         let shown_step = |st: &Step| !st.site.map_or(false, |i| entrys.contains(&i));
         // a call is named by its place among the body's sites, a step no site is by what it runs
         let occurrence = |st: &Step| format!("{at}/{}", st.site.map_or_else(|| st.to.clone(), |i| i.to_string()));
+        // the number and level of each choice told so far: a choice within one of its branches is told inside that branch
+        let mut told: HashMap<u32, (String, usize)> = HashMap::new();
         for item in &b.items {
             match item {
                 Item::Step(st) if !shown_step(st) => {}
@@ -315,19 +373,24 @@ impl<'g> Story<'g> {
                     let site = st.site.and_then(|i| sites.get(i));
                     self.step(st, site, &occurrence(st), &next(), "", level, depth, t, above)
                 }
-                Item::Choice { members, when, .. } => {
+                Item::Choice { choice, members, when, by, within, .. } => {
                     let members: Vec<_> = members.iter().filter(|m| shown_step(&m.step)).collect();
                     if members.is_empty() {
                         continue;
                     }
-                    let k = next();
+                    let inside = within.and_then(|(c, br)| told.get(&c).map(|(n, l)| (format!("{n}{}", letter(br)), *l)));
+                    let (k, level) = match inside {
+                        Some((arm, l)) => (in_arm(&t.text, &arm), l + 1),
+                        None => (next(), level),
+                    };
+                    told.insert(*choice, (k.clone(), level));
                     for m in members {
                         self.step(
                             &m.step,
                             m.step.site.and_then(|i| sites.get(i)),
                             &occurrence(&m.step),
                             &format!("{k}{}", letter(m.branch)),
-                            when.get(m.branch).map_or("", String::as_str),
+                            &when.get(m.branch).filter(|w| !w.is_empty()).map_or(String::new(), |w| picked(by, w)),
                             level,
                             depth,
                             t,
@@ -372,11 +435,7 @@ impl<'g> Story<'g> {
             t.text.push_str(&format!(
                 "{indent}{num}  {op}({hands}){}{}\n",
                 if gives.is_empty() { String::new() } else { format!(" → {gives}") },
-                match when {
-                    "" => String::new(),
-                    "otherwise" => "   ·   otherwise".to_string(),
-                    w => format!("   ·   when {w}"),
-                }
+                suffix(when)
             ));
             return;
         };
@@ -387,11 +446,7 @@ impl<'g> Story<'g> {
         let runner = runs.and_then(|r| self.nodes.get(r).copied()).unwrap_or(n);
         let k = flow::key(runs.unwrap_or(&st.to), &st.on);
         let body = runs.and_then(|_| self.bodies.get(&k));
-        let when = match when {
-            "" => String::new(),
-            "otherwise" => "   ·   otherwise".to_string(),
-            w => format!("   ·   when {w}"),
-        };
+        let when = suffix(when);
         // a call of a function the route is already inside is the step it stands in
         if let Some(a) = runs.and_then(|r| above.iter().find(|a| a.id == r)) {
             t.tell(num, at, &runner.id, &[], Some(&a.label));
@@ -504,6 +559,36 @@ fn effects(touches: &[&Touch]) -> String {
         .map(|(v, items)| if items.is_empty() { v } else { format!("{v} {}", items.join(" | ")) })
         .collect::<Vec<_>>()
         .join(" · ")
+}
+
+/// The number of the next item inside the branch labelled `arm`: after the steps already told under it.
+fn in_arm(text: &str, arm: &str) -> String {
+    let used = text
+        .lines()
+        .filter_map(|l| l.trim_start().split_once("  ")?.0.strip_prefix(arm)?.strip_prefix('.'))
+        .filter_map(|r| r.split(|c: char| !c.is_ascii_digit()).next()?.parse::<usize>().ok())
+        .max()
+        .unwrap_or(0);
+    format!("{arm}.{}", used + 1)
+}
+
+/// What decides a branch, worded: of a choice one value picks (`Item::Choice::by`), whose every arm is decided by its key,
+/// the value and the key that picks the branch (`config.activation is "gelu"`); else as the code writes it.
+pub fn picked(by: &str, when: &str) -> String {
+    if by.is_empty() {
+        when.to_string()
+    } else {
+        format!("{by} is {when}")
+    }
+}
+
+/// What decides a step's branch, as the route text writes it after the step.
+fn suffix(when: &str) -> String {
+    match when {
+        "" => String::new(),
+        "otherwise" => "   ·   otherwise".to_string(),
+        w => format!("   ·   when {w}"),
+    }
 }
 
 /// The letters of the `i`th branch, from 0, as a spreadsheet names its columns: `a` to `z`, then

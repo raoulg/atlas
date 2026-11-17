@@ -31,7 +31,7 @@ use crate::repo::Repo;
 use crate::tree::named_children;
 
 use module::{first_docline, is_main_guard, load_module, new_parser, package_of, Module, Own};
-use passes::{collect_imports, collect_symbols, link, mark_exports, route_prefixes, star_imports};
+use passes::{array_types, collect_imports, collect_symbols, link, mark_exports, route_prefixes, star_imports};
 
 /// Whether a module runs as a program when it is run itself: `if __name__ == "__main__":` at its
 /// top level.
@@ -50,18 +50,9 @@ fn scripts(repo: &Repo, root_dir: &Path, packages: &[PathBuf]) -> Vec<PathBuf> {
     if packages.is_empty() && !is_project(repo, root_dir) {
         return named;
     }
-    // what a tool made, tests, and another project inside the project
-    let elsewhere = |d: &Path| {
-        let name = d.file_name().and_then(|n| n.to_str()).unwrap_or("");
-        knowledge::made_dir(name) || knowledge::TEST_DIRS.contains(&name) || is_project(repo, d)
-    };
-    let packaged: HashSet<PathBuf> = packages.iter().flat_map(|d| repo.files_under(d, SCRIPTS)).collect();
-    let mut out: Vec<PathBuf> = repo
-        .files_under(root_dir, SCRIPTS)
+    let mut out: Vec<PathBuf> = beside_packages(repo, root_dir, packages, SCRIPTS, |d| knowledge::TEST_DIRS.contains(&d))
         .into_iter()
-        .filter(|p| !packaged.contains(p))
-        .filter(|p| !p.ancestors().skip(1).take_while(|a| *a != root_dir).any(elsewhere))
-        .filter(|p| !knowledge::python_test_file(p.file_name().and_then(|n| n.to_str()).unwrap_or("")))
+        .filter(|p| !p.strip_prefix(root_dir).is_ok_and(|rel| knowledge::PYTEST.test_file(rel)))
         .filter(|p| !knowledge::PYTHON_PROJECT_FILES.iter().any(|f| p.file_name().is_some_and(|n| n == *f)))
         .collect();
     for f in named {
@@ -71,6 +62,35 @@ fn scripts(repo: &Repo, root_dir: &Path, packages: &[PathBuf]) -> Vec<PathBuf> {
     }
     out.sort();
     out
+}
+
+/// The tests a project keeps beside its packages, as pytest finds them below its root: the files
+/// that are test code by pytest's conventions (`knowledge::PYTEST`), a `tests/` beside the package
+/// and what it holds first among them.
+fn tests_beside(repo: &Repo, root_dir: &Path, packages: &[PathBuf]) -> Vec<PathBuf> {
+    let mut out: Vec<PathBuf> = beside_packages(repo, root_dir, packages, &["py"], |_| false)
+        .into_iter()
+        .filter(|p| p.strip_prefix(root_dir).is_ok_and(|rel| knowledge::PYTEST.test_file(rel)))
+        .collect();
+    out.sort();
+    out
+}
+
+/// The files of a project outside its packages, at any depth, whose extension is one of `kinds`:
+/// not what git ignores, hidden directories or environments, what a tool made, another project
+/// inside it (a directory that holds one, `is_project`: a part of its own), or below a directory
+/// `left` leaves out by its name.
+fn beside_packages(repo: &Repo, root_dir: &Path, packages: &[PathBuf], kinds: &[&str], left: impl Fn(&str) -> bool) -> Vec<PathBuf> {
+    let elsewhere = |d: &Path| {
+        let name = d.file_name().and_then(|n| n.to_str()).unwrap_or("");
+        knowledge::made_dir(name) || left(name) || is_project(repo, d)
+    };
+    let packaged: HashSet<PathBuf> = packages.iter().flat_map(|d| repo.files_under(d, kinds)).collect();
+    repo.files_under(root_dir, kinds)
+        .into_iter()
+        .filter(|p| !packaged.contains(p))
+        .filter(|p| !p.ancestors().skip(1).take_while(|a| *a != root_dir).any(elsewhere))
+        .collect()
 }
 
 /// How many directories, from a package up, are looked through for its project: the package,
@@ -300,7 +320,6 @@ pub fn parse(repo: &Repo, packages: &[PathBuf], project_root: Option<&Path>, opt
             is_pkg,
             // a module of a package that runs as a command, by `python -m`
             entry: runs_as_main(m.tree.root_node(), &m.src).then(|| Entry::new(EntryKind::Cli, format!("python -m {mid}"))),
-            test: knowledge::python_test_file(p.file_name().and_then(|n| n.to_str()).unwrap_or("")),
             ..Default::default()
         });
         modules.insert(mid, m);
@@ -363,6 +382,47 @@ pub fn parse(repo: &Repo, packages: &[PathBuf], project_root: Option<&Path>, opt
             });
             modules.insert(mid, m);
         }
+        // the tests beside its packages are modules of the project, by the names pytest imports
+        // them by from its root: `tests/test_cli.py` is `tests.test_cli`, `tests/__init__.py` the
+        // package `tests`
+        for p in tests_beside(repo, root_dir, packages) {
+            let rel = p.strip_prefix(root_dir).unwrap_or(&p).with_extension("");
+            let mut parts: Vec<String> = rel.components().map(|c| c.as_os_str().to_string_lossy().replace('.', "_")).collect();
+            let is_pkg = parts.last().is_some_and(|l| l == "__init__");
+            if is_pkg {
+                parts.pop();
+            }
+            let mid = parts.join(".");
+            if mid.is_empty() || modules.contains_key(&mid) {
+                continue;
+            }
+            let _parse = crate::clock::of("parse", &package_of(&mid), false);
+            // a test that does not load is left out, and the rest is read
+            let loaded = repo
+                .bytes(&p)
+                .with_context(|| format!("reading {}", p.display()))
+                .and_then(|text| load_module(&mut parser, &mid, &p, is_pkg, &text));
+            let m = match loaded {
+                Ok(m) => m,
+                Err(e) => {
+                    eprintln!("skipped {}: {e:#}", p.display());
+                    continue;
+                }
+            };
+            store.files.insert(crate::tree::path_str(&p), String::from_utf8_lossy(&m.src).to_string());
+            store.add_node(Node {
+                id: mid.clone(),
+                kind: NodeKind::Module,
+                name: parts.last().cloned().unwrap_or_default(),
+                file: crate::tree::path_str(&p),
+                span: Some((1, m.tree.root_node().end_position().row as u32 + 1)),
+                module: mid.clone(),
+                doc: first_docline(Some(m.tree.root_node()), &m.src),
+                is_pkg,
+                ..Default::default()
+            });
+            modules.insert(mid, m);
+        }
     }
 
     let types = read_libraries(repo, &mut parser, &mut modules, &mut store, &types_root, opts)?;
@@ -379,11 +439,14 @@ pub fn parse(repo: &Repo, packages: &[PathBuf], project_root: Option<&Path>, opt
         store.bindings.insert(m.id.clone(), m.bindings.clone());
     }
     drop(items);
-    link(&modules, &mut store, &own, &types, &types_root);
-    let _items = crate::clock::stage("items");
     mark_exports(&modules, &mut store, &own);
+    crate::entries::mark_scripts(repo, &mut store, project_root);
+    link(&modules, &mut store, &own, &types, &types_root);
+    array_types(&modules, &mut store, &own);
+    let _items = crate::clock::stage("items");
     route_prefixes(&modules, &mut store, &types, &own);
     store.mark_library();
+    passes::mark_called_classes(&mut store);
     Ok((store, root))
 }
 
@@ -411,6 +474,13 @@ fn read_libraries(
     drop(typing);
     let _reach = crate::clock::stage("reach");
     let mut reached = types.libs.clone();
+    // what the repository's other parts reach of a library read from the same directory, reached
+    // as the code's own calls are
+    for (dir, entries) in &opts.reach {
+        let Some(root) = Path::new(dir).file_stem().and_then(|s| s.to_str()) else { continue };
+        let mid = |m: &str| if m.is_empty() { root.to_string() } else { format!("{root}.{m}") };
+        reached.extend(entries.iter().map(|e| (mid(&e.module), PathBuf::from(&e.file))));
+    }
     let used: HashSet<String> = reached.iter().map(|(m, _)| package_of(m)).collect();
     let mut readable = Readable::default();
     let here = crate::repo::Repo::real(&root_dir);
@@ -431,13 +501,17 @@ fn read_libraries(
             let Ok(m) = load_module(parser, &mid, &shown, is_pkg, &text) else { continue };
             drop(parse);
             store.files.insert(crate::tree::path_str(&shown), String::from_utf8_lossy(&m.src).to_string());
-            // the library as the dependency it is: the directory of its top-level package, or its one module
-            let (root, depth) = (mid.split('.').next().unwrap_or(&mid), mid.split('.').count() - 1 + usize::from(is_pkg));
-            if let Some(top) = shown.ancestors().nth(depth) {
-                store
-                    .libraries
-                    .entry(root.to_string())
-                    .or_insert_with(|| Dependency { dir: crate::tree::path_str(top), ..Default::default() });
+            // the library as the dependency it is: where its code lies, its top-level package or its one
+            // module, with the version its distribution names
+            let root = mid.split('.').next().unwrap_or(&mid);
+            if !store.libraries.contains_key(root) {
+                if let Some(code) = crate::pytypes::library_code(&ty.places, root) {
+                    let version = crate::pytypes::library_version(&code, root);
+                    let dir = code.strip_prefix(&here).map(|r| root_dir.join(r)).unwrap_or(code);
+                    store
+                        .libraries
+                        .insert(root.to_string(), Dependency { dir: crate::tree::path_str(&dir), version, name: root.to_string() });
+                }
             }
             store.add_node(Node {
                 id: mid.clone(),

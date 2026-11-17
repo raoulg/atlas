@@ -50,7 +50,9 @@ instead (it needs Rust), and installs it as `atlas-code`, as `cargo install` doe
 Atlas Studio is the desktop app around the same engine, with the matching `atlas-code` inside it: it
 needs no installed CLI. Every release and every nightly has a disk image per Mac,
 `atlas-studio-aarch64-apple-darwin.dmg` (Apple silicon) and `atlas-studio-x86_64-apple-darwin.dmg`
-(Intel), and a setup program for Windows, `atlas-studio-x86_64-pc-windows-msvc-setup.exe`. On a Mac
+(Intel), a setup program for Windows, `atlas-studio-x86_64-pc-windows-msvc-setup.exe`, and for Linux on
+x86_64 a Debian package, `atlas-studio-x86_64-unknown-linux-gnu.deb`, and an AppImage,
+`atlas-studio-x86_64-unknown-linux-gnu.AppImage`. On a Mac
 Homebrew puts the app in `/Applications`:
 
 ```bash
@@ -91,6 +93,32 @@ irm https://raw.githubusercontent.com/raoulg/atlas/main/install-studio.ps1 | iex
 not signed with a paid identity either. Downloaded by the script it carries no mark of the internet
 and runs as it is; downloaded in a browser, SmartScreen asks first: choose More info, then Run anyway.
 Windows › Settings › Apps removes Studio again.
+
+On Linux (x86_64) the script puts the AppImage in `~/.local/bin` as `atlas-studio`, with an entry in the
+application menu, and needs no root:
+
+```bash
+sh -c "$(curl -fsSL https://raw.githubusercontent.com/raoulg/atlas/main/install-studio.sh)"
+```
+
+`ATLAS_CHANNEL=nightly` installs the nightly as `atlas-studio-nightly` beside the release, and
+`ATLAS_STUDIO_DIR` another folder; run it again to update. An AppImage runs through FUSE 2 (`libfuse2` on
+Debian and Ubuntu); without it, start it with `APPIMAGE_EXTRACT_AND_RUN=1`. On Debian and Ubuntu
+`ATLAS_STUDIO_PACKAGE=deb` installs the package system-wide instead (`sudo apt install ./atlas-studio-x86_64-unknown-linux-gnu.deb`
+does the same for a file you have downloaded), and `sudo apt remove atlas-studio` removes it. The builds
+are made on Ubuntu 22.04 and need WebKitGTK 4.1, which Ubuntu 22.04 and newer, Debian 12 and newer and
+Fedora have. Studio does not install its own updates on Linux: run the script again. There is no build
+for Linux on arm64 yet.
+
+Studio and the CLI install apart and do not depend on each other's version. Studio draws with the
+`atlas-code` inside it, of the same commit and channel as the app (its status bar names that build), never
+with one on the `PATH`; a coding agent Studio starts runs the CLI of Studio's channel on the `PATH` where
+there is one, else Studio's own, so that its `atlas-code mcp` matches the page it shares. What Atlas reads
+is cached per build: a directory for each build in `.atlas/index/` of the repository and in the user's
+cache directory (`$XDG_CACHE_HOME/atlas`, else `~/Library/Caches`, `%LOCALAPPDATA%` or `~/.cache`). Two
+builds never read each other's entries, and an entry is written whole and renamed into place, so a CLI and
+a Studio of different versions can read one repository side by side; of the same build they share what
+either has read.
 
 ## Updates
 

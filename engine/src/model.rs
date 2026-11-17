@@ -167,6 +167,9 @@ pub enum EntryKind {
     /// An operation of sketch code that is not built yet: a route into what is planned.
     Prophecy,
     Test,
+    /// A class whose instance, called, runs one of its methods (`knowledge::PYTHON_CALL_RUNS`): the arrow
+    /// the class carries. The route is that method; the label is the class.
+    Class,
 }
 
 /// A route into the program.
@@ -332,6 +335,12 @@ pub struct Node {
     pub holds: BTreeMap<String, String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub decorators: Vec<String>,
+    /// The functions it is defined under, where the graph holds them (`@checked`, `@strict(least=1)`, Python's
+    /// decorators): each gives back the function a call of this one runs, so a call ends with what they end with too
+    /// (`builder::settle_fails`). A decorator is part of the definition, by a name or by a call, and no step of the body
+    /// the definition stands in.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub guards: Vec<String>,
     /// Sketch code kept in the tree, not built yet: what its marker says. Read by the language's reader.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub prophecy: Option<Prophecy>,
@@ -426,6 +435,11 @@ pub struct Node {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(type = "string")]
     pub door: Option<World>,
+    /// For a shaped array (`knowledge::SHAPED_ARRAYS`): the array type its annotation names, as the code resolves it
+    /// (`torch.Tensor` for `Float[Tensor, "batch dim"]` where `Tensor` is imported from torch). Its values are that
+    /// type's library's, whichever library writes their shape.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub array: String,
     /// The part of the repository the node belongs to.
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub part: String,
@@ -490,10 +504,29 @@ pub struct Node {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     #[ts(type = "Array<[number, number, string]>")]
     pub whens: Vec<(u32, u32, String)>,
+    /// The name a library decorator gives the choice this function runs under (`knowledge::PYTHON_CHOICE_NAMES`),
+    /// as the decorator's name and the name it is handed: `option skip` of `@option("skip")`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub names_choice: Option<String>,
+    /// The value that picks the arm of a choice one value picks, as the code writes it, by the choice: the value a table is
+    /// looked up by where a call goes through the table (`ACTIVATIONS[config.activation]()`), each entry an arm `whens`
+    /// words by its key.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[ts(type = "Array<[number, string]>")]
+    pub by: Vec<(u32, String)>,
     /// The fields the conditions that decide its body's choices read of the values they read, as the code
     /// names them: `ax` of the instance for `if self.ax is None:` (#184).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub tests: Vec<Test>,
+}
+
+/// A field an expression reads of a value a name holds (`Set::reads`): the value, as a call is handed it, and the
+/// field, through the fields it is reached by (`model.depth` of `config.model.depth`).
+#[derive(Serialize, Deserialize, TS, Clone, Debug, Default, PartialEq)]
+#[ts(export)]
+pub struct FieldRead {
+    pub on: Held,
+    pub field: String,
 }
 
 /// A field a condition reads (`Node::tests`): the choice it decides, numbered as `Site::arms` numbers them,
@@ -685,6 +718,12 @@ fn label<'n>(id: &str, node: &dyn Fn(&str) -> Option<&'n Node>, shared: &Shared)
     }
 }
 
+/// Whether a node is test code, by where it stands: a test, code the reader marks as test code (`Node::test`), or code in
+/// a test module. A test is a way in from outside the program. `node` gives the nodes of its reading by id.
+pub fn test_code<'n>(n: &Node, node: impl Fn(&str) -> Option<&'n Node>) -> bool {
+    n.test || n.entry.as_ref().is_some_and(|e| e.kind == EntryKind::Test) || node(&n.module).is_some_and(|m| m.test)
+}
+
 /// A function as Atlas says it, in the view (`stepName` in `viewer/plan.js`, a step of a route) and in words: a method by
 /// its class (`type_label`) and its own name (`Block.scaled`); an initializer, which fills in the value a call to its
 /// class makes, as that call (`Block()`: Python's `__init__` and TypeScript's `constructor` are one construct); any other
@@ -846,6 +885,15 @@ pub struct Site {
     /// (`other.take_from(board)`, `void remove(..)`, `store.add(x);`).
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub dropped: bool,
+    /// What the call gives is what the body gives back as it is: the body's own `return`, `yield` or last expression
+    /// carries it (`return self.head(x)`, a block's last expression without `;`), through what hands it on unchanged
+    /// (`await`, `?`, an arm's or a block's last part). False for a call in a function written in place (a lambda, a
+    /// closure, an arrow function) or in a body of its own the body defines (a nested `def`), whose `return` leaves that
+    /// function, and for a call that builds the error the body raises. A function a TypeScript `const` binds
+    /// (`export const load = (p) => parse(p)`) is read as one written in place, so the calls its own body returns are
+    /// false too. A `yield` counts as a `return`: the syntax tables do not tell the two apart.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub returned: bool,
     /// What the call gives leaves the body as an error: it builds the error a `raise`, a `throw`
     /// or a `return Err(..)` ends the body with.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
@@ -1046,6 +1094,11 @@ pub struct Set {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     #[ts(type = "Array<[number, number]>")]
     pub arms: Vec<(u32, u32)>,
+    /// The fields of the values names hold that the assigned expression reads, in the steps written in it too and
+    /// through the names it reads that the body bound before (`widths = [dim] * config.depth`): `sigma` of `config`
+    /// for `self.noise = Noise(sigma=config.sigma)`. The value a set builds from its configuration, as a lens reads it.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub reads: Vec<FieldRead>,
     /// Where the assigned expression is written, as a byte range of its file: a step written there that the
     /// set keeps (`self.left = Chart("left")`) is among what it reads once its result is named.
     #[serde(skip)]
@@ -1686,9 +1739,31 @@ pub struct Stats {
     /// Of those, the bodies of the libraries' code.
     #[serde(default)]
     pub linked_library_bodies: usize,
+    /// The files of the part's language that its reader found and did not read, by the folder each
+    /// lies in (its path, as `files` names a file), with how many: what the picture does not show.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub unread: BTreeMap<String, usize>,
 }
 
 impl Stats {
+    /// What was not read, in a line, each folder named from `root` (`3 files not read: functions/ 2,
+    /// legacy/ 1`); None when every file was read.
+    pub fn unread_line(&self, root: &str) -> Option<String> {
+        let total: usize = self.unread.values().sum();
+        if total == 0 {
+            return None;
+        }
+        let mut folders: Vec<(&String, &usize)> = self.unread.iter().collect();
+        folders.sort_by(|a, b| b.1.cmp(a.1).then(a.0.cmp(b.0)));
+        let named = |f: &str| {
+            let rel = f.strip_prefix(root).map_or(f, |r| r.trim_start_matches('/'));
+            format!("{}/", if rel.is_empty() { "." } else { rel })
+        };
+        let shown: Vec<String> = folders.iter().take(5).map(|(f, n)| format!("{} {n}", named(f))).collect();
+        let more = if folders.len() > 5 { ", …" } else { "" };
+        Some(format!("{total} file{} not read: {}{more}", if total == 1 { "" } else { "s" }, shown.join(", ")))
+    }
+
     /// The share of the calls not followed that the engine should have followed.
     pub fn unknown_share(&self) -> f64 {
         if self.unresolved_calls_total == 0 {
@@ -1808,6 +1883,10 @@ pub struct Part {
     /// What its language leaves to the author.
     #[serde(default)]
     pub leaves: Leaves,
+    /// Its manifest says it is meant to be imported (a crate with a lib target, a package that
+    /// names what it exports, a Python package): its routes in are its doors.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub library: bool,
     /// Its language compares types by their members: a value stands where a type is asked for when
     /// it has every member that type declares, whatever it is declared as (TypeScript).
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
@@ -1816,13 +1895,16 @@ pub struct Part {
 
 /// A library read as code, as the dependency it is: the directory its code is read from, which
 /// names that code (Cargo's registry keeps one directory per version, an environment its own
-/// copy), and the version its manifest names, `""` where it names none.
+/// copy), the version its manifest names, `""` where it names none, and the name the code imports
+/// it by, which the directories of one library's versions share.
 #[derive(Serialize, Deserialize, TS, Clone, Debug, Default, PartialEq, Eq)]
 #[ts(export)]
 pub struct Dependency {
     pub dir: String,
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub version: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub name: String,
 }
 
 /// What a language leaves its author to write: what its compiler neither asks for nor works out,
@@ -1965,7 +2047,7 @@ impl Graph {
             m(&mut n.id);
             m(&mut n.module);
             m(&mut n.part);
-            n.cls.iter_mut().chain(n.breaks.iter_mut()).chain(n.holds.values_mut()).for_each(&m);
+            n.cls.iter_mut().chain(n.breaks.iter_mut()).chain(n.holds.values_mut()).chain(n.guards.iter_mut()).for_each(&m);
             if let Some(p) = n.prophecy.as_mut() {
                 p.supersedes.iter_mut().chain(p.replaces.iter_mut()).chain(p.candidates.iter_mut()).for_each(&m);
             }
@@ -1984,6 +2066,7 @@ impl Graph {
             for s in &mut n.sets {
                 held(&mut s.on);
                 s.from.iter_mut().for_each(held);
+                s.reads.iter_mut().for_each(|r| held(&mut r.on));
             }
             for t in &mut n.tests {
                 held(&mut t.on);

@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 380" role="img" aria-label="Exporter.export is only declared: it takes and gives nothing of its own. publish calls it, which runs one of its two members, CsvExporter.export writing out.csv or JsonExporter.export writing out.json. 0.72 drew Exporter.export taking a Report and giving a Receipt.">
+<defs><marker id="m-g" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" style="fill:var(--ink-3)"/></marker><marker id="m-add" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" style="fill:var(--add)"/></marker><marker id="m-del" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" style="fill:var(--del)"/></marker></defs>
+<rect x="66.6" y="172" width="86.8" height="36" rx="18" style="fill:var(--panel);stroke:var(--ink-3);stroke-width:1.6"/>
+<text x="110" y="195" style="font-family:var(--mono);font-size:14px;fill:var(--ink);text-anchor:middle">publish</text>
+<rect x="220" y="96" width="420" height="188" rx="6" style="fill:var(--ink-3);fill-opacity:0.05;stroke:var(--ink-3);stroke-width:1.3"/>
+<text x="232" y="118" style="font-family:var(--mono);font-size:14px;fill:var(--ink-2)">Exporter.export · one of 2</text>
+<rect x="340.4" y="138" width="179.2" height="36" rx="18" style="fill:var(--panel);stroke:var(--ink-3);stroke-width:1.6"/>
+<text x="430" y="161" style="font-family:var(--mono);font-size:14px;fill:var(--ink);text-anchor:middle">CsvExporter.export</text>
+<rect x="336.2" y="218" width="187.6" height="36" rx="18" style="fill:var(--panel);stroke:var(--ink-3);stroke-width:1.6"/>
+<text x="430" y="241" style="font-family:var(--mono);font-size:14px;fill:var(--ink);text-anchor:middle">JsonExporter.export</text>
+<path d="M147,190 L218,190" style="fill:none;stroke:var(--ink-3);stroke-width:2" marker-end="url(#m-g)"/>
+<rect x="751.4" y="138" width="137.2" height="36" rx="3" style="fill:var(--panel);stroke:var(--ink-3);stroke-width:1.4"/>
+<text x="820" y="161" style="font-family:var(--mono);font-size:14px;fill:var(--ink);text-anchor:middle">File(out.csv)</text>
+<rect x="747.2" y="218" width="145.6" height="36" rx="3" style="fill:var(--panel);stroke:var(--ink-3);stroke-width:1.4"/>
+<text x="820" y="241" style="font-family:var(--mono);font-size:14px;fill:var(--ink);text-anchor:middle">File(out.json)</text>
+<path d="M518,156 L752,156" style="fill:none;stroke:var(--ink-3);stroke-width:2" marker-end="url(#m-g)"/>
+<path d="M526,236 L748,236" style="fill:none;stroke:var(--ink-3);stroke-width:2" marker-end="url(#m-g)"/>
+<rect x="353.0" y="22" width="154.0" height="36" rx="18" style="fill:var(--panel);stroke:var(--ink-3);stroke-width:1.6;stroke-dasharray:5 4"/>
+<text x="430" y="45" style="font-family:var(--mono);font-size:14px;fill:var(--ink);text-anchor:middle">Exporter.export</text>
+<text x="530" y="45" style="font-family:var(--sans);font-size:14px;fill:var(--ink-2);text-anchor:start">declared, no body: takes and gives nothing</text>
+<text x="430" y="320" style="font-family:var(--sans);font-size:14px;fill:var(--del);text-anchor:middle">0.72 drew Exporter.export as Report → Receipt, code it does not have</text>
+<text x="30" y="366" style="font-family:var(--sans);font-size:13px;fill:var(--ink-3)">dashed pill: a declared method · frame: a call that runs one of its members · red: drawn by 0.72 only</text>
+</svg>

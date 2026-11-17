@@ -9,6 +9,8 @@ line Web(feeds.example.org) > latest own        # return urlopen(FEED).read()
 
 side entry left
 side Web(feeds.example.org) left
+home _@latest latest
+line latest > _@latest value                                             # what it gives its caller, of no type of the code's
 
 route feeds.call
 line entry > call call
@@ -16,6 +18,8 @@ line call > Web(feeds.example.org) own          # urlopen(FEED, data), `data: by
 
 side entry left
 side Web(feeds.example.org) between
+home _@call call
+line call > _@call value                                                 # what it gives its caller, of no type of the code's
 
 route feeds.remove
 line entry > remove call

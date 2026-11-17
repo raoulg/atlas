@@ -16,3 +16,5 @@ line Source()/Source.read/Tape.read > Source()/Source.read back
 home Source Source()
 
 side entry left
+home _@Source()/Source.read Source()
+line Source()/Source.read > _@Source()/Source.read value                 # what it gives its caller, of no type of the code's

@@ -1,7 +1,7 @@
 //! TypeScript and TSX read as the same algebra as Python and Rust: modules, types, calls,
 //! routes and the places a body touches.
 
-use std::collections::{BTreeSet, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::path::PathBuf;
 
 use atlas_engine::principles::check;
@@ -73,7 +73,12 @@ fn routes_render_components_and_hand_on_functions() {
     assert!(has(&calls, "cli", "lib.api.laad"), "through lib/index.ts and its `export *`");
     let cli = g.node("fixture-ts.cli").unwrap().entry.clone().unwrap();
     assert_eq!((cli.kind, cli.label.as_str()), (EntryKind::Cli, "fixture"), "package.json bin");
-    assert_eq!(g.node("fixture-ts.lib.api_test").unwrap().entry.as_ref().map(|e| e.kind), Some(EntryKind::Test));
+    // a test file is test code, and each callback it hands `it` is a test, labelled by its string (#403)
+    let file = g.node("fixture-ts.lib.api_test").unwrap();
+    assert!(file.test && file.entry.is_none(), "the test file is the module that holds its tests");
+    let test = g.node("fixture-ts.lib.api_test.kiest kort").and_then(|n| n.entry.clone()).unwrap();
+    assert_eq!((test.kind, test.label.as_str()), (EntryKind::Test, "kiest kort"));
+    assert!(has(&calls, "lib.api_test.kiest kort", "lib.api.kies"));
 }
 
 /// A type with method signatures promises what its implementations do; a value of that type
@@ -248,6 +253,108 @@ fn a_typescript_body_lists_its_calls() {
     let toon = scherm.sites.iter().find(|s| s.to.ends_with("Laag.toon")).expect("laag.toon()");
     assert!(toon.hands.iter().any(|h| h.name == "laag"), "{:#?}", toon);
     assert!(scherm.sites.iter().position(|s| s.to.ends_with("model.Laag")) < scherm.sites.iter().position(|s| s.to.ends_with("Laag.toon")));
+}
+
+/// The files a reading reads are the files the compiler reads, as the TypeScript handbook defines the
+/// tsconfig (#472): `files` by name, `include` by pattern (`**/*` when neither is given, a directory for
+/// everything below it), less `exclude` (`outDir` among the defaults), each inherited along `extends`,
+/// `references` adding their projects, and closed under imports, since the compiler reads what a file
+/// it reads imports. Besides these, a file the manifest runs and a test the runner finds; without a
+/// config, the code under `src/`. Every file of the language found is read or counted as not read,
+/// by its folder, and never both. Each expected set is written from the handbook, never from Atlas.
+#[test]
+fn the_files_read_are_the_files_the_compiler_reads() {
+    const CODE: &[(&str, &str)] = &[
+        ("src/lib/x.ts", "export function x(): number {\n  return 1;\n}\n"),
+        ("src/legacy/old.ts", "export function old(): number {\n  return 0;\n}\n"),
+        ("scripts/main.ts", "import { x } from \"../src/lib/x.js\";\n\nconsole.log(x());\n"),
+        ("scripts/tool.ts", "console.log(\"tool\");\n"),
+        ("functions/api/hello.ts", "export function onRequest(): Response {\n  return new Response(\"hi\");\n}\n"),
+        ("tests/x.test.ts", "import { x } from \"../src/lib/x\";\n\ntest(\"x\", () => x());\n"),
+        ("compiled/gen.js", "export const gen = 1;\n"),
+    ];
+    const PLAIN: &str = r#"{ "name": "law" }"#;
+    let cases: &[(&str, &[(&str, &str)], &[&str])] = &[
+        ("default", &[("tsconfig.json", "{}")], &["src/lib/x.ts", "src/legacy/old.ts", "scripts/main.ts", "scripts/tool.ts", "functions/api/hello.ts", "tests/x.test.ts", "compiled/gen.js"]),
+        (
+            "outdir",
+            &[("tsconfig.json", r#"{ "compilerOptions": { "outDir": "compiled" } }"#)],
+            &["src/lib/x.ts", "src/legacy/old.ts", "scripts/main.ts", "scripts/tool.ts", "functions/api/hello.ts", "tests/x.test.ts"],
+        ),
+        ("include", &[("tsconfig.json", r#"{ "include": ["src"], "exclude": ["src/legacy"] }"#)], &["src/lib/x.ts", "tests/x.test.ts"]),
+        ("files", &[("tsconfig.json", r#"{ "files": ["scripts/main.ts"] }"#)], &["scripts/main.ts", "src/lib/x.ts", "tests/x.test.ts"]),
+        (
+            "extends",
+            &[
+                ("tsconfig.base.json", r#"{ "include": ["scripts"] }"#),
+                ("tsconfig.json", "{\n  // the base names what is compiled\n  \"extends\": \"./tsconfig.base\",\n  \"exclude\": [\"scripts/tool.ts\"],\n}\n"),
+            ],
+            &["scripts/main.ts", "src/lib/x.ts", "tests/x.test.ts"],
+        ),
+        (
+            "references",
+            &[
+                ("tsconfig.json", r#"{ "files": [], "references": [{ "path": "./tsconfig.app.json" }] }"#),
+                ("tsconfig.app.json", r#"{ "include": ["functions/**/*.ts"] }"#),
+            ],
+            &["functions/api/hello.ts", "tests/x.test.ts", "src/lib/x.ts"],
+        ),
+        (
+            "runs",
+            &[
+                ("tsconfig.json", r#"{ "include": ["src/lib"] }"#),
+                ("package.json", r#"{ "name": "law", "scripts": { "tool": "tsx scripts/tool.ts" } }"#),
+            ],
+            &["src/lib/x.ts", "scripts/tool.ts", "tests/x.test.ts"],
+        ),
+        ("none", &[], &["src/lib/x.ts", "src/legacy/old.ts", "tests/x.test.ts"]),
+    ];
+    for (name, config, want) in cases {
+        let mut files: Vec<(&str, &str)> = CODE.to_vec();
+        if !config.iter().any(|(p, _)| *p == "package.json") {
+            files.push(("package.json", PLAIN));
+        }
+        files.extend(config.iter().copied());
+        let g = written(&format!("compiled-{name}"), &files);
+        let at = format!("atlas-compiled-{name}-{}/", std::process::id());
+        let rel = |f: &str| f.split_once(&at).map(|(_, r)| r.to_string());
+        let read: BTreeSet<String> = g.files.keys().filter_map(|f| rel(f)).collect();
+        let want: BTreeSet<String> = want.iter().map(|w| w.to_string()).collect();
+        assert_eq!(read, want, "{name}");
+        // what is not read is counted by its folder, and with what is read makes every file found
+        let mut unread: BTreeMap<String, usize> = BTreeMap::new();
+        for (f, _) in CODE.iter().filter(|(f, _)| !want.contains(*f)) {
+            *unread.entry(f.split('/').next().unwrap().to_string()).or_default() += 1;
+        }
+        let counted: BTreeMap<String, usize> =
+            g.stats.unread.iter().filter_map(|(f, n)| Some((rel(&format!("{f}/"))?.trim_end_matches('/').to_string(), *n))).collect();
+        assert_eq!(counted, unread, "{name}");
+    }
+}
+
+/// A file beside the code base that the package compiles is a program run by itself, as a Python script beside its
+/// package is (#364): entered at its top level, by the path it is run from. Where `package.json` names a command that
+/// runs it, it is entered by that command; a file read only because another imports it is no program, nor is a test.
+#[test]
+fn a_file_beside_the_code_is_a_script() {
+    let files: &[(&str, &str)] = &[
+        ("package.json", r#"{ "name": "law", "scripts": { "tool": "tsx scripts/tool.ts" } }"#),
+        ("tsconfig.json", r#"{ "include": ["src", "scripts"] }"#),
+        ("src/lib/x.ts", "import { y } from \"../../shared/y\";\n\nexport function x(): number {\n  return y();\n}\n"),
+        ("shared/y.ts", "export function y(): number {\n  return 1;\n}\n"),
+        ("scripts/main.ts", "import { x } from \"../src/lib/x\";\n\nconsole.log(x());\n"),
+        ("scripts/tool.ts", "console.log(\"tool\");\n"),
+        ("tests/x.test.ts", "import { x } from \"../src/lib/x\";\n\ntest(\"x\", () => x());\n"),
+    ];
+    let g = written("beside", files);
+    let entry = |id: &str| g.node(id).unwrap_or_else(|| panic!("{id}")).entry.as_ref().map(|e| (e.kind, e.label.clone()));
+    assert_eq!(entry("law.scripts.main"), Some((EntryKind::Script, "scripts/main.ts".to_string())));
+    assert_eq!(entry("law.scripts.tool"), Some((EntryKind::Cli, "tool".to_string())));
+    assert_eq!(entry("law.shared.y"), None, "read because `x` imports it");
+    assert_eq!(entry("law.lib.x"), None);
+    let scripts: Vec<&str> =
+        g.nodes.iter().filter_map(|n| n.entry.as_ref().filter(|e| e.kind == EntryKind::Script)).map(|e| e.label.as_str()).collect();
+    assert_eq!(scripts, ["scripts/main.ts"], "a test is no script");
 }
 
 /// A small package written to a directory of its own, read, and removed.
@@ -1113,4 +1220,144 @@ fn a_call_is_read_alike_however_many_stand_beside_it() {
         let alone = if i + 1 == many.len() { &one[1] } else { &one[0] };
         assert_eq!(h, alone, "call {i} hands what it hands beside one call");
     }
+}
+
+/// The program of `a_value_is_handed_alike_however_many_names_stand_for_it`: `main` binds a chain of eight names, each an
+/// array of the one before written `wide` times (`const a1 = [a0, a0, a0]`), so that the last stands for `first` along
+/// `wide`^8 occurrences, and hands it to `calls` calls, every other one kept under a name of its own.
+fn fanned(wide: usize, calls: usize) -> String {
+    let of = |name: String| vec![name; wide].join(", ");
+    let mut code = String::from(
+        "export class Level {\n  constructor(readonly db: number) {}\n}\n\nexport function show(levels: unknown[]): number {\n  return levels.length;\n}\n\nexport function main(first: Level): void {\n",
+    );
+    code += &format!("  const a0 = [{}];\n", of("first".into()));
+    for k in 1..=8 {
+        code += &format!("  const a{k} = [{}];\n", of(format!("a{}", k - 1)));
+    }
+    for j in 0..calls {
+        code += &if j % 2 == 0 { "  show(a8);\n".to_string() } else { format!("  const r{j} = show(a8);\n") };
+    }
+    code += "}\n";
+    code
+}
+
+/// What a name holds is a fact of its binding, whichever occurrence asks and however often the names it stands for are
+/// written (`mathematics.md`, "One fine plan"): a value is handed once, however many occurrences of the names along the
+/// way stand for it. The subject binds a chain of eight names, once with each name written once in the next and once with
+/// it written four times, and hands the last to many calls between which the body keeps names: every call hands the same
+/// in both. A reader that follows every occurrence anew unfolds 4^8 occurrences at each call and cannot read the second
+/// in reasonable time (#401); one that finds what each name holds once, shared by its occurrences, reads both at once.
+#[test]
+fn a_value_is_handed_alike_however_many_names_stand_for_it() {
+    const CALLS: usize = 400;
+    let hands = |wide: usize| -> Vec<String> {
+        let g = written(
+            &format!("fanned-{wide}"),
+            &[("package.json", "{\n  \"name\": \"fanned\",\n  \"version\": \"0.1.0\"\n}\n"), ("src/main.ts", &fanned(wide, CALLS))],
+        );
+        let main = g.nodes.iter().find(|n| n.id.ends_with(".main") && n.kind == NodeKind::Function).expect("main is read");
+        let shown: Vec<String> = main
+            .sites
+            .iter()
+            .filter(|s| s.to.ends_with(".show"))
+            .map(|s| serde_json::to_string(&(&s.hands, &s.gives)).expect("hands serialize"))
+            .collect();
+        assert_eq!(shown.len(), CALLS, "every call of show is a site of main");
+        shown
+    };
+    let once = hands(1);
+    assert!(once[0].contains("Level"), "the chain hands what it stands for: {}", once[0]);
+    assert_eq!(hands(4), once, "a value is handed once however many occurrences stand for it");
+}
+
+/// The program of `a_call_of_one_name_reads_alike_however_many_stand_beside_it`: `main` leaves unless it is handed a
+/// level, then hands it to `calls` calls of `show`, and reads it itself.
+fn repeated(calls: usize) -> String {
+    let mut code = String::from(
+        "export class Level {\n  constructor(readonly db: number) {}\n}\n\nexport function show(level: Level): number {\n  return level.db;\n}\n\nexport function main(first: Level | undefined, other: Level): number {\n  if (!first) return 0;\n",
+    );
+    code += &"  show(first);\n".repeat(calls);
+    code += "  return first.db + other.db;\n}\n";
+    code
+}
+
+/// A step is read from where it stands in its body (`mathematics.md`, "One fine plan"): a call reads alike, and the body
+/// uses alike what it uses itself, however many calls of the same name stand beside it. The subject's calls stand after a
+/// guard, so each is in the guard's arm, and hand a name the body also reads itself: each of thousands of calls is the
+/// one call of the body that has one, but for its line. A reader that walks the body, or the block a call stands in,
+/// again for every call or every name reads it in time quadratic in the calls (#401); one that finds what the walks look
+/// for once per body or block reads it at once.
+#[test]
+fn a_call_of_one_name_reads_alike_however_many_stand_beside_it() {
+    let read = |calls: usize| -> (Vec<serde_json::Value>, String) {
+        let g = written(
+            &format!("repeated-{calls}"),
+            &[("package.json", "{\n  \"name\": \"repeated\",\n  \"version\": \"0.1.0\"\n}\n"), ("src/main.ts", &repeated(calls))],
+        );
+        let main = g.nodes.iter().find(|n| n.id.ends_with(".main") && n.kind == NodeKind::Function).expect("main is read");
+        let sites: Vec<serde_json::Value> = main
+            .sites
+            .iter()
+            .filter(|s| s.to.ends_with(".show"))
+            .map(|s| {
+                let mut v = serde_json::to_value(s).expect("a site serializes");
+                v.as_object_mut().expect("a site is an object").remove("line");
+                v
+            })
+            .collect();
+        assert_eq!(sites.len(), calls, "every call of show is a site of main");
+        (sites, serde_json::to_string(&main.uses).expect("uses serialize"))
+    };
+    let (one, uses) = read(1);
+    assert!(one[0].get("arms").is_some(), "the call stands in the guard's arm: {}", one[0]);
+    let (many, many_uses) = read(3000);
+    for (i, s) in many.iter().enumerate() {
+        assert_eq!(s, &one[0], "call {i} reads as the one call");
+    }
+    assert_eq!(many_uses, uses, "the body uses alike what it uses itself");
+}
+
+/// What a read gives is used where it reaches the step's codomain, and a call it is handed to is in that codomain,
+/// whatever becomes of what the call gives back (`docs/reference/mathematics.md`, "A route's domain and codomain"). So
+/// `f(x)`, `void f(x)` and `const done = f(x)` with `done` never read are one thing in every language, and a name read only to decide a choice keeps the read a check (#363).
+#[test]
+fn a_read_handed_to_a_call_is_used_whatever_becomes_of_the_calls_value() {
+    let g = written(
+        "usesread",
+        &[(
+            "package.json",
+            r#"{ "name": "usesread" }"#,
+        ), (
+            "src/usesread.ts",
+            "import * as fs from \"node:fs\";\n\nfunction consume(data: string): number {\n  return data.length;\n}\n\nexport function plain(): void {\n  consume(fs.readFileSync(\"in.txt\", \"utf8\"));\n}\n\nexport function discarded(): void {\n  void consume(fs.readFileSync(\"in.txt\", \"utf8\"));\n}\n\nexport function unread(): void {\n  const done = consume(fs.readFileSync(\"in.txt\", \"utf8\"));\n}\n\nexport function decided(): void {\n  const n = consume(fs.readFileSync(\"in.txt\", \"utf8\"));\n  if (n) {\n    return;\n  }\n}\n",
+        )],
+    );
+    let checks = |f: &str| -> Vec<bool> {
+        let n = g.nodes.iter().find(|n| n.id.ends_with(&format!(".{f}"))).unwrap_or_else(|| panic!("no node {f}"));
+        n.touches.iter().filter(|t| t.kind_name().starts_with("disk")).map(|t| t.checks).collect()
+    };
+    assert_eq!(checks("plain"), [false], "the file is handed to a call: the read is used");
+    assert_eq!(checks("discarded"), checks("plain"), "`void f(x)` is `f(x)`");
+    assert_eq!(checks("unread"), checks("plain"), "a name nothing reads is a drop");
+    assert_eq!(checks("decided"), [true], "a name read only in a condition decides a choice");
+}
+
+/// A loop over an array written in place is named by what it binds and how many members the array holds
+/// (`body::loop_label`), as the reader reads it from the code.
+#[test]
+fn a_loop_over_an_array_written_in_place_is_named_by_what_it_binds() {
+    let g = written(
+        "literal-loop",
+        &[
+            ("package.json", r#"{ "name": "stations" }"#),
+            ("tsconfig.json", "{}"),
+            (
+                "src/stations.ts",
+                "export class Station {\n  constructor(public name: string) {}\n}\n\nexport function station(name: string): Station {\n  return new Station(name);\n}\n\nexport function report(s: Station): number {\n  return s.name.length;\n}\n\nexport function all(first: Station, second: Station): number {\n  let n = 0;\n  for (const one of [first, second]) {\n    n += report(one);\n  }\n  return n;\n}\n",
+            ),
+        ],
+    );
+    let all = &g.nodes.iter().find(|n| n.name == "all").expect("all is read").sites;
+    let loop_ = all.iter().position(|s| s.op.starts_with("for ")).unwrap_or_else(|| panic!("the loop is a step: {all:#?}"));
+    assert_eq!(all[loop_].op, atlas_engine::body::loop_label("one", "of", "", Some(2)));
 }

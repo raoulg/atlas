@@ -1,9 +1,11 @@
 # `main` runs `review`, which keeps its report on the shelf `open_shelf` sets up, then sets the drafts up and reads the
 # report from them, where it never kept one. A set-up counts for what runs after it (composition is call order, #359):
 # the drafts are set up after the report is kept, so the write under `keep_report` writes `out/report.txt` alone, and
-# nothing the route runs writes `drafts/report.txt`. The read under `report` runs on the drafts and reads
-# `drafts/report.txt`, which the route takes from beyond it: it stands in the domain, and the closed `review` reads it.
-# `out/report.txt` is only written.
+# nothing the route runs writes `drafts/report.txt`. A set-up counts for a method only where the value the method runs
+# on may be one it built (#368): both set-ups ran before the read, but `report` runs on `drafts`, which `open_drafts`
+# made, so the read under it reads `drafts/report.txt` alone, never what the write left in `out/report.txt`. The route
+# takes `drafts/report.txt` from beyond it: it stands in the domain, and the closed `review` reads it. `out/report.txt` is
+# only written.
 
 route shelf.cli.main
 step main/review
@@ -31,11 +33,6 @@ line main/review/Shelf.report/read > main/review/Shelf.report back              
 line main/review/Shelf.report > main/review back
 line main/review > main back
 line main > Screen own                                                                  # `print(review())`
-# the shelf `open_shelf` set up ran before the read too, and the read counts it, though it runs on the drafts: it reads
-# back inside `review` what the write left
-known #368 extra line main/review/Shelf.keep_report/write > File(out/report.txt) in main/review value
-known #368 extra line File(out/report.txt) in main/review > main/review/Shelf.report/read value
-known #368 extra home File(out/report.txt) in main/review main/review
 
 home Shelf@main/review/open_shelf/Shelf() main/review/open_shelf
 home Shelf·shelf@main/review/open_shelf main/review

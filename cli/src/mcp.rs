@@ -184,7 +184,7 @@ fn tools() -> Value {
         },
         {
             "name": "choices",
-            "description": "The choices a route makes, each where it is made, in call order: what decides each branch as the code writes it (`when not raw.exists()`, a `match` pattern, `otherwise`), and the steps each branch runs with the places they touch; a choice of one branch runs nothing otherwise. Atlas does not say what a condition means: read the conditions and say it, e.g. \"only on the first run\", or \"never true here\". The page draws each choice as a frame titled with its conditions.",
+            "description": "The choices a route makes, each where it is made, in call order: what decides each branch as the code writes it (`when not raw.exists()`, a `match` pattern, `otherwise`; a call through a table looked up by a value, `TABLE[key]()`, is a choice between the table's entries, each branch worded by the value and its key, `when config.activation is \"gelu\"`), and the steps each branch runs with the places they touch; a choice of one branch runs nothing otherwise. Atlas does not say what a condition means: read the conditions and say it, e.g. \"only on the first run\", or \"never true here\". The page draws each choice as a frame titled with its conditions, a table's as `one of · <value>`.",
             "inputSchema": { "type": "object", "properties": {
                 "path": path,
                 "entry": { "type": "string", "description": "The route, by an entry's id or label as `routes` lists them." },
@@ -193,7 +193,7 @@ fn tools() -> Value {
         },
         {
             "name": "view",
-            "description": "Draw a repository's Flowchart in a view of your choosing and write it as a page the human can open: the same picture `atlas-code view` draws, opened where you point. A view is JSON: `route` (an entry id from `routes`), and `open.functions` (the steps that run these functions are opened, as `route` lists them); also `kind` (all routes of one kind: cli, export, script, notebook, route, mcp, make), `part`, `focus` (package ids), `tests` (true: the overview keeps the test code, which it leaves out otherwise), and the opened `parts`, `units` (packages), `families` (type ids) and `places`. Gives the file the page is in.",
+            "description": "Draw a repository's Flowchart in a view of your choosing and write it as a page the human can open: the same picture `atlas-code view` draws, opened where you point. A view is JSON: `route` (an entry id from `routes`), and `open.functions` (the steps that run these functions are opened, as `route` lists them); also `kind` (the overview, or a focus, of only the code the routes of one kind reach: cli, export, script, notebook, route, mcp, make), `part`, `focus` (package ids), `tests` (true: the overview keeps the test code, which it leaves out otherwise), `errors` (true: a route draws the errors its steps hand on as boxes, which it counts on each step otherwise), `receivers` (true: a route draws a line from a value to each step that runs on it, which it says by the step's name otherwise, `model.forward`), and the opened `parts`, `units` (packages), `families` (type ids), `places`, `classes` (class ids, each opened into its constructor and methods), `bases` (`base id@package id`, opened into the classes that keep that base's promise), `flat` (package ids, each grouped by base class instead of by module), `libraries` (library names, each opened in the overview into the types the program uses of it; `~` opens the program's own types that cross between packages) and `places` (a kind of the world the overview draws closed, `w:~Disk~in` for the disk read, `w:~Disk~out` for the disk written). A focus on a module draws what its functions take on the left and what they give on the right. Gives the file the page is in.",
             "inputSchema": { "type": "object", "properties": {
                 "path": path,
                 "view": { "type": "object", "description": "The view, e.g. `{\"route\": \"pkg.cli.build\", \"open\": {\"functions\": [\"pkg.build.Pipeline.run\"]}}`." },
@@ -513,11 +513,9 @@ fn call(name: &str, args: &Value, opts: &Options) -> Option<Result<String, Strin
 
 /// The sight a tool is handed as its `view`, if any.
 fn sight(args: &Value) -> Result<Option<Sight>, String> {
-    args.get("view")
-        .filter(|v| !v.is_null())
-        .map(Sight::deserialize)
-        .transpose()
-        .map_err(|e| format!("`view` is not a view the page knows ({e}): it holds `route`, `kind`, `part`, `focus`, `tests` and `open`."))
+    args.get("view").filter(|v| !v.is_null()).map(Sight::deserialize).transpose().map_err(|e| {
+        format!("`view` is not a view the page knows ({e}): it holds `route`, `kind`, `part`, `focus`, `tests`, `errors`, `receivers` and `open`.")
+    })
 }
 
 /// The page of the repository at `path` in `sight`, written to `out`, else to `.atlas/<project>.view.html`
@@ -528,7 +526,8 @@ fn view(path: Option<&str>, sight: Option<Sight>, out: Option<&str>, opts: &Opti
     let findings = read.findings();
     let (graph, compared) = read.drawn();
     let flow = atlas_engine::flow::of(&graph);
-    let opens = crate::page::Opens { route: None, sight, served: None };
+    let route = if sight.is_none() { crate::page::folder_route(&graph, &repo) } else { None };
+    let opens = crate::page::Opens { route, sight, served: None };
     let html =
         crate::page::Html::of(&graph, &flow, &findings, compared.as_ref(), &opens).map_err(|e| format!("Could not draw the page: {e}"))?;
     let home = clone.is_none().then_some(repo.as_path());

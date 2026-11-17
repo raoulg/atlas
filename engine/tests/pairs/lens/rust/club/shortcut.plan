@@ -75,3 +75,5 @@ line Register()/Register.names/query_map > _·rows@Register()/Register.names/que
 line _·rows@Register()/Register.names/query_map > Register()/Register.names value   # names returns what `collect` makes of them
 home _·select@Register()/Register.names/prepare Register()/Register.names
 home _·rows@Register()/Register.names/query_map Register()/Register.names
+home _@Register()/Register.names#2 Register()
+line Register()/Register.names > _@Register()/Register.names#2 value     # what it gives its caller, of no type of the code's

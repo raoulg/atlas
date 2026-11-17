@@ -1,0 +1,11 @@
+{
+  "name": "shelf",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "bin": { "shelf": "./src/cli.ts" },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "typescript": "^5.7.2"
+  }
+}

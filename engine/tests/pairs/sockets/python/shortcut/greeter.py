@@ -31,3 +31,5 @@ def greeting(name: bytes) -> str:
 def linger() -> None:
     """Wait a moment, so that the client has read the greeting before the connection is dropped."""
     time.sleep(1)
+
+__all__ = ["main"]

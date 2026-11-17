@@ -13,20 +13,36 @@ oracle and the quotient must find nothing, and every closed family must open int
 each value it stands for, as the page draws it (the walk's rule), and every class of the route's fiber, picked as the set
 of its values, must leave no closed box cut in two once the families it cuts are open, and every family opened must carry
 the light its closed box had to its frame and kinds (#296), and every box of files folded into a directory must
-open, in one step, to the files it held or to directories below it, leaving every other file where it stood. They are asked again with the plan cut as a large
+open, in one step, to the files it held or to directories below it, leaving every other file where it stood. The picture
+the model hands the page, its siblings that draw alike merged into one box (`siblings`), must have both ends of every line
+among its boxes, and merge only siblings that draw the same lines, calls among them (#412). And every place on the disk
+that lies in another the picture draws (`lies_in`, mathematics.md "Paths as terms") must stand in the outermost of them
+that is closed, its box standing for it, or, with them all open, in the frame of the innermost, with the folders and
+patterns closed, each opened alone and all opened, in routes and in the overview (the pair `meets`; #381), and no group of the
+places by the type that holds them may hold such a place without the outermost place it lies in (`held-in-a-folder`). They are asked again with the plan cut as a large
 program's is cut, at the budgets 1, 2 and 3 (`ATLAS_FINE_BUDGET`), where a step beyond the cut is the image of its body
 and each of its lines counts the fine lines its body draws there, and where each step beyond the cut, opened as the page
 opens it and planned anew, must refine the picture it was cut in; the facts are asked of the finest plan only. The
 overview of every program is asked the same of its own fine plan, the functions with their own arrows, a type as one
-place and the calls between functions. Each function's arrow there is its morphism: it takes every type of data the
+place and the calls between functions. Each function's arrow there is its morphism (a declared method, a function with no body, has none): it takes every type of data the
 function takes and gives every one it makes, whether or not another function of the code makes or takes it. For every
 set of open packages and parts, each line counts the fine lines it
 stands for, a type internal to a closed package draws none, each call goes between the blocks of its ends, opening one
-more box refines the picture, and the picture is a function of the set of open boxes (`overview-packages` holds a type
+more box refines the picture, the picture is a function of the set of open boxes, and the picture the page draws, its
+siblings merged, has both ends of every line and every call among its boxes (`overview-packages` holds a type
 internal to a package, one a package makes, takes and hands to another, and one a function gives back that no
 function takes). The same is asked of the overview without
 the test code, whose fine plan must be the fiber of the one with it, taken on that plan, for every set of open packages
 (`overview-tests` holds, in each language, a store with its tests beside it and a package of tests alone).
+A focus, the overview with some packages singled out, is asked the same of its own plan, the fiber of the overview's
+over the packages in focus with the rest of the code around it, for every set of packages in focus and every set of
+open boxes; besides, each package of the focus drawn closed has the border it has in the overview, and each type
+stands where the overview puts it (`focus-shapes` holds four ranks of one tensor type, each named otherwise by the
+package that takes it, and a class one package makes and another takes). In both, a library with two types or
+more in the plan is a box of its own: open, every box of its types stands in its frame, and the frame at the one home
+of its types; closed, it is one box `L · N types`, the image of the open picture under the quotient that merges its
+boxes, every other box where it was (`library-frame` holds torch tensors in four ranks, a bare `Tensor` and one
+numpy array, a library of one type; `library-frame-rust` two ndarray arrays).
 
 ```bash
 cargo test -p atlas-engine --test plans -- --nocapture                              # every program
@@ -98,10 +114,13 @@ A fact Atlas gets wrong is written down as it should be and marked with the issu
 known #101 line Store·store@run/Store() > run value                # a fact that does not hold
 known #134 extra line main/remove > main back                     # a fact Atlas has and should not
 known #N fault Page@Doc()/Doc() stands in                           # a fault of the pictures, matched as part of its text
+known #438 kinds all export routes: news.read.headlines draws       # a fault of a view, by the law that finds it
 ```
 
 The test reports each mark and passes. It fails once the fact holds, or the extra fact or the fault is gone, so the mark
-goes with the fix. A `known #N fault` written before any `route` holds for every route of the program.
+goes with the fix. A `known #N fault` written before any `route` holds for every route of the program. A fault of the
+program's views is marked by the law that finds it (`overview`, `focus`, `kinds`, `views` or `ends`) and holds wherever it is
+written; a file with no route holds only such marks.
 
 ## The programs here
 
@@ -143,6 +162,9 @@ smallest that showed one law:
 | `folds-two-levels` | files folded into directories nested in one another that hold the same files (`data/`, `data/*/`) are one box: opening it shows the files in one step (#227) |
 | `leaf-binds-a-local` | a name a body binds by an expression no step makes is the body's own value, whatever the expression reads: a leaf that makes its mask from the samples takes nothing from beyond, one that reads the module's floor takes it from beyond (#318) |
 | `door-tensor-pad` | a value a step planned by itself takes by a name its caller holds is the caller's: a cut door names the one value of its kind from beyond as its opened picture does, by its type alone (#319) |
-| `setup-in-a-loop` | what ran before a step in a loop is every call of the loop: a shelf a later call opens is the one an earlier call keeps its report on in the next round (#329) |
+| `setup-in-a-loop` | what ran before a step in a loop is every call of the loop: a shelf a later call opens is the one an earlier call keeps its report on in the next round (#329), and the call is handed it: a name the loop rebinds after a call holds, in the next round, what the rebinding made (#354); in Python, Rust and TypeScript |
 | `setup-in-an-arm` | what ran before a step in an arm is what ran before its choice and before it in its arm: a set-up in an arm counts for a call in a choice inside that arm (#329), and that choice is a frame inside the arm, never another arm beside it (#357); in Python, Rust and TypeScript |
 | `changed-in-an-arm` | a name the body binds by its own code holds the body's value, in its frame, for every step after the binding: a change in one arm makes it anew at the choice's moment, which the step after the choice takes, and a change in a loop takes it, never the latest of its kind the loop gives; in Python, Rust and TypeScript (#366) |
+| `returned-shape` | what a body returns as a call gives it is compared as its language reads the type, any shape of the same array; every other value its steps make keeps its shape: a lookup's result, named under another shape (`annotated`), named anew in an arm (`rebound`) or handed on through a library's operation (`cast`), or handed straight into the returned call (`narrowed`), is no part of what the body gives back, nor is what a function the body defines returns (`hooked`), and the cut plans keep the law of refinement (#456) |
+| `siblings-call` | siblings are one box only where they draw the same lines, calls among them: in the overview, `total` and `report` call `price` and `tax` and are called by `main`, and are one box, as `price` and `tax` are; `stamp` takes and shows what they do but calls nothing, `discount` takes what `price` takes but `main` calls it, and each stands on its own; every call ends at the box its callee joined (#412) |
+| `runs-on-its-fields` | a method reaches the instance it runs on only through `self`: every line its body draws from the encoder, its own code reading a field and a call on another, is its running on it, said on the step closed and on its frame opened, and opening it draws no line from the encoder the closed step did not (#461, #482) |

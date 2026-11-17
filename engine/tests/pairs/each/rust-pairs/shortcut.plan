@@ -34,3 +34,5 @@ home Where·places@drawn/collect drawn
 home _·out@drawn/push drawn
 
 side entry left
+home _@drawn drawn
+line drawn > _@drawn value                                               # what it gives its caller, of no type of the code's

@@ -92,3 +92,5 @@ side Disk(Store.path) both
 # What Atlas gets wrong here, each by the issue of its cause:
 # K: a value handed through a field reaches no step inside: `write_rows(self.path, rows)` hands `self` (#121, decision
 #    1), and the helper takes no Store
+home _@Store()/Store.get Store()
+line Store()/Store.get > _@Store()/Store.get value                       # what it gives its caller, of no type of the code's

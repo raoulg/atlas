@@ -2191,3 +2191,35 @@ fn a_change_of_a_part_changes_the_whole() {
 fn places_a_path_through_helpers_is_the_path_in_place() {
     common::a_path_through_helpers_is_the_path_in_place("typescript");
 }
+
+/// The ends pair: `loudest` gives back a `number` and ends at it, `Level` is an interface whose values are built from their
+/// fields, and ends at what it builds; the shortcut prints the loudest level and ends at the screen (#439).
+#[test]
+fn a_route_ends_at_what_it_gives_back() {
+    common::a_route_ends_at_what_it_gives_back("typescript", "number");
+}
+
+/// The programs pair (#472): a script beside `src/` that imports from it, run with a TypeScript runner. The clean side
+/// declares it: `package.json` names the command that runs it, and the tsconfig compiles it (`include` is `**/*` when it
+/// is not given). So it is read, its module is the CLI entry `summarize`, and its route runs `load` and `summarize` from
+/// `src/lib` and writes `summary.txt`. The shortcut runs it by hand and keeps it out of what the compiler checks
+/// (`include: ["src"]`): no declaration of the package names it, so it is not read, and the reading says so, by its
+/// folder. On both sides the Pages functions the tsconfig excludes are not read, and said.
+#[test]
+fn a_script_the_package_declares_is_read_and_one_it_does_not_is_said() {
+    let p = common::pair("programs/typescript");
+    let (clean, shortcut) = (&p.clean, &p.shortcut);
+    let entry = node(clean, "scripts.summarize").entry.clone().expect("the script is an entry");
+    assert_eq!((entry.kind, entry.label.as_str()), (atlas_engine::EntryKind::Cli, "summarize"));
+    let (runs, _) = route_runs(clean, "digest.scripts.summarize");
+    assert!(runs.contains("digest.lib.feed.load") && runs.contains("digest.lib.feed.summarize"), "{runs:?}");
+    let written: Vec<String> = node(clean, "scripts.summarize").touches.iter().map(|t| t.artifact.clone()).collect();
+    assert!(written.iter().any(|w| w.contains("summary.txt")), "{written:?}");
+    assert!(shortcut.node("digest.scripts.summarize").is_none(), "the script no declaration names is not read");
+    assert!(shortcut.node("digest.lib.feed.load").is_some(), "the code it runs is");
+    let folders = |g: &Graph| -> BTreeSet<String> {
+        g.stats.unread.iter().map(|(f, n)| format!("{} {n}", f.rsplit('/').next().unwrap_or(f))).collect()
+    };
+    assert_eq!(folders(clean), BTreeSet::from(["functions 1".to_string()]));
+    assert_eq!(folders(shortcut), BTreeSet::from(["functions 1".to_string(), "scripts 1".to_string()]));
+}

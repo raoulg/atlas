@@ -86,6 +86,17 @@
     base.replace(/\/?$/, '/') + path.split('/').map(encodeURIComponent).join('/');
 
   // a path relative to the file `from`, from the workspace's root
+  // Where a traced file's reading starts. A file that is run (a script, a notebook, a command line, a route, a test) opens
+  // the route of the entry point it defines. A module of a library is run by nobody: it opens as the focus on itself, what
+  // its functions take on the left and what they give on the right. A file that defines no function is pointed at.
+  function reading(facts) {
+    const run = facts.find((fact) => fact.entry && fact.entry !== 'export');
+    if (run) return {view: {route: run.id}};
+    const home = facts.find((fact) => fact.kind === 'module');
+    if (home && facts.some((fact) => fact.kind === 'function' || fact.kind === 'method')) return {view: {focus: [home.id]}};
+    return {at: (home || facts[0]).id};
+  }
+
   function relative(from, target) {
     const parts = from.split('/').slice(0, -1);
     for (const part of target.split('#')[0].split('/')) {
@@ -227,10 +238,6 @@
       if (focused) list.querySelector(`[data-path="${CSS.escape(focused)}"]`)?.focus();
     }
 
-    // where a traced file's reading starts: the route of the entry point it defines (a notebook or a
-    // script is one itself, a command line is a function in it), as a file named to `atlas-code view` opens;
-    // else its module's box, else the first thing defined in it
-    const reading = (facts) => facts.find((fact) => fact.entry) || facts.find((fact) => fact.kind === 'module') || facts[0];
 
     function choose(row, preview = false) {
       if (row.dir) {
@@ -244,8 +251,8 @@
       selected = row.path;
       draw();
       const start = reading(facts);
-      if (start.entry) bridge.openFullView({route: start.id});
-      else bridge.pointAt(start.id);
+      if (start.view) bridge.openFullView(start.view);
+      else bridge.pointAt(start.at);
     }
 
     // arrows move through the tree, right and left open and close a folder, Enter opens
@@ -534,6 +541,6 @@
     return {load, clear, shown, openFile, setDock, factFile: (id) => factFile.get(id) || factFile.get(factOf(id))};
   }
 
-  root.AtlasFiles = {mount, tree, factOf, relative, highlightedLines, previewUrl, language, SIDES, sideOf};
+  root.AtlasFiles = {mount, tree, factOf, reading, relative, highlightedLines, previewUrl, language, SIDES, sideOf};
   if (typeof module !== 'undefined' && module.exports) module.exports = root.AtlasFiles;
 })(typeof window !== 'undefined' ? window : globalThis);

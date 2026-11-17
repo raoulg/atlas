@@ -2,7 +2,8 @@
 //! per directory its code is read from, and a library both read from one directory is one
 //! (`mathematics.md`, Coproducts; #372). The repository is written to a directory of its own, with
 //! the crates its parts depend on where Cargo keeps them: `orders` locks `notekit` 0.1.0, `billing`
-//! locks 0.2.0, and both lock `common` 1.0.0. Nothing is fetched.
+//! locks 0.2.0, and both lock `common` 1.0.0, each in a lock of its own or as two members of one
+//! workspace in its one lock (#378). Nothing is fetched.
 
 use std::collections::BTreeSet;
 use std::path::Path;
@@ -51,10 +52,30 @@ fn git(dir: &Path, args: &[&str]) {
     assert!(ok, "git {args:?}");
 }
 
+/// The workspace whose members are `orders` and `billing`, with the one lock that pins each its own
+/// version of `notekit` and both `common` 1.0.0 (#378): its manifest and its lock.
+fn workspace() -> Vec<(String, String)> {
+    let source = "source = \"registry+https://example.org/index\"";
+    let member = |name: &str, version: &str| {
+        format!("[[package]]\nname = \"{name}\"\nversion = \"0.1.0\"\ndependencies = [\n \"common\",\n \"notekit {version}\",\n]\n\n")
+    };
+    let crate_of = |name: &str, version: &str| format!("[[package]]\nname = \"{name}\"\nversion = \"{version}\"\n{source}\n\n");
+    let lock = format!(
+        "version = 4\n\n{}{}{}{}{}",
+        member("billing", "0.2.0"),
+        crate_of("common", "1.0.0"),
+        crate_of("notekit", "0.1.0"),
+        crate_of("notekit", "0.2.0"),
+        member("orders", "0.1.0")
+    );
+    vec![("Cargo.toml".into(), "[workspace]\nmembers = [\"orders\", \"billing\"]\nresolver = \"2\"\n".into()), ("Cargo.lock".into(), lock)]
+}
+
 /// `then` run on the repository `shop`, committed, with Cargo's home beside it as this process's
-/// `CARGO_HOME`; written to a directory of `name`'s own and removed. One runs at a time, since the
-/// process has one `CARGO_HOME`.
-fn in_shop<T>(name: &str, then: impl FnOnce(&Path) -> T) -> T {
+/// `CARGO_HOME`; written to a directory of `name`'s own and removed. Its crates are two parts, each
+/// with its lock, or the two members of one workspace (`one`). One runs at a time, since the process
+/// has one `CARGO_HOME`.
+fn in_shop<T>(name: &str, one: bool, then: impl FnOnce(&Path) -> T) -> T {
     static ONE: Mutex<()> = Mutex::new(());
     let _one = ONE.lock().unwrap_or_else(|e| e.into_inner());
     let dir = std::env::temp_dir().join(format!("atlas-versions-{name}-{}", std::process::id()));
@@ -65,8 +86,12 @@ fn in_shop<T>(name: &str, then: impl FnOnce(&Path) -> T) -> T {
         files.push((format!("{REGISTRY}/{crate_name}-{version}/Cargo.toml"), manifest));
         files.push((format!("{REGISTRY}/{crate_name}-{version}/src/lib.rs"), lib.to_string()));
     }
-    files.extend(part("orders", "0.1.0", "orders.txt").into_iter().map(|(p, t)| (format!("shop/{p}"), t)));
-    files.extend(part("billing", "0.2.0", "bills.txt").into_iter().map(|(p, t)| (format!("shop/{p}"), t)));
+    let mut shop: Vec<(String, String)> = [part("orders", "0.1.0", "orders.txt"), part("billing", "0.2.0", "bills.txt")].concat();
+    if one {
+        shop.retain(|(p, _)| !p.ends_with("Cargo.lock"));
+        shop.extend(workspace());
+    }
+    files.extend(shop.into_iter().map(|(p, t)| (format!("shop/{p}"), t)));
     for (path, text) in &files {
         let file = dir.join(path);
         std::fs::create_dir_all(file.parent().unwrap()).unwrap();
@@ -93,10 +118,18 @@ fn calls(g: &Graph, from: &str, written: &str) -> String {
 /// Law: an id names one node, so the merge of the parts holds no id twice. A library the parts read
 /// from two directories (two versions Cargo keeps apart) is two libraries, each named after its
 /// version, and each part's route runs its own; a library both read from one directory keeps its
-/// name and is one node both parts call.
+/// name and is one node both parts call. So also where the two crates are the members of one
+/// workspace, one part, whose one lock pins each crate its version (#378).
 #[test]
 fn two_versions_are_two_libraries() {
-    let g = in_shop("merged", |shop| parts::analyze_repo(&[shop.to_path_buf()], &Options::default())).expect("the parts parse");
+    for one in [false, true] {
+        let g = in_shop("merged", one, |shop| parts::analyze_repo(&[shop.to_path_buf()], &Options::default())).expect("the parts parse");
+        assert_eq!(g.parts.len(), 2, "{one}: two crates");
+        two_libraries(&g);
+    }
+}
+
+fn two_libraries(g: &Graph) {
     let ids: Vec<&str> = g.nodes.iter().map(|n| n.id.as_str()).collect();
     let unique: BTreeSet<&str> = ids.iter().copied().collect();
     assert_eq!(
@@ -106,12 +139,12 @@ fn two_versions_are_two_libraries() {
         ids.iter().filter(|i| ids.iter().filter(|j| j == i).count() > 1).collect::<Vec<_>>()
     );
     for (part, version) in [("orders", "0.1.0"), ("billing", "0.2.0")] {
-        let save = calls(&g, &format!("{part}.main"), ".save");
+        let save = calls(g, &format!("{part}.main"), ".save");
         assert_eq!(save, format!("notekit-{}.save", version.replace('.', "_")), "{part} runs the version its lock pins");
         let read = g.node(&save).unwrap();
         assert!(read.library && read.file.contains(&format!("notekit-{version}")), "{}", read.file);
         assert_eq!(g.libraries[&format!("notekit-{}", version.replace('.', "_"))].version, version);
-        assert_eq!(calls(&g, &format!("{part}.main"), ".trim"), "common.trim", "one directory, one library under its own name");
+        assert_eq!(calls(g, &format!("{part}.main"), ".trim"), "common.trim", "one directory, one library under its own name");
     }
     assert!(g.node("notekit.save").is_none() && g.nodes.iter().filter(|n| n.id == "common.trim").count() == 1);
     // each version does what its code does: 0.2.0 renames its file in, 0.1.0 does not
@@ -123,7 +156,7 @@ fn two_versions_are_two_libraries() {
 /// nothing, and neither does the tree at that revision. Both readings are made and compared.
 #[test]
 fn a_revision_against_itself_changes_nothing() {
-    let (same, tree) = in_shop("changes", |shop| {
+    let (same, tree) = in_shop("changes", false, |shop| {
         (changes::compare(shop, "HEAD", Some("HEAD"), &Options::default()), changes::since(shop, "HEAD", &Options::default()))
     });
     for c in [same.expect("HEAD against HEAD"), tree.expect("the tree against HEAD")] {

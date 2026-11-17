@@ -95,6 +95,8 @@ pub enum Declared {
 /// The nodes and edges found so far, and the tables that resolve names into them.
 #[derive(Default)]
 pub struct GraphBuilder {
+    /// Completion has read which functions are doors.
+    pub doors_read: bool,
     pub nodes: IndexMap<String, Node>,
     pub edges: Vec<Edge>,
     /// The edges by source, target and kind, and for a change by the input it changes.
@@ -119,6 +121,9 @@ pub struct GraphBuilder {
     pub linked: [usize; 2],
     /// The libraries read as code, by the id of each one's root.
     pub libraries: BTreeMap<String, crate::model::Dependency>,
+    /// The files of the language the reader found in the part and did not read, by the folder each
+    /// lies in (`Stats::unread`).
+    pub unread: BTreeMap<String, usize>,
 }
 
 impl GraphBuilder {
@@ -228,8 +233,28 @@ impl GraphBuilder {
     /// A name a package exports, as a route into it: a function or a class, by its label, unless
     /// it is already a route of another kind.
     pub fn export(&mut self, id: &str, label: String) {
-        if let Some(n) = self.nodes.get_mut(id).filter(|n| matches!(n.kind, NodeKind::Function | NodeKind::Class) && n.entry.is_none()) {
-            n.entry = Some(crate::model::Entry::new(crate::model::EntryKind::Export, label));
+        if self.nodes.get(id).is_some_and(|n| matches!(n.kind, NodeKind::Function | NodeKind::Class)) {
+            self.enter(id, crate::model::Entry::new(crate::model::EntryKind::Export, label));
+        }
+    }
+
+    /// Make `entry` a route into the node `id`. The kind a node ends as does not depend on the order
+    /// the marks come in: a door yields to every other kind and leaves the node exported, and any
+    /// other kind stays where it is once it is set. Doors are marked before completion reads them;
+    /// a door marked after is a fault of the reader.
+    pub fn enter(&mut self, id: &str, entry: crate::model::Entry) {
+        use crate::model::EntryKind;
+        let door = entry.kind == EntryKind::Export;
+        debug_assert!(!(self.doors_read && door), "a door marked after completion read the doors: {id}");
+        let Some(n) = self.nodes.get_mut(id) else { return };
+        match n.entry.as_ref().map(|e| e.kind) {
+            None => n.entry = Some(entry),
+            Some(EntryKind::Export) if !door => {
+                n.exported = true;
+                n.entry = Some(entry);
+            }
+            Some(EntryKind::Export) => {}
+            Some(_) => n.exported |= door,
         }
     }
 
@@ -397,6 +422,7 @@ impl GraphBuilder {
                 unresolved_calls: self.unresolved_by,
                 linked_bodies: self.linked.iter().sum(),
                 linked_library_bodies: self.linked[1],
+                unread: self.unread,
                 ..Default::default()
             },
             ..Default::default()
@@ -705,7 +731,8 @@ fn caught_by(class: &str) -> &str {
 /// does: what the callee's body ends with uncaught, as a `raise` propagates. A body ends with what it
 /// raises, by the class of the error it builds, and with what its calls hand on, each where no handler
 /// around it catches it. A handler catches the classes it names and those below them, and one that
-/// names none catches whatever is raised. A call that `?` hands on fails as its reader said (`Steps`).
+/// names none catches whatever is raised. A function defined under others (`Node::guards`) ends with what they end
+/// with too. A call that `?` hands on fails as its reader said (`Steps`).
 fn settle_fails(nodes: &mut IndexMap<String, Node>, edges: &[Edge]) {
     let mut bases: HashMap<&str, Vec<&str>> = HashMap::new();
     for e in edges.iter().filter(|e| e.kind == EdgeKind::Inherits) {
@@ -745,6 +772,12 @@ fn settle_fails(nodes: &mut IndexMap<String, Node>, edges: &[Edge]) {
         for n in nodes.values() {
             let mut out: Vec<String> = ends.get(&n.id).cloned().unwrap_or_default();
             let before = out.len();
+            // a function runs inside what it is defined under, and ends with what that ends with
+            for e in n.guards.iter().flat_map(|g| ends.get(g).into_iter().flatten()) {
+                if !out.contains(e) {
+                    out.push(e.clone());
+                }
+            }
             for s in &n.sites {
                 let raised = s.gives.iter().filter(|g| s.raises && !caught(&s.caught, &g.ty)).map(|g| g.ty.clone());
                 for e in raised.chain(handed(s, &ends)) {

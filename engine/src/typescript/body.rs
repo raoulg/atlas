@@ -1,7 +1,7 @@
 //! A function's body as TypeScript reads it: its steps in the order they run, what its calls touch,
 //! the values its names hold and what made them, and the syntax of its choices and comparisons.
 
-use std::cell::OnceCell;
+use std::cell::{OnceCell, RefCell};
 use std::collections::{HashMap, HashSet};
 
 use indexmap::IndexMap;
@@ -13,8 +13,8 @@ use super::module::{
 };
 use super::paths::{self, Arg, At, Eval};
 use crate::body::{
-    changed_binding, changed_through, element_written, BindSyntax, Bindings, Crosses, Holders, Lookups, Range, Step, Steps, UseSyntax,
-    Written,
+    changed_binding, changed_through, element_written, BindSyntax, Bindings, Crosses, Holders, Kept, Lookups, Range, Step, Steps,
+    UseSyntax, Written,
 };
 use crate::builder::{foreign_type, GraphBuilder};
 use crate::effects::{self, Crossing};
@@ -570,6 +570,9 @@ pub(super) struct Body<'a, 't> {
     pub(super) read: Read<'t>,
     /// The bindings the body's calls change in place (`changed_bindings`), found once the body is set up.
     in_place: OnceCell<HashSet<(String, Option<usize>)>>,
+    /// The values each name holds where it stands, by the name's node and the depth it is followed at (`held`), for the
+    /// names the steps have kept so far, by how many they are.
+    holds: RefCell<(usize, HashMap<(usize, u32), Vec<Held>>)>,
 }
 
 const STRINGS: &[&str] = &["string", "template_string"];
@@ -615,6 +618,7 @@ impl<'a, 't> Body<'a, 't> {
             keeps_command_line: HashSet::new(),
             read: Read::default(),
             in_place: OnceCell::new(),
+            holds: RefCell::new((0, HashMap::new())),
         };
         b.typed(n);
         for a in walk(body, &["assignment_expression"]) {
@@ -1260,7 +1264,13 @@ impl<'a, 't> Body<'a, 't> {
             })
             .collect();
         // the step stands where what it goes over is written: a call there hands it what it gives, the loop's body does not
-        steps.each(right, &format!("for {} of {}", text(left, self.src), text(right, self.src)), hands, gives);
+        // an array written in place (`[a, b]`) is named by what the loop binds and how many it holds
+        let constant = |e: &TsNode| matches!(e.kind(), "string" | "number" | "true" | "false" | "null");
+        let members = (right.kind() == "array" && !named_children(right).iter().any(|e| e.kind() == "spread_element"))
+            .then(|| named_children(right).into_iter().filter(|e| e.kind() != "comment").collect::<Vec<_>>())
+            .filter(|m| !crate::body::constants_shown(text(right, self.src), m.iter().all(constant)))
+            .map(|m| m.len());
+        steps.each(right, &crate::body::loop_label(text(left, self.src), "of", text(right, self.src), members), hands, gives);
     }
 
     /// What a call is handed: the value it is called on, its arguments, an element's attributes. A
@@ -1273,12 +1283,12 @@ impl<'a, 't> Body<'a, 't> {
     /// `this.rows.push(e)`); a method called on `this` itself runs on it, which its step says
     /// (`on_receiver`), and is handed nothing more. Of a name written twice, the occurrence outside a
     /// call written inside counts, since a call that is a step of its own takes its names itself.
-    fn hands(&self, parts: &[Option<TsNode>], kept: &HashSet<String>) -> Vec<Held> {
+    fn hands(&self, parts: &[Option<TsNode>], kept: &Kept) -> Vec<Held> {
         self.hands_on(None, parts, kept)
     }
 
     /// What a method call is handed: the value it is called `on`, and its arguments (`hands`).
-    fn hands_on(&self, on: Option<TsNode>, parts: &[Option<TsNode>], kept: &HashSet<String>) -> Vec<Held> {
+    fn hands_on(&self, on: Option<TsNode>, parts: &[Option<TsNode>], kept: &Kept) -> Vec<Held> {
         let mut out: Vec<(Held, bool)> = vec![];
         for (p, receiver) in on.map(|o| (o, true)).into_iter().chain(parts.iter().flatten().map(|p| (*p, false))) {
             for i in self.names_of(p) {
@@ -1333,8 +1343,37 @@ impl<'a, 't> Body<'a, 't> {
         declared.is_some_and(|d| d.id() != i.id() && self.locals.which(d, self.src) == self.locals.which(i, self.src))
     }
 
-    /// The values the name `i` holds where it stands (`hands`).
-    fn held(&self, i: TsNode, kept: &HashSet<String>, depth: u32, out: &mut Vec<Held>) {
+    /// The values the name `i` holds where it stands (`hands`), each once. They are a function of the name's binding, the
+    /// depth it is followed at and the names the steps have kept (`kept`), the body being set up whole, so each is found
+    /// once and shared by every occurrence and every call that follows the name there: a name that stands for another
+    /// twice along eight bindings is followed along eight bindings, not along 2^8 occurrences. `kept` changes only by
+    /// being given values (`Steps::kept`), so its version says which of its states asks.
+    fn held(&self, i: TsNode, kept: &Kept, depth: u32, out: &mut Vec<Held>) {
+        let key = (i.id(), depth);
+        {
+            let mut holds = self.holds.borrow_mut();
+            if holds.0 != kept.version() {
+                *holds = (kept.version(), HashMap::new());
+            }
+            if let Some(found) = holds.1.get(&key) {
+                out.extend(found.iter().cloned());
+                return;
+            }
+        }
+        let mut found = vec![];
+        self.held_anew(i, kept, depth, &mut found);
+        let mut once: Vec<Held> = Vec::with_capacity(found.len());
+        for h in found {
+            if !once.iter().any(|o| same(o, &h)) {
+                once.push(h);
+            }
+        }
+        out.extend(once.iter().cloned());
+        self.holds.borrow_mut().1.insert(key, once);
+    }
+
+    /// The values the name `i` holds where it stands, as `held` finds them, the names it follows asked of `held`.
+    fn held_anew(&self, i: TsNode, kept: &Kept, depth: u32, out: &mut Vec<Held>) {
         let name = text(i, self.src);
         if i.kind() == "this" {
             out.extend(self.cls.clone().map(|k| Held::new(k, "")));
@@ -1374,8 +1413,8 @@ impl<'a, 't> Body<'a, 't> {
         if let Some(ty) = self.type_of(i) {
             return out.push(Held::new(ty, name));
         }
-        if kept.contains(name) {
-            return out.push(Held::new("", name));
+        if let Some(held) = kept.value_of(name, false) {
+            return out.extend(held);
         }
         // a name a step changes in place holds a value of its own (`changed_in_place`), of what the values it is bound to
         // hold where they all hold one type, as a container holds what is put into it (`Level` of `const rows =
@@ -1471,7 +1510,7 @@ impl<'a, 't> Body<'a, 't> {
     /// own code computes of names, whatever type the name has (`const gap = first.db - second.db`, `const both: Level[] =
     /// [first, second]`), and no step made it anew, the names those values are computed of (`body::stands_for`); none for any
     /// other name.
-    fn stands(&self, i: TsNode, kept: &HashSet<String>) -> Vec<TsNode<'t>> {
+    fn stands(&self, i: TsNode, kept: &Kept) -> Vec<TsNode<'t>> {
         let (values, element) = self.bound_to(i);
         if element || values.is_empty() || kept.contains(text(i, self.src)) || self.changed_in_place(i) {
             return vec![];
@@ -1675,6 +1714,10 @@ impl<'a, 't> Body<'a, 't> {
         if parts.first().map_or(true, |p| !p.starts_with(|ch: char| ch.is_uppercase()) && parts.len() == 1) {
             return;
         }
+        let name = c.child_by_field_name("name").filter(|n| n.kind() == "identifier");
+        if name.is_some_and(|n| self.locals.bound(n, self.src)) {
+            return;
+        }
         if let Some(r) = self.resolve(&parts).filter(|r| self.own(r)) {
             let kind = if self.store.nodes[&r].kind == NodeKind::Class { EdgeKind::Instantiates } else { EdgeKind::Calls };
             let attrs: Vec<Option<TsNode>> = walk(c, &["jsx_attribute"]).into_iter().map(Some).collect();
@@ -1690,7 +1733,8 @@ impl<'a, 't> Body<'a, 't> {
             _ => false,
         });
         let fun = |r: &String| matches!(self.store.nodes[r].kind, NodeKind::Function | NodeKind::Method);
-        if let Some(r) = self.resolve(&[text(c, self.src).to_string()]).filter(|r| handed && self.own(r) && fun(r)) {
+        let bound = steps.kept.value_of(text(c, self.src), self.locals.bound(c, self.src)).is_some();
+        if let Some(r) = self.resolve(&[text(c, self.src).to_string()]).filter(|r| handed && !bound && self.own(r) && fun(r)) {
             let each = self.per_element(c, &steps.kept);
             steps.handed(c, c, &r, EdgeKind::Calls, each);
         }
@@ -1699,7 +1743,7 @@ impl<'a, 't> Body<'a, 't> {
     /// What a method of an array that runs the function `f` it is handed first on each element of the
     /// array hands that function (`knowledge::TYPESCRIPT_EACH`): the values the array is a part of, and
     /// the parameter the element fills (`lines.map(parseLine)`).
-    fn per_element(&self, f: TsNode<'t>, kept: &HashSet<String>) -> Option<(Vec<Held>, Slot)> {
+    fn per_element(&self, f: TsNode<'t>, kept: &Kept) -> Option<(Vec<Held>, Slot)> {
         let args = f.parent().filter(|p| p.kind() == "arguments")?;
         if named_children(args).into_iter().find(|x| x.kind() != "comment").map(|x| x.id()) != Some(f.id()) {
             return None;
@@ -1749,6 +1793,9 @@ impl<'a, 't> Body<'a, 't> {
             .flatten();
         if let Some(t) = method.and_then(|(o, name)| self.store.method_of(&self.receiver(o)?, name)) {
             return Some(t);
+        }
+        if f.kind() == "identifier" && self.locals.bound(f, self.src) {
+            return None;
         }
         let parts = member_parts(f, self.src);
         if parts.is_empty() {
@@ -1958,7 +2005,7 @@ impl<'a, 't> Body<'a, 't> {
     /// `rows.at(0)!.push(x)` where `rows: Level[][]`, and for `row.push(x)` where `const row =
     /// rows[0]` binds `row` to the part (`changed_through`): the values the name holds, as a call
     /// is handed them.
-    fn changes(&self, c: TsNode<'t>, kept: &HashSet<String>) -> Vec<Held> {
+    fn changes(&self, c: TsNode<'t>, kept: &Kept) -> Vec<Held> {
         let src = self.src;
         let Some(f) = function_of(c).filter(|f| f.kind() == "member_expression") else { return vec![] };
         let (Some(o), Some(p)) = (f.child_by_field_name("object"), f.child_by_field_name("property")) else { return vec![] };
@@ -1972,11 +2019,17 @@ impl<'a, 't> Body<'a, 't> {
         let part = owner.kind() == "identifier"
             && changed_binding(self.body, src, &BINDS, &looked, text(owner, src), owner.start_byte())
                 .is_some_and(|(w, _)| w != text(owner, src));
-        if part {
+        if part || owner.kind() == "identifier" {
             let mut held = vec![];
             self.held(owner, kept, 0, &mut held);
-            if !held.is_empty() {
+            if part && !held.is_empty() {
                 return held.into_iter().map(|h| Held { at: owner.start_byte() as u32, ..h }).collect();
+            }
+            // the change gives the name it changes, with each type the name holds where it stands
+            let mut types: Vec<String> = held.into_iter().map(|h| h.ty).filter(|t| !t.is_empty()).collect();
+            types.dedup();
+            if !types.is_empty() {
+                return types.into_iter().map(|ty| Held::at(ty, text(owner, src).to_string(), owner.start_byte(), false)).collect();
             }
         }
         let (ty, name) = match owner.kind() {
@@ -2544,7 +2597,7 @@ impl<'a, 't> Body<'a, 't> {
     /// is of the type the body knows for it, else of the type the change is drawn as: the Array
     /// `addLine(lines, ..)` changes. A part the call makes anew (a literal, a spread, what a call
     /// gives) changes no value of the body.
-    fn changed_values(&self, t: &str, on: Option<TsNode<'t>>, c: TsNode<'t>, kept: &HashSet<String>) -> Vec<Held> {
+    fn changed_values(&self, t: &str, on: Option<TsNode<'t>>, c: TsNode<'t>, kept: &Kept) -> Vec<Held> {
         let mut out: Vec<Held> = vec![];
         for (part, ty) in self.changed_parts(t, on, c) {
             for r in roots_of(part) {
@@ -2603,6 +2656,13 @@ impl<'a, 't> Body<'a, 't> {
             self.read.mutates.push((t, r));
         }
     }
+}
+
+/// Whether two values are the same in every part, where they come from included: what a consumer of `Body::held` reads
+/// of one it reads alike of the other.
+fn same(a: &Held, b: &Held) -> bool {
+    let Held { ty, name, at, bound, fills, through, param } = a;
+    (ty, name, at, bound, fills, through, param) == (&b.ty, &b.name, &b.at, &b.bound, &b.fills, &b.through, &b.param)
 }
 
 /// The names in an expression that stand for values, and `this`: not the key of a lookup, which
@@ -2839,7 +2899,10 @@ const USES: UseSyntax = UseSyntax {
         matches!(n.kind(), "call_expression" | "new_expression") && n.child_by_field_name("arguments").map(|a| a.id()) == Some(child.id())
     },
     changes: |_, _| vec![],
-    splits: |n, child| n.kind() == "switch_statement" && n.child_by_field_name("value").map(|v| v.id()) == Some(child.id()),
+    // a case binds no name: the value only decides which one runs
+    splits: |n, child, _| {
+        (n.kind() == "switch_statement" && n.child_by_field_name("value").map(|v| v.id()) == Some(child.id())).then(Vec::new)
+    },
     names: &["identifier", "shorthand_property_identifier"],
     keeps: &["member_expression", "subscript_expression"],
     field: |n, src| {

@@ -15,3 +15,5 @@ def emit(n: int) -> None:
     """Write the count to the report."""
     with open("report.txt", "w") as out:
         out.write(f"{n}\n")
+
+__all__ = ["main"]

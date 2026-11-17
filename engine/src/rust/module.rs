@@ -20,7 +20,7 @@ pub(super) const WRAPPERS: Wrappers =
     &["parenthesized_expression", "reference_expression", "unary_expression *", "try_expression", "await_expression"];
 
 pub(crate) struct Crate {
-    pub(super) name: String,
+    pub(crate) name: String,
     pub(crate) dir: PathBuf,
 }
 
@@ -51,6 +51,19 @@ pub(super) struct Module {
     /// Whether the module is a library's, read as far as the program's calls go into it: its
     /// paths are the library's, `ext:` where Atlas does not read them.
     pub(super) library: bool,
+    /// The libraries its crate calls by another name than the library's own: the name the code
+    /// writes, with the library's root (`notekit` is `notekit-0_2_0`).
+    pub(super) externs: HashMap<String, String>,
+}
+
+/// A path whose head names a library, as the library's: the head the module's crate calls it by
+/// taken to the library's root (`notekit::save` of a crate on 0.2.0 is `ext:notekit-0_2_0.save`).
+fn extern_path(m: &Module, parts: &[String]) -> String {
+    let head = parts.first().and_then(|h| m.externs.get(h));
+    match head {
+        Some(root) => ext::of(&std::iter::once(root.as_str()).chain(parts[1..].iter().map(String::as_str)).collect::<Vec<_>>().join(".")),
+        None => ext::of(&parts.join(".")),
+    }
 }
 
 pub(super) fn new_parser() -> Result<Parser> {
@@ -347,7 +360,7 @@ pub(super) fn path_to_id(m: &Module, parts: &[String], crate_ids: &HashMap<Strin
         }
         h if crate_ids.contains_key(h) => (crate_ids[h].clone(), &parts[1..]),
         h if is_module(&format!("{}.{h}", m.id)) => (format!("{}.{h}", m.id), &parts[1..]),
-        _ => return ext::of(&parts.join(".")),
+        _ => return extern_path(m, parts),
     };
     let mut id = base;
     for p in rest {
@@ -408,7 +421,7 @@ pub(super) fn resolve(
     } else if let Some(glob) = glob_of(m, parts) {
         (format!("{glob}.{head}"), &[])
     } else {
-        (ext::of(&parts.join(".")), &[])
+        (extern_path(m, parts), &[])
     };
     for p in rest {
         target.push('.');
@@ -657,6 +670,14 @@ pub(super) fn bound_in(def: TsNode, src: &[u8]) -> HashSet<String> {
 /// The variants of `Option` and `Result` that hold the value they give: where a value is followed,
 /// `Some(x)` and `Ok(x)` are `x`.
 pub(super) const HOLDING: &[&str] = &["Some", "Ok"];
+
+/// The methods of `bool` that give an `Option` holding what they are handed where the value is true,
+/// as `if c { Some(x) } else { None }` does: `c.then_some(x)` holds `x`, `c.then(|| x)` what the closure gives.
+pub(super) const HOLDING_IF: &[&str] = &["then_some", "then"];
+
+/// The variant of `Option` that holds no value: handed to a parameter, it hands nothing, as a call
+/// that leaves a parameter out does in a language with defaults.
+pub(super) const NOTHING: &str = "None";
 
 /// `Option` and `Result` methods whose argument is the other arm: `find(g).unwrap_or_else(|| infer(g))`.
 pub(super) const OR_ELSE: &[&str] = &["unwrap_or_else", "unwrap_or", "or_else", "or", "map_or_else", "map_or"];

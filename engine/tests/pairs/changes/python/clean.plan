@@ -94,3 +94,5 @@ line Board·board@main/Board.reset > main/Board.merged/Board() value
 # each cell: the board reaches the loop through `self`
 line Board·board@main/Board() > main/Board.mark_all/for cell in self.cells value
 line Cell·cell@main/Board.mark_all/for cell in self.cells > main/Board.mark_all value
+home _@main main
+line main > _@main value                                                 # what it gives its caller, of no type of the code's

@@ -25,3 +25,5 @@ home Where@drawn/Touch.drawn/Where() drawn/Touch.drawn
 home Where@drawn/Touch.drawn drawn
 
 side entry left
+home _@drawn drawn
+line drawn > _@drawn value                                               # what it gives its caller, of no type of the code's

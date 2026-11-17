@@ -2340,6 +2340,33 @@ fn places_a_declared_program_is_a_command_in_every_layout() {
     assert!(package.node("tally.cli.main").is_some_and(|n| !n.exported), "{:?}", package.node("tally.cli.main").map(|n| &n.entry));
 }
 
+/// What a function is to its user does not depend on the order the reader marks it in (#435). A command a framework
+/// registers (`@click.command()`) that its package also exports in `__all__` is the command, with the options its user
+/// types, and a door as well, as a declared program its package exports is (`entries::mark_scripts`). The doors are
+/// marked before completion reads them, so the command is marked after its door: the law holds both marks together.
+#[test]
+fn an_exported_command_is_the_command_and_a_door() {
+    let root = std::env::temp_dir().join(format!("atlas-python-exported-command-{}", std::process::id()));
+    let typings = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixture/typings");
+    std::fs::create_dir_all(root.join("src/cmds")).expect("makes the package");
+    let manifest = format!(
+        "[project]\nname = \"cmds\"\nversion = \"0\"\n\n[build-system]\nrequires = [\"uv_build\"]\nbuild-backend = \"uv_build\"\n\n\
+         [tool.ty.environment]\nextra-paths = [{:?}]\n",
+        typings.to_string_lossy()
+    );
+    std::fs::write(root.join("pyproject.toml"), manifest).expect("writes the manifest");
+    std::fs::write(root.join("src/cmds/__init__.py"), "from cmds.cli import greet\n\n__all__ = [\"greet\"]\n").expect("writes the root");
+    let cli = "import click\n\n\n@click.command()\n@click.option(\"--out\", default=\"hello.txt\")\ndef greet(out: str) -> None:\n    \
+               open(out, \"w\").write(\"hello\")\n";
+    std::fs::write(root.join("src/cmds/cli.py"), cli).expect("writes the command");
+    let g = analyze(&root, &Options::default()).expect("reads");
+    let _ = std::fs::remove_dir_all(&root);
+    let greet = g.node("cmds.cli.greet").expect("the command is in the graph");
+    let entry = greet.entry.as_ref().map(|e| (e.kind, e.label.as_str(), e.options.clone()));
+    assert_eq!(entry, Some((EntryKind::Cli, "greet", vec!["--out".to_string()])), "the command its user types");
+    assert!(greet.exported, "and a door its package names");
+}
+
 /// The places pair, `places/python`: rows read and kept, pages made from a template the package
 /// ships, a report a command writes, rows kept by kind and a cache, the same on both sides but for
 /// who decides where each lives.
@@ -2932,8 +2959,9 @@ fn setup_a_step_before_the_calls_sets_up_the_object_a_method_runs_on() {
 /// the shortcut it reads the report from the drafts, set up after it kept the report, where it never kept one.
 /// Composition is call order: a set-up counts for what runs after it, and one `review` runs itself never stands above
 /// it, so on both sides the report is written in `out` alone and neither `review` nor `main` reads back a file but that
-/// one. The shortcut also reads the drafts' report, which nothing in the route writes: it takes it from beyond, and the
-/// closed `review` draws the line from it. The clean route takes nothing from beyond.
+/// one (whether the shortcut reads it back at all is the law of the value a method runs on, `pairs.rs`, #368). The
+/// shortcut also reads the drafts' report, which nothing in the route writes: it takes it from beyond, and the closed
+/// `review` draws the line from it. The clean route takes nothing from beyond.
 #[test]
 fn order_a_set_up_counts_for_what_runs_after_it() {
     let p = common::pair("order/python");
@@ -2945,9 +2973,11 @@ fn order_a_set_up_counts_for_what_runs_after_it() {
     for (side, g) in [("clean", &p.clean), ("shortcut", &p.shortcut)] {
         let arrows = flow::arrows(g);
         for f in ["shelf.cli.review", main] {
-            assert_eq!(arrows[f].reads_back, [out.clone()], "{side}: `{f}` reads back the report it kept, and no other file");
+            let back = arrows.get(f).map(|a| a.reads_back.clone()).unwrap_or_default();
+            assert!(back.iter().all(|x| *x == out), "{side}: `{f}` reads back no file but the report it kept: {back:?}");
         }
     }
+    assert_eq!(flow::arrows(&p.clean)["shelf.cli.review"].reads_back, [out.clone()], "clean: `review` reads back the report it kept");
     assert_eq!(touched(&p.clean), BTreeSet::from([out.clone()]), "clean: the route touches the report it kept alone");
     assert_eq!(touched(&p.shortcut), BTreeSet::from([out, drafts]), "shortcut: the route also reads the drafts' report");
 }
@@ -3117,6 +3147,23 @@ fn doors_a_sockets_operation_goes_its_way_in_every_language() {
     }
     let ends = |g: &Graph| touches(g, "greeter.ask.main", "net").iter().filter(|t| t.op == "end").count();
     assert_eq!((ends(&ts.clean), ends(&ts.shortcut)), (0, 0), "`end` itself sends nothing; `end(data)` is a write");
+}
+
+/// The sockets pair (#363): whether a read is used is a fact of the body, the same in every language. The clean `linger`
+/// reads the connection to see whether it is closed: Python's `if not conn.recv(1024): break`, Rust's `match` whose
+/// arms bind nothing, and Node's listener that does nothing with the chunk only decide, so each read is a check.
+#[test]
+fn doors_a_sockets_linger_only_checks_in_every_language() {
+    let (py, rs, ts) = (common::pair("sockets/python"), common::pair("sockets/rust"), common::pair("sockets/typescript"));
+    let checks = |g: &Graph, id: &str| -> Vec<bool> {
+        let mut net: Vec<_> = touches(g, id, "net").into_iter().filter(|t| t.dir == Some(atlas_engine::Dir::Read)).collect();
+        net.sort_by_key(|t| t.line);
+        net.into_iter().map(|t| t.checks).collect()
+    };
+    let p = checks(&py.clean, "greeter.linger");
+    assert_eq!(p, [true], "Python's `linger` reads to see whether the connection is closed");
+    assert_eq!(checks(&rs.clean, "greeter.linger"), p, "Rust's `linger` is Python's");
+    assert_eq!(checks(&ts.clean, "greeter.greeter.linger"), p, "TypeScript's `linger` is Python's");
 }
 
 /// The sockets and handles pairs (#353): a socket's read and a file's read are drawn alike, from the place, in every
@@ -3306,6 +3353,80 @@ fn every_wire_of_a_typed_forward_pass_carries_its_shape() {
     assert!(wires >= 12, "{wires} wires");
 }
 
+/// The modules pair (#456): `branch` returns what its call gives, `Projection.forward`'s `Float[Tensor, "*lead {self.out}"]`,
+/// under the written `Float[Tensor, "batch 16"]`, a shape of another rank family. What a body gives back is of a type its
+/// signature gives as its language reads the type (`docs/reference/mathematics.md`, "One fine plan, every picture its
+/// image"): ty reads both shapes as `Tensor`, and a shape refines that type, so the body is made of its call's result. The
+/// two forms of the call, `projection(image)` and `projection.forward(image)`, give back the same (the `.plan` files beside
+/// the pair draw the line from the call's result to `branch`'s own arrow).
+#[test]
+fn a_body_gives_back_its_calls_result_under_another_shape_of_the_same_array() {
+    use atlas_engine::shapes::Array;
+    let side = |s: &str| {
+        analyze(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/pairs/modules/python").join(s), &Options::default()).unwrap()
+    };
+    let returns = |g: &Graph, f: &str| -> Vec<String> {
+        g.edges.iter().filter(|e| e.src == f && e.kind == EdgeKind::Returns).map(|e| e.dst.clone()).collect()
+    };
+    for s in ["clean", "shortcut"] {
+        let g = side(s);
+        let (call, written) = (returns(&g, "encoders.model.Projection.forward"), returns(&g, "encoders.model.branch"));
+        let rank = |t: &[String]| t.iter().filter_map(|t| Array::of_id(t)).map(|a| a.rank()).collect::<Vec<_>>();
+        assert_ne!(rank(&call), rank(&written), "{s}: the call's shape and the written one are of two rank families");
+        let made = flow::of(&g).bodies["encoders.model.branch"].made_from.clone();
+        assert_eq!(made, call, "{s}: branch gives back what its call made");
+    }
+}
+
+/// The modules pair (#456): only what a body returns as a call gives it is compared as its language reads the type, in
+/// both directions. `widened(..) -> Float[Tensor, "*lead 16"]` returns `branch(..)`, which gives `Float[Tensor, "batch 16"]`:
+/// a written return wider than the call's, and the body gives back what the call made. `headed` drops one result of
+/// `Projection.forward` and hands another to `Head.forward`, whose result it returns: a shaped array of the same array type
+/// that the body names or drops is no part of what it gives back, so `headed` is made of `Head.forward`'s result alone.
+#[test]
+fn only_the_returned_call_is_compared_as_its_language_reads_the_type() {
+    let side = |s: &str| {
+        analyze(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/pairs/modules/python").join(s), &Options::default()).unwrap()
+    };
+    let returns = |g: &Graph, f: &str| -> Vec<String> {
+        g.edges.iter().filter(|e| e.src == f && e.kind == EdgeKind::Returns).map(|e| e.dst.clone()).collect()
+    };
+    for s in ["clean", "shortcut"] {
+        let g = side(s);
+        let flow = flow::of(&g);
+        let returned: Vec<&str> =
+            g.node("encoders.model.headed").unwrap().sites.iter().filter(|x| x.returned).map(|x| x.to.as_str()).collect();
+        assert_eq!(returned, ["encoders.model.Head.forward"], "{s}: headed returns Head.forward's result as it is");
+        let (call, written) = (returns(&g, "encoders.model.branch"), returns(&g, "encoders.model.widened"));
+        assert_ne!(call, written, "{s}: the written return is another shape than the call's");
+        assert_eq!(flow.bodies["encoders.model.widened"].made_from, call, "{s}: widened gives back what branch made");
+        assert_eq!(
+            flow.bodies["encoders.model.headed"].made_from,
+            returns(&g, "encoders.model.Head.forward"),
+            "{s}: headed gives back no result of Projection.forward"
+        );
+    }
+}
+
+/// A `return` in a function the body defines leaves that function, not the body (#456): in `plans/returned-shape`,
+/// `hooked` defines `hook`, whose `return Projection().forward(y)` is `hook`'s, and itself returns
+/// `MeanPool().forward(..)`. Only the body's own return is what it gives back as a call gives it, so `hooked` is made of
+/// `MeanPool.forward`'s result alone, though `Projection.forward`'s is a shape of the same array.
+#[test]
+fn a_return_in_a_function_the_body_defines_is_not_the_bodys() {
+    let g = analyze(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/plans/returned-shape"), &Options::default()).unwrap();
+    let returned: Vec<&str> =
+        g.node("mesh.components.hooked").unwrap().sites.iter().filter(|s| s.returned).map(|s| s.to.as_str()).collect();
+    assert_eq!(returned, ["mesh.components.MeanPool.forward"]);
+    let pool: Vec<String> = g
+        .edges
+        .iter()
+        .filter(|e| e.src == "mesh.components.MeanPool.forward" && e.kind == EdgeKind::Returns)
+        .map(|e| e.dst.clone())
+        .collect();
+    assert_eq!(flow::of(&g).bodies["mesh.components.hooked"].made_from, pool);
+}
+
 /// Only a torch module's call runs its forward (#422): a class that is no module is called through its own `__call__`,
 /// whatever else it names `forward`, and so is a module that defines `__call__` itself, and a class below one. The rule
 /// is torch's alone; no other class's call is given a `forward`.
@@ -3340,4 +3461,381 @@ fn an_instance_handed_on_is_no_call_of_it() {
         );
     }
     assert!(reaches(&side("other"), "callers.model.show").is_empty());
+}
+
+/// The ends pair: `loudest` gives back a `float` and ends at it, `Level` is a dataclass built from its fields and ends at
+/// the class it builds; the shortcut prints the loudest level and ends at the screen (#439).
+#[test]
+fn a_route_ends_at_what_it_gives_back() {
+    common::a_route_ends_at_what_it_gives_back("python", "float");
+}
+
+// ---------- guards: what a function is defined under is part of its definition ----------
+
+/// The guards pair (`tests/pairs/guards/python`): `run` tidies, scales and averages some readings, and each of the three
+/// steps refuses a call that hands it nothing, by a check written once. The clean side defines each function under the
+/// check, by its name (`@guarded`) or by a call that gives it (`@strict(least=1)`); the shortcut puts the check around
+/// each by hand after it is defined (`tidy = guarded(_tidy)`), so the name the program calls holds a value.
+fn guards() -> &'static Pair {
+    static PAIR: OnceLock<Pair> = OnceLock::new();
+    PAIR.get_or_init(|| common::pair("guards/python"))
+}
+
+/// What a function is defined under is part of its definition, and a definition is no step of the body it stands in
+/// (`mathematics.md`, "A decorator is part of the definition", #463): written as a name or as a call that gives it, in a
+/// module or in a class, the forms say the same. On each side the test asks both of the module's body: whether it runs
+/// one of the checks as a step, and whether a function names a check as what it is defined under. Exactly one holds:
+/// the clean side names and never steps, in each of the three forms; the shortcut steps, and no function names a check.
+#[test]
+fn guards_what_a_function_is_defined_under_is_no_step_in_any_form() {
+    let checks = ["scores.guarded", "scores.strict"];
+    for (side, g) in [("clean", &guards().clean), ("shortcut", &guards().shortcut)] {
+        let stepped = g.node("scores").unwrap().sites.iter().any(|s| checks.contains(&s.to.as_str()));
+        let named = g.nodes.iter().any(|n| n.guards.iter().any(|x| checks.contains(&x.as_str())));
+        assert_ne!(stepped, named, "{side}: a check is a step or a part of a definition, never both");
+        assert_eq!(named, side == "clean", "{side}");
+    }
+    for (function, check) in [("scores.tidy", "scores.guarded"), ("scores.Scale.apply", "scores.guarded"), ("scores.mean", "scores.strict")]
+    {
+        assert_eq!(guards().clean.node(function).unwrap().guards, [check], "{function}");
+    }
+}
+
+/// A function runs inside what it is defined under, so a call of it ends with what that ends with (`mathematics.md`,
+/// "A decorator is part of the definition"; `builder::settle_fails`). For each step of `run`, on each side, the test
+/// computes both: whether the function the step runs is defined under a check that ends with `Refused`, and whether the
+/// call hands `Refused` on. They agree at every step. On the clean side every one of the three does; on the shortcut the
+/// calls go to names that hold a value, which the code does not say the function of, and none hands an error on.
+#[test]
+fn guards_a_call_ends_with_what_its_function_is_defined_under_ends_with() {
+    let refused = "scores.Refused";
+    for (side, g) in [("clean", &guards().clean), ("shortcut", &guards().shortcut)] {
+        let ends = |f: &str| g.node(f).is_some_and(|n| n.sites.iter().any(|s| s.raises && s.gives.iter().any(|x| x.ty == refused)));
+        let mut any = false;
+        for s in &g.node("scores.run").unwrap().sites {
+            let under = g.node(&s.to).is_some_and(|n| n.guards.iter().any(|x| ends(x)));
+            assert_eq!(s.fails.iter().any(|e| e == refused), under, "{side}: line {}", s.line);
+            any |= under;
+        }
+        assert_eq!(any, side == "clean", "{side}");
+    }
+}
+
+/// The applied pair (`tests/pairs/applied/python`): `run` scales and shifts some readings and takes their mean, each of
+/// the two steps with a setting. The clean side builds each step with its setting and runs it (`scale.apply(readings)`);
+/// the shortcut builds the settings as objects and writes the steps as functions beside them, so the caller hands a step
+/// the object (`shift_with(scaled, shift)`) or takes the setting out of it (`scale_by(readings, scale.by)`).
+fn applied() -> &'static Pair {
+    static PAIR: OnceLock<Pair> = OnceLock::new();
+    PAIR.get_or_init(|| common::pair("applied/python"))
+}
+
+/// The receiver is a channel of its own (`mathematics.md`, #461): a call runs on a value or takes it as an input, and the
+/// two are different facts of the call. For each call of `run` that is handed a setting, on each side, the test computes
+/// both: whether the call hands the setting for the value it runs on and for nothing else, and whether the function it
+/// runs is a method of the setting's class. They agree at every call. On the clean side every such call runs on its
+/// setting; on the shortcut none does, and each is handed its setting as a parameter.
+#[test]
+fn applied_a_call_runs_on_a_value_or_takes_it_never_both() {
+    let settings = ["levels.Scale", "levels.Shift"];
+    for (side, g) in [("clean", &applied().clean), ("shortcut", &applied().shortcut)] {
+        let mut handed = 0;
+        for s in &g.node("levels.run").unwrap().sites {
+            for h in s.hands.iter().filter(|h| settings.contains(&h.ty.as_str())) {
+                let runs_on = !h.fills.is_empty() && h.fills.iter().all(|slot| matches!(slot, atlas_engine::Slot::Receiver));
+                let method = g.node(&s.to).is_some_and(|n| n.cls.as_deref() == Some(h.ty.as_str()) && !n.name.starts_with("__"));
+                assert_eq!(runs_on, method, "{side}: line {}", s.line);
+                assert_eq!(runs_on, side == "clean", "{side}: line {}", s.line);
+                handed += 1;
+            }
+        }
+        assert_eq!(handed, 2, "{side}: each of the two settings is handed to one step");
+    }
+}
+
+/// The designs pair (#478): one head, a torch module whose stages are methods, read three times: with a script that builds
+/// and runs it (`clean`), the same with the stage the search may leave out under a bare condition (`shortcut`), and the
+/// module alone (`alone`).
+fn design(name: &str) -> Graph {
+    analyze(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/pairs/designs/python").join(name), &Options::default()).unwrap()
+}
+
+/// A class is the arrow it carries (mathematics.md, "Currying: a class is the arrow it carries"): a class whose call runs
+/// a method a library says it runs (`knowledge::PYTHON_CALL_RUNS`) is a route of its own, that method, and what the
+/// constructor does is no step of it. The route is the module's own: the same with a script around the module as without.
+#[test]
+fn a_module_is_a_route_its_forward_pass_whatever_runs_it() {
+    let (scripted, alone) = (design("clean"), design("alone"));
+    for g in [&scripted, &alone] {
+        let forward = g.node("heads.design.Head.forward").unwrap();
+        assert_eq!(forward.entry.as_ref().map(|e| e.kind), Some(EntryKind::Class), "{}: the module is a route", g.root);
+        let steps = atlas_engine::story::told_steps(g, "heads.design.Head.forward", 3).unwrap();
+        assert!(steps.iter().all(|s| !s.runs.ends_with("__init__")), "{}: the constructor is no step of the arrow", g.root);
+    }
+    assert_eq!(
+        atlas_engine::story::route(&scripted, "heads.design.Head.forward", 3),
+        atlas_engine::story::route(&alone, "heads.design.Head.forward", 3),
+        "a script around the module leaves its route as it is"
+    );
+}
+
+/// A folder opens on its one module where the folder's scripts run it (`story::folder_route`), and as it always did where
+/// nothing of the folder runs a module.
+#[test]
+fn a_folder_opens_on_the_module_its_script_runs() {
+    let opens = |name: &str| {
+        let g = design(name);
+        let dir = std::fs::canonicalize(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/pairs/designs/python").join(name)).unwrap();
+        let inside = |f: &str| std::fs::canonicalize(f).is_ok_and(|f| f.starts_with(&dir));
+        atlas_engine::story::folder_route(&g, &inside)
+    };
+    assert_eq!(opens("clean").as_deref(), Some("heads.design.Head.forward"));
+    assert_eq!(opens("alone"), None, "a module nothing of the folder runs opens nothing");
+}
+
+/// A library decorator that gives its function back names the choice the function runs under (`knowledge::PYTHON_CHOICE_NAMES`,
+/// mathematics.md "A decorator is part of the definition"): the choice is read from the code alike on both sides, and only
+/// the side that says `@option("skip")` names it.
+#[test]
+fn an_option_names_the_choice_a_bare_condition_leaves_unnamed() {
+    let (named, bare) = (design("clean"), design("shortcut"));
+    let choices = |g: &Graph| {
+        let f = g.node("heads.design.Head.forward").unwrap();
+        // the lines differ by the two the decorator and its import take
+        (f.whens.clone(), f.tests.clone(), f.sites.iter().map(|s| (s.to.clone(), s.arms.clone())).collect::<Vec<_>>())
+    };
+    assert_eq!(choices(&named), choices(&bare), "the choice is read from the code, whatever names it");
+    assert_eq!(named.node("heads.design.Head.skip").unwrap().names_choice.as_deref(), Some("option skip"));
+    assert_eq!(bare.node("heads.design.Head.skip").unwrap().names_choice, None);
+    // the table names the argument by its place and by its keyword: `option(axis="gate")` is `option("gate")`
+    assert_eq!(named.node("heads.design.Head.gate").unwrap().names_choice.as_deref(), Some("option gate"));
+    assert_eq!(bare.node("heads.design.Head.gate").unwrap().names_choice, None);
+}
+
+/// A module that runs a submodule of its own is the one a folder opens on: among the classes the folder's scripts reach,
+/// the one no other of them runs (`story::folder_route`), and none where two stand outermost.
+#[test]
+fn a_folder_opens_on_the_outer_module() {
+    let g = design("clean");
+    assert_eq!(
+        g.node("heads.design.Block.forward").and_then(|n| n.entry.as_ref()).map(|e| e.kind),
+        Some(EntryKind::Class),
+        "the inner module is a route too"
+    );
+    let dir = std::fs::canonicalize(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/pairs/designs/python/clean")).unwrap();
+    let inside = |f: &str| std::fs::canonicalize(f).is_ok_and(|f| f.starts_with(&dir));
+    assert_eq!(
+        atlas_engine::story::folder_route(&g, &inside).as_deref(),
+        Some("heads.design.Head.forward"),
+        "the module that runs the block"
+    );
+}
+
+/// What the constructor sets a field of the instance to reads fields of what it was handed (`Set::reads`), through the
+/// names the constructor bound before (`widths = [width, config.hidden]`): the lens from the configuration into the
+/// instance, the same however the stage is chosen.
+#[test]
+fn a_field_the_constructor_sets_reads_the_configuration_it_was_built_from() {
+    for g in [design("clean"), design("shortcut")] {
+        let init = g.node("heads.design.Head.__init__").unwrap();
+        let reads = |field: &str| -> Vec<String> {
+            init.sets
+                .iter()
+                .filter(|s| s.field == field)
+                .flat_map(|s| s.reads.iter().map(|r| format!("{}.{}", r.on.name, r.field)))
+                .collect()
+        };
+        assert_eq!(reads("block"), ["config.hidden"], "{}: through a name bound before", g.root);
+        assert_eq!(reads("projection"), ["config.hidden"], "{}: in a step written in the expression", g.root);
+        assert!(reads("config").is_empty(), "{}: a value set whole reads no field of it", g.root);
+    }
+}
+
+/// Two modules of one name are two routes the reader tells apart: a class route's label carries the fewest last parts of
+/// its module that no other route of that name shares (`a.designs.Kernels` beside `b.designs.Kernels`), and a name no
+/// other route bears stands alone.
+#[test]
+fn modules_of_one_name_are_told_apart_by_their_module() {
+    let root = std::env::temp_dir().join(format!("atlas-python-same-names-{}", std::process::id()));
+    let module =
+        "from torch import Tensor, nn\n\n\nclass Kernels(nn.Module):\n    def forward(self, x: Tensor) -> Tensor:\n        return x\n";
+    for (dir, code) in [
+        ("a", module.to_string()),
+        ("b", format!("{module}\n\nclass Head(nn.Module):\n    def forward(self, x: Tensor) -> Tensor:\n        return x\n")),
+    ] {
+        std::fs::create_dir_all(root.join("src/demo").join(dir)).expect("makes the package");
+        std::fs::write(root.join("src/demo").join(dir).join("__init__.py"), "").expect("writes the package");
+        std::fs::write(root.join("src/demo").join(dir).join("designs.py"), code).expect("writes the module");
+    }
+    std::fs::write(root.join("pyproject.toml"), "[project]\nname = \"demo\"\nversion = \"0\"\n").expect("writes the manifest");
+    std::fs::write(root.join("src/demo/__init__.py"), "").expect("writes the package");
+    let g = analyze(&root, &Options::default()).expect("reads");
+    let _ = std::fs::remove_dir_all(&root);
+    let label = |id: &str| g.node(id).and_then(|n| n.entry.as_ref()).filter(|e| e.kind == EntryKind::Class).map(|e| e.label.clone());
+    assert_eq!(label("demo.a.designs.Kernels.forward").as_deref(), Some("a.designs.Kernels"));
+    assert_eq!(label("demo.b.designs.Kernels.forward").as_deref(), Some("b.designs.Kernels"));
+    assert_eq!(label("demo.b.designs.Head.forward").as_deref(), Some("Head"));
+}
+
+/// The turns pair, `turns/python` (#480): a stack of layers built from its config. The clean side writes what one turn
+/// builds where the turn runs (`for layer in (Linear(..), ACTIVATIONS[config.activation](), Dropout(..), ..)`) and keeps the
+/// activations in a table looked up by the config; the shortcut finds the layers by their names at run time
+/// (`getattr(layers, name)(..)`), and keeps tables that are no choice: one the module changes, one looked up by a
+/// constant, one bound again where it is read, one of a single entry.
+fn turns() -> &'static Pair {
+    static PAIR: OnceLock<Pair> = OnceLock::new();
+    PAIR.get_or_init(|| common::pair("turns/python"))
+}
+
+/// The steps of `id` that reach a class of `classes`, each by the class and the arms of the choices it runs in.
+fn reaching<'g>(g: &'g Graph, id: &str, classes: &[&str]) -> Vec<(&'g str, &'g [(u32, u32)])> {
+    g.node(id)
+        .unwrap_or_else(|| panic!("{id} is in the graph"))
+        .sites
+        .iter()
+        .filter(|s| classes.iter().any(|c| s.to.ends_with(&format!(".{c}"))))
+        .map(|s| (s.to.as_str(), s.arms.as_slice()))
+        .collect()
+}
+
+/// The loop's step of a body: the one site whose operation is a loop's head.
+fn loop_step<'g>(n: &'g atlas_engine::Node) -> &'g atlas_engine::Site {
+    let loops: Vec<&atlas_engine::Site> = n.sites.iter().filter(|s| s.op.starts_with("for ")).collect();
+    let [one] = loops.as_slice() else { panic!("{}: one loop is a step: {:?}", n.id, n.sites) };
+    one
+}
+
+/// A loop over a literal written in place runs its members: each member is a step, before the loop binds it, and the loop
+/// is named by what it binds and how many members the literal holds (`body::loop_label`), as the reader computes it from
+/// the code. The shortcut's loop goes over names; what each turn builds is no step Atlas follows.
+#[test]
+fn turns_a_loop_over_a_literal_runs_its_members() {
+    let members = ["Readout", "Calibrate"];
+    let g = &turns().clean;
+    let head = g.node("turns.stack.head").unwrap();
+    let loop_ = head.sites.iter().position(|s| s.op.starts_with("for ")).expect("clean: the loop is a step");
+    assert_eq!(head.sites[loop_].op, atlas_engine::body::loop_label("layer", "in", "", Some(members.len())));
+    assert_eq!(head.sites[..loop_].iter().filter(|s| members.iter().any(|m| s.to.ends_with(m))).count(), members.len());
+    assert!(reaching(&turns().shortcut, "turns.stack.head", &members).is_empty(), "shortcut: the layers are found by name");
+    assert!(turns().shortcut.node("turns.stack.head").unwrap().sites.iter().any(|s| s.not_followed));
+}
+
+/// Every member of a literal a comprehension's loop goes over reaches the call the comprehension is written in: what each
+/// member's step gives, and what a member no step stands for is made of (`SimpleNamespace(scale=config.dropout)`, a
+/// library's class), is handed to the loop's step, and what the loop gives is handed to the call around it (`Stack`).
+#[test]
+fn turns_every_member_of_a_literal_reaches_the_call_around_the_comprehension() {
+    let g = &turns().clean;
+    let build = g.node("turns.stack.build").unwrap();
+    let loop_ = loop_step(build);
+    let stack = build.sites.iter().find(|s| s.to == "turns.stack.Stack").unwrap();
+    for (to, _) in reaching(g, "turns.stack.build", &["Linear", "GELU", "ReLU", "Tanh", "Dropout"]) {
+        let s = build.sites.iter().find(|s| s.to == to).unwrap();
+        for h in &s.gives {
+            assert!(loop_.hands.contains(h), "clean: what {to} gives is handed to the loop: {:?}", loop_.hands);
+        }
+    }
+    assert!(loop_.hands.iter().any(|h| h.name == "config"), "clean: the library's member is made of the config: {:?}", loop_.hands);
+    for h in &loop_.gives {
+        assert!(stack.hands.iter().any(|x| x.name == h.name), "clean: what the loop gives reaches Stack: {:?}", stack.hands);
+    }
+}
+
+/// The names the loop before a literal binds (`for width_in, width_out in pairwise(..)`) are handed to the members written
+/// with them and to no call they do not reach: the list the comprehension makes holds the members, not the widths.
+#[test]
+fn turns_the_names_of_the_loop_before_a_literal_reach_only_where_they_are_written() {
+    let g = &turns().clean;
+    let build = g.node("turns.stack.build").unwrap();
+    let stack = build.sites.iter().find(|s| s.to == "turns.stack.Stack").unwrap();
+    let widths = ["width_in", "width_out"];
+    assert!(!stack.hands.iter().any(|h| widths.contains(&h.name.as_str())), "clean: Stack is handed no width: {:?}", stack.hands);
+    assert!(!build.sites.iter().any(|s| s.gives.iter().any(|h| widths.contains(&h.name.as_str()))), "clean: no step makes a width");
+}
+
+/// A comprehension whose loop goes over values Atlas does not draw (`for width in config.widths`, a `list[int]`) and over no
+/// literal has no loop step: its element is no value the body makes.
+#[test]
+fn turns_a_loop_over_values_atlas_does_not_draw_is_no_step() {
+    let square = turns().clean.node("turns.stack.square").unwrap();
+    assert!(!square.sites.iter().any(|s| s.op.starts_with("for ")), "clean: {:?}", square.sites);
+    assert!(square.sites.iter().any(|s| s.to.ends_with(".Linear")), "clean: the element's call is a step");
+}
+
+/// A call through a table looked up by a value is a choice between the table's entries: each entry's class is built in an
+/// arm of its own of one choice, the value that picks it names the choice (`Node::by`), and each arm is worded by its key.
+/// The shortcut finds the class by its name, a call Atlas cannot follow, and reaches none of them.
+#[test]
+fn turns_a_call_through_a_table_is_a_choice_between_its_entries() {
+    let activations = ["GELU", "ReLU", "Tanh"];
+    let g = &turns().clean;
+    let build = g.node("turns.stack.build").unwrap();
+    let arms: Vec<(u32, u32)> = reaching(g, "turns.stack.build", &activations).into_iter().map(|(_, a)| *a.last().unwrap()).collect();
+    assert_eq!(arms.len(), activations.len(), "clean: each entry is a step: {:?}", build.sites);
+    let choice = arms[0].0;
+    assert!(arms.iter().all(|(c, _)| *c == choice), "clean: one choice holds every entry: {arms:?}");
+    assert_eq!(arms.iter().map(|(_, a)| *a).collect::<BTreeSet<_>>().len(), activations.len(), "clean: each entry in its own arm");
+    assert_eq!(build.by, vec![(choice, "config.activation".to_string())], "clean: the value looked up by picks the arm");
+    let keys: BTreeSet<&str> = build.whens.iter().filter(|w| w.0 == choice).map(|w| w.2.as_str()).collect();
+    assert_eq!(keys, BTreeSet::from(["\"gelu\"", "\"relu\"", "\"tanh\""]), "clean: each arm under its key");
+    assert!(reaching(&turns().shortcut, "turns.stack.build", &activations).is_empty(), "shortcut: the class is found by name");
+    assert!(turns().shortcut.node("turns.stack.build").unwrap().sites.iter().any(|s| s.not_followed));
+}
+
+/// What the page and the route read of a table's choice: the body's choice item carries the value that picks its branch
+/// (`Item::Choice::by`, which the page titles `one of · <value>`), the one `Node::by` holds for that choice, and the route
+/// words each entry's arm by the value and the key (`story::picked`), on the line of the entry it builds.
+#[test]
+fn turns_the_page_and_the_route_name_the_value_a_table_is_looked_up_by() {
+    let g = &turns().clean;
+    let node = g.node("turns.stack.by_table").unwrap();
+    let bodies = flow::bodies(g);
+    let body = bodies.get("turns.stack.by_table").expect("by_table has a body");
+    let picked: Vec<(u32, &str)> = body
+        .items
+        .iter()
+        .filter_map(|it| match it {
+            flow::Item::Choice { choice, by, .. } => Some((*choice, by.as_str())),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(picked, node.by.iter().map(|(k, v)| (*k, v.as_str())).collect::<Vec<_>>());
+    assert_eq!(picked.len(), 1, "by_table: one choice, picked by the config: {:?}", body.items);
+    let text = route(g, "turns.stack.by_table");
+    for (class, key) in [("GELU", "\"gelu\""), ("ReLU", "\"relu\""), ("Tanh", "\"tanh\"")] {
+        let line = text.lines().find(|l| l.contains(&format!("{class}("))).unwrap_or_else(|| panic!("{class} in:\n{text}"));
+        assert!(line.contains("config.activation") && line.contains(key), "the arm of {class} names the value and its key: {line}");
+    }
+}
+
+/// A table is a choice only where it is what the module wrote: a table the module changes (`register` assigns into it), a
+/// key that is a constant of the module's (`FIXED[DEFAULT]()`), a name bound again where it is read (`for FIXED in
+/// tables`) and a table of one entry are each no choice: no step of theirs stands in an arm, and no value picks one.
+#[test]
+fn turns_a_table_the_module_does_not_keep_as_written_is_no_choice() {
+    let g = &turns().shortcut;
+    for id in ["turns.stack.registered", "turns.stack.by_default", "turns.stack.each_table", "turns.stack.only"] {
+        let n = g.node(id).unwrap_or_else(|| panic!("{id} is in the graph"));
+        assert!(n.by.is_empty() && n.sites.iter().all(|s| s.arms.is_empty()), "{id}: no choice: {:?}", n.sites);
+    }
+}
+
+/// A call through a table (`by_table`) and a `match` on the table's key with a case per entry (`by_cases`) build the same
+/// classes, each in an arm of its own decided by the same key. The route words the table's arms with the value it is
+/// looked up by besides (`config.activation is "gelu"`), where the `match` says the key alone.
+#[test]
+fn turns_a_table_and_a_match_on_its_key_build_the_same_classes_under_the_same_keys() {
+    let g = &turns().clean;
+    let arms = |id: &str| -> BTreeSet<(String, String)> {
+        let n = g.node(id).unwrap();
+        reaching(g, id, &["GELU", "ReLU", "Tanh"])
+            .into_iter()
+            .map(|(to, a)| {
+                let (c, arm) = *a.last().unwrap();
+                (to.to_string(), n.whens.iter().find(|w| w.0 == c && w.1 == arm).map(|w| w.2.clone()).unwrap_or_default())
+            })
+            .collect()
+    };
+    assert_eq!(arms("turns.stack.by_table"), arms("turns.stack.by_cases"));
+    assert_eq!(arms("turns.stack.by_table").len(), 3);
 }

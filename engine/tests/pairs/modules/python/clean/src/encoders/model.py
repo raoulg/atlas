@@ -55,3 +55,33 @@ def main() -> None:
     model = Fusion()
     print(predict(model, image, text))
     print(model)
+
+
+class Projection(nn.Module):
+    def __init__(self, width: int, out: int) -> None:
+        super().__init__()
+        self.out = out
+        self.linear = nn.Linear(width, out)
+
+    def forward(self, x: Float[Tensor, "*lead width"]) -> Float[Tensor, "*lead {self.out}"]:
+        return self.linear(x)
+
+
+def branch(projection: Projection, image: Float[Tensor, "batch 384"]) -> Float[Tensor, "batch 16"]:
+    return projection(image)
+
+
+def project() -> None:
+    image, _ = batch()
+    z = branch(Projection(384, 16), image)
+    print(z)
+
+
+def widened(projection: Projection, image: Float[Tensor, "batch 384"]) -> Float[Tensor, "*lead 16"]:
+    return branch(projection, image)
+
+
+def headed(projection: Projection, head: Head, image: Float[Tensor, "batch 384"]) -> Float[Tensor, "batch 4"]:
+    projection(image)
+    hidden = projection(image)
+    return head(hidden)

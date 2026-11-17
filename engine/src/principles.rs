@@ -482,10 +482,9 @@ impl<'g> Index<'g> {
         n.prophecy.is_some() || n.cls.as_deref().and_then(|c| self.node(c)).is_some_and(|c| c.prophecy.is_some())
     }
 
-    /// Whether a node is test code, by where it stands: a test, code the reader marks as test code,
-    /// or code in a test module. A test is a way in from outside the program.
+    /// Whether a node is test code (`model::test_code`).
     fn test(&self, n: &Node) -> bool {
-        n.test || n.entry.as_ref().is_some_and(|e| e.kind == EntryKind::Test) || self.node(&n.module).is_some_and(|m| m.test)
+        crate::model::test_code(n, |id| self.node(id))
     }
 
     /// What the prophecy `p` supersedes, when the code holds it.
@@ -658,7 +657,6 @@ fn exported(n: &Node) -> bool {
 
 fn doors(ix: &Index) -> Vec<Finding> {
     let g = ix.g;
-    let exports: Vec<&Node> = g.nodes.iter().filter(|n| exported(n)).collect();
     let mut out = vec![];
     let declared = ix.leaves(&g.root).exports;
     // `src/` is where packages live, not a name: installed, it collides with every other project laid out the same way
@@ -673,16 +671,19 @@ fn doors(ix: &Index) -> Vec<Finding> {
             )
             .with("named", [root.name.clone()]));
         }
-    } else if exports.is_empty() && declared {
-        if let Some(root) = ix.node(&g.root) {
+    } else {
+        // a part meant to be imported is met at its doors: one that exports nothing has none, whether or not its language asks the author to name them
+        for part in g.parts.iter().filter(|p| p.library) {
+            let exports = g.nodes.iter().any(|n| n.part == part.id && exported(n));
+            let Some(root) = ix.node(&part.id).or_else(|| ix.node(&g.root)).filter(|_| !exports) else { continue };
             out.push(ix.finding(
                 Principle::Doors,
                 root,
-                format!("{} exports nothing at its root", g.root),
-                vec![format!("{}: no `__all__`, and no public name of the package bound there", ix.file(root))],
+                format!("{} exports nothing at its root", part.id),
+                vec![format!("{}: no public name of the package is exported there", ix.file(root))],
                 format!(
-                    "Named in `__all__`, each door becomes a route Atlas can draw. What may a user of {} import, and from where?",
-                    g.root
+                    "Named as its doors, each export becomes a route Atlas can draw. What may a user of {} import, and from where?",
+                    part.id
                 ),
             ));
         }
@@ -1936,17 +1937,10 @@ fn held(t: &Touch) -> Option<(String, String)> {
     match t.kind {
         _ if t.shape() => None,
         World::Db(_) if !t.artifact.is_empty() => at(t),
-        World::Disk if format_only(&t.artifact) => {
-            (!t.what.is_empty()).then(|| at(&Touch { artifact: String::new(), ..t.clone() })).flatten()
-        }
+        World::Disk if t.by_format() && t.what.is_empty() => None,
         World::Disk if !t.what.is_empty() || !t.artifact.is_empty() => at(t),
         _ => None,
     }
-}
-
-/// A file named only by its format (`*.json`): the code says what kind of file, not which.
-fn format_only(artifact: &str) -> bool {
-    artifact.strip_prefix("*.").map_or(false, |ext| !ext.is_empty() && !ext.contains(['/', '*']))
 }
 
 /// Whether a touch may write what its call is handed into its place: a statement whose values

@@ -14,7 +14,11 @@
 //! its box for each value it stands for, as the page draws the frame (the walk's rule); and each class, picked as the set of
 //! its values, opens the families it cuts in two until no box is lit in part and none of its values is lost, and a family lit
 //! whole opens into lit boxes only (the filter first, mathematics.md "Saturation"); and each box of files folded into a
-//! directory opens in one step to what lies below it, every other file standing where it stood. The pictures are asked again of
+//! directory opens in one step to what lies below it, every other file standing where it stood; and the picture the model
+//! hands the page, its siblings that draw alike merged into one box, has both ends of every line among its boxes and joins
+//! only siblings that draw the same lines, calls among them (#412); and a place on the disk that lies in another the
+//! picture draws stands in the outermost of them that is closed, or in the frame of the innermost where all are open
+//! (#381). The pictures are asked again of
 //! the plan cut as a large program's is cut, at a few small budgets (`ATLAS_FINE_BUDGET`): a step beyond the cut is the
 //! image of its body, and each of its lines counts the fine lines its body draws there. Opening a step beyond the cut plans
 //! it anew, so the oracle, which opens a box of one plan, does not hold it: each such step of the closed picture is opened
@@ -22,7 +26,8 @@
 //!
 //! What Atlas gets wrong today is marked in the file with the issue that tracks it: `known #N FACT` for a fact that does
 //! not hold, `known #N extra FACT` for one Atlas has and should not, `known #N fault TEXT` for a fault of the pictures
-//! (before any route, of every route of the program). The test reports each and passes, and fails once it holds or is
+//! (before any route, of every route of the program), and `known #N VIEW TEXT` for a fault of the program's views that its
+//! law (`overview`, `focus`, `kinds`, `views` or `ends`) finds. The test reports each and passes, and fails once it holds or is
 //! gone, so that the mark goes with the fix.
 
 use atlas_engine::{flow, parts, Options};
@@ -40,6 +45,8 @@ struct Known {
     extra: bool,
     /// a fault of the pictures, matched as part of the fault's text
     fault: bool,
+    /// the law of the views that finds the fault, for a fault of the program's views
+    view: Option<String>,
 }
 
 /// What a `.plan` file says of one route.
@@ -49,12 +56,17 @@ struct Expected {
     known: Vec<Known>,
 }
 
-/// A `.plan` file: the faults known of every route of the program, and the routes it writes down, in its order.
+/// A `.plan` file: the faults known of every route of the program and of its views, and the routes it writes down, in its
+/// order.
 #[derive(Default)]
 struct Plan {
     faults: Vec<Known>,
+    views: Vec<Known>,
     routes: Vec<(String, Expected)>,
 }
+
+/// The laws of the views, each by the word its marks carry and the flag `plans.mjs` is asked with.
+const VIEW_LAWS: [&str; 5] = ["overview", "focus", "kinds", "views", "ends"];
 
 fn read_plan(path: &Path) -> Plan {
     let text = std::fs::read_to_string(path).expect("reads the plan");
@@ -73,10 +85,12 @@ fn read_plan(path: &Path) -> Plan {
         let known = (words[0] == "known").then(|| {
             let issue = words.get(1).filter(|w| w.starts_with('#')).unwrap_or_else(|| panic!("{}: known names its issue", at()));
             let (extra, fault) = (words.get(2) == Some(&"extra"), words.get(2) == Some(&"fault"));
-            let fact = words[if extra || fault { 3 } else { 2 }..].join(" ");
-            Known { issue: issue.to_string(), fact, extra, fault }
+            let view = words.get(2).filter(|w| VIEW_LAWS.contains(w)).map(|w| w.to_string());
+            let fact = words[if extra || fault || view.is_some() { 3 } else { 2 }..].join(" ");
+            Known { issue: issue.to_string(), fact, extra, fault: fault || view.is_some(), view }
         });
         match (known, plan.routes.last_mut()) {
+            (Some(k), _) if k.view.is_some() => plan.views.push(k),
             (Some(k), None) if k.fault => plan.faults.push(k),
             (_, None) => panic!("{}: a fact before its route", at()),
             (Some(k), Some((_, e))) => {
@@ -131,7 +145,10 @@ fn modelled(program: &Path, data: &str, budget: Option<usize>) -> BTreeMap<Strin
 /// its overview.
 fn asked(program: &Path, data: &str, budget: Option<usize>, args: &[&str]) -> BTreeMap<String, (BTreeSet<String>, Vec<String>)> {
     let name = program.to_string_lossy().replace(['/', '\\', ':'], "_");
-    let file = std::env::temp_dir().join(format!("atlas-plans-{}-{name}-{budget:?}-{}.json", std::process::id(), args.join("")));
+    // each asking has a file of its own: two tests ask one program the same question at once
+    static ASKED: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+    let nth = ASKED.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let file = std::env::temp_dir().join(format!("atlas-plans-{}-{nth}-{name}-{budget:?}-{}.json", std::process::id(), args.join("")));
     std::fs::write(&file, data).expect("writes the data");
     let here = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let mut node = Command::new("node");
@@ -210,6 +227,49 @@ fn faults_of(marks: &[&Known], faults: &[String], fails: &mut Vec<String>, known
             None => fails.push(format!("fault {f}")),
         }
     }
+}
+
+/// The faults one law of the views finds of every program, against the marks of that law: what fails, a mark whose fault is
+/// gone among it.
+fn views_hold(law: &str) -> Vec<String> {
+    views_said(law).0
+}
+
+/// What one law of the views says of every program: its faults, against the marks of that law, and what it finds of the
+/// programs themselves, each by the program it is of.
+fn views_said(law: &str) -> (Vec<String>, Vec<String>) {
+    let (tests, all) = all_programs();
+    let (next, fails, findings) = (AtomicUsize::new(0), Mutex::new(vec![]), Mutex::new(vec![]));
+    let workers = std::thread::available_parallelism().map_or(4, |n| n.get());
+    let flag = format!("--{law}");
+    std::thread::scope(|s| {
+        for _ in 0..workers {
+            s.spawn(|| {
+                while let Some(program) = all.get(next.fetch_add(1, Ordering::Relaxed)) {
+                    let name = program.strip_prefix(&tests).unwrap().display().to_string();
+                    let file = program.with_extension("plan");
+                    let plan = if file.is_file() { read_plan(&file) } else { Plan::default() };
+                    let marks: Vec<&Known> = plan.views.iter().filter(|k| k.view.as_deref() == Some(law)).collect();
+                    let (mut f, mut known) = (vec![], vec![]);
+                    let said = asked(program, &data(program), None, &[&flag]);
+                    findings.lock().unwrap().extend(said.values().flat_map(|(x, _)| x).map(|x| format!("{name}: {x}")));
+                    let faults: Vec<String> = said.into_values().flat_map(|(_, x)| x).collect();
+                    faults_of(&marks, &faults, &mut f, &mut known);
+                    for k in marks.iter().filter(|k| !faults.iter().any(|x| x.contains(&k.fact))) {
+                        f.push(format!("gone now, so the mark goes: known {} {law} {}", k.issue, k.fact));
+                    }
+                    let mut fails = fails.lock().unwrap();
+                    fails.extend(f.into_iter().map(|x| format!("{name}: {x}")));
+                    for k in known {
+                        println!("{name}: known {k}");
+                    }
+                }
+            });
+        }
+    });
+    let mut findings = findings.into_inner().unwrap();
+    findings.sort();
+    (fails.into_inner().unwrap(), findings)
 }
 
 /// The programs under `pairs` and `plans`; `ATLAS_PLANS=pairs/pipeline` keeps only those under that path.
@@ -320,35 +380,71 @@ fn every_picture_of_a_cut_plan_is_its_image() {
 /// The overview is the image of one fine plan of generators, as a route's pictures are of theirs (mathematics.md, "One fine
 /// plan, every picture its image"; #69): for every set of open packages and parts of every program, each line of the picture
 /// counts the fine lines it stands for, a type internal to a closed package draws none, a call goes between the blocks of its
-/// ends, opening one more box refines the picture (the oracle), and the picture is a function of the set of open boxes. The
+/// ends, opening one more box refines the picture (the oracle), the picture is a function of the set of open boxes, and the
+/// picture the page draws, its siblings merged, has both ends of every line and every call among its boxes and joins only
+/// siblings that draw the same lines (`plans/siblings-call`, #412). The
 /// faults known of a program are known here too. All of it holds of the overview without the test code as well, which is the
 /// image of the fiber of the plan where the code is no test code (mathematics.md, "A filter: the program without its test
 /// code"; #400): its fine plan, built from the code without its test code, is the fiber of the fine plan with it, taken on
 /// that plan, and for every set of open packages its picture is the image of that fiber.
 #[test]
 fn every_package_view_is_the_image_of_its_plan() {
-    let (tests, all) = all_programs();
-    let (next, fails) = (AtomicUsize::new(0), Mutex::new(vec![]));
-    let workers = std::thread::available_parallelism().map_or(4, |n| n.get());
-    std::thread::scope(|s| {
-        for _ in 0..workers {
-            s.spawn(|| {
-                while let Some(program) = all.get(next.fetch_add(1, Ordering::Relaxed)) {
-                    let name = program.strip_prefix(&tests).unwrap().display().to_string();
-                    let file = program.with_extension("plan");
-                    let plan = if file.is_file() { read_plan(&file) } else { Plan::default() };
-                    let marks: Vec<&Known> = plan.faults.iter().filter(|k| k.fault).collect();
-                    for (_, (_, faults)) in asked(program, &data(program), None, &["--overview"]) {
-                        let (mut f, mut known) = (vec![], vec![]);
-                        faults_of(&marks, &faults, &mut f, &mut known);
-                        fails.lock().unwrap().extend(f.into_iter().map(|x| format!("{name}: {x}")));
-                    }
-                }
-            });
-        }
-    });
-    let fails = fails.into_inner().unwrap();
+    let fails = views_hold("overview");
     assert!(fails.is_empty(), "{} faults of the overviews:\n{}", fails.len(), fails.join("\n"));
+}
+
+/// A focus is the fiber of the overview's fine plan `F₀` over the packages in it, with the rest of the code around it, and
+/// its picture is the image of that fiber under the map the open boxes define, as the overview's is of `F₀` (mathematics.md,
+/// "One fine plan, every picture its image", the focus; #399). For every set of packages in focus (each subset while there are few,
+/// else each alone and each pair) and every set of open boxes (its packages and the rest): the focus's fine plan is the fiber
+/// of `F₀` as the test restates it; each line counts the fine lines it stands for, a type internal to a closed package draws
+/// none, each call goes between the blocks of its ends, opening one more box refines the picture, the picture is a function
+/// of the set of open boxes, and every line of the picture the page draws ends at a box it draws; a package of the focus drawn
+/// closed has at its border the type boxes the overview draws at its border (`plans/focus-shapes`: four ranks of one tensor
+/// type, each named otherwise by the package that takes it); and a type box stands where the overview puts it: a type's
+/// home is a fact of `F₀`, the same in every view. All of it with the test code and without it.
+#[test]
+fn every_focus_is_the_image_of_a_fiber_of_the_overviews_plan() {
+    let fails = views_hold("focus");
+    assert!(fails.is_empty(), "{} faults of the focus:\n{}", fails.len(), fails.join("\n"));
+}
+
+/// The routes of a kind are a fiber of the program (mathematics.md, "One fine plan, every picture its image", the routes
+/// of a kind): with a kind picked, the overview's fine plan is `F₀` over the code the kind's routes reach. It is a part of
+/// `F₀`, each function in the frame it has there with no line to a type it lacks there, and its functions are those the
+/// routes of the kind run, each route planned on its own as its page plans it.
+#[test]
+fn the_routes_of_a_kind_are_a_fiber_of_the_overview() {
+    let fails = views_hold("kinds");
+    assert!(fails.is_empty(), "{} faults of the routes of a kind:\n{}", fails.len(), fails.join("\n"));
+}
+
+/// Every view the page draws is the image of its fine plan through one function, `plan()`, on one view state `V`
+/// (mathematics.md, "One fine plan, every picture its image", the view state; #437). For every program the law walks that state: each view (the overview and each
+/// part alone, each focus, each kind, each route), with the test code and without, at the closed picture, at each box of
+/// each coordinate of `V.open` alone and at sets of them all drawn from a seed (`ATLAS_VIEWS_SEED`). Each picture has both
+/// ends of every line among its boxes, opening one more box refines it (the oracle), each line counts the fine lines it
+/// stands for and each box stands where its plan puts it (a type at its home in `F₀`); a coordinate the view does not read
+/// leaves its picture as it is, and drawn again after every other state, each picture is the one it was. The keys of `V`
+/// are read from the page: a coordinate the law does not walk is a fault.
+#[test]
+fn every_view_state_draws_the_image_of_its_plan() {
+    let fails = views_hold("views");
+    assert!(fails.is_empty(), "{} faults of the view states:\n{}", fails.len(), fails.join("\n"));
+}
+
+/// A route starts at an entry point and ends at a place, and both are visible (sentence 3): every route closed whose
+/// code gives something (a value back, whatever its type, a change, a write, a request,
+/// an error), as the graph says and no plan, gives a value, a place it changes or a call it makes. A route whose code gives
+/// nothing and changes nothing ends at the terminal object, no place: a finding of the program, which the law says and does
+/// not fail on (mathematics.md, "The terminal object").
+#[test]
+fn every_route_ends_at_a_place() {
+    let (fails, findings) = views_said("ends");
+    for f in &findings {
+        println!("finding {f}");
+    }
+    assert!(fails.is_empty(), "{} routes end at no place:\n{}", fails.len(), fails.join("\n"));
 }
 
 /// Test code is not saturated by the package quotient, so the fiber and the quotient do not commute (mathematics.md,
@@ -366,6 +462,45 @@ fn test_code_cuts_a_package_in_two() {
         let facts = asked.values().flat_map(|(facts, _)| facts.iter()).collect::<Vec<_>>();
         assert!(facts.iter().any(|f| f.starts_with("cut unit:")), "{}: no package is cut in two by the test code", program.display());
     }
+}
+
+/// The hierarchy goes on below a module, by class and by base class (mathematics.md, "Currying: a class is the arrow it
+/// carries"). The pair `pairs/blocks` writes two pools once as good practice does, two classes that keep the promise of one
+/// base, and once with the shortcut, two classes that share no base and name their method each its own way. A class that
+/// holds a constructor and a method is a block of both in either program: the instance between them is internal to it. Only
+/// the promise the code states makes the block above them: the clean side has the base's block, holding the functions of
+/// both classes and the method the base declares, which a call into the family runs as one of theirs, beside the module's
+/// one other function (a base that held every function of its module would be the module),
+/// and the shortcut has none, since Atlas draws no family the code does not name. The quotient by base class has one more
+/// class, the code that names no base: beside a base's block it is a block of its own (the module's two other functions on
+/// the clean side), and where no base has a block there is nothing to set it apart from. That each block closes to
+/// the image of what it holds is asked of every pair by `every_package_view_is_the_image_of_its_plan`.
+#[test]
+fn the_classes_of_one_base_are_one_block_and_a_class_is_the_block_of_its_functions() {
+    let pair = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/pairs/blocks/python");
+    let blocks = |side: &str| -> BTreeSet<String> {
+        let program = pair.join(side);
+        let asked = asked(&program, &data(&program), None, &["--overview"]);
+        asked.values().flat_map(|(facts, _)| facts.iter()).filter(|f| f.starts_with("block ")).cloned().collect()
+    };
+    let (clean, shortcut) = (blocks("clean"), blocks("shortcut"));
+    for side in [&clean, &shortcut] {
+        for class in ["MeanPool", "LastPool"] {
+            assert!(
+                side.contains(&format!("block cls:pools.pooling.{class} 2")),
+                "{class} is the block of its constructor and its method: {side:?}"
+            );
+        }
+    }
+    assert!(
+        clean.contains("block fam:pools.pooling.Pool@pools.pooling 5"),
+        "the classes that keep Pool's promise are one block, with the method Pool declares for them: {clean:?}"
+    );
+    assert!(clean.contains("block fam:~none@pools.pooling 2"), "beside a base's block, what names no base is one block: {clean:?}");
+    assert!(
+        !shortcut.iter().any(|f| f.starts_with("block fam:")),
+        "classes that share no base are no family, and nothing is set apart from one: {shortcut:?}"
+    );
 }
 
 /// How many levels the route of `a_step_beyond_the_cut_is_made_without_unfolding_its_body` calls down, each twice.
@@ -454,4 +589,81 @@ fn an_opened_group_holds_its_files_as_the_disk_folds_them() {
     assert!(out.status.success(), "the model fails\n{}", String::from_utf8_lossy(&out.stderr));
     let faults: Vec<String> = serde_json::from_slice(&out.stdout).expect("the check prints JSON");
     assert!(faults.is_empty(), "{} faults of opened groups:\n{}", faults.len(), faults.join("\n"));
+}
+
+/// What the page draws of a program's routes beside their plans, as `plans.mjs --drawn` reads it.
+fn drawn(program: &Path, routes: &[&str]) -> serde_json::Value {
+    let file =
+        std::env::temp_dir().join(format!("atlas-drawn-{}-{}.json", std::process::id(), program.file_name().unwrap().to_string_lossy()));
+    std::fs::write(&file, data(program)).expect("writes the data");
+    let here = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let out = Command::new("node")
+        .arg(here.join("tests/plans.mjs"))
+        .arg(here.join("../viewer/plan.js"))
+        .arg(&file)
+        .arg("--drawn")
+        .args(routes)
+        .output()
+        .expect("node runs the viewer's model: the test needs node on the PATH");
+    let _ = std::fs::remove_file(&file);
+    assert!(out.status.success(), "{}: the model fails\n{}", program.display(), String::from_utf8_lossy(&out.stderr));
+    serde_json::from_slice(&out.stdout).expect("the model prints JSON")
+}
+
+/// A design draws what its module is built from and what the search may leave out (mathematics.md, "The receiver is a
+/// channel of its own", "A decorator is part of the definition", "Shapes"): under the route, the fields of the
+/// configuration each stage reads (`receiverReads`), through what the constructor set (`self.block` built of
+/// `config.hidden`); the choice a library option names carries the option's name where the option's stage runs on the
+/// module, and no other choice does, not one of a script that calls the stage; the input carries the name the route gives
+/// it; and the shapes button opens every rank family into the axes its signature names, and closes them again, shown
+/// where opening tells something.
+#[test]
+fn a_design_draws_its_configuration_its_options_and_its_shapes() {
+    let pairs = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/pairs/designs/python");
+    let strings = |v: &serde_json::Value| -> Vec<String> {
+        v.as_array().into_iter().flatten().filter_map(|x| x.as_str().map(String::from)).collect()
+    };
+    let clean = drawn(&pairs.join("clean"), &["heads.design.Head.forward", "_root.show.explain"]);
+    let head = &clean["heads.design.Head.forward"];
+    let fields = |step: &str| -> Vec<(String, bool)> {
+        head["config"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter(|row| row["type"] == "heads.design.Config")
+            .flat_map(|row| row["steps"].as_array().into_iter().flatten())
+            .filter(|s| s["step"] == step)
+            .flat_map(|s| s["fields"].as_array().into_iter().flatten())
+            .map(|f| (f["name"].as_str().unwrap_or("").to_string(), f["option"].as_bool().unwrap_or(false)))
+            .collect()
+    };
+    assert!(
+        fields("heads.design.Head.hidden").contains(&("hidden".into(), false)),
+        "the row holds the field the hidden stage's block was built of: {head}"
+    );
+    assert!(fields("heads.design.Head.skip").contains(&("skip".into(), true)), "the field that decides the option is marked: {head}");
+    let titles = strings(&head["closed"]["titles"]);
+    for option in ["skip", "gate"] {
+        assert!(
+            titles.iter().any(|t| t.starts_with(&format!("option {option} · if "))),
+            "the {option} choice is named by its option: {titles:?}"
+        );
+    }
+    let script = strings(&clean["_root.show.explain"]["closed"]["titles"]);
+    assert!(
+        !script.is_empty() && script.iter().all(|t| !t.starts_with("option")),
+        "a script's choice that calls a stage is no choice of the option: {script:?}"
+    );
+    let (closed, open) = (strings(&head["closed"]["labels"]), strings(&head["open"]["labels"]));
+    assert!(closed.iter().any(|l| l.ends_with(" · x")), "the input carries the name the route gives it: {closed:?}");
+    assert_eq!(head["button"], true, "two shapes in one family: the button shows");
+    assert!(
+        closed.iter().all(|l| !l.contains(" × ")) && open.iter().any(|l| l.contains("batch × hidden")),
+        "opening reads the shapes as their axes: {closed:?} {open:?}"
+    );
+    let bare = drawn(&pairs.join("shortcut"), &["heads.design.Head.forward"]);
+    let titles = strings(&bare["heads.design.Head.forward"]["closed"]["titles"]);
+    assert!(!titles.is_empty() && titles.iter().all(|t| !t.starts_with("option")), "a bare condition names no option: {titles:?}");
+    let single = drawn(&pairs.join("single"), &["scales.design.Scale.forward"]);
+    assert_eq!(single["scales.design.Scale.forward"]["button"], false, "one family of one shape: opening tells nothing, no button");
 }

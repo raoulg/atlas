@@ -9,9 +9,11 @@
 //! `inRoute`) and says it of its finest plan (`ran_before.mjs`, in node). The law: for every route that starts at a
 //! function, the two readings name the same occurrences, and under each the same places. (The route of a class is its
 //! doors, each called by the entry with no order between them; `orders` reads each door as a function of its own, never
-//! the class as one body.) Its subjects are the `setup` pair, where the step that sets the shelf up runs beside the
-//! methods that keep files on it, the `order` pair, where the route sets a second shelf up after it kept its report, and
-//! two programs made for the order in a loop and in a nested arm (`plans/setup-in-a-loop`, and `plans/setup-in-an-arm` in Python, Rust and TypeScript).
+//! the class as one body.) Its subjects, each in Python, Rust and TypeScript, are the `setup` pair, where the step that
+//! sets the shelf up runs beside the methods that keep files on it, the `order` pair, where the route sets a second shelf
+//! up after it kept its report and reads from the second, so that a set-up holds for a method only where the value the
+//! method runs on may be one it built, and two programs made for the order in a loop and in a nested arm
+//! (`plans/setup-in-a-loop`, `plans/setup-in-an-arm`).
 //!
 //! A function's arrow (`flow::arrows`) reads back what it does in the contexts it is called in, one of them the route
 //! that starts at it. The second law: what a function does at places holds what that route, written out occurrence by
@@ -76,12 +78,22 @@ fn differences(engine: &Reading, page: &Reading) -> Vec<String> {
 }
 
 /// The subjects: the pairs and programs where a step sets up the object a later call runs on.
-const SUBJECTS: [&str; 8] = [
+const SUBJECTS: [&str; 18] = [
     "pairs/setup/python/clean",
     "pairs/setup/python/shortcut",
+    "pairs/setup/rust/clean",
+    "pairs/setup/rust/shortcut",
+    "pairs/setup/typescript/clean",
+    "pairs/setup/typescript/shortcut",
     "pairs/order/python/clean",
     "pairs/order/python/shortcut",
-    "plans/setup-in-a-loop",
+    "pairs/order/rust/clean",
+    "pairs/order/rust/shortcut",
+    "pairs/order/typescript/clean",
+    "pairs/order/typescript/shortcut",
+    "plans/setup-in-a-loop/python",
+    "plans/setup-in-a-loop/rust",
+    "plans/setup-in-a-loop/typescript",
     "plans/setup-in-an-arm/python",
     "plans/setup-in-an-arm/rust",
     "plans/setup-in-an-arm/typescript",
@@ -115,9 +127,12 @@ fn written_out(g: &Graph, route: &str) -> Graph {
     while let Some((at, f, on)) = todo.pop() {
         let n = g.node(&f).unwrap_or_else(|| panic!("{at}: runs {f}, a function of the graph"));
         let places = &reading[&at];
-        // the touches the body runs there, by their places: in the subjects a body's touches at one place are made whole
-        // alike, so the place says which run
-        let all: Vec<&Touch> = n.touches.iter().chain(&n.instead).collect();
+        // the touches the body runs there, by their places. A call as it was read (`instead`) at the place of a touch of
+        // that call is that touch there, whichever of the two a route runs (`Node::touches_in` shows one): a door whose
+        // users hand the path in full (`write(path)`) is made whole by them at the place it was read at. Of the others, in
+        // the subjects a body's touches at one place are made whole alike, so the place says which run
+        let same = |a: &Touch, b: &Touch| (a.line, &a.op, a.kind, a.place().id) == (b.line, &b.op, b.kind, b.place().id);
+        let all: Vec<&Touch> = n.touches.iter().chain(n.instead.iter().filter(|t| !n.touches.iter().any(|o| same(o, t)))).collect();
         for t in &all {
             let p = t.place().id;
             assert!(all.iter().filter(|u| u.place().id == p).all(|u| u.by == t.by), "{f}: its touches at {p} are made whole alike");

@@ -8,3 +8,5 @@ line Fit | Failed·r > line value # the route's parameter, by its name
 home Fit | Failed·r line
 
 side entry left
+home _@line line
+line line > _@line value                                                 # what it gives its caller, of no type of the code's

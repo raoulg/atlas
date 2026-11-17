@@ -14,8 +14,14 @@ fn storage_places_keep_the_evidence_for_their_quotient() {
         let joining = graph.node("storage.join").unwrap();
         let reading = graph.node("storage.read_pair").unwrap();
         let drawn = flow::of(&graph);
-        let reads: Vec<_> = reading.touches.iter().zip(&drawn.drawn[&reading.id]).filter(|(t, _)| t.kind_name() == "disk_read").collect();
-        let writes: Vec<_> = joining.touches.iter().zip(&drawn.drawn[&joining.id]).filter(|(t, _)| t.kind_name() == "disk_write").collect();
+        // the touches the route of `run` runs: `read_pair` and `join` are doors too, and a door drawn alone reads the
+        // holes its own parameters name
+        let reached = graph.reach("storage.run");
+        let ran = |t: &&atlas_engine::Touch| t.in_route("storage.run", &|f| reached.contains(f));
+        let reads: Vec<_> =
+            reading.touches.iter().zip(&drawn.drawn[&reading.id]).filter(|(t, _)| t.kind_name() == "disk_read" && ran(t)).collect();
+        let writes: Vec<_> =
+            joining.touches.iter().zip(&drawn.drawn[&joining.id]).filter(|(t, _)| t.kind_name() == "disk_write" && ran(t)).collect();
         assert_eq!(reads.len(), 2, "{side}: {reads:?}");
         assert_eq!(writes.len(), 1, "{side}: {writes:?}");
         assert_eq!(reads.iter().map(|(_, p)| &p.place.id).collect::<BTreeSet<_>>().len(), 2);

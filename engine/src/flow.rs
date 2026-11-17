@@ -147,17 +147,43 @@ pub struct Flow {
     /// For each node with touches, where each of them is drawn: its touches in order, then its
     /// calls as read (`instead`).
     pub drawn: BTreeMap<String, Vec<Where>>,
+    /// The order of the program's places on the disk (`lies_in`): each file or folder a touch rests in, to the
+    /// folders and patterns other touches rest in that hold it, from the top. A place lies in the folder a listing
+    /// reads where it is made or written below it, so two routes meet on the disk where a place one writes is, or lies
+    /// in, a place the other reads. It is a quotient of the places, as a directory is of its files: each place keeps
+    /// its own term.
+    #[serde(skip_serializing_if = "BTreeMap::is_empty")]
+    pub lies_in: BTreeMap<String, Vec<String>>,
 }
 
 /// The flow of a graph.
 pub fn of(g: &Graph) -> Flow {
-    let drawn = g
+    let drawn: BTreeMap<String, Vec<Where>> = g
         .nodes
         .iter()
         .filter(|n| !n.touches.is_empty() || !n.instead.is_empty())
         .map(|n| (n.id.clone(), n.touches.iter().chain(&n.instead).map(Touch::drawn).collect()))
         .collect();
-    Flow { bodies: bodies(g), arrows: arrows(g), types: crate::families::families(g), units: units(g), drawn }
+    let lies_in = order(&drawn);
+    Flow { bodies: bodies(g), arrows: arrows(g), types: crate::families::families(g), units: units(g), drawn, lies_in }
+}
+
+/// The order of the places `drawn` rests in on the disk (`Flow::lies_in`), by their ids.
+fn order(drawn: &BTreeMap<String, Vec<Where>>) -> BTreeMap<String, Vec<String>> {
+    let files: BTreeSet<&str> = drawn.values().flatten().map(|w| w.place.file.as_str()).filter(|f| !f.is_empty()).collect();
+    // only a folder or a pattern holds another place
+    let holders: Vec<&str> = files.iter().copied().filter(|q| q.ends_with('/') || q.contains(['*', '?', '['])).collect();
+    let mut out = BTreeMap::new();
+    for p in &files {
+        let mut above: Vec<&str> = holders.iter().copied().filter(|q| lies_in(p, q)).collect();
+        if above.is_empty() {
+            continue;
+        }
+        // from the top: a place lies in fewer places than one it holds
+        above.sort_by_key(|q| (holders.iter().filter(|r| lies_in(q, r)).count(), *q));
+        out.insert(format!("w:File:{p}"), above.into_iter().map(|q| format!("w:File:{q}")).collect());
+    }
+    out
 }
 
 /// The code quotiented by module path, one level at a time. A part's top level is the children
@@ -343,8 +369,85 @@ impl World {
     }
 }
 
+/// Whether the place `p` lies in the place `q` on the disk, `p` and `q` as `paths::place` writes them: places are ordered by
+/// their terms. A folder holds what lies below it (`data/raw/{unpack.kind}/a.zip/` lies in `data/raw/`), and a pattern
+/// holds the places it matches and what lies below them (`data/out.csv` and `data/a.zip/x` lie in `data/*.csv` and
+/// `data/*.zip`): a listing of `D` reads the fiber `D/*`, so what is made or written below `D` changes what it reads.
+/// The order is strict: no place lies in itself, nor in the same parts written as a folder. A part of `p` is held by
+/// the same part of `q`, or by `*`, which holds any one part (a name, a hole, a pattern of one part), or by a pattern of
+/// one part that matches its name; `**` holds any number of parts, none as well. A hole the code gives no name (`{}`)
+/// is held only by a wildcard, since two of them are two values. A file the code names holds nothing.
+pub fn lies_in(p: &str, q: &str) -> bool {
+    let parts = |s: &str| -> Vec<String> { s.trim_end_matches('/').split('/').map(str::to_string).collect() };
+    let (ps, qs) = (parts(p), parts(q));
+    if ps == qs {
+        return false;
+    }
+    let wild = |x: &str| x.contains(['*', '?', '[']);
+    let pattern = qs.iter().any(|x| wild(x));
+    if !pattern && !q.ends_with('/') {
+        return false;
+    }
+    // the parts of `p` a match of `q` takes from its front: each way `q` can match a prefix of `p`
+    let mut ends = vec![];
+    prefixes(&qs, &ps, 0, &mut ends);
+    ends.into_iter().any(|k| {
+        let rest = &ps[k..];
+        // below a match, in every place `p` is: some part of `p` is left that is more than `**`, which holds none as well
+        let below = rest.iter().any(|x| x != "**");
+        below || (k == ps.len() && pattern)
+    })
+}
+
+/// Each number of parts at the front of `p`, from `at`, that `q` matches (`lies_in`).
+fn prefixes(q: &[String], p: &[String], at: usize, out: &mut Vec<usize>) {
+    let Some((first, rest)) = q.split_first() else {
+        if !out.contains(&at) {
+            out.push(at);
+        }
+        return;
+    };
+    if first == "**" {
+        for k in at..=p.len() {
+            prefixes(rest, p, k, out);
+        }
+        return;
+    }
+    if at < p.len() && holds_part(first, &p[at]) {
+        prefixes(rest, p, at + 1, out);
+    }
+}
+
+/// Whether the part `q` of a place holds the part `p` (`lies_in`).
+fn holds_part(q: &str, p: &str) -> bool {
+    let wild = |x: &str| x.contains(['*', '?', '[']);
+    match q {
+        "*" => p != "**",
+        _ if p == "{}" => false,
+        _ if q == p => true,
+        _ if wild(q) && !q.contains('[') && !wild(p) && !p.contains('{') => glob(q.as_bytes(), p.as_bytes()),
+        _ => false,
+    }
+}
+
+/// Whether the name `p` matches the pattern `q` of one part, its `*` any run of characters and its `?` one.
+fn glob(q: &[u8], p: &[u8]) -> bool {
+    match (q.split_first(), p.split_first()) {
+        (None, None) => true,
+        (Some((b'*', rest)), _) => glob(rest, p) || (!p.is_empty() && glob(q, &p[1..])),
+        (Some((b'?', rest)), Some((_, tail))) => glob(rest, tail),
+        (Some((c, rest)), Some((d, tail))) if c == d => glob(rest, tail),
+        _ => false,
+    }
+}
+
 fn place(id: String, label: String, short: String, glyph: &'static str) -> Place {
     Place { id, label, short, glyph, file: String::new(), coarse: None, group: String::new() }
+}
+
+/// A pattern that says a file's format only (`*.json`): a kind of file, not which.
+fn format(artifact: &str) -> bool {
+    artifact.strip_prefix("*.").map_or(false, |ext| !ext.is_empty() && !ext.contains(['/', '*']))
 }
 
 /// A text as a label: its first three words, at most 48 characters. A place is named by all of
@@ -393,9 +496,10 @@ impl Touch {
     /// into it or out of it, its removal; one file is one place. What a directory lists is that
     /// directory, a place of its own (`assets/regelingen/`), and so is a pattern below it; a listing
     /// the code names no directory or pattern for is the disk. A file only a variable names is the
-    /// disk read or written, split by that name. A database is one place, split by its tables; a
-    /// host on the web and a model's checkpoint are named where the code names them; a program by
-    /// its command.
+    /// disk read or written, split by that name, whatever format its operation reads or writes: the
+    /// format (`*.csv` of `read_csv`) names a file only where no term of the code does
+    /// (`by_format`). A database is one place, split by its tables; a host on the web and a model's
+    /// checkpoint are named where the code names them; a program by its command.
     pub fn place(&self) -> Place {
         let (w, name) = (self.kind, self.kind.name());
         let base = format!("w:{name}");
@@ -412,7 +516,8 @@ impl Touch {
                     place(format!("w:Type:{}", self.holder), short.clone(), short, "file")
                 });
                 let lists = crate::effects::fs_op(&self.op) == crate::effects::FsOp::Lists;
-                if !self.artifact.is_empty() && (!lists || self.artifact.ends_with('/') || self.artifact.contains('*')) {
+                let named = !self.artifact.is_empty() && (!format(&self.artifact) || self.by_format());
+                if named && (!lists || self.artifact.ends_with('/') || self.artifact.contains('*')) {
                     let a = &self.artifact;
                     let file = Place { file: a.clone(), ..place(format!("w:File:{a}"), format!("File({a})"), a.clone(), "file") };
                     return match held {
@@ -453,6 +558,14 @@ impl Touch {
             }
             _ => world(),
         }
+    }
+
+    /// Whether the file is known only by the format its operation reads or writes (`*.json` of
+    /// `json.dump(.., f)`): the code names it by no term of its own. A file a term names (`load.path`,
+    /// `{root}/out.csv`) is that term, the format no part of it, so two doors that each take the file
+    /// their caller names are drawn alike, whatever each does with its content.
+    pub fn by_format(&self) -> bool {
+        format(&self.artifact) && (self.what.is_empty() || self.what == self.artifact)
     }
 
     /// What the touch does at its place, as a verb: the operation when it says more than the kind
@@ -665,19 +778,86 @@ impl Key {
         Under { calls: &self.made, before, classes: &self.classes, top }
     }
 
-    /// What ran before a call of the body that `prior` says ran before it inside the body, with what ran before the body.
-    fn before(&self, prior: &[u32]) -> Vec<u32> {
-        let mut out: Vec<u32> = self.before.iter().chain(prior).copied().collect();
+    /// What ran before a call of the body that `prior` says ran before it inside the body, with what ran before the body,
+    /// but for the set-ups `off` that cannot have built the value the call runs on (`Ix::off`).
+    fn before(&self, prior: &[u32], off: &[u32]) -> Vec<u32> {
+        let mut out: Vec<u32> = self.before.iter().chain(prior).copied().filter(|g| !off.contains(g)).collect();
         out.sort_unstable();
         out.dedup();
         out
     }
 }
 
+/// The steps of body `n` whose results the name `name` may hold where call `i` reads it (mathematics.md, "Who makes a path
+/// whole"): the sites of the body that bind it by what they give, read in call order. Before the call they are the
+/// binding nearest before it and, where that one stands in an arm the call is not in, the ones before it too, up to one
+/// that runs whenever the call does; one in another arm of a choice the call is in never runs before it. In a loop that
+/// holds the call, where no binding in the loop runs before it in the same round, the name holds in a later round what a
+/// binding after the call in the loop made in the round before: every such binding is one of them. A value no name holds
+/// (`#3`) is the result of the step that makes it. None where the name may hold what no step of the body makes: a
+/// parameter, a value the body binds by its own code, one bound before the body.
+pub fn makers(n: &Node, i: usize, name: &str) -> Option<Vec<usize>> {
+    let sites = &n.sites;
+    let gives = |j: usize| sites[j].gives.iter().any(|g| g.name == name);
+    if name.is_empty() || i >= sites.len() {
+        return None;
+    }
+    if name.starts_with('#') {
+        return (0..sites.len()).find(|&j| j != i && gives(j)).map(|j| vec![j]);
+    }
+    if n.binds.iter().any(|b| b.name == name) {
+        return None;
+    }
+    let (at, line) = (&sites[i].arms, sites[i].line);
+    let apart = |j: usize| sites[j].arms.iter().any(|(c, x)| at.iter().any(|(d, y)| c == d && x != y));
+    let whenever = |j: usize| sites[j].arms.iter().all(|a| at.contains(a));
+    let mut out = vec![];
+    let mut last = None;
+    for j in (0..i).rev().filter(|&j| gives(j) && !apart(j)) {
+        out.push(j);
+        if whenever(j) {
+            last = Some(sites[j].line);
+            break;
+        }
+    }
+    let last = last?;
+    for &(a, b) in n.loop_lines.iter().filter(|&&(a, b)| a <= line && line <= b) {
+        if !(a <= last && last <= b) {
+            out.extend((i + 1..sites.len()).filter(|&j| gives(j) && a <= sites[j].line && sites[j].line <= b));
+        }
+    }
+    out.sort_unstable();
+    out.dedup();
+    Some(out)
+}
+
+/// The steps of body `n` whose results the value call `i` runs on may be made of (`makers`): the steps that bind it, and
+/// those that make what each of them is handed, through every step. None where the value may be one no step of the body
+/// makes, or be made of one: the body does not say which object it is.
+pub fn receiver_makers(n: &Node, i: usize) -> Option<BTreeSet<usize>> {
+    let site = n.sites.get(i)?;
+    if site.on_receiver {
+        return None;
+    }
+    let h = site.hands.iter().find(|h| h.fills.contains(&crate::model::Slot::Receiver))?;
+    let mut out: BTreeSet<usize> = BTreeSet::new();
+    let mut todo: Vec<(usize, String)> = vec![(i, h.name.clone())];
+    while let Some((at, name)) = todo.pop() {
+        for j in makers(n, at, &name)? {
+            if out.insert(j) {
+                todo.extend(n.sites[j].hands.iter().map(|h| (j, h.name.clone())));
+            }
+        }
+    }
+    Some(out)
+}
+
 /// Whether condition `f` of a touch holds in a body run under `k` (mathematics.md, "Who makes a path whole"): `f` is on
 /// the calls that lead there; or it is a constructor of the class of a method on them, which built the object that
 /// method runs on, before the route or in it; or it ran before and set such an object up, its calls reaching a
-/// constructor of that class. A caller that hands the rest of the path hands it down the calls, so it holds only on them.
+/// constructor of that class, where the value the method runs on may be one it built (what ran before a call leaves out
+/// the set-ups that cannot have, `Ix::off`). A caller that hands the rest of the path hands it down the calls, so it holds
+/// only on them.
 fn holds(ix: &Ix, f: &str, k: &Key) -> bool {
     let x = ix.name(f);
     if k.made.contains(&x) {
@@ -769,8 +949,9 @@ fn orders(ix: &Ix, id: &str, on: &str, top: &str, under: &Under, mut done: Optio
         .flat_map(|t| std::iter::once(t.line).chain(t.also_at.iter().copied()).map(move |l| (l, Event::Touch(t))))
         .collect();
     let calls = if done.is_some() { ix.calls(body, n, on) } else { Rc::from([]) };
-    // what ran before each call, besides what ran before the body
+    // what ran before each call, besides what ran before the body, and the set-ups that cannot have built what it runs on
     let prior = ix.prior(body, n, on, &calls);
+    let off = ix.off(body, n, on, &calls);
     events.extend(calls.iter().enumerate().map(|(i, c)| (c.line, Event::Call(i, c))));
     // on one line what is read comes first, then the calls, then what is written: `x ??= v` reads
     // `x` before it may write it, `y = f(x)` calls `f` before `y` is written
@@ -793,7 +974,7 @@ fn orders(ix: &Ix, id: &str, on: &str, top: &str, under: &Under, mut done: Optio
                 vec![(ix.place_of(t), Order { finds: !writes, writes, always_writes: writes, ..Order::default() })]
             }
             Event::Call(i, c) => {
-                let before = if prior[*i].is_empty() { None } else { Some(k.before(&prior[*i])) };
+                let before = if prior[*i].is_empty() && off[*i].is_empty() { None } else { Some(k.before(&prior[*i], &off[*i])) };
                 let under = k.under(before.as_deref().unwrap_or(&k.before), under.top);
                 one_of(&c.runs.iter().map(|(t, on)| orders(ix, t, on, top, &under, done.as_deref_mut())).collect::<Vec<_>>())
             }
@@ -1074,6 +1255,16 @@ fn arrow_of(ix: &Ix, n: &Node, contexts: &FxHashMap<(u32, u32), Vec<(&Key, &Done
     let ctor = n.ctor;
     let gives = ix.targets(&n.id, EdgeKind::Returns);
     let (at, own) = (in_every_context(ix, &n.id, "", contexts, false), in_every_context(ix, &n.id, "", contexts, true));
+    // a function with no body has no arrow of its own: it takes, gives and changes nothing, its signature being its
+    // family's type. What a call of it does at places is what its members do, the coproduct of theirs
+    if n.declared {
+        return Arrow {
+            receiver: n.cls.clone().filter(|_| !ctor && !n.on_class).unwrap_or_default(),
+            reads_back: at.reads_back,
+            updates: at.updates,
+            ..Default::default()
+        };
+    }
     // a function whose signature does not say what it gives back gives back a value where its callers use one
     let returns_value = n.returns.as_ref().map_or(false, |r| !r.value.is_empty()) || (ix.unsaid(n) && ix.used(&n.id));
     Arrow {
@@ -1178,10 +1369,10 @@ fn occurrences<'g>(ix: &Ix<'g>, id: &str, on: &str, at: String, top: &str, under
         return;
     }
     let calls = ix.calls(k.body, n, on);
-    let prior = ix.prior(k.body, n, on, &calls);
+    let (prior, off) = (ix.prior(k.body, n, on, &calls), ix.off(k.body, n, on, &calls));
     path.push(id.to_string());
-    for (c, ran) in calls.iter().zip(prior.iter()) {
-        let before = k.before(ran);
+    for ((c, ran), off) in calls.iter().zip(prior.iter()).zip(off.iter()) {
+        let before = k.before(ran, off);
         let under = k.under(&before, under.top);
         for (i, (t, tc)) in c.runs.iter().enumerate() {
             if !ix.nodes.contains_key(t.as_str()) || path.contains(t) {
@@ -1238,10 +1429,13 @@ pub fn initializers(g: &Graph) -> HashMap<String, String> {
 /// What a body's steps make that it may give back: the class a step builds, else what the function it runs gives back,
 /// where that is of a type the function itself gives (`n`'s `returns`, a kind or a variant of one, or a type its written
 /// return holds as a value as its language reads it: the error of a `Result<T, E>`, `T + E`), or an error its own calls
-/// raise or hand on. A value of another type its steps make is no part of what it gives back: a function that gives back a
-/// number is made of none of them, and one that gives back a collection of pairs (`Vec<(String, Vec<Where>)>`) gives back
-/// pairs of a type the code does not name, none of what they pair. A signature that says nothing of what it gives back,
-/// whose callers use what it gives (`Arrow::returns_value`), rules out no type.
+/// raise or hand on. What the call the body returns as it is gives (`Site::returned`) is compared as its language reads
+/// the type: a shape of the same array as one `n` gives, narrower or wider, is of it (`return self.proj(x)` giving
+/// `Float[Tensor, *lead 128]` where `n` gives `Float[Tensor, batch 128]`). A value of another type its steps make is no part
+/// of what it gives back: a function that gives back a number is made of none of them, and one that gives back a collection
+/// of pairs (`Vec<(String, Vec<Where>)>`) gives back pairs of a type the code does not name, none of what they pair. A
+/// signature that says nothing of what it gives back, whose callers use what it gives (`Arrow::returns_value`), rules out
+/// no type.
 fn made_from(ix: &Ix, n: &Node, body: &Body) -> Vec<String> {
     let mut gives = ix.targets(&n.id, EdgeKind::Returns);
     for s in &n.sites {
@@ -1261,6 +1455,14 @@ fn made_from(ix: &Ix, n: &Node, body: &Body) -> Vec<String> {
             || names(t)
             || gives.iter().any(|g| t == g || ix.mro(t).contains(&g.as_str()) || ix.out(g, EdgeKind::Variant).any(|e| e.dst == t))
     };
+    // the functions a call the body returns as it is may run: the one it reaches and those it may run in its place
+    let returned: HashSet<String> = body
+        .steps()
+        .into_iter()
+        .filter(|s| s.site.and_then(|i| n.sites.get(i)).is_some_and(|x| x.returned))
+        .flat_map(|s| std::iter::once(s.to.clone()).chain(s.instead.iter().map(|k| split(k).0.to_string())))
+        .collect();
+    let same_array = |t: &str| gives.iter().any(|g| crate::shapes::one_array(t, g));
     let mut callees: Vec<&str> = vec![];
     for t in body.steps().into_iter().map(|s| s.to.as_str()).chain(body.alts.iter().map(|k| split(k).0)) {
         if ix.nodes.contains_key(t) && !callees.contains(&t) {
@@ -1270,7 +1472,7 @@ fn made_from(ix: &Ix, n: &Node, body: &Body) -> Vec<String> {
     let mut out = vec![];
     for c in callees {
         let made = if ix.nodes[c].kind == NodeKind::Class { vec![c.to_string()] } else { ix.targets(c, EdgeKind::Returns) };
-        out.extend(made.into_iter().filter(|t| of(t)));
+        out.extend(made.into_iter().filter(|t| of(t) || returned.contains(c) && same_array(t)));
     }
     out
 }
@@ -1357,6 +1559,9 @@ pub enum Item {
         members: Vec<Member>,
         #[serde(skip_serializing_if = "Vec::is_empty")]
         when: Vec<String>,
+        /// The value that picks the branch, where one value picks it (`Node::by`): a choice between a table's entries.
+        #[serde(skip_serializing_if = "String::is_empty")]
+        by: String,
         /// The arms each branch runs in, by branch, as `Site::arms` names them: from the body's
         /// outermost choice in, through this choice to the branch's last arm.
         arms: Vec<Vec<(u32, u32)>>,
@@ -1473,6 +1678,8 @@ struct Ix<'g> {
     asked: RefCell<FxHashMap<(u32, u32), Rc<BTreeSet<u32>>>>,
     /// What ran before each call of each body inside it, by the body (`Ix::prior`).
     prior: RefCell<FxHashMap<(u32, u32), Rc<[Box<[u32]>]>>>,
+    /// The set-ups that cannot have built the value each call of each body runs on, by the body (`Ix::off`).
+    off: RefCell<FxHashMap<(u32, u32), Rc<[Box<[u32]>]>>>,
     /// The conditions that set up the object of a method each body may run, and that method consults, by the body
     /// (`Ix::set_up`).
     set_up: RefCell<FxHashMap<(u32, u32), Rc<BTreeSet<u32>>>>,
@@ -1522,6 +1729,7 @@ impl<'g> Ix<'g> {
             builds: RefCell::default(),
             asked: RefCell::default(),
             prior: RefCell::default(),
+            off: RefCell::default(),
             set_up: RefCell::default(),
         }
     }
@@ -1651,7 +1859,16 @@ impl<'g> Ix<'g> {
         }
         let f = self.named(x);
         let f = f.as_str();
-        let ctor = |n: &Node, _: &str| n.cls.as_deref().filter(|_| n.ctor).map(|c| self.name(c)).into_iter().collect();
+        // the classes a body builds objects of: its own where it is a constructor, and each class it calls that has no
+        // constructor of its own (a struct's literal, `Shelf { root }`, is a call of the struct); the plan reads it alike
+        // (`madeIn` in `viewer/plan.js`)
+        let ctor = |n: &Node, on: &str| {
+            let literal = n
+                .sites
+                .iter()
+                .filter(|s| self.nodes.get(s.to.as_str()).is_some_and(|k| k.kind == NodeKind::Class) && self.may_run(s, on).is_empty());
+            n.cls.as_deref().filter(|_| n.ctor).into_iter().chain(literal.map(|s| s.to.as_str())).map(|c| self.name(c)).collect()
+        };
         let mut bodies: Vec<(String, String)> = vec![(f.to_string(), String::new())];
         if let Some(&n) = self.nodes.get(f) {
             bodies.extend(self.overrides(n).iter().map(|k| split(k)).map(|(g, c)| (g.to_string(), c.to_string())));
@@ -1709,6 +1926,42 @@ impl<'g> Ix<'g> {
             .collect();
         self.prior.borrow_mut().insert(root, prior.clone());
         prior
+    }
+
+    /// The set-ups that cannot have built the value each call of body `n` run on class `on`, numbered `root`, runs on (its
+    /// `calls`), each by its number (mathematics.md, "Who makes a path whole"): of the conditions the body consults, those
+    /// that set up an object of the class of the method the call names and that none of the steps the value may be made of
+    /// runs (`receiver_makers`). A set-up holds for a method only where the value the method runs on may be one it built;
+    /// where the body does not say which value that is, none is ruled out. Worked out once a body.
+    fn off(&self, root: (u32, u32), n: &Node, on: &str, calls: &[Call]) -> Rc<[Box<[u32]>]> {
+        if let Some(o) = self.off.borrow().get(&root) {
+            return o.clone();
+        }
+        let consulted = self.consulted(root, &n.id, on);
+        let off: Rc<[Box<[u32]>]> = calls
+            .iter()
+            .map(|c| {
+                let site = &n.sites[c.site];
+                let Some(cls) = self.nodes.get(site.to.as_str()).filter(|m| !m.ctor).and_then(|m| m.cls.as_deref()) else {
+                    return Box::default();
+                };
+                let cls = self.name(cls);
+                let builders: Vec<u32> = consulted.iter().copied().filter(|g| self.builds_of(*g).contains(&cls)).collect();
+                if builders.is_empty() {
+                    return Box::default();
+                }
+                let Some(made) = receiver_makers(n, c.site) else { return Box::default() };
+                let mut ran: BTreeSet<u32> = BTreeSet::new();
+                for m in calls.iter().filter(|m| made.contains(&m.site)) {
+                    for (t, tc) in &m.runs {
+                        ran.extend(self.ran((self.name(t), self.name(tc)), t, tc).iter().copied());
+                    }
+                }
+                builders.into_iter().filter(|g| !ran.contains(g)).collect()
+            })
+            .collect();
+        self.off.borrow_mut().insert(root, off.clone());
+        off
     }
 
     /// The conditions that set up the object of a method body `id` run on class `on`, numbered `root`, may run (itself
@@ -1889,6 +2142,7 @@ fn grouped(steps: Vec<(Step, Vec<(u32, u32)>)>, whens: &[(u32, u32, String)]) ->
             choice: k,
             members: g.members.clone(),
             when: if when.iter().all(String::is_empty) { vec![] } else { when },
+            by: String::new(),
             arms: g.branches.clone(),
             within,
         }
@@ -1946,11 +2200,16 @@ fn body_of(ix: &Ix, n: &Node, on: &str) -> Body {
                 Some((Step { site: Some(i), ..step }, s.arms.clone()))
             })
             .collect();
-        return Body { alts, items: grouped(steps, &n.whens), made_from: vec![] };
+        return Body { alts, items: decided(grouped(steps, &n.whens), &n.by), made_from: vec![] };
     }
     let callees: Vec<String> = if n.kind == NodeKind::Class && n.entry.is_some() {
         let ctor = ix.runs(&n.id);
         let mut out: Vec<String> = ctor.iter().cloned().collect();
+        // a class with no methods is built from its fields: its constructor, the class itself, is the door that builds it
+        // (`Order(id=..)`, `Order { id }`, a literal of its shape), as an initializer is
+        if ctor.is_none() && n.methods.is_empty() {
+            out.push(n.id.clone());
+        }
         // the initializer building it runs, its own or a base's, and its public methods, the initializer once
         out.extend(
             ix.out(&n.id, EdgeKind::Contains)
@@ -1981,7 +2240,19 @@ fn body_of(ix: &Ix, n: &Node, on: &str) -> Body {
         arms.entry(e.dst.as_str()).or_insert_with(|| e.arms.clone());
     }
     let steps = callees.iter().map(|c| (Step::of(c), arms.get(c.as_str()).cloned().unwrap_or_default())).collect();
-    Body { alts, items: grouped(steps, &n.whens), made_from: vec![] }
+    Body { alts, items: decided(grouped(steps, &n.whens), &n.by), made_from: vec![] }
+}
+
+/// The items of a body, each choice one value picks the branch of named by that value (`Node::by`).
+fn decided(mut items: Vec<Item>, picked: &[(u32, String)]) -> Vec<Item> {
+    for it in items.iter_mut() {
+        if let Item::Choice { choice, by, .. } = it {
+            if let Some((_, v)) = picked.iter().find(|(k, _)| k == choice) {
+                by.clone_from(v);
+            }
+        }
+    }
+    items
 }
 
 /// The body of every function, and of every function on each class a step or what it may run

@@ -20,6 +20,8 @@ side Web(localhost:8000) left
 # which leaves something at the place, and drops what it answers (`send()?;`), so the place stands in the codomain.
 # (The shortcut's `order` looks its method up by a key at run time, `client.request(method("order"), ..)`: the code
 # does not say which way it goes, and the place is in neither.)
+home _@item#2 item
+line item > _@item#2 value                                               # what it gives its caller, of no type of the code's
 
 route rsclean.order
 line entry > order call

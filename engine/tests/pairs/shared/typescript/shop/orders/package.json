@@ -1,0 +1,6 @@
+{
+  "name": "orders",
+  "private": true,
+  "type": "module",
+  "dependencies": { "notekit": "file:../../vendor/notekit-0.1.0" }
+}

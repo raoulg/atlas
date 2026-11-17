@@ -7,8 +7,8 @@
 //! picture is a link; `atlas-code view --view`, `atlas-code mcp`'s `view` and `look` hand a page the sight an
 //! agent wrote.
 //!
-//! Its serde form is the page's: `{route, kind, part, focus, tests, open: {parts, units, steps,
-//! functions, families, places, dirs}}`, every member optional, an empty one left out. A member the
+//! Its serde form is the page's: `{route, kind, part, focus, tests, errors, receivers, open: {parts, units, steps,
+//! functions, families, places, dirs, classes, bases, flat}}`, every member optional, an empty one left out. A member the
 //! page does not know is refused, so that a sight misspelt is said, not drawn as no sight at all.
 
 use std::collections::BTreeSet;
@@ -25,19 +25,27 @@ pub struct Sight {
     /// One route, by its entry's id.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub route: Option<String>,
-    /// Every route of one kind.
+    /// The code the routes of one kind reach: a fiber of the overview and of a focus.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub kind: Option<EntryKind>,
     /// One part, by its id.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub part: Option<String>,
-    /// The packages in focus, by their ids.
+    /// What is in focus: a package by its id, a class or a base class by its block (`cls:…`, `fam:…`).
     #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
     pub focus: BTreeSet<String>,
     /// The overview keeps the test code. Without it, the overview is the fiber of the code that is no
     /// test code: no test, no code a reader marks as test code, no code in a test module.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub tests: bool,
+    /// A route's errors are drawn as boxes. Without it, an error that only leaves is counted on each step that hands it
+    /// on (`mathematics.md`, "Errors counted on the arrow").
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub errors: bool,
+    /// A route draws a line from each value to the steps that run on it. Without it, such a step is named by the value
+    /// (`model.forward`; `mathematics.md`, "The receiver is a channel of its own").
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub receivers: bool,
     #[serde(default, skip_serializing_if = "Opened::is_empty")]
     pub open: Opened,
 }
@@ -68,12 +76,38 @@ pub struct Opened {
     /// Directories, opened into their files.
     #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
     pub dirs: BTreeSet<String>,
+    /// Classes, opened into their constructor and methods.
+    #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
+    pub classes: BTreeSet<String>,
+    /// The classes of one base in one package (`pkg.Base@pkg.sub`), opened into the classes.
+    #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
+    pub bases: BTreeSet<String>,
+    /// Packages opened by base class: each holds its functions itself, whatever module they are written in.
+    #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
+    pub flat: BTreeSet<String>,
+    /// Libraries of the overview, opened into the types the program uses of them.
+    #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
+    pub libraries: BTreeSet<String>,
 }
 
 impl Opened {
     /// Nothing opened: the coarsest picture of the fibers kept.
     pub fn is_empty(&self) -> bool {
-        [&self.parts, &self.units, &self.steps, &self.functions, &self.families, &self.places, &self.dirs].iter().all(|s| s.is_empty())
+        [
+            &self.parts,
+            &self.units,
+            &self.steps,
+            &self.functions,
+            &self.families,
+            &self.places,
+            &self.dirs,
+            &self.classes,
+            &self.bases,
+            &self.flat,
+            &self.libraries,
+        ]
+        .iter()
+        .all(|s| s.is_empty())
     }
 }
 

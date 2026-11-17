@@ -20,3 +20,5 @@ home _@readings/get_store readings
 
 side entry left
 side Global(os.environ) left
+home _@readings readings
+line readings > _@readings value                                         # what it gives its caller, of no type of the code's

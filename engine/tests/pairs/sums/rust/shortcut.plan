@@ -63,3 +63,5 @@ side Disk(Kennisbank.path) both
 # building the struct the route is about is read as a call of the route inside itself
 # the methods run on what the constructor built, not on the caller's instance
 line Kennisbank > Kennisbank()/Kennisbank.voeg_toe/Kennisbank.write/read_to_string value   # `fs::read_to_string(&self.path)`
+home _@Kennisbank()/Kennisbank.graaf#2 Kennisbank()
+line Kennisbank()/Kennisbank.graaf > _@Kennisbank()/Kennisbank.graaf#2 value # what it gives its caller, of no type of the code's

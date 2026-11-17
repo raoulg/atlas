@@ -26,8 +26,9 @@ default 8: its folded folders, its steps, then its closed families) and holds th
 was: opening a box refines the quotient, so it takes no line away (every line of the closed picture is a line of the
 open one, seen through the quotient map, which sends a file to the folded folder that holds it), draws no line the
 closed picture did not (a line the open box draws across its frame is one the closed box should have drawn: rule 1),
-moves no box from outside a frame into it, and closing the box (by its frame, a folder by its chip) draws the closed
-picture again. It fails when a box does otherwise.
+moves no box from outside a frame into it, and closing the box (by the title of its frame, a folder without one by its
+chip in the list of what is opened) draws the closed picture again. A view the page cannot draw keeps the picture before
+it, so a box whose opening throws is reported as such, never compared. It fails when a box does otherwise.
 
 A sample is as good as its draw, and no number of routes proves the law: with `ATLAS_TOPOLOGY_SECONDS=s` topology takes
 the routes in an order drawn from a seed (`ATLAS_SEED`, else a fresh one, printed first) and stops when s seconds have
@@ -104,11 +105,12 @@ FAMILIES = """async (done) => {
 }"""
 
 # Opens one box of the route in the page and says what the picture did: `null` lists the boxes that open, `{id, kind}` opens one.
-# The quotient map sends each box of the open picture to the box of the closed one it lies in, or to itself.
+# The quotient map sends each box of the open picture to the box of the closed one it lies in, or to itself. A line is
+# written `a ⟶ b`: a box's id may hold `>` (`v::Vec<String>`).
 TOPOLOGY = """async (spec) => {
   const sleep = ms => new Promise(r => setTimeout(r, ms));
   const settle = async n0 => { for (let i = 0; i < 100 && window.atlasPicture.n === n0; i++) await sleep(50); await sleep(30); };
-  const snap = () => { const P = window.atlasPicture; return {n: P.n, folded: new Map(window.atlasPlan?.coarse?.folded || []), boxes: new Map(P.boxes), sides: new Map(P.sides || []), lines: P.lines.map(([a, b]) => a + ">" + b), dirs: new Map(P.folders || [])}; };
+  const snap = () => { const P = window.atlasPicture; return {n: P.n, folded: new Map(window.atlasPlan?.coarse?.folded || []), boxes: new Map(P.boxes), sides: new Map(P.sides || []), lines: P.lines.map(([a, b]) => a + " ⟶ " + b), dirs: new Map(P.folders || [])}; };
   const keyOf = id => id.replace(/^[no]:/, "");
   const closedFamily = g => g.matches('g.tnode[data-id^="t:"]') && /\\(\\d+\\)/.test(g.querySelector(".title")?.textContent || "");
   // a box of files folded into a directory opens that directory
@@ -131,7 +133,12 @@ TOPOLOGY = """async (spec) => {
       if (coarse.boxes.has(id)) return id;
       if (coarse.folded.has(id)) return coarse.folded.get(id);
       if (/^w:File:/.test(id) && inFolder(id)) return inFolder(id);
-      for (let p = fine.boxes.get(id); p && p !== "root"; p = fine.boxes.get(p)) if (coarse.boxes.has(p)) return p;
+      // a frame is no box of its own: a box in a frame lies where the frame's step lies (a value read back in a choice of a
+      // step, `v:back:..~in~STEP`, has no moment in its id to go by)
+      for (let p = fine.boxes.get(id); p && p !== "root"; p = fine.boxes.get(p)) {
+        if (coarse.boxes.has(p)) return p;
+        if (!fine.boxes.has(p) && /^n:/.test(p)) { const u = under(keyOf(p)); if (u) return u; }
+      }
       const m = id.match(/^(.*?)@(.*)$/);
       if (m) {
         const k = keyOf(m[2]), u = under(k);
@@ -150,19 +157,25 @@ TOPOLOGY = """async (spec) => {
   let n0 = window.atlasPicture.n;
   g.dispatchEvent(new MouseEvent("click", {bubbles: true}));
   await settle(n0);
+  // a view the page cannot draw keeps the picture before it: what it says is the fault, not the picture
+  const thrown = (f => f && !f.hidden ? (f.querySelector("pre")?.textContent || "a fault").split("\\n")[0] : null)(document.getElementById("fault"));
+  if (thrown) return {opened: spec.id, thrown};
   const fine = snap(), phi = phiFor(coarse, fine), image = new Set();
-  for (const l of fine.lines) { const [a, b] = l.split(">"); const A = phi(a), B = phi(b); if (A !== B) image.add(A + ">" + B); }
+  for (const l of fine.lines) { const [a, b] = l.split(" ⟶ "); const A = phi(a), B = phi(b); if (A !== B) image.add(A + " ⟶ " + B); }
   const base = new Set(coarse.lines), lost = [...base].filter(l => !image.has(l));
   // what a step reads back of what it wrote is a value inside it (rule 4), so no line from a place may appear on opening
   const gained = [...image].filter(l => !base.has(l));
   const moved = [...fine.boxes].filter(([b, par]) => coarse.boxes.has(b) && coarse.boxes.get(b) !== par).map(([b, par]) => `${b}: ${coarse.boxes.get(b)} -> ${par}`);
   // a place of the world stands on the side it stood: opening a box does not make what it does there another's
   const resided = [...fine.sides].filter(([id, side]) => coarse.sides.has(id) && coarse.sides.get(id) !== side).map(([id, side]) => `${id}: ${coarse.sides.get(id)} -> ${side}`);
-  // close it again by its frame, or a folder by its chip
-  const frame = [...fine.boxes].find(([b, par]) => !coarse.boxes.has(b) && coarse.boxes.has(par) && /^(n|t):/.test(par))?.[1];
+  // close it again as a reader does: by the title of the frame it opened into, else (a folder whose files only spread out)
+  // by its chip in the list of what is opened, which the bar shows on request
+  const frame = spec.kind === "folder" ? spec.id : [...fine.boxes].find(([b, par]) => !coarse.boxes.has(b) && coarse.boxes.has(par) && /^(n|t):/.test(par))?.[1];
   let back = null;
   const fr = frame && [...document.querySelectorAll("#scene g.frame[data-id]")].find(x => x.dataset.id === frame);
-  const closer = spec.kind === "folder" ? [...document.querySelectorAll("button")].find(b => b.textContent === coarse.dirs.get(spec.id) + " ✕") : fr?.querySelector(".ftitle");
+  const chip = () => [...document.querySelectorAll("#crumbs button")].find(b => b.textContent === coarse.dirs.get(spec.id) + " ✕");
+  const listed = () => { const more = document.querySelector("#crumbs button.count"); if (!chip() && more && /▸$/.test(more.textContent)) more.click(); return chip(); };
+  const closer = fr?.querySelector(".ftitle") || (spec.kind === "folder" ? listed() : null);
   if (closer) {
     n0 = window.atlasPicture.n;
     closer.dispatchEvent(new MouseEvent("click", {bubbles: true}));
@@ -185,9 +198,11 @@ ORDER = """async (specs) => {
     const n0 = window.atlasPicture.n;
     g.dispatchEvent(new MouseEvent("click", {bubbles: true}));
     await settle(n0);
+    const thrown = (f => f && !f.hidden ? (f.querySelector("pre")?.textContent || "a fault").split("\\n")[0] : null)(document.getElementById("fault"));
+    if (thrown) return {thrown: spec.id + ": " + thrown};
   }
   const P = window.atlasPicture;
-  return {boxes: P.boxes.map(b => b[0] + " in " + b[1]).sort(), lines: P.lines.map(l => l.join(">")).sort()};
+  return {boxes: P.boxes.map(b => b[0] + " in " + b[1]).sort(), lines: P.lines.map(l => l.join(" ⟶ ")).sort()};
 }"""
 
 
@@ -303,6 +318,10 @@ def topology(atlas: str, repo: str, out: pathlib.Path, routes: int, opens: int) 
                 checked += 1
                 if r.get("gone"):
                     continue
+                if r.get("thrown"):
+                    bad += 1
+                    print(route, "· opens", spec["kind"], spec["id"], "and the page cannot draw it:", r["thrown"])
+                    continue
                 faults = [f"{what} {x}" for what in ("lost", "moved", "resided") for x in r[what][:3]] + (["does not close to the picture it was"] if r["reversible"] is False else [])
                 more = [f"more {x}" for x in r["gained"][:3]]
                 if faults or more:
@@ -321,6 +340,11 @@ def topology(atlas: str, repo: str, out: pathlib.Path, routes: int, opens: int) 
                             break
                         shots.append(tab.evaluate(ORDER, order))
                     checked += 1
+                    thrown = [x["thrown"] for x in shots if x.get("thrown")]
+                    if thrown:
+                        bad += 1
+                        print(route, "· opens", A["id"], "and", B["id"], "and the page cannot draw it:", thrown[0])
+                        continue
                     if len(shots) == 2 and not any(x.get("gone") for x in shots) and shots[0] != shots[1]:
                         bad += 1
                         print(route, "· opens", A["id"], "and", B["id"], "and the order changes the picture")

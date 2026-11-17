@@ -203,7 +203,8 @@ def smoothing(ctx, dark, atlas, out, drawn):
 def close_up(page, last):
     """The part of the page from `load` to the step `last`, with the boxes between them."""
     return page.evaluate(r"""(last) => {
-          const label = g => g.textContent.replace(/^[\u25b8\u25be]\s*/, '').trim();
+          // a step's name, without the count of errors it hands on beside it (`load  +1 error type`)
+          const label = g => g.textContent.replace(/^[\u25b8\u25be]\s*/, '').trim().split(/\s+\+\d/)[0];
           const steps = [...document.querySelectorAll('#scene g.tstep')];
           const box = n => n.querySelector('rect.bg').getBoundingClientRect();
           const [first, end] = ['load', last].map(l => steps.find(g => label(g) === l));

@@ -1,0 +1,11 @@
+[project]
+name = "billing"
+version = "0.1.0"
+requires-python = ">=3.12"
+dependencies = ["notekit"]
+
+[project.scripts]
+billing = "billing.main:main"
+
+[tool.uv.sources]
+notekit = { path = "../../vendor/notekit-0.2.0", editable = true }

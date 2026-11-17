@@ -103,10 +103,17 @@ fn library_knowledge_is_data() {
     names.extend(k::PYTHON_ENVIRONMENT.iter().flat_map(|(l, c, _)| [*l, *c]));
     // a file's classes hold where ty finds their library, never by their names
     names.extend(k::PYTHON_FILE_CLASSES.iter().flat_map(|(l, c, _)| [*l, *c]));
-    // a runner's test files and a package's client makers by their conventions (`open` is also a
-    // word of the page and of the effects); the conditions of `exports` other than words the reader
-    // uses for the language's own forms (`import`, `default`)
-    names.extend(k::TYPESCRIPT_TEST_FILES.marks.iter().chain(k::TYPESCRIPT_TEST_FILES.dirs).copied());
+    // a decorator that names a choice holds by where ty finds it, never by its name (`option` is also a word of the
+    // command-line readers)
+    names.extend(k::PYTHON_CHOICE_NAMES.iter().flat_map(|(l, d, _, _)| [*l, *d]).filter(|n| *n != "option"));
+    // a runner's test code and its tests and a package's client makers by their conventions (`test` is
+    // also Rust's own `cfg(test)` and `Test` a word of the page; `open` is also a word of the page and
+    // of the effects); the conditions of `exports` other than words the reader uses for the
+    // language's own forms (`import`, `default`)
+    for runner in [&k::PYTEST, &k::CARGO_TEST, &k::JS_TESTS] {
+        let words = [runner.files, runner.collects, runner.functions, runner.classes, runner.marks];
+        names.extend(words.into_iter().flatten().copied().filter(|w| !matches!(*w, "test" | "Test" | "**")));
+    }
     names.extend(k::TYPESCRIPT_CLIENT_MAKERS.names.iter().copied().filter(|n| *n != "open"));
     names.extend(k::EXPORT_CONDITIONS.iter().copied().filter(|c| !matches!(*c, "import" | "require" | "default" | "module" | "node")));
     for table in [
@@ -125,9 +132,17 @@ fn library_knowledge_is_data() {
     }
     // what the engine once tested by name
     names.extend(["cmd_", "repo_id", "plt", "np", "pd", "OpenOptions", "pathlib"]);
+    names.extend(k::PYTHON_CALL_RUNS.iter().map(|(l, _, _)| *l));
+    // a library by its root package as well: `vectormesh` of the row `vectormesh.design`
+    let roots: Vec<&str> = names
+        .iter()
+        .filter_map(|n| n.split_once('.').map(|(r, _)| r))
+        .filter(|r| r.chars().next().is_some_and(char::is_alphabetic) && r.chars().all(|c| c.is_alphanumeric() || c == '_'))
+        .collect();
+    names.extend(roots);
     let quoted: Vec<String> = names.iter().map(|n| format!("\"{n}\"")).collect();
     // in the viewer as well, where a library's name is also a word of the page (an event, a kind)
-    let anywhere = Regex::new(r"\b(rkg|plusmin|vectormesh|goad|huggingface|cmd_)\b").unwrap();
+    let anywhere = Regex::new(r"\b(rkg|plusmin|goad|huggingface|cmd_)\b").unwrap();
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let mut files: Vec<PathBuf> = std::fs::read_dir(root.join("src")).unwrap().flatten().map(|e| e.path()).collect();
     for sub in ["python", "typescript", "rust"] {

@@ -48,6 +48,22 @@ pub struct Families {
     /// The rank families of shaped arrays (`Float Tensor · 3D`): families no type of the code's is, each one a
     /// family however few shapes it holds.
     pub ranks: Vec<String>,
+    /// The library each type of a library is of, by the name of its top package (`library_of`); a rank family is of
+    /// its shapes' library.
+    pub library: BTreeMap<String, String>,
+}
+
+/// The library whose values a type is, by the name of its top package: a type past the code or a library's class, of the
+/// package its module is in (`torch` for `torch.nn.Module`), a shaped array of its array type's (`torch` for
+/// `Float[Tensor, batch dim]` whose `Tensor` is `torch.Tensor`); none for a type of the code's.
+pub fn library_of(n: &crate::model::Node) -> Option<String> {
+    let from = |path: &str| path.split(['.', ':']).next().filter(|p| !p.is_empty()).map(str::to_string);
+    match n.kind {
+        NodeKind::External if !n.array.is_empty() => from(&n.array),
+        NodeKind::External => from(&n.module),
+        NodeKind::Class if n.library => from(&n.module),
+        _ => None,
+    }
 }
 
 struct Ix<'g> {
@@ -192,8 +208,10 @@ pub fn families(g: &Graph) -> Families {
         }
     }
     let library: HashSet<&str> = g.nodes.iter().filter(|n| n.library).map(|n| n.id.as_str()).collect();
+    // a function with no body makes and takes nothing of its own: its signature is the family's type
+    let declared: HashSet<&str> = g.nodes.iter().filter(|n| n.declared).map(|n| n.id.as_str()).collect();
     let (mut makes, mut takes): (IndexMap<String, Vec<String>>, IndexMap<String, Vec<String>>) = Default::default();
-    for e in g.edges.iter().filter(|e| !library.contains(e.src.as_str())) {
+    for e in g.edges.iter().filter(|e| !library.contains(e.src.as_str()) && !declared.contains(e.src.as_str())) {
         let use_ = match e.kind {
             EdgeKind::Takes => &mut takes,
             EdgeKind::Returns | EdgeKind::Instantiates | EdgeKind::Mutates => &mut makes,
@@ -203,6 +221,13 @@ pub fn families(g: &Graph) -> Families {
         if !by.contains(&e.src) {
             by.push(e.src.clone());
         }
+    }
+    for n in &g.nodes {
+        let Some(lib) = library_of(n) else { continue };
+        if let Some(f) = ix.ranks.get(n.id.as_str()) {
+            out.library.entry(f.clone()).or_insert_with(|| lib.clone());
+        }
+        out.library.insert(n.id.clone(), lib);
     }
     let mut ranks: Vec<String> = ix.ranks.values().cloned().collect();
     ranks.sort();

@@ -52,12 +52,27 @@ def graph(library: bool) -> dict:
 
 class Corpus(unittest.TestCase):
     def test_the_corpus_holds_its_own_laws(self):
-        """tools/corpus.txt as it is: every program at a full commit, a name per program, a private one measured alone."""
+        """tools/corpus.txt as it is: every program at a full commit, a name per program, a private one never sampled."""
         programs = perf.corpus()
         self.assertTrue(any("perf" in p.readers for p in programs))
         for p in programs:
             if p.private:
-                self.assertEqual(p.readers, ("perf",))
+                self.assertNotIn("laws", p.readers)
+
+    def test_every_lock_a_program_commits_is_installed_by_its_tool_where_it_lies(self):
+        """Fetching a lock's dependencies is one construct: each committed lock file, in any language and at any depth,
+        names the command of its tool, run in its own directory; an uncommitted file (a lock in `node_modules`) is none."""
+        with tempfile.TemporaryDirectory() as d:
+            tree = Path(d)
+            for f in ("Cargo.lock", "uv.lock", "web/package-lock.json", "web/pnpm-lock.yaml", "README.md"):
+                (tree / f).parent.mkdir(parents=True, exist_ok=True)
+                (tree / f).write_text("")
+            (tree / "node_modules").mkdir()
+            (tree / "node_modules" / "package-lock.json").write_text("")
+            subprocess.run(["git", "init", "-q", str(tree)], check=True)
+            subprocess.run(["git", "-C", str(tree), "add", "Cargo.lock", "uv.lock", "web", "README.md"], check=True)
+            got = [(w.relative_to(tree).as_posix(), c[0] if c[0] != "corepack" else c[1]) for w, c in perf.locks_in(tree)]
+            self.assertEqual(got, [(".", "cargo"), (".", "uv"), ("web", "npm"), ("web", "pnpm")])
 
     def test_a_private_program_is_never_sampled(self):
         with self.assertRaisesRegex(SystemExit, "laws never reads it"):
@@ -126,6 +141,14 @@ class Series(unittest.TestCase):
         perf.one_revision({"atlas": {"revision": "d" * 40, "pinned": False}}, past)
         with self.assertRaisesRegex(SystemExit, "another name"):
             perf.one_revision({"x": {"revision": "b" * 40, "pinned": True}}, past)
+
+    def test_a_night_is_judged_by_the_tables_measures(self):
+        """A reading is slower where its seconds or its cold peak are: a phase, a count or the warm peak never makes a
+        night suspect, and what is reproduced is what the release's table shows."""
+        for m in perf.table_measures(["x"]):
+            self.assertTrue(perf.in_table(m))
+        for m in ("read/x/cold/phase/read", "read/x/warm/peak_rss", "read/x/cold/linked/library", "build/release/seconds", "tests/total/seconds"):
+            self.assertFalse(perf.in_table(m))
 
     def test_a_pair_from_one_runner_goes_before_two_nights(self):
         measure = "read/x/cold/seconds"
@@ -204,9 +227,9 @@ class Page(unittest.TestCase):
         result = {"a": "a" * 40, "b": "b" * 40, "measures": measures, "cards": {"public-x": card, "hidden-y": card}}
         night = {"commit": "c" * 40, "runner": {"cpu": "cpu"}, "metrics": {"read/public-x/cold/seconds": {"value": 4.0}}}
         data = perf.bench_data(programs, [], {"0.1.0": night, "0.2.0": night}, "0.1.0", "0.2.0", result)
-        self.assertEqual(len(data["rows"]), len(programs) + 1)
+        self.assertEqual(len(data["rows"]), len(programs))
         unmeasured = {"a": "a" * 40, "b": "b" * 40, "measures": {m: g for m, g in measures.items() if "hidden-y" not in m}}
-        self.assertEqual(len(perf.bench_data(programs, [], {}, "0.1.0", "0.2.0", unmeasured)["rows"]), len(programs))
+        self.assertEqual(len(perf.bench_data(programs, [], {}, "0.1.0", "0.2.0", unmeasured)["rows"]), len(programs) - 1)
         with tempfile.TemporaryDirectory() as d:
             (Path(d) / "bench.json").write_text(json.dumps(data))
             docs, release_page.DOCS = release_page.DOCS, Path(d)

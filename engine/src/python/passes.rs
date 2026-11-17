@@ -504,6 +504,58 @@ pub(super) fn link(modules: &IndexMap<String, Module>, store: &mut GraphBuilder,
             n.breaks = breaks;
         }
     }
+    // the functions a definition is defined under, by the name each decorator is written with or calls
+    for id in &ids {
+        let n = &store.nodes[id];
+        if !matches!(n.kind, NodeKind::Function | NodeKind::Method) || n.decorators.is_empty() {
+            continue;
+        }
+        let m = &modules[&n.module];
+        let facts = types.of(&n.file);
+        let Some(decorated) = def_node(m, n).and_then(|d| d.parent()).filter(|p| p.kind() == "decorated_definition") else { continue };
+        let mut guards: Vec<String> = vec![];
+        let mut names_choice: Option<String> = None;
+        for d in named_children(decorated).into_iter().filter(|d| d.kind() == "decorator") {
+            let Some(written) = d.named_child(0) else { continue };
+            let name = if written.kind() == "call" { written.child_by_field_name("function").unwrap_or(written) } else { written };
+            let by_ty = facts.map_or(&[][..], |f| f.callees((name.start_byte(), name.end_byte()))).iter().find_map(|c| match &c.target {
+                Target::Here { file, at } => sites.get(&(file.clone(), *at)).cloned(),
+                Target::Lib(_) => None,
+            });
+            let guard = by_ty.or_else(|| resolve(m, &dotted(Some(name), &m.src), modules, &store.nodes, own).map(Resolved::id));
+            // a decorator a library names the choice by, read or known only by its stubs: its name and the string it is
+            // handed there
+            let library = guard.as_deref().map(|g| ext::path(g).unwrap_or(g));
+            let named = library
+                .and_then(|g| g.rsplit_once('.'))
+                .and_then(|(module, decorator)| Some((decorator, knowledge::python_choice_name(module, decorator)?)));
+            if let Some((decorator, (at, keyword))) = named.filter(|_| written.kind() == "call") {
+                let args = written.child_by_field_name("arguments").map(named_children).unwrap_or_default();
+                let by_keyword = args.iter().find_map(|a| {
+                    (a.kind() == "keyword_argument" && a.child_by_field_name("name").is_some_and(|n| text(n, &m.src) == keyword))
+                        .then(|| a.child_by_field_name("value"))
+                        .flatten()
+                });
+                let by_place = || {
+                    args.iter()
+                        .filter(|a| !matches!(a.kind(), "keyword_argument" | "comment" | "list_splat" | "dictionary_splat"))
+                        .nth(at)
+                        .copied()
+                };
+                if let Some(a) = by_keyword.or_else(by_place).filter(|a| a.kind() == "string") {
+                    names_choice = Some(format!("{decorator} {}", unquote(text(a, &m.src))));
+                }
+            }
+            if let Some(g) = guard.filter(|g| store.nodes.get(g).is_some_and(|x| matches!(x.kind, NodeKind::Function | NodeKind::Method))) {
+                if !guards.contains(&g) {
+                    guards.push(g);
+                }
+            }
+        }
+        let n = store.nodes.get_mut(id).expect("a node of the graph");
+        n.guards = guards;
+        n.names_choice = names_choice;
+    }
     // what a framework registers, and what the attributes hold, as ty types them
     mark_registered(modules, store, types, &sites, own);
     attributes(modules, store, types, &sites, own);
@@ -525,7 +577,7 @@ pub(super) fn link(modules: &IndexMap<String, Module>, store: &mut GraphBuilder,
             let Some(body) = d.child_by_field_name("body") else { continue };
             let seen = Seen::new(m, types, &sites, modules, store, own);
             let cls = n.cls.as_deref().filter(|_| method);
-            let (receiver, params) = changed_params(&seen, &changing, d, body, method, cls);
+            let (receiver, params) = crate::tree::indexed(d, || changed_params(&seen, &changing, d, body, method, cls));
             found.push((id.clone(), receiver && method && n.name != "__init__" && cls.is_some(), params));
         }
         for (id, receiver, params) in found {
@@ -568,24 +620,27 @@ pub(super) fn link(modules: &IndexMap<String, Module>, store: &mut GraphBuilder,
     // a parameter a call leaves out holds its declared default, and an entry's what it is run with
     let completed = {
         let store = &*store;
-        let default = |f: &str, p: &str| -> Vec<Built> {
+        // (`paths::Defaults`): a default that is `None` is nothing
+        let default = |f: &str, p: &str| -> Option<Vec<Built>> {
             // a value built from its fields: the field's declared default
             if let Some((m, d)) = field_default(modules, store, f, p) {
-                return eval.of(At { m, scope: None, params: &[] }, d, 0);
+                return Some(eval.of(At { m, scope: None, params: &[] }, d, 0));
             }
-            let Some(n) = store.nodes.get(f) else { return vec![] };
-            let Some(m) = modules.get(&n.module) else { return vec![] };
-            let Some(def) = def_node(m, n) else { return vec![] };
+            let n = store.nodes.get(f)?;
+            let m = modules.get(&n.module)?;
+            let def = def_node(m, n)?;
             let declared =
                 paths::parameters(def, &m.src, n.kind == NodeKind::Method).into_iter().find(|(q, _)| q == p).and_then(|(_, d)| d);
             let entry =
                 n.entry.is_some().then(|| paths::entry_defaults(def, &m.src).into_iter().find(|(q, _)| q == p).map(|(_, d)| d)).flatten();
-            [entry, declared].into_iter().flatten().flat_map(|d| eval.of(At { m, scope: None, params: &[] }, d, 0)).collect()
+            let defaults: Vec<_> = [entry, declared].into_iter().flatten().collect();
+            (!defaults.is_empty()).then(|| defaults.into_iter().flat_map(|d| eval.of(At { m, scope: None, params: &[] }, d, 0)).collect())
         };
         let handing: Vec<Evaluated> = args.iter().map(|arg| Evaluated { arg, modules, eval: &eval }).collect();
         let entry = |f: &str| store.nodes.get(f).map_or(false, |n| n.entry.is_some());
         let family = store.family();
-        crate::paths::complete(waiting, &handing, &family, &default, &entry)
+        let holds = |g: &str, x: &str| eval.field(g, x);
+        crate::paths::complete(waiting, &handing, &family, &default, &holds, &entry)
     };
     crate::paths::place_calls(store, completed, false);
     drop(callers);
@@ -828,11 +883,11 @@ fn mark_registered(
                     .any(|(t, name)| seen.package(t).map_or(false, |p| knowledge::TOOL_SERVERS.contains(&(p.as_str(), name.as_str()))))
             })
         };
-        for n in store
-            .nodes
-            .values()
-            .filter(|n| n.module == m.id && matches!(n.kind, NodeKind::Function | NodeKind::Method) && n.entry.is_none())
-        {
+        for n in store.nodes.values().filter(|n| {
+            n.module == m.id
+                && matches!(n.kind, NodeKind::Function | NodeKind::Method)
+                && n.entry.as_ref().map_or(true, |e| e.kind == EntryKind::Export)
+        }) {
             let Some(decorated) = def_node(m, n).and_then(|d| d.parent()).filter(|p| p.kind() == "decorated_definition") else { continue };
             let registered = named_children(decorated)
                 .into_iter()
@@ -871,9 +926,7 @@ fn mark_registered(
         }
     }
     for (id, entry) in found {
-        if let Some(n) = store.nodes.get_mut(&id) {
-            n.entry = Some(entry);
-        }
+        store.enter(&id, entry);
     }
 }
 
@@ -1012,6 +1065,71 @@ pub(super) fn mark_exports(modules: &IndexMap<String, Module>, store: &mut Graph
             let Some(t) = m.symbols.get(&name).or_else(|| m.bindings.get(&name)).filter(|t| own.holds(t)) else { continue };
             let Some(t) = defined(t, modules, &store.nodes) else { continue };
             store.export(&t, if path.is_empty() { name.clone() } else { format!("{path}.{name}") });
+        }
+    }
+}
+
+/// A class of the project whose instance, called, runs a method a library class says it runs
+/// (`knowledge::PYTHON_CALL_RUNS`: torch's `Module` runs `forward`) is a route of its own: the class is the
+/// arrow its instance is (mathematics.md, "Currying: a class is the arrow it carries"), and that arrow is the
+/// method. The route starts at the method, labelled by the class; the constructor, which fixes the instance,
+/// is no step of it. Along the class's bases in Python's order the first definition of the method before the
+/// library's class is the one that runs; a class on the way that defines `__call__` is called as any class is.
+pub(super) fn mark_called_classes(store: &mut GraphBuilder) {
+    let mut bases: HashMap<String, Vec<String>> = HashMap::new();
+    for e in store.edges.iter().filter(|e| e.kind == EdgeKind::Inherits) {
+        bases.entry(e.src.clone()).or_default().push(e.dst.clone());
+    }
+    let classes: Vec<(String, String, String)> = store
+        .nodes
+        .values()
+        .filter(|n| n.kind == NodeKind::Class && !n.library)
+        .map(|n| (n.id.clone(), n.name.clone(), n.module.clone()))
+        .collect();
+    let runs = |c: &str| {
+        let path = ext::path(c).unwrap_or(c);
+        let (module, class) = path.rsplit_once('.')?;
+        knowledge::python_call_runs(module, class)
+    };
+    let defines = |c: &str, m: &str| store.nodes.get(&format!("{c}.{m}")).is_some_and(|n| n.kind == NodeKind::Method);
+    // each class that is such a route, by the method that runs, with its name and its module
+    let mut found: Vec<(String, &str, &str)> = vec![];
+    for (id, name, module) in &classes {
+        let of = |c: &str| -> Vec<&str> { bases.get(c).map(|b| b.iter().map(String::as_str).collect()).unwrap_or_default() };
+        let order = crate::model::linearization(id.as_str(), &of, &mut HashMap::new());
+        let Some(method) = order.iter().find_map(|c| runs(c)) else { continue };
+        let mut runner = None;
+        for c in &order {
+            if runs(c).is_some() || defines(c, "__call__") {
+                break;
+            }
+            if defines(c, method) {
+                runner = Some(format!("{c}.{method}"));
+                break;
+            }
+        }
+        if let Some(runner) = runner {
+            found.push((runner, name, module));
+        }
+    }
+    // a label two of them share carries the fewest last parts of each one's module that tell them apart
+    // (`01_kernels.Kernels` beside `02_state_and_gates.Kernels`)
+    let label = |name: &str, module: &str| -> String {
+        let parts = |m: &str| m.split('.').map(str::to_string).collect::<Vec<_>>();
+        let mine = parts(module);
+        let others: Vec<Vec<String>> = found.iter().filter(|(_, n, m)| *n == name && *m != module).map(|(_, _, m)| parts(m)).collect();
+        if others.is_empty() {
+            return name.to_string();
+        }
+        let tail = |m: &[String], k: usize| m[m.len().saturating_sub(k)..].join(".");
+        let k = (1..=mine.len()).find(|&k| others.iter().all(|o| tail(o, k) != tail(&mine, k))).unwrap_or(mine.len());
+        format!("{}.{name}", tail(&mine, k))
+    };
+    let entries: Vec<(String, Entry)> =
+        found.iter().map(|(runner, name, module)| (runner.clone(), Entry::new(EntryKind::Class, label(name, module)))).collect();
+    for (id, entry) in entries {
+        if store.nodes.get(&id).is_some_and(|n| n.entry.is_none()) {
+            store.enter(&id, entry);
         }
     }
 }
@@ -1165,6 +1283,26 @@ fn alias_targets(
     }
     let Some(a) = aliases.get(&full) else { return vec![] };
     a.names.iter().filter_map(|n| resolve(&modules[&a.module], n, modules, nodes, own).map(Resolved::id)).collect()
+}
+
+/// The array type each shaped array names (`Node::array`), resolved where a module of the program's names it: `Tensor` in
+/// `Float[Tensor, "batch dim"]` is `torch.Tensor` in a module that imports it from torch. The shape's id keeps the array
+/// type as the annotation writes it, so the first module that names it says which one it is.
+pub(super) fn array_types(modules: &IndexMap<String, Module>, store: &mut GraphBuilder, own: &Own) {
+    let shaped: Vec<(String, String)> = store
+        .nodes
+        .values()
+        .filter(|n| n.kind == NodeKind::External)
+        .filter_map(|n| Some((n.id.clone(), crate::shapes::Array::of_id(&n.id)?.array)))
+        .collect();
+    for (id, array) in shaped {
+        let parts: Vec<String> = array.split('.').map(str::to_string).collect();
+        let named = |m: &&Module| m.symbols.contains_key(&parts[0]) || m.bindings.contains_key(&parts[0]);
+        let Some(found) = modules.values().filter(named).find_map(|m| resolve(m, &parts, modules, &store.nodes, own)) else { continue };
+        if let Some(n) = store.nodes.get_mut(&id) {
+            n.array = crate::model::ext::name(&found.id()).to_string();
+        }
+    }
 }
 
 /// The shaped array each function returns, where its signature returns that one type and it is a

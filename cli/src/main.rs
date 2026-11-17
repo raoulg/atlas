@@ -4,6 +4,7 @@ mod http;
 mod log;
 mod mcp;
 mod page;
+mod prefs;
 mod serve;
 mod shared;
 mod update;
@@ -245,7 +246,7 @@ enum Cmd {
         /// Open the page in this view, as JSON: `{"route": <entry id>}`
         ///
         /// Also `"open": {"functions": [<id>, ..]}`, and `kind`, `part`, `focus`, and the opened
-        /// `parts`, `units`, `steps`, `families`, `places`, `dirs`, as the page's address writes them.
+        /// `parts`, `units`, `steps`, `families`, `places`, `dirs`, `classes`, `bases`, `flat`, as the page's address writes them.
         #[arg(long, value_name = "JSON")]
         view: Option<Sight>,
         /// Write how long each phase took (read, check, flow, page), in seconds, how many bodies the
@@ -357,7 +358,8 @@ fn view(
     let (graph, compared) = read.drawn();
     let flow = atlas_engine::flow::of(&graph);
     phases.done("flow");
-    let opens = page::Opens { route: named_route(&graph, &opts.named), sight, served: None };
+    let route = if opts.named.is_empty() { folder_route(&graph, repos) } else { named_route(&graph, &opts.named) };
+    let opens = page::Opens { route, sight, served: None };
     let html = page::Html::of(&graph, &flow, &findings, compared.as_ref(), &opens)?;
     let out = out.unwrap_or_else(|| home::made(home, &format!("{}.html", graph.root)));
     html.write(&out)?;
@@ -402,6 +404,12 @@ impl Phases {
 fn named_route(graph: &Graph, named: &[PathBuf]) -> Option<String> {
     let lies_in = |file: &str| Repo::resolved(std::path::Path::new(file)).is_some_and(|f| named.contains(&f));
     graph.nodes.iter().find(|n| n.entry.is_some() && lies_in(&n.file)).map(|n| n.id.clone())
+}
+
+/// The route a folder named on the command line opens on (`page::folder_route`), where one folder is named.
+fn folder_route(graph: &Graph, repos: &[PathBuf]) -> Option<String> {
+    let [folder] = repos else { return None };
+    page::folder_route(graph, folder)
 }
 
 /// A repository argument as a folder on disk: a path as it is, a URL cloned for as long as the
@@ -530,6 +538,14 @@ fn main() -> ExitCode {
     }
 }
 
+/// The graph `atlas-code analyze` writes: of the package named, else of every part of the repository.
+fn analyzed(repo: &Path, package: Option<PathBuf>, opts: Options) -> Result<Graph> {
+    match package {
+        Some(p) => atlas_engine::analyze(repo, &Options { package: Some(p), ..opts }),
+        None => parts::analyze_repo(&[repo.to_path_buf()], &opts),
+    }
+}
+
 /// The command, and 1 for `atlas-code check` with something to ask. It returns once what it holds is
 /// dropped, the temporary clone of a git URL among it, so that is removed whatever the status.
 fn run(cli: Cli) -> Result<ExitCode> {
@@ -618,10 +634,7 @@ fn run(cli: Cli) -> Result<ExitCode> {
         Cmd::Analyze { repo, package, out } => {
             let (repo, clone) = local(repo, &mut opts)?;
             let out = out.unwrap_or_else(|| home::made(clone.is_none().then_some(repo.as_path()), "graph.json"));
-            let g = match package {
-                Some(p) => atlas_engine::analyze(&repo, &Options { package: Some(p), ..opts })?,
-                None => parts::analyze_repo(&[repo.clone()], &opts)?,
-            };
+            let g = analyzed(&repo, package, opts)?;
             if let Some(dir) = out.parent() {
                 std::fs::create_dir_all(dir)?;
             }
@@ -643,6 +656,9 @@ fn run(cli: Cli) -> Result<ExitCode> {
                 100.0 * s.unknown_share()
             );
             eprintln!("entries {} · make targets {}", g.nodes.iter().filter(|n| n.entry.is_some()).count(), g.make.len());
+            if let Some(unread) = page::unread(&g) {
+                eprintln!("{unread}");
+            }
             eprintln!("wrote {}", out.display());
         }
     }

@@ -18,8 +18,10 @@ Read it from left to right:
 
 - **On the left** are the places whose content the route finds and uses, each folded under the type
   that keeps it, with how many it holds: `Repo`, the repository's files and the manifests by which it finds the repository's
-  parts, and `Environment`, where the libraries the code calls are kept. A click opens a type into
-  its files. The green `>_` box is where the route starts.
+  parts, and `Environment`, where the libraries the code calls are kept. A place no type keeps stands alone:
+  a file the code names by its own name (`File({d}/pyproject.toml)`, the manifest a library's version is read
+  from), and the places the code knows only by a hole together as `from disk`; so does the one place of a type
+  that keeps no other. A click opens a type into its files. The green `>_` box is where the route starts.
 - **In the middle** are the steps. A rounded pill is a function. A box with a coloured
   bar is a value of a type in memory: `Options`, `Repo`, `Graph`. Arrows run in
   call order.
@@ -38,7 +40,10 @@ Read it from left to right:
 - **A dashed frame is a choice.** Its title says what decides each branch, as the code writes it,
   each in the branch's colour: `one of ● mode == "train" ● otherwise`. A step that runs only when
   a condition holds stands in a frame of its own, `only when not raw.exists()`: the route follows
-  it in principle and skips it when the condition does not hold.
+  it in principle and skips it when the condition does not hold. A call through a table the module
+  keeps, looked up by a value (`ACTIVATIONS[config.activation]()`), is a choice between the table's
+  entries: `one of · config.activation`, each branch under its key, and the route says `when
+  config.activation is "gelu"`.
 - **Read it as a sentence:** *read* the repository into a `Repo`, and make its `graph_of`
   with the `Options` of the reading. That is Atlas's whole job, and the code says it in two
   calls.
@@ -73,8 +78,8 @@ Read it from left to right:
 - **Files fold into their folders** once a picture holds more than a column's worth:
   `File(artefacts/) · 8` opens into what is in it with a click.
 - **Shift-click a package** in the overview to focus on it: the picture keeps the packages
-  in focus, the types that cross between them and the places they touch, and joins the
-  rest of the code by counted arrows on either side. Click the rest to open it into the
+  in focus with what they take on the left and what they give on the right, and the
+  rest of the code as one box on either side. Click the rest to open it into the
   packages that hand the focus data or take data from it, and click one of those to add
   it to the focus. The state bar names the packages around the focus, the most exchanged
   first, to add with one click.
@@ -423,7 +428,7 @@ same either way. `--no-cache` reads everything anew and keeps nothing.
 `atlas-code mcp` serves Atlas over the [Model Context Protocol](https://modelcontextprotocol.io).
 The tools are `principles`, `check`, `explain`, `routes`, `route`, `choices` and `changes`;
 `route` returns what one entry point does, step by step, `choices` the choices it makes with what
-decides each branch, and `changes` what the working tree did
+decides each branch (a table's entry `when <value> is <key>`), and `changes` what the working tree did
 since a commit (or, with `until`, what one commit did against another), so an agent can check its
 edit against what it was meant to do. Register it once, for every project, in
 [Claude Code](https://claude.com/claude-code) and in [Codex](https://openai.com/codex):

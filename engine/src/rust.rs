@@ -30,7 +30,7 @@ mod passes;
 mod paths;
 
 use module::{definitions, module_doc, new_parser, type_parameters, Crate, Module};
-use passes::{collect_impls, collect_symbols, collect_uses, link, mark_exports, mark_tests};
+use passes::{collect_impls, collect_symbols, collect_uses, link, mark_cfg_test, mark_exports};
 
 pub(crate) fn crates(repo: &Repo) -> Result<Vec<Crate>> {
     let manifest = repo.root().join("Cargo.toml");
@@ -106,6 +106,11 @@ pub fn environment(repo: &Repo) -> Vec<crate::cache::Check> {
     crates(repo).map(|cs| libraries::environment(repo, &cs)).unwrap_or_default()
 }
 
+/// Where the code of the crate that the code calls `name` lies, called from the file `from`.
+pub fn library_code(repo: &Repo, env: &mut crate::environment::Environment, from: &Path, name: &str) -> Option<PathBuf> {
+    libraries::library_code(repo, env, from, name)
+}
+
 /// Parse a Cargo workspace or crate into a `GraphBuilder`, with the crates its calls go into read
 /// as far as `opts.libraries` says; returns the store and the workspace name.
 pub fn parse(repo: &Repo, opts: &crate::Options) -> Result<(GraphBuilder, String)> {
@@ -116,7 +121,10 @@ pub fn parse(repo: &Repo, opts: &crate::Options) -> Result<(GraphBuilder, String
     // a single crate is named after itself; a workspace after its directory
     let root_name = if crate_list.len() == 1 { crate_list[0].name.clone() } else { repo.name().unwrap_or_else(|| "workspace".into()) };
     let crate_ids: HashMap<String, String> = crate_list.iter().map(|c| (c.name.replace('-', "_"), c.name.clone())).collect();
+    // the libraries each crate's code calls, where their code is read from
+    let deps = (opts.libraries > 0).then(|| libraries::dependencies(repo, &crate_list));
     for c in &crate_list {
+        let externs = deps.as_ref().map(|d| d.externs(&c.name)).unwrap_or_default();
         // a directory under the crate with a `Cargo.toml` of its own is another package
         let other = |p: &Path| {
             p.ancestors().skip(1).take_while(|a| *a != c.dir.as_path() && a.starts_with(&c.dir)).any(|a| repo.is_file(a.join("Cargo.toml")))
@@ -155,8 +163,6 @@ pub fn parse(repo: &Repo, opts: &crate::Options) -> Result<(GraphBuilder, String
                 module: mid.clone(),
                 doc: module_doc(tree.root_node(), &src),
                 is_pkg: is_root,
-                // an integration test: Cargo builds what `tests/` holds only to test the crate
-                test: p.strip_prefix(&c.dir).is_ok_and(|rel| rel.starts_with("tests")),
                 ..Default::default()
             });
             let defs = definitions(&tree, &src);
@@ -186,6 +192,7 @@ pub fn parse(repo: &Repo, opts: &crate::Options) -> Result<(GraphBuilder, String
                     bin,
                     defs,
                     library: false,
+                    externs: externs.clone(),
                 },
             );
         }
@@ -208,11 +215,13 @@ pub fn parse(repo: &Repo, opts: &crate::Options) -> Result<(GraphBuilder, String
     }
     {
         let _reach = crate::clock::stage("reach");
-        libraries::read(repo, &crate_list, &mut modules, &mut store, &crate_ids, opts.libraries);
+        if let Some(deps) = deps {
+            libraries::read(deps, &opts.reach, &mut modules, &mut store, &crate_ids, opts.libraries);
+        }
     }
     link(&modules, &mut store, &crate_ids);
     let _items = crate::clock::stage("items");
-    mark_tests(&modules, &mut store);
+    mark_cfg_test(&modules, &mut store);
     store.mark_library();
     Ok((store, root_name))
 }

@@ -9,6 +9,8 @@ line Web(feeds.example.org) > latest own        # return urlopen(FEED).read()
 
 side entry left
 side Web(feeds.example.org) left
+home _@latest latest
+line latest > _@latest value                                             # what it gives its caller, of no type of the code's
 
 route feeds.post
 line entry > post call

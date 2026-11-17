@@ -41,3 +41,5 @@ home _·tekst@Kennisbank()/Kennisbank.graaf/split Kennisbank()/Kennisbank.graaf
 
 side entry left
 side Disk(Kennisbank.path) both
+home _@Kennisbank()/Kennisbank.graaf Kennisbank()
+line Kennisbank()/Kennisbank.graaf > _@Kennisbank()/Kennisbank.graaf value # what it gives its caller, of no type of the code's

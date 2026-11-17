@@ -11,7 +11,7 @@ use super::module::{
     WRAPPERS,
 };
 use super::paths::{self, Arg, At, Eval};
-use crate::body::{element_written, held_written, Bindings, Crosses, Holders, Range, Step, Steps, UseSyntax, Written};
+use crate::body::{element_written, held_written, Bindings, Crosses, Holders, Kept, Range, Step, Steps, UseSyntax, Written};
 use crate::builder::{foreign_type, GraphBuilder};
 use crate::effects::{self, Crossing};
 use crate::knowledge::{self, OwnTypes};
@@ -905,6 +905,9 @@ pub(super) struct Body<'a, 't> {
     /// or a `static` that nothing changes (`const FLOOR: Floor = ..`). A name of one holds what the module holds, a value the
     /// body did not make.
     constants: HashMap<String, String>,
+    /// The fields of the body's own class that change in place (`knowledge::RUST_INTERIOR`, in the type or in what it
+    /// holds): a method that changes one through `&self` changes `self`, as `&mut self` does.
+    interior: HashSet<String>,
     read: Read<'t>,
 }
 
@@ -954,9 +957,11 @@ impl<'a, 't> Body<'a, 't> {
             unit: n.returns.as_ref().map_or(true, |r| r.value.is_empty() && !r.own),
             loop_values: HashSet::new(),
             constants: HashMap::new(),
+            interior: HashSet::new(),
             read: Read::default(),
         };
         b.constants = b.constants();
+        b.interior = b.interior_fields();
         b.parameters(d);
         b.binders(d, body);
         b.loop_values = b.iterations(body).into_iter().map(|(_, v)| v.id()).collect();
@@ -1061,6 +1066,14 @@ impl<'a, 't> Body<'a, 't> {
             if let Some(pat) = p.child_by_field_name("pattern").filter(|_| p.kind() == "parameter") {
                 for name in bound_names(pat, src) {
                     self.parameter.bind(text(name, src), d.start_byte(), d.end_byte(), true);
+                }
+                // a tuple pattern is one parameter; each name it binds is a part of that parameter, as `let (a, b) = p` binds them
+                if pat.kind() == "tuple_pattern" {
+                    let whole = text(pat, src).to_string();
+                    self.parameter.bind(&whole, d.start_byte(), d.end_byte(), true);
+                    for name in bound_names(pat, src) {
+                        self.aliases.bind(text(name, src), d.start_byte(), d.end_byte(), (whole.clone(), pat.start_byte()));
+                    }
                 }
             }
         }
@@ -1167,6 +1180,13 @@ impl<'a, 't> Body<'a, 't> {
         }
     }
 
+    /// Whether the root of a value names a place the body or its module holds: `self`, a name the body binds, or a
+    /// constant or a static of its module; not a variant that holds no value (`None`).
+    fn names_place(&self, root: TsNode<'t>) -> bool {
+        let (name, at) = (text(root, self.src), root.start_byte());
+        root.kind() == "self" || self.parameter.get(name, at).is_some() || self.item_written(name).is_some()
+    }
+
     /// A name a binding gives a part of another name's value holds that value (a projection bound
     /// to a name is still the projection): `let months = settings.months`, `let base =
     /// &config["base"]`, `let first = levels.first()?` (`Body::held_root`), `let record: Record = result?`, `let (date,
@@ -1180,7 +1200,7 @@ impl<'a, 't> Body<'a, 't> {
             // Some(a)) = (tag.world, args.first())` binds `a` to a part of `args`
             if let Some(pairs) = tuple_elements(n) {
                 for (p, v) in pairs {
-                    let Some(held) = self.held_root(v) else { continue };
+                    let Some(held) = self.held_root(v).filter(|h| self.names_place(*h)) else { continue };
                     for name in bound_names(p, src) {
                         if let Some((from, to)) = scope(name) {
                             self.aliases.bind(text(name, src), from, to, (text(held, src).to_string(), held.start_byte()));
@@ -1189,7 +1209,9 @@ impl<'a, 't> Body<'a, 't> {
                 }
                 continue;
             }
-            let Some(held) = n.child_by_field_name("value").and_then(|v| self.held_root(v)) else { continue };
+            let Some(held) = n.child_by_field_name("value").and_then(|v| self.held_root(v)).filter(|h| self.names_place(*h)) else {
+                continue;
+            };
             let patterns: Vec<TsNode> = match n.kind() {
                 "match_expression" => n
                     .child_by_field_name("body")
@@ -1431,6 +1453,27 @@ impl<'a, 't> Body<'a, 't> {
         )
     }
 
+    /// The names the `let`s of a body bind one at a time, each with its pattern, the type written for it and the value that
+    /// binds it: a `let` of a name, and each name of a tuple pattern a tuple written out is bound to (`tuple_elements`), as
+    /// a `let` of that name alone with the element of the tuple type at its place would.
+    fn bindings(&self, body: TsNode<'t>) -> Vec<(TsNode<'t>, TsNode<'t>, Option<TsNode<'t>>, Option<TsNode<'t>>)> {
+        let mut out = vec![];
+        for l in walk(body, &["let_declaration"]) {
+            let (ty, value) = (l.child_by_field_name("type"), l.child_by_field_name("value"));
+            if let Some(pairs) = tuple_elements(l) {
+                let types = ty.filter(|t| t.kind() == "tuple_type").map(named_children).filter(|t| t.len() == pairs.len());
+                for (i, (pat, element)) in pairs.into_iter().enumerate() {
+                    if matches!(pat.kind(), "identifier" | "mut_pattern") {
+                        out.push((l, pat, types.as_ref().map(|t| t[i]), Some(element)));
+                    }
+                }
+            } else if let Some(pat) = l.child_by_field_name("pattern").filter(|p| matches!(p.kind(), "identifier" | "mut_pattern")) {
+                out.push((l, pat, ty, value));
+            }
+        }
+        out
+    }
+
     /// Locals assigned from a constructor, a struct literal, or a function with a typed return;
     /// `.unwrap()`, `.expect(..)`, `.context(..)` hand on the type of the value they are called on.
     /// Gives the `let`s that write no type and whose value is of none the body knows, each with
@@ -1438,19 +1481,21 @@ impl<'a, 't> Body<'a, 't> {
     fn lets(&mut self, body: TsNode<'t>) -> Vec<(String, (usize, usize))> {
         let src = self.src;
         let mut untyped = vec![];
-        for l in walk(body, &["let_declaration"]) {
-            let Some(pat) = l.child_by_field_name("pattern").filter(|p| matches!(p.kind(), "identifier" | "mut_pattern")) else { continue };
+        for (l, pat, ty, given) in self.bindings(body) {
             let name = text(pat, src).trim_start_matches("mut ").to_string();
             let Some((from, to)) = scope(pat) else { continue };
-            if pat.kind() == "mut_pattern" || named_children(l).iter().any(|x| x.kind() == "mutable_specifier") {
+            if pat.kind() == "mut_pattern"
+                || (l.child_by_field_name("pattern").map(|x| x.id()) == Some(pat.id())
+                    && named_children(l).iter().any(|x| x.kind() == "mutable_specifier"))
+            {
                 self.mutable.bind(&name, from, to, ());
             }
-            let declared = type_names(l.child_by_field_name("type"), src);
+            let declared = type_names(ty, src);
             if let Some(t) = self.library_type(&declared) {
                 self.foreign.bind(&name, from, to, t);
             }
             let annotated = declared.iter().find_map(|t| self.resolve(t).and_then(|t| self.class_of(&t.id())));
-            let mut value = l.child_by_field_name("value");
+            let mut value = given;
             while let Some(v) = value {
                 value = match v.kind() {
                     _ if wraps(WRAPPERS, v) => wrapped(v),
@@ -1467,12 +1512,12 @@ impl<'a, 't> Body<'a, 't> {
                     _ => break,
                 };
             }
-            if let Some(made) = l.child_by_field_name("value") {
+            if let Some(made) = given {
                 self.made_by.bind(&name, from, to, made);
             }
             match annotated.or_else(|| value.and_then(|v| self.value_class(v))) {
                 Some(t) => self.locals.bind(&name, from, to, t),
-                None if l.child_by_field_name("type").is_none() => untyped.push((name, (from, to))),
+                None if ty.is_none() => untyped.push((name, (from, to))),
                 None => {}
             }
         }
@@ -1731,10 +1776,10 @@ impl<'a, 't> Body<'a, 't> {
                 if parts.is_empty() {
                     return None;
                 }
-                self.resolve_value(v, &parts)
-                    .map(Resolved::id)
-                    .as_deref()
-                    .and_then(|f| self.returned_class(f))
+                // a tuple struct called with its fields (`Html(text)`) is a value of the struct the path resolves to
+                self.resolve(&parts)
+                    .and_then(|r| self.class_of(&r.id()))
+                    .or_else(|| self.resolve_value(v, &parts).map(Resolved::id).as_deref().and_then(|f| self.returned_class(f)))
                     .or_else(|| self.resolve(&parts[..parts.len() - 1]).and_then(|r| self.class_of(&r.id())))
             }
             _ => None,
@@ -1749,6 +1794,35 @@ impl<'a, 't> Body<'a, 't> {
         let library = || self.foreign.get(name, at).filter(|t| foreign_type(t, &OWN));
         let constant = || self.constants.get(name).filter(|_| self.parameter.get(name, at).is_none());
         self.locals.get(name, at).or_else(|| self.taken.get(name, at)).or_else(library).or_else(constant).cloned()
+    }
+
+    /// The fields of the body's own class whose type changes in place or holds one that does (`Cell<usize>`,
+    /// `Arc<AtomicUsize>`, `Arc<Mutex<Vec<u8>>>`), not a type of the program's that is named like one.
+    fn interior_fields(&self) -> HashSet<String> {
+        let own = |t: &Vec<String>| self.resolve(t).and_then(Resolved::code).is_some_and(|r| self.class_of(&r).is_some());
+        let fields = self.cls.as_ref().and_then(|c| self.store.classes.get(c)).map(|c| c.fields.as_slice()).unwrap_or_default();
+        fields
+            .iter()
+            .filter(|(_, types)| types.iter().any(|t| t.last().is_some_and(|l| knowledge::rust_interior(l)) && !own(t)))
+            .map(|(name, _)| name.clone())
+            .collect()
+    }
+
+    /// Whether a method changes a field of `self` that changes in place, through `&self` (`self.n.fetch_add(..)`,
+    /// `self.log.lock().unwrap().push(..)`): a change of `self`, as `self.n += 1` through `&mut self` is.
+    fn changes_own_field(&self, value: TsNode<'t>, method: &str) -> bool {
+        let src = self.src;
+        let root = opened(value, src);
+        let guarded = root.id() != beneath(value, WRAPPERS).id();
+        let field = (root.kind() == "field_expression").then_some(root).and_then(|r| {
+            let on = opened(r.child_by_field_name("value")?, src);
+            if on.kind() == "self" {
+                Some(text(r.child_by_field_name("field")?, src))
+            } else {
+                None
+            }
+        });
+        field.is_some_and(|f| self.interior.contains(f)) && knowledge::rust_changes(method, guarded)
     }
 
     /// The constants the body's module declares at its top, each with the class of the program its declared type holds
@@ -1786,7 +1860,7 @@ impl<'a, 't> Body<'a, 't> {
     /// The instance the body runs on is handed where an argument names it or a part of it
     /// (`fs::read_to_string(&self.path)`, `let conn = &self.conn; conn.prepare(..)`), as a value of
     /// its class no name of the body holds; a call made on `self` itself runs on it instead.
-    fn hands(&self, parts: &[Option<TsNode>], kept: &HashSet<String>) -> Vec<Held> {
+    fn hands(&self, parts: &[Option<TsNode>], kept: &Kept) -> Vec<Held> {
         self.handed(self.hands_of(parts, kept))
     }
 
@@ -1799,7 +1873,7 @@ impl<'a, 't> Body<'a, 't> {
 
     /// What `hands` gives, each value with the place of the body's own parameter of no type of the
     /// code's it is, where it is one.
-    fn hands_of(&self, parts: &[Option<TsNode>], kept: &HashSet<String>) -> Vec<(Held, Option<usize>)> {
+    fn hands_of(&self, parts: &[Option<TsNode>], kept: &Kept) -> Vec<(Held, Option<usize>)> {
         let mut out: Vec<(Held, Option<usize>)> = vec![];
         // the receiver a method called by its path runs on is its first argument (`Self::raw(self)`)
         let runs_on: Vec<usize> =
@@ -1859,7 +1933,7 @@ impl<'a, 't> Body<'a, 't> {
     /// The values the name `name` written at byte `at` holds, as a call is handed them: the value `held_by` says, or the
     /// values the names it stands for hold there (`stands`), as the value written in the name's place hands them. Each is
     /// handed where the name is written, from where the name it holds it by is (`Held::bound`).
-    fn held_through(&self, name: &str, at: usize, kept: &HashSet<String>, depth: usize) -> Vec<(Held, Option<usize>)> {
+    fn held_through(&self, name: &str, at: usize, kept: &Kept, depth: usize) -> Vec<(Held, Option<usize>)> {
         let names = if depth <= 8 { self.stands(name, at, kept) } else { vec![] };
         if names.is_empty() {
             return self.held_by(name, at, kept).into_iter().collect();
@@ -1881,7 +1955,7 @@ impl<'a, 't> Body<'a, 't> {
     /// The names the name `name` written at byte `at` stands for: where a `let` binds it to what Rust's own code computes of
     /// names and nothing makes it anew, no step, no assignment and no change in place (`let gap = first.db - second.db`, `let
     /// both = [first, second]`), the names that value is computed of (`body::stands_for`); none for any other name.
-    fn stands(&self, name: &str, at: usize, kept: &HashSet<String>) -> Vec<TsNode<'t>> {
+    fn stands(&self, name: &str, at: usize, kept: &Kept) -> Vec<TsNode<'t>> {
         let (holder, from) = self.holder(name, at);
         let anew = |h: &String| kept.contains(h) || self.reassigned(h, from) || self.is_changed_in_place(h, from);
         let made = self.made_by.get(&holder, from).filter(|_| !anew(&holder));
@@ -1938,7 +2012,7 @@ impl<'a, 't> Body<'a, 't> {
     /// the code's where a step kept it under the name or the name is one of the function's
     /// parameters, which holds what its call hands it (given with the parameter's place). None for
     /// a name that holds no value Atlas draws (a local the body bound to a literal).
-    fn held_by(&self, name: &str, at: usize, kept: &HashSet<String>) -> Option<(Held, Option<usize>)> {
+    fn held_by(&self, name: &str, at: usize, kept: &Kept) -> Option<(Held, Option<usize>)> {
         let (name, from) = self.holder(name, at);
         // a name a `let` bound to a projection holds what the projection starts from, there (`let t = &self.title`)
         let bound = |h: Held| Held { bound: if from != at { from as u32 } else { 0 }, ..h };
@@ -1952,7 +2026,10 @@ impl<'a, 't> Body<'a, 't> {
         let param = || self.params.iter().position(|p| *p == name).filter(|_| self.parameter.get(&name, from) == Some(&true));
         match self.held_type(&name, from) {
             Some(ty) => Some((bound(Held::at(ty, name, at, false)), None)),
-            None if kept.contains(&name) => Some((bound(Held::at(String::new(), name, at, false)), None)),
+            None if kept.contains(&name) => {
+                let ty = kept.value_of(&name, false).and_then(|v| v.into_iter().next()).map(|h| h.ty).unwrap_or_default();
+                Some((bound(Held::at(ty, name, at, false)), None))
+            }
             None => {
                 let at_param = param()?;
                 Some((bound(Held::at(String::new(), name, at, false)), Some(at_param)))
@@ -2029,7 +2106,13 @@ impl<'a, 't> Body<'a, 't> {
             })
             .collect();
         // the step stands where what it goes over is written: a call there hands it what it gives, the loop's body does not
-        steps.each(value, &format!("for {} in {}", text(pat, self.src), text(value, self.src)), hands, gives);
+        // an array written in place (`[a, b]`, `&[a, b]`) is named by what the loop binds and how many it holds
+        let array = Some(beneath_reference(value)).filter(|a| a.kind() == "array_expression" && a.child_by_field_name("length").is_none());
+        let members = array.map(|a| named_children(a).into_iter().filter(|e| !e.kind().ends_with("comment")).collect::<Vec<_>>());
+        let constant =
+            |e: &TsNode| matches!(e.kind(), "string_literal" | "integer_literal" | "float_literal" | "boolean_literal" | "char_literal");
+        let members = members.filter(|m| !crate::body::constants_shown(text(value, self.src), m.iter().all(constant))).map(|m| m.len());
+        steps.each(value, &crate::body::loop_label(text(pat, self.src), "in", text(value, self.src), members), hands, gives);
     }
 
     /// What a call gives back, by the name the body keeps it by: the type the local is declared
@@ -2278,7 +2361,7 @@ impl<'a, 't> Body<'a, 't> {
 
     /// What a call is handed: the value it is called on, and the names that stand for values in
     /// its arguments.
-    fn call_hands(&self, c: TsNode<'t>, recv: Option<TsNode<'t>>, kept: &HashSet<String>) -> Vec<Held> {
+    fn call_hands(&self, c: TsNode<'t>, recv: Option<TsNode<'t>>, kept: &Kept) -> Vec<Held> {
         let parts: Vec<Option<TsNode>> = match c.kind() {
             "token_tree" => std::iter::once(recv).chain(token_values(c).into_iter().map(Some)).collect(),
             _ => vec![recv, c.child_by_field_name("arguments")],
@@ -2429,6 +2512,12 @@ impl<'a, 't> Body<'a, 't> {
             steps.looks_up(c, on);
             return;
         }
+        if own.is_none() && self.changes_own_field(value, &method) {
+            let class = self.cls.clone().map(|c| (c, "self".to_string()));
+            if let Some(m) = class.filter(|m| !self.read.mutates.contains(m)) {
+                self.read.mutates.push(m);
+            }
+        }
         if own.is_none() && self.changes_library_value(value, &method) {
             let hands = self.call_hands(c, Some(value), &steps.kept);
             // what changes is the name the part is picked of, never the index that picks it (`fills` of `fills[k].push(..)`)
@@ -2476,6 +2565,9 @@ impl<'a, 't> Body<'a, 't> {
     /// as it makes it, is of a crate whose row of `knowledge::MUTATORS` has the method. A prelude
     /// type (`Vec`, `String`) is std's, and so is a slice or an array.
     fn changes_library_value(&self, value: TsNode<'t>, method: &str) -> bool {
+        if self.changes_own_field(value, method) {
+            return true;
+        }
         let ty = match (self.declared(value), self.picked(value, 0)) {
             (Some(ty), _) => ty,
             (None, Some(element)) => {
@@ -3021,10 +3113,18 @@ const USES: UseSyntax = UseSyntax {
         _ => None,
     },
     leaves: |n, body| {
-        // the last named child of the block, which stands in it
+        // the last named child of the block, which stands in it: an expression statement without its `;` is a block's value
+        // (a `match` that ends a function); a loop's body gives the loop nothing
+        let value = match n.kind() {
+            "expression_statement" => {
+                n.child(n.child_count().saturating_sub(1)).is_some_and(|l| l.kind() != ";")
+                    && n.named_child(0).is_some_and(|e| !matches!(e.kind(), "loop_expression" | "while_expression" | "for_expression"))
+            }
+            "let_declaration" | "empty_statement" => false,
+            _ => true,
+        };
         n.kind() == "return_expression"
-            || (!matches!(n.kind(), "expression_statement" | "let_declaration" | "empty_statement")
-                && body.named_child(body.named_child_count().saturating_sub(1)).map(|l| l.id()) == Some(n.id()))
+            || (value && body.named_child(body.named_child_count().saturating_sub(1)).map(|l| l.id()) == Some(n.id()))
     },
     fails: panics,
     hands: |n, child| match n.kind() {
@@ -3049,7 +3149,29 @@ const USES: UseSyntax = UseSyntax {
         }
         out
     },
-    splits: |n, child| n.kind() == "match_expression" && n.child_by_field_name("value").map(|v| v.id()) == Some(child.id()),
+    splits: |n, child, src| {
+        if n.kind() != "match_expression" || n.child_by_field_name("value").map(|v| v.id()) != Some(child.id()) {
+            return None;
+        }
+        Some(
+            n.child_by_field_name("body")
+                .into_iter()
+                .flat_map(|b| (0..b.named_child_count()).filter_map(move |i| b.named_child(i)))
+                .filter_map(|arm| arm.child_by_field_name("pattern"))
+                .flat_map(|p| walk(p, &["identifier"]))
+                .filter(|id| {
+                    // a variant or a constant is written with a capital (`None`), a binding without (`_n` too); a path and the type of a variant pattern
+                    // (`Ok` of `Ok(n)`) name no binding
+                    !text(*id, src).starts_with(char::is_uppercase)
+                        && parent(*id).is_some_and(|p| {
+                            !matches!(p.kind(), "scoped_identifier" | "scoped_type_identifier")
+                                && !(matches!(p.kind(), "tuple_struct_pattern" | "struct_pattern")
+                                    && p.child_by_field_name("type").map(|t| t.id()) == Some(id.id()))
+                        })
+                })
+                .collect(),
+        )
+    },
     names: &["identifier"],
     keeps: &["field_expression", "index_expression"],
     field: |n, src| {
@@ -3269,3 +3391,11 @@ fn matched<'t>(n: TsNode<'t>, src: &[u8]) -> Option<(String, Vec<TsNode<'t>>, Op
 /// Rust's own types: std, core and alloc, the containers and wrappers, and the associated types
 /// a trait names (`Self::Target`, `S::Ok`).
 pub(super) const OWN: OwnTypes = knowledge::RUST_OWN_TYPES;
+
+/// What a reference is taken of (`[a, b]` of `&[a, b]`), else the expression itself.
+fn beneath_reference(e: TsNode) -> TsNode {
+    match e.kind() {
+        "reference_expression" => e.child_by_field_name("value").map_or(e, beneath_reference),
+        _ => e,
+    }
+}

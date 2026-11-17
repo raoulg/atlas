@@ -40,3 +40,5 @@ home Log·log@run/note_shared/push run/note_shared
 
 # `run` reads the lines of the log `note` changed
 line Log·log@run/note > run value
+home _@run run
+line run > _@run value                                                   # what it gives its caller, of no type of the code's

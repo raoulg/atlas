@@ -4,13 +4,12 @@ from pathlib import Path
 
 import typer
 
-from sunspots.download import download
+from sunspots.download import RAW, download
 from sunspots.plot import Trend
 from sunspots.series import load, smooth
 from sunspots.settings import Settings
 
 SILSO = "https://www.sidc.be/SILSO/DATA/SN_m_tot_V2.0.csv"
-RAW = Path("data/raw/sunspots.csv")
 FIGURE = Path("figures/sunspots.png")
 
 app = typer.Typer()

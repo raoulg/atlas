@@ -58,6 +58,7 @@ pub fn clean_copy(language: &str, name: &str) -> PathBuf {
 /// The `clean` side of a prophecy pair with `addition` appended to its file `file`, as a vision
 /// that is decided: what `prophetize` writes, and the revelation of the tree it is written into.
 /// The pair itself stays as it is; the tree is a copy.
+#[allow(dead_code)]
 pub fn decided(language: &str, file: &str, addition: &str, supersedes: &[(&str, &str)]) -> (Prophetized, Vec<Stand>) {
     let pair = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/pairs/prophecy").join(language).join("clean");
     let copy = std::env::temp_dir().join(format!("atlas-prophetize-{language}-{}", std::process::id())).join("clean");
@@ -77,6 +78,7 @@ pub fn decided(language: &str, file: &str, addition: &str, supersedes: &[(&str, 
 
 /// The `clean` side of a prophecy pair with `addition` appended to its file `file`, written to a
 /// copy of its own that the caller removes: the copy, and what Atlas reads of it.
+#[allow(dead_code)]
 pub fn written(language: &str, file: &str, addition: &str) -> (PathBuf, atlas_engine::Graph) {
     let pair = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/pairs/prophecy").join(language).join("clean");
     let copy = std::env::temp_dir().join(format!("atlas-sealed-{language}-{}", std::process::id())).join("clean");
@@ -234,6 +236,37 @@ pub fn planned_routes(g: &Graph, name: &str, budget: Option<usize>, routes: &[&s
     read.into_iter()
         .map(|(r, v)| (r, v["facts"].as_array().into_iter().flatten().filter_map(|x| x.as_str().map(String::from)).collect()))
         .collect()
+}
+
+/// The ends pair of `language` (`tests/pairs/ends`): a route ends at what it gives its caller, whatever its type (sentence
+/// 3; `docs/reference/mathematics.md`, "A route's domain and codomain"). Closed, the route `loudest` gives back the loudest
+/// level: a value of no type of the code's, which rests in Memory of the type its signature gives (`number`), and the box
+/// of that type is where the route ends, labelled by it, never contracted to a wire whose taker is beyond the plan. A
+/// record built from its fields (`Level`, no initializer of its own) is a route whose door is its constructor: it ends at
+/// the class it builds. The shortcut prints the loudest level instead of giving it back: its route ends at the screen, and
+/// gives its caller no value, and the record is the same record.
+#[allow(dead_code)]
+pub fn a_route_ends_at_what_it_gives_back(language: &str, number: &str) {
+    let p = pair(&format!("ends/{language}"));
+    let route = |g: &Graph, name: &str| {
+        g.nodes.iter().find(|n| n.entry.is_some() && n.name == name).unwrap_or_else(|| panic!("{language}: no route {name}")).id.clone()
+    };
+    for (side, g) in [("clean", &p.clean), ("shortcut", &p.shortcut)] {
+        let (loudest, level) = (route(g, "loudest"), route(g, "Level"));
+        let gives = planned_routes(g, &format!("ends-{language}-{side}"), None, &["--gives", &loudest, &level]);
+        let of = |r: &str| gives.get(r).cloned().unwrap_or_default();
+        assert_eq!(of(&level), BTreeSet::from(["Level".to_string()]), "{language} {side}: the record's route ends at the record it builds");
+        if side == "clean" {
+            assert_eq!(of(&loudest), BTreeSet::from([number.to_string()]), "{language}: the route ends at the {number} it gives back");
+        } else {
+            assert!(!of(&loudest).contains(number), "{language} shortcut: the route gives its caller no {number}");
+            assert!(
+                of(&loudest).iter().any(|x| x.starts_with("Screen")),
+                "{language} shortcut: the route ends at the screen: {:?}",
+                of(&loudest)
+            );
+        }
+    }
 }
 
 /// The budgets a route is planned at: uncut, and cut as a large program's plan is cut.

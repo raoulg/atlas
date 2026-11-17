@@ -27,6 +27,7 @@ use serde_json::{json, Value};
 use crate::http::{self, Answer, Request};
 use crate::log::{Log, Who};
 use crate::page::{self, Html, Opens, Reading};
+use crate::prefs;
 use crate::shared::{self, Note, State};
 
 const LOADING: &str = include_str!("../../viewer/loading.html");
@@ -174,6 +175,8 @@ impl Server {
             ("GET", "/api/annotations") => json(shared::annotations(&self.repo).and_then(|a| Ok(serde_json::to_value(a)?))),
             ("POST", "/api/notes") => json(self.note(req)),
             ("POST", "/api/notes/reopen") => json(self.reopen(req)),
+            ("GET", "/api/prefs") => json(prefs::read()),
+            ("POST", "/api/prefs") => json(self.body(req).and_then(|v| prefs::add(&v))),
             _ => Answer::text("404 Not Found", format!("nothing at {} {}", req.method, req.path)),
         }
     }
@@ -235,7 +238,7 @@ impl Server {
         let findings = read.findings();
         let (graph, compared) = read.drawn();
         let flow = atlas_engine::flow::of(&graph);
-        let opens = Opens { route: None, sight: None, served: Some(id.to_string()) };
+        let opens = Opens { route: page::folder_route(&graph, &self.repo), sight: None, served: Some(id.to_string()) };
         let data = Html::payload(&graph, &flow, &findings, compared.as_ref(), &opens)?;
         self.log.say(Who::Atlas, &format!("drew {}", page::summary(&graph)));
         let facts = witnesses.roots().first().map(|root| facts(root, &graph)).unwrap_or_default();
@@ -437,7 +440,8 @@ fn facts(root: &Path, graph: &atlas_engine::model::Graph) -> Facts {
     let mut facts = Facts::new();
     for n in graph.nodes.iter().filter(|n| n.kind != atlas_engine::model::NodeKind::External) {
         let Ok(rel) = Path::new(&n.file).strip_prefix(root) else { continue };
-        let fact = json!({"id": n.id, "name": n.name, "kind": n.kind, "line": n.span.map(|s| s.0), "entry": n.entry.is_some()});
+        let fact =
+            json!({"id": n.id, "name": n.name, "kind": n.kind, "line": n.span.map(|s| s.0), "entry": n.entry.as_ref().map(|e| &e.kind)});
         facts.entry(slashed(rel)).or_default().push(fact);
     }
     facts

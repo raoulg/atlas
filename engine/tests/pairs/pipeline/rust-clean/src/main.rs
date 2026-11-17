@@ -5,10 +5,9 @@ use std::path::PathBuf;
 
 use clap::Parser;
 
-use sunspots::{download, load, smooth, Error, Plot, Settings, Trend};
+use sunspots::{download, load, smooth, Error, Plot, Settings, Trend, RAW};
 
 const SILSO: &str = "https://www.sidc.be/SILSO/DATA/SN_m_tot_V2.0.csv";
-const RAW: &str = "data/raw/sunspots.csv";
 const FIGURE: &str = "figures/sunspots.png";
 
 /// Downloads SILSO's monthly sunspot numbers where none are kept, smooths them and saves their trend.
@@ -29,9 +28,9 @@ fn main() -> Result<(), Error> {
     let cli = Cli::parse();
     let settings = Settings { months: cli.months, ..Settings::default() };
     if !cli.raw.exists() {
-        download(SILSO, &cli.raw)?;
+        download(SILSO, Some(&cli.raw))?;
     }
-    let series = load(&cli.raw)?;
+    let series = load(Some(&cli.raw))?;
     let smoothed = smooth(&series, settings.months);
     Trend::new(settings).save(&series, &smoothed, &cli.figure)?;
     Ok(())

@@ -107,3 +107,5 @@ home Expense@main/Expense() main
 # a result the caller drops goes back to it: the reader does not say the call is a statement of its own
 
 # the push is handed the victim the call hands, stale (#129), and not this (#128): the own arrow takes this itself
+home _@main main
+line main > _@main value                                                 # what it gives its caller, of no type of the code's

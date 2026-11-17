@@ -110,6 +110,7 @@ pub fn menu<R: Runtime>(app: &AppHandle<R>, recent: &[Recent]) -> tauri::Result<
         .item(&MenuItemBuilder::with_id("view.atlas", "Atlas View").accelerator("CmdOrCtrl+1").build(app)?)
         .item(&MenuItemBuilder::with_id("view.history", "History").accelerator("CmdOrCtrl+2").build(app)?)
         .separator()
+        .item(&MenuItemBuilder::with_id("view.sidebar", "Toggle Sidebar").accelerator("CmdOrCtrl+B").build(app)?)
         .item(&MenuItemBuilder::with_id("view.terminal", "Terminal").accelerator("Ctrl+`").build(app)?)
         .separator()
         .item(&MenuItemBuilder::with_id("view.scheme", "Light or Dark").accelerator("CmdOrCtrl+Shift+L").build(app)?);

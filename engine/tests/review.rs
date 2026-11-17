@@ -159,6 +159,11 @@ const REVIEWED: &[(&str, &str, &str)] = &[
     ),
     (
         "choices",
+        "atlas-engine.python.body.link_body",
+        "`link_body` and `Body::new` each read `NodeKind` for a question of their own (whether a body is a module's, whether a method runs on an instance or on its class); that a `Node` is one struct for every kind is #13",
+    ),
+    (
+        "choices",
         "atlas-engine.rust.body.root",
         "`root`, `value_class` and `declared` read a name three ways: the name a value is a part of, the class of a value, the type a declaration gives it",
     ),
@@ -184,6 +189,16 @@ const REVIEWED: &[(&str, &str, &str)] = &[
     ),
     (
         "choices",
+        "atlas-engine.python.paths.Eval.built",
+        "`built` and `of` are two evaluations over the same kinds of expression: the class a value is and the calls that built it, the values it can have; tree-sitter's kind is the syntax's own sum, and each function asks it a question of its own",
+    ),
+    (
+        "choices",
+        "atlas-engine.typescript.paths.Eval.object",
+        "`object`, `named_value`, `built` and `class_of` read an expression four ways: the object literal it is, the value a name stands for, the class it is with the calls that built it, the class alone; tree-sitter's kind is the syntax's own sum, and each function asks it a question of its own",
+    ),
+    (
+        "choices",
         "atlas-engine.typescript.module.collect_types",
         "the TypeScript reader's functions each read a construct by tree-sitter's kind: a type name stands for one thing in a type, another in a member path",
     ),
@@ -203,6 +218,11 @@ const REVIEWED: &[(&str, &str, &str)] = &[
         "`\"default\"` is the language's name for the default export, read in two lines of one function",
     ),
     (
+        "choices",
+        "atlas-engine.paths.join",
+        "`\"/\"` is a path's separator: the empty path is the unit of a path's join on either side, one law read in two lines of one function, and a join of text (`\"\"`) has no unit to drop",
+    ),
+    (
         "places",
         "atlas-code.run",
         "`run` is `main`'s body, split off so that what it holds drops before the exit status is returned: the command line's default repository, the directory it is run in, is the entry's decision, as it was `main`'s",
@@ -216,21 +236,6 @@ const REVIEWED: &[(&str, &str, &str)] = &[
         "places",
         "atlas-engine.changes.envisioned",
         "a vision stands beside the repository's environment, `.venv`, where uv keeps a project's: the name is the convention's, the directory it is in the caller's (`{repo}/.venv`); `.venv` alone is the command line run in `.`",
-    ),
-    (
-        "places",
-        "atlas-engine.python.parse",
-        "wrong, #395: the files a test's pair holds are credited to `parse`, where the listing's file made the place whole, and not to the test that built the `Repo` whose root it is",
-    ),
-    (
-        "places",
-        "atlas-engine.typescript.parse",
-        "wrong, #395: the files a test's pair holds are credited to `parse`, where the listing's file made the place whole, and not to the test that built the `Repo` whose root it is",
-    ),
-    (
-        "nothing",
-        "atlas-engine.cache.Cache.read_anew",
-        "wrong, #417: `read_anew` raises the count its clones share through `&self` (`AtomicUsize::fetch_add`), a change of the cache's value the Rust reader does not read on a field of `self`",
     ),
     (
         "places",

@@ -122,7 +122,19 @@ svg#canvas:active{cursor:grabbing}
 #fault b{display:block;color:var(--ink);font-weight:600;margin-bottom:2px}
 #fault pre{font-family:var(--mono);font-size:11px;color:var(--ink);white-space:pre-wrap;word-break:break-word;margin:8px 0;max-height:180px;overflow:auto}
 #fault button{font:inherit;font-size:11px;color:var(--ink-2);background:var(--panel-2);border:1px solid var(--line);border-radius:3px;padding:2px 8px;cursor:pointer}
-#crumbs{position:absolute;left:14px;top:14px;right:200px;display:flex;flex-wrap:wrap;gap:5px 6px;align-items:center;font-size:11px;color:var(--ink-3)}
+#crumbs{position:absolute;left:14px;top:12px;right:340px;display:flex;flex-direction:column;gap:6px;font-size:11px;color:var(--ink-3)}
+#crumbs .path,#crumbs .folds{display:flex;flex-wrap:wrap;gap:5px 6px;align-items:center}
+#crumbs .path{font-family:var(--mono);font-size:13px}
+#crumbs .path .sep{color:var(--ink-3)}
+#crumbs .path button.step{border:0;border-bottom:1px solid var(--line);background:none;padding:1px 0;font-size:13px;color:var(--ink-2)}
+#crumbs .path button.step:hover{color:var(--ink);border-color:var(--ink)}
+#crumbs .path .here{background:var(--ink);color:var(--bg);border:0;padding:2px 9px;font-size:13px;font-family:var(--mono)}
+#crumbs .path button.up{border:0;background:none;color:var(--ink-3);padding:1px 4px}
+#crumbs button.fold{border-radius:11px;color:var(--ink-3);background:none}
+#crumbs button.fold::before{content:"○ ";font-size:9px}
+#crumbs button.fold.on{background:var(--panel);color:var(--ink)}
+#crumbs button.fold.on::before{content:"● ";color:var(--ink-2)}
+#crumbs button.count{border-style:dashed}
 #crumbs .lbl{letter-spacing:.06em;text-transform:uppercase;font-size:10px;margin-left:8px}
 #crumbs .lbl:first-child{margin-left:0}
 #crumbs .none{font-family:var(--mono);color:var(--ink-2)}
@@ -256,12 +268,22 @@ svg.glyph{vertical-align:-2px}
 .scene.focus .tstep:not(.on),.scene.focus .tnode:not(.on){opacity:.28}
 .sedge.on{opacity:1;stroke-width:2.2}
 .tstep rect.bg{fill:var(--panel-2);stroke:var(--ink-3)}
+.cfg-head{font-family:var(--sans);font-size:11px;fill:var(--ink-2)}
+.cfg-field rect{fill:var(--panel);stroke:var(--frame)}
+.cfg-field text{font-family:var(--mono);font-size:10.5px;fill:var(--ink)}
+.cfg-field.option rect{stroke:var(--focus);stroke-width:1.5}
+.cfg-field.option text{fill:var(--focus)}
 .tstep circle.border-point{fill:var(--ink-3);stroke:var(--panel);stroke-width:2}
 .tstep .title{font-family:var(--mono);font-size:11px;font-weight:500;fill:var(--ink)}
+.tstep .title .guard{fill:var(--ink-3);font-weight:400;font-size:10px}
+.tstep .title .errs,.frame .ftitle .errs{fill:var(--ink-3);font-weight:400;font-size:10px;cursor:pointer}
 .tstep:hover rect.bg,.tstep.selected rect.bg{stroke:var(--focus);stroke-width:1.6}
 .tnode.entry .title{font-family:var(--mono);font-weight:500}
 #zoomctl button{border:1px solid var(--line);background:var(--panel);color:var(--ink-2);font:inherit;font-size:12px;border-radius:0;padding:3px 9px;cursor:pointer;min-width:30px}
 #zoomctl button:hover{color:var(--ink);border-color:var(--ink-3)}
+#linetoggle{display:flex;margin:0 6px;border:1.5px solid var(--ink-2)}
+#zoomctl #linetoggle button{border:0;min-width:0;padding:3px 7px;display:flex;align-items:center}
+#zoomctl #linetoggle button[aria-pressed="true"]{background:var(--ink);color:var(--bg)}
 aside{border-left:1px solid var(--line);background:var(--panel);overflow:auto;padding:18px 20px 40px}
 aside .empty{color:var(--ink-3);padding-top:40px;text-align:center;line-height:1.6}
 aside .empty b{color:var(--ink-2);display:block;margin-bottom:6px;font-weight:500}
@@ -339,7 +361,7 @@ pre.code .l::before{counter-increment:ln;content:counter(ln);display:inline-bloc
     <div id="fault" role="alert" hidden></div>
     <div id="readstate" role="status" hidden></div>
     <div id="laying" role="status" hidden></div>
-    <div id="zoomctl"><button id="zout" type="button" title="zoom out">−</button><button id="fit" type="button">fit</button><button id="zone" type="button" title="actual size">1:1</button><button id="zin" type="button" title="zoom in">+</button><button id="codetoggle" type="button" title="show or hide the code panel">hide code</button></div>
+    <div id="zoomctl"><button id="zout" type="button" title="zoom out">−</button><button id="fit" type="button">fit</button><button id="zone" type="button" title="actual size">1:1</button><button id="zin" type="button" title="zoom in">+</button><span id="linetoggle" role="group" aria-label="the shape of the lines"><button id="linesquare" type="button" title="lines with corners"><svg viewBox="0 0 22 14" width="22" height="14" aria-hidden="true"><path d="M2,11 H11 V3 H20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="miter"/></svg></button><button id="lineround" type="button" title="lines with arcs; the route of a line stays the same"><svg viewBox="0 0 22 14" width="22" height="14" aria-hidden="true"><path d="M2,11 H6 C11,11 11,3 16,3 H20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="miter"/></svg></button></span><button id="codetoggle" type="button" title="show or hide the code panel">hide code</button></div>
     <div id="resizer" title="drag to resize the inspector"></div>
     <div id="legend"></div>
     <div id="hint"><kbd>shift</kbd>-click a package: focus · double-click: pin · <kbd>space</kbd>: code · <button id="keyshelp" type="button">? more</button></div>
@@ -393,6 +415,31 @@ const D = ALL[current];
 { const ps = document.getElementById("project"); for (const n of names) { const o = document.createElement("option"); o.value = n; o.textContent = n; o.selected = n === current; ps.appendChild(o); }
   ps.addEventListener("change", () => { location.hash = "#p=" + ps.value; location.reload(); }); }
 const NS = "http://www.w3.org/2000/svg";
+// a line through its bend points, in the shape the reader chose: square, with corners, or round, each corner an arc that
+// takes up to half of the two stretches it joins. The route is the layout's either way, and the ends stay straight.
+// The reader's choices of the page (`atlas.lines`, `atlas.code`, `atlas.legend.help`) are kept in this browser, and a served
+// page keeps them in the reader's own file too (`/api/prefs`): each repository is served at its own address, whose storage
+// is its own, and a choice is the reader's, not the repository's
+const pref = key => { try { return localStorage.getItem(key); } catch { return null; } };
+const setPref = (key, value) => {
+  try { localStorage.setItem(key, value); } catch {}
+  if (D.served) fetch("/api/prefs", {method: "POST", headers: {"content-type": "application/json"}, body: JSON.stringify({[key]: value})}).catch(() => {});
+};
+// how each choice is taken when the reader's file says otherwise than this browser
+const takePref = {};
+// lines are round unless the reader chose square
+let roundLines = pref("atlas.lines") !== "square";
+const linePath = pts => {
+  if (!roundLines || pts.length < 3) return pts.map((q, i) => (i ? "L" : "M") + q.x + "," + q.y).join(" ");
+  const toward = (a, b, r) => { const L = Math.hypot(b.x - a.x, b.y - a.y) || 1; return {x: a.x + (b.x - a.x) * r / L, y: a.y + (b.y - a.y) * r / L}; };
+  const half = (a, b) => Math.hypot(b.x - a.x, b.y - a.y) / 2;
+  let d = "M" + pts[0].x + "," + pts[0].y;
+  for (let i = 1; i < pts.length - 1; i++) {
+    const r = Math.min(half(pts[i - 1], pts[i]), half(pts[i], pts[i + 1])), a = toward(pts[i], pts[i - 1], r), b = toward(pts[i], pts[i + 1], r);
+    d += ` L${a.x},${a.y} Q${pts[i].x},${pts[i].y} ${b.x},${b.y}`;
+  }
+  return d + ` L${pts[pts.length - 1].x},${pts[pts.length - 1].y}`;
+};
 const el = (tag, attrs={}, parent) => { const e = document.createElementNS(NS, tag); for (const k in attrs) e.setAttribute(k, attrs[k]); if (parent) parent.appendChild(e); return e; };
 const html = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
 const chipW = name => 14 + name.length * 6.4;
@@ -504,17 +551,24 @@ function frameLesson(at) {
   svg.call(zoom.transform, d3.zoomIdentity.translate(W / 2 - scale * cx, H / 2 - scale * cy).scale(scale));
   document.getElementById("app").classList.add("lesson-framed");
 }
+// the legend lies over the bottom of the canvas: a fitted picture ends above it
+const footHeight = () => { const L = document.getElementById("legend"); return L && L.offsetHeight ? L.offsetHeight + 14 : 0; };
 function fit(animate = false, pad = 40, tries = 0) {
   const W = svg.node().clientWidth, H = svg.node().clientHeight;
   if ((W < 200 || H < 200) && tries < 30) { setTimeout(() => fit(animate, pad, tries + 1), 100); return; }
   const bb = document.getElementById("scene").getBBox();
   if (!bb.width || !bb.height) return;
-  const top = barHeight();  // keep the state bar clear
-  let s = Math.max(zoom.scaleExtent()[0], Math.min((W - pad*2) / bb.width, (H - top - pad*2) / bb.height, 1.4));
-  let t = d3.zoomIdentity.translate(W/2 - s*(bb.x + bb.width/2), top + (H - top)/2 - s*(bb.y + bb.height/2)).scale(s);
+  const top = barHeight(), foot = footHeight();  // keep the state bar and the legend clear
+  let s = Math.max(zoom.scaleExtent()[0], Math.min((W - pad*2) / bb.width, (H - top - foot - pad*2) / bb.height, 1.4));
+  let t = d3.zoomIdentity.translate(W/2 - s*(bb.x + bb.width/2), top + (H - top - foot)/2 - s*(bb.y + bb.height/2)).scale(s);
   if (animate) svg.transition().duration(300).call(zoom.transform, t); else svg.call(zoom.transform, t);
 }
 document.getElementById("fit").onclick = () => fit(true);
+{ const sq = document.getElementById("linesquare"), rd = document.getElementById("lineround");
+  const say = () => { sq.setAttribute("aria-pressed", !roundLines); rd.setAttribute("aria-pressed", roundLines); };
+  const pick = round => () => { if (roundLines === round) return; roundLines = round; setPref("atlas.lines", round ? "round" : "square"); say(); render(); };
+  sq.onclick = pick(false); rd.onclick = pick(true); say();
+  takePref.lines = round => { if (roundLines !== round) { roundLines = round; say(); render(); } }; }
 document.getElementById("zin").onclick = () => svg.transition().duration(150).call(zoom.scaleBy, 1.25);
 document.getElementById("zout").onclick = () => svg.transition().duration(150).call(zoom.scaleBy, 0.8);
 document.getElementById("zone").onclick = () => { const t = d3.zoomTransform(svg.node()); svg.transition().duration(200).call(zoom.transform, d3.zoomIdentity.translate(t.x, t.y).scale(1)); };
@@ -537,9 +591,9 @@ let defs = el("defs", {}, svg.node());
 // the code panel opens on demand (space shows the code over the picture); opened, the canvas gives it
 // room, and the choice is remembered in this browser
 { const app = document.getElementById("app"), btn = document.getElementById("codetoggle");
-  const set = open => { app.classList.toggle("noaside", !open); btn.textContent = open ? "hide code" : "show code"; if (!lessonEmbed) try { localStorage.setItem("atlas.code", open ? "1" : "0"); } catch {} };
-  let saved = null; try { saved = localStorage.getItem("atlas.code"); } catch {}
-  set(saved === "1" && !lessonEmbed);
+  const set = (open, chosen = true) => { app.classList.toggle("noaside", !open); btn.textContent = open ? "hide code" : "show code"; if (chosen && !lessonEmbed) setPref("atlas.code", open ? "1" : "0"); };
+  set(pref("atlas.code") === "1" && !lessonEmbed, false);
+  takePref.code = open => { if (!lessonEmbed && app.classList.contains("noaside") === open) { set(open, false); if (!userZoomed) setTimeout(() => fit(true), 30); } };
   btn.onclick = () => { set(app.classList.contains("noaside")); if (!userZoomed) setTimeout(() => fit(true), 30); }; }
 
 // every key and click on one card: `?` opens and closes it, Esc or a click beside it closes it
@@ -553,6 +607,9 @@ let defs = el("defs", {}, svg.node());
   }, true); }
 // the peek: with the panel closed, space over a block shows its details and code over the picture;
 // space again, Esc or a click on the picture puts it away, and the pin keeps the panel open
+let pictureRanks = [];  // the rank families of the picture drawn, closed or open
+let pictureRuns = false;  // whether a step of the picture drawn is named by the value it runs on
+let pictureErrors = [];  // the errors of the picture drawn, by their labels
 let hoverTarget = null;  // shows what is under the pointer in the inspector
 { const app = document.getElementById("app");
   const peek = open => app.classList.toggle("peek", open);
@@ -692,7 +749,7 @@ async function renderSig() {
   const eg = el("g", {}, g), ng = el("g", {}, g);
   for (const e of layout.edges || []) {
     const s = e.sections[0]; const pts = [s.startPoint, ...(s.bendPoints || []), s.endPoint];
-    const d = pts.map((q, i) => (i ? "L" : "M") + q.x + "," + q.y).join(" ");
+    const d = linePath(pts);
     const cnt = e.p.fns.length, sw = 1 + Math.log2(cnt) * 0.8;
     const path = el("path", {class: "sedge " + e.p.kind, d, "stroke-width": sw.toFixed(2)}, eg);
     const last = pts[pts.length-1], prev = pts[pts.length-2], ang = Math.atan2(last.y - prev.y, last.x - prev.x), L = 8, Wd = 4;
@@ -747,9 +804,14 @@ const viewData = () => {
   if (V.part) o.part = V.part;
   if (V.focus.size) o.focus = [...V.focus];
   if (V.tests) o.tests = true;
+  if (V.errors) o.errors = true;
+  if (V.receivers) o.receivers = true;
   const open = {};
   for (const [k, set] of Object.entries(V.open)) if (set.size) open[k] = [...set];
   if (Object.keys(open).length) o.open = open;
+  const closed = {};
+  for (const [k, set] of Object.entries(V.closed)) if (set.size) closed[k] = [...set];
+  if (Object.keys(closed).length) o.closed = closed;
   return o;
 };
 function setView(o) {
@@ -758,7 +820,10 @@ function setView(o) {
   V.part = o.part || null;
   V.focus = new Set(o.focus || []);
   V.tests = !!o.tests;
+  V.errors = !!o.errors;
+  V.receivers = !!o.receivers;
   for (const k of Object.keys(V.open)) V.open[k] = new Set((o.open || {})[k] || []);
+  for (const k of Object.keys(V.closed)) V.closed[k] = new Set((o.closed || {})[k] || []);
   entrySel.value = V.route || (V.kind ? "kind:" + V.kind : V.part ? "part:" + V.part : "");
 }
 {
@@ -795,8 +860,6 @@ const interleave = (xs, ys) => {
   while (j < ys.length) put(ys[j++]);
   return out;
 };
-// whether a step of a union runs a function whose own arrow B changed
-const stepChanged = steps => !!DIFF && steps.some(s => byId.get(stepOf(s))?.ds === "changed");
 // whether B renamed a node, or the class it is a member of: its label then reads `old → new`
 const renamed = id => !!DIFF && !!id && (!!DIFF.renamed[id] || !!DIFF.renamed[byId.get(id)?.cls]);
 // a label a union reads otherwise in A and in B: `old → new` for a rename, else as B reads it; the
@@ -847,11 +910,6 @@ const ELK_WORKER = /*__ELK_WORKER__*/null, KEPT = 48;
 const SUPERSEDED = new Error("laid out for a picture no longer asked for");
 const LAYOUTS = new Map();      // input → the promise of its layout, the least recently used first
 const rate = {ms: 0, size: 0};  // how long this page's layouts took, by their boxes and lines
-// A layer keeps the order the code gives its boxes and lines in (ELK's model order) in a picture of up to this many
-// lines. ELK sorts each layer against every line that passes through it, which grows with the square of the layer:
-// free in the pictures of a route or a package (at most about 200 lines), twenty seconds in one of 750 (#320), where
-// the boxes are too many to read an order in. Beyond it ELK orders a layer by its crossings alone.
-const ORDERED_LINES = 400;
 let elkUrl = null, layWorker = null;
 const sizeOf = n => 1 + (n.edges || []).length + (n.children || []).reduce((s, c) => s + sizeOf(c), 0);
 const startWorker = () => {
@@ -946,12 +1004,6 @@ async function renderPlaat(mine) {
     }
     // a step open in one reading and closed in the other is one box, the open one: its lines end at its frame, as the closed box's did
     for (const id of frames.keys()) pills.delete(id);
-    const rest = new Map();
-    for (const [s, p] of [["a", A], ["b", B]]) for (const [r, at, way, ts] of p.restArrows) {
-      const k = `${r}>${at}`;
-      if (!rest.has(k)) rest.set(k, [r, at, way, new Set(), new Set()]);
-      ts.forEach(t => rest.get(k)[3].add(t)); rest.get(k)[4].add(s);
-    }
     const roles = new Map(A.roles);
     for (const [k, r] of B.roles) { const q = roles.get(k); roles.set(k, q ? Object.fromEntries(Object.keys(r).map(f => [f, q[f] || r[f]])) : r); }
     // where a box stands and what the storage quotient holds, from the readings that have them
@@ -963,45 +1015,40 @@ async function renderPlaat(mine) {
       for (const f of [A.fine, B.fine]) for (const [k, w] of f.ways) ways.set(k, new Set([...(ways.get(k) || []), ...w]));
       fine = {places: fp, pills: new Map([...A.fine.pills, ...B.fine.pills]), ways};
     }
-    return {places, pills, frames, restArrows: [...rest.values()], roles, home, fine, oracle, calling: A.calling || B.calling};
+    return {places, pills, frames, roles, home, fine, oracle, calling: A.calling || B.calling};
   };
-  const {places, pills, frames, restArrows, roles, home, fine, oracle, calling: planCalls} = DIFF ? unite() : plan();
+  // the union's siblings that draw alike are one pill and its places are ordered on the disk, as each plan's are (`quotients`)
+  const {places, pills, frames, roles, home, fine, oracle, calling: planCalls, meets, errors: counted} = DIFF ? quotients(unite()) : plan();
+  // the errors of this picture, counted on its steps or drawn as boxes
+  pictureRuns = !DIFF && [...pills.values(), ...frames.values()].some(B => B.runsOn?.length);
+  pictureRanks = DIFF ? [] : ranksIn(places);
+  pictureErrors = DIFF ? [] : V.errors ? [...new Set([...places.values()].filter(p => p.err).map(p => p.label))].sort() : counted || [];
   // Storage quotients are computed on the visible fiber. A singleton keeps its concrete
   // expression; an opened quotient retains a frame around the same members.
-  const storage = new Map(), worldFrames = new Map(), worldParent = new Map();
-  const usedWorld = new Set([...pills.values()].flatMap(P => [...P.D.keys(), ...P.C.keys()]));
-  const worldUses = new Map();
-  for (const P of pills.values()) for (const [way, m] of [["in", P.D], ["out", P.C]]) for (const k of m.keys()) {
-    if (!worldUses.has(k)) worldUses.set(k, new Set());
-    worldUses.get(k).add(way);
-  }
-  const fineSide = k => sideOfRoles([roles.get(k)].filter(Boolean), () => { const w = fine ? fine.ways.get(k) : worldUses.get(k); return w?.size === 1 ? [...w][0] : "mid"; });
-  // a quotient of the places keeps the side: places that stand on different sides are different classes, each standing
-  // where its places stand (`from X` on the left, `into X` on the right)
-  const WAY = {in: "from", out: "into"};
-  // in a route the groups are those of the finest plan, whatever is open: which places a group holds, and which way each is used,
-  // do not depend on which of them a zoom draws
-  const finePlaces = fine ? [...fine.places.values()] : [...places.values()], fineUsed = id => fine ? fine.ways.has(id) : usedWorld.has(id);
-  for (const p of finePlaces) if (p.coarse && fineUsed(p.id)) {
-    const disk = p.group === "w:Disk", ways = fine ? fine.ways.get(p.id) : worldUses.get(p.id);
-    // A symbolic place used both ways is one place, rather than a member of two
-    // directional quotients. Its identity stays visible at this zoom.
-    if (disk && ways.size > 1) continue;
-    const way = [...ways][0], c = disk ? {...p.coarse, id: "w:Disk:" + way, label: way === "in" ? "from disk" : "into disk"} : p.coarse;
-    if (!storage.has(c.id)) storage.set(c.id, {id: c.id, label: c.label, group: p.group, kids: new Set()});
-    storage.get(c.id).kids.add(p.id);
-  }
-  for (const F of [...storage.values()]) {
-    if (fineUsed(F.id)) F.kids.add(F.id);
-    const bySide = new Map();
-    for (const k of F.kids) { const s = fineSide(k); if (!bySide.has(s)) bySide.set(s, new Set()); bySide.get(s).add(k); }
-    if (bySide.size < 2) continue;
-    storage.delete(F.id);
-    for (const [s, kids] of bySide) storage.set(`${F.id}~${s}`, {...F, id: `${F.id}~${s}`, kids, ...(WAY[s] ? {way: WAY[s]} : {})});
-  }
+  const worldFrames = new Map(), worldParent = new Map();
+  const worldUsed = worldUse({places, pills, roles, fine}), usedWorld = worldUsed.used, fineSide = worldUsed.side;
+  const storage = storageGroups({places, pills, roles, fine}, worldUsed);
   worldShown = new Map();
+  // the overview and a focus open with each kind of the world closed (`kindGroups`): one box that says how many places it
+  // stands for, whatever folds lie below it
+  const shownAt = {in: new Map(), out: new Map()};
+  const kinds = V.route || DIFF ? new Map() : kindGroups({places, pills, roles, fine}, worldUsed);
+  for (const G of kinds.values()) {
+    if (V.open.places.has(G.group)) continue;
+    const glyph = placeGlyph.get([...G.kids][0]), label = `${G.label} · ${G.kids.size}`;
+    const p = {id: G.id, label, short: label, glyph, kind: "world", toggleGroup: G.group, members: [...G.kids], role: G.side, ...(G.way ? {way: G.way} : {})};
+    placeGlyph.set(p.id, glyph);
+    for (const k of G.kids) shownAt[G.side].set(k, p);
+    places.set(p.id, p);
+  }
+  // a place stands in its kind on each side the kind is closed; one whose every use a kind stands for is no box of its own
+  for (const k of new Set([...shownAt.in.keys(), ...shownAt.out.keys()])) {
+    const left = [...worldUsed.uses.get(k)].filter(s => !shownAt[s].has(k));
+    if (!left.length) { worldShown.set(k, shownAt.in.get(k) || shownAt.out.get(k)); places.delete(k); }
+    else places.set(k, {...places.get(k), role: left[0]});
+  }
   for (const F of storage.values()) {
-    if (F.kids.size < 2) continue;
+    if (F.kids.size < 2 || [...F.kids].some(k => worldShown.has(k))) continue;
     // a group stands where a place it holds is drawn
     const shown = [...F.kids].filter(k => usedWorld.has(k));
     if (!shown.length) continue;
@@ -1022,19 +1069,21 @@ async function renderPlaat(mine) {
       places.set(p.id, p);
     }
   }
-  const shownWorld = k => worldShown.get(k)?.id || k;
-  const remapWorld = (m, sides = false) => {
+  const shownWorld = (k, s) => shownAt[s]?.get(k)?.id || worldShown.get(k)?.id || k;
+  const remapWorld = (m, s, sides = false) => {
     const r = new Map();
-    m.forEach((v, k) => { const id = shownWorld(k); r.set(id, sides ? new Set([...(r.get(id) || []), ...v]) : r.has(id) ? r.get(id) && v : v); });
+    m.forEach((v, k) => { const id = shownWorld(k, s); r.set(id, sides ? new Set([...(r.get(id) || []), ...v]) : r.has(id) ? r.get(id) && v : v); });
     return r;
   };
   const countsTo = (m, f) => { if (!m) return m; const out = new Map(); m.forEach((n, k) => out.set(f(k), (out.get(f(k)) || 0) + n)); return out; };
   const COUNTS = ["Dn", "Cn", "Dr", "Cr", "aDn", "aCn", "aDr", "aCr"];
-  for (const P of pills.values()) for (const n of COUNTS) P[n] = countsTo(P[n], shownWorld);
-  for (const P of pills.values()) { P.D = remapWorld(P.D); P.C = remapWorld(P.C); if (P.Ds) { P.Ds = remapWorld(P.Ds, true); P.Cs = remapWorld(P.Cs, true); } }
+  for (const P of pills.values()) for (const n of COUNTS) P[n] = countsTo(P[n], k => shownWorld(k, n.includes("D") ? "in" : "out"));
+  for (const P of pills.values()) { P.D = remapWorld(P.D, "in"); P.C = remapWorld(P.C, "out"); if (P.Ds) { P.Ds = remapWorld(P.Ds, "in", true); P.Cs = remapWorld(P.Cs, "out", true); } }
   // the disk is a tree: past a column's worth, files fold into their directories, and a click opens one
   const visibleFiles = new Set([...places.keys()].map(filePath).filter(Boolean));
-  dirFold = foldDirs((fine ? [...fine.ways.keys()].filter(k => !worldShown.has(k)) : [...places.keys()]).map(filePath).filter(Boolean));
+  // a place the order of the disk took stands where that order puts it (`meet`), whatever the crowd
+  const ordered = k => meets.took.has(k.replace(/~own$/, ""));
+  dirFold = foldDirs((fine ? [...fine.ways.keys()].filter(k => !worldShown.has(k)) : [...places.keys()]).filter(k => !ordered(k)).map(filePath).filter(Boolean));
   if (dirFold.to.size) {
     // a directory holds the files it folds by the side each stands on: one class where they agree, one per side where not
     const classes = new Map();
@@ -1060,33 +1109,10 @@ async function renderPlaat(mine) {
       for (const k of kids) worldParent.set(k, id);
     }
   }
-  // siblings that draw the same lines on the finest plan (the same places, versions and channels) are one pill: a
-  // quotient of the plan's steps, so it is the same whatever else is open, and each of its lines stands for the
-  // lines of all of them. In a union, only siblings that both readings, or the same one, hold, and that changed alike.
-  // A step the reader opened stands on its own: opening the pill refines the quotient into its members
-  // A call is a line of the plan as data is, so siblings are one pill only where they call and are called alike, and a
-  // call to a member is a call to the pill it joined
-  const merged = new Map(), joinedTo = new Map(), callers = new Map();
-  for (const P of pills.values()) for (const b of P.calls || []) { if (!callers.has(b)) callers.set(b, []); callers.get(b).push(P.id); }
-  const counts = (P, n) => P[n] || new Map([...(n[0] === "D" ? P.D : P.C)].filter(([, r]) => n[1] === "n" || r).map(([k]) => [k, 1]));
-  for (const P of [...pills.values()]) {
-    if (P.own || P.hue || P.steps[0].startsWith("part:") || P.steps[0].startsWith("unit:") || P.steps.some(st => V.open.steps.has(st))) continue;
-    const lines = (P.fine ?? [...P.D.keys()].sort() + ">" + [...P.C.keys()].sort()) + "|" + [...(P.calls || [])].sort() + "<" + (callers.get(P.id) || []).sort();
-    const key = (P.parent || "") + "|" + lines + "|" + (P.backTo || "") + "|" + [...(P.sides || [])].sort() + "|" + stepChanged(P.steps);
-    const Q = merged.get(key);
-    if (!Q) { merged.set(key, P); continue; }
-    for (const n of ["Dn", "Cn", "Dr", "Cr"]) { const q = counts(Q, n); counts(P, n).forEach((c, k) => q.set(k, (q.get(k) || 0) + c)); Q[n] = q; }
-    for (const n of ["aDn", "aCn", "aDr", "aCr"]) if (Q[n] && P[n]) P[n].forEach((c, k) => Q[n].set(k, (Q[n].get(k) || 0) + c));
-    Q.steps.push(...P.steps); P.D.forEach((r, k) => Q.D.set(k, Q.D.get(k) && r)); P.C.forEach((r, k) => Q.C.set(k, Q.C.get(k) && r)); joinGoes(Q.goes, P.goes);
-    for (const [qs, ps] of [[Q.Ds, P.Ds], [Q.Cs, P.Cs]]) ps?.forEach((s, k) => qs.set(k, new Set([...(qs.get(k) || []), ...s])));
-    joinedTo.set(P.id, Q);
-    pills.delete(P.id);
-  }
-  for (const P of pills.values()) if (P.steps.length > 1) { joinedTo.set(P.id, P); P.id = "n:" + P.steps.join("+"); }
-  const callee = b => joinedTo.get(b)?.id ?? b;
-  for (const P of pills.values()) {
-    if (P.calls) P.calls = new Set([...P.calls].map(callee));
-    if (P.Ks) { const Ks = new Map(); P.Ks.forEach((s, b) => Ks.set(callee(b), new Set([...(Ks.get(callee(b)) || []), ...s]))); P.Ks = Ks; }
+  // an opened place of the disk's order is a frame around its own place and what stands in it (`meet`)
+  for (const [id, F] of meets.frames) {
+    worldFrames.set(id, {...F, kids: new Set(F.kids)});
+    for (const k of F.kids) worldParent.set(k, id);
   }
   // a value with no name and no type of the code's is a wire, not a place where data rests: the step
   // that makes it points at the steps that take it
@@ -1101,6 +1127,9 @@ async function renderPlaat(mine) {
   const referenced = new Set([...pills.values()].flatMap(P => [...P.D.keys(), ...P.C.keys()]));
   for (const k of [...places.keys()]) if ((k.startsWith("t:") || k.startsWith("v:")) && !referenced.has(k)) places.delete(k);
   const keep = new Set(places.keys());
+  // a library's types stand in its frame while it is open (`libraryFrames`), and so does the frame of a family of it the reader
+  // opened; closed, the library is one box
+  const libFrames = libraryFrames(places);
   // open families are frames around their members, one at each moment of the data; a member stands
   // inside the frame of its moment, the family itself is the frame. A type opens where it stood closed:
   // in the kind it is a kind of, or as itself; a part stands on its own, as it did closed
@@ -1121,7 +1150,7 @@ async function renderPlaat(mine) {
   // subpackages), a part, the function a call runs. An open step's own pill stands for its
   // function, so its frame is marked where that pill is not drawn; an open part's own pill is only
   // the code in it that names other parts' routes
-  const askedOf = s => s.startsWith("unit:") ? (isRest(s.slice(5)) || s.endsWith("$") ? null : s.slice(5)) : s.startsWith("part:") ? s.slice(5) : stepOf(s);
+  const askedOf = s => s.startsWith("unit:") ? (isRest(s.slice(5)) || s.endsWith("$") ? null : s.slice(5)) : s.startsWith("part:") ? s.slice(5) : s.startsWith("cls:") ? s.slice(4) : s.startsWith("fam:") ? null : stepOf(s);
   // ---- what a closed box holds inside: the things in it that do not touch its border ----
   // Each thing the diff marks counts once, at the deepest level the picture draws it: a node of the
   // code, a step of a body, a place. A type the picture draws as a box of its own, or inside a closed
@@ -1154,7 +1183,7 @@ async function renderPlaat(mine) {
     return I;
   };
   const insideUnit = u => {
-    const ps = u === "~in" || u === "~out" ? [...restExchange(u).keys()] : [isRest(u) ? u.slice(u.indexOf(":") + 1) : u];
+    const ps = u === "~in" || u === "~out" ? FOCUS.rest : [isRest(u) ? u.slice(u.indexOf(":") + 1) : u];
     return insideCode(n => ps.some(p => inUnit(n.id, p)));
   };
   // a closed step holds its body: the steps it runs and every function they reach, each with its own
@@ -1186,11 +1215,11 @@ async function renderPlaat(mine) {
     return I;
   };
   // the boxes that close: a part, a package or a module, a step, a family, a place standing for others
-  const quotient = P => /^(part|unit):/.test(P.steps[0]);
+  const quotient = P => isBlock(P.steps[0]);
   for (const P of pills.values()) {
     if (P.own) continue;
     const s = P.steps[0];
-    P.inside = s.startsWith("part:") ? insideCode(n => partOf(n) === s.slice(5)) : s.startsWith("unit:") ? insideUnit(s.slice(5)) : insideSteps(P.steps);
+    P.inside = s.startsWith("part:") ? insideCode(n => partOf(n) === s.slice(5)) : s.startsWith("unit:") ? insideUnit(s.slice(5)) : /^(cls|fam):/.test(s) ? insideCode(blockHolds(s)) : insideSteps(P.steps);
   }
   for (const p of places.values()) {
     if (!keep.has(p.id)) continue;
@@ -1213,19 +1242,6 @@ async function renderPlaat(mine) {
   const root = {id: "root", children: [], edges: []};
   // a place that stands twice is `from X` on the left and `into X` on the right
   const TWIN = " ⇄", sideLabel = p => p.way ? `${p.way} ${p.label}` : p.label;
-  const sideOf = id => { const us = worldFrames.has(id) ? [...worldFrames.get(id).kids].map(k => used.get(k) || {}) : [used.get(id) || {}]; const i = us.some(u => u.in), o = us.some(u => u.out); return i && !o ? "in" : o && !i ? "out" : "both"; };
-  const worldIds = [...places.values()].filter(p => p.kind === "world" && keep.has(p.id) && !worldParent.has(p.id)).map(p => p.id).concat([...worldFrames.keys()]);
-  const sortWorld = ids => ids.sort((a, b) => (a.startsWith("e:") ? -1 : 0) - (b.startsWith("e:") ? -1 : 0) || (placeKind(a) || "").localeCompare(placeKind(b) || "") || a.localeCompare(b));
-  const worldNode = (id, constraint) => {
-    const F = worldFrames.get(id), opts = constraint ? {"elk.layered.layering.layerConstraint": constraint} : {};
-    if (!F) return leaf(id, placeW({...places.get(id), label: sideLabel(places.get(id)) + (places.get(id).twin ? TWIN : "")}, 40), 36, opts);
-    const n = frameNode(id, 36); Object.assign(n.layoutOptions, opts);
-    n.layoutOptions["elk.nodeSize.minimum"] = `(${textW(sideLabel(F) + (F.twin ? TWIN : "")) + 50},70)`;
-    for (const k of F.kids) n.children.push(leaf(k, placeW(places.get(k), 40), 36));
-    return n;
-  };
-  // where each drawn place stands is the side of the places of the finest plan it stands for (`sideOfRoles`). A place it
-  // uses and changes stands twice, `from X ⇄` on the left and `into X ⇄` on the right
   const finesOf = id => {
     const p = places.get(id);
     if (p?.members) return p.members;
@@ -1233,11 +1249,40 @@ async function renderPlaat(mine) {
     if (p?.folded) return [...dirFold.to].filter(([, d]) => d === p.folded).map(([f]) => "w:File:" + f);
     return [id];
   };
+  // a kind the reader opened is a frame around the boxes that stood for its places, each as the folds below it draw it
+  for (const G of kinds.values()) {
+    if (!V.open.places.has(G.group)) continue;
+    const tops = [...places.values()].filter(p => p.kind === "world" && keep.has(p.id) && !worldParent.has(p.id)).map(p => p.id).concat([...worldFrames.keys()].filter(id => !worldParent.has(id)));
+    // a place read and written stands twice, and in neither frame
+    const held = new Set([...G.kids].filter(k => worldUsed.uses.get(k)?.size === 1).flatMap(k => [k, ...(places.get(k)?.members || [])]));
+    const kids = tops.filter(id => held.has(id) || finesOf(id).some(k => held.has(k.replace(/~own$/, ""))));
+    if (!kids.length) continue;
+    const fid = "group:" + G.id;
+    placeGlyph.set(fid, placeKind(G.kids.values().next().value));
+    worldFrames.set(fid, {id: fid, label: G.label, group: G.group, role: G.side, kids: new Set(kids), members: [...G.kids], ...(G.way ? {way: G.way} : {})});
+    for (const k of kids) worldParent.set(k, fid);
+  }
+  const leavesIn = id => (worldFrames.has(id) ? [...worldFrames.get(id).kids].flatMap(leavesIn) : [id]);
+  const sideOf = id => { const us = leavesIn(id).map(k => used.get(k) || {}); const i = us.some(u => u.in), o = us.some(u => u.out); return i && !o ? "in" : o && !i ? "out" : "both"; };
+  const worldIds = [...places.values()].filter(p => p.kind === "world" && keep.has(p.id) && !worldParent.has(p.id)).map(p => p.id).concat([...worldFrames.keys()].filter(id => !worldParent.has(id)));
+  const sortWorld = ids => ids.sort((a, b) => (a.startsWith("e:") ? -1 : 0) - (b.startsWith("e:") ? -1 : 0) || (placeKind(a) || "").localeCompare(placeKind(b) || "") || a.localeCompare(b));
+  const worldNode = (id, constraint) => {
+    const F = worldFrames.get(id), opts = constraint ? {"elk.layered.layering.layerConstraint": constraint} : {};
+    if (!F) return leaf(id, placeW({...places.get(id), label: sideLabel(places.get(id)) + (places.get(id).twin ? TWIN : "")}, 40), 36, opts);
+    const n = frameNode(id, 36); Object.assign(n.layoutOptions, opts);
+    n.layoutOptions["elk.nodeSize.minimum"] = `(${textW(sideLabel(F) + (F.twin ? TWIN : "")) + 50},70)`;
+    for (const k of F.kids) n.children.push(worldFrames.has(k) ? worldNode(k) : leaf(k, placeW(places.get(k), 40), 36));
+    return n;
+  };
+  // where each drawn place stands is the side of the places of the finest plan it stands for (`sideOfRoles`). A place it
+  // uses and changes stands twice, `from X ⇄` on the left and `into X ⇄` on the right
   const roleOf = id => sideOfRoles((worldFrames.has(id) ? [...worldFrames.get(id).kids] : [id]).flatMap(finesOf).map(k => roles.get(k)).filter(Boolean), () => ({in: "in", out: "out"})[sideOf(id)] || "mid");
-  const roleAt = new Map(worldIds.map(id => [id, id.startsWith("e:") ? "in" : roleOf(id)])), twinOf = new Map();
+  const roleAt = new Map(worldIds.map(id => [id, id.startsWith("e:") ? "in" : places.get(id)?.role || worldFrames.get(id)?.role || roleOf(id)])), twinOf = new Map();
   for (const [id, r] of roleAt) {
     if (r !== "both") continue;
     const tw = id + TWIN, F = worldFrames.get(id);
+    // an opened place of the disk's order stands once, between what writes in it and what reads it
+    if (F?.dir) { roleAt.set(id, "mid"); continue; }
     if (F) {
       // an opened database: what is read of it stands in the one, what is written in the other
       const T = {...F, id: tw, kids: new Set(), way: "into", twin: id};
@@ -1258,7 +1303,14 @@ async function renderPlaat(mine) {
   // steps: frames hold their own steps, in call order
   const holder = pid => pid ? nodeOf.get(pid) : root;
   // a frame is at least as wide as its title, a choice's with what decides its branches
-  const titled = (n, F) => Object.assign(n.layoutOptions, {"elk.nodeSize.constraints": "MINIMUM_SIZE", "elk.nodeSize.minimum": `(${textW((F.synthetic ? "" : "▾ ") + F.title + (F.whens || []).map(([, w]) => `  ● ${w}`).join(""), 7.2) + 34},60)`});
+  const titled = (n, F) => Object.assign(n.layoutOptions, {"elk.nodeSize.constraints": "MINIMUM_SIZE", "elk.nodeSize.minimum": `(${textW((F.synthetic ? "" : "▾ ") + F.title + (F.errors?.length ? countedText(F.errors) : "") + (F.whens || []).map(([, w]) => `  ● ${w}`).join(""), 7.2) + 34},60)`});
+  // the errors a step hands on, counted on it: a click draws the errors of the picture as boxes
+  const countedText = errors => `  +${errors.length} error ${errors.length === 1 ? "type" : "types"}`;
+  const countedMark = (text, errors) => {
+    const t = el("tspan", {class: "errs"}, text); t.textContent = countedText(errors);
+    el("title", {}, t).textContent = `can hand on ${errors.length === 1 ? "an error of the type" : "errors of the types"} ${errors.join(", ")}: no fault, the code names what can go wrong · click to draw the error types as boxes`;
+    t.addEventListener("click", ev => { ev.stopPropagation(); V.errors = true; render(); });
+  };
   for (const F of frames.values()) {
     const n = frameNode(F.id, 34);
     titled(n, F);
@@ -1267,10 +1319,12 @@ async function renderPlaat(mine) {
   for (const F of frames.values()) if (F.parent) holder(F.parent).children.push(nodeOf.get(F.id));
   // an open part's own step: the code in it that names another part's routes
   const requesters = p => [...new Set(D.edges.filter(e => e.kind === "requests" && partOf(byId.get(e.src) || {}) === p).map(e => byId.get(e.src)?.name || short(e.src)))];
+  // a step that runs on one value the code names is named as the code names it: `model.forward` (`foldReceivers`)
+  const onValue = (label, runsOn) => runsOn?.length === 1 ? `${runsOn[0]}.${label.split(".").pop()}` : label;
   const pillLabel = P => {
     if (P.own && P.steps[0].startsWith("part:")) { const rs = requesters(P.steps[0].slice(5)); return rs.length <= 2 ? rs.join(", ") : `${rs.slice(0, 2).join(", ")} +${rs.length - 2}`; }
     if (P.own) return stepLabel(P.steps[0]);
-    const ns = [...new Set(P.steps.map(stepLabel))], text = ns.length <= 2 ? ns.join(", ") : `${ns.slice(0, 2).join(", ")} +${ns.length - 2}`;
+    const ns = [...new Set(P.steps.map(st => onValue(stepLabel(st), P.runsOn)))], text = ns.length <= 2 ? ns.join(", ") : `${ns.slice(0, 2).join(", ")} +${ns.length - 2}`;
     const alts = P.steps.length === 1 && !stepOf(P.steps[0]).startsWith("op:") ? oneOf(P.steps[0]) : 0;
     return (P.steps.some(st => treeInfo.get(st)?.recursive) ? "↻ " : P.steps.some(openable) || !V.route ? "▸ " : "") + text + (alts ? ` · one of ${alts}` : "") + (P.folded ? ` · +${P.folded} types` : "");
   };
@@ -1284,9 +1338,12 @@ async function renderPlaat(mine) {
       Object.assign(P, {labels: {a: la, b: lb}, label: (/^[▸↻] /.test(P.label) ? P.label.slice(0, 2) : "") + u.label});
     }
     P.interior = !P.own && ([...P.D.values(), ...P.C.values()].some(Boolean));
+    // what the step's function is defined under (`@checked`), and the errors it hands on, counted (`foldErrors`)
+    P.guards = DIFF || P.own ? [] : [...new Set(P.steps.flatMap(s => byId.get(stepOf(s))?.guards || []))];
+    P.marks = (P.guards.length ? "  guarded" : "") + (P.errors?.length ? countedText(P.errors) : "");
     // the own arrow of an opened step is its border: a point on the frame's right edge, where what the body gives back leaves it
     if (P.border) { holder(P.parent).children.push(leaf(P.id, 12, 12, {"elk.layered.layering.layerConstraint": "LAST"})); continue; }
-    holder(P.parent).children.push(leaf(P.id, Math.max((P.interior ? 48 : 24) + textW(P.label, 6.9), tagsWidth(P.inside) + 2 * 13), P.interior ? 34 : 26));
+    holder(P.parent).children.push(leaf(P.id, Math.max((P.interior ? 48 : 24) + textW(P.label + P.marks, 6.9), tagsWidth(P.inside) + 2 * 13), P.interior ? 34 : 26));
   }
   // memory lives in the smallest open step that holds every step using it
   const chain = fid => { const c = []; for (let f = fid; f; f = frames.get(f)?.parent) c.unshift(f); return c; };
@@ -1311,8 +1368,10 @@ async function renderPlaat(mine) {
     if (i >= 0) common = common.slice(0, i);
     return common.length ? nodeOf.get(common[common.length - 1]) : root;
   };
-  for (const p of [...places.values()].filter(p => (p.kind === "type" || p.kind === "ext") && keep.has(p.id) && !p.inFrame).sort((a, b) => a.label.localeCompare(b.label))) homeOf(p.id).children.push(leaf(p.id, placeW(p, 30), 36));
-  for (const F of famFrames.values()) { const n = frameNode(F.id, 30); titled(n, F); homeOf(F.id).children.push(n); for (const k of F.kids) n.children.push(leaf(k.id, 26 + textW(k.label, 6.9), 28)); }
+  for (const L of libFrames.values()) { const n = frameNode(L.id, 30); titled(n, L); homeOf(L.id).children.push(n); }
+  const inLibrary = (t, id) => { const f = libFrameOf(t) && libFrameAt(libFrameOf(t), id); return f && libFrames.has(f) ? nodeOf.get(f) : homeOf(id); };
+  for (const p of [...places.values()].filter(p => (p.kind === "type" || p.kind === "ext") && keep.has(p.id) && !p.inFrame).sort((a, b) => a.label.localeCompare(b.label))) inLibrary(p.type, p.id).children.push(leaf(p.id, placeW(p, 30), 36));
+  for (const F of famFrames.values()) { const n = frameNode(F.id, 30); titled(n, F); inLibrary(F.fam, F.id).children.push(n); for (const k of F.kids) n.children.push(leaf(k.id, 26 + textW(k.label, 6.9), 28)); }
   // a place one step leaves for a later one, or one the code does not say which way it goes, lives
   // like memory in the smallest open step that holds every step using it
   if (!home) for (const [id, F] of worldFrames) usersOf.set(id, [...F.kids].flatMap(k => usersOf.get(k) || []));
@@ -1321,14 +1380,34 @@ async function renderPlaat(mine) {
   // edges: data into a step and out of it, and results handed back to the caller
   // the channels between two boxes stay different lines: data a step moves itself, data it reaches through a step it
   // calls (the sixth sentence), a call, a result handed back
-  const edgeInfo = new Map(), dropped = [], addEdge = (a, b, info) => {
+  // The overview stands in columns (mathematics.md, "Layered drawing"): what the packages read of the world, the packages,
+  // the types that cross between them, what they write. A type is one box that a package takes and another gives, so the
+  // layout puts every type after every package and the arrowhead says the way: a line into a package is laid out from it
+  // (`flipped`) and drawn as it runs. A call between two packages orders neither and is an arc beside them, as in a focus
+  // What a package takes of a type and what it gives of it are two lines between the same two boxes: the overview draws them
+  // on one path with an arrowhead at each end the data runs to (`paired`: a pair of boxes to the line laid out for it, which
+  // carries the other as `also`). A line a package reaches through another stays a line of its own (sentence 6)
+  const columns = !V.route && !V.focus.size && !DIFF, flipped = new Set(), paired = new Map();
+  const isType = id => { const p = places.get(id); return p ? p.kind === "type" || p.kind === "ext" : famFrames.has(id) || libFrames.has(id); };
+  const edgeInfo = new Map(), dropped = [], besides = [], addEdge = (a, b, info) => {
     if (a === b) return;
     if (!nodeOf.has(a) || !nodeOf.has(b)) { dropped.push(`${a}>${b}`); return; }
     const id = `${a}>${b}` + (info.uses ? "~calls" : info.back ? "~back" : info.reach ? "~reach" : "");
     // in a union, a line is in the readings that draw it
     if (edgeInfo.has(id)) { const e = edgeInfo.get(id); e.n = (e.n || 1) + (info.n || 1); if (info.was != null) e.was = (e.was || 0) + info.was; if (e.sides && info.sides) info.sides.forEach(s => e.sides.add(s)); return; }
     edgeInfo.set(id, {...info, a, b, sides: info.sides && new Set(info.sides)});
-    root.edges.push({id, sources: [a], targets: [b], ...(info.label ? {labels: [{text: info.label, width: textW(info.label, 6.2), height: 12}]} : {})});
+    // A focus has no order between its functions: what it takes stands left of them and what it gives right, and a call
+    // between two of them is a channel of its own that puts neither before the other. It is drawn beside them once they
+    // are placed, and is no line of the layout
+    if (info.uses && (columns || V.focus.size) && !DIFF && ![a, b].some(x => x.startsWith("n:unit:~"))) { besides.push(id); return; }
+    if (columns && isType(a) !== isType(b) && !info.uses && !info.back) {
+      const key = `${[a, b].sort().join("|")}|${!!info.reach}`;
+      if (paired.has(key)) { edgeInfo.get(paired.get(key)).also = id; return; }
+      paired.set(key, id);
+    }
+    const flip = columns && isType(a) && !isType(b);
+    if (flip) flipped.add(id);
+    root.edges.push({id, sources: [flip ? b : a], targets: [flip ? a : b], ...(info.label ? {labels: [{text: info.label, width: textW(info.label, 6.2), height: 12}]} : {})});
   };
   for (const [a, b, hue, sides] of wires) addEdge(a, b, {hue, sides});
   // a line the step draws itself and reaches as well is two: the one it draws, and the one it reaches. In a union each reading
@@ -1347,11 +1426,6 @@ async function renderPlaat(mine) {
       for (const [reach, n, sides, was] of channels(P, "C", r, k)) addEdge(P.id, twinOf.get(k) || k, {reach, hue: P.hue, sides, n, was, ...(open ? {label: "?", title: "the code does not say which way the data goes"} : {})});
     });
     if (P.backTo) addEdge(P.id, P.backTo, {back: true, hue: P.hue, sides: P.sides, ...(P.said ? {label: P.said} : {})});
-  }
-  // a focus and the rest of the code: one arrow each way per unit, counting the types that cross
-  for (const [rest, at, r, ts, sides] of restArrows) {
-    const info = {label: `${ts.size} ${ts.size === 1 ? "type" : "types"}`, title: [...ts].map(typeLabel).sort().join(", "), sides};
-    if (r === "~in") addEdge(rest, at, info); else addEdge(at, rest, info);
   }
   // code that calls other code: a dotted line, from the caller. The calls are a channel of their own,
   // drawn whatever data also joins the two: a quotient keeps the image of a relation, and "calls while
@@ -1430,10 +1504,13 @@ async function renderPlaat(mine) {
   const sided = (text, labels) => { if (labels) { text.dataset.a = labels.a; text.dataset.b = labels.b; text.dataset.u = text.textContent; } };
   // a bundle says how many lines it stands for, and in a union what it was; the layout keeps room for the words
   const bundleOf = info => (recounted(info) ? `×${info.was} → ×${info.n ?? 1}` : info.n > 1 ? "×" + info.n : null);
-  for (const e of root.edges) { const t = bundleOf(edgeInfo.get(e.id)); if (t) (e.labels ||= []).push({text: t, width: textW(t, 6.2), height: 12}); }
-  // boxes are placed by Brandes–Köpf, which grows about linearly with the lines, so a picture of a few
-  // hundred lines opens at once; network simplex straightens long lines a little at ten times the cost
-  Object.assign(root, {layoutOptions: {"elk.algorithm": "layered", "elk.direction": "RIGHT", "elk.hierarchyHandling": "INCLUDE_CHILDREN", "elk.edgeRouting": "ORTHOGONAL", "elk.layered.spacing.nodeNodeBetweenLayers": "56", "elk.spacing.nodeNode": "16", "elk.layered.nodePlacement.strategy": "BRANDES_KOEPF", "elk.spacing.edgeNode": "14", "elk.layered.spacing.edgeNodeBetweenLayers": "16", "elk.layered.considerModelOrder.strategy": root.edges.length <= ORDERED_LINES ? "NODES_AND_EDGES" : "NONE"}});
+  // in columns a line's width and its tooltip say how many it stands for: a label would stand as a layer between two columns
+  if (!columns) for (const e of root.edges) { const t = bundleOf(edgeInfo.get(e.id)); if (t) (e.labels ||= []).push({text: t, width: textW(t, 6.2), height: 12}); }
+  // A focus is three columns: what it takes, its functions, what it gives. The code's order says nothing between functions
+  // that no line orders. The overview is four columns (`COLUMNS`): what the packages read, the packages, the types, what
+  // they write; a place they read and write stands in the first, its twin in the last
+  const columnOf = c => (["in", "both"].includes(roleAt.get(c.id)) ? "in" : roleAt.get(c.id) === "out" ? "out" : isType(c.id) ? "type" : "code");
+  layOut(root, {loose: (columns || !!V.focus.size) && !DIFF, columnOf: columns ? columnOf : null});
   let layout;
   laying(root, () => mine === undefined || mine === renderSeq);
   try { layout = await laidOut(root); } catch (err) { if (err === SUPERSEDED) return; throw err; }
@@ -1446,13 +1523,12 @@ async function renderPlaat(mine) {
   const walkPos = (n, ox, oy, depth) => { for (const c of n.children || []) { pos.set(c.id, {x: c.x + ox, y: c.y + oy, w: c.width, h: c.height, depth}); walkPos(c, c.x + ox, c.y + oy, depth + 1); } };
   walkPos(layout, OX, OY, 0);
   const parentOf = new Map(); const walkPar = n => { for (const c of n.children || []) { parentOf.set(c.id, n.id); walkPar(c); } }; walkPar(layout);
-  const focused = V.focus.size && !V.route && !V.kind;
-  el("text", {class: "route-title", x: 20, y: 24}, g).textContent = V.route ? `Route · ${entryTitle(V.route)}` : V.kind ? `All ${KIND_LABEL[V.kind]} routes` : focused ? `Focus · ${[...V.focus].sort().map(unitLabel).join(", ")}` : V.part ? `${V.part} by package` : multi ? `${PARTS.length} parts` : `${D.root} by package`;
+  const focused = V.focus.size && !V.route;
+  el("text", {class: "route-title", x: 20, y: 24}, g).textContent = V.route ? `Route · ${entryTitle(V.route)}` : focused ? `Focus · ${[...V.focus].sort().map(unitLabel).join(", ")}` : (V.part ? `${V.part} by package` : multi ? `${PARTS.length} parts` : `${D.root} by package`) + (V.kind ? ` · the code of its ${KIND_LABEL[V.kind]} routes` : "");
   el("text", {class: "route-sub", x: 20, y: 41}, g).textContent = V.route ? `${short(V.route)} · what it finds on the left, what it leaves on the right · click a pill to open it, a frame's title to close it, double-click a box to pin its lines`
-    : focused ? "the packages in focus, the types that cross between them and the places they touch; the rest of the code on either side · shift-click a package to add or drop it"
-    : multi && !V.part && !V.kind ? "each part from what it finds to what it leaves; one part's requests are another's HTTP · click a part to open it"
-    : !V.kind ? "each package from what its own code finds to what it leaves, joined by the types that cross between packages; a dotted line where one calls another · click a package to open it, shift-click to focus on it, double-click a box to pin its lines"
-    : "each route from what it finds to what it leaves · click a route to open it";
+    : focused ? "what is in focus, the types it takes and gives and the places it touches; the rest of the code on either side · shift-click a package or a class inside it to narrow the focus to it, one of the rest to add it"
+    : multi && !V.part ? "each part from what it finds to what it leaves; one part's requests are another's HTTP · click a part to open it"
+    : "each package from what its own code finds to what it leaves, joined by the types that cross between packages; a dotted line where one calls another · click a package to open it, shift-click to focus on it, double-click a box to pin its lines";
   if (!pos.size) el("text", {class: "route-sub", x: 20, y: 70}, g).textContent = "No step on this route takes or hands on a place: it calls nothing that does. Pick another route.";
   const fg = el("g", {}, g), eg = el("g", {}, g), ng = el("g", {}, g), ig = el("g", {class: "interior-ports"}, g);
   // pointing at a box or a pill lights up its lines and what is at their other ends; the versions of
@@ -1470,7 +1546,7 @@ async function renderPlaat(mine) {
     t.addEventListener("click", ev => { ev.stopPropagation(); goTo(other); });
   };
   // an opened box is drawn as a frame with the box's id: the fiber of the box, what `q` sends to it
-  const isFrame = id => pos.has(id) && (frames.has(id) || famFrames.has(id) || worldFrames.has(id));
+  const isFrame = id => pos.has(id) && (frames.has(id) || famFrames.has(id) || libFrames.has(id) || worldFrames.has(id));
   const light = id => {
     const ids = new Set([...nodeEls.keys()].filter(k => base(k) === base(id))), lit = new Set(ids);
     for (const k of worldFrames.get(id)?.kids || []) { ids.add(k); lit.add(k); }
@@ -1508,26 +1584,36 @@ async function renderPlaat(mine) {
     return ds.length > 0;
   };
   // frames: open steps (choices dashed) and open families
-  for (const F of worldFrames.values()) {
-    const P = pos.get(F.id), kind = placeKind([...F.kids][0]);
+  for (const F of [...worldFrames.values()].sort((a, b) => pos.get(a.id).depth - pos.get(b.id).depth)) {
+    const P = pos.get(F.id), kind = placeKind(F.dir || placeGlyph.has(F.id) ? F.id : [...F.kids][0]);
     const grp = el("g", {class: "frame storage", "data-id": F.id, "data-group": F.group}, fg);
     el("rect", {class: "bg", width: P.w, height: P.h, style: `stroke:var(--k-${kind});fill:var(--panel)`}, grp);
     const title = el("text", {class: "ftitle", x: 14, y: 22}, grp); title.textContent = "▾ " + sideLabel(F);
     if (F.twin) twinLink(title, F.twin);
-    title.addEventListener("click", ev => { ev.stopPropagation(); V.open.places.delete(F.group); plaatAnchor = F.id.slice(6); render(); });
+    title.addEventListener("click", ev => { ev.stopPropagation(); if (F.dir) { V.open.dirs.delete(F.dir); plaatAnchor = F.id; } else { V.open.places.delete(F.group); plaatAnchor = F.id.slice(6); } render(); });
     pointable(grp, F.id);
     place(grp, F.id);
   }
-  for (const id of [...pos.keys()].filter(id => frames.has(id) || famFrames.has(id)).sort((a, b) => pos.get(a).depth - pos.get(b).depth)) {
+  for (const id of [...pos.keys()].filter(id => frames.has(id) || famFrames.has(id) || libFrames.has(id)).sort((a, b) => pos.get(a).depth - pos.get(b).depth)) {
+    // a library open is a frame around the types it makes, titled by its name; clicking the title closes it into one box
+    if (libFrames.has(id)) {
+      const P = pos.get(id), L = libFrames.get(id), grp = el("g", {class: "frame fam library", "data-id": id}, fg);
+      const r = el("rect", {class: "bg", width: P.w, height: P.h}, grp);
+      const title = el("text", {class: "ftitle", x: 14, y: 20}, grp); title.textContent = "▾ " + L.title;
+      title.addEventListener("click", ev => { ev.stopPropagation(); plaatAnchor = id; libOpen(L.library, false); render(); });
+      place(grp, id, (from, to) => { if (!from.fresh) d3.select(r).attr("width", from.w).attr("height", from.h).transition().duration(DUR).attr("width", to.w).attr("height", to.h); });
+      continue;
+    }
     const P = pos.get(id), F = frames.get(id) || famFrames.get(id), isFam = !frames.has(id);
     const grp = el("g", {class: "frame" + (isFam ? " fam" : "") + (F.choice ? " choice" : ""), "data-id": id}, fg);
     const r = el("rect", {class: "bg", width: P.w, height: P.h}, grp);
     if (F.hue) r.setAttribute("style", `stroke:${hueVar(F.hue)}`);
     if (isFam) el("rect", {x: 0, y: 0, width: 5, height: P.h, fill: F.hue || hueOf(null)}, grp);
-    const title = el("text", {class: "ftitle", x: 14, y: 20}, grp); title.textContent = (F.synthetic ? "" : "▾ ") + F.title;
+    const title = el("text", {class: "ftitle", x: 14, y: 20}, grp); title.textContent = (F.synthetic ? "" : "▾ ") + onValue(F.title, F.runsOn);
+    if (F.errors?.length) countedMark(title, F.errors);
     for (const [h, w] of F.whens || []) { const t = el("tspan", {}, title); t.textContent = `  ● ${w}`; t.style.fill = hueVar(h); }
     if (DIFF && !isFam) {
-      const st = wholeRoute ? null : standing(F.sides, !!F.step && (/^(part|unit):/.test(F.step) ? borderOf(id) : stepChanged([F.step])));
+      const st = wholeRoute ? null : standing(F.sides, !!F.step && (isBlock(F.step) ? borderOf(id) : stepChanged([F.step])));
       marked(grp, st, P.w + 3, wasOf(st, id, F.step && DIFF.was[stepOf(F.step)]));
       sided(title, F.labels && {a: "▾ " + F.labels.a, b: "▾ " + F.labels.b});
     }
@@ -1535,7 +1621,8 @@ async function renderPlaat(mine) {
     if (asked) markAsks(grp, [asked], P.w - 8, 8);
     title.addEventListener("click", ev => {
       ev.stopPropagation(); if (F.synthetic) return; plaatAnchor = id;
-      if (isFam) V.open.families.delete(F.fam); else if (F.step && F.step.startsWith("part:")) V.open.parts.delete(F.step.slice(5)); else if (F.step && F.step.startsWith("unit:")) { const u = F.step.slice(5); for (const x of [...V.open.units]) if (x === u || x.startsWith(u + ".")) V.open.units.delete(x); } else if (F.anchor) { V.route = null; entrySel.value = ""; V.open.steps.clear(); V.open.functions.clear(); plaatAnchor = "n:" + F.step; } else { V.open.steps.delete(F.step); V.open.functions.delete(stepOf(F.step)); }
+      if (ev.shiftKey && !isFam && F.step && /^(unit|cls|fam):/.test(F.step) && !isRest(F.step.slice(5)) && !V.route) { putInFocus(focusKey(F.step)); plaatFit = true; render(); focusPanel(); return; }
+      if (isFam) V.open.families.delete(F.fam); else if (F.step && F.step.startsWith("part:")) V.open.parts.delete(F.step.slice(5)); else if (F.step && F.step.startsWith("unit:")) { const u = F.step.slice(5); for (const x of [...V.open.units]) if (x === u || x.startsWith(u + ".")) V.open.units.delete(x); V.open.flat.delete(u); } else if (F.step && F.step.startsWith("cls:")) V.open.classes.delete(F.step.slice(4)); else if (F.step && F.step.startsWith("fam:")) V.open.bases.delete(F.step.slice(4)); else if (F.anchor) { V.route = null; entrySel.value = ""; V.open.steps.clear(); V.open.functions.clear(); plaatAnchor = "n:" + F.step; } else { V.open.steps.delete(F.step); V.open.functions.delete(stepOf(F.step)); }
       render();
     });
     place(grp, id, (from, to) => { if (!from.fresh) d3.select(r).attr("width", from.w).attr("height", from.h).transition().duration(DUR).attr("width", to.w).attr("height", to.h); });
@@ -1546,6 +1633,8 @@ async function renderPlaat(mine) {
     const info = edgeInfo.get(e.id) || {}, c = e.container && e.container !== "root" ? pos.get(e.container) : {x: OX, y: OY};
     for (const sct of e.sections || []) {
       const pts = [sct.startPoint, ...(sct.bendPoints || []), sct.endPoint].map(q => ({x: q.x + c.x, y: q.y + c.y}));
+      if (flipped.has(e.id)) pts.reverse();
+      const [ea, eb] = flipped.has(e.id) ? [e.targets[0], e.sources[0]] : [e.sources[0], e.targets[0]];
       // Reached effects cross a closed step's border and meet its interior port. Own
       // effects stop at the border. The layout endpoints and graph identities stay intact.
       const ports = [];
@@ -1557,13 +1646,16 @@ async function renderPlaat(mine) {
         pts[i] = {x: q.x + 12 * dx, y: q.y + 12 * dy};
         ports.push({id, ...pts[i], dx, dy});
       }
-      const d = pts.map((q, i) => (i ? "L" : "M") + q.x + "," + q.y).join(" ");
+      const d = linePath(pts);
       const layer = ports.length ? ig : eg;
-      const p = el("path", {class: "sedge fn" + (info.reach ? " reach" : "") + (info.back ? " back" : "") + (info.uses ? " uses" : ""), d, "stroke-width": (info.uses ? 1 : 1.3) + (info.n > 1 ? Math.min(3, Math.log2(info.n)) : 0), "data-a": e.sources[0], "data-b": e.targets[0]}, layer);
-      const last = pts[pts.length - 1], prev = pts[pts.length - 2], ang = Math.atan2(last.y - prev.y, last.x - prev.x), L = 8, Wd = 4;
-      const head = el("polygon", {points: [[last.x, last.y], [last.x - L * Math.cos(ang) + Wd * Math.sin(ang), last.y - L * Math.sin(ang) - Wd * Math.cos(ang)], [last.x - L * Math.cos(ang) - Wd * Math.sin(ang), last.y - L * Math.sin(ang) + Wd * Math.cos(ang)]].map(q => q.join(",")).join(" "), class: "sedge-head"}, layer);
+      const other = info.also && edgeInfo.get(info.also), lines = (info.n || 1) + (other ? other.n || 1 : 0);
+      const p = el("path", {class: "sedge fn" + (info.reach ? " reach" : "") + (info.back ? " back" : "") + (info.uses ? " uses" : ""), d, "stroke-width": (info.uses ? 1 : 1.3) + (lines > 1 ? Math.min(3, Math.log2(lines)) : 0), "data-a": ea, "data-b": eb}, layer);
+      const headAt = (last, prev) => { const ang = Math.atan2(last.y - prev.y, last.x - prev.x), L = 8, Wd = 4; return el("polygon", {points: [[last.x, last.y], [last.x - L * Math.cos(ang) + Wd * Math.sin(ang), last.y - L * Math.sin(ang) - Wd * Math.cos(ang)], [last.x - L * Math.cos(ang) - Wd * Math.sin(ang), last.y - L * Math.sin(ang) + Wd * Math.cos(ang)]].map(q => q.join(",")).join(" "), class: "sedge-head"}, layer); };
+      const head = headAt(pts[pts.length - 1], pts[pts.length - 2]);
       if (info.hue) { p.style.stroke = hueVar(info.hue); head.style.fill = hueVar(info.hue); }
       const els = [p, head];
+      // the line the other way on the same path: its arrowhead at this line's start
+      if (other) { els.push(headAt(pts[0], pts[1])); el("title", {}, p).textContent = `${info.n || 1} of the finer picture's lines run this way, ${other.n || 1} the other`; edgeEls.push({a: eb, b: ea, els, kind: "data"}); }
       for (const port of ports) {
         const bar = el("path", {class: "sedge interior-port", "data-step": port.id, "pointer-events": "none", d: `M${port.x - 6 * port.dy},${port.y + 6 * port.dx}L${port.x + 6 * port.dy},${port.y - 6 * port.dx}`, "stroke-width": 2}, ig);
         if (info.hue) bar.style.stroke = hueVar(info.hue);
@@ -1572,7 +1664,7 @@ async function renderPlaat(mine) {
       // a bundle: the fine lines of one channel between the same two boxes are one line that says how many it stands for; in a
       // union, a count that differs says what it was
       const again = recounted(info), bundle = bundleOf(info);
-      if (bundle) el("title", {}, p).textContent = again ? `${info.was} lines of the finer picture in A, ${info.n ?? 1} in B` : `${info.n} lines of the finer picture`;
+      if (bundle && !other) el("title", {}, p).textContent = again ? `${info.was} lines of the finer picture in A, ${info.n ?? 1} in B` : `${info.n} lines of the finer picture`;
       if (info.title) el("title", {}, p).textContent = info.title;
       for (const l of e.labels || []) {
         const tx = el("text", {class: "sedge-label" + (l.text === bundle ? " bundle" : ""), x: l.x + c.x + l.width / 2, y: l.y + c.y + 10, "text-anchor": "middle"}, eg);
@@ -1580,11 +1672,24 @@ async function renderPlaat(mine) {
         if (l.text === bundle) sided(tx, again && {a: "×" + info.was, b: "×" + (info.n ?? 1)});
         els.push(tx);
       }
-      const st = reusedBox(e.sources[0]) && reusedBox(e.targets[0]) ? null : standing(info.sides, again);
+      const st = reusedBox(ea) && reusedBox(eb) ? null : standing(info.sides, again);
       if (st) for (const x of els) x.classList.add("d-" + st);
-      edgeEls.push({a: e.sources[0], b: e.targets[0], els, kind: info.uses ? "calls" : info.back ? "hands back" : info.reach ? "reaches" : "data"});
+      edgeEls.push({a: ea, b: eb, els, kind: info.uses ? "calls" : info.back ? "hands back" : info.reach ? "reaches" : "data"});
       if (DUR) for (const x of [p, head]) d3.select(x).attr("opacity", 0).transition().delay(DUR * .7).duration(DUR * .6).attr("opacity", 1);
     }
+  }
+  // the calls beside the boxes of a focus: an arc on their right where one stands above the other, else from one to the next
+  for (const id of besides) {
+    const info = edgeInfo.get(id), A = pos.get(info.a), B = pos.get(info.b);
+    if (!A || !B) continue;
+    const apart = A.x + A.w < B.x || B.x + B.w < A.x, back = B.x + B.w < A.x;
+    const from = {x: apart && back ? A.x : A.x + A.w, y: A.y + A.h / 2}, to = {x: apart && !back ? B.x : B.x + B.w, y: B.y + B.h / 2};
+    const k = apart ? (to.x - from.x) / 2 : 18 + Math.min(60, Math.abs(to.y - from.y) / 6), c1 = {x: from.x + k, y: from.y}, c2 = {x: apart ? to.x - k : to.x + k, y: to.y};
+    const p = el("path", {class: "sedge fn uses", d: `M${from.x},${from.y} C${c1.x},${c1.y} ${c2.x},${c2.y} ${to.x},${to.y}`, "stroke-width": 1, "data-a": info.a, "data-b": info.b}, eg);
+    const ang = Math.atan2(to.y - c2.y, to.x - c2.x), L = 8, Wd = 4;
+    const head = el("polygon", {points: [[to.x, to.y], [to.x - L * Math.cos(ang) + Wd * Math.sin(ang), to.y - L * Math.sin(ang) - Wd * Math.cos(ang)], [to.x - L * Math.cos(ang) - Wd * Math.sin(ang), to.y - L * Math.sin(ang) + Wd * Math.cos(ang)]].map(q => q.join(",")).join(" "), class: "sedge-head"}, eg);
+    edgeEls.push({a: info.a, b: info.b, els: [p, head], kind: "calls"});
+    if (DUR) for (const x of [p, head]) d3.select(x).attr("opacity", 0).transition().delay(DUR * .7).duration(DUR * .6).attr("opacity", 1);
   }
   // pills
   for (const P of pills.values()) {
@@ -1595,6 +1700,8 @@ async function renderPlaat(mine) {
     const shows = () => {
       const s = P.steps[0];
       if (s.startsWith("unit:")) { const u = s.slice(5); if (isRest(u)) focusPanel(); else if (byId.has(u.replace(/\$$/, ""))) select(u.replace(/\$$/, "")); return; }
+      if (s.startsWith("cls:")) { select(s.slice(4)); return; }
+      if (s.startsWith("fam:")) { if (byId.has(s.slice(4).split("@")[0])) select(s.slice(4).split("@")[0]); return; }
       if (s.startsWith("part:") || stepOf(s).startsWith("op:")) return;
       if (P.steps.length === 1) select(stepOf(s)); else selectArrows({fns: P.steps.map(stepOf), kind: "steps"});
     };
@@ -1610,6 +1717,11 @@ async function renderPlaat(mine) {
     if (P.hue) r.setAttribute("style", `stroke:${hueVar(P.hue)};stroke-width:1.6`);
     const label = el("text", {class: "title", x: P.interior ? 24 : 11, y: Q.h / 2 + 4}, grp);
     label.textContent = P.label;
+    if (P.guards.length) {
+      const t = el("tspan", {class: "guard"}, label); t.textContent = "  guarded";
+      el("title", {}, t).textContent = `defined under ${P.guards.map(g => byId.get(g)?.name || g.split(".").pop()).join(", ")}: every call of it runs inside that`;
+    }
+    if (P.errors?.length) countedMark(label, P.errors);
     if (DIFF) {
       const st = wholeRoute && reusedBox(P.id) ? null : standing(P.sides, quotient(P) ? differs.has(P.id) : stepChanged(P.steps));
       marked(grp, st, Q.w + 3, wasOf(st, P.id, P.steps.map(s => DIFF.was[stepOf(s)]).find(Boolean)));
@@ -1620,13 +1732,16 @@ async function renderPlaat(mine) {
     clicks(grp, ev => {
       if (P.steps[0].startsWith("unit:")) {
         const u = P.steps[0].slice(5);
-        // the rest opens into its packages; a package of it joins the focus
-        if (u === "~in" || u === "~out") { V.open.units.add(u); plaatAnchor = P.id; render(); focusPanel(); return; }
+        // the rest, on either side, opens into its packages; a package of it joins the focus
+        if (u === "~in" || u === "~out") { V.open.units.add(REST); plaatAnchor = P.id; render(); focusPanel(); return; }
         if (isRest(u)) { V.focus.add(u.slice(4)); plaatFit = true; render(); focusPanel(); return; }
-        if (ev.shiftKey) { if (V.focus.has(u)) V.focus.delete(u); else V.focus.add(u); plaatFit = true; render(); focusPanel(); return; }
       }
+      // shift-click puts a package, a class or a base class in focus, or lets go of it
+      if (ev.shiftKey && /^(unit|cls|fam):/.test(P.steps[0]) && !V.route) { putInFocus(focusKey(P.steps[0])); plaatFit = true; render(); focusPanel(); return; }
       if (P.steps[0].startsWith("part:")) { if (!P.own) { V.open.parts.add(P.steps[0].slice(5)); plaatAnchor = P.id; render(); } return; }
       if (P.steps[0].startsWith("unit:")) { V.open.units.add(P.steps[0].slice(5)); plaatAnchor = P.id; render(); return; }
+      if (P.steps[0].startsWith("cls:")) { V.open.classes.add(P.steps[0].slice(4)); plaatAnchor = P.id; render(); return; }
+      if (P.steps[0].startsWith("fam:")) { V.open.bases.add(P.steps[0].slice(4)); plaatAnchor = P.id; render(); return; }
       if (stepOf(P.steps[0]).startsWith("op:")) return;
       if (P.steps.length === 1) select(stepOf(P.steps[0])); else selectArrows({fns: P.steps.map(stepOf), kind: "steps"});
       if (P.own) return;
@@ -1676,6 +1791,8 @@ async function renderPlaat(mine) {
       if (kind) selectPlace(p.id, p.label);
       if (kind) { if (p.toggleGroup) { V.open.places.add(p.toggleGroup); render(); } return; }
       const tid = p.type;
+      // a library closed opens into its frame, around the types it makes
+      if (libOfBox(tid)) { libOpen(libOfBox(tid), true); render(); return; }
       if (opens(tid) && !V.open.families.has(tid)) { V.open.families.add(tid); render(); }
       else if (byId.has(tid)) select(tid);
     }, () => pin(p.id));
@@ -1712,13 +1829,42 @@ async function renderPlaat(mine) {
   }
   repaintPins();
   if ([...pinned].join() !== before) crumbs();
+  // the values the route's instance was built from, once under the route, each under the step that reads it
+  // (`receiverReads`); a value that decides a named choice is boxed in the colour of the focus
+  let cfgBottom = -Infinity;
+  const routeBox = V.route && !DIFF && pos.get("n:" + V.route);
+  if (routeBox) {
+    const xs = new Map();
+    for (const P of pills.values()) { const q = pos.get(P.id), f = stepOf(P.steps[0]); if (q && !xs.has(f)) xs.set(f, q.x); }
+    let y = routeBox.y + routeBox.h + 22;
+    for (const row of receiverReads(V.route)) {
+      const steps = row.steps.filter(s => xs.has(s.step));
+      if (!steps.length) continue;
+      const cg = el("g", {class: "cfg"}, ng), head = el("text", {class: "cfg-head", x: routeBox.x + 14, y}, cg);
+      head.textContent = `${typeLabel(row.type)} · the values it was built from, under the step that reads them; boxed: one that decides an option`;
+      let cursor = -Infinity;
+      for (const s of steps) {
+        let x = Math.max(xs.get(s.step), cursor);
+        for (const f of s.fields) {
+          const w = f.name.length * 6.6 + 14, g2 = el("g", {class: "cfg-field" + (f.option ? " option" : ""), transform: `translate(${x},${y + 12})`}, cg);
+          el("rect", {width: w, height: 18}, g2);
+          const t = el("text", {x: 7, y: 12.5}, g2); t.textContent = f.name;
+          x += w + 6;
+        }
+        cursor = x + 10;
+      }
+      y += 48;
+      cfgBottom = y;
+    }
+  }
   // keep the clicked thing where it was on the screen, at the zoom the reader chose; the zoom only
   // gives way when the box it opened into is bigger than the screen
   let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
   for (const q of pos.values()) { x0 = Math.min(x0, q.x); y0 = Math.min(y0, q.y); x1 = Math.max(x1, q.x + q.w); y1 = Math.max(y1, q.y + q.h); }
+  y1 = Math.max(y1, cfgBottom);
   x0 = Math.min(x0, 20); y0 = Math.min(y0, 10);
-  const W = svg.node().clientWidth, H = svg.node().clientHeight, top = document.getElementById("crumbs").offsetHeight + 14, pad = 30;
-  const fitK = Math.max(zoom.scaleExtent()[0], Math.min((W - 2 * pad) / (x1 - x0), (H - top - 2 * pad) / (y1 - y0), 1.4));
+  const W = svg.node().clientWidth, H = svg.node().clientHeight, top = document.getElementById("crumbs").offsetHeight + 14, foot = footHeight(), pad = 30;
+  const fitK = Math.max(zoom.scaleExtent()[0], Math.min((W - 2 * pad) / (x1 - x0), (H - top - foot - 2 * pad) / (y1 - y0), 1.4));
   const t0 = d3.zoomTransform(svg.node());
   const alt = id => [id, "group:" + id, "n:" + id, id.replace(/^o:/, "n:"), id.replace(/^(n|o|group):/, "")];
   const anchorIn = m => { for (const id of alt(plaatAnchor)) if (m.has(id)) return m.get(id); return null; };
@@ -1732,7 +1878,7 @@ async function renderPlaat(mine) {
     ty = Math.min(Math.max(ty, top + pad - k * a1.y), H - pad - k * (a1.y + a1.h));
     t1 = d3.zoomIdentity.translate(tx, ty).scale(k);
   } else if (plaatFit || !pos.size) {
-    t1 = d3.zoomIdentity.translate(W / 2 - fitK * (x0 + x1) / 2, top + (H - top) / 2 - fitK * (y0 + y1) / 2).scale(fitK);
+    t1 = d3.zoomIdentity.translate(W / 2 - fitK * (x0 + x1) / 2, top + (H - top - foot) / 2 - fitK * (y0 + y1) / 2).scale(fitK);
   }
   if (t1) { if (plaatFit || !DUR) svg.call(zoom.transform, t1); else svg.transition().duration(DUR).call(zoom.transform, t1); }
   prevPos = pos; prevParent = parentOf; plaatAnchor = null; plaatFit = false;
@@ -1742,60 +1888,94 @@ async function renderPlaat(mine) {
   window.atlasBoxes = nodeEls;
   window.atlasPicture = {n: (window.atlasPicture?.n || 0) + 1, planned: root, dropped, oracle: oracle || [], sides: [...roleAt], boxes: [...nodeEls.keys()].map(id => [id, parentOf.get(id) || "root"]), lines: edgeEls.map(e => [e.a, e.b]), folders: [...places.values()].filter(p => p.folded && nodeEls.has(p.id)).map(p => [p.id, p.folded])};
 }
-// what the picture is a function of, each part undoable: the route, the opened steps, the open families, the split world boxes
+// What the picture is a function of, in the order it is made in. The first line is the fiber, where the reader is: the
+// program, then the part, the routes of a kind, the route or the focus, each step of the path a way back to it. The second
+// is the quotient: what is folded, each fold a switch, and how much is opened, with the list of it on request.
+let crumbsOpened = false;
 function crumbs() {
   const C = document.getElementById("crumbs"); C.innerHTML = "";
   const show = view === "plaat";
   C.style.display = show ? "" : "none";
   if (!show) return;
-  const lbl = t => C.appendChild(html("span", "lbl", t));
-  const chip = (text, undo) => { const b = html("button", null, text + " ✕"); b.title = "undo"; b.onclick = () => { undo(); render(); }; C.appendChild(b); };
-  lbl("route");
-  if (V.part) chip(`Only ${V.part}`, () => { V.part = null; if (!V.route) entrySel.value = ""; });
-  if (V.kind) chip(`All ${KIND_LABEL[V.kind]}`, () => { V.kind = null; if (!V.route) entrySel.value = ""; });
-  if (V.route) chip(entryTitle(V.route), () => { V.route = null; entrySel.value = V.kind ? "kind:" + V.kind : ""; V.open.steps.clear(); });
-  if (!V.kind && !V.route && !V.part) C.appendChild(html("span", "none", entries.length ? "all" : "none"));
-  // the overview is the program without its test code, a fiber the reader can let go of; shown where there is test code
-  if (!V.route && !V.kind && !V.focus.size && OWN.some(n => has(n) && testCode(n))) {
-    lbl("code");
-    const b = html("button", V.tests ? "add" : null, V.tests ? "+ without test code" : "without test code ✕");
-    b.title = V.tests ? "leave the test code out: the program alone" : "draw the test code too: tests, test modules and what they touch";
-    b.onclick = () => { V.tests = !V.tests; plaatFit = true; render(); };
-    C.appendChild(b);
+  const path = C.appendChild(html("div", "path")), folds = C.appendChild(html("div", "folds"));
+  const again = act => () => { act(); plaatFit = true; render(); };
+  const home = () => { V.route = null; V.kind = null; V.part = null; V.focus.clear(); V.open.steps.clear(); entrySel.value = ""; };
+  const steps = [[D.root, "the whole program by package", home]];
+  if (V.part) steps.push([`only ${V.part}`, "this part alone", () => { V.route = null; V.kind = null; V.focus.clear(); entrySel.value = "part:" + V.part; }]);
+  if (V.kind) steps.push([`all ${KIND_LABEL[V.kind]} routes`, "every route of this kind", () => { V.route = null; V.open.steps.clear(); entrySel.value = "kind:" + V.kind; }]);
+  if (V.route) steps.push([entryTitle(V.route), "this route", () => {}]);
+  const focus = !V.route ? [...V.focus].sort() : [];
+  if (focus.length === 1) {
+    for (const u of [...(FOCUS.above.get(focus[0]) || [])].reverse()) steps.push([unitLabel(u), `focus on ${unitLabel(u)}`, () => { V.focus = new Set([u]); }]);
+    steps.push([unitLabel(focus[0]), "in focus", () => {}]);
   }
-  if (view === "plaat" && pinned.size) { lbl("pinned"); chip(`${pinned.size} ${pinned.size === 1 ? "box" : "boxes"}`, () => pinned.clear()); }
+  steps.forEach(([text, title, act], i) => {
+    if (i) path.appendChild(html("span", "sep", "›"));
+    const last = i === steps.length - 1 && focus.length < 2, b = path.appendChild(html(last ? "span" : "button", last ? "here" : "step", text));
+    b.title = title; if (!last) b.onclick = again(act);
+  });
+  if (focus.length > 1) {
+    path.appendChild(html("span", "sep", "›"));
+    focus.forEach((u, i) => { if (i) path.appendChild(html("span", "sep", "+")); const b = path.appendChild(html("button", "here", unitLabel(u) + " ✕")); b.title = "let go of it: the focus on the others"; b.onclick = again(() => V.focus.delete(u)); });
+  }
+  if (steps.length > 1 || focus.length > 1) { const b = path.appendChild(html("button", "up", "✕")); b.title = "back to the whole program"; b.onclick = again(home); }
+  const lbl = t => folds.appendChild(html("span", "lbl", t));
+  const chip = (text, undo) => { const b = html("button", null, text + " ✕"); b.title = "undo"; b.onclick = () => { undo(); render(); }; folds.appendChild(b); };
+  // a fold: on, the picture is drawn without it or with it counted; off, it is drawn
+  const fold = (text, on, title, flip) => { const b = folds.appendChild(html("button", "fold" + (on ? " on" : ""), text)); b.title = title; b.setAttribute("aria-pressed", on); b.onclick = again(flip); };
+  lbl("folded");
+  // the overview, and the focus that is its fiber, is the program without its test code; shown where there is test code
+  if (!V.route && OWN.some(n => has(n) && testCode(n)))
+    fold("tests", !V.tests, V.tests ? "leave the test code out: the program alone" : "draw the test code too: tests, test modules and what they touch", () => { V.tests = !V.tests; });
+  // errors that are only handed on are counted on the box that hands them on; shown where there are errors
+  if (!DIFF && pictureErrors.length)
+    fold(`error types · ${pictureErrors.length}`, !V.errors, V.errors ? "count the errors a box hands on, on the box: " + pictureErrors.join(", ") : "draw each error a box hands on as a box: " + pictureErrors.join(", "), () => { V.errors = !V.errors; });
+  // shaped arrays stand in their rank families (`Float Tensor · 2D`); one button opens every one into its shapes
+  // (`batch × dim`) and closes them again; shown where the picture has a rank family
+  if (shapesFold(pictureRanks)) {
+    const shut = pictureRanks.some(k => !V.open.families.has(k));
+    fold(`shapes · ${pictureRanks.length}`, shut, shut ? "open every rank family into its shapes, each axis by the name its signature gives it (batch × dim)" : "close the shapes into their rank families (Float Tensor · 2D)", () => shapesOpen(pictureRanks, shut));
+  }
+  // what a step runs on is said by its name; shown where the picture has such a step
+  if (V.route && !DIFF && (V.receivers || pictureRuns))
+    fold("runs on, by name", !V.receivers, V.receivers ? "name a step by the value it runs on (model.forward), without a line from that value" : "draw a line from each value to the steps that run on it", () => { V.receivers = !V.receivers; });
+  if (V.focus.size && !V.route) for (const L of V.closed.libraries) fold(L, true, "open this library into its types", () => V.closed.libraries.delete(L));
+  // a package of modules is opened by module or by base class: two quotients of the same functions, the reader's to pick
+  if (!V.route) {
+    const nested = u => !isRest(u) && !/^(cls|fam):/.test(u) && [...byId.values()].some(n => n.kind === "module" && !n.library && n.id.startsWith(u + "."));
+    for (const u of [...new Set([...V.focus, ...V.open.units, ...V.open.flat])].filter(u => V.open.flat.has(u) || nested(u))) {
+      const flat = V.open.flat.has(u);
+      fold(`${unitLabel(u)} by base class`, flat, flat ? "group this package by module again" : "group this package's functions by the base class they keep the promise of, whatever file they are written in", () => { if (flat) V.open.flat.delete(u); else V.open.flat.add(u); });
+    }
+  }
+  if (folds.children.length === 1) folds.lastChild.remove();
+  if (pinned.size) { lbl("pinned"); chip(`${pinned.size} ${pinned.size === 1 ? "box" : "boxes"}`, () => pinned.clear()); }
   if (lit) { lbl("lit"); chip(`values of ${typeLabel(lit.pick)}${lit.drawn === 0 ? " · none here" : ""}`, () => { lit = null; }); }
-  if (V.open.parts.size && !V.route) { lbl("parts"); for (const p of V.open.parts) chip(p, () => V.open.parts.delete(p)); }
-  const opened = u => u === "~in" ? "the rest, handing in" : u === "~out" ? "the rest, taking" : unitLabel(u);
-  if (V.open.units.size && !V.route && !V.kind) { lbl("packages"); for (const u of V.open.units) chip(opened(u), () => V.open.units.delete(u)); }
-  // an opened entry shows how its command line is parsed; any other opened place is split
-  const openEntries = [...V.open.places].filter(r => r.startsWith("e:") && byId.get(r.slice(2))?.entry), split = [...V.open.places].filter(r => !r.startsWith("e:"));
-  if (V.open.steps.size || V.open.functions.size || openEntries.length) {
+  // what is opened stands in the picture, each box with its own way to close; here it is counted, and listed on request
+  const opened = [], open = (set, k, text) => opened.push([text, () => set.delete(k)]);
+  const unit = u => (u === REST ? "the rest" : unitLabel(u));
+  if (!V.route) for (const p of V.open.parts) open(V.open.parts, p, p);
+  if (!V.route) {
+    for (const u of V.open.units) open(V.open.units, u, unit(u));
+    for (const [step, set, k] of [...[...V.open.bases].map(k => ["fam:" + k, V.open.bases, k]), ...[...V.open.classes].map(k => ["cls:" + k, V.open.classes, k])]) if (BLOCK_TITLE.has(step)) open(set, k, BLOCK_TITLE.get(step));
+  }
+  for (const r of V.open.places) {
+    if (r.startsWith("e:")) { if (byId.get(r.slice(2))?.entry) open(V.open.places, r, `${entryTitle(r.slice(2))} · its parse`); }
+    else open(V.open.places, r, r.startsWith("w:~") ? r.slice(3).replace(/~(in|out|mid|both)$/, (_, side) => ({in: " read", out: " written"})[side] || "") : r.slice(2));
+  }
+  for (const id of V.open.steps) { const info = treeInfo.get(id), n = byId.get(stepOf(id)), name = n?.name || short(stepOf(id)); open(V.open.steps, id, info?.on && n?.cls ? `${typeLabel(info.on)}.${name}` : name); }
+  for (const f of V.open.functions) open(V.open.functions, f, `every ${byId.get(f)?.name || short(f)}`);
+  for (const f of V.open.families) open(V.open.families, f, typeLabel(f));
+  for (const d of V.open.dirs) open(V.open.dirs, d, d);
+  if (opened.length) {
     lbl("opened");
-    for (const r of openEntries) chip(`${entryTitle(r.slice(2))} · its parse`, () => V.open.places.delete(r));
-    for (const id of V.open.steps) { const info = treeInfo.get(id), n = byId.get(stepOf(id)), name = n?.name || short(stepOf(id)); chip(info?.on && n?.cls ? `${typeLabel(info.on)}.${name}` : name, () => V.open.steps.delete(id)); }
-    for (const f of V.open.functions) chip(`every ${byId.get(f)?.name || short(f)}`, () => V.open.functions.delete(f));
-  }
-  if (V.open.families.size) { lbl("opened types"); for (const f of V.open.families) chip(typeLabel(f), () => V.open.families.delete(f)); }
-  if (split.length) { lbl("split"); for (const r of split) chip(r.slice(2), () => V.open.places.delete(r)); }
-  if (V.open.dirs.size) { lbl("folders"); for (const d of V.open.dirs) chip(d, () => V.open.dirs.delete(d)); }
-  if (V.focus.size && view === "plaat") {
-    lbl("focus"); for (const u of V.focus) chip(unitLabel(u), () => V.focus.delete(u));
-    // around the focus: the packages it exchanges the most data with, to add with a click
-    const add = (text, title, act) => { const b = html("button", "add", text); b.title = title; b.onclick = () => { act(); plaatFit = true; render(); }; C.appendChild(b); };
-    const ns = neighbours();
-    if (ns.length) lbl("around");
-    for (const {u, n} of ns.slice(0, 5)) add(`+ ${unitLabel(u)} · ${n}`, `add ${u} to the focus: ${n} ${n === 1 ? "type" : "types"} across`, () => V.focus.add(u));
-    if (ns.length > 5) add(`+${ns.length - 5} more`, "open the rest beside the focus", () => { V.open.units.add("~in"); V.open.units.add("~out"); });
-  }
-  // one ✕ for every opened box and every pinned one: back to the coarsest zoom. The route, the
-  // filters and the focus stay: they chose what is drawn, and closing the quotient does not undo them
-  const count = Object.values(V.open).reduce((k, s) => k + s.size, 0) + pinned.size;
-  if (count > 1) {
-    const b = html("button", "all", "close all ✕");
-    b.title = "close every opened box and let go of the pinned ones; the route and the filters stay";
-    b.onclick = () => { for (const s of Object.values(V.open)) s.clear(); pinned.clear(); plaatFit = true; render(); };
-    C.appendChild(b);
+    const more = folds.appendChild(html("button", "count", `${opened.length} ${opened.length === 1 ? "box" : "boxes"} ${crumbsOpened ? "▾" : "▸"}`));
+    more.title = "list what is opened, each to close"; more.onclick = () => { crumbsOpened = !crumbsOpened; crumbs(); };
+    if (crumbsOpened) for (const [text, undo] of opened) chip(text, undo);
+    // one ✕ for every opened box and every pinned one: back to the coarsest zoom. The path and the folds stay
+    const b = folds.appendChild(html("button", "all", "close all ✕"));
+    b.title = "close every opened box and let go of the pinned ones; the path and the folds stay";
+    b.onclick = () => { for (const set of Object.values(V.open)) set.clear(); pinned.clear(); plaatFit = true; render(); };
   }
 }
 
@@ -1825,7 +2005,7 @@ function focusPanel() {
   insp.innerHTML = "";
   insp.appendChild(html("div", "eyebrow", "focus"));
   insp.appendChild(html("h1", "name", V.focus.size ? [...V.focus].sort().map(unitLabel).join(", ") : "nothing in focus"));
-  insp.appendChild(html("div", "path", "shift-click a package in the picture to add or drop it"));
+  insp.appendChild(html("div", "path", "shift-click a package or a class in the picture: inside the focus it narrows to it, outside it adds it"));
   const redraw = () => { plaatFit = true; render(); focusPanel(); };
   const inside = html("div", "links");
   for (const u of [...V.focus].sort()) { const b = html("button", "fn", `− ${unitLabel(u)}`); b.title = u; b.onclick = () => { V.focus.delete(u); redraw(); }; inside.appendChild(b); }
@@ -1987,7 +2167,8 @@ function selectArrows(p) {
 
 // ---------- legend, search, render ----------
 // the colours stay in view; how to read them folds away behind "?"
-let legendHelp = false; try { legendHelp = localStorage.getItem("atlas.legend.help") === "1"; } catch {}
+let legendHelp = pref("atlas.legend.help") === "1";
+takePref.help = open => { if (legendHelp !== open) { legendHelp = open; legend(); } };
 function legend() {
   const L = document.getElementById("legend"); L.innerHTML = "";
   const row = html("div", "row");
@@ -2011,7 +2192,7 @@ function legend() {
   }
   const toggle = html("button", "help-toggle", "?");
   toggle.setAttribute("aria-expanded", String(legendHelp)); toggle.setAttribute("aria-label", "How to read this view"); toggle.title = "How to read this view";
-  toggle.onclick = () => { legendHelp = !legendHelp; try { localStorage.setItem("atlas.legend.help", legendHelp ? "1" : "0"); } catch {} legend(); };
+  toggle.onclick = () => { legendHelp = !legendHelp; setPref("atlas.legend.help", legendHelp ? "1" : "0"); legend(); };
   row.appendChild(toggle);
   L.appendChild(row);
   if (!legendHelp) return;
@@ -2063,7 +2244,7 @@ function openTo(n) {
   for (let level = 0; level < 64; level++) {
     const real = treeNodes().filter(w => !w.t.synthetic);
     const here = real.find(w => is(w.t));
-    if (here) return boxesOf(here);
+    if (here) { if (!V.route) openBlocksOf(n); return boxesOf(here); }
     const way = real.find(w => !w.t.open && (V.route ? !stepOf(w.t.id).startsWith("op:") && reaches(w.t) : holds(w.t)));
     if (!way) {
       const holder = !V.route && n.kind === "module" && real.filter(w => holds(w.t)).at(-1);
@@ -2104,7 +2285,7 @@ async function jumpTo(n) {
   if (view !== "plaat") return centre(n.id);
   const kept = Object.fromEntries(Object.entries(V.open).map(([k, s]) => [k, new Set(s)]));
   const restore = () => { for (const k of Object.keys(V.open)) V.open[k] = kept[k]; };
-  if (n.kind === "module" && (V.route || V.kind)) {
+  if (n.kind === "module" && V.route) {
     V.route = null; V.kind = null; V.open.steps.clear(); V.open.functions.clear();
     entrySel.value = V.part ? "part:" + V.part : "";
     plaatFit = true;
@@ -2168,11 +2349,17 @@ async function render() {
   entrySel.style.display = view === "plaat" ? "" : "none";
   crumbs();
   writeView();
+  // the legend first: the picture is fitted above it, and once more where the picture gave the legend another height
+  legend();
+  const fitted = view === "plaat" && (plaatFit || !prevPos.size), foot = footHeight();
   try {
     if (view === "plaat") { await renderPlaat(mine); } else if (view === "types") { renderTypes(); fit(); } else { await renderSig(); }
   } catch (err) { scene.node().classList.remove("busy"); fault(err); return; }
   if (mine !== renderSeq) return;
+  // the path of a focus and the folds of a picture are facts of its plan (`focusBase`, `foldErrors`)
+  if (view === "plaat") crumbs();
   legend();
+  if (fitted && !userZoomed && footHeight() !== foot) fit();
   relabel();
   if (selected) scene.node().querySelectorAll(`[data-id="${CSS.escape(selected)}"]`).forEach(x => x.classList.add("selected"));
   if (D.served) { markNotes(); report(); }
@@ -2404,6 +2591,14 @@ function noteField(x, y, on, label) {
   };
 }
 if (D.served) {
+  // the reader's file says what they chose last, on any page; this browser follows it
+  fetch("/api/prefs").then(r => r.json()).then(p => {
+    for (const [key, take, on] of [["atlas.lines", takePref.lines, "round"], ["atlas.code", takePref.code, "1"], ["atlas.legend.help", takePref.help, "1"]]) {
+      if (typeof p?.[key] !== "string") continue;
+      try { localStorage.setItem(key, p[key]); } catch {}
+      if (take) take(p[key] === on);
+    }
+  }).catch(() => {});
   scene.node().addEventListener("click", ev => {
     if (!ev.altKey) return;
     const line = ev.target.closest("path[data-a]"), box = !line && ev.target.closest("[data-id]");

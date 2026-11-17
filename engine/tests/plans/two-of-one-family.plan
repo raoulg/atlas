@@ -28,3 +28,5 @@ line Shape·shapes > total value
 home Shape·shapes total
 
 side entry left
+home _@total total
+line total > _@total value                                               # what it gives its caller, of no type of the code's
