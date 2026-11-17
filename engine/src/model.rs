@@ -2060,6 +2060,7 @@ impl Graph {
             for s in &mut n.sets {
                 held(&mut s.on);
                 s.from.iter_mut().for_each(held);
+                s.reads.iter_mut().for_each(|r| held(&mut r.on));
             }
             for t in &mut n.tests {
                 held(&mut t.on);

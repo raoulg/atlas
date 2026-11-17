@@ -1932,7 +1932,7 @@ function crumbs() {
     fold(`error types · ${pictureErrors.length}`, !V.errors, V.errors ? "count the errors a box hands on, on the box: " + pictureErrors.join(", ") : "draw each error a box hands on as a box: " + pictureErrors.join(", "), () => { V.errors = !V.errors; });
   // shaped arrays stand in their rank families (`Float Tensor · 2D`); one button opens every one into its shapes
   // (`batch × dim`) and closes them again; shown where the picture has a rank family
-  if (pictureRanks.length) {
+  if (shapesFold(pictureRanks)) {
     const shut = pictureRanks.some(k => !V.open.families.has(k));
     fold(`shapes · ${pictureRanks.length}`, shut, shut ? "open every rank family into its shapes, each axis by the name its signature gives it (batch × dim)" : "close the shapes into their rank families (Float Tensor · 2D)", () => shapesOpen(pictureRanks, shut));
   }

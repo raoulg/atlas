@@ -3607,6 +3607,28 @@ fn an_option_names_the_choice_a_bare_condition_leaves_unnamed() {
     assert_eq!(choices(&named), choices(&bare), "the choice is read from the code, whatever names it");
     assert_eq!(named.node("heads.design.Head.skip").unwrap().names_choice.as_deref(), Some("option skip"));
     assert_eq!(bare.node("heads.design.Head.skip").unwrap().names_choice, None);
+    // the table names the argument by its place and by its keyword: `option(axis="gate")` is `option("gate")`
+    assert_eq!(named.node("heads.design.Head.gate").unwrap().names_choice.as_deref(), Some("option gate"));
+    assert_eq!(bare.node("heads.design.Head.gate").unwrap().names_choice, None);
+}
+
+/// A module that runs a submodule of its own is the one a folder opens on: among the classes the folder's scripts reach,
+/// the one no other of them runs (`story::folder_route`), and none where two stand outermost.
+#[test]
+fn a_folder_opens_on_the_outer_module() {
+    let g = design("clean");
+    assert_eq!(
+        g.node("heads.design.Block.forward").and_then(|n| n.entry.as_ref()).map(|e| e.kind),
+        Some(EntryKind::Class),
+        "the inner module is a route too"
+    );
+    let dir = std::fs::canonicalize(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/pairs/designs/python/clean")).unwrap();
+    let inside = |f: &str| std::fs::canonicalize(f).is_ok_and(|f| f.starts_with(&dir));
+    assert_eq!(
+        atlas_engine::story::folder_route(&g, &inside).as_deref(),
+        Some("heads.design.Head.forward"),
+        "the module that runs the block"
+    );
 }
 
 /// What the constructor sets a field of the instance to reads fields of what it was handed (`Set::reads`), through the
@@ -3627,4 +3649,30 @@ fn a_field_the_constructor_sets_reads_the_configuration_it_was_built_from() {
         assert_eq!(reads("projection"), ["config.hidden"], "{}: in a step written in the expression", g.root);
         assert!(reads("config").is_empty(), "{}: a value set whole reads no field of it", g.root);
     }
+}
+
+/// Two modules of one name are two routes the reader tells apart: a class route's label carries the fewest last parts of
+/// its module that no other route of that name shares (`a.designs.Kernels` beside `b.designs.Kernels`), and a name no
+/// other route bears stands alone.
+#[test]
+fn modules_of_one_name_are_told_apart_by_their_module() {
+    let root = std::env::temp_dir().join(format!("atlas-python-same-names-{}", std::process::id()));
+    let module =
+        "from torch import Tensor, nn\n\n\nclass Kernels(nn.Module):\n    def forward(self, x: Tensor) -> Tensor:\n        return x\n";
+    for (dir, code) in [
+        ("a", module.to_string()),
+        ("b", format!("{module}\n\nclass Head(nn.Module):\n    def forward(self, x: Tensor) -> Tensor:\n        return x\n")),
+    ] {
+        std::fs::create_dir_all(root.join("src/demo").join(dir)).expect("makes the package");
+        std::fs::write(root.join("src/demo").join(dir).join("__init__.py"), "").expect("writes the package");
+        std::fs::write(root.join("src/demo").join(dir).join("designs.py"), code).expect("writes the module");
+    }
+    std::fs::write(root.join("pyproject.toml"), "[project]\nname = \"demo\"\nversion = \"0\"\n").expect("writes the manifest");
+    std::fs::write(root.join("src/demo/__init__.py"), "").expect("writes the package");
+    let g = analyze(&root, &Options::default()).expect("reads");
+    let _ = std::fs::remove_dir_all(&root);
+    let label = |id: &str| g.node(id).and_then(|n| n.entry.as_ref()).filter(|e| e.kind == EntryKind::Class).map(|e| e.label.clone());
+    assert_eq!(label("demo.a.designs.Kernels.forward").as_deref(), Some("a.designs.Kernels"));
+    assert_eq!(label("demo.b.designs.Kernels.forward").as_deref(), Some("b.designs.Kernels"));
+    assert_eq!(label("demo.b.designs.Head.forward").as_deref(), Some("Head"));
 }

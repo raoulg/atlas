@@ -406,13 +406,10 @@ fn named_route(graph: &Graph, named: &[PathBuf]) -> Option<String> {
     graph.nodes.iter().find(|n| n.entry.is_some() && lies_in(&n.file)).map(|n| n.id.clone())
 }
 
-/// The route a folder named on the command line opens on: its one class whose instance runs a method, where the
-/// folder's scripts run it (`story::folder_route`).
+/// The route a folder named on the command line opens on (`page::folder_route`), where one folder is named.
 fn folder_route(graph: &Graph, repos: &[PathBuf]) -> Option<String> {
     let [folder] = repos else { return None };
-    let folder = Repo::resolved(folder).filter(|f| f.is_dir())?;
-    let inside = |file: &str| Repo::resolved(Path::new(file)).is_some_and(|f| f.starts_with(&folder));
-    atlas_engine::story::folder_route(graph, &inside)
+    page::folder_route(graph, folder)
 }
 
 /// A repository argument as a folder on disk: a path as it is, a URL cloned for as long as the

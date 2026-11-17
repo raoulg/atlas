@@ -880,16 +880,16 @@ pub fn python_call_runs(module: &str, class: &str) -> Option<&'static str> {
 }
 
 /// Library decorators that name the choice the function they decorate runs under, by the library module that
-/// defines the decorator, its name, and the place of the argument that holds the name: vectormesh's
-/// `option("skip")` says that the choice that runs the stage is the axis `skip` of a search. The decorator gives
-/// the function back unchanged (an identity, mathematics.md "A decorator is part of the definition"); the choice
-/// is read from the code as every choice is, and the decorator gives its injection a name.
-pub const PYTHON_CHOICE_NAMES: &[(&str, &str, usize)] = &[("vectormesh.design", "option", 0)];
+/// defines the decorator, its name, and the argument that holds the name, by its place and by its keyword:
+/// vectormesh's `option("skip")` and `option(axis="skip")` say that the choice that runs the stage is the axis `skip`
+/// of a search. The decorator gives the function back unchanged (an identity, mathematics.md "A decorator is part of
+/// the definition"); the choice is read from the code as every choice is, and the decorator gives its injection a name.
+pub const PYTHON_CHOICE_NAMES: &[(&str, &str, usize, &str)] = &[("vectormesh.design", "option", 0, "axis")];
 
-/// The place of the argument that names a choice, for the decorator `name` the library module `module` defines
-/// (`PYTHON_CHOICE_NAMES`).
-pub fn python_choice_name(module: &str, name: &str) -> Option<usize> {
-    PYTHON_CHOICE_NAMES.iter().find(|(m, d, _)| *m == module && *d == name).map(|(_, _, at)| *at)
+/// The argument that names a choice, by its place and its keyword, for the decorator `name` the library module `module`
+/// defines (`PYTHON_CHOICE_NAMES`).
+pub fn python_choice_name(module: &str, name: &str) -> Option<(usize, &'static str)> {
+    PYTHON_CHOICE_NAMES.iter().find(|(m, d, _, _)| *m == module && *d == name).map(|(_, _, at, kw)| (*at, *kw))
 }
 
 /// Functions that wrap a callback-taking function into one that returns a promise: what they

@@ -985,8 +985,10 @@ function routeTree() {
       // what decides each branch, in the branch's colour; a choice of one branch runs it only when that holds
       const branches = [...new Set(kids.map(k => k.branch))].sort((a, b) => a - b);
       const when = branches.map(b => [b % 8 + 1, (it.when || [])[b] || ""]);
-      // a library decorator on what a branch runs may name the choice (`Node::names_choice`: `option skip`)
-      const named = it.members.map(m => byId.get(m.to)?.names_choice).find(Boolean);
+      // a library decorator on a stage may name the choice it runs under (`Node::names_choice`: `option skip`): a choice of
+      // the stage's own class, running the stage on the instance, never another choice that holds a call of it
+      const ownStage = m => !!n.cls && byId.get(m.to)?.cls === n.cls && m.site != null && !!siteIn(n, m.site)?.on_receiver;
+      const named = it.members.filter(ownStage).map(m => byId.get(m.to)?.names_choice).find(Boolean);
       return {id: `${key}~c${it.choice}`, open: true, synthetic: true, choice: true, kids, hue: h, when, paths: it.arms || [], branch, arms, ...(named ? {named} : {})};
     };
     for (const it of body.items) {
@@ -1084,6 +1086,8 @@ const axesOf = t => {
 // the rank families a picture's places stand in, closed or open: one button opens every one of them into its shapes and
 // closes them again (`shapesOpen`), a quotient of the same plan in both states
 const ranksIn = places => [...new Set([...places.values()].map(p => p.type && [p.type, kindOf(p.type), familyOf(p.type)].find(k => RANKS.has(k) && folds(k))).filter(Boolean))];
+// the button shows where opening tells something: two families, or one with more than one shape in it
+const shapesFold = ranks => ranks.length > 1 || (ranks.length === 1 && kindsOf(ranks[0]).length > 1);
 const shapesOpen = (ranks, open) => { for (const k of ranks) if (open) V.open.families.add(k); else V.open.families.delete(k); };
 // The values a route's receiver was built from, listed once under the route (mathematics.md, "The receiver is a channel of
 // its own"): a method reads fields of its instance (`self.noise`), the constructor set each from the fields of what it was
@@ -2308,8 +2312,10 @@ const imageOf = (F, opened, folded, {fineKeys = false} = {}) => {
     for (const P of fPills.values()) if (P.parse || hidden.has(P.parent)) hidden.add(P.id);
   }
   const qId = new Map();
-  // a value keeps its name where a step made it, and where two of its type are taken at once
-  const named = pl => !!pl.name && !pl.name.startsWith("#") && (!!pl.at || F.split.has(kindOf(pl.type)));
+  // a value keeps its name where a step made it, where two of its type are taken at once, and where the route takes it by
+  // a parameter of its own (`embed` of `forward(self, embed)`)
+  const params = new Set((byId.get(V.route)?.params || []).filter(p => !p.receiver).map(p => p.name));
+  const named = pl => !!pl.name && !pl.name.startsWith("#") && (!!pl.at || F.split.has(kindOf(pl.type)) || params.has(pl.name));
   const boxIn = (t, pl) => valueBox(t, {name: named(pl) ? pl.name : "", door: pl.door, at: pl.at});
   const q = k => {
     if (fineKeys) return k;

@@ -985,16 +985,18 @@ impl<'t, 's> Steps<'t, 's> {
                 out.push(r);
             }
         };
+        // a method called on a value is no field of it (`self.items.iter()` reads `items`, never `items.iter`)
+        let callee = |q: TsNode<'t>| self.up(q).and_then(|c| c.child_by_field_name("function")).is_some_and(|f| f.id() == q.id());
         let mut roots: HashSet<usize> = HashSet::new();
         for x in walk_all(value) {
             let Some((root, field)) = self.projection(x) else { continue };
+            roots.insert(root.id());
             let outer = self
                 .up(x)
-                .filter(|p| p.end_byte() <= value.end_byte())
+                .filter(|p| p.end_byte() <= value.end_byte() && !callee(*p))
                 .and_then(|p| self.projection(p))
                 .is_some_and(|(r, _)| r.id() == root.id());
-            roots.insert(root.id());
-            if outer || (u.label)(root, self.src) {
+            if callee(x) || outer || (u.label)(root, self.src) {
                 continue;
             }
             for h in held(root) {

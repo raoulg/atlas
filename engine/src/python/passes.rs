@@ -529,14 +529,21 @@ pub(super) fn link(modules: &IndexMap<String, Module>, store: &mut GraphBuilder,
             let named = library
                 .and_then(|g| g.rsplit_once('.'))
                 .and_then(|(module, decorator)| Some((decorator, knowledge::python_choice_name(module, decorator)?)));
-            if let Some((decorator, at)) = named.filter(|_| written.kind() == "call") {
-                let handed = written.child_by_field_name("arguments").map(named_children).unwrap_or_default();
-                let handed: Vec<TsNode> = handed
-                    .into_iter()
-                    .filter(|a| !matches!(a.kind(), "keyword_argument" | "comment" | "list_splat" | "dictionary_splat"))
-                    .collect();
-                if let Some(a) = handed.get(at).filter(|a| a.kind() == "string") {
-                    names_choice = Some(format!("{decorator} {}", unquote(text(*a, &m.src))));
+            if let Some((decorator, (at, keyword))) = named.filter(|_| written.kind() == "call") {
+                let args = written.child_by_field_name("arguments").map(named_children).unwrap_or_default();
+                let by_keyword = args.iter().find_map(|a| {
+                    (a.kind() == "keyword_argument" && a.child_by_field_name("name").is_some_and(|n| text(n, &m.src) == keyword))
+                        .then(|| a.child_by_field_name("value"))
+                        .flatten()
+                });
+                let by_place = || {
+                    args.iter()
+                        .filter(|a| !matches!(a.kind(), "keyword_argument" | "comment" | "list_splat" | "dictionary_splat"))
+                        .nth(at)
+                        .copied()
+                };
+                if let Some(a) = by_keyword.or_else(by_place).filter(|a| a.kind() == "string") {
+                    names_choice = Some(format!("{decorator} {}", unquote(text(a, &m.src))));
                 }
             }
             if let Some(g) = guard.filter(|g| store.nodes.get(g).is_some_and(|x| matches!(x.kind, NodeKind::Function | NodeKind::Method))) {
@@ -1073,16 +1080,21 @@ pub(super) fn mark_called_classes(store: &mut GraphBuilder) {
     for e in store.edges.iter().filter(|e| e.kind == EdgeKind::Inherits) {
         bases.entry(e.src.clone()).or_default().push(e.dst.clone());
     }
-    let classes: Vec<(String, String)> =
-        store.nodes.values().filter(|n| n.kind == NodeKind::Class && !n.library).map(|n| (n.id.clone(), n.name.clone())).collect();
+    let classes: Vec<(String, String, String)> = store
+        .nodes
+        .values()
+        .filter(|n| n.kind == NodeKind::Class && !n.library)
+        .map(|n| (n.id.clone(), n.name.clone(), n.module.clone()))
+        .collect();
     let runs = |c: &str| {
         let path = ext::path(c).unwrap_or(c);
         let (module, class) = path.rsplit_once('.')?;
         knowledge::python_call_runs(module, class)
     };
     let defines = |c: &str, m: &str| store.nodes.get(&format!("{c}.{m}")).is_some_and(|n| n.kind == NodeKind::Method);
-    let mut found: Vec<(String, Entry)> = vec![];
-    for (id, name) in classes {
+    // each class that is such a route, by the method that runs, with its name and its module
+    let mut found: Vec<(String, &str, &str)> = vec![];
+    for (id, name, module) in &classes {
         let of = |c: &str| -> Vec<&str> { bases.get(c).map(|b| b.iter().map(String::as_str).collect()).unwrap_or_default() };
         let order = crate::model::linearization(id.as_str(), &of, &mut HashMap::new());
         let Some(method) = order.iter().find_map(|c| runs(c)) else { continue };
@@ -1097,10 +1109,25 @@ pub(super) fn mark_called_classes(store: &mut GraphBuilder) {
             }
         }
         if let Some(runner) = runner {
-            found.push((runner, Entry::new(EntryKind::Class, name)));
+            found.push((runner, name, module));
         }
     }
-    for (id, entry) in found {
+    // a label two of them share carries the fewest last parts of each one's module that tell them apart
+    // (`01_kernels.Kernels` beside `02_state_and_gates.Kernels`)
+    let label = |name: &str, module: &str| -> String {
+        let parts = |m: &str| m.split('.').map(str::to_string).collect::<Vec<_>>();
+        let mine = parts(module);
+        let others: Vec<Vec<String>> = found.iter().filter(|(_, n, m)| *n == name && *m != module).map(|(_, _, m)| parts(m)).collect();
+        if others.is_empty() {
+            return name.to_string();
+        }
+        let tail = |m: &[String], k: usize| m[m.len().saturating_sub(k)..].join(".");
+        let k = (1..=mine.len()).find(|&k| others.iter().all(|o| tail(o, k) != tail(&mine, k))).unwrap_or(mine.len());
+        format!("{}.{name}", tail(&mine, k))
+    };
+    let entries: Vec<(String, Entry)> =
+        found.iter().map(|(runner, name, module)| (runner.clone(), Entry::new(EntryKind::Class, label(name, module)))).collect();
+    for (id, entry) in entries {
         if store.nodes.get(&id).is_some_and(|n| n.entry.is_none()) {
             store.enter(&id, entry);
         }

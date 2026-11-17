@@ -590,3 +590,80 @@ fn an_opened_group_holds_its_files_as_the_disk_folds_them() {
     let faults: Vec<String> = serde_json::from_slice(&out.stdout).expect("the check prints JSON");
     assert!(faults.is_empty(), "{} faults of opened groups:\n{}", faults.len(), faults.join("\n"));
 }
+
+/// What the page draws of a program's routes beside their plans, as `plans.mjs --drawn` reads it.
+fn drawn(program: &Path, routes: &[&str]) -> serde_json::Value {
+    let file =
+        std::env::temp_dir().join(format!("atlas-drawn-{}-{}.json", std::process::id(), program.file_name().unwrap().to_string_lossy()));
+    std::fs::write(&file, data(program)).expect("writes the data");
+    let here = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let out = Command::new("node")
+        .arg(here.join("tests/plans.mjs"))
+        .arg(here.join("../viewer/plan.js"))
+        .arg(&file)
+        .arg("--drawn")
+        .args(routes)
+        .output()
+        .expect("node runs the viewer's model: the test needs node on the PATH");
+    let _ = std::fs::remove_file(&file);
+    assert!(out.status.success(), "{}: the model fails\n{}", program.display(), String::from_utf8_lossy(&out.stderr));
+    serde_json::from_slice(&out.stdout).expect("the model prints JSON")
+}
+
+/// A design draws what its module is built from and what the search may leave out (mathematics.md, "The receiver is a
+/// channel of its own", "A decorator is part of the definition", "Shapes"): under the route, the fields of the
+/// configuration each stage reads (`receiverReads`), through what the constructor set (`self.block` built of
+/// `config.hidden`); the choice a library option names carries the option's name where the option's stage runs on the
+/// module, and no other choice does, not one of a script that calls the stage; the input carries the name the route gives
+/// it; and the shapes button opens every rank family into the axes its signature names, and closes them again, shown
+/// where opening tells something.
+#[test]
+fn a_design_draws_its_configuration_its_options_and_its_shapes() {
+    let pairs = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/pairs/designs/python");
+    let strings = |v: &serde_json::Value| -> Vec<String> {
+        v.as_array().into_iter().flatten().filter_map(|x| x.as_str().map(String::from)).collect()
+    };
+    let clean = drawn(&pairs.join("clean"), &["heads.design.Head.forward", "_root.show.explain"]);
+    let head = &clean["heads.design.Head.forward"];
+    let fields = |step: &str| -> Vec<(String, bool)> {
+        head["config"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter(|row| row["type"] == "heads.design.Config")
+            .flat_map(|row| row["steps"].as_array().into_iter().flatten())
+            .filter(|s| s["step"] == step)
+            .flat_map(|s| s["fields"].as_array().into_iter().flatten())
+            .map(|f| (f["name"].as_str().unwrap_or("").to_string(), f["option"].as_bool().unwrap_or(false)))
+            .collect()
+    };
+    assert!(
+        fields("heads.design.Head.hidden").contains(&("hidden".into(), false)),
+        "the row holds the field the hidden stage's block was built of: {head}"
+    );
+    assert!(fields("heads.design.Head.skip").contains(&("skip".into(), true)), "the field that decides the option is marked: {head}");
+    let titles = strings(&head["closed"]["titles"]);
+    for option in ["skip", "gate"] {
+        assert!(
+            titles.iter().any(|t| t.starts_with(&format!("option {option} · if "))),
+            "the {option} choice is named by its option: {titles:?}"
+        );
+    }
+    let script = strings(&clean["_root.show.explain"]["closed"]["titles"]);
+    assert!(
+        !script.is_empty() && script.iter().all(|t| !t.starts_with("option")),
+        "a script's choice that calls a stage is no choice of the option: {script:?}"
+    );
+    let (closed, open) = (strings(&head["closed"]["labels"]), strings(&head["open"]["labels"]));
+    assert!(closed.iter().any(|l| l.ends_with(" · x")), "the input carries the name the route gives it: {closed:?}");
+    assert_eq!(head["button"], true, "two shapes in one family: the button shows");
+    assert!(
+        closed.iter().all(|l| !l.contains(" × ")) && open.iter().any(|l| l.contains("batch × hidden")),
+        "opening reads the shapes as their axes: {closed:?} {open:?}"
+    );
+    let bare = drawn(&pairs.join("shortcut"), &["heads.design.Head.forward"]);
+    let titles = strings(&bare["heads.design.Head.forward"]["closed"]["titles"]);
+    assert!(!titles.is_empty() && titles.iter().all(|t| !t.starts_with("option")), "a bare condition names no option: {titles:?}");
+    let single = drawn(&pairs.join("single"), &["scales.design.Scale.forward"]);
+    assert_eq!(single["scales.design.Scale.forward"]["button"], false, "one family of one shape: opening tells nothing, no button");
+}
