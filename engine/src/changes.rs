@@ -62,12 +62,17 @@ pub struct StepChange {
 
 /// A place, by its id and the name the picture gives it, with the arrows it had in A when they
 /// differ.
-#[derive(Debug, serde::Serialize)]
+#[derive(Debug, Default, serde::Serialize)]
 pub struct PlaceChange {
     pub id: String,
     pub place: String,
     #[serde(skip_serializing_if = "String::is_empty")]
     pub was: String,
+    /// The arrows into it only A draws, and those only B draws.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub lost: Vec<diff::Arrow>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub gained: Vec<diff::Arrow>,
 }
 
 /// What the union of the two readings marks that no route reaches: nodes added, removed and
@@ -337,10 +342,15 @@ pub fn between(a: &str, b: Option<&str>, before: &[Graph], after: &[Graph]) -> C
         was: d.was.get(id).cloned().unwrap_or_default(),
     };
     let labels = place_labels(&union);
-    let place_changed = |id: &String| PlaceChange {
-        id: id.clone(),
-        place: labels.get(id).cloned().unwrap_or_else(|| id.clone()),
-        was: d.was.get(id).cloned().unwrap_or_default(),
+    let place_changed = |id: &String| {
+        let touched = d.touched.get(id).cloned().unwrap_or_default();
+        PlaceChange {
+            id: id.clone(),
+            place: labels.get(id).cloned().unwrap_or_else(|| id.clone()),
+            was: d.was.get(id).cloned().unwrap_or_default(),
+            lost: touched.lost,
+            gained: touched.gained,
+        }
     };
     let parts: BTreeSet<String> = after.iter().chain(before).map(|g| g.root.clone()).collect();
     let mut out = Changes { a: a.to_string(), b: b.map(str::to_string), roots: parts.into_iter().collect(), ..Default::default() };
@@ -419,7 +429,7 @@ pub fn between(a: &str, b: Option<&str>, before: &[Graph], after: &[Graph]) -> C
         }
     }
     for (id, s) in d.places.iter().filter(|(id, _)| labels.contains_key(*id) && !at.contains(id)) {
-        let place = PlaceChange { id: id.clone(), place: labels[id].clone(), was: String::new() };
+        let place = PlaceChange { id: id.clone(), place: labels[id].clone(), ..Default::default() };
         match s {
             Status::Added => e.places_added.push(place),
             Status::Removed => e.places_removed.push(place),
@@ -468,7 +478,92 @@ fn place_labels(g: &Graph) -> BTreeMap<String, String> {
     g.nodes.iter().flat_map(|n| n.touches.iter().chain(&n.instead)).map(|t| t.drawn().place).map(|p| (p.id, p.label)).collect()
 }
 
-/// The changes as text: each route that changed with its steps and places, then the findings.
+/// How many routes, or arrows into a place, the report names before it counts the rest.
+const NAMED_ROUTES: usize = 3;
+
+/// Each change the routes show, once, in the words of the report, with the routes it is on: the changes on the same
+/// routes stand together, each group in the order the first route of the routes lists it, the groups in the order of
+/// their first route. A change is what it is of, by id (a step, a place, a composition) and how it changed, so the
+/// change of one step on ten routes is one change. A route with no change of its own (added or removed, with no place)
+/// stands by itself.
+fn on_routes(c: &Changes) -> Vec<(Vec<&RouteChange>, Vec<String>)> {
+    let mut changes: Vec<(String, Vec<usize>)> = vec![];
+    let mut at: HashMap<String, usize> = HashMap::new();
+    for (i, r) in c.routes.iter().enumerate() {
+        let short = |id: &str| c.listed(&[r.root.as_str()], id);
+        let mut lines: Vec<(String, String)> = vec![];
+        if r.status == Status::Changed {
+            for (status, ids) in [(Status::Added, &r.steps_added), (Status::Removed, &r.steps_removed)] {
+                lines.extend(ids.iter().map(|x| (format!("step {} {x}", status.sign()), format!("{} step {}", status.sign(), short(x)))));
+            }
+            lines.extend(r.steps_changed.iter().map(|s| (format!("step ~ {}", s.id), format!("~ step {}", step(&short, s)))));
+        }
+        for (status, places) in [(Status::Added, &r.places_added), (Status::Removed, &r.places_removed)] {
+            lines.extend(places.iter().map(|p| (format!("place {} {p}", status.sign()), format!("{} place {p}", status.sign()))));
+        }
+        lines.extend(r.places_changed.iter().map(|p| (format!("place ~ {}", p.id), format!("~ place {}", place_changed(p)))));
+        for composition in &r.compositions_changed {
+            let sequence = |body: &crate::flow::Body| body.steps().iter().map(|s| short(&s.to)).collect::<Vec<_>>().join(" → ");
+            let line = format!(
+                "~ composition {}: {} ⇒ {}",
+                short(&composition.function),
+                sequence(&composition.before),
+                sequence(&composition.after)
+            );
+            lines.push((format!("composition {}", composition.function), line));
+        }
+        for (key, line) in lines {
+            let k = *at.entry(key).or_insert_with(|| {
+                changes.push((line, vec![]));
+                changes.len() - 1
+            });
+            if changes[k].1.last() != Some(&i) {
+                changes[k].1.push(i);
+            }
+        }
+    }
+    let mut groups: BTreeMap<Vec<usize>, Vec<String>> = BTreeMap::new();
+    for (line, on) in changes {
+        groups.entry(on).or_default().push(line);
+    }
+    let listed: HashSet<usize> = groups.keys().flatten().copied().collect();
+    for i in (0..c.routes.len()).filter(|i| !listed.contains(i)) {
+        groups.entry(vec![i]).or_default();
+    }
+    let mut groups: Vec<(Vec<usize>, Vec<String>)> = groups.into_iter().collect();
+    groups.sort_by_key(|(on, _)| on.first().copied());
+    groups.into_iter().map(|(on, lines)| (on.into_iter().map(|i| &c.routes[i]).collect(), lines)).collect()
+}
+
+/// A node changed, by the name it is listed by (`short`, `Changes::listed`), renamed or not, and what it was.
+fn step(short: &dyn Fn(&str) -> String, s: &StepChange) -> String {
+    let renamed = s.renamed_from.as_deref().map(|old| format!("renamed from {} · ", short(old))).unwrap_or_default();
+    format!("{}: {renamed}was {}", short(&s.id), s.was)
+}
+
+/// A changed place in words: the arrows into it B gained and A lost, production code before tests and a test's marked,
+/// the first few by name when they are many. A place whose arrows are not told apart says what it was.
+fn place_changed(p: &PlaceChange) -> String {
+    let side = |sign: char, arrows: &[diff::Arrow]| {
+        let mut xs: Vec<&diff::Arrow> = arrows.iter().collect();
+        xs.sort_by_key(|a| a.test);
+        let said = |a: &&diff::Arrow| format!("{}{}", a.arrow, if a.test { " (test)" } else { "" });
+        if xs.len() <= NAMED_ROUTES + 1 {
+            return xs.iter().map(|a| format!("{sign} {}", said(a))).collect::<Vec<_>>().join(" · ");
+        }
+        let tests = xs.iter().filter(|a| a.test).count();
+        let of_tests = if tests > 0 { format!(", {tests} of them in tests") } else { String::new() };
+        let first: Vec<String> = xs.iter().take(NAMED_ROUTES).map(said).collect();
+        format!("{sign} {} arrows{of_tests}: {}, …", xs.len(), first.join(", "))
+    };
+    let sides: Vec<String> = [side('+', &p.gained), side('-', &p.lost)].into_iter().filter(|s| !s.is_empty()).collect();
+    if sides.is_empty() {
+        return format!("{}: was {}", p.place, p.was);
+    }
+    format!("{}: {}", p.place, sides.join(" · "))
+}
+
+/// The changes as text: each change once, under the routes it is on, then what changed on no route, then the findings.
 pub fn report(c: &Changes) -> String {
     let mut out = String::new();
     let span = match &c.b {
@@ -484,40 +579,18 @@ pub fn report(c: &Changes) -> String {
         return format!("nothing changed in the routes, their places or the findings, {span}\n");
     }
     out.push_str(&format!("{span}\n"));
-    // a node changed, by the name it is listed by (`Changes::listed`), renamed or not, and what it was
-    let step = |short: &dyn Fn(&str) -> String, s: &StepChange| {
-        let renamed = s.renamed_from.as_deref().map(|old| format!("renamed from {} · ", short(old))).unwrap_or_default();
-        format!("{}: {renamed}was {}", short(&s.id), s.was)
-    };
-    for r in &c.routes {
-        out.push_str(&format!("\n{} {}\n", r.status.sign(), r.route));
-        let short = |id: &str| c.listed(&[r.root.as_str()], id);
-        let changed: Vec<String> = r.steps_changed.iter().map(|s| step(&short, s)).collect();
-        let places: Vec<String> = r.places_changed.iter().map(|p| format!("{}: was {}", p.place, p.was)).collect();
-        for (status, what, xs) in [
-            (Status::Added, "step", r.steps_added.iter().map(|x| short(x)).collect::<Vec<_>>()),
-            (Status::Removed, "step", r.steps_removed.iter().map(|x| short(x)).collect()),
-            (Status::Changed, "step", changed),
-            (Status::Added, "place", r.places_added.clone()),
-            (Status::Removed, "place", r.places_removed.clone()),
-            (Status::Changed, "place", places),
-        ] {
-            if r.status != Status::Changed && what == "step" {
-                continue;
-            }
-            for x in xs {
-                out.push_str(&format!("    {} {what} {x}\n", status.sign()));
-            }
+    for (on, lines) in on_routes(c) {
+        out.push('\n');
+        // the routes by name, the first few when they are many
+        let named = if on.len() > NAMED_ROUTES + 1 { NAMED_ROUTES } else { on.len() };
+        for r in &on[..named] {
+            out.push_str(&format!("{} {}\n", r.status.sign(), r.route));
         }
-        for composition in &r.compositions_changed {
-            let sequence = |body: &crate::flow::Body| body.steps().iter().map(|s| short(&s.to)).collect::<Vec<_>>().join(" → ");
-            out.push_str(&format!(
-                "    {} composition {}: {} ⇒ {}\n",
-                Status::Changed.sign(),
-                short(&composition.function),
-                sequence(&composition.before),
-                sequence(&composition.after)
-            ));
+        if on.len() > named {
+            out.push_str(&format!("  and {} more routes\n", on.len() - named));
+        }
+        for line in lines {
+            out.push_str(&format!("    {line}\n"));
         }
     }
     let e = &c.elsewhere;
@@ -526,7 +599,7 @@ pub fn report(c: &Changes) -> String {
         let roots: Vec<&str> = c.roots.iter().map(String::as_str).collect();
         let short = |id: &str| c.listed(&roots, id);
         let changed: Vec<String> = e.changed.iter().map(|s| step(&short, s)).collect();
-        let places: Vec<String> = e.places_changed.iter().map(|p| format!("{}: was {}", p.place, p.was)).collect();
+        let places: Vec<String> = e.places_changed.iter().map(place_changed).collect();
         let (places_added, places_removed): (Vec<String>, Vec<String>) =
             (e.places_added.iter().map(|p| p.place.clone()).collect(), e.places_removed.iter().map(|p| p.place.clone()).collect());
         let (added, removed): (Vec<String>, Vec<String>) =

@@ -482,10 +482,9 @@ impl<'g> Index<'g> {
         n.prophecy.is_some() || n.cls.as_deref().and_then(|c| self.node(c)).is_some_and(|c| c.prophecy.is_some())
     }
 
-    /// Whether a node is test code, by where it stands: a test, code the reader marks as test code,
-    /// or code in a test module. A test is a way in from outside the program.
+    /// Whether a node is test code (`model::test_code`).
     fn test(&self, n: &Node) -> bool {
-        n.test || n.entry.as_ref().is_some_and(|e| e.kind == EntryKind::Test) || self.node(&n.module).is_some_and(|m| m.test)
+        crate::model::test_code(n, |id| self.node(id))
     }
 
     /// What the prophecy `p` supersedes, when the code holds it.
