@@ -412,7 +412,18 @@ const D = ALL[current];
 const NS = "http://www.w3.org/2000/svg";
 // a line through its bend points, in the shape the reader chose: square, with corners, or round, each corner an arc that
 // takes up to half of the two stretches it joins. The route is the layout's either way, and the ends stay straight.
-let roundLines = false; try { roundLines = localStorage.getItem("atlas.lines") === "round"; } catch {}
+// The reader's choices of the page (`atlas.lines`, `atlas.code`, `atlas.legend.help`) are kept in this browser, and a served
+// page keeps them in the reader's own file too (`/api/prefs`): each repository is served at its own address, whose storage
+// is its own, and a choice is the reader's, not the repository's
+const pref = key => { try { return localStorage.getItem(key); } catch { return null; } };
+const setPref = (key, value) => {
+  try { localStorage.setItem(key, value); } catch {}
+  if (D.served) fetch("/api/prefs", {method: "POST", headers: {"content-type": "application/json"}, body: JSON.stringify({[key]: value})}).catch(() => {});
+};
+// how each choice is taken when the reader's file says otherwise than this browser
+const takePref = {};
+// lines are round unless the reader chose square
+let roundLines = pref("atlas.lines") !== "square";
 const linePath = pts => {
   if (!roundLines || pts.length < 3) return pts.map((q, i) => (i ? "L" : "M") + q.x + "," + q.y).join(" ");
   const toward = (a, b, r) => { const L = Math.hypot(b.x - a.x, b.y - a.y) || 1; return {x: a.x + (b.x - a.x) * r / L, y: a.y + (b.y - a.y) * r / L}; };
@@ -550,8 +561,9 @@ function fit(animate = false, pad = 40, tries = 0) {
 document.getElementById("fit").onclick = () => fit(true);
 { const sq = document.getElementById("linesquare"), rd = document.getElementById("lineround");
   const say = () => { sq.setAttribute("aria-pressed", !roundLines); rd.setAttribute("aria-pressed", roundLines); };
-  const pick = round => () => { if (roundLines === round) return; roundLines = round; try { localStorage.setItem("atlas.lines", round ? "round" : "square"); } catch {} say(); render(); };
-  sq.onclick = pick(false); rd.onclick = pick(true); say(); }
+  const pick = round => () => { if (roundLines === round) return; roundLines = round; setPref("atlas.lines", round ? "round" : "square"); say(); render(); };
+  sq.onclick = pick(false); rd.onclick = pick(true); say();
+  takePref.lines = round => { if (roundLines !== round) { roundLines = round; say(); render(); } }; }
 document.getElementById("zin").onclick = () => svg.transition().duration(150).call(zoom.scaleBy, 1.25);
 document.getElementById("zout").onclick = () => svg.transition().duration(150).call(zoom.scaleBy, 0.8);
 document.getElementById("zone").onclick = () => { const t = d3.zoomTransform(svg.node()); svg.transition().duration(200).call(zoom.transform, d3.zoomIdentity.translate(t.x, t.y).scale(1)); };
@@ -574,9 +586,9 @@ let defs = el("defs", {}, svg.node());
 // the code panel opens on demand (space shows the code over the picture); opened, the canvas gives it
 // room, and the choice is remembered in this browser
 { const app = document.getElementById("app"), btn = document.getElementById("codetoggle");
-  const set = open => { app.classList.toggle("noaside", !open); btn.textContent = open ? "hide code" : "show code"; if (!lessonEmbed) try { localStorage.setItem("atlas.code", open ? "1" : "0"); } catch {} };
-  let saved = null; try { saved = localStorage.getItem("atlas.code"); } catch {}
-  set(saved === "1" && !lessonEmbed);
+  const set = (open, chosen = true) => { app.classList.toggle("noaside", !open); btn.textContent = open ? "hide code" : "show code"; if (chosen && !lessonEmbed) setPref("atlas.code", open ? "1" : "0"); };
+  set(pref("atlas.code") === "1" && !lessonEmbed, false);
+  takePref.code = open => { if (!lessonEmbed && app.classList.contains("noaside") === open) { set(open, false); if (!userZoomed) setTimeout(() => fit(true), 30); } };
   btn.onclick = () => { set(app.classList.contains("noaside")); if (!userZoomed) setTimeout(() => fit(true), 30); }; }
 
 // every key and click on one card: `?` opens and closes it, Esc or a click beside it closes it
@@ -2113,7 +2125,8 @@ function selectArrows(p) {
 
 // ---------- legend, search, render ----------
 // the colours stay in view; how to read them folds away behind "?"
-let legendHelp = false; try { legendHelp = localStorage.getItem("atlas.legend.help") === "1"; } catch {}
+let legendHelp = pref("atlas.legend.help") === "1";
+takePref.help = open => { if (legendHelp !== open) { legendHelp = open; legend(); } };
 function legend() {
   const L = document.getElementById("legend"); L.innerHTML = "";
   const row = html("div", "row");
@@ -2137,7 +2150,7 @@ function legend() {
   }
   const toggle = html("button", "help-toggle", "?");
   toggle.setAttribute("aria-expanded", String(legendHelp)); toggle.setAttribute("aria-label", "How to read this view"); toggle.title = "How to read this view";
-  toggle.onclick = () => { legendHelp = !legendHelp; try { localStorage.setItem("atlas.legend.help", legendHelp ? "1" : "0"); } catch {} legend(); };
+  toggle.onclick = () => { legendHelp = !legendHelp; setPref("atlas.legend.help", legendHelp ? "1" : "0"); legend(); };
   row.appendChild(toggle);
   L.appendChild(row);
   if (!legendHelp) return;
@@ -2536,6 +2549,14 @@ function noteField(x, y, on, label) {
   };
 }
 if (D.served) {
+  // the reader's file says what they chose last, on any page; this browser follows it
+  fetch("/api/prefs").then(r => r.json()).then(p => {
+    for (const [key, take, on] of [["atlas.lines", takePref.lines, "round"], ["atlas.code", takePref.code, "1"], ["atlas.legend.help", takePref.help, "1"]]) {
+      if (typeof p?.[key] !== "string") continue;
+      try { localStorage.setItem(key, p[key]); } catch {}
+      if (take) take(p[key] === on);
+    }
+  }).catch(() => {});
   scene.node().addEventListener("click", ev => {
     if (!ev.altKey) return;
     const line = ev.target.closest("path[data-a]"), box = !line && ev.target.closest("[data-id]");

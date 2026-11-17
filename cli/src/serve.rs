@@ -27,6 +27,7 @@ use serde_json::{json, Value};
 use crate::http::{self, Answer, Request};
 use crate::log::{Log, Who};
 use crate::page::{self, Html, Opens, Reading};
+use crate::prefs;
 use crate::shared::{self, Note, State};
 
 const LOADING: &str = include_str!("../../viewer/loading.html");
@@ -174,6 +175,8 @@ impl Server {
             ("GET", "/api/annotations") => json(shared::annotations(&self.repo).and_then(|a| Ok(serde_json::to_value(a)?))),
             ("POST", "/api/notes") => json(self.note(req)),
             ("POST", "/api/notes/reopen") => json(self.reopen(req)),
+            ("GET", "/api/prefs") => json(prefs::read()),
+            ("POST", "/api/prefs") => json(self.body(req).and_then(|v| prefs::add(&v))),
             _ => Answer::text("404 Not Found", format!("nothing at {} {}", req.method, req.path)),
         }
     }
