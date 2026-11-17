@@ -1294,8 +1294,8 @@
     "Graph (9)"
    ],
    [
-    "t:atlas-engine.options.Options",
-    "options.Options (2)"
+    "t:atlas-engine.options.Options~opts",
+    "options.Options (2) \u00b7 opts"
    ],
    [
     "t:atlas-engine.repo.Repo~repo@n:atlas-engine.analyze/0",
@@ -1416,15 +1416,15 @@
     "o:atlas-engine.analyze"
    ],
    [
-    "t:atlas-engine.options.Options",
+    "t:atlas-engine.options.Options~opts",
     "n:atlas-engine.analyze/0"
    ],
    [
-    "t:atlas-engine.options.Options",
+    "t:atlas-engine.options.Options~opts",
     "n:atlas-engine.analyze/1"
    ],
    [
-    "t:atlas-engine.options.Options",
+    "t:atlas-engine.options.Options~opts",
     "o:atlas-engine.analyze"
    ],
    [
