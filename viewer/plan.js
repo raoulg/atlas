@@ -3197,3 +3197,38 @@ const sideOfRoles = (rs, otherwise) => {
   if (any("open")) return "mid";
   return otherwise();
 };
+// ---- how a picture is laid out ----
+// A layer keeps the order the code gives its boxes and lines in (ELK's model order) in a picture of up to this many
+// lines. ELK sorts each layer against every line that passes through it, which grows with the square of the layer:
+// free in the pictures of a route or a package (at most about 200 lines), twenty seconds in one of 750 (#320), where
+// the boxes are too many to read an order in. Beyond it ELK orders a layer by its crossings alone.
+const ORDERED_LINES = 400;
+// the overview's columns, in the order they stand (mathematics.md, "Layered drawing")
+const COLUMNS = ["in", "code", "type", "out"];
+// The options a picture is laid out with, set on the ELK graph `root` it is drawn from: one function for every view, so
+// that what holds of the layout holds of each (`engine/tests/layout.rs`). `loose`: a picture whose code gives its boxes no
+// order (a focus, the overview), placed by its lines alone. `columnOf`: the overview, each box at the top of the picture
+// in the column `columnOf` names of `COLUMNS`. The columns are partitions of the layers and nothing else: a box keeps no
+// layer constraint beside its partition. ELK puts a box whose every line runs into the last layer, constrained there,
+// in the layer before it, and refuses a line out of that box to any other layer; the partitions draw such lines, from
+// each column to the next. A partition orders the layers and leaves every box free to have the lines it has (#471)
+const layOut = (root, {loose = false, columnOf = null} = {}) => {
+  const lines = root.edges.length;
+  // boxes are placed by Brandes–Köpf, which grows about linearly with the lines, so a picture of a few
+  // hundred lines opens at once; network simplex straightens long lines a little at ten times the cost
+  root.layoutOptions = {"elk.algorithm": "layered", "elk.direction": "RIGHT", "elk.hierarchyHandling": "INCLUDE_CHILDREN", "elk.edgeRouting": "ORTHOGONAL", "elk.layered.spacing.nodeNodeBetweenLayers": "56", "elk.spacing.nodeNode": "16", "elk.layered.nodePlacement.strategy": "BRANDES_KOEPF", "elk.spacing.edgeNode": "14", "elk.layered.spacing.edgeNodeBetweenLayers": "16", "elk.layered.considerModelOrder.strategy": lines <= ORDERED_LINES ? "NODES_AND_EDGES" : "NONE"};
+  // a loose picture's boxes are placed by their lines alone, straight where they can be (network simplex, while the lines
+  // are few enough to afford it); each line stays a line of its own, so that it can be followed from box to box
+  if (loose) Object.assign(root.layoutOptions, {"elk.layered.considerModelOrder.strategy": "NONE", "elk.layered.spacing.edgeEdgeBetweenLayers": "5", "elk.layered.spacing.edgeNodeBetweenLayers": "10", "elk.layered.spacing.nodeNodeBetweenLayers": "36", ...(lines <= ORDERED_LINES ? {"elk.layered.nodePlacement.strategy": "NETWORK_SIMPLEX"} : {})});
+  // every line of the overview runs through the gaps between its columns, so the gaps are wide enough to keep each line
+  // apart from the next
+  if (columnOf) {
+    Object.assign(root.layoutOptions, {"elk.partitioning.activate": "true", "elk.layered.spacing.edgeEdgeBetweenLayers": "9", "elk.layered.spacing.nodeNodeBetweenLayers": "64"});
+    for (const c of root.children) {
+      const o = (c.layoutOptions ||= {});
+      delete o["elk.layered.layering.layerConstraint"];
+      o["elk.partitioning.partition"] = String(COLUMNS.indexOf(columnOf(c)));
+    }
+  }
+  return root;
+};
