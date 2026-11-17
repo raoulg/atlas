@@ -139,6 +139,14 @@ pub(crate) struct Opens {
     pub(crate) served: Option<String>,
 }
 
+/// The route a folder opens on, the folder named as the repository to read: its outer module, where the folder's scripts
+/// run one (`story::folder_route`). `atlas-code view`, `serve` and the MCP `view` tool open alike.
+pub(crate) fn folder_route(graph: &Graph, folder: &std::path::Path) -> Option<String> {
+    let folder = atlas_engine::repo::Repo::resolved(folder).filter(|f| f.is_dir())?;
+    let inside = |file: &str| atlas_engine::repo::Repo::resolved(std::path::Path::new(file)).is_some_and(|f| f.starts_with(&folder));
+    atlas_engine::story::folder_route(graph, &inside)
+}
+
 /// One project as the viewer is handed it: the graph, the flow its routes are read from, the
 /// findings at the nodes they are about, how its things stand to two readings when it is their
 /// union, and where the page opens.

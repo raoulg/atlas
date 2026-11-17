@@ -3552,3 +3552,127 @@ fn applied_a_call_runs_on_a_value_or_takes_it_never_both() {
         assert_eq!(handed, 2, "{side}: each of the two settings is handed to one step");
     }
 }
+
+/// The designs pair (#478): one head, a torch module whose stages are methods, read three times: with a script that builds
+/// and runs it (`clean`), the same with the stage the search may leave out under a bare condition (`shortcut`), and the
+/// module alone (`alone`).
+fn design(name: &str) -> Graph {
+    analyze(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/pairs/designs/python").join(name), &Options::default()).unwrap()
+}
+
+/// A class is the arrow it carries (mathematics.md, "Currying: a class is the arrow it carries"): a class whose call runs
+/// a method a library says it runs (`knowledge::PYTHON_CALL_RUNS`) is a route of its own, that method, and what the
+/// constructor does is no step of it. The route is the module's own: the same with a script around the module as without.
+#[test]
+fn a_module_is_a_route_its_forward_pass_whatever_runs_it() {
+    let (scripted, alone) = (design("clean"), design("alone"));
+    for g in [&scripted, &alone] {
+        let forward = g.node("heads.design.Head.forward").unwrap();
+        assert_eq!(forward.entry.as_ref().map(|e| e.kind), Some(EntryKind::Class), "{}: the module is a route", g.root);
+        let steps = atlas_engine::story::told_steps(g, "heads.design.Head.forward", 3).unwrap();
+        assert!(steps.iter().all(|s| !s.runs.ends_with("__init__")), "{}: the constructor is no step of the arrow", g.root);
+    }
+    assert_eq!(
+        atlas_engine::story::route(&scripted, "heads.design.Head.forward", 3),
+        atlas_engine::story::route(&alone, "heads.design.Head.forward", 3),
+        "a script around the module leaves its route as it is"
+    );
+}
+
+/// A folder opens on its one module where the folder's scripts run it (`story::folder_route`), and as it always did where
+/// nothing of the folder runs a module.
+#[test]
+fn a_folder_opens_on_the_module_its_script_runs() {
+    let opens = |name: &str| {
+        let g = design(name);
+        let dir = std::fs::canonicalize(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/pairs/designs/python").join(name)).unwrap();
+        let inside = |f: &str| std::fs::canonicalize(f).is_ok_and(|f| f.starts_with(&dir));
+        atlas_engine::story::folder_route(&g, &inside)
+    };
+    assert_eq!(opens("clean").as_deref(), Some("heads.design.Head.forward"));
+    assert_eq!(opens("alone"), None, "a module nothing of the folder runs opens nothing");
+}
+
+/// A library decorator that gives its function back names the choice the function runs under (`knowledge::PYTHON_CHOICE_NAMES`,
+/// mathematics.md "A decorator is part of the definition"): the choice is read from the code alike on both sides, and only
+/// the side that says `@option("skip")` names it.
+#[test]
+fn an_option_names_the_choice_a_bare_condition_leaves_unnamed() {
+    let (named, bare) = (design("clean"), design("shortcut"));
+    let choices = |g: &Graph| {
+        let f = g.node("heads.design.Head.forward").unwrap();
+        // the lines differ by the two the decorator and its import take
+        (f.whens.clone(), f.tests.clone(), f.sites.iter().map(|s| (s.to.clone(), s.arms.clone())).collect::<Vec<_>>())
+    };
+    assert_eq!(choices(&named), choices(&bare), "the choice is read from the code, whatever names it");
+    assert_eq!(named.node("heads.design.Head.skip").unwrap().names_choice.as_deref(), Some("option skip"));
+    assert_eq!(bare.node("heads.design.Head.skip").unwrap().names_choice, None);
+    // the table names the argument by its place and by its keyword: `option(axis="gate")` is `option("gate")`
+    assert_eq!(named.node("heads.design.Head.gate").unwrap().names_choice.as_deref(), Some("option gate"));
+    assert_eq!(bare.node("heads.design.Head.gate").unwrap().names_choice, None);
+}
+
+/// A module that runs a submodule of its own is the one a folder opens on: among the classes the folder's scripts reach,
+/// the one no other of them runs (`story::folder_route`), and none where two stand outermost.
+#[test]
+fn a_folder_opens_on_the_outer_module() {
+    let g = design("clean");
+    assert_eq!(
+        g.node("heads.design.Block.forward").and_then(|n| n.entry.as_ref()).map(|e| e.kind),
+        Some(EntryKind::Class),
+        "the inner module is a route too"
+    );
+    let dir = std::fs::canonicalize(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/pairs/designs/python/clean")).unwrap();
+    let inside = |f: &str| std::fs::canonicalize(f).is_ok_and(|f| f.starts_with(&dir));
+    assert_eq!(
+        atlas_engine::story::folder_route(&g, &inside).as_deref(),
+        Some("heads.design.Head.forward"),
+        "the module that runs the block"
+    );
+}
+
+/// What the constructor sets a field of the instance to reads fields of what it was handed (`Set::reads`), through the
+/// names the constructor bound before (`widths = [width, config.hidden]`): the lens from the configuration into the
+/// instance, the same however the stage is chosen.
+#[test]
+fn a_field_the_constructor_sets_reads_the_configuration_it_was_built_from() {
+    for g in [design("clean"), design("shortcut")] {
+        let init = g.node("heads.design.Head.__init__").unwrap();
+        let reads = |field: &str| -> Vec<String> {
+            init.sets
+                .iter()
+                .filter(|s| s.field == field)
+                .flat_map(|s| s.reads.iter().map(|r| format!("{}.{}", r.on.name, r.field)))
+                .collect()
+        };
+        assert_eq!(reads("block"), ["config.hidden"], "{}: through a name bound before", g.root);
+        assert_eq!(reads("projection"), ["config.hidden"], "{}: in a step written in the expression", g.root);
+        assert!(reads("config").is_empty(), "{}: a value set whole reads no field of it", g.root);
+    }
+}
+
+/// Two modules of one name are two routes the reader tells apart: a class route's label carries the fewest last parts of
+/// its module that no other route of that name shares (`a.designs.Kernels` beside `b.designs.Kernels`), and a name no
+/// other route bears stands alone.
+#[test]
+fn modules_of_one_name_are_told_apart_by_their_module() {
+    let root = std::env::temp_dir().join(format!("atlas-python-same-names-{}", std::process::id()));
+    let module =
+        "from torch import Tensor, nn\n\n\nclass Kernels(nn.Module):\n    def forward(self, x: Tensor) -> Tensor:\n        return x\n";
+    for (dir, code) in [
+        ("a", module.to_string()),
+        ("b", format!("{module}\n\nclass Head(nn.Module):\n    def forward(self, x: Tensor) -> Tensor:\n        return x\n")),
+    ] {
+        std::fs::create_dir_all(root.join("src/demo").join(dir)).expect("makes the package");
+        std::fs::write(root.join("src/demo").join(dir).join("__init__.py"), "").expect("writes the package");
+        std::fs::write(root.join("src/demo").join(dir).join("designs.py"), code).expect("writes the module");
+    }
+    std::fs::write(root.join("pyproject.toml"), "[project]\nname = \"demo\"\nversion = \"0\"\n").expect("writes the manifest");
+    std::fs::write(root.join("src/demo/__init__.py"), "").expect("writes the package");
+    let g = analyze(&root, &Options::default()).expect("reads");
+    let _ = std::fs::remove_dir_all(&root);
+    let label = |id: &str| g.node(id).and_then(|n| n.entry.as_ref()).filter(|e| e.kind == EntryKind::Class).map(|e| e.label.clone());
+    assert_eq!(label("demo.a.designs.Kernels.forward").as_deref(), Some("a.designs.Kernels"));
+    assert_eq!(label("demo.b.designs.Kernels.forward").as_deref(), Some("b.designs.Kernels"));
+    assert_eq!(label("demo.b.designs.Head.forward").as_deref(), Some("Head"));
+}

@@ -118,8 +118,18 @@ the blocks of the bases below; and beside the blocks of a package's bases, the c
 functions and its other classes (`no base class · 9`). Where no base has a block, nothing is set apart from one. A
 package of modules can be opened by base class instead of by module (`V.open.flat`): its functions stand in
 it directly, in their classes and bases, whatever file they are written in; both are quotients of the same functions,
-and the reader picks which.
-**Where.** `classBlocks`, `blockHolds` and `overviewOpen` in `viewer/plan.js`; `Opened::classes`, `bases` and `flat` in
+and the reader picks which. Where a library says which method a call of an instance runs (torch's `Module` runs
+`forward`), the arrow `A → B` the class carries is that method, and the class is a route of its own (`EntryKind::Class`,
+`Class · Head`): the route starts at the method, its stages are its steps, and the constructor, which fixes `Self`, is
+no step of it. Which method that is, is the library's fact (a table); everything drawn inside the route is the generic
+route. The route is the class's own, the same whether or not a script runs it. A folder opens on the outer one of the
+classes its scripts run: the one no other of them runs or builds in its own code (a module that runs its submodules),
+none where two stand outermost; `view`, `serve` and the MCP `view` open a folder alike. Two such classes of one name are
+told apart by the fewest last parts of their modules that differ (`01_kernels.Kernels`, `02_state_and_gates.Kernels`).
+**Where.** `classBlocks`, `blockHolds` and `overviewOpen` in `viewer/plan.js`; `mark_called_classes` in
+`engine/src/python/passes.rs` (from `knowledge::PYTHON_CALL_RUNS`), `story::folder_route` and `page::folder_route`
+(`cli`), told apart on the pair `pairs/designs` (`pairs_python.rs`,
+`a_module_is_a_route_its_forward_pass_whatever_runs_it`, `a_folder_opens_on_the_outer_module`, `modules_of_one_name_are_told_apart_by_their_module`); `Opened::classes`, `bases` and `flat` in
 `engine/src/sight.rs`; held for every set of open blocks by `overviewFaults` and `focusFaults` in
 `engine/tests/plans.mjs`, and told apart on the pair `pairs/blocks` (`plans.rs`,
 `the_classes_of_one_base_are_one_block_and_a_class_is_the_block_of_its_functions`).
@@ -153,7 +163,9 @@ are that step with a choice of what it is handed, no choice of where the value c
 coproduct of its arms, each injected by what decides it as the code writes it (`when not
 raw.exists()`, a `match` pattern, `otherwise`). A choice of one arm is a coproduct with the
 identity, `f + 1`: its steps run when the condition holds and nothing runs otherwise, so it is
-drawn as a choice too. An arm is the composite of what it runs, so a choice inside an arm beside other steps of it
+drawn as a choice too. A library may give the injection of such a choice a name (vectormesh's `@option("skip")` on the
+method the arm runs): nothing new is drawn, the choice is read from the code as before, and its title names it
+(`option skip · if self.config.skip`) where it would read `only when self.config.skip`. An arm is the composite of what it runs, so a choice inside an arm beside other steps of it
 is a coproduct inside that arm (`if keep: open_shelf(); if report: keep_report()` is `(open_shelf ; (keep_report + 1)) + 1`),
 a frame in the arm's branch, never another branch beside it: one run takes one branch of each frame it enters, and a run
 through both is one run. Coproducts are associative, `A + (B + C) = A + B + C`: an arm that runs nothing but one choice
@@ -263,12 +275,21 @@ the receiver is the one way to it, through its fields and its parts (`self.conv(
 `model.conv.forward`). A step that is handed the same value for a parameter too takes it as an input and
 keeps the line, as a function handed the instance does, or a caller that takes a field out of it. A value
 no constructor made in the route (a tensor, a path) is the data its method works on and keeps its line.
+What a step reads of its receiver is a lens into what the constructor was handed: the constructor set each field from
+fields of its configuration (`Set::reads`, fields and never the methods a value is called by, through the names it
+bound before: `self.noise = Noise(sigma=config.sigma)`
+reads `sigma`), and a step that reads the field reads those. A route that runs on an instance lists them once, under
+it, each under the first step that reads it, a field that decides a named choice marked (`receiverReads`): the channel
+drawn once instead of on every step.
 `receivers` in the view draws the lines. The named picture is the drawn one less those lines: the same
 steps, frames and boxes.
 **Where.** `plan.js`: `foldReceivers`, after `foldErrors` in `plan`; `onlyRuns`, `ranOn` and `built` say
 which lines; the view's `receivers` (`sight.rs`). Held by `engine/tests/plans.mjs`, `receiverFaults`, which
 draws every view state both ways and compares them, and by the pair `engine/tests/pairs/applied`
-(`pairs_python.rs`).
+(`pairs_python.rs`). The configuration a route reads: `Set::reads` (`body.rs`, `fields_read`), `receiverReads` in
+`plan.js`, drawn under the route's frame by `viewer/index.html`; held by the pair `pairs/designs`, the engine's half by
+`pairs_python.rs` (`a_field_the_constructor_sets_reads_the_configuration_it_was_built_from`) and the row the page draws
+by `plans.rs` (`a_design_draws_its_configuration_its_options_and_its_shapes`, through `plans.mjs --drawn`).
 
 ### A filter: the program without its test code
 **What.** The predicate *test code* on the functions of the graph: a function is test code when it
@@ -1457,9 +1478,19 @@ the graph holds it; the types a caller sees are the type checker's, which applie
 the function ends with what its guards end with. A body's nested functions are read as part of it, so a
 guard's errors are those of the decorator's own body and of the wrapper it gives back together. A library's
 decorator is reached with the function under it. Wrapping a function by hand after it is defined
-(`tidy = guarded(_tidy)`) is a step, and the name holds a value whose function the code does not say.
+(`tidy = guarded(_tidy)`) is a step, and the name holds a value whose function the code does not say. A decorator
+that gives its function back unchanged and only marks it (`vectormesh.design.option(axis)`) is an identity on the
+arrow; where a library's table says its mark names the choice the function runs under
+(`knowledge::PYTHON_CHOICE_NAMES`), the name it is handed is that choice's name (`Node::names_choice`). The decorator
+is known by the import path it is named through, with or without stubs, and the table names the argument by its place
+and by its keyword, so `option("skip")` and `option(axis="skip")` name the same. The name stands on a choice of the
+stage's own class's route, one whose arm runs the stage on the instance (`self.skip(x)`), and on no other choice that
+holds a call of it (`if verbose: model.skip(x)`).
 **Where.** `python/passes.rs` (`link`), `python/body.rs` (`holds`), `pytypes.rs`; `builder::settle_fails`;
-`view.rs` (`reach`). The pair `engine/tests/pairs/guards`, held by `pairs_python.rs`.
+`view.rs` (`reach`). The pair `engine/tests/pairs/guards`, held by `pairs_python.rs`. The choice an option names:
+`choiceNode` in `viewer/plan.js`; the pair `pairs/designs`, held by `pairs_python.rs`
+(`an_option_names_the_choice_a_bare_condition_leaves_unnamed`) and `plans.rs`
+(`a_design_draws_its_configuration_its_options_and_its_shapes`).
 
 ### Behavioural subtyping
 **What.** A subtype can stand wherever its base stands (Liskov).
@@ -1486,7 +1517,11 @@ as a subclass stands in its base (Coequalizer: a quotient), however few shapes o
 holds: the rank is a map on each shape alone, and a fiber of one is a fiber, so a shape's closed box is the same in
 the overview and zoomed into a route, whatever other code holds (#425). Closed, `Float Tensor · 2D` stands for the
 rank-2 float tensors the picture holds (`· ≥1D` where the rank is open, `· any rank` where no axis is promised);
-opened, it is a frame around the shapes themselves, the finer level, where the names of the axes show. The family is named by its dtype, array type and rank, never in
+opened, it is a frame around the shapes themselves, the finer level, where the names of the axes show, each shape as
+its axes in the names its signature gives them (`batch × dim` of `batch {self.dim}`), the frame saying the dtype and
+the rank. A picture opens with every family closed; one control opens every rank family of the picture and closes them
+again (`shapesOpen`), both states quotients of the same plan, shown where opening tells something: two families, or one
+holding more than one shape (`shapesFold`). The family is named by its dtype, array type and rank, never in
 the annotation's own notation: `Float[Tensor, _ _]` would read as a type the code wrote, and a box that says what the
 code does not is a guess. A shape the code writes as `_ _` is a member of its family like any other. A run alone
 (`...`) promises no axis, and its notation says nothing a reader needs: it is named as what it says,
@@ -1508,7 +1543,9 @@ the call made. Every other value the body's steps make is compared by its shape.
 claims more than the call proves, or contradicts it, is a question of the shapes, not of what the body gives back.
 **Where.** `shapes.rs` (`Array`, `Axis`, `Rank`, `family_id`, `name`, `one_array`), `families.rs` (the rank as a kind),
 principle `overrides` (`Array::fits`); on wires `python/body.rs` (`Seen::declared_shape`) and `python/passes.rs`
-(`shaped_returns`); what a body gives back `flow.rs` (`made_from`); the pairs `shapes/python` and `modules/python`.
+(`shaped_returns`); what a body gives back `flow.rs` (`made_from`); the pairs `shapes/python` and `modules/python`;
+the control, `ranksIn`, `axesOf`, `shapesOpen` and `shapesFold` in `viewer/plan.js`, held on the pair `designs/python`
+by `plans.rs` (`a_design_draws_its_configuration_its_options_and_its_shapes`).
 
 ### A library's types stand in their library
 **What.** The types a program holds are ordered by a lattice of quotients, each coarser than the one below it: library ›

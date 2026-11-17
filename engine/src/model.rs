@@ -167,6 +167,9 @@ pub enum EntryKind {
     /// An operation of sketch code that is not built yet: a route into what is planned.
     Prophecy,
     Test,
+    /// A class whose instance, called, runs one of its methods (`knowledge::PYTHON_CALL_RUNS`): the arrow
+    /// the class carries. The route is that method; the label is the class.
+    Class,
 }
 
 /// A route into the program.
@@ -501,10 +504,23 @@ pub struct Node {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     #[ts(type = "Array<[number, number, string]>")]
     pub whens: Vec<(u32, u32, String)>,
+    /// The name a library decorator gives the choice this function runs under (`knowledge::PYTHON_CHOICE_NAMES`),
+    /// as the decorator's name and the name it is handed: `option skip` of `@option("skip")`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub names_choice: Option<String>,
     /// The fields the conditions that decide its body's choices read of the values they read, as the code
     /// names them: `ax` of the instance for `if self.ax is None:` (#184).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub tests: Vec<Test>,
+}
+
+/// A field an expression reads of a value a name holds (`Set::reads`): the value, as a call is handed it, and the
+/// field, through the fields it is reached by (`model.depth` of `config.model.depth`).
+#[derive(Serialize, Deserialize, TS, Clone, Debug, Default, PartialEq)]
+#[ts(export)]
+pub struct FieldRead {
+    pub on: Held,
+    pub field: String,
 }
 
 /// A field a condition reads (`Node::tests`): the choice it decides, numbered as `Site::arms` numbers them,
@@ -1072,6 +1088,11 @@ pub struct Set {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     #[ts(type = "Array<[number, number]>")]
     pub arms: Vec<(u32, u32)>,
+    /// The fields of the values names hold that the assigned expression reads, in the steps written in it too and
+    /// through the names it reads that the body bound before (`widths = [dim] * config.depth`): `sigma` of `config`
+    /// for `self.noise = Noise(sigma=config.sigma)`. The value a set builds from its configuration, as a lens reads it.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub reads: Vec<FieldRead>,
     /// Where the assigned expression is written, as a byte range of its file: a step written there that the
     /// set keeps (`self.left = Chart("left")`) is among what it reads once its result is named.
     #[serde(skip)]
@@ -2039,6 +2060,7 @@ impl Graph {
             for s in &mut n.sets {
                 held(&mut s.on);
                 s.from.iter_mut().for_each(held);
+                s.reads.iter_mut().for_each(|r| held(&mut r.on));
             }
             for t in &mut n.tests {
                 held(&mut t.on);

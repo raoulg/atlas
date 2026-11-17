@@ -9,7 +9,7 @@ use tree_sitter::Node as TsNode;
 
 use crate::builder::GraphBuilder;
 use crate::effects::{self, Facts};
-use crate::model::{ext, Crossing, Dir, EdgeKind, Held, NodeKind, Set, Site, Slot, Test, Touch, Use, World};
+use crate::model::{ext, Crossing, Dir, EdgeKind, FieldRead, Held, NodeKind, Set, Site, Slot, Test, Touch, Use, World};
 use crate::tree::{
     beneath, guarded_by, guards, named_children, number_choices, parent, payload_of, starts_at_literal, text, walk, walk_all, what_of,
     wrapped, wraps, ChoiceSyntax, Part, Wrappers,
@@ -966,8 +966,56 @@ impl<'t, 's> Steps<'t, 's> {
                     of,
                     lines: Some((line(b), b.end_position().row as u32 + 1)),
                     arms: self.arms(b),
+                    reads: self.fields_read(value, held, 0),
                     value: (value.start_byte() as u32, value.end_byte() as u32),
                 });
+            }
+        }
+        out
+    }
+
+    /// The fields of the values names hold that `value` reads (`Set::reads`): each projection of a name written in it,
+    /// outermost, and through each name it reads whole, the fields the value bound to that name before reads.
+    fn fields_read(&self, value: TsNode<'t>, held: &dyn Fn(TsNode<'t>) -> Vec<Held>, depth: usize) -> Vec<FieldRead> {
+        let u = self.uses;
+        let kinds: Vec<&str> = u.names.iter().chain(u.reads).copied().collect();
+        let mut out: Vec<FieldRead> = vec![];
+        let mut push = |r: FieldRead| {
+            if !out.contains(&r) {
+                out.push(r);
+            }
+        };
+        // a method called on a value is no field of it (`self.items.iter()` reads `items`, never `items.iter`)
+        let callee = |q: TsNode<'t>| self.up(q).and_then(|c| c.child_by_field_name("function")).is_some_and(|f| f.id() == q.id());
+        let mut roots: HashSet<usize> = HashSet::new();
+        for x in walk_all(value) {
+            let Some((root, field)) = self.projection(x) else { continue };
+            roots.insert(root.id());
+            let outer = self
+                .up(x)
+                .filter(|p| p.end_byte() <= value.end_byte() && !callee(*p))
+                .and_then(|p| self.projection(p))
+                .is_some_and(|(r, _)| r.id() == root.id());
+            if callee(x) || outer || (u.label)(root, self.src) {
+                continue;
+            }
+            for h in held(root) {
+                push(FieldRead { on: Held { at: 0, fills: vec![], through: vec![], ..h }, field: field.clone() });
+            }
+        }
+        if depth >= 4 {
+            return out;
+        }
+        // a name read whole reads what the value bound to it before reads
+        for n in walk(value, &kinds).into_iter().filter(|n| !roots.contains(&n.id()) && !(u.label)(*n, self.src)) {
+            let name = text(n, self.src);
+            for b in walk_all(self.body).into_iter().filter(|b| b.end_byte() <= value.start_byte()) {
+                let Some((targets, bound)) = (u.binds)(b) else { continue };
+                if walk(targets, &kinds).iter().any(|t| text(*t, self.src) == name) {
+                    for r in self.fields_read(bound, held, depth + 1) {
+                        push(r);
+                    }
+                }
             }
         }
         out

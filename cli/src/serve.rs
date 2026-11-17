@@ -238,7 +238,7 @@ impl Server {
         let findings = read.findings();
         let (graph, compared) = read.drawn();
         let flow = atlas_engine::flow::of(&graph);
-        let opens = Opens { route: None, sight: None, served: Some(id.to_string()) };
+        let opens = Opens { route: page::folder_route(&graph, &self.repo), sight: None, served: Some(id.to_string()) };
         let data = Html::payload(&graph, &flow, &findings, compared.as_ref(), &opens)?;
         self.log.say(Who::Atlas, &format!("drew {}", page::summary(&graph)));
         let facts = witnesses.roots().first().map(|root| facts(root, &graph)).unwrap_or_default();

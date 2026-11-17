@@ -18,6 +18,53 @@ pub fn entries(g: &Graph) -> Vec<(EntryKind, &str, &str)> {
     out
 }
 
+/// The route a folder opens on, by the id it starts at: the outer class of the folder whose instance runs a method
+/// (`EntryKind::Class`) among those a script, command or notebook of the folder runs, by calling or building it: the one
+/// no other of them runs or builds in its own code (a module that runs its submodules is the one it runs them in); none
+/// where no such class stands outermost, or two do. `inside` says whether a file lies in the folder.
+pub fn folder_route(g: &Graph, inside: &dyn Fn(&str) -> bool) -> Option<String> {
+    let mut next: HashMap<&str, Vec<&str>> = HashMap::new();
+    for e in g.edges.iter().filter(|e| matches!(e.kind, EdgeKind::Calls | EdgeKind::Instantiates)) {
+        next.entry(e.src.as_str()).or_default().push(e.dst.as_str());
+    }
+    let starts: Vec<&str> = g
+        .nodes
+        .iter()
+        .filter(|n| inside(&n.file))
+        .filter(|n| n.entry.as_ref().is_some_and(|e| matches!(e.kind, EntryKind::Script | EntryKind::Cli | EntryKind::Notebook)))
+        .map(|n| n.id.as_str())
+        .collect();
+    let mut reached: HashSet<&str> = starts.iter().copied().collect();
+    let mut open = starts;
+    while let Some(id) = open.pop() {
+        for &d in next.get(id).into_iter().flatten() {
+            if reached.insert(d) {
+                open.push(d);
+            }
+        }
+    }
+    let run: Vec<&Node> = g
+        .nodes
+        .iter()
+        .filter(|n| inside(&n.file) && n.entry.as_ref().is_some_and(|e| e.kind == EntryKind::Class))
+        .filter(|n| reached.contains(n.id.as_str()) || n.cls.as_deref().is_some_and(|c| reached.contains(c)))
+        .collect();
+    // a class another of them runs or builds in a method of its own is inside that one
+    let class_of: HashMap<&str, &str> = g.nodes.iter().filter_map(|n| Some((n.id.as_str(), n.cls.as_deref()?))).collect();
+    let runs = |outer: &Node, inner: &Node| {
+        let Some(class) = outer.cls.as_deref() else { return false };
+        g.edges
+            .iter()
+            .filter(|e| matches!(e.kind, EdgeKind::Calls | EdgeKind::Instantiates))
+            .any(|e| class_of.get(e.src.as_str()) == Some(&class) && (e.dst == inner.id || inner.cls.as_deref() == Some(e.dst.as_str())))
+    };
+    let run: Vec<&Node> = run.iter().copied().filter(|inner| !run.iter().any(|outer| outer.id != inner.id && runs(outer, inner))).collect();
+    match run.as_slice() {
+        [one] => Some(one.id.clone()),
+        _ => None,
+    }
+}
+
 /// The route that starts at `entry` (an id, or an entry's label), its steps opened `depth`
 /// levels deep: the same steps, from the same bodies, as the page draws, each touching the places
 /// the route reads it to touch where it runs (`flow::Along`), under the calls that lead there and
@@ -187,6 +234,7 @@ pub fn kind_label(k: EntryKind) -> &'static str {
         EntryKind::Export => "Library",
         EntryKind::Prophecy => "Prophecy",
         EntryKind::Test => "Test",
+        EntryKind::Class => "Class",
     }
 }
 
@@ -195,6 +243,7 @@ fn kind_order(k: EntryKind) -> usize {
         EntryKind::Make,
         EntryKind::Cli,
         EntryKind::Export,
+        EntryKind::Class,
         EntryKind::Script,
         EntryKind::Notebook,
         EntryKind::Route,
