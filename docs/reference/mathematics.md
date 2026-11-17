@@ -260,14 +260,18 @@ different channels. A line of a route that stands only for a step running on a v
 there, and the code names, is said on the step (`scale.apply`; on the frame of an opened step) and not
 drawn. Every line a closed step's body draws from the value it runs on is that one line: inside a method
 the receiver is the one way to it, through its fields and its parts (`self.conv(x)` runs on a part,
-`model.conv.forward`). A step that is handed the same value for a parameter too takes it as an input and
-keeps the line, as a function handed the instance does, or a caller that takes a field out of it. A value
+`model.conv.forward`). Opened, the same lines are said on its frame, whichever box inside draws them: which lines are
+the running is a fact of each fine line, so naming commutes with opening (rule 1 of "Refinement keeps what it does not
+refine"). A step that is handed the same value for a parameter too takes it as an input and
+keeps the line, as a function handed the instance does, or a caller that takes a field out of it; opened, the call
+inside it that runs on the value keeps it too, since the value came in as data. A value
 no constructor made in the route (a tensor, a path) is the data its method works on and keeps its line.
 `receivers` in the view draws the lines. The named picture is the drawn one less those lines: the same
 steps, frames and boxes.
-**Where.** `plan.js`: `foldReceivers`, after `foldErrors` in `plan`; `onlyRuns`, `ranOn` and `built` say
+**Where.** `plan.js`: `foldReceivers`, after `foldErrors` in `plan`; `onlyRuns`, `ranOn`, `entered` and `built` say
 which lines; the view's `receivers` (`sight.rs`). Held by `engine/tests/plans.mjs`, `receiverFaults`, which
-draws every view state both ways and compares them, and by the pair `engine/tests/pairs/applied`
+draws every view state both ways and compares them and opens each closed step of the named picture (`namedOpenings`), by the
+program `engine/tests/plans/runs-on-its-fields`, and by the pair `engine/tests/pairs/applied`
 (`pairs_python.rs`).
 
 ### A filter: the program without its test code

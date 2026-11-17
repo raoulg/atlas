@@ -1296,14 +1296,15 @@ function errorFaults(S) {
 // to what its steps run on (`receivers`) and with those said by name, and the two are compared. The named picture is the
 // drawn one less lines: the same steps, frames and boxes, and every line but those from a value a constructor made and the
 // code names, to a step that does nothing with it but run on it. The step says that value's name (an opened step on its
-// frame), no step says a name without the line, and the value keeps a line: the one of the step that made it.
+// frame, which also says it for the lines of the boxes inside it), no step says a name without the line, and the value keeps
+// a line: the one of the step that made it.
 function receiverFaults(S) {
   setState({...S, receivers: true});
   const W = M.plan();
   setState({...S, receivers: false});
   const C = M.plan(), out = [];
   for (const [what, a, b] of [["box", W.places, C.places], ["step", W.pills, C.pills], ["frame", W.frames, C.frames]]) for (const id of new Set([...a.keys(), ...b.keys()])) if (a.has(id) !== b.has(id)) out.push(`the ${what} ${id} is in one of the two pictures alone`);
-  const kept = new Map();
+  const kept = new Map(), taken = new Set();
   for (const Q of C.pills.values()) for (const k of [...Q.D.keys(), ...Q.C.keys()]) kept.set(k, (kept.get(k) || 0) + 1);
   for (const [id, P] of W.pills) {
     const Q = C.pills.get(id);
@@ -1311,7 +1312,9 @@ function receiverFaults(S) {
     for (const k of Q.C.keys()) if (!P.C.has(k)) out.push(`${id}: naming what it runs on gives it a line to ${k}`);
     for (const k of P.C.keys()) if (!Q.C.has(k)) out.push(`${id}: naming what it runs on takes its line to ${k}, which it makes`);
     for (const k of Q.D.keys()) if (!P.D.has(k)) out.push(`${id}: naming what it runs on gives it a line from ${k}`);
-    const gone = [...P.D.keys()].filter(k => !Q.D.has(k)), says = (P.own ? C.frames.get(P.parent)?.runsOn : Q.runsOn) || [];
+    // a line inside an opened step that runs on the value is said on that step's frame, whatever box inside it draws it
+    const around = []; for (let f = P.parent; f; f = C.frames.get(f)?.parent) around.push(...(C.frames.get(f)?.runsOn || []));
+    const gone = [...P.D.keys()].filter(k => !Q.D.has(k)), says = [...(P.own ? [] : Q.runsOn || []), ...around];
     for (const k of gone) {
       const pl = W.places.get(k);
       if (!pl?.built || !pl.name) out.push(`${id}: its line from ${k} is taken, which is no value a constructor made and the code names`);
@@ -1319,8 +1322,35 @@ function receiverFaults(S) {
       if (!kept.get(k)) out.push(`${id}: its line from ${k} is taken, and the box ${k} keeps no line`);
       if (pl?.name && !says.some(n => n === pl.name || n.startsWith(pl.name + "."))) out.push(`${id}: its line from ${k} is taken, and it does not say ${pl.name}`);
     }
-    if (says.length && !gone.length) out.push(`${id} says it runs on ${says.join(" + ")}, and no line of it is taken`);
+    if (!P.own && Q.runsOn?.length && !gone.length) out.push(`${id} says it runs on ${Q.runsOn.join(" + ")}, and no line of it is taken`);
+    if (gone.length) for (let f = P.parent; f; f = C.frames.get(f)?.parent) taken.add(f);
   }
+  for (const [id, f] of C.frames) if (f.runsOn?.length && !taken.has(id)) out.push(`the frame ${id} says it runs on ${f.runsOn.join(" + ")}, and no line inside it is taken`);
+  for (const f of namedOpenings(S, C)) out.push(f);
+  return out;
+}
+// Naming what a step runs on commutes with opening it (`mathematics.md`, "Refinement keeps what it does not refine", rule 1;
+// #482): each closed step of the named picture is opened, and the value a constructor made and the code names draws a line
+// to the closed step if and only if it draws one to a box inside the step opened. A line the opened step draws and the
+// closed one did not is one the closed picture should have drawn; one it takes away is one the closed picture drew too many.
+function namedOpenings(S, C) {
+  if (!S.route) return [];
+  const out = [], F = window.atlasPlan?.fine;
+  const under = (s, x) => s === x || s.startsWith(x + "/") || s.startsWith(x + "~") || s.startsWith(x + "|");
+  const closed = [...C.pills.values()].filter(X => !X.own && X.steps.length === 1 && F?.frames.has("n:" + X.steps[0]) && !S.open.steps.has(X.steps[0]));
+  for (const X of closed) {
+    const x = X.steps[0];
+    setState(withBoxes({...S, receivers: false}, "open.steps", [...S.open.steps, x]));
+    const O = M.plan(), inside = [...O.pills.values()].filter(Q => Q.steps.every(st => under(st, x)));
+    if (!inside.length || O.pills.has(X.id)) continue;
+    const named = new Set([...O.places].filter(([, p]) => p.built && p.name && !(p.at && under(p.at.replace(/^[no]:/, ""), x))).map(([k]) => k));
+    for (const k of named) {
+      const open = inside.some(Q => Q.D.has(k)), shut = X.D.has(k);
+      if (open && !shut) out.push(`opening ${x} draws a line from ${k} into it, which the closed step, named, does not draw`);
+      if (shut && !open) out.push(`opening ${x} takes the line from ${k} away, which the closed step, named, draws`);
+    }
+  }
+  setState({...S, receivers: false});
   return out;
 }
 // a set of each coordinate's boxes, drawn: each box with a chance the set draws first
