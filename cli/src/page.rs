@@ -239,11 +239,22 @@ impl From<Html> for String {
     }
 }
 
-/// What a page draws, in a line: the project, its parts, how many modules and entries.
+/// What a page draws, in a line: the project, its parts, how many modules and entries, and what its
+/// readers found and did not read.
 pub(crate) fn summary(g: &Graph) -> String {
     let parts: Vec<&str> = g.parts.iter().map(|p| p.id.as_str()).collect();
     let entries = g.nodes.iter().filter(|n| n.entry.is_some()).count();
-    format!("{} · {} · {} modules · {entries} entries", g.root, parts.join(" + "), g.stats.modules)
+    let unread = unread(g).map(|u| format!(" · {u}")).unwrap_or_default();
+    format!("{} · {} · {} modules · {entries} entries{unread}", g.root, parts.join(" + "), g.stats.modules)
+}
+
+/// The files the readers found and did not read, in a line, each folder named from the directory
+/// that holds every part.
+pub(crate) fn unread(g: &Graph) -> Option<String> {
+    let dirs: Vec<&Path> = g.parts.iter().map(|p| Path::new(p.dir.as_str())).filter(|d| !d.as_os_str().is_empty()).collect();
+    let mut top: PathBuf = dirs.first().map(|d| d.to_path_buf()).unwrap_or_else(|| PathBuf::from(&g.project_root));
+    while !dirs.iter().all(|d| d.starts_with(&top)) && top.pop() {}
+    g.stats.unread_line(&atlas_engine::tree::path_str(&top))
 }
 
 /// Open a page or an address in the browser the system names.

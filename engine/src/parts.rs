@@ -654,6 +654,9 @@ pub fn merge(name: &str, graphs: Vec<Graph>) -> Graph {
         out.stats.unresolved_calls += g.stats.unresolved_calls;
         out.stats.linked_bodies += g.stats.linked_bodies;
         out.stats.linked_library_bodies += g.stats.linked_library_bodies;
+        for (folder, n) in g.stats.unread {
+            *out.stats.unread.entry(folder).or_default() += n;
+        }
         for (call, n) in g.stats.unresolved_calls_top {
             *unresolved.entry(call).or_default() += n;
         }
