@@ -113,7 +113,7 @@ pub fn choices(g: &Graph, entry: &str) -> Option<String> {
         for item in items {
             let steps: Vec<&Step> = match item {
                 Item::Step(st) => vec![st],
-                Item::Choice { choice, members, when, within, .. } => {
+                Item::Choice { choice, members, when, by, within, .. } => {
                     found += 1;
                     let line = members.iter().filter_map(|m| m.step.site.and_then(|i| sites.get(i))).map(|s| s.line).min().unwrap_or(0);
                     lines.insert(*choice, line);
@@ -130,7 +130,7 @@ pub fn choices(g: &Graph, entry: &str) -> Option<String> {
                         let words = match when.get(*br).map(String::as_str) {
                             None | Some("") => String::new(),
                             Some("otherwise") => "  otherwise:".to_string(),
-                            Some(w) => format!("  when {w}:"),
+                            Some(w) => format!("  when {}:", picked(by, w)),
                         };
                         let effects: Vec<String> = runs.iter().map(|st| touched(st)).filter(|e| !e.is_empty()).collect();
                         out.push_str(&format!(
@@ -324,7 +324,7 @@ impl<'g> Story<'g> {
                     let site = st.site.and_then(|i| sites.get(i));
                     self.step(st, site, &occurrence(st), &next(), "", level, depth, t, above)
                 }
-                Item::Choice { choice, members, when, within, .. } => {
+                Item::Choice { choice, members, when, by, within, .. } => {
                     let members: Vec<_> = members.iter().filter(|m| shown_step(&m.step)).collect();
                     if members.is_empty() {
                         continue;
@@ -341,7 +341,7 @@ impl<'g> Story<'g> {
                             m.step.site.and_then(|i| sites.get(i)),
                             &occurrence(&m.step),
                             &format!("{k}{}", letter(m.branch)),
-                            when.get(m.branch).map_or("", String::as_str),
+                            &when.get(m.branch).map_or(String::new(), |w| picked(by, w)),
                             level,
                             depth,
                             t,
@@ -529,6 +529,16 @@ fn in_arm(text: &str, arm: &str) -> String {
         .max()
         .unwrap_or(0);
     format!("{arm}.{}", used + 1)
+}
+
+/// What decides a branch, worded: of a choice one value picks (`Item::Choice::by`), the value and the key that picks the
+/// branch (`config.activation is "gelu"`); else as the code writes it.
+fn picked(by: &str, when: &str) -> String {
+    if by.is_empty() || when.is_empty() || when == "otherwise" {
+        when.to_string()
+    } else {
+        format!("{by} is {when}")
+    }
 }
 
 /// The letters of the `i`th branch, from 0, as a spreadsheet names its columns: `a` to `z`, then

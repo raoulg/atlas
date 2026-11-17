@@ -501,6 +501,12 @@ pub struct Node {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     #[ts(type = "Array<[number, number, string]>")]
     pub whens: Vec<(u32, u32, String)>,
+    /// The value that picks the arm of a choice one value picks, as the code writes it, by the choice: the value a table is
+    /// looked up by where a call goes through the table (`ACTIVATIONS[config.activation]()`), each entry an arm `whens`
+    /// words by its key.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[ts(type = "Array<[number, string]>")]
+    pub by: Vec<(u32, String)>,
     /// The fields the conditions that decide its body's choices read of the values they read, as the code
     /// names them: `ax` of the instance for `if self.ax is None:` (#184).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]

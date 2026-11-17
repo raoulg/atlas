@@ -985,7 +985,7 @@ function routeTree() {
       // what decides each branch, in the branch's colour; a choice of one branch runs it only when that holds
       const branches = [...new Set(kids.map(k => k.branch))].sort((a, b) => a - b);
       const when = branches.map(b => [b % 8 + 1, (it.when || [])[b] || ""]);
-      return {id: `${key}~c${it.choice}`, open: true, synthetic: true, choice: true, kids, hue: h, when, paths: it.arms || [], branch, arms};
+      return {id: `${key}~c${it.choice}`, open: true, synthetic: true, choice: true, kids, hue: h, when, by: it.by || "", paths: it.arms || [], branch, arms};
     };
     for (const it of body.items) {
       if (!it.members) { const k = call(it, hue, ranBefore(n, body, before, it)); if (k) node.kids.push(Object.assign(k, {arms: []})); continue; }
@@ -1374,7 +1374,8 @@ const rawOf = (parent, arms) => {
 const build = (node, parent, caller) => {
   if (node.synthetic) {
     const fid = "n:" + node.id, one = node.when.length === 1;
-    const w = one ? node.when[0][1] : "", title = !one ? "one of" : !w ? "only sometimes" : w === "otherwise" ? "only otherwise" : `only when ${w}`;
+    // a choice one value picks the branch of (a table's entries, `Item::Choice::by`) is named by that value
+    const w = one ? node.when[0][1] : "", title = !one ? (node.by ? `one of · ${node.by}` : "one of") : !w ? "only sometimes" : w === "otherwise" ? "only otherwise" : `only when ${node.by ? `${node.by} is ` : ""}${w}`;
     frames.set(fid, {id: fid, step: null, parent, hue: node.hue, branch: node.branch, paths: node.paths, raw: rawOf(parent, node.arms), choice: true, synthetic: true, title, whens: one ? [] : node.when.filter(w => w[1]), ...(one ? {one: true} : {})});
     return node.kids.flatMap(k => build(k, fid, caller));
   }

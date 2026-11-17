@@ -3552,3 +3552,98 @@ fn applied_a_call_runs_on_a_value_or_takes_it_never_both() {
         assert_eq!(handed, 2, "{side}: each of the two settings is handed to one step");
     }
 }
+
+/// The turns pair, `turns/python` (#480): a stack of layers built from its config. The clean side writes what one turn
+/// builds where the turn runs (`for layer in (Linear(..), ACTIVATIONS[config.activation](), Dropout(..))`) and keeps the
+/// activations in a table looked up by the config; the shortcut finds the layers by their names at run time
+/// (`getattr(layers, name)(..)`).
+fn turns() -> &'static Pair {
+    static PAIR: OnceLock<Pair> = OnceLock::new();
+    PAIR.get_or_init(|| common::pair("turns/python"))
+}
+
+/// The steps of `id` that reach a class of `classes`, each by the class and the arms of the choices it runs in.
+fn reaching<'g>(g: &'g Graph, id: &str, classes: &[&str]) -> Vec<(&'g str, &'g [(u32, u32)])> {
+    g.node(id)
+        .unwrap_or_else(|| panic!("{id} is in the graph"))
+        .sites
+        .iter()
+        .filter(|s| classes.iter().any(|c| s.to.ends_with(&format!(".{c}"))))
+        .map(|s| (s.to.as_str(), s.arms.as_slice()))
+        .collect()
+}
+
+/// A loop over a literal written in place runs its members: each member is a step of the loop's body, before the loop
+/// binds it, and the loop is named by what it binds and how many members the literal holds (`body::loop_label`), as the
+/// reader computes it from the code. The shortcut's loop goes over names; what each turn builds is no step Atlas follows.
+#[test]
+fn turns_a_loop_over_a_literal_runs_its_members() {
+    let members = ["Readout", "Calibrate"];
+    let g = &turns().clean;
+    let head = g.node("turns.stack.head").unwrap();
+    let built = reaching(g, "turns.stack.head", &members);
+    assert_eq!(built.len(), members.len(), "clean: each member of the literal is a step: {:?}", head.sites);
+    let at = |pred: &dyn Fn(&atlas_engine::Site) -> bool| head.sites.iter().position(pred);
+    let loop_ = at(&|s| s.op.starts_with("for ")).expect("clean: the loop is a step");
+    assert_eq!(head.sites[loop_].op, atlas_engine::body::loop_label("layer", "in", "", Some(members.len())));
+    assert!(head.sites[..loop_].iter().filter(|s| members.iter().any(|m| s.to.ends_with(m))).count() == members.len());
+    assert!(reaching(&turns().shortcut, "turns.stack.head", &members).is_empty(), "shortcut: the layers are found by name");
+    assert!(turns().shortcut.node("turns.stack.head").unwrap().sites.iter().any(|s| s.not_followed));
+}
+
+/// A literal a comprehension's later loop goes over is what one turn of the loop before it does: that loop is the step
+/// that repeats, giving the names it binds, and each member is a step after it; no step binds the name the literal's
+/// loop binds, whose value is what the members give.
+#[test]
+fn turns_a_literal_inside_a_comprehension_is_what_one_turn_does() {
+    let g = &turns().clean;
+    let build = g.node("turns.stack.build").unwrap();
+    let loops: Vec<usize> = build.sites.iter().enumerate().filter(|(_, s)| s.op.starts_with("for ")).map(|(i, _)| i).collect();
+    let [outer] = loops.as_slice() else { panic!("clean: one loop is a step: {:?}", build.sites) };
+    let names: BTreeSet<&str> = build.sites[*outer].gives.iter().map(|h| h.name.as_str()).collect();
+    assert_eq!(names, BTreeSet::from(["width_in", "width_out"]), "clean: the loop before the literal gives its names");
+    for (to, _) in reaching(g, "turns.stack.build", &["Linear", "Dropout", "GELU"]) {
+        let i = build.sites.iter().position(|s| s.to == to).unwrap();
+        assert!(i > *outer, "clean: {to} runs in the turn, after the loop binds its names");
+    }
+    assert!(!build.sites.iter().any(|s| s.gives.iter().any(|h| h.name == "layer")), "clean: no step binds `layer`");
+}
+
+/// A call through a table looked up by a value is a choice between the table's entries: each entry's class is built in an
+/// arm of its own of one choice, the value that picks it names the choice (`Node::by`), and each arm is worded by its key.
+/// The shortcut finds the class by its name, a call Atlas cannot follow, and reaches none of them.
+#[test]
+fn turns_a_call_through_a_table_is_a_choice_between_its_entries() {
+    let activations = ["GELU", "ReLU", "Tanh"];
+    let g = &turns().clean;
+    let build = g.node("turns.stack.build").unwrap();
+    let arms: Vec<(u32, u32)> = reaching(g, "turns.stack.build", &activations).into_iter().map(|(_, a)| *a.last().unwrap()).collect();
+    assert_eq!(arms.len(), activations.len(), "clean: each entry is a step: {:?}", build.sites);
+    let choice = arms[0].0;
+    assert!(arms.iter().all(|(c, _)| *c == choice), "clean: one choice holds every entry: {arms:?}");
+    assert_eq!(arms.iter().map(|(_, a)| *a).collect::<BTreeSet<_>>().len(), activations.len(), "clean: each entry in its own arm");
+    assert_eq!(build.by, vec![(choice, "config.activation".to_string())], "clean: the value looked up by picks the arm");
+    let keys: BTreeSet<&str> = build.whens.iter().filter(|w| w.0 == choice).map(|w| w.2.as_str()).collect();
+    assert_eq!(keys, BTreeSet::from(["\"gelu\"", "\"relu\"", "\"tanh\""]), "clean: each arm under its key");
+    assert!(reaching(&turns().shortcut, "turns.stack.build", &activations).is_empty(), "shortcut: the class is found by name");
+    assert!(turns().shortcut.node("turns.stack.build").unwrap().sites.iter().any(|s| s.not_followed));
+}
+
+/// Isomorphic is the same: a call through a table (`by_table`) and a `match` on the table's key with a case per entry
+/// (`by_cases`) are one choice, the same classes built in the same arms under the same words.
+#[test]
+fn turns_a_table_and_a_match_on_its_key_are_one_choice() {
+    let g = &turns().clean;
+    let arms = |id: &str| -> BTreeSet<(String, String)> {
+        let n = g.node(id).unwrap();
+        reaching(g, id, &["GELU", "ReLU", "Tanh"])
+            .into_iter()
+            .map(|(to, a)| {
+                let (c, arm) = *a.last().unwrap();
+                (to.to_string(), n.whens.iter().find(|w| w.0 == c && w.1 == arm).map(|w| w.2.clone()).unwrap_or_default())
+            })
+            .collect()
+    };
+    assert_eq!(arms("turns.stack.by_table"), arms("turns.stack.by_cases"));
+    assert_eq!(arms("turns.stack.by_table").len(), 3);
+}

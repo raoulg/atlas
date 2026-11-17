@@ -12,7 +12,7 @@ use super::module::{
     written, Module, Own, WRAPPERS,
 };
 use super::paths::{self, At, Built, Eval};
-use crate::body::{changed_binding, changed_through, BindSyntax, Crosses, Kept, Lookups, Range, Step, Steps, UseSyntax};
+use crate::body::{changed_binding, changed_through, loop_label, BindSyntax, Crosses, Kept, Lookups, Range, Step, Steps, UseSyntax};
 use crate::builder::{foreign_type, GraphBuilder};
 use crate::effects::{self, Crossing};
 use crate::knowledge::{self, OwnTypes};
@@ -229,6 +229,40 @@ fn projections_through<'t>(v: TsNode<'t>, looked: Lookups<'_, 't>) -> Vec<Option
         }
         _ => vec![None],
     }
+}
+
+/// The members of a literal a loop goes over as written (`(a, b)`, `[a, b]`, `{a, b}`), where none is unpacked into it.
+fn literal_members(n: TsNode) -> Option<Vec<TsNode>> {
+    if !matches!(n.kind(), "tuple" | "list" | "set") {
+        return None;
+    }
+    let members: Vec<TsNode> = named_children(n).into_iter().filter(|m| m.kind() != "comment").collect();
+    (!members.iter().any(|m| matches!(m.kind(), "list_splat" | "parenthesized_list_splat"))).then_some(members)
+}
+
+/// The loops of the comprehension a clause stands in (`for_in_clause`), in the order written.
+fn clauses(l: TsNode) -> Vec<TsNode> {
+    parent(l).map(|q| named_children(q).into_iter().filter(|c| c.kind() == "for_in_clause").collect()).unwrap_or_default()
+}
+
+/// Whether a comprehension's loop goes over a literal written in place with a loop of the comprehension before it
+/// (`[layer for a, b in pairwise(ws) for layer in (Linear(a, b), Dropout(p))]`): one turn of that loop runs the members.
+fn inner_literal(l: TsNode) -> bool {
+    l.kind() == "for_in_clause"
+        && l.child_by_field_name("right").is_some_and(|r| literal_members(r).is_some())
+        && clauses(l).first().is_some_and(|c| c.id() != l.id())
+}
+
+/// Whether `x` is a name a literal one turn goes over binds (`inner_literal`), where the clause binds it or where it is read.
+fn literal_name(x: TsNode, src: &[u8]) -> bool {
+    let mut up = x;
+    while let Some(p) = parent(up).filter(|p| matches!(p.kind(), "pattern_list" | "tuple_pattern" | "list_pattern" | "for_in_clause")) {
+        if p.kind() == "for_in_clause" {
+            return inner_literal(p) && p.child_by_field_name("left").is_some_and(|l| l.id() == up.id());
+        }
+        up = p;
+    }
+    looped_by(x, text(x, src), src).and_then(parent).is_some_and(inner_literal)
 }
 
 /// What the loop around `at` that binds `name` goes over (`for s, t in rows`): its element is a part of
@@ -866,6 +900,12 @@ impl<'a> Seen<'a> {
         let element: Vec<String> = over.map(|v| self.drawn(v, ext)).unwrap_or_default();
         // what it goes over is of a known type that holds none Atlas draws (a `list[str]`): its elements are no values it draws
         let undrawn = element.is_empty() && over.is_some_and(|v| v.shown != "Unknown");
+        // a literal a turn of the comprehension's loop before it goes over is what that turn does: its members are the steps,
+        // and that loop is the loop, which gives its names whatever they hold
+        if inner_literal(l) {
+            return (vec![], vec![]);
+        }
+        let turns = l.kind() == "for_in_clause" && clauses(l).iter().any(|c| c.start_byte() > l.start_byte() && inner_literal(*c));
         let one = names.len() == 1;
         let gives: Vec<Held> = names
             .into_iter()
@@ -875,6 +915,8 @@ impl<'a> Seen<'a> {
                     named
                 } else if one && !element.is_empty() {
                     element.iter().map(|t| Held::new(t.clone(), text(n, src))).collect()
+                } else if turns {
+                    vec![Held::new(String::new(), text(n, src))]
                 } else if undrawn {
                     vec![]
                 } else {
@@ -935,7 +977,8 @@ impl<'a> Seen<'a> {
                 continue;
             }
             // a name, not the attribute a projection reads (`.width`) or the keyword an argument is handed by
-            if x.kind() == "identifier" && !(USES.label)(x, src) && !lambda_binds(x, e, src) {
+            // a name a literal one turn goes over binds holds what the members give, each a step of its own
+            if x.kind() == "identifier" && !(USES.label)(x, src) && !lambda_binds(x, e, src) && !literal_name(x, src) {
                 names.extend(self.projected(x, made, !changed));
             }
             stack.extend(named_children(x).into_iter().rev());
@@ -1597,7 +1640,7 @@ impl<'a, 't> Body<'a, 't> {
         let (hands, mut gives) = self.seen.each(l, self.ext, &steps.kept);
         self.read.new_ext.extend(hands.iter().chain(&gives).map(|h| h.ty.clone()).filter(|t| ext::is(t)));
         // the step stands where what it goes over is written: a call there hands it what it gives, the loop's body does not
-        let label = format!("for {} in {}", text(left, self.src), text(right, self.src));
+        let label = loop_label(text(left, self.src), "in", text(right, self.src), literal_members(right).map(|m| m.len()));
         // a loop over the command line keeps each word under the name it binds: it parses the command line
         if self.words_read().iter().any(|w| w.id() == right.id()) {
             let names = if left.kind() == "identifier" { vec![left] } else { walk(left, &["identifier"]) };
@@ -1706,6 +1749,9 @@ impl<'a, 't> Body<'a, 't> {
         };
         let hands = self.hands(c, receiver, &steps.kept);
         let assigned = kept_as(c, self.src).unwrap_or_default();
+        if self.through_table(steps, c, &hands, &assigned) {
+            return;
+        }
         // a lookup is the projection of its collection a subscript is, and gives the body no value of a step's
         let looked = self.seen.lookup(c);
         if let Some(l) = &looked {
@@ -1819,6 +1865,81 @@ impl<'a, 't> Body<'a, 't> {
                 self.library(steps, c, fnode, None);
             }
         }
+    }
+
+    /// A call through a table of the module's own looked up by a value (`ACTIVATIONS[config.activation]()`, with
+    /// `ACTIVATIONS = {"gelu": nn.GELU, ..}` at the top of the module): a choice between the table's entries, the value
+    /// deciding which, as a `match` on it with a case for each key is. Each entry is called in an arm of its own, as a call
+    /// written by its name is. A key written in place (`ACTIVATIONS["gelu"]()`) picks one entry and is no choice; a table
+    /// of what is no name (`{"a": make()}`) holds values, no entries to call.
+    fn through_table(&mut self, steps: &mut Steps<'t, '_>, c: TsNode<'t>, hands: &[Held], assigned: &str) -> bool {
+        let src = self.src;
+        let Some(f) = c.child_by_field_name("function").filter(|f| f.kind() == "subscript") else { return false };
+        let keys = field_children(f, "subscript");
+        let (Some(table), [key]) = (f.child_by_field_name("value"), keys.as_slice()) else { return false };
+        let written = matches!(key.kind(), "string" | "concatenated_string" | "integer" | "float" | "true" | "false" | "none" | "slice");
+        if table.kind() != "identifier" || written {
+            return false;
+        }
+        let name = text(table, src);
+        // the name is the module's own binding, not an import, a parameter or a local
+        let top = |a: &TsNode| parent(*a).and_then(parent).is_some_and(|m| m.kind() == "module");
+        if self.m.bindings.contains_key(name) || self.own_params.iter().any(|p| p == name) || !reaching(table, name, src).iter().all(top) {
+            return false;
+        }
+        let Some(dict) = top_assignments(self.m)
+            .into_iter()
+            .filter(|a| a.child_by_field_name("left").is_some_and(|l| l.kind() == "identifier" && text(l, src) == name))
+            .last()
+            .and_then(|a| a.child_by_field_name("right"))
+            .filter(|r| r.kind() == "dictionary")
+        else {
+            return false;
+        };
+        let written: Vec<TsNode> = named_children(dict).into_iter().filter(|p| p.kind() != "comment").collect();
+        let pairs: Vec<(TsNode, TsNode)> = written
+            .iter()
+            .filter_map(|p| p.child_by_field_name("key").zip(p.child_by_field_name("value")).filter(|_| p.kind() == "pair"))
+            .collect();
+        if pairs.is_empty() || pairs.len() != written.len() || !pairs.iter().all(|(_, v)| matches!(v.kind(), "identifier" | "attribute")) {
+            return false;
+        }
+        let choice = steps.table(text(*key, src), pairs.iter().map(|(k, _)| text(*k, src).to_string()).collect());
+        for (i, (_, v)) in pairs.iter().enumerate() {
+            steps.entry(Some((choice, i as u32)));
+            let named = || if assigned.is_empty() { vec![] } else { vec![Held::new(String::new(), assigned)] };
+            match self.seen.callee(*v) {
+                Some(Callee::Def(t)) => {
+                    let (kind, gives) = match self.seen.is_class(&t) {
+                        true => (EdgeKind::Instantiates, vec![Held::new(t.clone(), assigned)]),
+                        false => (EdgeKind::Calls, named()),
+                    };
+                    steps.call(c, &t, kind, None, Step { hands: hands.to_vec(), gives, ..Default::default() });
+                }
+                _ => {
+                    // what the entry builds: the class of its name among those ty finds the call to give
+                    let op = dotted(Some(*v), src).last().cloned().unwrap_or_default();
+                    let built: Vec<String> = self
+                        .seen
+                        .value(c)
+                        .filter(|x| !x.is_class && !x.is_code)
+                        .map(|x| {
+                            let of = x.classes.iter().zip(&x.names).filter(|(_, n)| **n == op);
+                            let (classes, names) = of.map(|(t, n)| (t.clone(), n.clone())).unzip();
+                            self.seen.drawn(&Value { shown: String::new(), classes, names, is_class: false, is_code: false }, self.ext)
+                        })
+                        .unwrap_or_default();
+                    let gives: Vec<Held> = match built.is_empty() {
+                        true => named(),
+                        false => built.into_iter().map(|ty| Held::new(ty, assigned)).collect(),
+                    };
+                    self.read.new_ext.extend(gives.iter().map(|h| h.ty.clone()).filter(|t| ext::is(t)));
+                    steps.op(c, &op, hands.to_vec(), gives);
+                }
+            }
+        }
+        steps.entry(None);
+        true
     }
 
     /// A call of the program's own function or class; a method called on a subclass's value is

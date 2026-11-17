@@ -2106,7 +2106,10 @@ impl<'a, 't> Body<'a, 't> {
             })
             .collect();
         // the step stands where what it goes over is written: a call there hands it what it gives, the loop's body does not
-        steps.each(value, &format!("for {} in {}", text(pat, self.src), text(value, self.src)), hands, gives);
+        // an array written in place (`[a, b]`, `&[a, b]`) is named by what the loop binds and how many it holds
+        let array = Some(beneath_reference(value)).filter(|a| a.kind() == "array_expression" && a.child_by_field_name("length").is_none());
+        let members = array.map(|a| named_children(a).into_iter().filter(|e| !e.kind().ends_with("comment")).count());
+        steps.each(value, &crate::body::loop_label(text(pat, self.src), "in", text(value, self.src), members), hands, gives);
     }
 
     /// What a call gives back, by the name the body keeps it by: the type the local is declared
@@ -3385,3 +3388,11 @@ fn matched<'t>(n: TsNode<'t>, src: &[u8]) -> Option<(String, Vec<TsNode<'t>>, Op
 /// Rust's own types: std, core and alloc, the containers and wrappers, and the associated types
 /// a trait names (`Self::Target`, `S::Ok`).
 pub(super) const OWN: OwnTypes = knowledge::RUST_OWN_TYPES;
+
+/// What a reference is taken of (`[a, b]` of `&[a, b]`), else the expression itself.
+fn beneath_reference(e: TsNode) -> TsNode {
+    match e.kind() {
+        "reference_expression" => e.child_by_field_name("value").map_or(e, beneath_reference),
+        _ => e,
+    }
+}
