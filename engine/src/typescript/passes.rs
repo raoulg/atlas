@@ -24,7 +24,7 @@ use crate::tree::{beneath, named_children, span, text, unquote, walk};
 use path_clean::clean;
 
 /// The file an import specifier names: relative to the importing file, or through a path alias.
-fn resolve_spec(spec: &str, from: &Path, aliases: &[(String, PathBuf)], files: &HashMap<PathBuf, String>) -> Option<String> {
+pub(super) fn resolve_spec(spec: &str, from: &Path, aliases: &[(String, PathBuf)], files: &HashMap<PathBuf, String>) -> Option<String> {
     let base = if spec.starts_with('.') {
         from.parent()?.join(spec)
     } else {

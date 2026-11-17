@@ -1706,9 +1706,31 @@ pub struct Stats {
     /// Of those, the bodies of the libraries' code.
     #[serde(default)]
     pub linked_library_bodies: usize,
+    /// The files of the part's language that its reader found and did not read, by the folder each
+    /// lies in (its path, as `files` names a file), with how many: what the picture does not show.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub unread: BTreeMap<String, usize>,
 }
 
 impl Stats {
+    /// What was not read, in a line, each folder named from `root` (`3 files not read: functions/ 2,
+    /// legacy/ 1`); None when every file was read.
+    pub fn unread_line(&self, root: &str) -> Option<String> {
+        let total: usize = self.unread.values().sum();
+        if total == 0 {
+            return None;
+        }
+        let mut folders: Vec<(&String, &usize)> = self.unread.iter().collect();
+        folders.sort_by(|a, b| b.1.cmp(a.1).then(a.0.cmp(b.0)));
+        let named = |f: &str| {
+            let rel = f.strip_prefix(root).map_or(f, |r| r.trim_start_matches('/'));
+            format!("{}/", if rel.is_empty() { "." } else { rel })
+        };
+        let shown: Vec<String> = folders.iter().take(5).map(|(f, n)| format!("{} {n}", named(f))).collect();
+        let more = if folders.len() > 5 { ", …" } else { "" };
+        Some(format!("{total} file{} not read: {}{more}", if total == 1 { "" } else { "s" }, shown.join(", ")))
+    }
+
     /// The share of the calls not followed that the engine should have followed.
     pub fn unknown_share(&self) -> f64 {
         if self.unresolved_calls_total == 0 {

@@ -12,13 +12,14 @@
 //! (`passes.rs`); the libraries' code, read with those passes (`libraries.rs`); and here, on top,
 //! the package and the order the passes run in.
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
 use indexmap::IndexMap;
 
 mod body;
+mod compiled;
 mod libraries;
 mod module;
 mod passes;
@@ -26,7 +27,7 @@ mod paths;
 
 use crate::builder::GraphBuilder;
 use crate::knowledge;
-use crate::model::{Node, NodeKind};
+use crate::model::{EntryKind, Node, NodeKind};
 use crate::repo::Repo;
 use crate::tree::span;
 use path_clean::clean;
@@ -62,62 +63,6 @@ pub(crate) fn code_base(repo: &Repo) -> PathBuf {
     } else {
         repo.root().to_path_buf()
     }
-}
-
-/// tsconfig `paths`: alias prefix -> directory, `"@/*": ["./src/*"]` -> (`@/`, `<repo>/src/`).
-fn path_aliases(repo: &Repo) -> Vec<(String, PathBuf)> {
-    let mut out = vec![];
-    for cfg in ["tsconfig.json", "jsconfig.json"] {
-        let Some(text) = repo.text(cfg) else { continue };
-        let Ok(json) = serde_json::from_str::<serde_json::Value>(&jsonc(&text)) else { continue };
-        let opts = &json["compilerOptions"];
-        let base = repo.root().join(opts["baseUrl"].as_str().unwrap_or("."));
-        if let Some(paths) = opts["paths"].as_object() {
-            for (alias, targets) in paths {
-                let Some(first) = targets.as_array().and_then(|t| t.first()).and_then(|t| t.as_str()) else { continue };
-                out.push((alias.trim_end_matches('*').to_string(), base.join(first.trim_end_matches('*'))));
-            }
-        }
-    }
-    out
-}
-
-/// JSON with comments and trailing commas, as tsconfig allows, made plain JSON. Comments are
-/// recognised outside strings only: `"@/*"` is a path, not the start of one.
-fn jsonc(text: &str) -> String {
-    let mut out = String::with_capacity(text.len());
-    let mut chars = text.chars().peekable();
-    let mut in_string = false;
-    while let Some(c) = chars.next() {
-        if in_string {
-            out.push(c);
-            match c {
-                '\\' => out.extend(chars.next()),
-                '"' => in_string = false,
-                _ => {}
-            }
-            continue;
-        }
-        match (c, chars.peek()) {
-            ('"', _) => {
-                in_string = true;
-                out.push(c);
-            }
-            ('/', Some('/')) => while chars.next_if(|&n| n != '\n').is_some() {},
-            ('/', Some('*')) => {
-                chars.next();
-                let mut prev = ' ';
-                for n in chars.by_ref() {
-                    if prev == '*' && n == '/' {
-                        break;
-                    }
-                    prev = n;
-                }
-            }
-            _ => out.push(c),
-        }
-    }
-    regex::Regex::new(r",(\s*[}\]])").unwrap().replace_all(&out, "$1").to_string()
 }
 
 /// What a reading of the package at `repo` takes from its dependency directories: its own
@@ -159,24 +104,145 @@ pub fn library_code(repo: &Repo, env: &mut crate::environment::Environment, from
     libraries::library_code(repo, env, from, name)
 }
 
+/// What a reading of the package reads. With a config, the files the compiler reads
+/// (`compiled.rs`); without one, every file under the code base. Besides these, the files the
+/// manifest runs (`bin`, a file a script runs: `tsx scripts/summarize.ts`) and the tests the runners
+/// find, and, closed under imports as the compiler reads them, every file a file read imports. Never
+/// what a tool made, nor a package beside the code base, which is a part of its own
+/// (`Language::reads`).
+struct Reading {
+    /// Each file read, with its text and its tree, in path order.
+    parsed: BTreeMap<PathBuf, (Vec<u8>, tree_sitter::Tree)>,
+    /// The files read as programs: those the config compiles or the manifest runs, but no test and
+    /// no file read only because another imports it.
+    programs: Vec<PathBuf>,
+    /// The files of the package found and not read, by the folder they lie in (`Stats::unread`).
+    unread: BTreeMap<String, usize>,
+}
+
+impl Reading {
+    fn of(
+        repo: &Repo,
+        name: &str,
+        base: &Path,
+        aliases: &[(String, PathBuf)],
+        ts: &mut tree_sitter::Parser,
+        tsx: &mut tree_sitter::Parser,
+    ) -> Result<Reading> {
+        let top = repo.root();
+        let rel = |p: &Path| p.strip_prefix(top).unwrap_or(p).to_path_buf();
+        let named = |p: &Path, any: &dyn Fn(&str) -> bool| rel(p).components().any(|c| any(c.as_os_str().to_str().unwrap_or("")));
+        // a manifest beside the code base roots a part of its own, as `parts::roots` finds it
+        // (asked of the folders that hold code only, so that a reading rests on no other folder)
+        let mut own: HashMap<PathBuf, bool> = HashMap::new();
+        let mut in_own = |p: &Path| {
+            p.ancestors().skip(1).take_while(|d| *d != top && !d.starts_with(base)).any(|d| {
+                *own.entry(d.to_path_buf()).or_insert_with(|| {
+                    repo.is_file(d.join("package.json"))
+                        && !named(d, &|n| n.starts_with('.') || knowledge::made_dir(n) || knowledge::TEST_DIRS.contains(&n))
+                })
+            })
+        };
+        let found: Vec<PathBuf> = repo
+            .files_under(top, EXTENSIONS)
+            .into_iter()
+            .filter(|p| is_code(p) && !named(p, &knowledge::made_dir))
+            .filter(|p| !in_own(p))
+            .map(|p| clean(&p))
+            .collect();
+        let compiled = compiled::Compiled::of(repo);
+        let declared = |p: &Path| match &compiled {
+            Some(c) => c.reads(&rel(p)),
+            None => p.starts_with(base),
+        };
+        let run = runs(repo);
+        let test = |p: &Path| knowledge::JS_TESTS.test_file(&rel(p));
+        let programs: Vec<PathBuf> = found
+            .iter()
+            .filter(|p| (declared(p) || run.contains(*p)) && !test(p) && !knowledge::JS_TESTS.collects_from(&rel(p)))
+            .cloned()
+            .collect();
+        // the files an import can name, by their place in `found`
+        let known: HashMap<PathBuf, String> = found.iter().enumerate().map(|(i, p)| (p.clone(), i.to_string())).collect();
+        let mut todo: Vec<PathBuf> = found.iter().filter(|p| declared(p) || run.contains(*p) || test(p)).cloned().collect();
+        let mut parsed = BTreeMap::new();
+        while let Some(p) = todo.pop() {
+            if parsed.contains_key(&p) {
+                continue;
+            }
+            let _parse = crate::clock::of("parse", name, false);
+            let src = repo.bytes(&p).with_context(|| format!("reading {}", p.display()))?.to_vec();
+            let jsx = matches!(p.extension().and_then(|e| e.to_str()), Some("tsx" | "jsx" | "js" | "mjs" | "cjs"));
+            let tree = (if jsx { &mut *tsx } else { &mut *ts }).parse(&src, None).with_context(|| format!("parsing {}", p.display()))?;
+            for spec in specifiers(&tree, &src) {
+                if let Some(i) = passes::resolve_spec(&spec, &p, aliases, &known).and_then(|i| i.parse::<usize>().ok()) {
+                    todo.push(found[i].clone());
+                }
+            }
+            parsed.insert(p, (src, tree));
+        }
+        let mut unread: BTreeMap<String, usize> = BTreeMap::new();
+        for p in found.iter().filter(|p| !parsed.contains_key(*p)) {
+            let r = rel(p);
+            let folder = match (r.components().next(), r.components().count() > 1) {
+                (Some(first), true) => top.join(first),
+                _ => top.to_path_buf(),
+            };
+            *unread.entry(crate::tree::path_str(&folder)).or_default() += 1;
+        }
+        let programs = programs.into_iter().filter(|p| parsed.contains_key(p)).collect();
+        Ok(Reading { parsed, programs, unread })
+    }
+}
+
+/// The files of the package its manifest runs: what `bin` names, and a file a script's command
+/// names (`tsx scripts/summarize.ts`).
+fn runs(repo: &Repo) -> HashSet<PathBuf> {
+    let json = repo.text("package.json").and_then(|t| serde_json::from_str::<serde_json::Value>(&t).ok()).unwrap_or_default();
+    let mut words: Vec<String> = match &json["bin"] {
+        serde_json::Value::String(p) => vec![p.clone()],
+        serde_json::Value::Object(o) => o.values().filter_map(|v| v.as_str().map(str::to_string)).collect(),
+        _ => vec![],
+    };
+    for cmd in json["scripts"].as_object().into_iter().flatten().filter_map(|(_, c)| c.as_str()) {
+        words.extend(cmd.split_whitespace().map(|w| w.trim_matches(['"', '\'']).to_string()));
+    }
+    words
+        .iter()
+        .map(|w| clean(repo.root().join(w)))
+        .filter(|p| p.extension().and_then(|e| e.to_str()).is_some_and(|e| EXTENSIONS.contains(&e)) && repo.is_file(p))
+        .collect()
+}
+
+/// What a module imports, as written: the source of each `import` and `export .. from`, and what
+/// `import()` and `require()` are handed.
+fn specifiers(tree: &tree_sitter::Tree, src: &[u8]) -> Vec<String> {
+    use crate::tree::{named_children, text, unquote, walk};
+    let root = tree.root_node();
+    let mut out: Vec<String> =
+        named_children(root).into_iter().filter_map(|s| s.child_by_field_name("source")).map(|s| unquote(text(s, src))).collect();
+    for c in walk(root, &["call_expression"]) {
+        let Some(f) = c.child_by_field_name("function") else { continue };
+        if f.kind() == "import" || (f.kind() == "identifier" && text(f, src) == "require") {
+            let arg = c.child_by_field_name("arguments").and_then(|a| named_children(a).into_iter().find(|a| a.kind() == "string"));
+            out.extend(arg.map(|a| unquote(text(a, src))));
+        }
+    }
+    out
+}
+
 pub fn parse(repo: &Repo, opts: &crate::Options) -> Result<(GraphBuilder, String)> {
     let root = root_name(repo);
     let base = code_base(repo);
-    let aliases = path_aliases(repo);
+    let aliases = compiled::path_aliases(repo);
     let mut store = GraphBuilder::default();
-    // not under what a tool made
-    let made = |p: &Path, from: &Path| {
-        p.strip_prefix(from).map_or(false, |r| r.components().any(|c| knowledge::made_dir(c.as_os_str().to_str().unwrap_or(""))))
-    };
-    let mut paths: Vec<PathBuf> =
-        repo.files_under(&base, EXTENSIONS).into_iter().filter(|p| is_code(p) && !made(p, &base)).map(|p| clean(&p)).collect();
-    // the tests the runners find beside the code (a `tests/` beside `src/`), named from the package's root
+    let (mut ts, mut tsx) = (ts_parser(false)?, ts_parser(true)?);
+    let reading = Reading::of(repo, &root, &base, &aliases, &mut ts, &mut tsx)?;
+    store.unread = reading.unread;
+    let mut parsed = reading.parsed;
+    let paths: Vec<PathBuf> = parsed.keys().cloned().collect();
+    // a file beside the code base (`scripts/` beside `src/`) is named from the package's root
     let beside = |p: &Path| !p.starts_with(&base);
-    if base != repo.root() {
-        let tests = repo.files_under(repo.root(), EXTENSIONS).into_iter().filter(|p| beside(p) && is_code(p) && !made(p, repo.root()));
-        paths.extend(tests.filter(|p| p.strip_prefix(repo.root()).is_ok_and(|r| knowledge::JS_TESTS.test_file(r))).map(|p| clean(&p)));
-    }
-    paths.sort();
     let from = |p: &Path| if beside(p) { repo.root().to_path_buf() } else { base.clone() };
     let files: HashMap<PathBuf, String> = paths.iter().map(|p| (p.clone(), module_id(&root, &from(p), p))).collect();
     // every directory is a package module, so the module quotient follows the folders; a directory the
@@ -205,13 +271,9 @@ pub fn parse(repo: &Repo, opts: &crate::Options) -> Result<(GraphBuilder, String
         });
     }
     let mut modules: IndexMap<String, Module> = IndexMap::new();
-    let (mut ts, mut tsx) = (ts_parser(false)?, ts_parser(true)?);
     for p in &paths {
         let id = files[p].clone();
-        let _parse = crate::clock::of("parse", id.split('.').next().unwrap_or(&id), false);
-        let src = repo.bytes(p).with_context(|| format!("reading {}", p.display()))?.to_vec();
-        let jsx = matches!(p.extension().and_then(|e| e.to_str()), Some("tsx" | "jsx" | "js" | "mjs" | "cjs"));
-        let tree = (if jsx { &mut tsx } else { &mut ts }).parse(&src, None).with_context(|| format!("parsing {}", p.display()))?;
+        let (src, tree) = parsed.remove(p).expect("every path read is parsed");
         store.files.insert(crate::tree::path_str(p), String::from_utf8_lossy(&src).to_string());
         let is_index = p.file_stem().and_then(|s| s.to_str()) == Some("index");
         let node = Node {
@@ -246,6 +308,13 @@ pub fn parse(repo: &Repo, opts: &crate::Options) -> Result<(GraphBuilder, String
     }
     route_prefixes(&modules, &mut store);
     mark_bins(repo, &files, &mut store);
+    // a file beside the code base that is run as a program, as a Python script beside its package is:
+    // entered at its top level, by the path it is run from, where the package's manifest names no command for it
+    for p in reading.programs.iter().filter(|p| beside(p)) {
+        if let Some(n) = files.get(p).and_then(|id| store.nodes.get_mut(id)).filter(|n| n.entry.is_none()) {
+            n.entry = Some(crate::model::Entry::new(EntryKind::Script, crate::tree::path_str(p.strip_prefix(repo.root()).unwrap_or(p))));
+        }
+    }
     mark_exports(repo, &files, &modules, &mut store);
     drop(items);
     link(&modules, &mut store, repo.root());

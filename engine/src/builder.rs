@@ -121,6 +121,9 @@ pub struct GraphBuilder {
     pub linked: [usize; 2],
     /// The libraries read as code, by the id of each one's root.
     pub libraries: BTreeMap<String, crate::model::Dependency>,
+    /// The files of the language the reader found in the part and did not read, by the folder each
+    /// lies in (`Stats::unread`).
+    pub unread: BTreeMap<String, usize>,
 }
 
 impl GraphBuilder {
@@ -419,6 +422,7 @@ impl GraphBuilder {
                 unresolved_calls: self.unresolved_by,
                 linked_bodies: self.linked.iter().sum(),
                 linked_library_bodies: self.linked[1],
+                unread: self.unread,
                 ..Default::default()
             },
             ..Default::default()

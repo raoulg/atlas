@@ -530,6 +530,14 @@ fn main() -> ExitCode {
     }
 }
 
+/// The graph `atlas-code analyze` writes: of the package named, else of every part of the repository.
+fn analyzed(repo: &Path, package: Option<PathBuf>, opts: Options) -> Result<Graph> {
+    match package {
+        Some(p) => atlas_engine::analyze(repo, &Options { package: Some(p), ..opts }),
+        None => parts::analyze_repo(&[repo.to_path_buf()], &opts),
+    }
+}
+
 /// The command, and 1 for `atlas-code check` with something to ask. It returns once what it holds is
 /// dropped, the temporary clone of a git URL among it, so that is removed whatever the status.
 fn run(cli: Cli) -> Result<ExitCode> {
@@ -618,10 +626,7 @@ fn run(cli: Cli) -> Result<ExitCode> {
         Cmd::Analyze { repo, package, out } => {
             let (repo, clone) = local(repo, &mut opts)?;
             let out = out.unwrap_or_else(|| home::made(clone.is_none().then_some(repo.as_path()), "graph.json"));
-            let g = match package {
-                Some(p) => atlas_engine::analyze(&repo, &Options { package: Some(p), ..opts })?,
-                None => parts::analyze_repo(&[repo.clone()], &opts)?,
-            };
+            let g = analyzed(&repo, package, opts)?;
             if let Some(dir) = out.parent() {
                 std::fs::create_dir_all(dir)?;
             }
@@ -643,6 +648,9 @@ fn run(cli: Cli) -> Result<ExitCode> {
                 100.0 * s.unknown_share()
             );
             eprintln!("entries {} · make targets {}", g.nodes.iter().filter(|n| n.entry.is_some()).count(), g.make.len());
+            if let Some(unread) = page::unread(&g) {
+                eprintln!("{unread}");
+            }
             eprintln!("wrote {}", out.display());
         }
     }

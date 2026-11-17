@@ -1,7 +1,7 @@
 //! TypeScript and TSX read as the same algebra as Python and Rust: modules, types, calls,
 //! routes and the places a body touches.
 
-use std::collections::{BTreeSet, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::path::PathBuf;
 
 use atlas_engine::principles::check;
@@ -253,6 +253,108 @@ fn a_typescript_body_lists_its_calls() {
     let toon = scherm.sites.iter().find(|s| s.to.ends_with("Laag.toon")).expect("laag.toon()");
     assert!(toon.hands.iter().any(|h| h.name == "laag"), "{:#?}", toon);
     assert!(scherm.sites.iter().position(|s| s.to.ends_with("model.Laag")) < scherm.sites.iter().position(|s| s.to.ends_with("Laag.toon")));
+}
+
+/// The files a reading reads are the files the compiler reads, as the TypeScript handbook defines the
+/// tsconfig (#472): `files` by name, `include` by pattern (`**/*` when neither is given, a directory for
+/// everything below it), less `exclude` (`outDir` among the defaults), each inherited along `extends`,
+/// `references` adding their projects, and closed under imports, since the compiler reads what a file
+/// it reads imports. Besides these, a file the manifest runs and a test the runner finds; without a
+/// config, the code under `src/`. Every file of the language found is read or counted as not read,
+/// by its folder, and never both. Each expected set is written from the handbook, never from Atlas.
+#[test]
+fn the_files_read_are_the_files_the_compiler_reads() {
+    const CODE: &[(&str, &str)] = &[
+        ("src/lib/x.ts", "export function x(): number {\n  return 1;\n}\n"),
+        ("src/legacy/old.ts", "export function old(): number {\n  return 0;\n}\n"),
+        ("scripts/main.ts", "import { x } from \"../src/lib/x.js\";\n\nconsole.log(x());\n"),
+        ("scripts/tool.ts", "console.log(\"tool\");\n"),
+        ("functions/api/hello.ts", "export function onRequest(): Response {\n  return new Response(\"hi\");\n}\n"),
+        ("tests/x.test.ts", "import { x } from \"../src/lib/x\";\n\ntest(\"x\", () => x());\n"),
+        ("compiled/gen.js", "export const gen = 1;\n"),
+    ];
+    const PLAIN: &str = r#"{ "name": "law" }"#;
+    let cases: &[(&str, &[(&str, &str)], &[&str])] = &[
+        ("default", &[("tsconfig.json", "{}")], &["src/lib/x.ts", "src/legacy/old.ts", "scripts/main.ts", "scripts/tool.ts", "functions/api/hello.ts", "tests/x.test.ts", "compiled/gen.js"]),
+        (
+            "outdir",
+            &[("tsconfig.json", r#"{ "compilerOptions": { "outDir": "compiled" } }"#)],
+            &["src/lib/x.ts", "src/legacy/old.ts", "scripts/main.ts", "scripts/tool.ts", "functions/api/hello.ts", "tests/x.test.ts"],
+        ),
+        ("include", &[("tsconfig.json", r#"{ "include": ["src"], "exclude": ["src/legacy"] }"#)], &["src/lib/x.ts", "tests/x.test.ts"]),
+        ("files", &[("tsconfig.json", r#"{ "files": ["scripts/main.ts"] }"#)], &["scripts/main.ts", "src/lib/x.ts", "tests/x.test.ts"]),
+        (
+            "extends",
+            &[
+                ("tsconfig.base.json", r#"{ "include": ["scripts"] }"#),
+                ("tsconfig.json", "{\n  // the base names what is compiled\n  \"extends\": \"./tsconfig.base\",\n  \"exclude\": [\"scripts/tool.ts\"],\n}\n"),
+            ],
+            &["scripts/main.ts", "src/lib/x.ts", "tests/x.test.ts"],
+        ),
+        (
+            "references",
+            &[
+                ("tsconfig.json", r#"{ "files": [], "references": [{ "path": "./tsconfig.app.json" }] }"#),
+                ("tsconfig.app.json", r#"{ "include": ["functions/**/*.ts"] }"#),
+            ],
+            &["functions/api/hello.ts", "tests/x.test.ts", "src/lib/x.ts"],
+        ),
+        (
+            "runs",
+            &[
+                ("tsconfig.json", r#"{ "include": ["src/lib"] }"#),
+                ("package.json", r#"{ "name": "law", "scripts": { "tool": "tsx scripts/tool.ts" } }"#),
+            ],
+            &["src/lib/x.ts", "scripts/tool.ts", "tests/x.test.ts"],
+        ),
+        ("none", &[], &["src/lib/x.ts", "src/legacy/old.ts", "tests/x.test.ts"]),
+    ];
+    for (name, config, want) in cases {
+        let mut files: Vec<(&str, &str)> = CODE.to_vec();
+        if !config.iter().any(|(p, _)| *p == "package.json") {
+            files.push(("package.json", PLAIN));
+        }
+        files.extend(config.iter().copied());
+        let g = written(&format!("compiled-{name}"), &files);
+        let at = format!("atlas-compiled-{name}-{}/", std::process::id());
+        let rel = |f: &str| f.split_once(&at).map(|(_, r)| r.to_string());
+        let read: BTreeSet<String> = g.files.keys().filter_map(|f| rel(f)).collect();
+        let want: BTreeSet<String> = want.iter().map(|w| w.to_string()).collect();
+        assert_eq!(read, want, "{name}");
+        // what is not read is counted by its folder, and with what is read makes every file found
+        let mut unread: BTreeMap<String, usize> = BTreeMap::new();
+        for (f, _) in CODE.iter().filter(|(f, _)| !want.contains(*f)) {
+            *unread.entry(f.split('/').next().unwrap().to_string()).or_default() += 1;
+        }
+        let counted: BTreeMap<String, usize> =
+            g.stats.unread.iter().filter_map(|(f, n)| Some((rel(&format!("{f}/"))?.trim_end_matches('/').to_string(), *n))).collect();
+        assert_eq!(counted, unread, "{name}");
+    }
+}
+
+/// A file beside the code base that the package compiles is a program run by itself, as a Python script beside its
+/// package is (#364): entered at its top level, by the path it is run from. Where `package.json` names a command that
+/// runs it, it is entered by that command; a file read only because another imports it is no program, nor is a test.
+#[test]
+fn a_file_beside_the_code_is_a_script() {
+    let files: &[(&str, &str)] = &[
+        ("package.json", r#"{ "name": "law", "scripts": { "tool": "tsx scripts/tool.ts" } }"#),
+        ("tsconfig.json", r#"{ "include": ["src", "scripts"] }"#),
+        ("src/lib/x.ts", "import { y } from \"../../shared/y\";\n\nexport function x(): number {\n  return y();\n}\n"),
+        ("shared/y.ts", "export function y(): number {\n  return 1;\n}\n"),
+        ("scripts/main.ts", "import { x } from \"../src/lib/x\";\n\nconsole.log(x());\n"),
+        ("scripts/tool.ts", "console.log(\"tool\");\n"),
+        ("tests/x.test.ts", "import { x } from \"../src/lib/x\";\n\ntest(\"x\", () => x());\n"),
+    ];
+    let g = written("beside", files);
+    let entry = |id: &str| g.node(id).unwrap_or_else(|| panic!("{id}")).entry.as_ref().map(|e| (e.kind, e.label.clone()));
+    assert_eq!(entry("law.scripts.main"), Some((EntryKind::Script, "scripts/main.ts".to_string())));
+    assert_eq!(entry("law.scripts.tool"), Some((EntryKind::Cli, "tool".to_string())));
+    assert_eq!(entry("law.shared.y"), None, "read because `x` imports it");
+    assert_eq!(entry("law.lib.x"), None);
+    let scripts: Vec<&str> =
+        g.nodes.iter().filter_map(|n| n.entry.as_ref().filter(|e| e.kind == EntryKind::Script)).map(|e| e.label.as_str()).collect();
+    assert_eq!(scripts, ["scripts/main.ts"], "a test is no script");
 }
 
 /// A small package written to a directory of its own, read, and removed.
