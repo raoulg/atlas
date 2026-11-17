@@ -1,6 +1,6 @@
 {
  "before": "0.72.2",
- "after": "0.73.0",
+ "after": "0.74.0",
  "summary": {
   "ratio": 0.9084,
   "measures": 9,
@@ -10,7 +10,7 @@
  "releases": [
   "0.70.0",
   "0.71.0",
-  "0.73.0"
+  "0.74.0"
  ],
  "rows": [
   {
@@ -165,7 +165,7 @@
    "unit": "s",
    "points": [
     [
-     "0.73.0",
+     "0.74.0",
      11.2415,
      "1f0225e",
      "AMD EPYC 9V45 96-Core Processor"
@@ -178,7 +178,7 @@
    "unit": "s",
    "points": [
     [
-     "0.73.0",
+     "0.74.0",
      0.7283,
      "1f0225e",
      "AMD EPYC 9V45 96-Core Processor"
@@ -191,7 +191,7 @@
    "unit": "MB",
    "points": [
     [
-     "0.73.0",
+     "0.74.0",
      404.25,
      "1f0225e",
      "AMD EPYC 9V45 96-Core Processor"
@@ -204,7 +204,7 @@
    "unit": "s",
    "points": [
     [
-     "0.73.0",
+     "0.74.0",
      4.1676,
      "1f0225e",
      "AMD EPYC 9V45 96-Core Processor"
@@ -217,7 +217,7 @@
    "unit": "s",
    "points": [
     [
-     "0.73.0",
+     "0.74.0",
      0.0583,
      "1f0225e",
      "AMD EPYC 9V45 96-Core Processor"
@@ -230,7 +230,7 @@
    "unit": "MB",
    "points": [
     [
-     "0.73.0",
+     "0.74.0",
      675.9336,
      "1f0225e",
      "AMD EPYC 9V45 96-Core Processor"
@@ -243,7 +243,7 @@
    "unit": "s",
    "points": [
     [
-     "0.73.0",
+     "0.74.0",
      15.4535,
      "1f0225e",
      "AMD EPYC 9V45 96-Core Processor"
@@ -256,7 +256,7 @@
    "unit": "s",
    "points": [
     [
-     "0.73.0",
+     "0.74.0",
      0.4805,
      "1f0225e",
      "AMD EPYC 9V45 96-Core Processor"
@@ -269,7 +269,7 @@
    "unit": "MB",
    "points": [
     [
-     "0.73.0",
+     "0.74.0",
      739.1953,
      "1f0225e",
      "AMD EPYC 9V45 96-Core Processor"

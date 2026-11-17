@@ -23,5 +23,5 @@
 <path d="M640,98 C700,150 700,180 734,190" style="fill:none;stroke:var(--del);stroke-width:2;stroke-dasharray:6 5" marker-end="url(#m-del)"/>
 <text x="640" y="160" style="font-family:var(--sans);font-size:14px;fill:var(--del);text-anchor:end">0.72 also drew</text>
 <text x="30" y="270" style="font-family:var(--sans);font-size:14px;fill:var(--ink-2);text-anchor:start">a field is what the constructor that built the value set; a step reads where its own object was set up</text>
-<text x="30" y="326" style="font-family:var(--sans);font-size:13px;fill:var(--ink-3)">pill: a call · box: a value or a place · green: drawn by 0.73 only · red: drawn by 0.72 only</text>
+<text x="30" y="326" style="font-family:var(--sans);font-size:13px;fill:var(--ink-3)">pill: a call · box: a value or a place · green: drawn by 0.74 only · red: drawn by 0.72 only</text>
 </svg>

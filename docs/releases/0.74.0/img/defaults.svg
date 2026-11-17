@@ -16,5 +16,5 @@
 <text x="730" y="140" style="font-family:var(--sans);font-size:14px;fill:var(--del);text-anchor:middle">0.72 drew File({path})</text>
 <text x="30" y="270" style="font-family:var(--mono);font-size:14px;fill:var(--ink-2);text-anchor:start">path: str = …   ≡   path ?? …   ≡   path or …   ≡   path.unwrap_or(…)</text>
 <text x="30" y="294" style="font-family:var(--sans);font-size:14px;fill:var(--ink-2);text-anchor:start">a parameter&#x27;s default, a fallback in the body and an Option unwrapped are one construct</text>
-<text x="30" y="346" style="font-family:var(--sans);font-size:13px;fill:var(--ink-3)">pill: a call · box: a place · green: drawn by 0.73 only · red: drawn by 0.72 only</text>
+<text x="30" y="346" style="font-family:var(--sans);font-size:13px;fill:var(--ink-3)">pill: a call · box: a place · green: drawn by 0.74 only · red: drawn by 0.72 only</text>
 </svg>
