@@ -731,3 +731,20 @@ fn a_read_handed_to_a_call_is_used_and_a_match_follows_what_its_arms_bind() {
     assert_eq!(checks("deciding"), [true], "arms that bind nothing the body uses only decide");
     assert_eq!(checks("taking"), [false], "an arm binds a name that is returned");
 }
+
+/// A loop over an array written in place is named by what it binds and how many members the array holds
+/// (`body::loop_label`), as the reader reads it from the code, and each member is a step before the loop.
+#[test]
+fn a_loop_over_an_array_written_in_place_is_named_by_what_it_binds() {
+    let g = written(
+        "stations",
+        &[(
+            "src/lib.rs",
+            "pub struct Station { pub name: String }\n\nimpl Station {\n    pub fn new(name: &str) -> Station { Station { name: name.to_string() } }\n}\n\npub fn report(s: &Station) -> usize { s.name.len() }\n\npub fn all() -> usize {\n    let mut n = 0;\n    for station in [Station::new(\"a\"), Station::new(\"b\")] {\n        n += report(&station);\n    }\n    n\n}\n",
+        )],
+    );
+    let all = &g.node("stations.all").unwrap().sites;
+    let loop_ = all.iter().position(|s| s.op.starts_with("for ")).unwrap_or_else(|| panic!("the loop is a step: {all:#?}"));
+    assert_eq!(all[loop_].op, atlas_engine::body::loop_label("station", "in", "", Some(2)));
+    assert_eq!(all[..loop_].iter().filter(|s| s.to == "stations.Station.new").count(), 2, "{all:#?}");
+}
