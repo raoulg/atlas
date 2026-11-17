@@ -3,6 +3,7 @@ names and a Dropout, written where the turn runs; the activation is an entry of 
 
 from dataclasses import dataclass
 from itertools import pairwise
+from types import SimpleNamespace
 
 from turns.layers import GELU, Calibrate, Config, Dropout, Layer, Linear, Readout, ReLU, Tanh
 
@@ -11,7 +12,7 @@ ACTIVATIONS = {"gelu": GELU, "relu": ReLU, "tanh": Tanh}
 
 @dataclass
 class Stack:
-    layers: list[Layer]
+    layers: list[Layer | SimpleNamespace]
 
 
 def build(config: Config) -> Stack:
@@ -23,6 +24,7 @@ def build(config: Config) -> Stack:
                 Linear(width_in, width_out),
                 ACTIVATIONS[config.activation](),
                 Dropout(config.dropout),
+                SimpleNamespace(scale=config.dropout),
             )
         ]
     )
@@ -48,3 +50,7 @@ def by_cases(config: Config) -> Layer:
         case "tanh":
             return Tanh()
     raise ValueError(config.activation)
+
+
+def square(config: Config) -> Stack:
+    return Stack([Linear(width, width) for width in config.widths])

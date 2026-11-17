@@ -2108,7 +2108,10 @@ impl<'a, 't> Body<'a, 't> {
         // the step stands where what it goes over is written: a call there hands it what it gives, the loop's body does not
         // an array written in place (`[a, b]`, `&[a, b]`) is named by what the loop binds and how many it holds
         let array = Some(beneath_reference(value)).filter(|a| a.kind() == "array_expression" && a.child_by_field_name("length").is_none());
-        let members = array.map(|a| named_children(a).into_iter().filter(|e| !e.kind().ends_with("comment")).count());
+        let members = array.map(|a| named_children(a).into_iter().filter(|e| !e.kind().ends_with("comment")).collect::<Vec<_>>());
+        let constant =
+            |e: &TsNode| matches!(e.kind(), "string_literal" | "integer_literal" | "float_literal" | "boolean_literal" | "char_literal");
+        let members = members.filter(|m| !crate::body::constants_shown(text(value, self.src), m.iter().all(constant))).map(|m| m.len());
         steps.each(value, &crate::body::loop_label(text(pat, self.src), "in", text(value, self.src), members), hands, gives);
     }
 

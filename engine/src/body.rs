@@ -2027,14 +2027,29 @@ impl<'t, 's> Steps<'t, 's> {
 }
 
 /// A loop's label: `for {binds} {keyword} {over}` as the code writes it. Over a literal written in place, of `members` values,
-/// by what it binds and how many: `for layer in 4 layers`, `for a, b in 2 × (a, b)`; the members are the steps.
+/// by what it binds and how many: `for layer in 4 layers`, a name that takes no plural `s` by the count of members (`for _ in
+/// 2 members`), a pattern by the count of what it binds (`for (a, b) in 2 × (a, b)`). A literal of constants short enough
+/// to read says more than a count (`for split in ("train", "valid", "test")`): the reader hands it as no literal
+/// (`constants_shown`).
 pub fn loop_label(binds: &str, keyword: &str, over: &str, members: Option<usize>) -> String {
-    let one = !binds.is_empty() && binds.chars().all(|c| c.is_alphanumeric() || c == '_');
-    match members {
-        Some(n) if one => format!("for {binds} {keyword} {n} {binds}s"),
-        Some(n) => format!("for {binds} {keyword} {n} × ({binds})"),
-        None => format!("for {binds} {keyword} {over}"),
+    let Some(n) = members else { return format!("for {binds} {keyword} {over}") };
+    let bare = binds.strip_prefix('(').and_then(|b| b.strip_suffix(')')).unwrap_or(binds);
+    let name = !bare.is_empty() && bare.chars().all(|c| c.is_alphanumeric() || c == '_');
+    let plural = name
+        && bare.chars().next().is_some_and(|c| c.is_ascii_lowercase())
+        && bare.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_')
+        && !bare.ends_with(['_', 's', 'x', 'z', 'y', 'h'])
+        && bare.chars().last().is_some_and(|c| c.is_ascii_alphabetic());
+    match () {
+        _ if plural => format!("for {binds} {keyword} {n} {bare}s"),
+        _ if name => format!("for {binds} {keyword} {n} members"),
+        _ => format!("for {binds} {keyword} {n} × ({bare})"),
     }
+}
+
+/// Whether a literal a loop goes over is shown as written: all its members constants, and short enough to read.
+pub fn constants_shown(over: &str, constants: bool) -> bool {
+    constants && over.chars().count() <= 40
 }
 
 /// The error type a written result names apart from its value, where it names one: the second
@@ -2357,19 +2372,28 @@ mod tests {
 
     proptest::proptest! {
         /// Law: a loop over a literal written in place is named by what it binds and how many members the literal holds,
-        /// never by how the members are written: two literals of as many members label their loops alike, and a loop over
-        /// anything else keeps what it goes over as written.
+        /// never by how the members are written: two literals of as many members label their loops alike, each label says
+        /// the count, a pattern's parentheses are written once, and a loop over anything else keeps what it goes over as
+        /// written.
         #[test]
         fn a_literal_loop_is_named_by_what_it_binds_and_how_many(
-            binds in "[a-z_][a-z0-9_]{0,8}|[a-z]{1,4}, [a-z]{1,4}",
+            binds in "[a-z_][a-z0-9_]{0,8}|[a-z]{1,4}, [a-z]{1,4}|\\([a-z]{1,4}, [a-z]{1,4}\\)",
             first in "[A-Za-z(), ]{0,30}",
             second in "[A-Za-z(), ]{0,30}",
             n in 0usize..12,
         ) {
-            proptest::prop_assert_eq!(loop_label(&binds, "in", &first, Some(n)), loop_label(&binds, "in", &second, Some(n)));
+            let label = loop_label(&binds, "in", &first, Some(n));
+            proptest::prop_assert_eq!(&label, &loop_label(&binds, "in", &second, Some(n)));
             let head = format!("for {binds} in {n} ");
-            proptest::prop_assert!(loop_label(&binds, "in", &first, Some(n)).starts_with(&head));
+            proptest::prop_assert!(label.starts_with(&head), "{}", label);
+            proptest::prop_assert!(!label.contains("(("), "{}", label);
             proptest::prop_assert_eq!(loop_label(&binds, "of", &first, None), format!("for {binds} of {first}"));
+        }
+
+        /// Law: a plural is made only of a name that takes an `s`; any other name is counted in members.
+        #[test]
+        fn a_literal_loop_makes_no_plural_a_name_does_not_take(binds in "_|_[a-z]{1,4}|[a-z]{0,4}[sxzyh]|[A-Z][a-z]{0,4}", n in 0usize..12) {
+            proptest::prop_assert_eq!(loop_label(&binds, "in", "", Some(n)), format!("for {binds} in {n} members"));
         }
 
         /// Law: whether one of a body's spans covers a range is a question of the spans as a set: `Spans` answers as a scan

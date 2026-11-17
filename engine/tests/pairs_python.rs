@@ -3554,9 +3554,10 @@ fn applied_a_call_runs_on_a_value_or_takes_it_never_both() {
 }
 
 /// The turns pair, `turns/python` (#480): a stack of layers built from its config. The clean side writes what one turn
-/// builds where the turn runs (`for layer in (Linear(..), ACTIVATIONS[config.activation](), Dropout(..))`) and keeps the
+/// builds where the turn runs (`for layer in (Linear(..), ACTIVATIONS[config.activation](), Dropout(..), ..)`) and keeps the
 /// activations in a table looked up by the config; the shortcut finds the layers by their names at run time
-/// (`getattr(layers, name)(..)`).
+/// (`getattr(layers, name)(..)`), and keeps tables that are no choice: one the module changes, one looked up by a
+/// constant, one bound again where it is read, one of a single entry.
 fn turns() -> &'static Pair {
     static PAIR: OnceLock<Pair> = OnceLock::new();
     PAIR.get_or_init(|| common::pair("turns/python"))
@@ -3573,40 +3574,68 @@ fn reaching<'g>(g: &'g Graph, id: &str, classes: &[&str]) -> Vec<(&'g str, &'g [
         .collect()
 }
 
-/// A loop over a literal written in place runs its members: each member is a step of the loop's body, before the loop
-/// binds it, and the loop is named by what it binds and how many members the literal holds (`body::loop_label`), as the
-/// reader computes it from the code. The shortcut's loop goes over names; what each turn builds is no step Atlas follows.
+/// The loop's step of a body: the one site whose operation is a loop's head.
+fn loop_step<'g>(n: &'g atlas_engine::Node) -> &'g atlas_engine::Site {
+    let loops: Vec<&atlas_engine::Site> = n.sites.iter().filter(|s| s.op.starts_with("for ")).collect();
+    let [one] = loops.as_slice() else { panic!("{}: one loop is a step: {:?}", n.id, n.sites) };
+    one
+}
+
+/// A loop over a literal written in place runs its members: each member is a step, before the loop binds it, and the loop
+/// is named by what it binds and how many members the literal holds (`body::loop_label`), as the reader computes it from
+/// the code. The shortcut's loop goes over names; what each turn builds is no step Atlas follows.
 #[test]
 fn turns_a_loop_over_a_literal_runs_its_members() {
     let members = ["Readout", "Calibrate"];
     let g = &turns().clean;
     let head = g.node("turns.stack.head").unwrap();
-    let built = reaching(g, "turns.stack.head", &members);
-    assert_eq!(built.len(), members.len(), "clean: each member of the literal is a step: {:?}", head.sites);
-    let at = |pred: &dyn Fn(&atlas_engine::Site) -> bool| head.sites.iter().position(pred);
-    let loop_ = at(&|s| s.op.starts_with("for ")).expect("clean: the loop is a step");
+    let loop_ = head.sites.iter().position(|s| s.op.starts_with("for ")).expect("clean: the loop is a step");
     assert_eq!(head.sites[loop_].op, atlas_engine::body::loop_label("layer", "in", "", Some(members.len())));
-    assert!(head.sites[..loop_].iter().filter(|s| members.iter().any(|m| s.to.ends_with(m))).count() == members.len());
+    assert_eq!(head.sites[..loop_].iter().filter(|s| members.iter().any(|m| s.to.ends_with(m))).count(), members.len());
     assert!(reaching(&turns().shortcut, "turns.stack.head", &members).is_empty(), "shortcut: the layers are found by name");
     assert!(turns().shortcut.node("turns.stack.head").unwrap().sites.iter().any(|s| s.not_followed));
 }
 
-/// A literal a comprehension's later loop goes over is what one turn of the loop before it does: that loop is the step
-/// that repeats, giving the names it binds, and each member is a step after it; no step binds the name the literal's
-/// loop binds, whose value is what the members give.
+/// Every member of a literal a comprehension's loop goes over reaches the call the comprehension is written in: what each
+/// member's step gives, and what a member no step stands for is made of (`SimpleNamespace(scale=config.dropout)`, a
+/// library's class), is handed to the loop's step, and what the loop gives is handed to the call around it (`Stack`).
 #[test]
-fn turns_a_literal_inside_a_comprehension_is_what_one_turn_does() {
+fn turns_every_member_of_a_literal_reaches_the_call_around_the_comprehension() {
     let g = &turns().clean;
     let build = g.node("turns.stack.build").unwrap();
-    let loops: Vec<usize> = build.sites.iter().enumerate().filter(|(_, s)| s.op.starts_with("for ")).map(|(i, _)| i).collect();
-    let [outer] = loops.as_slice() else { panic!("clean: one loop is a step: {:?}", build.sites) };
-    let names: BTreeSet<&str> = build.sites[*outer].gives.iter().map(|h| h.name.as_str()).collect();
-    assert_eq!(names, BTreeSet::from(["width_in", "width_out"]), "clean: the loop before the literal gives its names");
-    for (to, _) in reaching(g, "turns.stack.build", &["Linear", "Dropout", "GELU"]) {
-        let i = build.sites.iter().position(|s| s.to == to).unwrap();
-        assert!(i > *outer, "clean: {to} runs in the turn, after the loop binds its names");
+    let loop_ = loop_step(build);
+    let stack = build.sites.iter().find(|s| s.to == "turns.stack.Stack").unwrap();
+    for (to, _) in reaching(g, "turns.stack.build", &["Linear", "GELU", "ReLU", "Tanh", "Dropout"]) {
+        let s = build.sites.iter().find(|s| s.to == to).unwrap();
+        for h in &s.gives {
+            assert!(loop_.hands.contains(h), "clean: what {to} gives is handed to the loop: {:?}", loop_.hands);
+        }
     }
-    assert!(!build.sites.iter().any(|s| s.gives.iter().any(|h| h.name == "layer")), "clean: no step binds `layer`");
+    assert!(loop_.hands.iter().any(|h| h.name == "config"), "clean: the library's member is made of the config: {:?}", loop_.hands);
+    for h in &loop_.gives {
+        assert!(stack.hands.iter().any(|x| x.name == h.name), "clean: what the loop gives reaches Stack: {:?}", stack.hands);
+    }
+}
+
+/// The names the loop before a literal binds (`for width_in, width_out in pairwise(..)`) are handed to the members written
+/// with them and to no call they do not reach: the list the comprehension makes holds the members, not the widths.
+#[test]
+fn turns_the_names_of_the_loop_before_a_literal_reach_only_where_they_are_written() {
+    let g = &turns().clean;
+    let build = g.node("turns.stack.build").unwrap();
+    let stack = build.sites.iter().find(|s| s.to == "turns.stack.Stack").unwrap();
+    let widths = ["width_in", "width_out"];
+    assert!(!stack.hands.iter().any(|h| widths.contains(&h.name.as_str())), "clean: Stack is handed no width: {:?}", stack.hands);
+    assert!(!build.sites.iter().any(|s| s.gives.iter().any(|h| widths.contains(&h.name.as_str()))), "clean: no step makes a width");
+}
+
+/// A comprehension whose loop goes over values Atlas does not draw (`for width in config.widths`, a `list[int]`) and over no
+/// literal has no loop step: its element is no value the body makes.
+#[test]
+fn turns_a_loop_over_values_atlas_does_not_draw_is_no_step() {
+    let square = turns().clean.node("turns.stack.square").unwrap();
+    assert!(!square.sites.iter().any(|s| s.op.starts_with("for ")), "clean: {:?}", square.sites);
+    assert!(square.sites.iter().any(|s| s.to.ends_with(".Linear")), "clean: the element's call is a step");
 }
 
 /// A call through a table looked up by a value is a choice between the table's entries: each entry's class is built in an
@@ -3629,10 +3658,49 @@ fn turns_a_call_through_a_table_is_a_choice_between_its_entries() {
     assert!(turns().shortcut.node("turns.stack.build").unwrap().sites.iter().any(|s| s.not_followed));
 }
 
-/// Isomorphic is the same: a call through a table (`by_table`) and a `match` on the table's key with a case per entry
-/// (`by_cases`) are one choice, the same classes built in the same arms under the same words.
+/// What the page and the route read of a table's choice: the body's choice item carries the value that picks its branch
+/// (`Item::Choice::by`, which the page titles `one of · <value>`), the one `Node::by` holds for that choice, and the route
+/// words each entry's arm by the value and the key (`story::picked`), on the line of the entry it builds.
 #[test]
-fn turns_a_table_and_a_match_on_its_key_are_one_choice() {
+fn turns_the_page_and_the_route_name_the_value_a_table_is_looked_up_by() {
+    let g = &turns().clean;
+    let node = g.node("turns.stack.by_table").unwrap();
+    let bodies = flow::bodies(g);
+    let body = bodies.get("turns.stack.by_table").expect("by_table has a body");
+    let picked: Vec<(u32, &str)> = body
+        .items
+        .iter()
+        .filter_map(|it| match it {
+            flow::Item::Choice { choice, by, .. } => Some((*choice, by.as_str())),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(picked, node.by.iter().map(|(k, v)| (*k, v.as_str())).collect::<Vec<_>>());
+    assert_eq!(picked.len(), 1, "by_table: one choice, picked by the config: {:?}", body.items);
+    let text = route(g, "turns.stack.by_table");
+    for (class, key) in [("GELU", "\"gelu\""), ("ReLU", "\"relu\""), ("Tanh", "\"tanh\"")] {
+        let line = text.lines().find(|l| l.contains(&format!("{class}("))).unwrap_or_else(|| panic!("{class} in:\n{text}"));
+        assert!(line.contains("config.activation") && line.contains(key), "the arm of {class} names the value and its key: {line}");
+    }
+}
+
+/// A table is a choice only where it is what the module wrote: a table the module changes (`register` assigns into it), a
+/// key that is a constant of the module's (`FIXED[DEFAULT]()`), a name bound again where it is read (`for FIXED in
+/// tables`) and a table of one entry are each no choice: no step of theirs stands in an arm, and no value picks one.
+#[test]
+fn turns_a_table_the_module_does_not_keep_as_written_is_no_choice() {
+    let g = &turns().shortcut;
+    for id in ["turns.stack.registered", "turns.stack.by_default", "turns.stack.each_table", "turns.stack.only"] {
+        let n = g.node(id).unwrap_or_else(|| panic!("{id} is in the graph"));
+        assert!(n.by.is_empty() && n.sites.iter().all(|s| s.arms.is_empty()), "{id}: no choice: {:?}", n.sites);
+    }
+}
+
+/// A call through a table (`by_table`) and a `match` on the table's key with a case per entry (`by_cases`) build the same
+/// classes, each in an arm of its own decided by the same key. The route words the table's arms with the value it is
+/// looked up by besides (`config.activation is "gelu"`), where the `match` says the key alone.
+#[test]
+fn turns_a_table_and_a_match_on_its_key_build_the_same_classes_under_the_same_keys() {
     let g = &turns().clean;
     let arms = |id: &str| -> BTreeSet<(String, String)> {
         let n = g.node(id).unwrap();

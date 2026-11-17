@@ -1265,8 +1265,11 @@ impl<'a, 't> Body<'a, 't> {
             .collect();
         // the step stands where what it goes over is written: a call there hands it what it gives, the loop's body does not
         // an array written in place (`[a, b]`) is named by what the loop binds and how many it holds
+        let constant = |e: &TsNode| matches!(e.kind(), "string" | "number" | "true" | "false" | "null");
         let members = (right.kind() == "array" && !named_children(right).iter().any(|e| e.kind() == "spread_element"))
-            .then(|| named_children(right).into_iter().filter(|e| e.kind() != "comment").count());
+            .then(|| named_children(right).into_iter().filter(|e| e.kind() != "comment").collect::<Vec<_>>())
+            .filter(|m| !crate::body::constants_shown(text(right, self.src), m.iter().all(constant)))
+            .map(|m| m.len());
         steps.each(right, &crate::body::loop_label(text(left, self.src), "of", text(right, self.src), members), hands, gives);
     }
 

@@ -341,7 +341,7 @@ impl<'g> Story<'g> {
                             m.step.site.and_then(|i| sites.get(i)),
                             &occurrence(&m.step),
                             &format!("{k}{}", letter(m.branch)),
-                            &when.get(m.branch).map_or(String::new(), |w| picked(by, w)),
+                            &when.get(m.branch).filter(|w| !w.is_empty()).map_or(String::new(), |w| picked(by, w)),
                             level,
                             depth,
                             t,
@@ -386,11 +386,7 @@ impl<'g> Story<'g> {
             t.text.push_str(&format!(
                 "{indent}{num}  {op}({hands}){}{}\n",
                 if gives.is_empty() { String::new() } else { format!(" → {gives}") },
-                match when {
-                    "" => String::new(),
-                    "otherwise" => "   ·   otherwise".to_string(),
-                    w => format!("   ·   when {w}"),
-                }
+                suffix(when)
             ));
             return;
         };
@@ -401,11 +397,7 @@ impl<'g> Story<'g> {
         let runner = runs.and_then(|r| self.nodes.get(r).copied()).unwrap_or(n);
         let k = flow::key(runs.unwrap_or(&st.to), &st.on);
         let body = runs.and_then(|_| self.bodies.get(&k));
-        let when = match when {
-            "" => String::new(),
-            "otherwise" => "   ·   otherwise".to_string(),
-            w => format!("   ·   when {w}"),
-        };
+        let when = suffix(when);
         // a call of a function the route is already inside is the step it stands in
         if let Some(a) = runs.and_then(|r| above.iter().find(|a| a.id == r)) {
             t.tell(num, at, &runner.id, &[], Some(&a.label));
@@ -531,13 +523,22 @@ fn in_arm(text: &str, arm: &str) -> String {
     format!("{arm}.{}", used + 1)
 }
 
-/// What decides a branch, worded: of a choice one value picks (`Item::Choice::by`), the value and the key that picks the
-/// branch (`config.activation is "gelu"`); else as the code writes it.
-fn picked(by: &str, when: &str) -> String {
-    if by.is_empty() || when.is_empty() || when == "otherwise" {
+/// What decides a branch, worded: of a choice one value picks (`Item::Choice::by`), whose every arm is decided by its key,
+/// the value and the key that picks the branch (`config.activation is "gelu"`); else as the code writes it.
+pub fn picked(by: &str, when: &str) -> String {
+    if by.is_empty() {
         when.to_string()
     } else {
         format!("{by} is {when}")
+    }
+}
+
+/// What decides a step's branch, as the route text writes it after the step.
+fn suffix(when: &str) -> String {
+    match when {
+        "" => String::new(),
+        "otherwise" => "   ·   otherwise".to_string(),
+        w => format!("   ·   when {w}"),
     }
 }
 
