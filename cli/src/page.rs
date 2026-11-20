@@ -131,12 +131,14 @@ fn compared(repo: &Path, a: &str, b: Option<&str>, opts: &Options) -> Result<Rea
     Ok(Reading::compared(repo, (named_a, before), (named_b, changes::parts_at(repo, b, opts)?)))
 }
 
-/// Where a page opens, besides what it draws: on a route by its entry's id, in a sight, and, where
-/// `atlas-code serve` serves it, as the drawing the server knows it by, to follow the next.
+/// Where a page opens, besides what it draws: on a route by its entry's id, in a sight, on a file
+/// whose code it shows while nothing is selected, and, where `atlas-code serve` serves it, as the
+/// drawing the server knows it by, to follow the next.
 #[derive(Default)]
 pub(crate) struct Opens {
     pub(crate) route: Option<String>,
     pub(crate) sight: Option<Sight>,
+    pub(crate) file: Option<String>,
     pub(crate) served: Option<String>,
 }
 
@@ -148,17 +150,26 @@ pub(crate) fn start(graph: &Graph, place: &Path) -> Start {
     atlas_engine::story::start(graph, &inside, place.is_file())
 }
 
+/// The file `place` is, by the name the graph's nodes know it by; none for a folder, or a file the graph defines nothing in.
+fn defined_in(graph: &Graph, place: &Path) -> Option<String> {
+    let place = atlas_engine::repo::Repo::resolved(place).filter(|p| p.is_file())?;
+    let is_place = |file: &str| atlas_engine::repo::Repo::resolved(Path::new(file)).is_some_and(|f| f == place);
+    graph.nodes.iter().find(|n| is_place(&n.file)).map(|n| n.file.clone())
+}
+
 impl Opens {
     /// A page of the first of `places` whose reading starts somewhere (`start`) opens there: on a route, or, where no
-    /// `sight` is asked for, on the focus on a module.
+    /// `sight` is asked for, on the focus on a module. Where that place is a file the graph defines something in, the
+    /// page opens on that file, as the graph names it.
     pub(crate) fn at(graph: &Graph, places: &[PathBuf], sight: Option<Sight>, served: Option<String>) -> Opens {
-        let start = places.iter().map(|p| start(graph, p)).find(|s| *s != Start::Overview).unwrap_or(Start::Overview);
-        match start {
-            Start::Route(route) => Opens { route: Some(route), sight, served },
+        let started = places.iter().map(|p| (p, start(graph, p))).find(|(_, s)| *s != Start::Overview);
+        let file = started.as_ref().and_then(|(place, _)| defined_in(graph, place));
+        match started.map_or(Start::Overview, |(_, start)| start) {
+            Start::Route(route) => Opens { route: Some(route), sight, file, served },
             Start::Focus(module) if sight.is_none() => {
-                Opens { route: None, sight: Some(Sight { focus: [module].into(), ..Sight::default() }), served }
+                Opens { route: None, sight: Some(Sight { focus: [module].into(), ..Sight::default() }), file, served }
             }
-            _ => Opens { route: None, sight, served },
+            _ => Opens { route: None, sight, file, served },
         }
     }
 }
@@ -178,6 +189,8 @@ struct Project<'a> {
     open: Option<&'a str>,
     #[serde(skip_serializing_if = "Option::is_none")]
     view: Option<&'a Sight>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    file: Option<&'a str>,
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     served: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -250,6 +263,7 @@ fn payload(graph: &Graph, flow: &Flow, findings: &Findings, compared: Option<&Co
         diff: compared.zip(findings.changed).map(|(compared, findings)| Marked { compared, findings }),
         open: opens.route.as_deref(),
         view: opens.sight.as_ref(),
+        file: opens.file.as_deref(),
         served: opens.served.is_some(),
         drawn: opens.served.as_deref(),
     };
