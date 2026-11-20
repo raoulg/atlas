@@ -51,7 +51,8 @@ async function setAppearance(next) {
 }
 // the other scheme, in its theme: from the system's, the one it does not show
 const toggleScheme = () => setAppearance({...appearance, theme: Themes.schemeOf(appearance) === 'dark' ? 'light' : 'dark'});
-const viewHash = (view, at) => [view ? `v=${encodeURIComponent(JSON.stringify(view))}` : '', at ? `at=${encodeURIComponent(at)}` : ''].filter(Boolean).join('&');
+// `file` is a node the file defines: the page shows that file's code while nothing is selected
+const viewHash = (view, at, file) => [view ? `v=${encodeURIComponent(JSON.stringify(view))}` : '', at ? `at=${encodeURIComponent(at)}` : '', file ? `file=${encodeURIComponent(file)}` : ''].filter(Boolean).join('&');
 
 const lessonPanel = window.AtlasLesson.mount(byId('lesson-panel'), {
   workspaceUrl: () => workspace?.url || '',
@@ -95,9 +96,9 @@ const files = window.AtlasFiles.mount(byId('file-tree'), byId('preview'), {
   dock: (side) => setPreviewDock(side),
   pointAt,
   workspaceUrl: () => workspace?.url || '',
-  openFullView: (view, at) => {
+  openFullView: (view, at, file) => {
     if (!workspace) return;
-    byId('atlas-frame').src = atlasPage(viewHash(view, at));
+    byId('atlas-frame').src = atlasPage(viewHash(view, at, file));
     selectView('atlas');
   },
 });

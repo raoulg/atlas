@@ -193,7 +193,7 @@ impl Server {
         let findings = read.findings();
         let (graph, compared) = read.drawn();
         let flow = atlas_engine::flow::of(&graph);
-        let html = Html::of(&graph, &flow, &findings, compared.as_ref(), &Opens { route: None, sight, served: None })?;
+        let html = Html::of(&graph, &flow, &findings, compared.as_ref(), &Opens { sight, ..Opens::default() })?;
         self.log.say(Who::You, &format!("exported {}.html, in the view {said}", graph.root));
         Ok((graph.root, html.into()))
     }

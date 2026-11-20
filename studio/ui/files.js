@@ -258,7 +258,7 @@
       draw();
       list.querySelector(`[data-path="${CSS.escape(row.path)}"]`)?.focus();
       const start = opening(row.dir ? listing.folders[row.path] : file.opens);
-      if (start.view) bridge.openFullView(start.view);
+      if (start.view) bridge.openFullView(start.view, null, file?.facts[0].id);
       else bridge.pointAt(start.at);
     }
 

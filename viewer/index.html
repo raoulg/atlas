@@ -1989,9 +1989,9 @@ function linkList(ids, kindClass) {
 }
 function section(title, count, node) { const s = html("div", "sec"); const h = html("h3", null, title); if (count != null) h.appendChild(html("span", null, String(count))); s.appendChild(h); s.appendChild(node); return s; }
 const codeLang = n => ({python: "python", rust: "rust", typescript: "typescript"})[langOf(n)] || "python";
-function codeBlock(n, mark) {
+function codeBlock(n, mark, most = 400) {
   const src = D.files[n.file]; if (!src || !n.span) return null;
-  const lines = src.split("\n").slice(n.span[0] - 1, Math.min(n.span[1], n.span[0] - 1 + 400));
+  const lines = src.split("\n").slice(n.span[0] - 1, Math.min(n.span[1], n.span[0] - 1 + most));
   const pre = html("pre", "code"); pre.style.setProperty("--ln0", n.span[0] - 1);
   const hl = hljs.highlight(lines.join("\n"), {language: codeLang(n)}).value;
   pre.innerHTML = hl.split("\n").map((l, i) => `<span class="l${n.span[0] + i === mark ? " mark" : ""}">${l || " "}</span>`).join("");
@@ -2123,7 +2123,20 @@ function select(id, extra) {
     for (const [t, ids] of groups) if (ids.length) insp.appendChild(section(t, ids.length, linkList(ids)));
   }
   if (n.kind !== "external" && n.kind !== "module") { const c = codeBlock(n); if (c) insp.appendChild(section("code", null, c)); }
-  else if (n.kind === "module") { const c = codeBlock({file: n.file, span: [1, 60]}); if (c) insp.appendChild(section("head of file", null, c)); }
+  else if (n.kind === "module") { const c = fileBlock(n.file); if (c) insp.appendChild(section("file", null, c)); }
+  insp.scrollTop = 0;
+}
+// a file, whole
+const fileBlock = file => D.files[file] == null ? null : codeBlock({file, span: [1, D.files[file].replace(/\n$/, "").split("\n").length]}, null, Infinity);
+// the file a view was opened on, or the one its route starts in: what the panel shows while nothing is selected
+function showFile(file) {
+  const c = fileBlock(file); if (!c) return;
+  const parts = file.split(/[\\/]/), home = D.nodes.find(n => n.kind === "module" && n.file === file);
+  insp.innerHTML = "";
+  const eb = html("div", "eyebrow"); eb.appendChild(html("span", null, "file")); if (home) eb.appendChild(packageChip(home)); insp.appendChild(eb);
+  insp.appendChild(html("h1", "name", parts.at(-1)));
+  insp.appendChild(html("div", "path", file.startsWith(D.project_root) ? parts.slice(D.project_root.split(/[\\/]/).length).join("/") : parts.slice(-3).join("/")));
+  insp.appendChild(section("code", null, c));
   insp.scrollTop = 0;
 }
 function aggList(list, side) {
@@ -2528,6 +2541,7 @@ async function point(at) {
 }
 // A served reading installs its own model and event handlers; the view survives a new reading.
 let back = null;
+let openedFile = null;  // the file the page was opened on, as the graph names it
 let updating = false;
 async function redraw() {
   if (updating) return;
@@ -2538,7 +2552,7 @@ async function redraw() {
     const data = await response.json();
     if (Object.values(data.projects)[0]?.drawn === D.drawn) return;
     const t = d3.zoomTransform(svg.node());
-    const resume = {view, selected, pinned: [...pinned], t: [t.x, t.y, t.k], state: viewData()};
+    const resume = {view, selected, pinned: [...pinned], t: [t.x, t.y, t.k], state: viewData(), file: openedFile};
     dispose();
     // the picture's svg, and the zoom bound to it, live as long as the page: a new reading draws in the same svg, so
     // a wheel gesture the browser holds to it goes on into the new picture
@@ -2706,7 +2720,11 @@ if (D.served) {
 }
 // a link to a place (`#v=…&at=…`, the place of a note) points at it once the picture is drawn
 const linkedAt = lessonAt || decodeURIComponent((location.hash.match(/[#&]at=([^&]*)/) || [])[1] || "");
+// a link to a file (`#…&file=`, by a node the file defines), else the file the page was opened on (`atlas-code view <file>`),
+// else the one the route starts in
+openedFile = resume?.file || byId.get(decodeURIComponent((location.hash.match(/[#&]file=([^&]*)/) || [])[1] || ""))?.file || D.file;
 render().then(comeBack).then(async () => {
+  if (!selected) showFile(openedFile || byId.get(V.route)?.file);
   if (linkedAt) await point(linkedAt);
   if (lessonEmbed) setTimeout(() => frameLesson(linkedAt), SETTLED);
 });
