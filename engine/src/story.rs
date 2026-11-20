@@ -23,10 +23,6 @@ pub fn entries(g: &Graph) -> Vec<(EntryKind, &str, &str)> {
 /// no other of them runs or builds in its own code (a module that runs its submodules is the one it runs them in); none
 /// where no such class stands outermost, or two do. `inside` says whether a file lies in the folder.
 pub fn folder_route(g: &Graph, inside: &dyn Fn(&str) -> bool) -> Option<String> {
-    let mut next: HashMap<&str, Vec<&str>> = HashMap::new();
-    for e in g.edges.iter().filter(|e| matches!(e.kind, EdgeKind::Calls | EdgeKind::Instantiates)) {
-        next.entry(e.src.as_str()).or_default().push(e.dst.as_str());
-    }
     let starts: Vec<&str> = g
         .nodes
         .iter()
@@ -34,6 +30,13 @@ pub fn folder_route(g: &Graph, inside: &dyn Fn(&str) -> bool) -> Option<String> 
         .filter(|n| n.entry.as_ref().is_some_and(|e| matches!(e.kind, EntryKind::Script | EntryKind::Cli | EntryKind::Notebook)))
         .map(|n| n.id.as_str())
         .collect();
+    if starts.is_empty() {
+        return None;
+    }
+    let mut next: HashMap<&str, Vec<&str>> = HashMap::new();
+    for e in g.edges.iter().filter(|e| matches!(e.kind, EdgeKind::Calls | EdgeKind::Instantiates)) {
+        next.entry(e.src.as_str()).or_default().push(e.dst.as_str());
+    }
     let mut reached: HashSet<&str> = starts.iter().copied().collect();
     let mut open = starts;
     while let Some(id) = open.pop() {
@@ -62,6 +65,42 @@ pub fn folder_route(g: &Graph, inside: &dyn Fn(&str) -> bool) -> Option<String> 
     match run.as_slice() {
         [one] => Some(one.id.clone()),
         _ => None,
+    }
+}
+
+/// Where the reading of a place of the repository starts, a folder or a file: what `atlas-code view <place>` opens, and
+/// what a click on the place in Studio's file tree shows.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Start {
+    /// A route, by the id of its entry.
+    Route(String),
+    /// The focus on a module: what its functions take and what they give.
+    Focus(String),
+    /// A box of the picture, pointed at.
+    Box(String),
+    /// The overview.
+    Overview,
+}
+
+/// Where the reading of the place whose files `inside` holds starts. A folder and a file alike open on the module their
+/// scripts run (`folder_route`); a folder that runs none opens on the overview. A file that runs none opens on the route
+/// of an entry it defines, one that is run from the file (an export is a route into the package from outside); a module
+/// of a library, run by nobody, on its focus; a file that defines no function on its box.
+pub fn start(g: &Graph, inside: &dyn Fn(&str) -> bool, file: bool) -> Start {
+    if let Some(route) = folder_route(g, inside) {
+        return Start::Route(route);
+    }
+    if !file {
+        return Start::Overview;
+    }
+    let own: Vec<&Node> = g.nodes.iter().filter(|n| n.kind != NodeKind::External && inside(&n.file)).collect();
+    if let Some(run) = own.iter().find(|n| n.entry.as_ref().is_some_and(|e| e.kind != EntryKind::Export)) {
+        return Start::Route(run.id.clone());
+    }
+    let home = own.iter().find(|n| n.kind == NodeKind::Module);
+    match home {
+        Some(home) if own.iter().any(|n| matches!(n.kind, NodeKind::Function | NodeKind::Method)) => Start::Focus(home.id.clone()),
+        _ => home.or(own.first()).map_or(Start::Overview, |n| Start::Box(n.id.clone())),
     }
 }
 

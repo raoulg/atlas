@@ -51,6 +51,7 @@ struct Drawn {
     id: String,
     data: String,
     facts: Facts,
+    starts: Starts,
     witnesses: Mutex<Witnesses>,
     vision: Stamp,
 }
@@ -66,6 +67,8 @@ impl Drawn {
 /// modules, classes and functions, each with its id, the line it starts at, and whether a route
 /// starts at it.
 type Facts = BTreeMap<String, Vec<Value>>;
+/// Where the reading of a file or a folder starts (`story::start`), by its path from the listing's root.
+type Starts = BTreeMap<String, Value>;
 
 /// The phase the drawing is in, since when, and what went wrong; and how many parts the cache had read
 /// anew when it began, so that a drawing knows whether it reads code or only finds its index.
@@ -238,11 +241,12 @@ impl Server {
         let findings = read.findings();
         let (graph, compared) = read.drawn();
         let flow = atlas_engine::flow::of(&graph);
-        let opens = Opens { route: page::folder_route(&graph, &self.repo), sight: None, served: Some(id.to_string()) };
+        let opens = Opens::at(&graph, std::slice::from_ref(&self.repo), None, Some(id.to_string()));
         let data = Html::payload(&graph, &flow, &findings, compared.as_ref(), &opens)?;
         self.log.say(Who::Atlas, &format!("drew {}", page::summary(&graph)));
         let facts = witnesses.roots().first().map(|root| facts(root, &graph)).unwrap_or_default();
-        Ok(Drawn { stamps: stamps.clone(), id: id.to_string(), data, facts, witnesses: Mutex::new(witnesses), vision })
+        let starts = witnesses.roots().first().map(|root| starts(root, &graph, &facts)).unwrap_or_default();
+        Ok(Drawn { stamps: stamps.clone(), id: id.to_string(), data, facts, starts, witnesses: Mutex::new(witnesses), vision })
     }
 
     /// The files of the working tree as Atlas reads them, now, each with what the last page drawn
@@ -257,10 +261,17 @@ impl Server {
             .map(|f| {
                 let path = slashed(f);
                 let facts = kept.as_ref().and_then(|d| d.facts.get(&path)).cloned().unwrap_or_default();
-                json!({"path": path, "facts": facts})
+                let opens = kept.as_ref().and_then(|d| d.starts.get(&path)).cloned().unwrap_or(Value::Null);
+                json!({"path": path, "facts": facts, "opens": opens})
             })
             .collect();
-        Ok(json!({"root": read.root(), "drawn": kept.map(|d| d.id.clone()), "files": files}))
+        let folders = kept.as_ref().map(|d| {
+            let files: std::collections::BTreeSet<&str> = d.facts.keys().map(String::as_str).collect();
+            d.starts.iter().filter(|(path, _)| !files.contains(path.as_str())).collect::<BTreeMap<_, _>>()
+        });
+        Ok(
+            json!({"root": read.root(), "drawn": kept.as_ref().map(|d| d.id.clone()), "files": files, "folders": folders.unwrap_or_default()}),
+        )
     }
 
     fn kept(&self) -> Option<Arc<Drawn>> {
@@ -445,6 +456,36 @@ fn facts(root: &Path, graph: &atlas_engine::model::Graph) -> Facts {
         facts.entry(slashed(rel)).or_default().push(fact);
     }
     facts
+}
+
+/// Where the reading of each file the graph defines something in starts, and of each folder above one
+/// (`story::start`): what `atlas-code view <path>` opens, by the path from `root`. A folder that opens on the
+/// overview is left out, as the listing's root is.
+fn starts(root: &Path, graph: &atlas_engine::model::Graph, facts: &Facts) -> Starts {
+    use atlas_engine::story::{start, Start};
+    let mut folders = std::collections::BTreeSet::new();
+    for path in facts.keys() {
+        let parts: Vec<&str> = path.split('/').collect();
+        folders.extend((1..parts.len()).map(|n| parts[..n].join("/")));
+    }
+    let places = facts.keys().map(|p| (p.clone(), true)).chain(folders.into_iter().map(|p| (p, false)));
+    // each node's file from the root, once: a place asks it of every node
+    let rel: std::collections::HashMap<&str, &Path> =
+        graph.nodes.iter().filter_map(|n| Some((n.file.as_str(), Path::new(&n.file).strip_prefix(root).ok()?))).collect();
+    let mut starts = Starts::new();
+    for (path, file) in places {
+        let place = Path::new(&path).to_path_buf();
+        let inside = |f: &str| rel.get(f).is_some_and(|r| r.starts_with(&place));
+        let opens = match start(graph, &inside, file) {
+            Start::Route(id) => json!({"route": id}),
+            Start::Focus(id) => json!({"focus": id}),
+            Start::Box(id) => json!({"at": id}),
+            Start::Overview if file => json!({}),
+            Start::Overview => continue,
+        };
+        starts.insert(path, opens);
+    }
+    starts
 }
 
 /// A path from a root, with `/` between its parts.

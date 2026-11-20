@@ -2,10 +2,11 @@
   'use strict';
 
   // The workspace's files as Atlas reads them, a tree beside the picture: a file the graph defines
-  // something in is traced (a filled dot), any other file is only physical (an open dot). A traced
-  // file opens where the picture has it, its module's box; the picture is that file's reading. Any
-  // other file opens in the preview, as a traced one does on request (alt-click, shift-Enter, or its
-  // row's preview button).
+  // something in is traced (a filled dot), any other file is only physical (an open dot). A folder's
+  // chevron folds and unfolds it; its name shows the folder. A folder and a traced file show where
+  // their reading starts, as `atlas-code view <path>` opens them: the engine says where
+  // (`story::start`, in `/api/files`). Any other file opens in the preview, as a traced one does on
+  // request (alt-click, shift-Enter, or its row's preview button).
 
   const node = (tag, className, label) => {
     const element = document.createElement(tag);
@@ -85,18 +86,16 @@
   const previewUrl = (path, base = root.__TAURI__?.core.convertFileSrc('', 'preview') || 'preview://localhost/') =>
     base.replace(/\/?$/, '/') + path.split('/').map(encodeURIComponent).join('/');
 
-  // a path relative to the file `from`, from the workspace's root
-  // Where a traced file's reading starts. A file that is run (a script, a notebook, a command line, a route, a test) opens
-  // the route of the entry point it defines. A module of a library is run by nobody: it opens as the focus on itself, what
-  // its functions take on the left and what they give on the right. A file that defines no function is pointed at.
-  function reading(facts) {
-    const run = facts.find((fact) => fact.entry && fact.entry !== 'export');
-    if (run) return {view: {route: run.id}};
-    const home = facts.find((fact) => fact.kind === 'module');
-    if (home && facts.some((fact) => fact.kind === 'function' || fact.kind === 'method')) return {view: {focus: [home.id]}};
-    return {at: (home || facts[0]).id};
+  // What the Atlas view shows for a place, from where the engine says its reading starts: a route,
+  // the focus on a module, a box pointed at, or, where it names none, the overview.
+  function opening(start) {
+    if (start?.route) return {view: {route: start.route}};
+    if (start?.focus) return {view: {focus: [start.focus]}};
+    if (start?.at) return {at: start.at};
+    return {view: {}};
   }
 
+  // a path relative to the file `from`, from the workspace's root
   function relative(from, target) {
     const parts = from.split('/').slice(0, -1);
     for (const part of target.split('#')[0].split('/')) {
@@ -173,7 +172,7 @@
       fold.replaceChildren(panel.glyph(panel.PARTS[side]), foldName);
     }
 
-    let listing = {files: []};
+    let listing = {files: [], folders: {}};
     let byPath = new Map();
     let factFile = new Map();
     let open = new Set();
@@ -204,10 +203,14 @@
         item.style.setProperty('--depth', row.depth);
         item.tabIndex = row.path === (focused || selected || shown[0]?.path) ? 0 : -1;
         if (row.dir) item.setAttribute('aria-expanded', String(open.has(row.path)));
-        else item.setAttribute('aria-selected', String(row.path === selected));
+        item.setAttribute('aria-selected', String(row.path === selected));
         item.classList.toggle('selected', row.path === selected);
         item.classList.toggle('in-view', row.path === inView);
         const caret = node('span', 'caret', row.dir ? (open.has(row.path) ? '▾' : '▸') : '');
+        if (row.dir) {
+          caret.title = open.has(row.path) ? 'Fold the folder (Left)' : 'Unfold the folder (Right)';
+          caret.addEventListener('click', (event) => { event.stopPropagation(); toggle(row); });
+        }
         const badge = node('span', 'badge', row.dir ? '' : (extension(row.name)[0] || '·').toUpperCase());
         const label = node('span', 'name', row.name);
         item.append(caret, badge, label);
@@ -239,23 +242,27 @@
     }
 
 
+    // the chevron: a folder opens or closes in the tree, and the Atlas view stays as it is
+    function toggle(row) {
+      if (open.has(row.path)) open.delete(row.path); else open.add(row.path);
+      draw();
+      list.querySelector(`[data-path="${CSS.escape(row.path)}"]`)?.focus();
+    }
+
+    // the name: a folder or a traced file shows where its reading starts; a physical file, or a
+    // file asked for as a preview, opens in the preview
     function choose(row, preview = false) {
-      if (row.dir) {
-        if (open.has(row.path)) open.delete(row.path); else open.add(row.path);
-        draw();
-        list.querySelector(`[data-path="${CSS.escape(row.path)}"]`)?.focus();
-        return;
-      }
-      const facts = byPath.get(row.path)?.facts || [];
-      if (preview || !facts.length) { openFile(row.path); return; }
+      const file = row.dir ? null : byPath.get(row.path);
+      if (!row.dir && (preview || !file?.facts.length)) { openFile(row.path); return; }
       selected = row.path;
       draw();
-      const start = reading(facts);
+      list.querySelector(`[data-path="${CSS.escape(row.path)}"]`)?.focus();
+      const start = opening(row.dir ? listing.folders[row.path] : file.opens);
       if (start.view) bridge.openFullView(start.view);
       else bridge.pointAt(start.at);
     }
 
-    // arrows move through the tree, right and left open and close a folder, Enter opens
+    // arrows move through the tree, right and left open and close a folder, Enter shows
     list.addEventListener('keydown', (event) => {
       const items = [...list.querySelectorAll('.file-row')];
       const at = items.indexOf(document.activeElement);
@@ -272,8 +279,8 @@
       else if (event.key === 'ArrowUp') go(at - 1);
       else if (event.key === 'Home') go(0);
       else if (event.key === 'End') go(items.length - 1);
-      else if (event.key === 'ArrowRight' && row.dir && !open.has(row.path)) choose(row);
-      else if (event.key === 'ArrowLeft' && row.dir && open.has(row.path)) choose(row);
+      else if (event.key === 'ArrowRight' && row.dir && !open.has(row.path)) toggle(row);
+      else if (event.key === 'ArrowLeft' && row.dir && open.has(row.path)) toggle(row);
       else if (event.key === 'ArrowLeft') {
         const parent = row.path.split('/').slice(0, -1).join('/');
         const index = items.findIndex((each) => each.dataset.path === parent);
@@ -290,7 +297,7 @@
 
     // what the listing says now; the tree keeps its open folders and its selection
     function load(next) {
-      listing = next;
+      listing = {folders: {}, ...next};
       byPath = new Map(next.files.map((file) => [file.path, file]));
       factFile = new Map(next.files.flatMap((file) => file.facts.map((fact) => [fact.id, file.path])));
       if (!open.size) for (const file of next.files) if (file.facts.length) { reveal(file.path); break; }
@@ -299,7 +306,7 @@
     }
 
     function clear() {
-      listing = {files: []};
+      listing = {files: [], folders: {}};
       byPath = new Map();
       factFile = new Map();
       open = new Set();
@@ -541,6 +548,6 @@
     return {load, clear, shown, openFile, setDock, factFile: (id) => factFile.get(id) || factFile.get(factOf(id))};
   }
 
-  root.AtlasFiles = {mount, tree, factOf, reading, relative, highlightedLines, previewUrl, language, SIDES, sideOf};
+  root.AtlasFiles = {mount, tree, factOf, opening, relative, highlightedLines, previewUrl, language, SIDES, sideOf};
   if (typeof module !== 'undefined' && module.exports) module.exports = root.AtlasFiles;
 })(typeof window !== 'undefined' ? window : globalThis);
