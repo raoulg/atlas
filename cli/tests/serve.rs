@@ -610,3 +610,83 @@ fn every_malformed_request_gets_a_bounded_answer() {
     server.kill().ok();
     let _ = std::fs::remove_dir_all(repo.parent().unwrap());
 }
+
+/// The project a page holds, from its HTML.
+fn project_of(html: &str) -> Value {
+    let data = &html[html.find("window.DATA = ").expect("the page holds its data") + "window.DATA = ".len()..];
+    let data: Value = serde_json::Deserializer::from_str(data).into_iter().next().unwrap().unwrap();
+    data["projects"].as_object().unwrap().values().next().unwrap().clone()
+}
+
+/// The code a route of `project` starts at, as the disk has it: its file and its span. A folder read alone names its
+/// modules from itself, and read in its workspace from the workspace, so an id is no measure across the two.
+fn site_of(project: &Value, id: &str) -> (PathBuf, Value) {
+    let node = project["nodes"].as_array().unwrap().iter().find(|n| n["id"] == id).unwrap_or_else(|| panic!("no node {id}"));
+    (std::fs::canonicalize(node["file"].as_str().unwrap()).unwrap(), node["span"].clone())
+}
+
+/// A click on a folder or a file in Studio's tree opens what `atlas-code view` opens for it: the start `serve` lists for
+/// the place is the route the command line's page opens on, for a folder read alone and for a file read with its project.
+#[test]
+fn a_click_on_a_place_in_the_tree_opens_what_view_opens_for_it() {
+    let pairs = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../engine/tests/pairs/designs/python");
+    let top = std::env::temp_dir().join(format!("atlas-serve-{}-places", std::process::id()));
+    let _ = std::fs::remove_dir_all(&top);
+    let copy = |from: &Path, to: &Path| {
+        for entry in walk(from) {
+            let target = to.join(entry.strip_prefix(from).unwrap());
+            std::fs::create_dir_all(target.parent().unwrap()).unwrap();
+            std::fs::copy(&entry, &target).unwrap();
+        }
+    };
+    copy(&pairs.join("typings"), &top.join("typings"));
+    for lesson in ["lesson", "inline"] {
+        let repo = top.join(lesson);
+        copy(&pairs.join(lesson), &repo);
+        std::fs::create_dir_all(repo.join(".git")).unwrap();
+        let (mut server, at) = serve(&repo);
+        complete(&at);
+        let (_, snapshot) = send(&at, "GET", "/api/snapshot", None, false);
+        let served: Value = serde_json::from_str(&snapshot).unwrap_or_else(|e| panic!("{e}: {snapshot}"));
+        let served = served["projects"].as_object().unwrap().values().next().unwrap().clone();
+        let (_, body) = send(&at, "GET", "/api/files", None, false);
+        let listed: Value = serde_json::from_str(&body).unwrap_or_else(|e| panic!("{e}: {body}"));
+        for (place, file) in [("exercises", false), ("exercises/designs.py", true), ("exercises/study.py", true)] {
+            let start = if file {
+                listed["files"].as_array().unwrap().iter().find(|f| f["path"] == place).unwrap()["opens"].clone()
+            } else {
+                listed["folders"][place].clone()
+            };
+            let out = top.join(format!("{lesson}-{}.html", place.replace('/', "-")));
+            let made = Command::new(env!("CARGO_BIN_EXE_atlas-code"))
+                .args(["view", "--no-open", "--out", out.to_str().unwrap(), repo.join(place).to_str().unwrap()])
+                .env("XDG_CACHE_HOME", top.join("cache"))
+                .output()
+                .unwrap();
+            assert!(made.status.success(), "{}", String::from_utf8_lossy(&made.stderr));
+            let viewed = project_of(&std::fs::read_to_string(&out).unwrap());
+            let clicked = start["route"].as_str().map(|id| site_of(&served, id));
+            let opened = viewed["open"].as_str().map(|id| site_of(&viewed, id));
+            if (lesson, place) == ("lesson", "exercises") {
+                assert!(clicked.is_some(), "the lesson's folder opens on its module");
+            }
+            assert_eq!(clicked, opened, "{lesson}/{place}: the click opens {start}, the command line {}", viewed["open"]);
+        }
+        server.kill().ok();
+    }
+    let _ = std::fs::remove_dir_all(&top);
+}
+
+/// The files below `dir`, at any depth.
+fn walk(dir: &Path) -> Vec<PathBuf> {
+    let mut files = Vec::new();
+    for entry in std::fs::read_dir(dir).unwrap().map(Result::unwrap) {
+        let path = entry.path();
+        if path.is_dir() {
+            files.extend(walk(&path));
+        } else {
+            files.push(path);
+        }
+    }
+    files
+}

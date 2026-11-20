@@ -12,6 +12,7 @@ use atlas_engine::diff::Diff;
 use atlas_engine::flow::Flow;
 use atlas_engine::principles::Finding;
 use atlas_engine::sight::Sight;
+use atlas_engine::story::Start;
 use atlas_engine::{parts, Graph, Options};
 use serde::Serialize;
 
@@ -139,12 +140,27 @@ pub(crate) struct Opens {
     pub(crate) served: Option<String>,
 }
 
-/// The route a folder opens on, the folder named as the repository to read: its outer module, where the folder's scripts
-/// run one (`story::folder_route`). `atlas-code view`, `serve` and the MCP `view` tool open alike.
-pub(crate) fn folder_route(graph: &Graph, folder: &std::path::Path) -> Option<String> {
-    let folder = atlas_engine::repo::Repo::resolved(folder).filter(|f| f.is_dir())?;
-    let inside = |file: &str| atlas_engine::repo::Repo::resolved(std::path::Path::new(file)).is_some_and(|f| f.starts_with(&folder));
-    atlas_engine::story::folder_route(graph, &inside)
+/// Where the reading of `place`, a folder or a file on the disk, starts (`story::start`). `atlas-code view`, `serve`, its
+/// file tree and the MCP `view` tool open alike.
+pub(crate) fn start(graph: &Graph, place: &Path) -> Start {
+    let Some(place) = atlas_engine::repo::Repo::resolved(place) else { return Start::Overview };
+    let inside = |file: &str| atlas_engine::repo::Repo::resolved(Path::new(file)).is_some_and(|f| f.starts_with(&place));
+    atlas_engine::story::start(graph, &inside, place.is_file())
+}
+
+impl Opens {
+    /// A page of the first of `places` whose reading starts somewhere (`start`) opens there: on a route, or, where no
+    /// `sight` is asked for, on the focus on a module.
+    pub(crate) fn at(graph: &Graph, places: &[PathBuf], sight: Option<Sight>, served: Option<String>) -> Opens {
+        let start = places.iter().map(|p| start(graph, p)).find(|s| *s != Start::Overview).unwrap_or(Start::Overview);
+        match start {
+            Start::Route(route) => Opens { route: Some(route), sight, served },
+            Start::Focus(module) if sight.is_none() => {
+                Opens { route: None, sight: Some(Sight { focus: [module].into(), ..Sight::default() }), served }
+            }
+            _ => Opens { route: None, sight, served },
+        }
+    }
 }
 
 /// One project as the viewer is handed it: the graph, the flow its routes are read from, the

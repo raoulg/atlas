@@ -3631,6 +3631,32 @@ fn a_folder_opens_on_the_outer_module() {
     );
 }
 
+/// A folder and a file open where their reading starts (`story::start`), the file as a folder of one. A lesson whose head
+/// is a module of its own opens on that module from its folder and from the file that defines and runs it, and its study,
+/// which defines no module, on its own script. A lesson that builds its head in place names no module: its folder opens
+/// on the overview and its file on its script, so the picture shows that the code gives the head no name.
+#[test]
+fn a_lesson_opens_on_the_module_its_code_names() {
+    use atlas_engine::story::{start, Start};
+    let at = |name: &str, place: &str| {
+        let g = design(name);
+        let base = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/pairs/designs/python").join(name);
+        let place = std::fs::canonicalize(base.join(place)).unwrap();
+        let inside = |f: &str| std::fs::canonicalize(f).is_ok_and(|f| f.starts_with(&place));
+        start(&g, &inside, place.is_file())
+    };
+    let head = Start::Route("exercises.designs.Head.forward".into());
+    assert_eq!(at("lesson", "exercises"), head, "the folder opens on the module its scripts run");
+    assert_eq!(at("lesson", "exercises/designs.py"), head, "the file opens on the module it defines and runs");
+    assert_eq!(
+        at("lesson", "exercises/study.py"),
+        Start::Route("exercises.study".into()),
+        "a file that defines no module opens on its script"
+    );
+    assert_eq!(at("inline", "exercises"), Start::Overview, "a head built in place is no module to open on");
+    assert_eq!(at("inline", "exercises/designs.py"), Start::Route("exercises.designs".into()));
+}
+
 /// What the constructor sets a field of the instance to reads fields of what it was handed (`Set::reads`), through the
 /// names the constructor bound before (`widths = [width, config.hidden]`): the lens from the configuration into the
 /// instance, the same however the stage is chosen.

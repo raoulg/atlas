@@ -358,8 +358,7 @@ fn view(
     let (graph, compared) = read.drawn();
     let flow = atlas_engine::flow::of(&graph);
     phases.done("flow");
-    let route = if opts.named.is_empty() { folder_route(&graph, repos) } else { named_route(&graph, &opts.named) };
-    let opens = page::Opens { route, sight, served: None };
+    let opens = page::Opens::at(&graph, named_or_folder(repos, &opts.named), sight, None);
     let html = page::Html::of(&graph, &flow, &findings, compared.as_ref(), &opens)?;
     let out = out.unwrap_or_else(|| home::made(home, &format!("{}.html", graph.root)));
     html.write(&out)?;
@@ -400,16 +399,14 @@ impl Phases {
     }
 }
 
-/// The route of a file named on the command line: the entry that lies in one of the `named`, by its id.
-fn named_route(graph: &Graph, named: &[PathBuf]) -> Option<String> {
-    let lies_in = |file: &str| Repo::resolved(std::path::Path::new(file)).is_some_and(|f| named.contains(&f));
-    graph.nodes.iter().find(|n| n.entry.is_some() && lies_in(&n.file)).map(|n| n.id.clone())
-}
-
-/// The route a folder named on the command line opens on (`page::folder_route`), where one folder is named.
-fn folder_route(graph: &Graph, repos: &[PathBuf]) -> Option<String> {
-    let [folder] = repos else { return None };
-    page::folder_route(graph, folder)
+/// The places a page named on the command line opens where their reading starts (`page::Opens::at`): the files named,
+/// else the one folder named; none where several folders are.
+fn named_or_folder<'a>(repos: &'a [PathBuf], named: &'a [PathBuf]) -> &'a [PathBuf] {
+    match (named, repos) {
+        ([], [_]) => repos,
+        ([], _) => &[],
+        _ => named,
+    }
 }
 
 /// A repository argument as a folder on disk: a path as it is, a URL cloned for as long as the
